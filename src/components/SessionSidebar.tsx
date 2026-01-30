@@ -91,7 +91,7 @@ export function SessionSidebar({ cwd, currentSessionId, onSelectSession, loading
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-gray-700">
         <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-          Sessions
+          Recent
         </span>
         <button
           onClick={() => setIsCollapsed(true)}

@@ -102,11 +102,11 @@ function PreviewModal({ title, content, onClose }: PreviewModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col"
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -175,9 +175,21 @@ export function ToolCall({ toolCall, cwd }: ToolCallProps) {
     return icons[name] || '🔧';
   };
 
-  // 从 input 中提取文件路径（用于 Read, Write, Edit 等工具）
-  const getFilePath = () => {
+  // 从 input 中提取文件路径或关键信息（用于 Read, Write, Edit, Glob, Bash 等工具）
+  const getDisplayInfo = () => {
     const input = toolCall.input;
+    // Bash 工具展示 command
+    if (toolCall.name === 'Bash' && input.command && typeof input.command === 'string') {
+      return input.command;
+    }
+    // Glob 工具展示 pattern
+    if (toolCall.name === 'Glob' && input.pattern && typeof input.pattern === 'string') {
+      return input.pattern;
+    }
+    // Grep 工具展示 pattern
+    if (toolCall.name === 'Grep' && input.pattern && typeof input.pattern === 'string') {
+      return input.pattern;
+    }
     if (input.file_path && typeof input.file_path === 'string') {
       return input.file_path;
     }
@@ -203,7 +215,9 @@ export function ToolCall({ toolCall, cwd }: ToolCallProps) {
     return fullPath;
   };
 
-  const filePath = getFilePath();
+  const displayInfo = getDisplayInfo();
+  // Bash, Glob 和 Grep 不需要转换为相对路径
+  const skipRelativePath = toolCall.name === 'Glob' || toolCall.name === 'Grep' || toolCall.name === 'Bash';
 
   return (
     <div className="my-2 border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-800">
@@ -212,15 +226,15 @@ export function ToolCall({ toolCall, cwd }: ToolCallProps) {
         className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
       >
         <span className="text-base">{getToolIcon(toolCall.name)}</span>
-        <span className="font-medium text-sm text-gray-700 dark:text-gray-300">
+        <span className="font-medium text-sm text-gray-700 dark:text-gray-300 flex-shrink-0">
           {toolCall.name}
         </span>
-        {filePath && (
+        {displayInfo && (
           <span
-            className="text-xs text-gray-500 dark:text-gray-400 font-mono truncate max-w-[300px]"
-            title={filePath}
+            className="text-xs text-gray-500 dark:text-gray-400 font-mono truncate flex-1 min-w-0"
+            title={displayInfo}
           >
-            {getRelativePath(filePath)}
+            {skipRelativePath ? displayInfo : getRelativePath(displayInfo)}
           </span>
         )}
         {toolCall.isLoading && (

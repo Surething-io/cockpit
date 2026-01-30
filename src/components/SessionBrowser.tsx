@@ -176,24 +176,24 @@ export function SessionBrowser({ isOpen, onClose }: SessionBrowserProps) {
       />
 
       {/* Modal */}
-      <div className="relative w-[90vw] max-w-6xl h-[85vh] bg-white dark:bg-gray-800 rounded-xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-6xl h-[90vh] mx-4 bg-white dark:bg-gray-800 rounded-lg shadow-xl flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-            Session Browser
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+            Projects
           </h2>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <input
               ref={searchInputRef}
               type="text"
               placeholder="搜索项目路径..."
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
-              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <button
               onClick={onClose}
-              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -203,11 +203,11 @@ export function SessionBrowser({ isOpen, onClose }: SessionBrowserProps) {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4">
           {isLoadingProjects && (
             <div className="flex items-center justify-center h-full">
-              <div className="flex items-center gap-3 text-gray-500 dark:text-gray-400">
-                <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
@@ -218,13 +218,13 @@ export function SessionBrowser({ isOpen, onClose }: SessionBrowserProps) {
 
           {error && (
             <div className="flex items-center justify-center h-full">
-              <div className="text-red-500 dark:text-red-400">{error}</div>
+              <div className="text-xs text-red-500 dark:text-red-400">{error}</div>
             </div>
           )}
 
           {!isLoadingProjects && !error && projects.length === 0 && (
             <div className="flex items-center justify-center h-full">
-              <div className="text-gray-500 dark:text-gray-400">No projects found</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">No projects found</div>
             </div>
           )}
 
@@ -234,15 +234,15 @@ export function SessionBrowser({ isOpen, onClose }: SessionBrowserProps) {
             const state = projectStates[project.encodedPath] || { isExpanded: false, isLoading: false, sessions: [], error: null };
 
             return (
-              <div key={project.encodedPath} className="mb-4">
+              <div key={project.encodedPath} className="mb-3">
                 {/* Project Header (Clickable) */}
                 <button
                   onClick={() => toggleProject(project.encodedPath)}
-                  className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
+                  className="w-full flex items-center gap-2 p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
                 >
                   {/* Expand/Collapse Icon */}
                   <svg
-                    className={`w-4 h-4 text-gray-500 dark:text-gray-400 transition-transform ${state.isExpanded ? 'rotate-90' : ''}`}
+                    className={`w-3 h-3 text-gray-500 dark:text-gray-400 transition-transform ${state.isExpanded ? 'rotate-90' : ''}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -251,27 +251,27 @@ export function SessionBrowser({ isOpen, onClose }: SessionBrowserProps) {
                   </svg>
 
                   {/* Folder Icon */}
-                  <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                   </svg>
 
                   {/* Project Path */}
-                  <span className="flex-1 font-medium text-gray-900 dark:text-gray-100 truncate" title={project.fullPath}>
+                  <span className="flex-1 text-xs font-medium text-gray-900 dark:text-gray-100 truncate" title={project.fullPath}>
                     {project.fullPath}
                   </span>
 
                   {/* Session Count */}
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
                     ({project.sessionCount})
                   </span>
                 </button>
 
                 {/* Sessions (when expanded) */}
                 {state.isExpanded && (
-                  <div className="ml-8 mt-2">
+                  <div className="ml-6 mt-2">
                     {state.isLoading && (
-                      <div className="flex items-center gap-2 p-4 text-gray-500 dark:text-gray-400">
-                        <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <div className="flex items-center gap-2 p-3 text-xs text-gray-500 dark:text-gray-400">
+                        <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                         </svg>
@@ -280,29 +280,29 @@ export function SessionBrowser({ isOpen, onClose }: SessionBrowserProps) {
                     )}
 
                     {state.error && (
-                      <div className="p-4 text-red-500 dark:text-red-400">{state.error}</div>
+                      <div className="p-3 text-xs text-red-500 dark:text-red-400">{state.error}</div>
                     )}
 
                     {!state.isLoading && !state.error && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                         {state.sessions.map((session) => (
                           <div
                             key={session.path}
                             onClick={() => handleSessionClick(project.fullPath, session.path)}
-                            className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-400 hover:shadow-md cursor-pointer transition-all"
+                            className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded border border-gray-200 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-400 hover:shadow-md cursor-pointer transition-all"
                           >
                             {/* Session Title */}
-                            <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-1 truncate" title={session.title}>
+                            <h4 className="text-xs font-medium text-gray-900 dark:text-gray-100 mb-1 truncate" title={session.title}>
                               {session.title}
                             </h4>
 
                             {/* Session Time */}
-                            <div className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
                               {formatDate(session.modifiedAt)}
                             </div>
 
                             {/* Messages Preview */}
-                            <div className="space-y-1 text-sm">
+                            <div className="space-y-0.5 text-xs">
                               {/* First Messages */}
                               {session.firstMessages.map((msg, idx) => (
                                 <div
@@ -317,7 +317,7 @@ export function SessionBrowser({ isOpen, onClose }: SessionBrowserProps) {
 
                               {/* Separator if there are last messages */}
                               {session.lastMessages.length > 0 && (
-                                <div className="text-gray-400 dark:text-gray-500 text-center py-1">
+                                <div className="text-gray-400 dark:text-gray-500 text-center py-0.5">
                                   ···
                                 </div>
                               )}

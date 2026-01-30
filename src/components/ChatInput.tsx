@@ -29,6 +29,24 @@ export function ChatInput({ onSend, disabled, cwd, onReloadHistory }: ChatInputP
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const commandListRef = useRef<HTMLDivElement>(null);
 
+  // 自动调整 textarea 高度
+  const adjustTextareaHeight = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    // 重置高度以获取正确的 scrollHeight
+    textarea.style.height = 'auto';
+    // 设置新高度，最大 200px（约 8-10 行）
+    const maxHeight = 200;
+    const newHeight = Math.min(textarea.scrollHeight, maxHeight);
+    textarea.style.height = `${newHeight}px`;
+  }, []);
+
+  // 当输入内容变化时调整高度
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [input, adjustTextareaHeight]);
+
   // 加载命令列表
   useEffect(() => {
     const loadCommands = async () => {
@@ -80,6 +98,10 @@ export function ChatInput({ onSend, disabled, cwd, onReloadHistory }: ChatInputP
       setInput('');
       setImages([]);
       setShowCommands(false);
+      // 重置 textarea 高度
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
     }
   };
 
@@ -249,10 +271,9 @@ export function ChatInput({ onSend, disabled, cwd, onReloadHistory }: ChatInputP
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder="输入消息，Enter 发送 (Shift+Enter 换行，可粘贴 PNG 图片，/ 显示命令)"
-          disabled={disabled}
+          placeholder={disabled ? "生成中... 可继续输入" : "输入消息，Enter 发送 (Shift+Enter 换行，可粘贴 PNG 图片，/ 显示命令)"}
           rows={1}
-          className="flex-1 resize-none px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50"
+          className="flex-1 resize-none px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
         />
       </div>
     </div>

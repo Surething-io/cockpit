@@ -254,3 +254,40 @@ body {
 .dark *::-webkit-scrollbar-thumb {
   background-color: hsl(var(--slate-7));
 }
+
+/* ---- Shiki 代码高亮样式 ---- */
+.shiki-wrapper pre {
+  margin: 0;
+  padding: 1rem;
+  overflow-x: auto;
+  border-radius: 0.5rem;
+}
+
+.shiki-wrapper code {
+  /* 使用 flexbox 避免换行符文本节点造成的额外间距 */
+  display: flex;
+  flex-direction: column;
+}
+
+.shiki-wrapper .line {
+  /* flexbox 子项自动占满一行，不需要 display: block */
+  line-height: 1.5;
+  white-space: pre; /* 行内保留空白 */
+}
+
+.shiki-wrapper .line-number {
+  display: inline-block;
+  width: 3em;
+  margin-right: 1em;
+  padding-right: 0.5em;
+  text-align: right;
+  color: #6b7280;
+  border-right: 1px solid #e5e7eb;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.dark .shiki-wrapper .line-number {
+  color: #9ca3af;
+  border-right-color: #374151;
+}

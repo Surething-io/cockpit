@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
           }
         };
 
-        console.log("============="+cwd)
+        console.log("cwd============="+cwd)
         try {
           // 根据是否有图片决定使用哪种方式调用 SDK
           const hasImages = images && images.length > 0;
@@ -113,6 +113,8 @@ export async function POST(request: NextRequest) {
             allowDangerouslySkipPermissions: true,
             // 启用流式文本块
             includePartialMessages: true,
+            // 启用 1M token 上下文窗口（beta）- 解决 "Prompt is too long" 问题
+            betas: ['context-1m-2025-08-07'],
           };
 
           let response;

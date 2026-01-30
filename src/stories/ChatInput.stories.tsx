@@ -12,9 +12,6 @@ const meta = {
       console.log('Send message:', message);
       console.log('Send images:', images);
     },
-    onNewSession: () => {
-      console.log('New session');
-    },
   },
 } satisfies Meta<typeof ChatInput>;
 

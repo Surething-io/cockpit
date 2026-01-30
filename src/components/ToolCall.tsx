@@ -437,7 +437,7 @@ function DiffSplitView({ oldStr, newStr, filePath }: { oldStr: string; newStr: s
   return (
     <div className="font-mono flex" style={{ fontSize: '0.8125rem' }}>
       {/* 左侧 - Old */}
-      <div className="flex-1 border-r border-gray-300 dark:border-gray-600">
+      <div className="w-1/2 min-w-0 overflow-x-auto border-r border-gray-300 dark:border-gray-600">
         <div className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-center text-xs font-medium border-b border-gray-300 dark:border-gray-600">
           Old
         </div>
@@ -460,7 +460,7 @@ function DiffSplitView({ oldStr, newStr, filePath }: { oldStr: string; newStr: s
         ))}
       </div>
       {/* 右侧 - New */}
-      <div className="flex-1">
+      <div className="w-1/2 min-w-0 overflow-x-auto">
         <div className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-center text-xs font-medium border-b border-gray-300 dark:border-gray-600">
           New
         </div>
@@ -665,6 +665,21 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
 
   const [viewMode, setViewMode] = useState<ViewMode>(getDefaultMode());
 
+  // ESC 键关闭
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        // 移除焦点，避免关闭后焦点停留在按钮上
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const renderContent = () => {
     if (viewMode === 'file' && filePath) {
       return <FilePreview filePath={filePath} />;
@@ -854,6 +869,8 @@ export function ToolCall({ toolCall, cwd }: ToolCallProps) {
   const displayInfo = getDisplayInfo();
   // Bash, Glob 和 Grep 不需要转换为相对路径
   const skipRelativePath = toolCall.name === 'Glob' || toolCall.name === 'Grep' || toolCall.name === 'Bash';
+  // 用于显示的相对路径（标题栏等）
+  const displayPath = displayInfo ? (skipRelativePath ? displayInfo : getRelativePath(displayInfo)) : null;
 
   return (
     <div className="my-2 border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-800">
@@ -865,12 +882,12 @@ export function ToolCall({ toolCall, cwd }: ToolCallProps) {
         <span className="font-medium text-sm text-gray-700 dark:text-gray-300 flex-shrink-0">
           {toolCall.name}
         </span>
-        {displayInfo && (
+        {displayPath && (
           <span
             className="text-xs text-gray-500 dark:text-gray-400 font-mono truncate flex-1 min-w-0"
-            title={displayInfo}
+            title={displayInfo || ''}
           >
-            {skipRelativePath ? displayInfo : getRelativePath(displayInfo)}
+            {displayPath}
           </span>
         )}
         {toolCall.isLoading && (
@@ -891,7 +908,7 @@ export function ToolCall({ toolCall, cwd }: ToolCallProps) {
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-gray-500 dark:text-gray-400">输入参数:</span>
               <button
-                onClick={() => setPreviewContent({ title: `${toolCall.name}${displayInfo ? ` ${displayInfo}` : ''}`, content: JSON.stringify(toolCall.input, null, 2), toolName: toolCall.name })}
+                onClick={() => setPreviewContent({ title: `${toolCall.name}${displayPath ? ` ${displayPath}` : ''}`, content: JSON.stringify(toolCall.input, null, 2), toolName: toolCall.name })}
                 className="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
               >
                 查看全部
@@ -907,7 +924,7 @@ export function ToolCall({ toolCall, cwd }: ToolCallProps) {
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-gray-500 dark:text-gray-400">结果:</span>
                 <button
-                  onClick={() => setPreviewContent({ title: `${toolCall.name}${displayInfo ? ` ${displayInfo}` : ''}`, content: toolCall.result || '', toolName: toolCall.name })}
+                  onClick={() => setPreviewContent({ title: `${toolCall.name}${displayPath ? ` ${displayPath}` : ''}`, content: toolCall.result || '', toolName: toolCall.name })}
                   className="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
                 >
                   查看全部

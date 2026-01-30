@@ -37,3 +37,12 @@ export interface ChatSession {
   id: string | null;
   messages: ChatMessage[];
 }
+
+// Token 使用信息
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  totalCostUsd: number;
+}

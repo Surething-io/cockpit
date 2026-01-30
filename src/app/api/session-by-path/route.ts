@@ -7,6 +7,13 @@ import * as path from 'path';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+interface TokenUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
 interface TranscriptMessage {
   type: string;
   message?: {
@@ -26,6 +33,7 @@ interface TranscriptMessage {
         data: string;
       };
     }>;
+    usage?: TokenUsage;
   };
   uuid?: string;
   sessionId?: string;
@@ -89,9 +97,9 @@ export async function POST(request: NextRequest) {
     }
 
     // 读取并解析 JSONL 文件
-    const { messages, title } = await parseTranscriptFile(sessionPath);
+    const { messages, title, usage } = await parseTranscriptFile(sessionPath);
 
-    return new Response(JSON.stringify({ messages, sessionId, title }), {
+    return new Response(JSON.stringify({ messages, sessionId, title, usage }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
@@ -161,7 +169,7 @@ function generateTitle(summary: string, userMessages: string[]): string {
   return 'Untitled Session';
 }
 
-async function parseTranscriptFile(filePath: string): Promise<{ messages: ChatMessage[]; title: string }> {
+async function parseTranscriptFile(filePath: string): Promise<{ messages: ChatMessage[]; title: string; usage?: TokenUsage }> {
   const fileStream = fs.createReadStream(filePath);
   const rl = readline.createInterface({
     input: fileStream,
@@ -171,12 +179,18 @@ async function parseTranscriptFile(filePath: string): Promise<{ messages: ChatMe
   const rawMessages: TranscriptMessage[] = [];
   let summary = '';
   const userTextMessages: string[] = [];
+  let lastUsage: TokenUsage | undefined;
 
   for await (const line of rl) {
     try {
       const obj = JSON.parse(line) as TranscriptMessage & { summary?: string; isMeta?: boolean };
       if (obj.type === 'user' || obj.type === 'assistant') {
         rawMessages.push(obj);
+
+        // 收集最后一条 assistant 消息的 usage
+        if (obj.type === 'assistant' && obj.message?.usage) {
+          lastUsage = obj.message.usage;
+        }
 
         // 收集用户文本消息用于生成标题
         if (obj.type === 'user' && !obj.isMeta && obj.message?.content) {
@@ -204,7 +218,7 @@ async function parseTranscriptFile(filePath: string): Promise<{ messages: ChatMe
   const messages = convertToChatMessages(rawMessages);
   const title = generateTitle(summary, userTextMessages);
 
-  return { messages, title };
+  return { messages, title, usage: lastUsage };
 }
 
 function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] {

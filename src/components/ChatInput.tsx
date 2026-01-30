@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback } from 'react';
 import { ImageInfo } from '@/types/chat';
 import { ImagePreview } from './ImagePreview';
+import { GitStatusModal } from './GitStatusModal';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -16,16 +17,16 @@ interface ChatInputProps {
   onSend: (message: string, images?: ImageInfo[]) => void;
   disabled?: boolean;
   cwd?: string;
-  onReloadHistory?: () => void;
 }
 
-export function ChatInput({ onSend, disabled, cwd, onReloadHistory }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, cwd }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [images, setImages] = useState<ImageInfo[]>([]);
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [showCommands, setShowCommands] = useState(false);
   const [filteredCommands, setFilteredCommands] = useState<CommandInfo[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [showGitStatus, setShowGitStatus] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const commandListRef = useRef<HTMLDivElement>(null);
 
@@ -252,19 +253,42 @@ export function ChatInput({ onSend, disabled, cwd, onReloadHistory }: ChatInputP
       )}
 
       <div className="flex gap-2 items-end p-4">
-        {/* 刷新历史按钮 */}
-        {onReloadHistory && (
-          <button
-            onClick={onReloadHistory}
-            disabled={disabled}
-            className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 active:scale-95 rounded-lg transition-all disabled:opacity-50"
-            title="重新加载历史消息"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
-        )}
+        {/* Git 暂存所有文件按钮 */}
+        <button
+          onClick={async () => {
+            try {
+              const response = await fetch('/api/git/stage', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cwd, files: ['.'] }),
+              });
+              if (!response.ok) {
+                console.error('Failed to stage all files');
+              }
+            } catch (err) {
+              console.error('Error staging files:', err);
+            }
+          }}
+          disabled={disabled}
+          className="p-2 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/30 active:bg-green-100 dark:active:bg-green-900/50 active:scale-95 rounded-lg transition-all disabled:opacity-50"
+          title="暂存所有文件 (git add -A)"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+
+        {/* Git 查看变更按钮 - 生成中也可点击 */}
+        <button
+          onClick={() => setShowGitStatus(true)}
+          className="p-2 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 active:bg-blue-100 dark:active:bg-blue-900/50 active:scale-95 rounded-lg transition-all"
+          title="查看 Git 变更"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+        </button>
+
         <textarea
           ref={textareaRef}
           value={input}
@@ -276,6 +300,15 @@ export function ChatInput({ onSend, disabled, cwd, onReloadHistory }: ChatInputP
           className="flex-1 resize-none px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
         />
       </div>
+
+      {/* Git 状态模态框 */}
+      {showGitStatus && (
+        <GitStatusModal cwd={cwd} onClose={() => {
+          setShowGitStatus(false);
+          // 关闭后聚焦输入框
+          setTimeout(() => textareaRef.current?.focus(), 0);
+        }} />
+      )}
     </div>
   );
 }

@@ -1,0 +1,538 @@
+'use client';
+
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { ChatMessage, ToolCallInfo, ImageInfo, MessageImage } from '@/types/chat';
+import { MessageList } from './MessageList';
+import { ChatInput } from './ChatInput';
+import { SessionBrowser } from './SessionBrowser';
+import { ProjectSessionsModal } from './ProjectSessionsModal';
+import { SessionSidebar } from './SessionSidebar';
+
+interface ChatProps {
+  initialCwd?: string;
+  initialSessionId?: string;
+  hideHeader?: boolean;
+  hideSidebar?: boolean;
+  onLoadingChange?: (isLoading: boolean) => void;
+  onSessionIdChange?: (sessionId: string) => void;
+  onTitleChange?: (title: string) => void;
+}
+
+export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, onLoadingChange, onSessionIdChange, onTitleChange }: ChatProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isSessionBrowserOpen, setIsSessionBrowserOpen] = useState(false);
+  const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // 根据 cwd + sessionId 加载历史消息
+  // incremental: 是否增量更新（只更新变化的部分，不触发滚动）
+  const loadHistoryByCwdAndSessionId = async (cwd: string, sid: string, incremental = false) => {
+    if (!incremental) {
+      setIsLoadingHistory(true);
+    }
+    try {
+      const response = await fetch('/api/session-by-path', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cwd, sessionId: sid }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.messages && data.messages.length > 0) {
+          if (incremental) {
+            // 增量更新模式：只更新变化的消息
+            setMessages((prevMessages) => {
+              const newMessages = data.messages as ChatMessage[];
+              // 如果消息数量相同且最后一条消息相同，不更新
+              if (
+                prevMessages.length === newMessages.length &&
+                prevMessages.length > 0 &&
+                prevMessages[prevMessages.length - 1].content === newMessages[newMessages.length - 1].content
+              ) {
+                return prevMessages;
+              }
+              // 找到第一个不同的消息索引
+              let diffIndex = 0;
+              for (let i = 0; i < Math.min(prevMessages.length, newMessages.length); i++) {
+                if (
+                  prevMessages[i].id !== newMessages[i].id ||
+                  prevMessages[i].content !== newMessages[i].content
+                ) {
+                  break;
+                }
+                diffIndex = i + 1;
+              }
+              // 保留相同的前缀，替换后面的部分
+              if (diffIndex === prevMessages.length && diffIndex < newMessages.length) {
+                // 只有新增消息，追加即可
+                return [...prevMessages, ...newMessages.slice(diffIndex)];
+              }
+              // 有更新或删除，需要替换
+              return newMessages;
+            });
+          } else {
+            setMessages(data.messages);
+          }
+        }
+        if (data.sessionId) {
+          setSessionId(data.sessionId);
+        }
+        // 通知父组件标题变化
+        if (data.title) {
+          onTitleChange?.(data.title);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load history by cwd and sessionId:', error);
+    } finally {
+      if (!incremental) {
+        setIsLoadingHistory(false);
+      }
+    }
+  };
+
+  // 页面加载时加载历史消息（只运行一次）
+  useEffect(() => {
+    // 如果有 initialCwd + initialSessionId，加载指定的会话历史
+    if (initialCwd && initialSessionId) {
+      loadHistoryByCwdAndSessionId(initialCwd, initialSessionId);
+      return;
+    }
+
+    // 如果有 initialCwd 但没有 initialSessionId，说明是新建空白会话，不加载任何历史
+    if (initialCwd) {
+      return;
+    }
+
+    // 如果没有 initialCwd（独立模式），从后端读取状态
+    const loadState = async () => {
+      try {
+        const response = await fetch('/api/state');
+        if (response.ok) {
+          const state = await response.json();
+          if (state.sessionId) {
+            setSessionId(state.sessionId);
+            loadHistory(state.sessionId);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load state:', error);
+      }
+    };
+    loadState();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 只在组件挂载时运行一次
+
+  // 当 sessionId 变化时通知父组件
+  useEffect(() => {
+    if (sessionId) {
+      onSessionIdChange?.(sessionId);
+    }
+  }, [sessionId, onSessionIdChange]);
+
+  // 当 sessionId 变化时保存到后端（仅在独立模式下）
+  useEffect(() => {
+    // 如果有 initialCwd，说明是在 TabManager 中管理，不需要保存到后端
+    if (initialCwd) return;
+    if (!sessionId) return;
+
+    fetch('/api/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+    }).catch((error) => {
+      console.error('Failed to save state:', error);
+    });
+  }, [sessionId, initialCwd]);
+
+  // 当 isLoading 变化时通知父组件
+  useEffect(() => {
+    onLoadingChange?.(isLoading);
+  }, [isLoading, onLoadingChange]);
+
+  // 加载历史消息
+  const loadHistory = async (sid: string) => {
+    setIsLoadingHistory(true);
+    try {
+      const response = await fetch(`/api/session/${sid}/history`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.messages && data.messages.length > 0) {
+          setMessages(data.messages);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load history:', error);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  // 停止生成
+  const handleStop = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  }, []);
+
+  // 重新加载历史消息（增量模式，不触发滚动）
+  const handleReloadHistory = useCallback(() => {
+    if (initialCwd && sessionId) {
+      loadHistoryByCwdAndSessionId(initialCwd, sessionId, true);
+    } else if (sessionId) {
+      loadHistory(sessionId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCwd, sessionId]);
+
+  // ESC 键监听：鼠标悬停在聊天区域时按 ESC 停止生成
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isHovered && isLoading) {
+        handleStop();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isHovered, isLoading, handleStop]);
+
+  const handleSend = useCallback(
+    async (content: string, images?: ImageInfo[]) => {
+      // 转换图片格式
+      const messageImages: MessageImage[] | undefined = images?.map((img) => ({
+        type: 'base64' as const,
+        media_type: 'image/png' as const,
+        data: img.data,
+      }));
+
+      // 添加用户消息
+      const userMessage: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content,
+        images: messageImages,
+      };
+      setMessages((prev) => [...prev, userMessage]);
+      setIsLoading(true);
+
+      // 创建助手消息占位
+      const assistantMessageId = `assistant-${Date.now()}`;
+      const assistantMessage: ChatMessage = {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: '',
+        toolCalls: [],
+        isStreaming: true,
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      // 创建 AbortController 用于中断请求
+      abortControllerRef.current = new AbortController();
+
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: content,
+            sessionId,
+            images: messageImages,
+            // 传递 cwd 用于设置工作目录
+            cwd: initialCwd,
+          }),
+          signal: abortControllerRef.current.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error('请求失败');
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('无法读取响应流');
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              if (data === '[DONE]') continue;
+
+              try {
+                const event = JSON.parse(data);
+                handleStreamEvent(event, assistantMessageId);
+              } catch {
+                // 忽略解析错误
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // 如果是用户主动中断，不显示错误信息
+        if (error instanceof Error && error.name === 'AbortError') {
+          // 保留已生成的内容，仅结束流式状态
+        } else {
+          console.error('Chat error:', error);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: '发生错误，请重试', isStreaming: false }
+                : msg
+            )
+          );
+        }
+      } finally {
+        abortControllerRef.current = null;
+        setIsLoading(false);
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMessageId
+              ? { ...msg, isStreaming: false }
+              : msg
+          )
+        );
+      }
+    },
+    [sessionId, initialCwd]
+  );
+
+  const handleStreamEvent = (event: Record<string, unknown>, messageId: string) => {
+    const eventType = event.type as string;
+
+    // 处理 session_id
+    if (eventType === 'system' && event.subtype === 'init') {
+      setSessionId(event.session_id as string);
+      return;
+    }
+
+    // 处理流式文本块（打字机效果）
+    if (eventType === 'stream_event') {
+      const streamEvent = event.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
+      if (streamEvent?.type === 'content_block_delta' && streamEvent.delta?.type === 'text_delta') {
+        const deltaText = streamEvent.delta.text || '';
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === messageId
+              ? { ...msg, content: (msg.content || '') + deltaText }
+              : msg
+          )
+        );
+      }
+      return;
+    }
+
+    // 处理文本内容（完整消息）
+    if (eventType === 'assistant') {
+      const message = event.message as { content?: Array<{ text?: string; name?: string; id?: string; input?: Record<string, unknown> }> } | undefined;
+      if (message?.content) {
+        for (const block of message.content) {
+          // 处理工具调用
+          if ('name' in block && block.name) {
+            const toolCall: ToolCallInfo = {
+              id: (block.id as string) || `tool-${Date.now()}`,
+              name: block.name as string,
+              input: (block.input as Record<string, unknown>) || {},
+              isLoading: true,
+            };
+            setMessages((prev) =>
+              prev.map((msg) => {
+                if (msg.id !== messageId) return msg;
+                // 避免重复添加
+                const exists = msg.toolCalls?.some((tc) => tc.id === toolCall.id);
+                if (exists) return msg;
+                return {
+                  ...msg,
+                  toolCalls: [...(msg.toolCalls || []), toolCall],
+                };
+              })
+            );
+          }
+        }
+      }
+    }
+
+    // 处理工具结果
+    if (eventType === 'user') {
+      const message = event.message as { content?: Array<{ tool_use_id?: string; content?: string }> } | undefined;
+      if (message?.content) {
+        for (const block of message.content) {
+          if ('tool_use_id' in block && block.tool_use_id) {
+            const toolUseId = block.tool_use_id;
+            const result = typeof block.content === 'string'
+              ? block.content
+              : JSON.stringify(block.content);
+
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === messageId
+                  ? {
+                      ...msg,
+                      toolCalls: msg.toolCalls?.map((tc) =>
+                        tc.id === toolUseId
+                          ? { ...tc, result, isLoading: false }
+                          : tc
+                      ),
+                    }
+                  : msg
+              )
+            );
+          }
+        }
+      }
+    }
+
+    // 处理最终结果
+    if (eventType === 'result') {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId
+            ? {
+                ...msg,
+                isStreaming: false,
+                toolCalls: msg.toolCalls?.map((tc) => ({
+                  ...tc,
+                  isLoading: false,
+                })),
+              }
+            : msg
+        )
+      );
+    }
+  };
+
+  // 处理侧边栏点击 session - 打开新标签页
+  const handleSelectSession = useCallback((sid: string, _title?: string) => {
+    if (initialCwd) {
+      const url = `/?cwd=${encodeURIComponent(initialCwd)}&sessionId=${sid}`;
+      window.open(url, '_blank');
+    }
+  }, [initialCwd]);
+
+  return (
+    <div className={`flex ${hideHeader && hideSidebar ? 'h-full' : 'h-screen'} bg-white dark:bg-gray-900`}>
+      {/* Sidebar - 只在有 cwd 且不隐藏时显示 */}
+      {initialCwd && !hideSidebar && (
+        <SessionSidebar
+          cwd={initialCwd}
+          currentSessionId={sessionId}
+          onSelectSession={handleSelectSession}
+        />
+      )}
+
+      {/* Main Content */}
+      <div
+        className="flex-1 flex flex-col min-w-0"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {/* Header - 可选隐藏 */}
+        {!hideHeader && (
+          <div className="border-b border-gray-200 dark:border-gray-700 px-4 py-3 bg-white dark:bg-gray-800">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <img src="/icons/icon-72x72.png" alt="Cockpit" className="w-6 h-6" />
+                <div className="flex items-baseline gap-2">
+                  <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                    Cockpit
+                  </h1>
+                  <span className="text-xs text-gray-400 dark:text-gray-500">
+                    One seat. One AI. Everything under control.
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {/* 显示项目路径 */}
+                {initialCwd && (
+                  <span
+                    className="text-sm text-gray-700 dark:text-gray-300 max-w-md truncate cursor-help"
+                    title={`CWD: ${initialCwd}`}
+                  >
+                    {initialCwd}
+                  </span>
+                )}
+                {/* 如果没有 initialCwd 但有 sessionId，则显示 sessionId */}
+                {!initialCwd && sessionId && (
+                  <span className="text-xs text-gray-400 dark:text-gray-500">
+                    Session: {sessionId.slice(0, 8)}...
+                  </span>
+                )}
+                {/* 当前项目 Sessions 按钮（仅当有 cwd 时显示） */}
+                {initialCwd && (
+                  <button
+                    onClick={() => setIsProjectSessionsOpen(true)}
+                    className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                    title="Project Sessions"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </button>
+                )}
+                {/* 全局 Session Browser 按钮 */}
+                <button
+                  onClick={() => setIsSessionBrowserOpen(true)}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  title="Browse All Sessions"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Messages */}
+        {isLoadingHistory ? (
+          <div className="flex-1 flex items-center justify-center">
+            <span className="text-gray-500 dark:text-gray-400">加载历史消息...</span>
+          </div>
+        ) : (
+          <MessageList messages={messages} isLoading={isLoading} cwd={initialCwd} />
+        )}
+
+        {/* Input */}
+        <ChatInput
+          onSend={handleSend}
+          disabled={isLoading}
+          cwd={initialCwd}
+          onReloadHistory={sessionId ? handleReloadHistory : undefined}
+        />
+      </div>
+
+      {/* Session Browser Modal - 仅在不隐藏 header 时显示 */}
+      {!hideHeader && (
+        <SessionBrowser
+          isOpen={isSessionBrowserOpen}
+          onClose={() => setIsSessionBrowserOpen(false)}
+        />
+      )}
+
+      {/* Project Sessions Modal - 仅在不隐藏 header 时显示 */}
+      {!hideHeader && initialCwd && (
+        <ProjectSessionsModal
+          isOpen={isProjectSessionsOpen}
+          onClose={() => setIsProjectSessionsOpen(false)}
+          cwd={initialCwd}
+        />
+      )}
+    </div>
+  );
+}

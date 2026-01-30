@@ -1,26 +1,252 @@
 @import "tailwindcss";
 
+/* ============================================
+   Design System - 参考 ai-assistant 项目风格
+   ============================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* ---- Radix Teal 色阶 (品牌色) ---- */
+  --teal-1: 180 50% 99.2%;
+  --teal-2: 180 44% 97%;
+  --teal-3: 180 43% 93.8%;
+  --teal-4: 180 44% 89.7%;
+  --teal-5: 180 42% 84.3%;
+  --teal-6: 181 39% 76.8%;
+  --teal-7: 181 35% 66.3%;
+  --teal-8: 181 33% 52.5%;
+  --teal-9: 179 35% 35%;
+  --teal-10: 179 37% 31%;
+  --teal-11: 180 50% 22%;
+  --teal-12: 186 100% 7%;
+
+  /* ---- Radix Slate 色阶 (UI 灰色) ---- */
+  --slate-1: 240 20% 99%;
+  --slate-2: 240 17% 97%;
+  --slate-3: 240 14% 94.5%;
+  --slate-4: 240 13% 92%;
+  --slate-5: 240 12% 89.5%;
+  --slate-6: 237 11% 86%;
+  --slate-7: 235 9% 81%;
+  --slate-8: 233 8% 70%;
+  --slate-9: 230 7% 55%;
+  --slate-10: 228 6% 50%;
+  --slate-11: 225 6% 40%;
+  --slate-12: 210 14% 13%;
+
+  /* ---- Radix Red 色阶 (错误状态) ---- */
+  --red-9: 358 75% 59%;
+  --red-10: 358 69% 55%;
+  --red-11: 358 65% 49%;
+
+  /* ---- Radix Green 色阶 (成功状态) ---- */
+  --green-9: 151 55% 42%;
+  --green-10: 152 57% 39%;
+  --green-11: 153 67% 28%;
+
+  /* ---- Radix Amber 色阶 (警告状态) ---- */
+  --amber-9: 39 100% 57%;
+  --amber-10: 36 100% 50%;
+  --amber-11: 24 100% 37%;
+
+  /* ---- 语义颜色 (shadcn 风格) ---- */
+  --background: 0 0% 98%;
+  --foreground: var(--slate-12);
+  --card: 0 0% 100%;
+  --card-foreground: var(--slate-12);
+  --popover: 0 0% 100%;
+  --popover-foreground: var(--slate-12);
+  --primary: var(--slate-12);
+  --primary-foreground: 0 0% 100%;
+  --secondary: var(--slate-3);
+  --secondary-foreground: var(--slate-12);
+  --muted: var(--slate-3);
+  --muted-foreground: var(--slate-11);
+  --accent: var(--slate-4);
+  --accent-foreground: var(--slate-12);
+  --destructive: var(--red-9);
+  --destructive-foreground: 0 0% 100%;
+  --border: var(--slate-5);
+  --input: var(--slate-5);
+  --ring: var(--teal-9);
+  --brand: var(--teal-9);
+  --brand-foreground: var(--teal-11);
+
+  /* ---- 圆角 ---- */
+  --radius: 0.5rem;
 }
 
+/* ---- 暗色主题 ---- */
+.dark {
+  /* Radix Teal Dark */
+  --teal-1: 183 30% 7%;
+  --teal-2: 183 35% 9%;
+  --teal-3: 183 38% 12%;
+  --teal-4: 182 40% 15%;
+  --teal-5: 182 40% 18%;
+  --teal-6: 182 38% 23%;
+  --teal-7: 181 35% 30%;
+  --teal-8: 180 34% 40%;
+  --teal-9: 179 42% 50%;
+  --teal-10: 179 48% 56%;
+  --teal-11: 179 55% 65%;
+  --teal-12: 180 50% 85%;
+
+  /* Radix Slate Dark */
+  --slate-1: 240 6% 7%;
+  --slate-2: 240 5% 10%;
+  --slate-3: 240 5% 13%;
+  --slate-4: 240 4% 16%;
+  --slate-5: 240 4% 19%;
+  --slate-6: 238 4% 23%;
+  --slate-7: 235 4% 30%;
+  --slate-8: 233 4% 40%;
+  --slate-9: 230 5% 52%;
+  --slate-10: 228 5% 58%;
+  --slate-11: 220 9% 70%;
+  --slate-12: 220 9% 94%;
+
+  /* Radix Red Dark */
+  --red-9: 358 75% 59%;
+  --red-10: 357 74% 64%;
+  --red-11: 355 78% 75%;
+
+  /* Radix Green Dark */
+  --green-9: 151 55% 42%;
+  --green-10: 150 52% 48%;
+  --green-11: 148 58% 60%;
+
+  /* Radix Amber Dark */
+  --amber-9: 39 100% 57%;
+  --amber-10: 43 100% 64%;
+  --amber-11: 46 100% 74%;
+
+  /* 语义颜色 Dark */
+  --background: var(--slate-1);
+  --foreground: var(--slate-12);
+  --card: 0 0% 12%;
+  --card-foreground: var(--slate-12);
+  --popover: 0 0% 12%;
+  --popover-foreground: var(--slate-12);
+  --primary: var(--slate-12);
+  --primary-foreground: var(--slate-1);
+  --secondary: var(--slate-3);
+  --secondary-foreground: var(--slate-12);
+  --muted: var(--slate-3);
+  --muted-foreground: var(--slate-11);
+  --accent: var(--slate-4);
+  --accent-foreground: var(--slate-12);
+  --destructive: var(--red-9);
+  --destructive-foreground: 0 0% 100%;
+  --border: var(--slate-6);
+  --input: var(--slate-6);
+  --ring: var(--teal-9);
+  --brand: var(--teal-9);
+  --brand-foreground: var(--teal-11);
+}
+
+/* ---- Tailwind v4 主题注册 ---- */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* 字体 */
+  --font-sans: var(--font-inter), "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-serif: var(--font-lora), "PingFang SC", "Microsoft YaHei", serif;
+  --font-mono: var(--font-jetbrains-mono), "Menlo", "Consolas", monospace;
+
+  /* 颜色 */
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-brand: hsl(var(--brand));
+  --color-brand-foreground: hsl(var(--brand-foreground));
+
+  /* Teal 色阶 */
+  --color-teal-1: hsl(var(--teal-1));
+  --color-teal-2: hsl(var(--teal-2));
+  --color-teal-3: hsl(var(--teal-3));
+  --color-teal-4: hsl(var(--teal-4));
+  --color-teal-5: hsl(var(--teal-5));
+  --color-teal-6: hsl(var(--teal-6));
+  --color-teal-7: hsl(var(--teal-7));
+  --color-teal-8: hsl(var(--teal-8));
+  --color-teal-9: hsl(var(--teal-9));
+  --color-teal-10: hsl(var(--teal-10));
+  --color-teal-11: hsl(var(--teal-11));
+  --color-teal-12: hsl(var(--teal-12));
+
+  /* Slate 色阶 */
+  --color-slate-1: hsl(var(--slate-1));
+  --color-slate-2: hsl(var(--slate-2));
+  --color-slate-3: hsl(var(--slate-3));
+  --color-slate-4: hsl(var(--slate-4));
+  --color-slate-5: hsl(var(--slate-5));
+  --color-slate-6: hsl(var(--slate-6));
+  --color-slate-7: hsl(var(--slate-7));
+  --color-slate-8: hsl(var(--slate-8));
+  --color-slate-9: hsl(var(--slate-9));
+  --color-slate-10: hsl(var(--slate-10));
+  --color-slate-11: hsl(var(--slate-11));
+  --color-slate-12: hsl(var(--slate-12));
+
+  /* 状态色 */
+  --color-red-9: hsl(var(--red-9));
+  --color-red-10: hsl(var(--red-10));
+  --color-red-11: hsl(var(--red-11));
+  --color-green-9: hsl(var(--green-9));
+  --color-green-10: hsl(var(--green-10));
+  --color-green-11: hsl(var(--green-11));
+  --color-amber-9: hsl(var(--amber-9));
+  --color-amber-10: hsl(var(--amber-10));
+  --color-amber-11: hsl(var(--amber-11));
+
+  /* 圆角 */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* ---- 基础样式 ---- */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+}
+
+/* ---- 滚动条样式 ---- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--slate-6)) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--slate-6));
+  border-radius: 4px;
+}
+
+.dark *::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--slate-7));
 }

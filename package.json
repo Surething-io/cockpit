@@ -1,26 +1,49 @@
 {
-  "name": "chat-demo",
+  "name": "cockpit",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3456",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "next start -p 3457",
+    "lint": "eslint",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build",
+    "generate-icons": "node scripts/generate-icons.js"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.22",
+    "@types/react-syntax-highlighter": "^15.5.13",
     "next": "16.1.6",
+    "next-pwa": "^5.6.0",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^16.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@chromatic-com/storybook": "^5.0.0",
+    "@storybook/addon-a11y": "^10.2.1",
+    "@storybook/addon-docs": "^10.2.1",
+    "@storybook/addon-onboarding": "^10.2.1",
+    "@storybook/addon-vitest": "^10.2.1",
+    "@storybook/nextjs-vite": "^10.2.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/browser-playwright": "^4.0.18",
+    "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "eslint-plugin-storybook": "^10.2.1",
+    "playwright": "^1.58.0",
+    "sharp": "^0.34.5",
+    "storybook": "^10.2.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
   }
 }

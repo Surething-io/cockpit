@@ -255,6 +255,16 @@ body {
   background-color: hsl(var(--slate-7));
 }
 
+/* 隐藏滚动条的工具类 */
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* ---- Shiki 代码高亮样式 ---- */
 .shiki-wrapper pre {
   margin: 0;

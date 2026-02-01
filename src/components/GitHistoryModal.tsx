@@ -304,19 +304,6 @@ function DiffSplitView({ oldStr, newStr, filePath, isNew, isDeleted }: {
   const diffLines = computeLineDiff(oldStr, newStr);
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
-  const isSyncingRef = useRef(false);
-
-  const handleScroll = useCallback((source: 'left' | 'right') => {
-    if (isSyncingRef.current) return;
-    isSyncingRef.current = true;
-    const sourceEl = source === 'left' ? leftRef.current : rightRef.current;
-    const targetEl = source === 'left' ? rightRef.current : leftRef.current;
-    if (sourceEl && targetEl) {
-      targetEl.scrollTop = sourceEl.scrollTop;
-      targetEl.scrollLeft = sourceEl.scrollLeft;
-    }
-    requestAnimationFrame(() => { isSyncingRef.current = false; });
-  }, []);
 
   const leftLines: { lineNum: number; content: string; type: 'unchanged' | 'removed'; originalIdx: number }[] = [];
   const rightLines: { lineNum: number; content: string; type: 'unchanged' | 'added'; originalIdx: number }[] = [];
@@ -356,51 +343,66 @@ function DiffSplitView({ oldStr, newStr, filePath, isNew, isDeleted }: {
     return { type: 'unchanged' as const };
   });
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
   return (
-    <div className="font-mono flex h-full" style={{ fontSize: '0.8125rem' }}>
-      <div
-        ref={leftRef}
-        onScroll={() => handleScroll('left')}
-        className={`${leftWidth} min-w-0 overflow-auto border-r border-gray-300 dark:border-gray-600`}
-      >
-        <div className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-center text-xs font-medium border-b border-gray-300 dark:border-gray-600 sticky top-0 z-10">
+    <div className="font-mono flex flex-col h-full" style={{ fontSize: '0.8125rem' }}>
+      {/* Header row - fixed */}
+      <div className="flex flex-shrink-0 border-b border-gray-300 dark:border-gray-600">
+        <div className={`${leftWidth} min-w-0 px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-center text-xs font-medium border-r border-gray-300 dark:border-gray-600`}>
           {isNew ? '(New File)' : isDeleted ? 'Deleted' : 'Old'}
         </div>
-        {leftLines.map((line, idx) => (
-          <div key={idx} className={`flex ${line.type === 'removed' ? 'bg-red-100 dark:bg-red-900/30' : ''}`}>
-            <span className="w-10 flex-shrink-0 text-right pr-2 text-gray-400 dark:text-gray-500 select-none border-r border-gray-200 dark:border-gray-700">
-              {line.lineNum || ''}
-            </span>
-            <HighlightedContent
-              content={line.content}
-              highlightedLine={line.originalIdx >= 0 ? highlightedLines.get(line.originalIdx) : undefined}
-              className="flex-1 whitespace-pre pl-2"
-            />
-          </div>
-        ))}
-      </div>
-      <div
-        ref={rightRef}
-        onScroll={() => handleScroll('right')}
-        className={`${rightWidth} min-w-0 overflow-auto`}
-      >
-        <div className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-center text-xs font-medium border-b border-gray-300 dark:border-gray-600 sticky top-0 z-10">
+        <div className={`${rightWidth} min-w-0 px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-center text-xs font-medium`}>
           {isDeleted ? '(Deleted)' : 'New'}
         </div>
-        {rightLines.map((line, idx) => (
-          <div key={idx} className={`flex ${line.type === 'added' ? 'bg-green-100 dark:bg-green-900/30' : ''}`}>
-            <span className="w-10 flex-shrink-0 text-right pr-2 text-gray-400 dark:text-gray-500 select-none border-r border-gray-200 dark:border-gray-700">
-              {line.lineNum || ''}
-            </span>
-            <HighlightedContent
-              content={line.content}
-              highlightedLine={line.originalIdx >= 0 ? highlightedLines.get(line.originalIdx) : undefined}
-              className="flex-1 whitespace-pre pl-2"
-            />
-          </div>
-        ))}
+        <div className="w-4 flex-shrink-0 bg-gray-100 dark:bg-gray-700" />
       </div>
-      <DiffMinimap lines={minimapLines} containerRef={rightRef} totalLines={leftLines.length} />
+      {/* Content row - scrollable */}
+      <div className="flex flex-1 overflow-hidden">
+        <div
+          ref={scrollContainerRef}
+          className="flex flex-1 overflow-auto scrollbar-hide"
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
+          {/* Left panel */}
+          <div
+            ref={leftRef}
+            className={`${leftWidth} min-w-0 border-r border-gray-300 dark:border-gray-600`}
+          >
+            {leftLines.map((line, idx) => (
+              <div key={idx} className={`flex ${line.type === 'removed' ? 'bg-red-100 dark:bg-red-900/30' : ''}`}>
+                <span className="w-10 flex-shrink-0 text-right pr-2 text-gray-400 dark:text-gray-500 select-none border-r border-gray-200 dark:border-gray-700">
+                  {line.lineNum || ''}
+                </span>
+                <HighlightedContent
+                  content={line.content}
+                  highlightedLine={line.originalIdx >= 0 ? highlightedLines.get(line.originalIdx) : undefined}
+                  className="flex-1 whitespace-pre pl-2"
+                />
+              </div>
+            ))}
+          </div>
+          {/* Right panel */}
+          <div
+            ref={rightRef}
+            className={`${rightWidth} min-w-0`}
+          >
+            {rightLines.map((line, idx) => (
+              <div key={idx} className={`flex ${line.type === 'added' ? 'bg-green-100 dark:bg-green-900/30' : ''}`}>
+                <span className="w-10 flex-shrink-0 text-right pr-2 text-gray-400 dark:text-gray-500 select-none border-r border-gray-200 dark:border-gray-700">
+                  {line.lineNum || ''}
+                </span>
+                <HighlightedContent
+                  content={line.content}
+                  highlightedLine={line.originalIdx >= 0 ? highlightedLines.get(line.originalIdx) : undefined}
+                  className="flex-1 whitespace-pre pl-2"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+        <DiffMinimap lines={minimapLines} containerRef={scrollContainerRef} totalLines={leftLines.length} />
+      </div>
     </div>
   );
 }
@@ -731,8 +733,7 @@ export function GitHistoryModal({ isOpen, onClose, cwd }: GitHistoryModalProps) 
   }, [isOpen, onClose]);
 
   // Load branches
-  useEffect(() => {
-    if (!isOpen) return;
+  const loadBranches = useCallback(() => {
     setIsLoadingBranches(true);
     setError(null);
     fetch(`/api/git/branches?cwd=${encodeURIComponent(cwd)}`)
@@ -755,7 +756,23 @@ export function GitHistoryModal({ isOpen, onClose, cwd }: GitHistoryModalProps) 
         setBranches(null);
       })
       .finally(() => setIsLoadingBranches(false));
-  }, [isOpen, cwd]);
+  }, [cwd]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    loadBranches();
+  }, [isOpen, loadBranches]);
+
+  // Refresh - reload branches and commits
+  const handleRefresh = useCallback(() => {
+    loadBranches();
+    // Reset selection state
+    setSelectedCommit(null);
+    setFiles([]);
+    setFileTree([]);
+    setSelectedFile(null);
+    setFileDiff(null);
+  }, [loadBranches]);
 
   // Load commits when branch changes
   useEffect(() => {
@@ -839,14 +856,26 @@ export function GitHistoryModal({ isOpen, onClose, cwd }: GitHistoryModalProps) 
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
           <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">Git History</h3>
-          <button
-            onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleRefresh}
+              disabled={isLoadingBranches || isLoadingCommits}
+              className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors disabled:opacity-50"
+              title="刷新"
+            >
+              <svg className={`w-5 h-5 ${isLoadingBranches || isLoadingCommits ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Content */}

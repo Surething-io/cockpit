@@ -6,7 +6,6 @@ import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { SessionBrowser } from './SessionBrowser';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
-import { SessionSidebar } from './SessionSidebar';
 import { FileBrowserModal } from './FileBrowserModal';
 import { SettingsModal } from './SettingsModal';
 
@@ -445,15 +444,6 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
 
   return (
     <div className={`flex ${hideHeader && hideSidebar ? 'h-full' : 'h-screen'} bg-card`}>
-      {/* Sidebar - 只在有 cwd 且不隐藏时显示 */}
-      {initialCwd && !hideSidebar && (
-        <SessionSidebar
-          cwd={initialCwd}
-          currentSessionId={sessionId}
-          onSelectSession={handleSelectSession}
-        />
-      )}
-
       {/* Main Content */}
       <div
         className="flex-1 flex flex-col min-w-0"

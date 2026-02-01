@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { createHighlighter, type Highlighter, type BundledLanguage } from 'shiki';
+import { type BundledLanguage } from 'shiki';
+import { getHighlighter, getLanguageFromPath } from './CodeViewer';
 
 // ============================================
 // Types
@@ -24,55 +25,6 @@ interface DiffViewProps {
   filePath: string;
   isNew?: boolean;
   isDeleted?: boolean;
-}
-
-// ============================================
-// Shiki Highlighter Singleton
-// ============================================
-
-let highlighterPromise: Promise<Highlighter> | null = null;
-
-const SUPPORTED_LANGS = [
-  'typescript', 'tsx', 'javascript', 'jsx',
-  'html', 'css', 'scss', 'json', 'yaml',
-  'python', 'go', 'rust', 'java', 'ruby', 'php',
-  'bash', 'shell', 'markdown', 'sql', 'c', 'cpp',
-  'swift', 'kotlin', 'dart', 'lua', 'graphql', 'xml',
-] as const;
-
-function getHighlighter(): Promise<Highlighter> {
-  if (!highlighterPromise) {
-    highlighterPromise = createHighlighter({
-      themes: ['github-dark', 'github-light'],
-      langs: [...SUPPORTED_LANGS],
-    });
-  }
-  return highlighterPromise;
-}
-
-function getLanguageFromPath(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase();
-  const map: Record<string, string> = {
-    ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
-    mjs: 'javascript', cjs: 'javascript',
-    html: 'html', htm: 'html', css: 'css', scss: 'scss',
-    json: 'json', yaml: 'yaml', yml: 'yaml', xml: 'xml',
-    py: 'python', go: 'go', rs: 'rust', java: 'java',
-    kt: 'kotlin', rb: 'ruby', php: 'php',
-    cs: 'cpp', cpp: 'cpp', c: 'c', h: 'c',
-    sh: 'bash', bash: 'bash', zsh: 'bash',
-    md: 'markdown', mdx: 'markdown', sql: 'sql',
-    swift: 'swift', dart: 'dart', lua: 'lua',
-    graphql: 'graphql', gql: 'graphql',
-    dockerfile: 'bash',
-    toml: 'yaml', sass: 'scss', less: 'css',
-    scala: 'java', r: 'python', vim: 'bash',
-  };
-  const lang = map[ext || ''] || 'text';
-  if (SUPPORTED_LANGS.includes(lang as typeof SUPPORTED_LANGS[number])) {
-    return lang;
-  }
-  return 'text';
 }
 
 // ============================================

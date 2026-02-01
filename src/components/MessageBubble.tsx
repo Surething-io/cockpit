@@ -59,7 +59,7 @@ export function MessageBubble({ message, cwd }: MessageBubbleProps) {
         <div
           className={`max-w-[80%] ${
             isUser
-              ? 'bg-blue-500 text-white rounded-2xl rounded-br-md'
+              ? 'bg-accent text-foreground border border-brand rounded-2xl rounded-br-md'
               : 'bg-accent text-foreground rounded-2xl rounded-bl-md'
           } px-4 py-2`}
         >
@@ -106,7 +106,7 @@ export function MessageBubble({ message, cwd }: MessageBubbleProps) {
                     <span className="font-medium text-foreground">
                       {toolCallsCount} 个工具调用
                     </span>
-                    <span className="ml-auto text-slate-9 text-sm">
+                    <span className="ml-auto text-muted-foreground text-sm">
                       {toolCallsExpanded ? '▲ 收起' : '▼ 展开'}
                     </span>
                   </button>

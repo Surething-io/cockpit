@@ -307,7 +307,7 @@ function DiffMinimap({
           <div
             key={idx}
             className={`absolute left-0 right-0 ${
-              line.type === 'removed' ? 'bg-red-400 dark:bg-red-500' : 'bg-green-400 dark:bg-green-500'
+              line.type === 'removed' ? 'bg-red-9' : 'bg-green-9'
             }`}
             style={{
               top: `${idx * lineHeight}%`,
@@ -319,7 +319,7 @@ function DiffMinimap({
       ))}
       {/* Viewport indicator */}
       <div
-        className="absolute left-0 right-0 bg-slate-8/40 border-y border-slate-8"
+        className="absolute left-0 right-0 bg-muted/60 border-y border-border"
         style={{
           top: `${viewportInfo.top}px`,
           height: `${Math.max(viewportInfo.height, 10)}px`,

@@ -135,7 +135,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
               placeholder="搜索会话..."
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
-              className="px-2 py-1 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="px-2 py-1 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
             />
             <button
               onClick={onClose}
@@ -164,7 +164,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
 
           {error && (
             <div className="flex items-center justify-center h-full">
-              <div className="text-xs text-red-500 dark:text-red-400">{error}</div>
+              <div className="text-xs text-red-11">{error}</div>
             </div>
           )}
 

@@ -61,9 +61,9 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
   }, [toast.id, onRemove]);
 
   const bgColor = {
-    success: 'bg-green-600',
-    error: 'bg-red-600',
-    info: 'bg-blue-600',
+    success: 'bg-green-9',
+    error: 'bg-red-9',
+    info: 'bg-brand',
   }[toast.type];
 
   const icon = {
@@ -123,7 +123,7 @@ export function toast(message: string, type: Toast['type'] = 'success') {
   const container = getToastContainer();
   const toastEl = document.createElement('div');
   toastEl.className = `${
-    type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'
+    type === 'success' ? 'bg-green-9' : type === 'error' ? 'bg-red-9' : 'bg-brand'
   } text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 min-w-[200px]`;
   toastEl.style.animation = 'slideIn 0.3s ease-out';
 

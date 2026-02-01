@@ -74,9 +74,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             <label className="block text-sm font-medium text-foreground mb-2">
               关于
             </label>
-            <div className="text-xs text-muted-foreground space-y-1">
+            <div className="text-xs text-muted-foreground">
               <p>Cockpit - One seat. One AI. Everything under control.</p>
-              <p>配色体系参考 Cursor IDE / VS Code</p>
             </div>
           </div>
         </div>

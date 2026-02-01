@@ -132,13 +132,13 @@ export function SessionSidebar({ cwd, currentSessionId, onSelectSession, loading
                 onClick={() => handleSessionClick(session)}
                 className={`px-3 py-2 cursor-pointer border-b border-border transition-colors ${
                   isActive
-                    ? 'bg-brand/10 border-l-2 border-l-blue-500'
+                    ? 'bg-brand/10 border-l-2 border-l-brand'
                     : 'hover:bg-accent/50'
                 }`}
               >
                 <div className="flex items-center gap-1.5">
                   {isGenerating && (
-                    <svg className="animate-spin h-3 w-3 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                    <svg className="animate-spin h-3 w-3 text-brand flex-shrink-0" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>

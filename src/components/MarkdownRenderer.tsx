@@ -60,7 +60,7 @@ export function MarkdownRenderer({ content, isUser = false }: MarkdownRendererPr
           return (
             <div className="relative my-3 rounded-lg overflow-hidden">
               {match && (
-                <div className="flex items-center justify-between px-4 py-2 bg-slate-11 text-muted-foreground text-xs">
+                <div className="flex items-center justify-between px-4 py-2 bg-secondary text-muted-foreground text-xs border-b border-border">
                   <span>{match[1]}</span>
                   <CopyButton text={String(children).replace(/\n$/, '')} />
                 </div>
@@ -215,7 +215,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="px-2 py-1 text-xs rounded hover:bg-slate-8 transition-colors"
+      className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors"
     >
       {copied ? '✓ 已复制' : '复制'}
     </button>

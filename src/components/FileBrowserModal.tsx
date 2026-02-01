@@ -1808,25 +1808,22 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     setTooltipPos(null);
   }, []);
 
-  // ========== Load Data on Tab Change ==========
+  // ========== Initial Data Load (once on mount) ==========
   useEffect(() => {
-    if (activeTab === 'tree' || activeTab === 'recent') {
-      loadExpandedPaths();
-      loadFiles();
-      loadRecentFiles();
-    } else if (activeTab === 'status') {
-      fetchStatus();
-    } else if (activeTab === 'history') {
-      loadBranches();
-    }
-  }, [activeTab, loadExpandedPaths, loadFiles, loadRecentFiles, fetchStatus, loadBranches]);
+    loadExpandedPaths();
+    loadFiles();
+    loadRecentFiles();
+    fetchStatus();
+    loadBranches();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Load commits when branch changes
+  // Load commits when branch changes (user selects a different branch)
   useEffect(() => {
-    if (activeTab === 'history' && selectedBranch) {
+    if (selectedBranch) {
       loadCommits(selectedBranch);
     }
-  }, [activeTab, selectedBranch, loadCommits]);
+  }, [selectedBranch, loadCommits]);
 
   // Search auto-expand
   useEffect(() => {
@@ -1895,6 +1892,89 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
   // Determine loading state for refresh button
   const isRefreshLoading = isLoadingFiles || statusLoading || isLoadingBranches || isLoadingCommits;
+
+  // ========== Auto-sync with fingerprint detection ==========
+  const lastFingerprintRef = useRef<string>('');
+
+  const silentRefresh = useCallback(async () => {
+    try {
+      // 1. Check if anything changed using fingerprint
+      const checkRes = await fetch(`/api/sync?cwd=${encodeURIComponent(cwd)}&since=${encodeURIComponent(lastFingerprintRef.current)}`);
+      const { changed, fingerprint } = await checkRes.json();
+
+      if (!changed) {
+        // No changes, skip refresh
+        return;
+      }
+
+      // Update fingerprint
+      lastFingerprintRef.current = fingerprint;
+
+      // 2. Refresh all data since something changed
+      const [filesRes, recentRes, statusRes, commitsRes] = await Promise.all([
+        fetch(`/api/files/list?cwd=${encodeURIComponent(cwd)}`),
+        fetch(`/api/files/recent?cwd=${encodeURIComponent(cwd)}`),
+        fetch(`/api/git/status?cwd=${encodeURIComponent(cwd)}`),
+        selectedBranch
+          ? fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(selectedBranch)}&limit=${COMMITS_PER_PAGE}`)
+          : Promise.resolve(null),
+      ]);
+
+      // Process files
+      const filesData = await filesRes.json();
+      if (!filesData.error) {
+        setFiles(filesData.files || []);
+      }
+
+      // Process recent files
+      const recentData = await recentRes.json();
+      setRecentFiles(recentData.files || []);
+
+      // Process Git status
+      if (statusRes.ok) {
+        const statusData: GitStatusResponse = await statusRes.json();
+        setStatus(statusData);
+        const staged = buildGitFileTree(statusData.staged);
+        const unstaged = buildGitFileTree(statusData.unstaged);
+        setStagedTree(staged);
+        setUnstagedTree(unstaged);
+        const newPaths = new Set<string>([
+          ...collectGitTreeDirPaths(staged),
+          ...collectGitTreeDirPaths(unstaged),
+        ]);
+        setStatusExpandedPaths(prev => new Set([...prev, ...newPaths]));
+      }
+
+      // Process Git commits
+      if (commitsRes) {
+        const commitsData = await commitsRes.json();
+        const newCommits = commitsData.commits || [];
+        setCommits(newCommits);
+        setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
+      }
+
+      // Refresh current preview file content (if selected)
+      if (selectedPath && fileContent?.type === 'text') {
+        const contentRes = await fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(selectedPath)}`);
+        const contentData = await contentRes.json();
+        if (contentData.type === 'text') {
+          setFileContent(contentData);
+        }
+      }
+    } catch (err) {
+      // Silent fail - don't show errors for auto-refresh
+      console.error('Silent refresh error:', err);
+    }
+  }, [cwd, selectedBranch, selectedPath, fileContent?.type]);
+
+  // ========== Auto-sync polling (every 5s) ==========
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      silentRefresh();
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [silentRefresh]);
 
   return (
     <MenuContainerProvider container={menuContainer}>
@@ -1972,11 +2052,11 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               </div>
             )}
 
-            {/* List Content - 复用下面的内容 */}
-            <div className="flex-1 overflow-hidden">
+            {/* List Content - 使用 CSS 显示/隐藏避免组件重新挂载 */}
+            <div className="flex-1 overflow-hidden flex flex-col">
               {/* Tree Tab */}
-              {activeTab === 'tree' && (
-                isLoadingFiles ? (
+              <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'tree' ? '' : 'hidden'}`}>
+                {isLoadingFiles ? (
                   <div className="p-4 text-center text-muted-foreground text-sm">加载中...</div>
                 ) : fileError ? (
                   <div className="p-4 text-center text-red-11 text-sm">{fileError}</div>
@@ -1995,12 +2075,12 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     cwd={cwd}
                     shouldScrollToSelected={shouldScrollToSelected}
                   />
-                )
-              )}
+                )}
+              </div>
 
               {/* Recent Tab */}
-              {activeTab === 'recent' && (
-                recentFiles.length === 0 ? (
+              <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'recent' ? '' : 'hidden'}`}>
+                {recentFiles.length === 0 ? (
                   <div className="p-4 text-center text-muted-foreground text-sm">
                     暂无最近浏览的文件
                   </div>
@@ -2013,12 +2093,12 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     onToggle={NOOP}
                     cwd={cwd}
                   />
-                )
-              )}
+                )}
+              </div>
 
               {/* Status Tab */}
-              {activeTab === 'status' && (
-                statusLoading ? (
+              <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'status' ? '' : 'hidden'}`}>
+                {statusLoading ? (
                   <div className="flex-1 flex items-center justify-center">
                     <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                   </div>
@@ -2111,12 +2191,12 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     </div>
 
                   </div>
-                )
-              )}
+                )}
+              </div>
 
               {/* History Tab */}
-              {activeTab === 'history' && (
-                historyError ? (
+              <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'history' ? '' : 'hidden'}`}>
+                {historyError ? (
                   <div className="flex-1 flex items-center justify-center">
                     <div className="text-center">
                       <svg className="w-16 h-16 mx-auto text-slate-7 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2168,8 +2248,8 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       </>
                     )}
                   </div>
-                )
-              )}
+                )}
+              </div>
             </div>
           </div>
 

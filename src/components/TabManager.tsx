@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Chat } from './Chat';
 import { SessionSidebar } from './SessionSidebar';
 import { SessionBrowser } from './SessionBrowser';
@@ -97,6 +97,16 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   }, []);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
+
+  // Update document title based on current directory
+  useEffect(() => {
+    if (initialCwd) {
+      const dirName = initialCwd.split('/').filter(Boolean).pop() || initialCwd;
+      document.title = `Cockpit - ${dirName}`;
+    } else {
+      document.title = 'Cockpit';
+    }
+  }, [initialCwd]);
 
   return (
     <div className="flex h-screen bg-white dark:bg-gray-900">

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback } from 'react';
 import { ImageInfo } from '@/types/chat';
 import { ImagePreview } from './ImagePreview';
-import { GitStatusModal } from './GitStatusModal';
+import { FileBrowserModal } from './FileBrowserModal';
 import { toast } from './Toast';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -306,12 +306,17 @@ export function ChatInput({ onSend, disabled, cwd }: ChatInputProps) {
       </div>
 
       {/* Git 状态模态框 */}
-      {showGitStatus && (
-        <GitStatusModal cwd={cwd} onClose={() => {
-          setShowGitStatus(false);
-          // 关闭后聚焦输入框
-          setTimeout(() => textareaRef.current?.focus(), 0);
-        }} />
+      {showGitStatus && cwd && (
+        <FileBrowserModal
+          isOpen={showGitStatus}
+          cwd={cwd}
+          initialTab="status"
+          onClose={() => {
+            setShowGitStatus(false);
+            // 关闭后聚焦输入框
+            setTimeout(() => textareaRef.current?.focus(), 0);
+          }}
+        />
       )}
     </div>
   );

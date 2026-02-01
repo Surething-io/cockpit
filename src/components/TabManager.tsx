@@ -5,7 +5,6 @@ import { Chat } from './Chat';
 import { SessionSidebar } from './SessionSidebar';
 import { SessionBrowser } from './SessionBrowser';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
-import { GitHistoryModal } from './GitHistoryModal';
 import { FileBrowserModal } from './FileBrowserModal';
 import { Tooltip } from './Tooltip';
 
@@ -36,8 +35,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id);
   const [isSessionBrowserOpen, setIsSessionBrowserOpen] = useState(false);
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
-  const [isGitHistoryOpen, setIsGitHistoryOpen] = useState(false);
   const [isFileBrowserOpen, setIsFileBrowserOpen] = useState(false);
+  const [fileBrowserInitialTab, setFileBrowserInitialTab] = useState<'tree' | 'recent' | 'status' | 'history'>('tree');
 
   // 添加新标签页
   const addTab = useCallback((cwd?: string, sessionId?: string, title?: string) => {
@@ -142,7 +141,10 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               {/* 文件浏览器按钮 */}
               {initialCwd && (
                 <button
-                  onClick={() => setIsFileBrowserOpen(true)}
+                  onClick={() => {
+                    setFileBrowserInitialTab('tree');
+                    setIsFileBrowserOpen(true);
+                  }}
                   className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                   title="文件浏览"
                 >
@@ -151,10 +153,28 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                   </svg>
                 </button>
               )}
+              {/* Git 变更 按钮 */}
+              {initialCwd && (
+                <button
+                  onClick={() => {
+                    setFileBrowserInitialTab('status');
+                    setIsFileBrowserOpen(true);
+                  }}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  title="Git 变更"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                </button>
+              )}
               {/* Git History 按钮 */}
               {initialCwd && (
                 <button
-                  onClick={() => setIsGitHistoryOpen(true)}
+                  onClick={() => {
+                    setFileBrowserInitialTab('history');
+                    setIsFileBrowserOpen(true);
+                  }}
                   className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                   title="Git History"
                 >
@@ -265,21 +285,13 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         />
       )}
 
-      {/* Git History Modal */}
-      {initialCwd && (
-        <GitHistoryModal
-          isOpen={isGitHistoryOpen}
-          onClose={() => setIsGitHistoryOpen(false)}
-          cwd={initialCwd}
-        />
-      )}
-
-      {/* File Browser Modal */}
+      {/* File Browser Modal (includes Git Status and Git History) */}
       {initialCwd && (
         <FileBrowserModal
           isOpen={isFileBrowserOpen}
           onClose={() => setIsFileBrowserOpen(false)}
           cwd={initialCwd}
+          initialTab={fileBrowserInitialTab}
         />
       )}
     </div>

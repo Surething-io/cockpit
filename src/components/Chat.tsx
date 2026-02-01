@@ -7,7 +7,7 @@ import { ChatInput } from './ChatInput';
 import { SessionBrowser } from './SessionBrowser';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { SessionSidebar } from './SessionSidebar';
-import { GitHistoryModal } from './GitHistoryModal';
+import { FileBrowserModal } from './FileBrowserModal';
 
 interface ChatProps {
   initialCwd?: string;
@@ -600,10 +600,11 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
 
       {/* Git History Modal - 仅在不隐藏 header 且有 cwd 时显示 */}
       {!hideHeader && initialCwd && (
-        <GitHistoryModal
+        <FileBrowserModal
           isOpen={isGitHistoryOpen}
           onClose={() => setIsGitHistoryOpen(false)}
           cwd={initialCwd}
+          initialTab="history"
         />
       )}
     </div>

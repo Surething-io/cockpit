@@ -113,6 +113,48 @@ interface FileDiff {
 type TabType = 'tree' | 'recent' | 'status' | 'history';
 
 // ============================================================================
+// Cache Utilities (30s TTL)
+// ============================================================================
+
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+const CACHE_TTL = 30 * 1000; // 30 seconds
+
+const cache = {
+  files: new Map<string, CacheEntry<FileNode[]>>(),
+  expanded: new Map<string, CacheEntry<string[]>>(),
+  branches: new Map<string, CacheEntry<Branch>>(),
+  fileContent: new Map<string, CacheEntry<FileContent>>(),
+};
+
+function getCached<T>(map: Map<string, CacheEntry<T>>, key: string): T | null {
+  const entry = map.get(key);
+  if (entry && Date.now() - entry.timestamp < CACHE_TTL) {
+    return entry.data;
+  }
+  return null;
+}
+
+function setCache<T>(map: Map<string, CacheEntry<T>>, key: string, data: T): void {
+  map.set(key, { data, timestamp: Date.now() });
+}
+
+function clearCache(key: string): void {
+  cache.files.delete(key);
+  cache.expanded.delete(key);
+  cache.branches.delete(key);
+  // Clear all file content for this cwd
+  for (const k of cache.fileContent.keys()) {
+    if (k.startsWith(key + ':')) {
+      cache.fileContent.delete(k);
+    }
+  }
+}
+
+// ============================================================================
 // Shiki Highlighter
 // ============================================================================
 
@@ -233,6 +275,13 @@ const FILE_ICONS: Record<string, string> = {
 function getFileIcon(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase();
   return FILE_ICONS[ext || ''] || '📄';
+}
+
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp']);
+
+function isImageFile(filePath: string): boolean {
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  return IMAGE_EXTENSIONS.has(ext || '');
 }
 
 function computeMatchedPaths(nodes: FileNode[], searchQuery: string): Set<string> {
@@ -607,6 +656,16 @@ function VirtualFileTree({
     overscan: 10,
   });
 
+  // Scroll to selected file when it changes
+  useEffect(() => {
+    if (selectedPath && flatItems.length > 0) {
+      const index = flatItems.findIndex(item => item.node.path === selectedPath);
+      if (index >= 0) {
+        virtualizer.scrollToIndex(index, { align: 'center' });
+      }
+    }
+  }, [selectedPath, flatItems, virtualizer]);
+
   if (flatItems.length === 0) {
     return (
       <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">
@@ -658,10 +717,114 @@ function VirtualFileTree({
   );
 }
 
-// Code Preview
+// Search match info
+interface SearchMatch {
+  lineIndex: number;
+  startIndex: number;
+  endIndex: number;
+}
+
+// Find all matches in content
+function findMatches(
+  lines: string[],
+  query: string,
+  caseSensitive: boolean,
+  wholeWord: boolean
+): SearchMatch[] {
+  if (!query) return [];
+
+  const matches: SearchMatch[] = [];
+  const flags = caseSensitive ? 'g' : 'gi';
+  const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = wholeWord ? `\\b${escapedQuery}\\b` : escapedQuery;
+
+  try {
+    const regex = new RegExp(pattern, flags);
+
+    lines.forEach((line, lineIndex) => {
+      let match;
+      while ((match = regex.exec(line)) !== null) {
+        matches.push({
+          lineIndex,
+          startIndex: match.index,
+          endIndex: match.index + match[0].length,
+        });
+      }
+    });
+  } catch {
+    // Invalid regex, ignore
+  }
+
+  return matches;
+}
+
+// Highlight matches in a line (works with already HTML-escaped content)
+function highlightMatchesInLine(
+  lineHtml: string,
+  lineText: string,
+  matches: SearchMatch[],
+  lineIndex: number,
+  currentMatchIndex: number,
+  allMatches: SearchMatch[]
+): string {
+  const lineMatches = matches.filter(m => m.lineIndex === lineIndex);
+  if (lineMatches.length === 0) return lineHtml;
+
+  // We need to work with the original text positions, then apply to HTML
+  // This is tricky because HTML has tags. Simple approach: rebuild the line
+  let result = '';
+  let lastIndex = 0;
+
+  for (const match of lineMatches) {
+    // Check if this match is the current one
+    const isCurrentMatch = allMatches.findIndex(
+      m => m.lineIndex === match.lineIndex && m.startIndex === match.startIndex
+    ) === currentMatchIndex;
+
+    const beforeMatch = escapeHtml(lineText.substring(lastIndex, match.startIndex));
+    const matchText = escapeHtml(lineText.substring(match.startIndex, match.endIndex));
+
+    result += beforeMatch;
+    if (isCurrentMatch) {
+      result += `<mark class="bg-orange-400 dark:bg-orange-500 text-white rounded px-0.5">${matchText}</mark>`;
+    } else {
+      result += `<mark class="bg-yellow-200 dark:bg-yellow-600/50 rounded px-0.5">${matchText}</mark>`;
+    }
+    lastIndex = match.endIndex;
+  }
+
+  result += escapeHtml(lineText.substring(lastIndex));
+  return result;
+}
+
+// Code Preview with line numbers and search
 function CodePreview({ content, filePath }: { content: string; filePath: string }) {
-  const [highlightedHtml, setHighlightedHtml] = useState<string>('');
+  const [highlightedLines, setHighlightedLines] = useState<string[]>([]);
   const [isDark, setIsDark] = useState(false);
+  const parentRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Search state
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [wholeWord, setWholeWord] = useState(false);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+
+  const lines = useMemo(() => content.split('\n'), [content]);
+
+  // Find matches
+  const matches = useMemo(() => {
+    return findMatches(lines, searchQuery, caseSensitive, wholeWord);
+  }, [lines, searchQuery, caseSensitive, wholeWord]);
+
+  // Reset current match when matches change
+  useEffect(() => {
+    if (matches.length > 0) {
+      setCurrentMatchIndex(0);
+    }
+  }, [matches.length, searchQuery, caseSensitive, wholeWord]);
 
   useEffect(() => {
     const checkDarkMode = () => {
@@ -680,26 +843,235 @@ function CodePreview({ content, filePath }: { content: string; filePath: string 
         const language = getLanguageFromPath(filePath);
         const theme = isDark ? 'github-dark' : 'github-light';
 
-        const html = highlighter.codeToHtml(content, {
-          lang: language as BundledLanguage,
-          theme,
+        const highlighted = lines.map(line => {
+          try {
+            const html = highlighter.codeToHtml(line || ' ', {
+              lang: language as BundledLanguage,
+              theme,
+            });
+            const match = html.match(/<code[^>]*>([\s\S]*?)<\/code>/);
+            return match ? match[1] : escapeHtml(line);
+          } catch {
+            return escapeHtml(line);
+          }
         });
 
-        setHighlightedHtml(html);
+        setHighlightedLines(highlighted);
       } catch (err) {
         console.error('Highlight error:', err);
-        setHighlightedHtml(`<pre>${escapeHtml(content)}</pre>`);
+        setHighlightedLines(lines.map(line => escapeHtml(line)));
       }
     };
 
     highlight();
-  }, [content, filePath, isDark]);
+  }, [content, filePath, isDark, lines]);
+
+  // Keyboard shortcut for search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        setShowSearch(true);
+        setTimeout(() => searchInputRef.current?.focus(), 0);
+      }
+      if (e.key === 'Escape' && showSearch) {
+        setShowSearch(false);
+        setSearchQuery('');
+      }
+    };
+
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('keydown', handleKeyDown);
+      return () => container.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [showSearch]);
+
+  // Navigate to current match
+  useEffect(() => {
+    if (matches.length > 0 && currentMatchIndex >= 0 && currentMatchIndex < matches.length) {
+      const match = matches[currentMatchIndex];
+      virtualizer.scrollToIndex(match.lineIndex, { align: 'center' });
+    }
+  }, [currentMatchIndex, matches]);
+
+  const virtualizer = useVirtualizer({
+    count: lines.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 20,
+    overscan: 20,
+  });
+
+  const goToNextMatch = useCallback(() => {
+    if (matches.length === 0) return;
+    setCurrentMatchIndex(prev => (prev + 1) % matches.length);
+  }, [matches.length]);
+
+  const goToPrevMatch = useCallback(() => {
+    if (matches.length === 0) return;
+    setCurrentMatchIndex(prev => (prev - 1 + matches.length) % matches.length);
+  }, [matches.length]);
+
+  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        goToPrevMatch();
+      } else {
+        goToNextMatch();
+      }
+    }
+    if (e.key === 'Escape') {
+      setShowSearch(false);
+      setSearchQuery('');
+    }
+  }, [goToNextMatch, goToPrevMatch]);
+
+  const lineNumberWidth = Math.max(3, String(lines.length).length) * 10 + 16;
 
   return (
-    <div
-      className="text-sm font-mono overflow-auto h-full p-4"
-      dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-    />
+    <div ref={containerRef} className="h-full flex flex-col" tabIndex={0}>
+      {/* Search Bar */}
+      {showSearch && (
+        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="搜索..."
+            className="flex-1 max-w-xs px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {/* Case sensitive toggle */}
+          <button
+            onClick={() => setCaseSensitive(!caseSensitive)}
+            className={`px-2 py-1 text-xs font-mono rounded border transition-colors ${
+              caseSensitive
+                ? 'bg-blue-500 text-white border-blue-500'
+                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:border-gray-400'
+            }`}
+            title="大小写敏感 (Aa)"
+          >
+            Aa
+          </button>
+          {/* Whole word toggle */}
+          <button
+            onClick={() => setWholeWord(!wholeWord)}
+            className={`px-2 py-1 text-xs font-mono rounded border transition-colors ${
+              wholeWord
+                ? 'bg-blue-500 text-white border-blue-500'
+                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:border-gray-400'
+            }`}
+            title="全词匹配 (W)"
+          >
+            W
+          </button>
+          {/* Match count and navigation */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={goToPrevMatch}
+              disabled={matches.length === 0}
+              className="p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="上一个 (Shift+Enter)"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+              </svg>
+            </button>
+            <span className="text-xs text-gray-500 dark:text-gray-400 min-w-[50px] text-center">
+              {matches.length > 0 ? `${currentMatchIndex + 1}/${matches.length}` : '0/0'}
+            </span>
+            <button
+              onClick={goToNextMatch}
+              disabled={matches.length === 0}
+              className="p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="下一个 (Enter)"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          </div>
+          {/* Close button */}
+          <button
+            onClick={() => {
+              setShowSearch(false);
+              setSearchQuery('');
+            }}
+            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            title="关闭 (Esc)"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* Code Content */}
+      <div ref={parentRef} className="flex-1 overflow-auto font-mono text-sm">
+        <div
+          style={{
+            height: `${virtualizer.getTotalSize()}px`,
+            width: '100%',
+            position: 'relative',
+          }}
+        >
+          {virtualizer.getVirtualItems().map((virtualItem) => {
+            const lineIndex = virtualItem.index;
+            const lineNumber = lineIndex + 1;
+            const lineText = lines[lineIndex] || '';
+
+            // Apply search highlighting if searching
+            let lineContent: string;
+            if (searchQuery && matches.length > 0) {
+              lineContent = highlightMatchesInLine(
+                highlightedLines[lineIndex] || escapeHtml(lineText),
+                lineText,
+                matches,
+                lineIndex,
+                currentMatchIndex,
+                matches
+              );
+            } else {
+              lineContent = highlightedLines[lineIndex] || escapeHtml(lineText);
+            }
+
+            // Check if this line has the current match
+            const hasCurrentMatch = matches.length > 0 &&
+              currentMatchIndex >= 0 &&
+              matches[currentMatchIndex]?.lineIndex === lineIndex;
+
+            return (
+              <div
+                key={lineIndex}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: `${virtualItem.size}px`,
+                  transform: `translateY(${virtualItem.start}px)`,
+                }}
+                className={`flex ${hasCurrentMatch ? 'bg-orange-50 dark:bg-orange-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'}`}
+              >
+                <div
+                  className="flex-shrink-0 px-2 text-right text-gray-400 dark:text-gray-500 select-none border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50"
+                  style={{ width: lineNumberWidth }}
+                >
+                  {lineNumber}
+                </div>
+                <pre
+                  className="flex-1 px-3 overflow-hidden whitespace-pre"
+                  dangerouslySetInnerHTML={{ __html: lineContent }}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1342,31 +1714,57 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
   }, [isOpen, onClose, showBlame]);
 
   // ========== File Browser Functions ==========
-  const loadExpandedPaths = useCallback(async () => {
+  const loadExpandedPaths = useCallback(async (forceRefresh = false) => {
+    // Check cache first
+    if (!forceRefresh) {
+      const cached = getCached(cache.expanded, cwd);
+      if (cached && cached.length > 0) {
+        setExpandedPaths(new Set(cached));
+        return;
+      }
+    }
+
     try {
       const res = await fetch(`/api/files/expanded?cwd=${encodeURIComponent(cwd)}`);
       const data = await res.json();
       if (data.paths && Array.isArray(data.paths) && data.paths.length > 0) {
         setExpandedPaths(new Set(data.paths));
+        setCache(cache.expanded, cwd, data.paths);
       }
     } catch (err) {
       console.error('Error loading expanded paths:', err);
     }
   }, [cwd]);
 
-  const saveExpandedPaths = useCallback(async (paths: Set<string>) => {
-    try {
-      await fetch('/api/files/expanded', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, paths: Array.from(paths) }),
-      });
-    } catch (err) {
-      console.error('Error saving expanded paths:', err);
+  const saveExpandedPathsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveExpandedPaths = useCallback((paths: Set<string>) => {
+    // Debounce save to avoid too many requests
+    if (saveExpandedPathsTimeoutRef.current) {
+      clearTimeout(saveExpandedPathsTimeoutRef.current);
     }
+    saveExpandedPathsTimeoutRef.current = setTimeout(async () => {
+      try {
+        await fetch('/api/files/expanded', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cwd, paths: Array.from(paths) }),
+        });
+      } catch (err) {
+        console.error('Error saving expanded paths:', err);
+      }
+    }, 500);
   }, [cwd]);
 
-  const loadFiles = useCallback(async () => {
+  const loadFiles = useCallback(async (forceRefresh = false) => {
+    // Check cache first
+    if (!forceRefresh) {
+      const cached = getCached(cache.files, cwd);
+      if (cached) {
+        setFiles(cached);
+        return;
+      }
+    }
+
     setIsLoadingFiles(true);
     setFileError(null);
     try {
@@ -1375,7 +1773,9 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
       if (data.error) {
         setFileError(data.error);
       } else {
-        setFiles(data.files || []);
+        const filesData = data.files || [];
+        setFiles(filesData);
+        setCache(cache.files, cwd, filesData);
       }
     } catch (err) {
       console.error('Error loading files:', err);
@@ -1396,28 +1796,48 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
   }, [cwd]);
 
   const addToRecentFiles = useCallback(async (filePath: string) => {
+    // Optimistically update local state (move to front, avoid duplicates)
+    setRecentFiles(prev => {
+      const filtered = prev.filter(f => f !== filePath);
+      return [filePath, ...filtered].slice(0, 50); // Keep max 50 recent files
+    });
+
+    // Persist to server (fire and forget)
     try {
       await fetch('/api/files/recent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cwd, file: filePath }),
       });
-      loadRecentFiles();
     } catch (err) {
       console.error('Error adding to recent files:', err);
     }
-  }, [cwd, loadRecentFiles]);
+  }, [cwd]);
 
-  const loadFileContent = useCallback(async (filePath: string) => {
-    setIsLoadingContent(true);
-    setFileContent(null);
+  const loadFileContent = useCallback(async (filePath: string, forceRefresh = false) => {
+    const cacheKey = `${cwd}:${filePath}`;
+
+    // Check cache first (but always reset blame state)
     setShowBlame(false);
     setBlameLines([]);
     setBlameError(null);
+
+    if (!forceRefresh) {
+      const cached = getCached(cache.fileContent, cacheKey);
+      if (cached) {
+        setFileContent(cached);
+        addToRecentFiles(filePath);
+        return;
+      }
+    }
+
+    setIsLoadingContent(true);
+    setFileContent(null);
     try {
       const res = await fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`);
       const data = await res.json();
       setFileContent(data);
+      setCache(cache.fileContent, cacheKey, data);
       addToRecentFiles(filePath);
     } catch (err) {
       console.error('Error loading file content:', err);
@@ -1461,7 +1881,30 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
   const handleSelectFile = useCallback((path: string) => {
     setSelectedPath(path);
     loadFileContent(path);
-  }, [loadFileContent]);
+
+    // Auto-expand parent directories
+    const parts = path.split('/');
+    if (parts.length > 1) {
+      const parentPaths: string[] = [];
+      for (let i = 1; i < parts.length; i++) {
+        parentPaths.push(parts.slice(0, i).join('/'));
+      }
+      setExpandedPaths(prev => {
+        const next = new Set(prev);
+        let changed = false;
+        for (const p of parentPaths) {
+          if (!next.has(p)) {
+            next.add(p);
+            changed = true;
+          }
+        }
+        if (changed) {
+          saveExpandedPaths(next);
+        }
+        return changed ? next : prev;
+      });
+    }
+  }, [loadFileContent, saveExpandedPaths]);
 
   const handleToggle = useCallback((path: string) => {
     setExpandedPaths(prev => {
@@ -1525,6 +1968,11 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
       return next;
     });
   }, []);
+
+  const handleStatusFileSelect = useCallback((file: GitFileStatus, type: 'staged' | 'unstaged') => {
+    setStatusSelectedFile({ file, type });
+    addToRecentFiles(file.path);
+  }, [addToRecentFiles]);
 
   const handleStage = useCallback(async (path: string) => {
     try {
@@ -1633,7 +2081,17 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
   }, [statusSelectedFile, cwd]);
 
   // ========== Git History Functions ==========
-  const loadBranches = useCallback(() => {
+  const loadBranches = useCallback((forceRefresh = false) => {
+    // Check cache first
+    if (!forceRefresh) {
+      const cached = getCached(cache.branches, cwd);
+      if (cached) {
+        setBranches(cached);
+        setSelectedBranch(cached.current);
+        return;
+      }
+    }
+
     setIsLoadingBranches(true);
     setHistoryError(null);
     fetch(`/api/git/branches?cwd=${encodeURIComponent(cwd)}`)
@@ -1645,6 +2103,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
         } else if (data.local && data.current) {
           setBranches(data);
           setSelectedBranch(data.current);
+          setCache(cache.branches, cwd, data);
         } else {
           setHistoryError('无法获取分支信息');
           setBranches(null);
@@ -1735,13 +2194,14 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
   const handleSelectHistoryFile = useCallback((file: FileChange) => {
     if (!selectedCommit) return;
     setHistorySelectedFile(file);
+    addToRecentFiles(file.path);
     setIsLoadingHistoryDiff(true);
     fetch(`/api/git/commit-diff?cwd=${encodeURIComponent(cwd)}&hash=${selectedCommit.hash}&file=${encodeURIComponent(file.path)}`)
       .then(res => res.json())
       .then(data => setHistoryFileDiff(data))
       .catch(console.error)
       .finally(() => setIsLoadingHistoryDiff(false));
-  }, [cwd, selectedCommit]);
+  }, [cwd, selectedCommit, addToRecentFiles]);
 
   const handleHistoryToggle = useCallback((path: string) => {
     setHistoryExpandedPaths(prev => {
@@ -1819,15 +2279,34 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
     }
   }, [searchQuery, files]);
 
+  // ========== Auto-select first recent file when switching to tree/recent tab ==========
+  const prevTabRef = useRef<TabType>(activeTab);
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const prevTab = prevTabRef.current;
+    prevTabRef.current = activeTab;
+
+    // When switching from status/history to tree/recent, select the most recent file
+    if ((activeTab === 'tree' || activeTab === 'recent') && recentFiles.length > 0) {
+      const isFromOtherTab = prevTab === 'status' || prevTab === 'history';
+      const needsUpdate = !selectedPath || (isFromOtherTab && selectedPath !== recentFiles[0]);
+
+      if (needsUpdate) {
+        handleSelectFile(recentFiles[0]);
+      }
+    }
+  }, [isOpen, activeTab, recentFiles, selectedPath, handleSelectFile]);
+
   // ========== Refresh Handler ==========
   const handleRefresh = useCallback(() => {
     if (activeTab === 'tree' || activeTab === 'recent') {
-      loadFiles();
+      loadFiles(true);  // Force refresh, bypass cache
       loadRecentFiles();
     } else if (activeTab === 'status') {
       fetchStatus();
     } else if (activeTab === 'history') {
-      loadBranches();
+      loadBranches(true);  // Force refresh, bypass cache
       if (selectedBranch) {
         loadCommits(selectedBranch);
       }
@@ -2025,7 +2504,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                               node={node}
                               level={0}
                               selectedPath={statusSelectedFile?.type === 'staged' ? statusSelectedFile.file.path : null}
-                              onSelect={(file, type) => setStatusSelectedFile({ file, type })}
+                              onSelect={handleStatusFileSelect}
                               onUnstage={handleUnstage}
                               type="staged"
                               onToggle={handleStatusToggle}
@@ -2062,7 +2541,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                               node={node}
                               level={0}
                               selectedPath={statusSelectedFile?.type === 'unstaged' ? statusSelectedFile.file.path : null}
-                              onSelect={(file, type) => setStatusSelectedFile({ file, type })}
+                              onSelect={handleStatusFileSelect}
                               onStage={handleStage}
                               type="unstaged"
                               onToggle={handleStatusToggle}
@@ -2254,13 +2733,23 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                     </span>
                   </div>
                   <div className="flex-1 overflow-auto">
-                    <DiffView
-                      oldContent={statusDiff.oldContent}
-                      newContent={statusDiff.newContent}
-                      filePath={statusDiff.filePath}
-                      isNew={statusDiff.isNew}
-                      isDeleted={statusDiff.isDeleted}
-                    />
+                    {isImageFile(statusSelectedFile.file.path) ? (
+                      <div className="p-4 flex items-center justify-center">
+                        <img
+                          src={`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(statusSelectedFile.file.path)}&raw=1`}
+                          alt={statusSelectedFile.file.path}
+                          className="max-w-full max-h-[60vh] object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <DiffView
+                        oldContent={statusDiff.oldContent}
+                        newContent={statusDiff.newContent}
+                        filePath={statusDiff.filePath}
+                        isNew={statusDiff.isNew}
+                        isDeleted={statusDiff.isDeleted}
+                      />
+                    )}
                   </div>
                 </div>
               ) : (
@@ -2345,13 +2834,23 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                       {isLoadingHistoryDiff ? (
                         <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">Loading diff...</div>
                       ) : historyFileDiff ? (
-                        <DiffView
-                          oldContent={historyFileDiff.oldContent}
-                          newContent={historyFileDiff.newContent}
-                          filePath={historyFileDiff.filePath}
-                          isNew={historyFileDiff.isNew}
-                          isDeleted={historyFileDiff.isDeleted}
-                        />
+                        isImageFile(historyFileDiff.filePath) ? (
+                          <div className="p-4 flex items-center justify-center h-full">
+                            <div className="text-center text-gray-500 dark:text-gray-400">
+                              <span className="text-4xl">🖼️</span>
+                              <p className="mt-2 text-sm">图片文件: {historyFileDiff.filePath.split('/').pop()}</p>
+                              <p className="text-xs mt-1">{historyFileDiff.isNew ? '新增' : historyFileDiff.isDeleted ? '删除' : '修改'}</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <DiffView
+                            oldContent={historyFileDiff.oldContent}
+                            newContent={historyFileDiff.newContent}
+                            filePath={historyFileDiff.filePath}
+                            isNew={historyFileDiff.isNew}
+                            isDeleted={historyFileDiff.isDeleted}
+                          />
+                        )
                       ) : (
                         <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">Select a file to view diff</div>
                       )}

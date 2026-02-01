@@ -335,7 +335,37 @@ function DiffMinimap({
 
 export function DiffView({ oldContent, newContent, filePath, isNew = false, isDeleted = false }: DiffViewProps) {
   const diffLines = computeLineDiff(oldContent, newContent);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const leftPanelRef = useRef<HTMLDivElement>(null);
+  const rightPanelRef = useRef<HTMLDivElement>(null);
+  const isSyncingRef = useRef(false);
+
+  // Sync both vertical and horizontal scroll between left and right panels
+  useEffect(() => {
+    const leftPanel = leftPanelRef.current;
+    const rightPanel = rightPanelRef.current;
+    if (!leftPanel || !rightPanel) return;
+
+    const syncScroll = (source: HTMLDivElement, target: HTMLDivElement) => {
+      if (isSyncingRef.current) return;
+      isSyncingRef.current = true;
+      target.scrollTop = source.scrollTop;
+      target.scrollLeft = source.scrollLeft;
+      requestAnimationFrame(() => {
+        isSyncingRef.current = false;
+      });
+    };
+
+    const handleLeftScroll = () => syncScroll(leftPanel, rightPanel);
+    const handleRightScroll = () => syncScroll(rightPanel, leftPanel);
+
+    leftPanel.addEventListener('scroll', handleLeftScroll);
+    rightPanel.addEventListener('scroll', handleRightScroll);
+
+    return () => {
+      leftPanel.removeEventListener('scroll', handleLeftScroll);
+      rightPanel.removeEventListener('scroll', handleRightScroll);
+    };
+  }, []);
 
   // Split into left and right columns
   const leftLines: { lineNum: number; content: string; type: 'unchanged' | 'removed'; originalIdx: number }[] = [];
@@ -402,15 +432,14 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
         </div>
         <div className="w-4 flex-shrink-0 bg-gray-100 dark:bg-gray-700" />
       </div>
-      {/* Content row - scrollable */}
+      {/* Content row - two independent scroll panels with synced vertical scroll */}
       <div className="flex flex-1 overflow-hidden">
+        {/* Left Panel - Old */}
         <div
-          ref={scrollContainerRef}
-          className="flex flex-1 overflow-auto scrollbar-hide"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          ref={leftPanelRef}
+          className={`${leftWidth} overflow-auto border-r border-gray-300 dark:border-gray-600`}
         >
-          {/* Left - Old */}
-          <div className={`${leftWidth} min-w-0 border-r border-gray-300 dark:border-gray-600`}>
+          <div className="min-w-max">
             {leftLines.map((line, idx) => (
               <div
                 key={idx}
@@ -422,25 +451,30 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
                 <HighlightedContent
                   content={line.content}
                   highlightedLine={line.originalIdx >= 0 ? highlightedLines.get(line.originalIdx) : undefined}
-                  className="flex-1 whitespace-pre pl-2"
+                  className="whitespace-pre pl-2"
                 />
               </div>
             ))}
           </div>
-          {/* Right - New */}
-          <div className={`${rightWidth} min-w-0`}>
+        </div>
+        {/* Right Panel - New */}
+        <div
+          ref={rightPanelRef}
+          className={`${rightWidth} overflow-auto`}
+        >
+          <div className="min-w-max">
             {rightLines.map((line, idx) => (
               <div
                 key={idx}
-                className={`flex ${line.type === 'added' ? 'bg-green-100 dark:bg-green-900/30' : ''}`}
+                className={`flex ${line?.type === 'added' ? 'bg-green-100 dark:bg-green-900/30' : ''}`}
               >
                 <span className="w-10 flex-shrink-0 text-right pr-2 text-gray-400 dark:text-gray-500 select-none border-r border-gray-200 dark:border-gray-700">
-                  {line.lineNum || ''}
+                  {line?.lineNum || ''}
                 </span>
                 <HighlightedContent
-                  content={line.content}
-                  highlightedLine={line.originalIdx >= 0 ? highlightedLines.get(line.originalIdx) : undefined}
-                  className="flex-1 whitespace-pre pl-2"
+                  content={line?.content || ''}
+                  highlightedLine={line?.originalIdx >= 0 ? highlightedLines.get(line.originalIdx) : undefined}
+                  className="whitespace-pre pl-2"
                 />
               </div>
             ))}
@@ -449,7 +483,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
         {/* Minimap */}
         <DiffMinimap
           lines={minimapLines}
-          containerRef={scrollContainerRef}
+          containerRef={leftPanelRef}
         />
       </div>
     </div>

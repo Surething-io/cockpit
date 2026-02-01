@@ -30,6 +30,11 @@ npm run build    # Build for production
 npm run lint     # Run ESLint
 ```
 
+## 项目特性
+
+- **纯本地应用**: 所有 API 请求延迟在 10ms 内
+- **不需要接口缓存**: 本地请求足够快，缓存带来的性能收益可忽略，反而会引入数据一致性问题
+
 ## Claude Code 使用规范
 
 - **浏览器测试**: 使用 `evaluate_script` 操作 DOM，避免使用 `take_screenshot`（消耗大量 token）

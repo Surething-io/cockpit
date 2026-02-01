@@ -2,71 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { createHighlighter, type Highlighter, type BundledLanguage } from 'shiki';
 import { ToolCallInfo } from '@/types/chat';
 import { DiffView, DiffUnifiedView } from './DiffView';
-
-// Shiki 高亮器单例
-let highlighterPromise: Promise<Highlighter> | null = null;
-
-// 支持的语言列表
-const SUPPORTED_LANGS = [
-  'typescript', 'tsx', 'javascript', 'jsx',
-  'html', 'css', 'scss', 'json', 'yaml',
-  'python', 'go', 'rust', 'java', 'ruby', 'php',
-  'bash', 'shell', 'markdown', 'sql', 'c', 'cpp',
-  'swift', 'kotlin', 'dart', 'lua', 'graphql', 'xml',
-] as const;
-
-// 初始化 Shiki 高亮器（单例模式）
-function getHighlighter(): Promise<Highlighter> {
-  if (!highlighterPromise) {
-    highlighterPromise = createHighlighter({
-      themes: ['github-dark', 'github-light'],
-      langs: [...SUPPORTED_LANGS],
-    });
-  }
-  return highlighterPromise;
-}
-
-// 根据文件扩展名获取语言
-function getLanguageFromPath(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase();
-  const map: Record<string, string> = {
-    // JavaScript/TypeScript
-    ts: 'typescript', tsx: 'tsx',
-    js: 'javascript', jsx: 'jsx',
-    mjs: 'javascript', cjs: 'javascript',
-    // Web
-    html: 'html', htm: 'html',
-    css: 'css', scss: 'scss', sass: 'scss', less: 'css',
-    // Data formats
-    json: 'json', yaml: 'yaml', yml: 'yaml',
-    xml: 'xml', toml: 'yaml',
-    // Backend
-    py: 'python', go: 'go', rs: 'rust',
-    java: 'java', kt: 'kotlin', scala: 'java',
-    rb: 'ruby', php: 'php',
-    cs: 'cpp', cpp: 'cpp', c: 'c', h: 'c',
-    // Shell
-    sh: 'bash', bash: 'bash', zsh: 'bash',
-    // Config
-    md: 'markdown', mdx: 'markdown',
-    sql: 'sql',
-    dockerfile: 'bash',
-    graphql: 'graphql', gql: 'graphql',
-    // Other
-    swift: 'swift', dart: 'dart',
-    lua: 'lua', r: 'python',
-    vim: 'bash',
-  };
-  const lang = map[ext || ''] || 'text';
-  // 确保语言在支持列表中
-  if (SUPPORTED_LANGS.includes(lang as typeof SUPPORTED_LANGS[number])) {
-    return lang;
-  }
-  return 'text';
-}
+import { CodeViewer } from './CodeViewer';
 
 // 检查是否是有效的 JSON
 function isValidJson(content: string): boolean {
@@ -188,29 +126,11 @@ function getFilePath(content: string): string | null {
   return null;
 }
 
-// 文件预览组件
+// 文件预览组件 - 使用统一的 CodeViewer
 function FilePreview({ filePath }: { filePath: string }) {
   const [fileContent, setFileContent] = useState<string | null>(null);
-  const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isDark, setIsDark] = useState(false);
-
-  // 检测暗色模式
-  useEffect(() => {
-    const checkDarkMode = () => {
-      setIsDark(document.documentElement.classList.contains('dark'));
-    };
-    checkDarkMode();
-
-    const observer = new MutationObserver(checkDarkMode);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-
-    return () => observer.disconnect();
-  }, []);
 
   // 防止 StrictMode 下重复请求
   const fetchingRef = useRef(false);
@@ -240,51 +160,6 @@ function FilePreview({ filePath }: { filePath: string }) {
     loadFile();
   }, [filePath]);
 
-  // 使用 Shiki 进行语法高亮
-  useEffect(() => {
-    if (!fileContent) return;
-
-    const theme = isDark ? 'github-dark' : 'github-light';
-
-    const highlight = async () => {
-      try {
-        const highlighter = await getHighlighter();
-        const language = getLanguageFromPath(filePath);
-
-        // 手动添加行号
-        const lines = fileContent.split('\n');
-        const lineNumberWidth = String(lines.length).length;
-
-        const html = highlighter.codeToHtml(fileContent, {
-          lang: language,
-          theme: theme,
-          transformers: [
-            {
-              line(node, line) {
-                // 添加行号
-                const lineNum = String(line).padStart(lineNumberWidth, ' ');
-                node.children.unshift({
-                  type: 'element',
-                  tagName: 'span',
-                  properties: { class: 'line-number' },
-                  children: [{ type: 'text', value: lineNum }],
-                });
-              },
-            },
-          ],
-        });
-
-        setHighlightedHtml(html);
-      } catch (err) {
-        console.error('Highlight error:', err);
-        // 出错时显示纯文本
-        setHighlightedHtml(null);
-      }
-    };
-
-    highlight();
-  }, [fileContent, filePath, isDark]);
-
   if (error) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -293,37 +168,30 @@ function FilePreview({ filePath }: { filePath: string }) {
     );
   }
 
-  // 加载中显示纯文本
   if (isLoading) {
     return (
-      <pre
-        className="text-xs font-mono text-foreground whitespace-pre-wrap break-words p-4 rounded-lg bg-secondary"
-        style={{ fontSize: '0.8125rem' }}
-      >
-        Loading...
-      </pre>
+      <div className="flex items-center justify-center h-full">
+        <span className="text-sm text-muted-foreground">Loading...</span>
+      </div>
     );
   }
 
-  // 高亮完成，显示高亮内容
-  if (highlightedHtml) {
+  if (!fileContent) {
     return (
-      <div
-        className="shiki-wrapper rounded-lg overflow-auto"
-        style={{ fontSize: '0.8125rem' }}
-        dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-      />
+      <div className="flex items-center justify-center h-full">
+        <span className="text-sm text-muted-foreground">No content</span>
+      </div>
     );
   }
 
-  // 高亮未完成，先显示纯文本
   return (
-    <pre
-      className="text-xs font-mono text-foreground whitespace-pre-wrap break-words p-4 rounded-lg bg-secondary"
-      style={{ fontSize: '0.8125rem' }}
-    >
-      {fileContent || ''}
-    </pre>
+    <CodeViewer
+      content={fileContent}
+      filePath={filePath}
+      showLineNumbers={true}
+      showSearch={true}
+      className="h-full"
+    />
   );
 }
 

@@ -77,6 +77,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const cwd = body.cwd as string;
     const sessionId = body.sessionId as string;
+    // 分页参数：limit = 每页 turn 数量（一个 turn = user + assistant 消息对）
+    // beforeTurnIndex = 加载此 turn 之前的消息（用于向上滚动加载更多）
+    const limit = body.limit as number | undefined;
+    const beforeTurnIndex = body.beforeTurnIndex as number | undefined;
 
     if (!cwd || !sessionId) {
       return new Response(JSON.stringify({ error: 'Missing cwd or sessionId' }), {
@@ -96,10 +100,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 读取并解析 JSONL 文件
-    const { messages, title, usage } = await parseTranscriptFile(sessionPath);
+    // 读取并解析 JSONL 文件（支持分页）
+    const { messages, title, usage, totalTurns, hasMore } = await parseTranscriptFile(sessionPath, limit, beforeTurnIndex);
 
-    return new Response(JSON.stringify({ messages, sessionId, title, usage }), {
+    return new Response(JSON.stringify({ messages, sessionId, title, usage, totalTurns, hasMore }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
@@ -169,7 +173,11 @@ function generateTitle(summary: string, userMessages: string[]): string {
   return 'Untitled Session';
 }
 
-async function parseTranscriptFile(filePath: string): Promise<{ messages: ChatMessage[]; title: string; usage?: TokenUsage }> {
+async function parseTranscriptFile(
+  filePath: string,
+  limit?: number,
+  beforeTurnIndex?: number
+): Promise<{ messages: ChatMessage[]; title: string; usage?: TokenUsage; totalTurns: number; hasMore: boolean }> {
   const fileStream = fs.createReadStream(filePath);
   const rl = readline.createInterface({
     input: fileStream,
@@ -214,11 +222,46 @@ async function parseTranscriptFile(filePath: string): Promise<{ messages: ChatMe
     }
   }
 
-  // 转换消息格式
-  const messages = convertToChatMessages(rawMessages);
+  // 转换消息格式（全量）
+  const allMessages = convertToChatMessages(rawMessages);
   const title = generateTitle(summary, userTextMessages);
 
-  return { messages, title, usage: lastUsage };
+  // 计算 turn 数量：一个 turn = 一个 user 消息 + 对应的 assistant 消息
+  // 这里简化处理：每个 user 消息开始一个新 turn
+  const turns: ChatMessage[][] = [];
+  let currentTurn: ChatMessage[] = [];
+
+  for (const msg of allMessages) {
+    if (msg.role === 'user') {
+      if (currentTurn.length > 0) {
+        turns.push(currentTurn);
+      }
+      currentTurn = [msg];
+    } else {
+      currentTurn.push(msg);
+    }
+  }
+  if (currentTurn.length > 0) {
+    turns.push(currentTurn);
+  }
+
+  const totalTurns = turns.length;
+
+  // 如果没有分页参数，返回全量消息
+  if (limit === undefined) {
+    return { messages: allMessages, title, usage: lastUsage, totalTurns, hasMore: false };
+  }
+
+  // 分页逻辑：从 beforeTurnIndex 往前取 limit 个 turn
+  const endIndex = beforeTurnIndex !== undefined ? beforeTurnIndex : totalTurns;
+  const startIndex = Math.max(0, endIndex - limit);
+  const hasMore = startIndex > 0;
+
+  // 取出指定范围的 turns 并扁平化为消息数组
+  const selectedTurns = turns.slice(startIndex, endIndex);
+  const messages = selectedTurns.flat();
+
+  return { messages, title, usage: lastUsage, totalTurns, hasMore };
 }
 
 function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] {

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { createHighlighter, type Highlighter, type BundledLanguage } from 'shiki';
 import { ToolCallInfo } from '@/types/chat';
 import { DiffView, DiffUnifiedView } from './DiffView';
@@ -342,6 +343,7 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
   const filePath = getFilePath(content);
   const hasDiffMode = !!editInput;
   const hasFileMode = !!filePath;
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
 
   // 默认模式：Read/Write 工具默认 file 模式，Edit 工具默认 diff 模式，其他用可读模式
   const getDefaultMode = (): ViewMode => {
@@ -352,6 +354,12 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
   };
 
   const [viewMode, setViewMode] = useState<ViewMode>(getDefaultMode());
+
+  // 获取 Portal 容器（Chat 屏幕）
+  useEffect(() => {
+    const container = document.getElementById('chat-screen');
+    setPortalContainer(container);
+  }, []);
 
   // ESC 键关闭
   useEffect(() => {
@@ -393,15 +401,15 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
   };
 
   // Split 模式使用更宽的窗口
-  const modalWidth = viewMode === 'diff-split' ? 'max-w-[90vw]' : 'max-w-6xl';
+  const modalWidth = viewMode === 'diff-split' ? 'max-w-[90%]' : 'max-w-[90%]';
 
-  return (
+  const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
     >
       <div
-        className={`bg-card rounded-lg shadow-xl w-full ${modalWidth} h-[90vh] flex flex-col transition-all`}
+        className={`bg-card rounded-lg shadow-xl w-full ${modalWidth} h-[90%] flex flex-col transition-all`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -481,6 +489,41 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
               </svg>
             </button>
           </div>
+        </div>
+        {/* Content */}
+        <div className="flex-1 overflow-auto p-4">
+          {renderContent()}
+        </div>
+      </div>
+    </div>
+  );
+
+  // 使用 Portal 渲染到 Chat 屏幕容器，如果容器不存在则回退到 body
+  if (portalContainer) {
+    return createPortal(modalContent, portalContainer);
+  }
+
+  // 回退：直接渲染（fixed 定位到整个视口）
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className={`bg-card rounded-lg shadow-xl w-full ${modalWidth} h-[90vh] flex flex-col transition-all`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <h3 className="text-sm font-medium text-foreground">{title}</h3>
+          <button
+            onClick={onClose}
+            className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
         {/* Content */}
         <div className="flex-1 overflow-auto p-4">

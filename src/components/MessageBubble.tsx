@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ChatMessage, MessageImage } from '@/types/chat';
 import { ToolCallModal } from './ToolCallModal';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -11,7 +12,13 @@ interface ImageModalProps {
 }
 
 function ImageModal({ image, onClose }: ImageModalProps) {
-  return (
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const modalContent = (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
       onClick={onClose}
@@ -35,6 +42,13 @@ function ImageModal({ image, onClose }: ImageModalProps) {
       />
     </div>
   );
+
+  // 客户端渲染时使用 Portal 到 body
+  if (mounted) {
+    return createPortal(modalContent, document.body);
+  }
+
+  return null;
 }
 
 interface MessageBubbleProps {

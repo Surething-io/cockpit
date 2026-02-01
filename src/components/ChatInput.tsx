@@ -37,9 +37,10 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus }: ChatInputP
 
     // 重置高度以获取正确的 scrollHeight
     textarea.style.height = 'auto';
-    // 设置新高度，最大 200px（约 8-10 行）
+    // 设置新高度，最小 38px（单行），最大 200px（约 8-10 行）
+    const minHeight = 38;
     const maxHeight = 200;
-    const newHeight = Math.min(textarea.scrollHeight, maxHeight);
+    const newHeight = Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight));
     textarea.style.height = `${newHeight}px`;
   }, []);
 

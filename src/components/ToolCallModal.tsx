@@ -216,7 +216,7 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
   // 默认模式：Read/Write 工具默认 file 模式，Edit 工具默认 diff 模式，其他用可读模式
   const getDefaultMode = (): ViewMode => {
     if ((toolName === 'Read' || toolName === 'Write') && hasFileMode) return 'file';
-    if (hasDiffMode) return 'diff-split';
+    if (hasDiffMode) return 'diff-unified';
     if (isJson) return 'readable';
     return 'json';
   };

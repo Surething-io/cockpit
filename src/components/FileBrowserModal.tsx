@@ -1911,7 +1911,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             </div>
                           )
                         ) : (
-                          <CodeViewer content={fileContent.content} filePath={selectedPath} />
+                          <CodeViewer content={fileContent.content} filePath={selectedPath} cwd={cwd} enableComments={true} />
                         )
                       ) : fileContent.type === 'image' && fileContent.content ? (
                         <div className="h-full flex items-center justify-center p-4 bg-secondary">
@@ -1982,6 +1982,8 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         filePath={statusDiff.filePath}
                         isNew={statusDiff.isNew}
                         isDeleted={statusDiff.isDeleted}
+                        cwd={cwd}
+                        enableComments={true}
                       />
                     )}
                   </div>

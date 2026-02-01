@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { createHighlighter, type Highlighter, type BundledLanguage } from 'shiki';
+import { useComments, type CodeComment } from '@/hooks/useComments';
 
 // ============================================
 // Types
@@ -14,6 +16,9 @@ interface CodeViewerProps {
   showLineNumbers?: boolean;
   showSearch?: boolean;
   className?: string;
+  // 评论功能需要 cwd
+  cwd?: string;
+  enableComments?: boolean;
 }
 
 interface SearchMatch {
@@ -127,6 +132,236 @@ function findMatches(
 }
 
 // ============================================
+// View Comment Card (for viewing existing comments)
+// ============================================
+
+interface ViewCommentCardProps {
+  x: number;
+  y: number;
+  comment: CodeComment;
+  onClose: () => void;
+  onUpdateComment: (id: string, content: string) => Promise<boolean>;
+  onDeleteComment: (id: string) => Promise<boolean>;
+}
+
+function ViewCommentCard({
+  x,
+  y,
+  comment,
+  onClose,
+  onUpdateComment,
+  onDeleteComment,
+}: ViewCommentCardProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(comment.content);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ x, y });
+
+  // Position adjustment
+  useEffect(() => {
+    if (cardRef.current) {
+      const rect = cardRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      let newX = x, newY = y;
+      if (x + rect.width > viewportWidth - 16) newX = viewportWidth - rect.width - 16;
+      if (newX < 16) newX = 16;
+      if (y + rect.height > viewportHeight - 16) newY = y - rect.height - 8;
+      if (newY < 16) newY = 16;
+      setPosition({ x: newX, y: newY });
+    }
+  }, [x, y]);
+
+  // Click outside to close
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
+
+  const handleSave = async () => {
+    if (editContent.trim()) {
+      await onUpdateComment(comment.id, editContent.trim());
+      setIsEditing(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    await onDeleteComment(comment.id);
+    onClose();
+  };
+
+  return (
+    <div
+      ref={cardRef}
+      className="fixed z-50 w-96 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+      style={{ left: position.x, top: position.y }}
+    >
+      <div className="p-3">
+        {isEditing ? (
+          <div className="space-y-2">
+            <textarea
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+              rows={3}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSave();
+                }
+                if (e.key === 'Escape') {
+                  setIsEditing(false);
+                  setEditContent(comment.content);
+                }
+              }}
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setIsEditing(false); setEditContent(comment.content); }}
+                className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSave}
+                className="px-2 py-1 text-xs bg-brand text-white rounded hover:bg-brand/90"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-foreground whitespace-pre-wrap">{comment.content}</p>
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">
+                行 {comment.startLine}-{comment.endLine}
+              </span>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="p-1 rounded hover:bg-accent text-muted-foreground"
+                  title="编辑"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={handleDelete}
+                  className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-red-9"
+                  title="删除"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Add Comment Input (simple input for adding new comment)
+// ============================================
+
+interface AddCommentInputProps {
+  x: number;
+  y: number;
+  range: { start: number; end: number };
+  onSubmit: (content: string) => void;
+  onClose: () => void;
+}
+
+function AddCommentInput({ x, y, range, onSubmit, onClose }: AddCommentInputProps) {
+  const [content, setContent] = useState('');
+  const cardRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [position, setPosition] = useState({ x, y });
+
+  // Position adjustment
+  useEffect(() => {
+    if (cardRef.current) {
+      const rect = cardRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      let newX = x, newY = y;
+      if (x + rect.width > viewportWidth - 16) newX = viewportWidth - rect.width - 16;
+      if (newX < 16) newX = 16;
+      if (y + rect.height > viewportHeight - 16) newY = y - rect.height - 8;
+      if (newY < 16) newY = 16;
+      setPosition({ x: newX, y: newY });
+    }
+  }, [x, y]);
+
+  // Auto focus
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  // Click outside to close
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
+
+  const handleSubmit = () => {
+    if (content.trim()) {
+      onSubmit(content.trim());
+    }
+  };
+
+  return (
+    <div
+      ref={cardRef}
+      className="fixed z-50 w-80 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+      style={{ left: position.x, top: position.y }}
+    >
+      <div className="px-3 py-2 bg-secondary border-b border-border">
+        <span className="text-xs text-muted-foreground">行 {range.start}-{range.end}</span>
+      </div>
+      <div className="p-2">
+        <textarea
+          ref={textareaRef}
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="输入评论..."
+          className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+          rows={2}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSubmit();
+            }
+            if (e.key === 'Escape') {
+              onClose();
+            }
+          }}
+        />
+        <div className="mt-1 text-xs text-muted-foreground">
+          Enter 提交 · Shift+Enter 换行
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
 // CodeViewer Component
 // ============================================
 
@@ -136,12 +371,20 @@ export function CodeViewer({
   showLineNumbers = true,
   showSearch = true,
   className = '',
+  cwd,
+  enableComments = false,
 }: CodeViewerProps) {
   const [highlightedLines, setHighlightedLines] = useState<string[]>([]);
   const [isDark, setIsDark] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
   const parentRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Track mount state for Portal rendering
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Search state
   const [isSearchVisible, setIsSearchVisible] = useState(false);
@@ -150,7 +393,57 @@ export function CodeViewer({
   const [wholeWord, setWholeWord] = useState(false);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
+  // Comment UI state
+  const [viewingComment, setViewingComment] = useState<{
+    comment: CodeComment;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const [addCommentButton, setAddCommentButton] = useState<{
+    x: number;
+    y: number;
+    range: { start: number; end: number };
+  } | null>(null);
+
+  const [addCommentInput, setAddCommentInput] = useState<{
+    x: number;
+    y: number;
+    range: { start: number; end: number };
+  } | null>(null);
+
+  // Comments hook
+  const commentsEnabled = enableComments && !!cwd;
+  const { comments, addComment, updateComment, deleteComment } = useComments({
+    cwd: cwd || '',
+    filePath,
+  });
+
   const lines = useMemo(() => content.split('\n'), [content]);
+
+  // Group comments by their end line (for inline display)
+  const commentsByEndLine = useMemo(() => {
+    const map = new Map<number, CodeComment[]>();
+    for (const comment of comments) {
+      const line = comment.endLine;
+      if (!map.has(line)) {
+        map.set(line, []);
+      }
+      map.get(line)!.push(comment);
+    }
+    return map;
+  }, [comments]);
+
+  // Lines that have comments
+  const linesWithComments = useMemo(() => {
+    const set = new Set<number>();
+    for (const comment of comments) {
+      for (let i = comment.startLine; i <= comment.endLine; i++) {
+        set.add(i);
+      }
+    }
+    return set;
+  }, [comments]);
 
   // Find matches
   const matches = useMemo(() => {
@@ -206,12 +499,22 @@ export function CodeViewer({
     highlight();
   }, [content, filePath, isDark, lines]);
 
+  // Calculate row count including comment rows
+  const rowData = useMemo(() => {
+    const rows: Array<{ type: 'code'; lineIndex: number } | { type: 'comment'; lineNum: number; comments: CodeComment[] } | { type: 'add-comment'; startLine: number; endLine: number }> = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      rows.push({ type: 'code', lineIndex: i });
+    }
+    return rows;
+  }, [lines.length]);
+
   // Virtual scrolling
   const virtualizer = useVirtualizer({
-    count: lines.length,
+    count: rowData.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 20,
-    overscan: 20,
+    overscan: 10,
   });
 
   // Keyboard shortcut for search
@@ -224,9 +527,17 @@ export function CodeViewer({
         setIsSearchVisible(true);
         setTimeout(() => searchInputRef.current?.focus(), 0);
       }
-      if (e.key === 'Escape' && isSearchVisible) {
-        setIsSearchVisible(false);
-        setSearchQuery('');
+      if (e.key === 'Escape') {
+        if (isSearchVisible) {
+          setIsSearchVisible(false);
+          setSearchQuery('');
+        } else if (addCommentInput) {
+          setAddCommentInput(null);
+        } else if (addCommentButton) {
+          setAddCommentButton(null);
+        } else if (viewingComment) {
+          setViewingComment(null);
+        }
       }
     };
 
@@ -235,15 +546,19 @@ export function CodeViewer({
       container.addEventListener('keydown', handleKeyDown);
       return () => container.removeEventListener('keydown', handleKeyDown);
     }
-  }, [showSearch, isSearchVisible]);
+  }, [showSearch, isSearchVisible, addCommentInput, addCommentButton, viewingComment]);
 
   // Navigate to current match
   useEffect(() => {
     if (matches.length > 0 && currentMatchIndex >= 0 && currentMatchIndex < matches.length) {
       const match = matches[currentMatchIndex];
-      virtualizer.scrollToIndex(match.lineIndex, { align: 'center' });
+      // Find the row index for this line
+      const rowIndex = rowData.findIndex(r => r.type === 'code' && r.lineIndex === match.lineIndex);
+      if (rowIndex >= 0) {
+        virtualizer.scrollToIndex(rowIndex, { align: 'center' });
+      }
     }
-  }, [currentMatchIndex, matches, virtualizer]);
+  }, [currentMatchIndex, matches, virtualizer, rowData]);
 
   const goToNextMatch = useCallback(() => {
     if (matches.length === 0) return;
@@ -270,7 +585,92 @@ export function CodeViewer({
     }
   }, [goToNextMatch, goToPrevMatch]);
 
-  const lineNumberWidth = showLineNumbers ? Math.max(3, String(lines.length).length) * 10 + 16 : 0;
+  // Comment bubble click - view existing comment
+  const handleCommentBubbleClick = useCallback((comment: CodeComment, e: React.MouseEvent) => {
+    if (!commentsEnabled) return;
+    e.stopPropagation();
+    setViewingComment({ comment, x: e.clientX, y: e.clientY });
+    setAddCommentButton(null);
+    setAddCommentInput(null);
+  }, [commentsEnabled]);
+
+  // Text selection handler - show "add comment" button
+  // Use document-level mouseup to catch selections even when mouse is released outside code area
+  useEffect(() => {
+    if (!commentsEnabled) return;
+
+    const handleMouseUp = (e: MouseEvent) => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || !selection.toString().trim()) {
+        setAddCommentButton(null);
+        return;
+      }
+
+      // Get line range from selection
+      const range = selection.getRangeAt(0);
+      const container = parentRef.current;
+      if (!container) return;
+
+      // Check if selection is within our code area
+      if (!container.contains(range.commonAncestorContainer)) {
+        return;
+      }
+
+      // Find line numbers from DOM
+      const startNode = range.startContainer;
+      const endNode = range.endContainer;
+
+      const getLineFromNode = (node: Node): number | null => {
+        let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node as Element;
+        while (el && el !== container) {
+          const lineRow = el.closest('[data-line]');
+          if (lineRow) {
+            return parseInt(lineRow.getAttribute('data-line') || '0', 10);
+          }
+          el = el.parentElement;
+        }
+        return null;
+      };
+
+      const startLine = getLineFromNode(startNode);
+      const endLine = getLineFromNode(endNode);
+
+      if (startLine && endLine) {
+        const minLine = Math.min(startLine, endLine);
+        const maxLine = Math.max(startLine, endLine);
+        setAddCommentButton({
+          x: e.clientX,
+          y: e.clientY,
+          range: { start: minLine, end: maxLine },
+        });
+      }
+    };
+
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => document.removeEventListener('mouseup', handleMouseUp);
+  }, [commentsEnabled]);
+
+  // Click "add comment" button - show input
+  const handleAddCommentButtonClick = useCallback(() => {
+    if (!addCommentButton) return;
+    setAddCommentInput({
+      x: addCommentButton.x,
+      y: addCommentButton.y,
+      range: addCommentButton.range,
+    });
+    setAddCommentButton(null);
+    // Clear text selection
+    window.getSelection()?.removeAllRanges();
+  }, [addCommentButton]);
+
+  // Submit new comment
+  const handleCommentSubmit = useCallback(async (content: string) => {
+    if (!addCommentInput) return;
+    await addComment(addCommentInput.range.start, addCommentInput.range.end, content);
+    setAddCommentInput(null);
+  }, [addCommentInput, addComment]);
+
+  const lineNumberWidth = showLineNumbers ? Math.max(3, String(lines.length).length) * 10 + 24 : 0;
 
   // Highlight match in line
   const getHighlightedLineHtml = useCallback((lineIndex: number, html: string): string => {
@@ -279,8 +679,6 @@ export function CodeViewer({
     const lineMatches = matches.filter(m => m.lineIndex === lineIndex);
     if (lineMatches.length === 0) return html;
 
-    // For simplicity, wrap matches with highlight span
-    // This is a basic implementation - could be improved for complex HTML
     let result = html;
     const line = lines[lineIndex];
 
@@ -292,7 +690,6 @@ export function CodeViewer({
       const escapedMatch = escapeHtml(matchText);
       const highlightClass = isCurrentMatch ? 'bg-amber-9/50' : 'bg-amber-9/30';
 
-      // Try to find and replace the escaped match text in HTML
       const regex = new RegExp(escapedMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
       result = result.replace(regex, `<span class="${highlightClass}">${escapedMatch}</span>`);
     }
@@ -314,7 +711,6 @@ export function CodeViewer({
             placeholder="搜索..."
             className="flex-1 max-w-xs px-2 py-1 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
-          {/* Case sensitive toggle */}
           <button
             onClick={() => setCaseSensitive(!caseSensitive)}
             className={`px-2 py-1 text-xs font-mono rounded border transition-colors ${
@@ -326,7 +722,6 @@ export function CodeViewer({
           >
             Aa
           </button>
-          {/* Whole word toggle */}
           <button
             onClick={() => setWholeWord(!wholeWord)}
             className={`px-2 py-1 text-xs font-mono rounded border transition-colors ${
@@ -338,40 +733,20 @@ export function CodeViewer({
           >
             [ab]
           </button>
-          {/* Match count */}
           <span className="text-xs text-muted-foreground">
             {matches.length > 0 ? `${currentMatchIndex + 1}/${matches.length}` : '无匹配'}
           </span>
-          {/* Navigation */}
-          <button
-            onClick={goToPrevMatch}
-            disabled={matches.length === 0}
-            className="p-1 rounded hover:bg-accent disabled:opacity-50"
-            title="上一个 (Shift+Enter)"
-          >
+          <button onClick={goToPrevMatch} disabled={matches.length === 0} className="p-1 rounded hover:bg-accent disabled:opacity-50" title="上一个">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
             </svg>
           </button>
-          <button
-            onClick={goToNextMatch}
-            disabled={matches.length === 0}
-            className="p-1 rounded hover:bg-accent disabled:opacity-50"
-            title="下一个 (Enter)"
-          >
+          <button onClick={goToNextMatch} disabled={matches.length === 0} className="p-1 rounded hover:bg-accent disabled:opacity-50" title="下一个">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
-          {/* Close */}
-          <button
-            onClick={() => {
-              setIsSearchVisible(false);
-              setSearchQuery('');
-            }}
-            className="p-1 rounded hover:bg-accent"
-            title="关闭 (Esc)"
-          >
+          <button onClick={() => { setIsSearchVisible(false); setSearchQuery(''); }} className="p-1 rounded hover:bg-accent" title="关闭">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -392,14 +767,23 @@ export function CodeViewer({
           }}
         >
           {virtualizer.getVirtualItems().map((virtualItem) => {
-            const lineIndex = virtualItem.index;
+            const row = rowData[virtualItem.index];
+            if (row.type !== 'code') return null;
+
+            const lineIndex = row.lineIndex;
             const lineNum = lineIndex + 1;
             const html = highlightedLines[lineIndex] || escapeHtml(lines[lineIndex] || '');
             const highlightedHtml = getHighlightedLineHtml(lineIndex, html);
 
+            const hasComments = linesWithComments.has(lineNum);
+            const lineComments = commentsByEndLine.get(lineNum);
+            const firstComment = lineComments?.[0];
+            const isInRange = addCommentInput && lineNum >= addCommentInput.range.start && lineNum <= addCommentInput.range.end;
+
             return (
               <div
                 key={virtualItem.key}
+                data-line={lineNum}
                 style={{
                   position: 'absolute',
                   top: 0,
@@ -408,14 +792,30 @@ export function CodeViewer({
                   height: `${virtualItem.size}px`,
                   transform: `translateY(${virtualItem.start}px)`,
                 }}
-                className="flex hover:bg-accent/50"
+                className={`flex ${isInRange ? 'bg-blue-9/20' : hasComments ? 'bg-amber-9/10' : 'hover:bg-accent/50'}`}
               >
                 {showLineNumbers && (
                   <span
-                    className="flex-shrink-0 px-2 text-right text-slate-9 select-none border-r border-border bg-card/50"
+                    className={`flex-shrink-0 flex items-center justify-end gap-0.5 pr-1 select-none border-r border-border ${
+                      isInRange ? 'bg-blue-9/30 text-blue-11' : 'bg-card/50 text-slate-9'
+                    }`}
                     style={{ width: lineNumberWidth }}
                   >
-                    {lineNum}
+                    {/* Comment bubble - only show when line has comments */}
+                    {commentsEnabled && hasComments && firstComment && (
+                      <button
+                        onClick={(e) => handleCommentBubbleClick(firstComment, e)}
+                        className="w-4 h-4 flex items-center justify-center rounded hover:bg-accent text-amber-9"
+                        title={`${lineComments?.length} 条评论`}
+                      >
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    )}
+                    {/* Placeholder for alignment when no comments */}
+                    {commentsEnabled && !hasComments && <span className="w-4" />}
+                    <span className="w-6 text-right">{lineNum}</span>
                   </span>
                 )}
                 <span
@@ -427,6 +827,46 @@ export function CodeViewer({
           })}
         </div>
       </div>
+
+      {/* Floating elements via Portal to avoid willChange: transform issues */}
+      {isMounted && createPortal(
+        <>
+          {/* Floating "Add Comment" Button */}
+          {addCommentButton && (
+            <button
+              className="fixed z-50 px-2 py-1 text-xs bg-brand text-white rounded shadow-lg hover:bg-brand/90"
+              style={{ left: addCommentButton.x, top: addCommentButton.y }}
+              onClick={handleAddCommentButtonClick}
+            >
+              添加评论
+            </button>
+          )}
+
+          {/* Add Comment Input */}
+          {addCommentInput && (
+            <AddCommentInput
+              x={addCommentInput.x}
+              y={addCommentInput.y}
+              range={addCommentInput.range}
+              onSubmit={handleCommentSubmit}
+              onClose={() => setAddCommentInput(null)}
+            />
+          )}
+
+          {/* View Comment Card */}
+          {viewingComment && (
+            <ViewCommentCard
+              x={viewingComment.x}
+              y={viewingComment.y}
+              comment={viewingComment.comment}
+              onClose={() => setViewingComment(null)}
+              onUpdateComment={updateComment}
+              onDeleteComment={deleteComment}
+            />
+          )}
+        </>,
+        document.body
+      )}
     </div>
   );
 }
@@ -498,14 +938,10 @@ export function SimpleCodeBlock({ content, filePath, className = '' }: SimpleCod
       <div
         className={`overflow-auto text-xs font-mono ${className}`}
         dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-        style={{
-          // Shiki styles
-        }}
       />
     );
   }
 
-  // Fallback: plain text with line numbers
   const lines = content.split('\n');
   const lineNumberWidth = String(lines.length).length;
 

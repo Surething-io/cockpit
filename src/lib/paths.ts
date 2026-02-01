@@ -57,6 +57,13 @@ export function getExpandedPathsPath(cwd: string): string {
   return join(getCockpitProjectDir(cwd), 'expanded-paths.json');
 }
 
+/**
+ * Get the comments.json path for a project
+ */
+export function getCommentsFilePath(cwd: string): string {
+  return join(getCockpitProjectDir(cwd), 'comments.json');
+}
+
 // ============================================
 // Claude Project Paths (~/.claude/projects/<encoded-cwd>/...)
 // ============================================

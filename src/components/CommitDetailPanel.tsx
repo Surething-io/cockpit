@@ -233,6 +233,8 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
               filePath={fileDiff.filePath}
               isNew={fileDiff.isNew}
               isDeleted={fileDiff.isDeleted}
+              cwd={cwd}
+              enableComments={true}
             />
           ) : (
             <div className="h-full flex items-center justify-center text-muted-foreground text-sm">

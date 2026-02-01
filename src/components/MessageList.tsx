@@ -93,7 +93,7 @@ export function MessageList({ messages, isLoading, cwd }: MessageListProps) {
         className="h-full overflow-y-auto p-4"
       >
         {messages.length === 0 && !isLoading ? (
-          <div className="flex items-center justify-center h-full text-gray-400 dark:text-gray-500">
+          <div className="flex items-center justify-center h-full text-slate-9">
             <div className="text-center">
               <div className="text-4xl mb-4">💬</div>
               <div>开始对话吧</div>
@@ -107,8 +107,8 @@ export function MessageList({ messages, isLoading, cwd }: MessageListProps) {
             ))}
             {isLoading && (
               <div className="flex justify-start mb-4">
-                <div className="bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-bl-md px-4 py-3">
-                  <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                <div className="bg-accent rounded-2xl rounded-bl-md px-4 py-3">
+                  <div className="flex items-center gap-2 text-muted-foreground">
                     <span className="inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                     <span className="text-sm">Claude 正在思考...</span>
                   </div>
@@ -124,7 +124,7 @@ export function MessageList({ messages, isLoading, cwd }: MessageListProps) {
       {showTopButton && messages.length > 0 && (
         <button
           onClick={scrollToTop}
-          className="absolute top-2 left-1/2 -translate-x-1/2 p-2 bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 shadow-md rounded-full transition-all hover:shadow-lg active:scale-95"
+          className="absolute top-2 left-1/2 -translate-x-1/2 p-2 bg-card text-muted-foreground hover:text-foreground shadow-md rounded-full transition-all hover:shadow-lg active:scale-95"
           title="跳转到开始"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -137,7 +137,7 @@ export function MessageList({ messages, isLoading, cwd }: MessageListProps) {
       {showBottomButton && messages.length > 0 && (
         <button
           onClick={scrollToBottom}
-          className="absolute bottom-2 left-1/2 -translate-x-1/2 p-2 bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 shadow-md rounded-full transition-all hover:shadow-lg active:scale-95"
+          className="absolute bottom-2 left-1/2 -translate-x-1/2 p-2 bg-card text-muted-foreground hover:text-foreground shadow-md rounded-full transition-all hover:shadow-lg active:scale-95"
           title="跳转到最新"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

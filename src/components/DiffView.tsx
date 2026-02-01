@@ -298,7 +298,7 @@ function DiffMinimap({
   return (
     <div
       ref={minimapRef}
-      className="w-4 flex-shrink-0 bg-gray-100 dark:bg-gray-800 border-l border-gray-300 dark:border-gray-600 relative cursor-pointer"
+      className="w-4 flex-shrink-0 bg-secondary border-l border-border relative cursor-pointer"
       onClick={handleClick}
     >
       {/* Change markers with percentage positioning */}
@@ -319,7 +319,7 @@ function DiffMinimap({
       ))}
       {/* Viewport indicator */}
       <div
-        className="absolute left-0 right-0 bg-gray-400/40 dark:bg-gray-500/40 border-y border-gray-500 dark:border-gray-400"
+        className="absolute left-0 right-0 bg-slate-8/40 border-y border-slate-8"
         style={{
           top: `${viewportInfo.top}px`,
           height: `${Math.max(viewportInfo.height, 10)}px`,
@@ -423,29 +423,29 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
   return (
     <div className="font-mono flex flex-col h-full" style={{ fontSize: '0.8125rem' }}>
       {/* Header row - fixed */}
-      <div className="flex flex-shrink-0 border-b border-gray-300 dark:border-gray-600">
-        <div className={`${leftWidth} min-w-0 px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-center text-xs font-medium border-r border-gray-300 dark:border-gray-600`}>
+      <div className="flex flex-shrink-0 border-b border-border">
+        <div className={`${leftWidth} min-w-0 px-2 py-1 bg-accent text-muted-foreground text-center text-xs font-medium border-r border-border`}>
           {isNew ? '(New File)' : isDeleted ? 'Deleted' : 'Old'}
         </div>
-        <div className={`${rightWidth} min-w-0 px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-center text-xs font-medium`}>
+        <div className={`${rightWidth} min-w-0 px-2 py-1 bg-accent text-muted-foreground text-center text-xs font-medium`}>
           {isDeleted ? '(Deleted)' : 'New'}
         </div>
-        <div className="w-4 flex-shrink-0 bg-gray-100 dark:bg-gray-700" />
+        <div className="w-4 flex-shrink-0 bg-accent" />
       </div>
       {/* Content row - two independent scroll panels with synced vertical scroll */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left Panel - Old */}
         <div
           ref={leftPanelRef}
-          className={`${leftWidth} overflow-auto border-r border-gray-300 dark:border-gray-600`}
+          className={`${leftWidth} overflow-auto border-r border-border`}
         >
           <div className="min-w-max">
             {leftLines.map((line, idx) => (
               <div
                 key={idx}
-                className={`flex ${line.type === 'removed' ? 'bg-red-100 dark:bg-red-900/30' : ''}`}
+                className={`flex ${line.type === 'removed' ? 'bg-red-9/15 dark:bg-red-9/25' : ''}`}
               >
-                <span className="w-10 flex-shrink-0 text-right pr-2 text-gray-400 dark:text-gray-500 select-none border-r border-gray-200 dark:border-gray-700">
+                <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
                   {line.lineNum || ''}
                 </span>
                 <HighlightedContent
@@ -466,9 +466,9 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
             {rightLines.map((line, idx) => (
               <div
                 key={idx}
-                className={`flex ${line?.type === 'added' ? 'bg-green-100 dark:bg-green-900/30' : ''}`}
+                className={`flex ${line?.type === 'added' ? 'bg-green-9/15 dark:bg-green-9/25' : ''}`}
               >
-                <span className="w-10 flex-shrink-0 text-right pr-2 text-gray-400 dark:text-gray-500 select-none border-r border-gray-200 dark:border-gray-700">
+                <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
                   {line?.lineNum || ''}
                 </span>
                 <HighlightedContent
@@ -507,27 +507,27 @@ export function DiffUnifiedView({ oldContent, newContent, filePath }: Omit<DiffV
           key={idx}
           className={`flex ${
             line.type === 'removed'
-              ? 'bg-red-100 dark:bg-red-900/30'
+              ? 'bg-red-9/15 dark:bg-red-9/25'
               : line.type === 'added'
-              ? 'bg-green-100 dark:bg-green-900/30'
+              ? 'bg-green-9/15 dark:bg-green-9/25'
               : ''
           }`}
         >
           {/* Line numbers */}
-          <span className="w-10 flex-shrink-0 text-right pr-2 text-gray-400 dark:text-gray-500 select-none border-r border-gray-200 dark:border-gray-700">
+          <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
             {line.type !== 'added' ? line.oldLineNum : ''}
           </span>
-          <span className="w-10 flex-shrink-0 text-right pr-2 text-gray-400 dark:text-gray-500 select-none border-r border-gray-200 dark:border-gray-700">
+          <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
             {line.type !== 'removed' ? line.newLineNum : ''}
           </span>
           {/* Symbol */}
           <span
             className={`w-6 flex-shrink-0 text-center select-none ${
               line.type === 'removed'
-                ? 'text-red-600 dark:text-red-400'
+                ? 'text-red-11'
                 : line.type === 'added'
-                ? 'text-green-600 dark:text-green-400'
-                : 'text-gray-400'
+                ? 'text-green-11'
+                : 'text-slate-9'
             }`}
           >
             {line.type === 'removed' ? '-' : line.type === 'added' ? '+' : ' '}

@@ -117,14 +117,14 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-6xl h-[90vh] mx-4 bg-white dark:bg-gray-800 rounded-lg shadow-xl flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-6xl h-[90vh] mx-4 bg-card rounded-lg shadow-xl flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex-1 min-w-0">
-            <h2 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+            <h2 className="text-sm font-medium text-foreground">
               会话列表
             </h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate" title={cwd}>
+            <p className="text-xs text-muted-foreground truncate" title={cwd}>
               {cwd}
             </p>
           </div>
@@ -135,11 +135,11 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
               placeholder="搜索会话..."
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
-              className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="px-2 py-1 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <button
               onClick={onClose}
-              className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+              className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -152,7 +152,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
         <div className="flex-1 overflow-y-auto p-4">
           {isLoading && (
             <div className="flex items-center justify-center h-full">
-              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -170,7 +170,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
 
           {!isLoading && !error && filteredSessions.length === 0 && (
             <div className="flex items-center justify-center h-full">
-              <div className="text-xs text-gray-500 dark:text-gray-400">
+              <div className="text-xs text-muted-foreground">
                 {searchKeyword ? '未找到匹配的会话' : '暂无会话'}
               </div>
             </div>
@@ -182,15 +182,15 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
                 <div
                   key={session.path}
                   onClick={() => handleSessionClick(session)}
-                  className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded border border-gray-200 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-400 hover:shadow-md cursor-pointer transition-all"
+                  className="p-3 bg-secondary rounded border border-border hover:border-brand hover:shadow-md cursor-pointer transition-all"
                 >
                   {/* Session Title */}
-                  <h4 className="text-xs font-medium text-gray-900 dark:text-gray-100 mb-1 truncate" title={session.title}>
+                  <h4 className="text-xs font-medium text-foreground mb-1 truncate" title={session.title}>
                     {session.title}
                   </h4>
 
                   {/* Session Time */}
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  <div className="text-xs text-muted-foreground mb-2">
                     {formatDate(session.modifiedAt)}
                   </div>
 
@@ -200,17 +200,17 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
                     {session.firstMessages.map((msg, idx) => (
                       <div
                         key={`first-${idx}`}
-                        className="text-gray-600 dark:text-gray-300 truncate"
+                        className="text-foreground truncate"
                         title={msg}
                       >
-                        <span className="text-gray-400 dark:text-gray-500 mr-1">•</span>
+                        <span className="text-slate-9 mr-1">•</span>
                         {msg}
                       </div>
                     ))}
 
                     {/* Separator if there are last messages */}
                     {session.lastMessages.length > 0 && (
-                      <div className="text-gray-400 dark:text-gray-500 text-center py-0.5">
+                      <div className="text-slate-9 text-center py-0.5">
                         ···
                       </div>
                     )}
@@ -219,10 +219,10 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
                     {session.lastMessages.map((msg, idx) => (
                       <div
                         key={`last-${idx}`}
-                        className="text-gray-600 dark:text-gray-300 truncate"
+                        className="text-foreground truncate"
                         title={msg}
                       >
-                        <span className="text-gray-400 dark:text-gray-500 mr-1">•</span>
+                        <span className="text-slate-9 mr-1">•</span>
                         {msg}
                       </div>
                     ))}

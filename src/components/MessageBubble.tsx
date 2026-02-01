@@ -60,7 +60,7 @@ export function MessageBubble({ message, cwd }: MessageBubbleProps) {
           className={`max-w-[80%] ${
             isUser
               ? 'bg-blue-500 text-white rounded-2xl rounded-br-md'
-              : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-2xl rounded-bl-md'
+              : 'bg-accent text-foreground rounded-2xl rounded-bl-md'
           } px-4 py-2`}
         >
           {/* 图片内容 */}
@@ -97,21 +97,21 @@ export function MessageBubble({ message, cwd }: MessageBubbleProps) {
             <div className={`${message.content || hasImages ? 'mt-2' : ''}`}>
               {shouldCollapseToolCalls ? (
                 // 折叠模式：显示摘要和展开按钮
-                <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-800">
+                <div className="border border-border rounded-lg overflow-hidden bg-secondary">
                   <button
                     onClick={() => setToolCallsExpanded(!toolCallsExpanded)}
-                    className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors active:bg-gray-200 dark:active:bg-gray-600"
+                    className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-accent transition-colors active:bg-muted"
                   >
                     <span className="text-lg">🔧</span>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">
+                    <span className="font-medium text-foreground">
                       {toolCallsCount} 个工具调用
                     </span>
-                    <span className="ml-auto text-gray-400 text-sm">
+                    <span className="ml-auto text-slate-9 text-sm">
                       {toolCallsExpanded ? '▲ 收起' : '▼ 展开'}
                     </span>
                   </button>
                   {toolCallsExpanded && (
-                    <div className="border-t border-gray-200 dark:border-gray-600 p-2 space-y-1">
+                    <div className="border-t border-border p-2 space-y-1">
                       {message.toolCalls.map((toolCall, index) => (
                         <ToolCallModal key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} />
                       ))}

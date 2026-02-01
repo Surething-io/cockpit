@@ -218,14 +218,14 @@ export function ChatInput({ onSend, disabled, cwd }: ChatInputProps) {
   };
 
   return (
-    <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 relative">
+    <div className="border-t border-border bg-card relative">
       <ImagePreview images={images} onRemove={handleRemoveImage} disabled={disabled} />
 
       {/* 命令候选列表 */}
       {showCommands && filteredCommands.length > 0 && (
         <div
           ref={commandListRef}
-          className="absolute bottom-full left-0 right-0 mx-4 mb-2 max-h-64 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg"
+          className="absolute bottom-full left-0 right-0 mx-4 mb-2 max-h-64 overflow-y-auto bg-card border border-border rounded-lg shadow-lg"
         >
           {filteredCommands.map((cmd, index) => (
             <div
@@ -233,14 +233,14 @@ export function ChatInput({ onSend, disabled, cwd }: ChatInputProps) {
               onClick={() => handleSelectCommand(cmd)}
               className={`flex items-center gap-3 px-4 py-2 cursor-pointer ${
                 index === selectedIndex
-                  ? 'bg-blue-50 dark:bg-blue-900/30'
-                  : 'hover:bg-gray-50 dark:hover:bg-gray-700'
+                  ? 'bg-brand/10'
+                  : 'hover:bg-accent'
               }`}
             >
-              <span className="font-mono text-sm font-medium text-gray-900 dark:text-gray-100">
+              <span className="font-mono text-sm font-medium text-foreground">
                 {cmd.name}
               </span>
-              <span className="flex-1 text-sm text-gray-500 dark:text-gray-400 truncate">
+              <span className="flex-1 text-sm text-muted-foreground truncate">
                 {cmd.description}
               </span>
               <span
@@ -274,7 +274,7 @@ export function ChatInput({ onSend, disabled, cwd }: ChatInputProps) {
             }
           }}
           disabled={disabled}
-          className="p-2 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/30 active:bg-green-100 dark:active:bg-green-900/50 active:scale-95 rounded-lg transition-all disabled:opacity-50"
+          className="p-2 text-green-600 hover:text-green-10 hover:bg-green-9/10 active:bg-green-9/20 active:scale-95 rounded-lg transition-all disabled:opacity-50"
           title="暂存所有文件 (git add -A)"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -285,7 +285,7 @@ export function ChatInput({ onSend, disabled, cwd }: ChatInputProps) {
         {/* Git 查看变更按钮 - 生成中也可点击 */}
         <button
           onClick={() => setShowGitStatus(true)}
-          className="p-2 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 active:bg-blue-100 dark:active:bg-blue-900/50 active:scale-95 rounded-lg transition-all"
+          className="p-2 text-blue-600 hover:text-brand hover:bg-brand/10 active:bg-brand/20 active:scale-95 rounded-lg transition-all"
           title="查看 Git 变更"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -301,7 +301,7 @@ export function ChatInput({ onSend, disabled, cwd }: ChatInputProps) {
           onPaste={handlePaste}
           placeholder={disabled ? "生成中... 可继续输入" : "输入消息，Enter 发送 (Shift+Enter 换行，可粘贴 PNG 图片，/ 显示命令)"}
           rows={1}
-          className="flex-1 resize-none px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+          className="flex-1 resize-none px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-card text-foreground placeholder-slate-9"
         />
       </div>
 

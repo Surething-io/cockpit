@@ -475,30 +475,30 @@ const VirtualTreeRow = React.memo(function VirtualTreeRow({
   if (node.isDirectory) {
     return (
       <div
-        className={`flex items-center gap-1 px-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 ${
-          isSelected ? 'bg-blue-100 dark:bg-blue-900/50' : ''
+        className={`flex items-center gap-1 px-2 cursor-pointer hover:bg-accent ${
+          isSelected ? 'bg-brand/10' : ''
         }`}
         style={{ paddingLeft: `${level * 12 + 8}px`, height: ROW_HEIGHT }}
         onClick={() => onToggle(node.path)}
       >
-        <span className="text-gray-400 text-xs w-3">
+        <span className="text-slate-9 text-xs w-3">
           {isExpanded ? '▼' : '▶'}
         </span>
-        <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{node.name}</span>
+        <span className="text-sm text-foreground truncate">{node.name}</span>
       </div>
     );
   }
 
   return (
     <div
-      className={`flex items-center gap-1 px-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 ${
-        isSelected ? 'bg-blue-100 dark:bg-blue-900/50' : ''
+      className={`flex items-center gap-1 px-2 cursor-pointer hover:bg-accent ${
+        isSelected ? 'bg-brand/10' : ''
       }`}
       style={{ paddingLeft: `${level * 12 + 20}px`, height: ROW_HEIGHT }}
       onClick={() => onSelect(node.path)}
     >
       <span>{getFileIcon(node.name)}</span>
-      <span className={`text-sm truncate ${isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'}`}>
+      <span className={`text-sm truncate ${isSelected ? 'text-brand' : 'text-foreground'}`}>
         {node.name}
       </span>
     </div>
@@ -536,16 +536,16 @@ const FileTreeItem = React.memo(function FileTreeItem({
     return (
       <div>
         <div
-          className={`flex items-center gap-1 py-0.5 px-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 ${
-            isSelected ? 'bg-blue-100 dark:bg-blue-900/50' : ''
+          className={`flex items-center gap-1 py-0.5 px-2 cursor-pointer hover:bg-accent ${
+            isSelected ? 'bg-brand/10' : ''
           }`}
           style={{ paddingLeft: `${level * 12 + 8}px` }}
           onClick={() => onToggle(node.path)}
         >
-          <span className="text-gray-400 text-xs w-3">
+          <span className="text-slate-9 text-xs w-3">
             {isExpanded ? '▼' : '▶'}
           </span>
-          <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{node.name}</span>
+          <span className="text-sm text-foreground truncate">{node.name}</span>
         </div>
         {isExpanded && node.children && (
           <div>
@@ -569,14 +569,14 @@ const FileTreeItem = React.memo(function FileTreeItem({
 
   return (
     <div
-      className={`flex items-center gap-1 py-0.5 px-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 ${
-        isSelected ? 'bg-blue-100 dark:bg-blue-900/50' : ''
+      className={`flex items-center gap-1 py-0.5 px-2 cursor-pointer hover:bg-accent ${
+        isSelected ? 'bg-brand/10' : ''
       }`}
       style={{ paddingLeft: `${level * 12 + 20}px` }}
       onClick={() => onSelect(node.path)}
     >
       <span>{getFileIcon(node.name)}</span>
-      <span className={`text-sm truncate ${isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'}`}>
+      <span className={`text-sm truncate ${isSelected ? 'text-brand' : 'text-foreground'}`}>
         {node.name}
       </span>
     </div>
@@ -626,7 +626,7 @@ function VirtualFileTree({
 
   if (flatItems.length === 0) {
     return (
-      <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">
+      <div className="p-4 text-center text-muted-foreground text-sm">
         No files
       </div>
     );
@@ -891,7 +891,7 @@ function CodePreview({ content, filePath }: { content: string; filePath: string 
     <div ref={containerRef} className="h-full flex flex-col" tabIndex={0}>
       {/* Search Bar */}
       {showSearch && (
-        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-secondary border-b border-border">
           <input
             ref={searchInputRef}
             type="text"
@@ -899,7 +899,7 @@ function CodePreview({ content, filePath }: { content: string; filePath: string 
             onChange={e => setSearchQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
             placeholder="搜索..."
-            className="flex-1 max-w-xs px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 max-w-xs px-2 py-1 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           {/* Case sensitive toggle */}
           <button
@@ -907,7 +907,7 @@ function CodePreview({ content, filePath }: { content: string; filePath: string 
             className={`px-2 py-1 text-xs font-mono rounded border transition-colors ${
               caseSensitive
                 ? 'bg-blue-500 text-white border-blue-500'
-                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:border-gray-400'
+                : 'bg-card text-muted-foreground border-border hover:border-slate-6'
             }`}
             title="大小写敏感 (Aa)"
           >
@@ -919,7 +919,7 @@ function CodePreview({ content, filePath }: { content: string; filePath: string 
             className={`px-2 py-1 text-xs font-mono rounded border transition-colors ${
               wholeWord
                 ? 'bg-blue-500 text-white border-blue-500'
-                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:border-gray-400'
+                : 'bg-card text-muted-foreground border-border hover:border-slate-6'
             }`}
             title="全词匹配 (W)"
           >
@@ -930,20 +930,20 @@ function CodePreview({ content, filePath }: { content: string; filePath: string 
             <button
               onClick={goToPrevMatch}
               disabled={matches.length === 0}
-              className="p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="p-1 text-muted-foreground hover:text-foreground dark:text-slate-9 dark:hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
               title="上一个 (Shift+Enter)"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
               </svg>
             </button>
-            <span className="text-xs text-gray-500 dark:text-gray-400 min-w-[50px] text-center">
+            <span className="text-xs text-muted-foreground min-w-[50px] text-center">
               {matches.length > 0 ? `${currentMatchIndex + 1}/${matches.length}` : '0/0'}
             </span>
             <button
               onClick={goToNextMatch}
               disabled={matches.length === 0}
-              className="p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="p-1 text-muted-foreground hover:text-foreground dark:text-slate-9 dark:hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
               title="下一个 (Enter)"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -957,7 +957,7 @@ function CodePreview({ content, filePath }: { content: string; filePath: string 
               setShowSearch(false);
               setSearchQuery('');
             }}
-            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            className="p-1 text-slate-9 hover:text-muted-foreground dark:hover:text-foreground"
             title="关闭 (Esc)"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1012,10 +1012,10 @@ function CodePreview({ content, filePath }: { content: string; filePath: string 
                   height: `${virtualItem.size}px`,
                   transform: `translateY(${virtualItem.start}px)`,
                 }}
-                className={`flex ${hasCurrentMatch ? 'bg-orange-50 dark:bg-orange-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'}`}
+                className={`flex ${hasCurrentMatch ? 'bg-orange-50 dark:bg-orange-900/20' : 'hover:bg-secondary'}`}
               >
                 <div
-                  className="flex-shrink-0 px-2 text-right text-gray-400 dark:text-gray-500 select-none border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50"
+                  className="flex-shrink-0 px-2 text-right text-slate-9 select-none border-r border-border bg-secondary/50"
                   style={{ width: lineNumberWidth }}
                 >
                   {lineNumber}
@@ -1115,14 +1115,14 @@ function BlameView({ blameLines, cwd }: BlameViewProps) {
                 transform: `translateY(${virtualItem.start}px)`,
                 backgroundColor: isHovered ? authorColor.bg : undefined,
               }}
-              className="flex hover:bg-gray-100 dark:hover:bg-gray-700/50"
+              className="flex hover:bg-accent/50"
             >
               <div
                 className="w-1 flex-shrink-0"
                 style={{ backgroundColor: authorColor.border }}
               />
               <div
-                className="w-48 flex-shrink-0 px-2 flex items-center gap-2 border-r border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/50"
+                className="w-48 flex-shrink-0 px-2 flex items-center gap-2 border-r border-border text-muted-foreground cursor-pointer hover:bg-accent"
                 onMouseEnter={(e) => handleMouseEnter(line, e)}
                 onMouseLeave={handleMouseLeave}
                 onClick={() => handleClick(line)}
@@ -1132,15 +1132,15 @@ function BlameView({ blameLines, cwd }: BlameViewProps) {
                   <>
                     <span className="font-medium" style={{ color: authorColor.border }}>{line.hash}</span>
                     <span className="truncate flex-1">{line.author.split(' ')[0]}</span>
-                    <span className="text-gray-400 dark:text-gray-500">{formatRelativeTime(line.time)}</span>
+                    <span className="text-slate-9">{formatRelativeTime(line.time)}</span>
                   </>
                 ) : null}
               </div>
-              <div className="w-10 flex-shrink-0 px-2 text-right text-gray-400 dark:text-gray-500 select-none">
+              <div className="w-10 flex-shrink-0 px-2 text-right text-slate-9 select-none">
                 {line.line}
               </div>
               <pre className="flex-1 px-2 overflow-hidden whitespace-pre">
-                <code className="text-gray-800 dark:text-gray-200">{line.content}</code>
+                <code className="text-foreground">{line.content}</code>
               </pre>
             </div>
           );
@@ -1149,7 +1149,7 @@ function BlameView({ blameLines, cwd }: BlameViewProps) {
 
       {tooltip && (
         <div
-          className="fixed z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 max-w-lg"
+          className="fixed z-50 bg-card border border-border rounded-lg shadow-lg p-3 max-w-lg"
           style={{
             left: Math.min(tooltip.x, window.innerWidth - 450),
             top: Math.max(8, Math.min(tooltip.y, window.innerHeight - 200)),
@@ -1163,18 +1163,18 @@ function BlameView({ blameLines, cwd }: BlameViewProps) {
               {tooltip.line.hash}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+              <div className="text-sm font-medium text-foreground">
                 {tooltip.line.author}
               </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">
+              <div className="text-xs text-muted-foreground">
                 {tooltip.line.authorEmail}
               </div>
             </div>
           </div>
-          <div className="mt-2 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap max-h-48 overflow-y-auto">
+          <div className="mt-2 text-sm text-foreground whitespace-pre-wrap max-h-48 overflow-y-auto">
             {tooltip.line.message}
           </div>
-          <div className="mt-2 text-xs text-gray-400 dark:text-gray-500 border-t border-gray-200 dark:border-gray-700 pt-2">
+          <div className="mt-2 text-xs text-slate-9 border-t border-border pt-2">
             {new Date(tooltip.line.time * 1000).toLocaleString()}
             <span className="ml-2 text-blue-500">点击查看详情</span>
           </div>
@@ -1236,14 +1236,14 @@ function StatusFileTreeItem({
     return (
       <div>
         <div
-          className="flex items-center gap-1 py-0.5 px-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+          className="flex items-center gap-1 py-0.5 px-2 hover:bg-accent cursor-pointer"
           style={{ paddingLeft: `${level * 12 + 8}px` }}
           onClick={() => onToggle(node.path)}
         >
-          <span className="text-gray-400 text-xs">
+          <span className="text-slate-9 text-xs">
             {node.expanded ? '▼' : '▶'}
           </span>
-          <span className="text-sm text-gray-700 dark:text-gray-300">{node.name}</span>
+          <span className="text-sm text-foreground">{node.name}</span>
         </div>
         {node.expanded && node.children.map(child => (
           <StatusFileTreeItem
@@ -1265,13 +1265,13 @@ function StatusFileTreeItem({
   return (
     <div
       className={`flex items-center gap-1 py-0.5 px-2 cursor-pointer group ${
-        isSelected ? 'bg-blue-100 dark:bg-blue-900/50' : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+        isSelected ? 'bg-brand/10' : 'hover:bg-accent'
       }`}
       style={{ paddingLeft: `${level * 12 + 8}px` }}
       onClick={() => node.file && onSelect(node.file, type)}
     >
-      <span className="text-gray-400">📄</span>
-      <span className={`text-sm flex-1 truncate ${isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'}`}>
+      <span className="text-slate-9">📄</span>
+      <span className={`text-sm flex-1 truncate ${isSelected ? 'text-brand' : 'text-foreground'}`}>
         {node.name}
       </span>
       {node.file && getStatusIcon(node.file.status)}
@@ -1361,38 +1361,38 @@ function BranchSelector({
       <button
         onClick={() => setIsOpen(!isOpen)}
         disabled={isLoading}
-        className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-left flex items-center justify-between hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+        className="w-full px-3 py-1.5 text-sm border border-border rounded bg-card text-foreground text-left flex items-center justify-between hover:border-slate-6 dark:hover:border-slate-6 transition-colors"
       >
         <span className="truncate flex items-center gap-2">
-          <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
           {selectedBranch || '选择分支...'}
           {branches?.current === selectedBranch && (
-            <span className="text-xs text-green-600 dark:text-green-400">(当前)</span>
+            <span className="text-xs text-green-11">(当前)</span>
           )}
         </span>
-        <svg className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className={`w-4 h-4 text-slate-9 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-80 flex flex-col">
-          <div className="p-2 border-b border-gray-200 dark:border-gray-700">
+        <div className="absolute z-50 mt-1 w-full bg-card border border-border rounded-lg shadow-lg max-h-80 flex flex-col">
+          <div className="p-2 border-b border-border">
             <input
               ref={inputRef}
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="搜索分支..."
-              className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400"
+              className="w-full px-2 py-1 text-sm border border-border rounded bg-secondary text-foreground placeholder-slate-9"
             />
           </div>
           <div className="overflow-y-auto flex-1">
             {filteredLocal.length > 0 && (
               <div>
-                <div className="px-3 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900 sticky top-0">
+                <div className="px-3 py-1 text-xs font-medium text-muted-foreground bg-secondary sticky top-0">
                   本地分支
                 </div>
                 {filteredLocal.map(branch => (
@@ -1401,13 +1401,13 @@ function BranchSelector({
                     onClick={() => handleSelect(branch)}
                     className={`px-3 py-1.5 text-sm cursor-pointer flex items-center gap-2 ${
                       branch === selectedBranch
-                        ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                        ? 'bg-brand/10 text-brand'
+                        : 'hover:bg-accent text-foreground'
                     }`}
                   >
                     <span className="truncate flex-1">{branch}</span>
                     {branch === branches?.current && (
-                      <span className="text-xs text-green-600 dark:text-green-400 flex-shrink-0">当前</span>
+                      <span className="text-xs text-green-11 flex-shrink-0">当前</span>
                     )}
                     {branch === selectedBranch && (
                       <svg className="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1420,7 +1420,7 @@ function BranchSelector({
             )}
             {filteredRemote.length > 0 && (
               <div>
-                <div className="px-3 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900 sticky top-0">
+                <div className="px-3 py-1 text-xs font-medium text-muted-foreground bg-secondary sticky top-0">
                   远程分支
                 </div>
                 {filteredRemote.map(branch => (
@@ -1429,8 +1429,8 @@ function BranchSelector({
                     onClick={() => handleSelect(branch)}
                     className={`px-3 py-1.5 text-sm cursor-pointer flex items-center gap-2 ${
                       branch === selectedBranch
-                        ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                        ? 'bg-brand/10 text-brand'
+                        : 'hover:bg-accent text-foreground'
                     }`}
                   >
                     <span className="truncate flex-1">{branch}</span>
@@ -1444,7 +1444,7 @@ function BranchSelector({
               </div>
             )}
             {filteredLocal.length === 0 && filteredRemote.length === 0 && (
-              <div className="px-3 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">
+              <div className="px-3 py-4 text-sm text-muted-foreground text-center">
                 未找到分支
               </div>
             )}
@@ -1457,10 +1457,10 @@ function BranchSelector({
 
 function FileStatusIcon({ status }: { status: FileChange['status'] }) {
   const colors = {
-    added: 'text-green-600 dark:text-green-400',
-    modified: 'text-yellow-600 dark:text-yellow-400',
-    deleted: 'text-red-600 dark:text-red-400',
-    renamed: 'text-blue-600 dark:text-blue-400',
+    added: 'text-green-11',
+    modified: 'text-amber-11',
+    deleted: 'text-red-11',
+    renamed: 'text-brand',
   };
   const labels = { added: 'A', modified: 'M', deleted: 'D', renamed: 'R' };
   return (
@@ -1492,14 +1492,14 @@ function HistoryFileTreeItem({
     return (
       <div>
         <div
-          className="flex items-center gap-1 py-0.5 px-2 pr-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer whitespace-nowrap"
+          className="flex items-center gap-1 py-0.5 px-2 pr-3 hover:bg-accent cursor-pointer whitespace-nowrap"
           style={{ paddingLeft: `${level * 12 + 8}px` }}
           onClick={() => onToggle(node.path)}
         >
-          <span className="text-gray-400 text-xs">
+          <span className="text-slate-9 text-xs">
             {isExpanded ? '▼' : '▶'}
           </span>
-          <span className="text-sm text-gray-700 dark:text-gray-300">{node.name}</span>
+          <span className="text-sm text-foreground">{node.name}</span>
         </div>
         {isExpanded && node.children.map(child => (
           <HistoryFileTreeItem
@@ -1519,20 +1519,20 @@ function HistoryFileTreeItem({
   return (
     <div
       className={`flex items-center gap-1 py-0.5 px-2 pr-3 cursor-pointer whitespace-nowrap ${
-        isSelected ? 'bg-blue-100 dark:bg-blue-900/50' : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+        isSelected ? 'bg-brand/10' : 'hover:bg-accent'
       }`}
       style={{ paddingLeft: `${level * 12 + 8}px` }}
       onClick={() => node.file && onSelect(node.file)}
     >
-      <span className="text-gray-400">📄</span>
-      <span className={`text-sm ${isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'}`}>
+      <span className="text-slate-9">📄</span>
+      <span className={`text-sm ${isSelected ? 'text-brand' : 'text-foreground'}`}>
         {node.name}
       </span>
       {node.file && <FileStatusIcon status={node.file.status} />}
       {node.file && (
         <>
-          <span className="text-xs text-green-600 dark:text-green-400">+{node.file.additions}</span>
-          <span className="text-xs text-red-600 dark:text-red-400">-{node.file.deletions}</span>
+          <span className="text-xs text-green-11">+{node.file.additions}</span>
+          <span className="text-xs text-red-11">-{node.file.deletions}</span>
         </>
       )}
     </div>
@@ -2233,19 +2233,19 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
   return (
     <div className="fixed inset-0 z-50 bg-black/50" onClick={onClose}>
       <div
-        className="bg-white dark:bg-gray-800 w-full h-full flex flex-col"
+        className="bg-card w-full h-full flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <h3 className="text-sm font-medium text-foreground">
             文件浏览
           </h3>
           <div className="flex items-center gap-1">
             <button
               onClick={handleRefresh}
               disabled={isRefreshLoading}
-              className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors disabled:opacity-50"
+              className="p-1 text-slate-9 hover:text-muted-foreground dark:hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-50"
               title="刷新"
             >
               <svg className={`w-5 h-5 ${isRefreshLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2254,7 +2254,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
             </button>
             <button
               onClick={onClose}
-              className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+              className="p-1 text-slate-9 hover:text-muted-foreground dark:hover:text-foreground hover:bg-accent rounded transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -2266,15 +2266,15 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
         {/* Content */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Panel */}
-          <div className="w-80 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+          <div className="w-80 flex-shrink-0 border-r border-border flex flex-col">
             {/* Tabs */}
-            <div className="flex border-b border-gray-200 dark:border-gray-700">
+            <div className="flex border-b border-border">
               <button
                 onClick={() => setActiveTab('tree')}
                 className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
                   activeTab === 'tree'
-                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                    ? 'text-brand border-b-2 border-blue-600 dark:border-blue-400'
+                    : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
                 }`}
               >
                 目录树
@@ -2283,8 +2283,8 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                 onClick={() => setActiveTab('recent')}
                 className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
                   activeTab === 'recent'
-                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                    ? 'text-brand border-b-2 border-blue-600 dark:border-blue-400'
+                    : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
                 }`}
               >
                 最近浏览
@@ -2293,8 +2293,8 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                 onClick={() => setActiveTab('status')}
                 className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
                   activeTab === 'status'
-                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                    ? 'text-brand border-b-2 border-blue-600 dark:border-blue-400'
+                    : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
                 }`}
               >
                 Git 变更
@@ -2303,8 +2303,8 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                 onClick={() => setActiveTab('history')}
                 className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
                   activeTab === 'history'
-                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                    ? 'text-brand border-b-2 border-blue-600 dark:border-blue-400'
+                    : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
                 }`}
               >
                 Git 历史
@@ -2313,21 +2313,21 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
 
             {/* Tab-specific content above list */}
             {activeTab === 'tree' && (
-              <div className="p-2 border-b border-gray-200 dark:border-gray-700">
+              <div className="p-2 border-b border-border">
                 <input
                   ref={searchInputRef}
                   type="text"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   placeholder="搜索文件..."
-                  className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             )}
 
             {activeTab === 'history' && (
-              <div className="p-3 border-b border-gray-200 dark:border-gray-700">
-                <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">查看分支</label>
+              <div className="p-3 border-b border-border">
+                <label className="text-xs text-muted-foreground mb-1 block">查看分支</label>
                 <BranchSelector
                   branches={branches}
                   selectedBranch={selectedBranch}
@@ -2342,7 +2342,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
               {/* Tree Tab */}
               {activeTab === 'tree' && (
                 isLoadingFiles ? (
-                  <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">加载中...</div>
+                  <div className="p-4 text-center text-muted-foreground text-sm">加载中...</div>
                 ) : fileError ? (
                   <div className="p-4 text-center text-red-500 text-sm">{fileError}</div>
                 ) : (
@@ -2360,7 +2360,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
               {/* Recent Tab */}
               {activeTab === 'recent' && (
                 recentFiles.length === 0 ? (
-                  <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">
+                  <div className="p-4 text-center text-muted-foreground text-sm">
                     暂无最近浏览的文件
                   </div>
                 ) : (
@@ -2394,9 +2394,9 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                 ) : (
                   <div className="flex-1 overflow-y-auto">
                     {/* Staged Section */}
-                    <div className="border-b border-gray-200 dark:border-gray-700">
-                      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-900">
-                        <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                    <div className="border-b border-border">
+                      <div className="flex items-center justify-between px-3 py-2 bg-secondary">
+                        <span className="text-xs font-medium text-muted-foreground">
                           暂存区 ({status?.staged.length || 0})
                         </span>
                         {(status?.staged.length || 0) > 0 && (
@@ -2424,7 +2424,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                           ))}
                         </div>
                       ) : (
-                        <div className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">
+                        <div className="px-3 py-2 text-xs text-slate-9">
                           无暂存的文件
                         </div>
                       )}
@@ -2432,8 +2432,8 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
 
                     {/* Unstaged Section */}
                     <div>
-                      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-900">
-                        <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                      <div className="flex items-center justify-between px-3 py-2 bg-secondary">
+                        <span className="text-xs font-medium text-muted-foreground">
                           工作区 ({status?.unstaged.length || 0})
                         </span>
                         {(status?.unstaged.length || 0) > 0 && (
@@ -2461,7 +2461,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                           ))}
                         </div>
                       ) : (
-                        <div className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">
+                        <div className="px-3 py-2 text-xs text-slate-9">
                           无未暂存的变更
                         </div>
                       )}
@@ -2475,10 +2475,10 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                 historyError ? (
                   <div className="flex-1 flex items-center justify-center">
                     <div className="text-center">
-                      <svg className="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-16 h-16 mx-auto text-slate-7 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                       </svg>
-                      <p className="text-gray-500 dark:text-gray-400">{historyError}</p>
+                      <p className="text-muted-foreground">{historyError}</p>
                     </div>
                   </div>
                 ) : (
@@ -2488,27 +2488,27 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                     onScroll={handleCommitListScroll}
                   >
                     {isLoadingCommits ? (
-                      <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">加载提交记录中...</div>
+                      <div className="p-4 text-center text-muted-foreground text-sm">加载提交记录中...</div>
                     ) : commits.length === 0 ? (
-                      <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">无提交记录</div>
+                      <div className="p-4 text-center text-muted-foreground text-sm">无提交记录</div>
                     ) : (
                       <>
                         {commits.map(commit => (
                           <div
                             key={commit.hash}
                             onClick={() => handleSelectCommit(commit)}
-                            className={`px-3 py-2 border-b border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 ${
-                              selectedCommit?.hash === commit.hash ? 'bg-blue-50 dark:bg-blue-900/30' : ''
+                            className={`px-3 py-2 border-b border-border cursor-pointer hover:bg-accent ${
+                              selectedCommit?.hash === commit.hash ? 'bg-brand/10' : ''
                             }`}
                           >
                             <div className="flex items-center gap-2">
-                              <span className="font-mono text-xs text-blue-600 dark:text-blue-400">{commit.shortHash}</span>
-                              <span className="text-xs text-gray-400 dark:text-gray-500" title={commit.date}>
+                              <span className="font-mono text-xs text-brand">{commit.shortHash}</span>
+                              <span className="text-xs text-slate-9" title={commit.date}>
                                 {commit.relativeDate} · {formatDateTime(commit.date)}
                               </span>
                             </div>
-                            <div className="text-sm text-gray-900 dark:text-gray-100 truncate mt-0.5">{commit.subject}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{commit.author}</div>
+                            <div className="text-sm text-foreground truncate mt-0.5">{commit.subject}</div>
+                            <div className="text-xs text-muted-foreground mt-0.5">{commit.author}</div>
                           </div>
                         ))}
                         {isLoadingMore && (
@@ -2517,7 +2517,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                           </div>
                         )}
                         {!hasMoreCommits && commits.length > 0 && (
-                          <div className="p-3 text-center text-xs text-gray-400 dark:text-gray-500">
+                          <div className="p-3 text-center text-xs text-slate-9">
                             已加载全部 {commits.length} 条记录
                           </div>
                         )}
@@ -2535,8 +2535,8 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
             {(activeTab === 'tree' || activeTab === 'recent') && (
               selectedPath ? (
                 <>
-                  <div className="px-4 py-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex-shrink-0 flex items-center justify-between">
-                    <span className="text-xs font-mono text-gray-600 dark:text-gray-400">
+                  <div className="px-4 py-2 bg-secondary border-b border-border flex-shrink-0 flex items-center justify-between">
+                    <span className="text-xs font-mono text-muted-foreground">
                       {selectedPath}
                     </span>
                     {fileContent?.type === 'text' && (
@@ -2546,7 +2546,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                         className={`px-2 py-1 text-xs rounded transition-colors ${
                           showBlame
                             ? 'bg-blue-500 text-white'
-                            : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                            : 'text-muted-foreground hover:bg-accent'
                         } disabled:opacity-50`}
                         title="查看每行代码的修改记录"
                       >
@@ -2567,7 +2567,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                       fileContent.type === 'text' && fileContent.content ? (
                         showBlame ? (
                           blameError ? (
-                            <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400">
+                            <div className="h-full flex items-center justify-center text-muted-foreground">
                               <div className="text-center">
                                 <p className="text-red-500">{blameError}</p>
                                 <button
@@ -2589,7 +2589,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                           <CodePreview content={fileContent.content} filePath={selectedPath} />
                         )
                       ) : fileContent.type === 'image' && fileContent.content ? (
-                        <div className="h-full flex items-center justify-center p-4 bg-gray-100 dark:bg-gray-900">
+                        <div className="h-full flex items-center justify-center p-4 bg-secondary">
                           <img
                             src={fileContent.content}
                             alt={selectedPath}
@@ -2597,9 +2597,9 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                           />
                         </div>
                       ) : (
-                        <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400">
+                        <div className="h-full flex items-center justify-center text-muted-foreground">
                           <div className="text-center">
-                            <svg className="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-16 h-16 mx-auto text-slate-7 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
                             <p>{fileContent.message || '无法预览此文件'}</p>
@@ -2607,14 +2607,14 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                         </div>
                       )
                     ) : (
-                      <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400">
+                      <div className="h-full flex items-center justify-center text-muted-foreground">
                         <span>加载失败</span>
                       </div>
                     )}
                   </div>
                 </>
               ) : (
-                <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400">
+                <div className="h-full flex items-center justify-center text-muted-foreground">
                   <span>选择文件查看内容</span>
                 </div>
               )
@@ -2623,7 +2623,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
             {/* Status - Right Panel */}
             {activeTab === 'status' && (
               !statusSelectedFile ? (
-                <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-gray-500">
+                <div className="flex-1 flex items-center justify-center text-slate-9">
                   <span>选择文件查看差异</span>
                 </div>
               ) : statusDiffLoading ? (
@@ -2632,8 +2632,8 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                 </div>
               ) : statusDiff ? (
                 <div className="flex-1 overflow-hidden flex flex-col">
-                  <div className="px-4 py-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
-                    <span className="text-xs font-mono text-gray-600 dark:text-gray-400">
+                  <div className="px-4 py-2 bg-secondary border-b border-border flex items-center gap-2">
+                    <span className="text-xs font-mono text-muted-foreground">
                       {statusSelectedFile.file.path}
                     </span>
                     <span className={`text-xs px-1.5 py-0.5 rounded ${
@@ -2665,7 +2665,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                   </div>
                 </div>
               ) : (
-                <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-gray-500">
+                <div className="flex-1 flex items-center justify-center text-slate-9">
                   <span>加载差异失败</span>
                 </div>
               )
@@ -2677,12 +2677,12 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                 <>
                   {/* Commit info with tooltip */}
                   <div
-                    className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex-shrink-0 cursor-help"
+                    className="px-4 py-2 border-b border-border bg-secondary flex-shrink-0 cursor-help"
                     onMouseMove={handleCommitInfoMouseMove}
                     onMouseLeave={handleCommitInfoMouseLeave}
                   >
-                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{selectedCommit.subject}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <div className="text-sm font-medium text-foreground">{selectedCommit.subject}</div>
+                    <div className="text-xs text-muted-foreground mt-1">
                       <span className="font-mono">{selectedCommit.shortHash}</span>
                       <span className="mx-2">·</span>
                       <span>{selectedCommit.author}</span>
@@ -2700,17 +2700,17 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                         top: tooltipPos.y + 12,
                       }}
                     >
-                      <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl border border-gray-200 dark:border-gray-600 p-3 max-w-lg min-w-[300px]">
+                      <div className="bg-card text-foreground rounded-lg shadow-xl border border-border p-3 max-w-lg min-w-[300px]">
                         <div className="text-sm font-medium mb-2">{selectedCommit.subject}</div>
                         {selectedCommit.body && (
-                          <div className="text-xs text-gray-600 dark:text-gray-300 mb-2 whitespace-pre-wrap border-t border-gray-200 dark:border-gray-600 pt-2 max-h-48 overflow-y-auto">
+                          <div className="text-xs text-muted-foreground dark:text-foreground mb-2 whitespace-pre-wrap border-t border-border pt-2 max-h-48 overflow-y-auto">
                             {selectedCommit.body}
                           </div>
                         )}
-                        <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1 border-t border-gray-200 dark:border-gray-600 pt-2">
-                          <div><span className="text-gray-400 dark:text-gray-500">哈希:</span> <span className="font-mono">{selectedCommit.hash}</span></div>
-                          <div><span className="text-gray-400 dark:text-gray-500">作者:</span> {selectedCommit.author} &lt;{selectedCommit.authorEmail}&gt;</div>
-                          <div><span className="text-gray-400 dark:text-gray-500">日期:</span> {selectedCommit.date}</div>
+                        <div className="text-xs text-muted-foreground space-y-1 border-t border-border pt-2">
+                          <div><span className="text-slate-9">哈希:</span> <span className="font-mono">{selectedCommit.hash}</span></div>
+                          <div><span className="text-slate-9">作者:</span> {selectedCommit.author} &lt;{selectedCommit.authorEmail}&gt;</div>
+                          <div><span className="text-slate-9">日期:</span> {selectedCommit.date}</div>
                         </div>
                       </div>
                     </div>
@@ -2719,11 +2719,11 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                   {/* File tree + Diff container */}
                   <div className="flex-1 flex overflow-hidden">
                     {/* File tree */}
-                    <div className="w-72 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 overflow-auto">
+                    <div className="w-72 flex-shrink-0 border-r border-border overflow-auto">
                       {isLoadingHistoryFiles ? (
-                        <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">加载文件中...</div>
+                        <div className="p-4 text-center text-muted-foreground text-sm">加载文件中...</div>
                       ) : historyFiles.length === 0 ? (
-                        <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">无文件变更</div>
+                        <div className="p-4 text-center text-muted-foreground text-sm">无文件变更</div>
                       ) : (
                         <div className="py-1 min-w-max">
                           {historyFileTree.map(node => (
@@ -2744,11 +2744,11 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                     {/* Diff view */}
                     <div className="flex-1 overflow-hidden">
                       {isLoadingHistoryDiff ? (
-                        <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">加载差异中...</div>
+                        <div className="h-full flex items-center justify-center text-muted-foreground text-sm">加载差异中...</div>
                       ) : historyFileDiff ? (
                         isImageFile(historyFileDiff.filePath) ? (
                           <div className="p-4 flex items-center justify-center h-full">
-                            <div className="text-center text-gray-500 dark:text-gray-400">
+                            <div className="text-center text-muted-foreground">
                               <span className="text-4xl">🖼️</span>
                               <p className="mt-2 text-sm">图片文件: {historyFileDiff.filePath.split('/').pop()}</p>
                               <p className="text-xs mt-1">{historyFileDiff.isNew ? '新增' : historyFileDiff.isDeleted ? '删除' : '修改'}</p>
@@ -2764,13 +2764,13 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                           />
                         )
                       ) : (
-                        <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">选择文件查看差异</div>
+                        <div className="h-full flex items-center justify-center text-muted-foreground text-sm">选择文件查看差异</div>
                       )}
                     </div>
                   </div>
                 </>
               ) : (
-                <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">
+                <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
                   Select a commit to view changes
                 </div>
               )

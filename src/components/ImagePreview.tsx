@@ -25,7 +25,7 @@ function ImageModal({ image, onClose }: { image: ImageInfo; onClose: () => void 
         />
         <button
           onClick={onClose}
-          className="absolute -top-3 -right-3 w-8 h-8 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white rounded-full shadow-lg flex items-center justify-center transition-colors"
+          className="absolute -top-3 -right-3 w-8 h-8 bg-card text-foreground hover:text-foreground rounded-full shadow-lg flex items-center justify-center transition-colors"
           title="关闭"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -46,11 +46,11 @@ export function ImagePreview({ images, onRemove, disabled }: ImagePreviewProps) 
 
   return (
     <>
-      <div className="flex flex-wrap gap-2 p-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex flex-wrap gap-2 p-2 bg-secondary border-b border-border">
         {images.map((image) => (
           <div
             key={image.id}
-            className="relative group w-16 h-16 rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600 cursor-pointer"
+            className="relative group w-16 h-16 rounded-lg overflow-hidden border border-border cursor-pointer"
             onClick={() => setPreviewImage(image)}
           >
             <img

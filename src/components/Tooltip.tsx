@@ -94,7 +94,7 @@ export function Tooltip({ content, children, delay = 300, className = '' }: Tool
       {isVisible && (
         <div
           ref={tooltipRef}
-          className="fixed z-50 px-2 py-1 text-xs text-gray-100 bg-gray-700 dark:bg-gray-600 rounded shadow-lg max-w-md break-words pointer-events-none"
+          className="fixed z-50 px-2 py-1 text-xs text-foreground bg-accent rounded shadow-lg max-w-md break-words pointer-events-none"
           style={{
             top: position.top,
             left: position.left,

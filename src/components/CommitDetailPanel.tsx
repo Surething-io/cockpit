@@ -61,10 +61,10 @@ function formatDateTime(dateStr: string): string {
 // File status icon
 function FileStatusIcon({ status }: { status: FileChange['status'] }) {
   const colors = {
-    added: 'text-green-600 dark:text-green-400',
-    modified: 'text-yellow-600 dark:text-yellow-400',
-    deleted: 'text-red-600 dark:text-red-400',
-    renamed: 'text-blue-600 dark:text-blue-400',
+    added: 'text-green-11',
+    modified: 'text-amber-11',
+    deleted: 'text-red-11',
+    renamed: 'text-brand',
   };
   const labels = { added: 'A', modified: 'M', deleted: 'D', renamed: 'R' };
   return (
@@ -144,14 +144,14 @@ function FileTreeItem({
     return (
       <div>
         <div
-          className="flex items-center gap-1 py-0.5 px-2 pr-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer whitespace-nowrap"
+          className="flex items-center gap-1 py-0.5 px-2 pr-3 hover:bg-accent cursor-pointer whitespace-nowrap"
           style={{ paddingLeft: `${level * 12 + 8}px` }}
           onClick={() => onToggle(node.path)}
         >
-          <span className="text-gray-400 text-xs">
+          <span className="text-slate-9 text-xs">
             {isExpanded ? '▼' : '▶'}
           </span>
-          <span className="text-sm text-gray-700 dark:text-gray-300">{node.name}</span>
+          <span className="text-sm text-foreground">{node.name}</span>
         </div>
         {isExpanded && node.children.map(child => (
           <FileTreeItem
@@ -171,20 +171,20 @@ function FileTreeItem({
   return (
     <div
       className={`flex items-center gap-1 py-0.5 px-2 pr-3 cursor-pointer whitespace-nowrap ${
-        isSelected ? 'bg-blue-100 dark:bg-blue-900/50' : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+        isSelected ? 'bg-brand/10' : 'hover:bg-accent'
       }`}
       style={{ paddingLeft: `${level * 12 + 8}px` }}
       onClick={() => node.file && onSelect(node.file)}
     >
-      <span className="text-gray-400">📄</span>
-      <span className={`text-sm ${isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'}`}>
+      <span className="text-slate-9">📄</span>
+      <span className={`text-sm ${isSelected ? 'text-brand' : 'text-foreground'}`}>
         {node.name}
       </span>
       {node.file && <FileStatusIcon status={node.file.status} />}
       {node.file && (
         <>
-          <span className="text-xs text-green-600 dark:text-green-400">+{node.file.additions}</span>
-          <span className="text-xs text-red-600 dark:text-red-400">-{node.file.deletions}</span>
+          <span className="text-xs text-green-11">+{node.file.additions}</span>
+          <span className="text-xs text-red-11">-{node.file.deletions}</span>
         </>
       )}
     </div>
@@ -298,15 +298,15 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd }: CommitDetail
   return (
     <div className="fixed inset-0 z-[60] bg-black/50" onClick={onClose}>
       <div
-        className="bg-white dark:bg-gray-800 w-full h-full flex flex-col"
+        className="bg-card w-full h-full flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">提交详情</h3>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <h3 className="text-sm font-medium text-foreground">提交详情</h3>
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+            className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -317,36 +317,36 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd }: CommitDetail
         {/* Content */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Commit info header */}
-          <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex-shrink-0">
-            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
+          <div className="px-4 py-3 border-b border-border bg-secondary flex-shrink-0">
+            <div className="text-sm font-medium text-foreground mb-2">
               {commit.subject}
             </div>
             {commit.body && (
-              <div className="text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap mb-3 max-h-32 overflow-y-auto border-l-2 border-gray-300 dark:border-gray-600 pl-3">
+              <div className="text-xs text-muted-foreground whitespace-pre-wrap mb-3 max-h-32 overflow-y-auto border-l-2 border-border pl-3">
                 {commit.body}
               </div>
             )}
-            <div className="flex flex-wrap gap-4 text-xs text-gray-500 dark:text-gray-400">
+            <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
               <div className="flex items-center gap-1">
-                <span className="text-gray-400">哈希:</span>
-                <span className="font-mono bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded">
+                <span className="text-slate-9">哈希:</span>
+                <span className="font-mono bg-accent px-1.5 py-0.5 rounded">
                   {commit.hash}
                 </span>
               </div>
               <div className="flex items-center gap-1">
-                <span className="text-gray-400">作者:</span>
+                <span className="text-slate-9">作者:</span>
                 <span>{commit.author}</span>
-                <span className="text-gray-400">&lt;{commit.authorEmail}&gt;</span>
+                <span className="text-slate-9">&lt;{commit.authorEmail}&gt;</span>
               </div>
               <div className="flex items-center gap-1">
-                <span className="text-gray-400">日期:</span>
+                <span className="text-slate-9">日期:</span>
                 <span>{displayDate}</span>
                 {commit.relativeDate && (
-                  <span className="text-gray-400">({commit.relativeDate})</span>
+                  <span className="text-slate-9">({commit.relativeDate})</span>
                 )}
               </div>
               <div className="flex items-center gap-1">
-                <span className="text-gray-400">文件:</span>
+                <span className="text-slate-9">文件:</span>
                 <span>{files.length} 个变更</span>
               </div>
             </div>
@@ -355,11 +355,11 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd }: CommitDetail
           {/* File tree + Diff container */}
           <div className="flex-1 flex overflow-hidden">
             {/* File tree */}
-            <div className="w-72 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 overflow-auto">
+            <div className="w-72 flex-shrink-0 border-r border-border overflow-auto">
               {isLoadingFiles ? (
-                <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">加载文件中...</div>
+                <div className="p-4 text-center text-muted-foreground text-sm">加载文件中...</div>
               ) : files.length === 0 ? (
-                <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">无文件变更</div>
+                <div className="p-4 text-center text-muted-foreground text-sm">无文件变更</div>
               ) : (
                 <div className="py-1 min-w-max">
                   {fileTree.map(node => (
@@ -380,7 +380,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd }: CommitDetail
             {/* Diff view */}
             <div className="flex-1 overflow-hidden">
               {isLoadingDiff ? (
-                <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">加载差异中...</div>
+                <div className="h-full flex items-center justify-center text-muted-foreground text-sm">加载差异中...</div>
               ) : fileDiff ? (
                 <DiffView
                   oldContent={fileDiff.oldContent}
@@ -390,7 +390,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd }: CommitDetail
                   isDeleted={fileDiff.isDeleted}
                 />
               ) : (
-                <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">
+                <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
                   选择文件查看差异
                 </div>
               )}

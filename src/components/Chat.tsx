@@ -8,6 +8,7 @@ import { SessionBrowser } from './SessionBrowser';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { SessionSidebar } from './SessionSidebar';
 import { FileBrowserModal } from './FileBrowserModal';
+import { SettingsModal } from './SettingsModal';
 
 interface ChatProps {
   initialCwd?: string;
@@ -28,6 +29,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
   const [isSessionBrowserOpen, setIsSessionBrowserOpen] = useState(false);
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
   const [isGitHistoryOpen, setIsGitHistoryOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -442,7 +444,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
   }, [initialCwd]);
 
   return (
-    <div className={`flex ${hideHeader && hideSidebar ? 'h-full' : 'h-screen'} bg-white dark:bg-gray-900`}>
+    <div className={`flex ${hideHeader && hideSidebar ? 'h-full' : 'h-screen'} bg-card`}>
       {/* Sidebar - 只在有 cwd 且不隐藏时显示 */}
       {initialCwd && !hideSidebar && (
         <SessionSidebar
@@ -460,15 +462,15 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
       >
         {/* Header - 可选隐藏 */}
         {!hideHeader && (
-          <div className="border-b border-gray-200 dark:border-gray-700 px-4 py-3 bg-white dark:bg-gray-800">
+          <div className="border-b border-border px-4 py-3 bg-card">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <img src="/icons/icon-72x72.png" alt="Cockpit" className="w-6 h-6" />
                 <div className="flex items-baseline gap-2">
-                  <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  <h1 className="text-lg font-semibold text-foreground">
                     Cockpit
                   </h1>
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
+                  <span className="text-xs text-muted-foreground">
                     One seat. One AI. Everything under control.
                   </span>
                 </div>
@@ -477,7 +479,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
                 {/* 显示项目路径 */}
                 {initialCwd && (
                   <span
-                    className="text-sm text-gray-700 dark:text-gray-300 max-w-md truncate cursor-help"
+                    className="text-sm text-foreground max-w-md truncate cursor-help"
                     title={`CWD: ${initialCwd}`}
                   >
                     {initialCwd}
@@ -485,7 +487,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
                 )}
                 {/* 如果没有 initialCwd 但有 sessionId，则显示 sessionId */}
                 {!initialCwd && sessionId && (
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
+                  <span className="text-xs text-muted-foreground">
                     Session: {sessionId.slice(0, 8)}...
                   </span>
                 )}
@@ -493,7 +495,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
                 {initialCwd && (
                   <button
                     onClick={() => setIsGitHistoryOpen(true)}
-                    className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                    className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
                     title="Git 历史"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -505,7 +507,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
                 {initialCwd && (
                   <button
                     onClick={() => setIsProjectSessionsOpen(true)}
-                    className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                    className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
                     title="项目会话"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -516,11 +518,22 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
                 {/* 全局 Session Browser 按钮 */}
                 <button
                   onClick={() => setIsSessionBrowserOpen(true)}
-                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
                   title="浏览所有会话"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                </button>
+                {/* 设置按钮 */}
+                <button
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+                  title="设置"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
                 </button>
               </div>
@@ -531,7 +544,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
         {/* Messages */}
         {isLoadingHistory ? (
           <div className="flex-1 flex items-center justify-center">
-            <span className="text-gray-500 dark:text-gray-400">加载历史消息...</span>
+            <span className="text-muted-foreground">加载历史消息...</span>
           </div>
         ) : (
           <MessageList messages={messages} isLoading={isLoading} cwd={initialCwd} />
@@ -539,22 +552,22 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
 
         {/* Token Usage Display */}
         {tokenUsage && (
-          <div className="px-4 py-1.5 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-            <div className="flex items-center justify-end gap-4 text-xs text-gray-500 dark:text-gray-400">
+          <div className="px-4 py-1.5 border-t border-border bg-secondary">
+            <div className="flex items-center justify-end gap-4 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
                 </svg>
-                <span>上下文: <strong className="text-gray-700 dark:text-gray-300">{(tokenUsage.inputTokens + tokenUsage.cacheReadInputTokens + tokenUsage.cacheCreationInputTokens).toLocaleString()}</strong></span>
+                <span>上下文: <strong className="text-foreground">{(tokenUsage.inputTokens + tokenUsage.cacheReadInputTokens + tokenUsage.cacheCreationInputTokens).toLocaleString()}</strong></span>
               </span>
               <span className="flex items-center gap-1">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                 </svg>
-                <span>输出: <strong className="text-gray-700 dark:text-gray-300">{tokenUsage.outputTokens.toLocaleString()}</strong></span>
+                <span>输出: <strong className="text-foreground">{tokenUsage.outputTokens.toLocaleString()}</strong></span>
               </span>
               {(tokenUsage.cacheReadInputTokens > 0 || tokenUsage.cacheCreationInputTokens > 0) && (
-                <span className="flex items-center gap-1 text-blue-500 dark:text-blue-400">
+                <span className="flex items-center gap-1 text-brand">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
                   </svg>
@@ -562,7 +575,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
                 </span>
               )}
               {tokenUsage.totalCostUsd > 0 && (
-                <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                <span className="flex items-center gap-1 text-green-11">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
@@ -605,6 +618,14 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
           onClose={() => setIsGitHistoryOpen(false)}
           cwd={initialCwd}
           initialTab="history"
+        />
+      )}
+
+      {/* Settings Modal */}
+      {!hideHeader && (
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
         />
       )}
     </div>

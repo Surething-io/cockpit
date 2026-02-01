@@ -120,7 +120,7 @@ function formatValueHumanReadable(value: unknown, indent: number): React.ReactNo
         {'[\n'}
         {value.map((item, i) => (
           <span key={i}>
-            {indentStr}  <span className="font-bold text-gray-900 dark:text-gray-100">[{i}]</span>: {formatValueHumanReadable(item, indent + 1)}
+            {indentStr}  <span className="font-bold text-foreground">[{i}]</span>: {formatValueHumanReadable(item, indent + 1)}
             {i < value.length - 1 ? '\n' : ''}
           </span>
         ))}
@@ -137,7 +137,7 @@ function formatValueHumanReadable(value: unknown, indent: number): React.ReactNo
         {'{\n'}
         {entries.map(([k, v], i) => (
           <span key={k}>
-            {indentStr}  <span className="font-bold text-gray-900 dark:text-gray-100">{k}</span>: {formatValueHumanReadable(v, indent + 1)}
+            {indentStr}  <span className="font-bold text-foreground">{k}</span>: {formatValueHumanReadable(v, indent + 1)}
             {i < entries.length - 1 ? '\n' : ''}
           </span>
         ))}
@@ -296,7 +296,7 @@ function FilePreview({ filePath }: { filePath: string }) {
   if (isLoading) {
     return (
       <pre
-        className="text-xs font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words p-4 rounded-lg bg-gray-50 dark:bg-gray-900"
+        className="text-xs font-mono text-foreground whitespace-pre-wrap break-words p-4 rounded-lg bg-secondary"
         style={{ fontSize: '0.8125rem' }}
       >
         Loading...
@@ -318,7 +318,7 @@ function FilePreview({ filePath }: { filePath: string }) {
   // 高亮未完成，先显示纯文本
   return (
     <pre
-      className="text-xs font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words p-4 rounded-lg bg-gray-50 dark:bg-gray-900"
+      className="text-xs font-mono text-foreground whitespace-pre-wrap break-words p-4 rounded-lg bg-secondary"
       style={{ fontSize: '0.8125rem' }}
     >
       {fileContent || ''}
@@ -380,13 +380,13 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
     }
     if (viewMode === 'readable' && isJson) {
       return (
-        <pre className="font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words" style={{ fontSize: '0.8125rem' }}>
+        <pre className="font-mono text-foreground whitespace-pre-wrap break-words" style={{ fontSize: '0.8125rem' }}>
           {formatAsHumanReadable(content)}
         </pre>
       );
     }
     return (
-      <pre className="font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words" style={{ fontSize: '0.8125rem' }}>
+      <pre className="font-mono text-foreground whitespace-pre-wrap break-words" style={{ fontSize: '0.8125rem' }}>
         {isJson ? formatAsJson(content) : content}
       </pre>
     );
@@ -401,24 +401,24 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
       onClick={onClose}
     >
       <div
-        className={`bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full ${modalWidth} h-[90vh] flex flex-col transition-all`}
+        className={`bg-card rounded-lg shadow-xl w-full ${modalWidth} h-[90vh] flex flex-col transition-all`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">{title}</h3>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <h3 className="text-sm font-medium text-foreground">{title}</h3>
           <div className="flex items-center gap-3">
             {/* 视图模式切换 */}
             {isJson && (
-              <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 rounded p-0.5">
+              <div className="flex items-center gap-1 bg-accent rounded p-0.5">
                 {hasDiffMode && (
                   <>
                     <button
                       onClick={() => setViewMode('diff-split')}
                       className={`px-2 py-1 text-xs rounded transition-colors ${
                         viewMode === 'diff-split'
-                          ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                          ? 'bg-card text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
                       }`}
                       title="并列对比"
                     >
@@ -428,8 +428,8 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
                       onClick={() => setViewMode('diff-unified')}
                       className={`px-2 py-1 text-xs rounded transition-colors ${
                         viewMode === 'diff-unified'
-                          ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                          ? 'bg-card text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
                       }`}
                       title="统一对比"
                     >
@@ -442,8 +442,8 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
                     onClick={() => setViewMode('file')}
                     className={`px-2 py-1 text-xs rounded transition-colors ${
                       viewMode === 'file'
-                        ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                        ? 'bg-card text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
                     }`}
                     title="预览文件"
                   >
@@ -454,8 +454,8 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
                   onClick={() => setViewMode('readable')}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     viewMode === 'readable'
-                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                      ? 'bg-card text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   可读
@@ -464,8 +464,8 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
                   onClick={() => setViewMode('json')}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     viewMode === 'json'
-                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                      ? 'bg-card text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   JSON
@@ -474,7 +474,7 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
             )}
             <button
               onClick={onClose}
-              className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+              className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -561,18 +561,18 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
   const displayPath = displayInfo ? (skipRelativePath ? displayInfo : getRelativePath(displayInfo)) : null;
 
   return (
-    <div className="my-2 border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-800">
+    <div className="my-2 border border-border rounded-lg overflow-hidden bg-secondary">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-accent transition-colors"
       >
         <span className="text-base">{getToolIcon(toolCall.name)}</span>
-        <span className="font-medium text-sm text-gray-700 dark:text-gray-300 flex-shrink-0">
+        <span className="font-medium text-sm text-foreground flex-shrink-0">
           {toolCall.name}
         </span>
         {displayPath && (
           <span
-            className="text-xs text-gray-500 dark:text-gray-400 font-mono truncate flex-1 min-w-0"
+            className="text-xs text-muted-foreground font-mono truncate flex-1 min-w-0"
             title={displayInfo || ''}
           >
             {displayPath}
@@ -584,41 +584,41 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
           </span>
         )}
         {!toolCall.isLoading && (
-          <span className="ml-auto text-gray-400 text-xs">
+          <span className="ml-auto text-slate-9 text-xs">
             {expanded ? '▲' : '▼'}
           </span>
         )}
       </button>
 
       {expanded && (
-        <div className="border-t border-gray-200 dark:border-gray-600">
+        <div className="border-t border-border">
           <div className="px-3 py-2">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-500 dark:text-gray-400">输入参数:</span>
+              <span className="text-xs text-muted-foreground">输入参数:</span>
               <button
                 onClick={() => setPreviewContent({ title: `${toolCall.name}${displayPath ? ` ${displayPath}` : ''}`, content: JSON.stringify(toolCall.input, null, 2), toolName: toolCall.name })}
-                className="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                className="text-xs text-blue-500 hover:text-brand dark:hover:text-blue-300"
               >
                 查看全部
               </button>
             </div>
-            <pre className="text-xs bg-gray-100 dark:bg-gray-900 p-2 rounded overflow-x-auto max-h-24 overflow-y-auto text-gray-700 dark:text-gray-300">
+            <pre className="text-xs bg-secondary p-2 rounded overflow-x-auto max-h-24 overflow-y-auto text-foreground">
               {JSON.stringify(toolCall.input, null, 2)}
             </pre>
           </div>
 
           {toolCall.result && (
-            <div className="px-3 py-2 border-t border-gray-200 dark:border-gray-600">
+            <div className="px-3 py-2 border-t border-border">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-500 dark:text-gray-400">结果:</span>
+                <span className="text-xs text-muted-foreground">结果:</span>
                 <button
                   onClick={() => setPreviewContent({ title: `${toolCall.name}${displayPath ? ` ${displayPath}` : ''}`, content: toolCall.result || '', toolName: toolCall.name })}
-                  className="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                  className="text-xs text-blue-500 hover:text-brand dark:hover:text-blue-300"
                 >
                   查看全部
                 </button>
               </div>
-              <pre className="text-xs bg-gray-100 dark:bg-gray-900 p-2 rounded overflow-x-auto max-h-24 overflow-y-auto text-gray-700 dark:text-gray-300">
+              <pre className="text-xs bg-secondary p-2 rounded overflow-x-auto max-h-24 overflow-y-auto text-foreground">
                 {toolCall.result}
               </pre>
             </div>

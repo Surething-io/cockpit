@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cockpit 配色体系预览</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      /* Slate (Gray) - Light */
+      --slate-1: #fafafa;
+      --slate-2: #f4f4f5;
+      --slate-3: #e4e4e7;
+      --slate-4: #d4d4d8;
+      --slate-5: #a1a1aa;
+      --slate-6: #71717a;
+      --slate-7: #52525b;
+      --slate-8: #3f3f46;
+      --slate-9: #27272a;
+      --slate-10: #18181b;
+      --slate-11: #09090b;
+      --slate-12: #000000;
+
+      /* Teal (Brand) */
+      --teal-1: #f0fdfa;
+      --teal-2: #ccfbf1;
+      --teal-3: #99f6e4;
+      --teal-4: #5eead4;
+      --teal-5: #2dd4bf;
+      --teal-6: #14b8a6;
+      --teal-7: #0d9488;
+      --teal-8: #0f766e;
+      --teal-9: #115e59;
+      --teal-10: #134e4a;
+      --teal-11: #042f2e;
+      --teal-12: #021716;
+
+      /* Status Colors */
+      --green-9: #22c55e;
+      --green-11: #15803d;
+      --red-9: #ef4444;
+      --red-11: #b91c1c;
+      --amber-9: #f59e0b;
+      --amber-11: #b45309;
+      --blue-9: #3b82f6;
+      --blue-11: #1d4ed8;
+
+      /* Semantic - Light Mode */
+      --background: var(--slate-1);
+      --foreground: var(--slate-11);
+      --card: #ffffff;
+      --card-foreground: var(--slate-11);
+      --secondary: var(--slate-2);
+      --secondary-foreground: var(--slate-11);
+      --muted: var(--slate-3);
+      --muted-foreground: var(--slate-6);
+      --accent: var(--slate-3);
+      --accent-foreground: var(--slate-11);
+      --border: var(--slate-4);
+      --input: var(--slate-4);
+      --ring: var(--teal-7);
+      --brand: var(--teal-7);
+      --brand-foreground: #ffffff;
+    }
+
+    .dark {
+      /* Slate (Gray) - Dark */
+      --slate-1: #09090b;
+      --slate-2: #18181b;
+      --slate-3: #27272a;
+      --slate-4: #3f3f46;
+      --slate-5: #52525b;
+      --slate-6: #71717a;
+      --slate-7: #a1a1aa;
+      --slate-8: #d4d4d8;
+      --slate-9: #e4e4e7;
+      --slate-10: #f4f4f5;
+      --slate-11: #fafafa;
+      --slate-12: #ffffff;
+
+      /* Semantic - Dark Mode */
+      --background: var(--slate-1);
+      --foreground: var(--slate-11);
+      --card: var(--slate-2);
+      --card-foreground: var(--slate-11);
+      --secondary: var(--slate-3);
+      --secondary-foreground: var(--slate-11);
+      --muted: var(--slate-4);
+      --muted-foreground: var(--slate-6);
+      --accent: var(--slate-4);
+      --accent-foreground: var(--slate-11);
+      --border: var(--slate-4);
+      --input: var(--slate-4);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--background);
+      color: var(--foreground);
+      padding: 24px;
+      transition: all 0.3s ease;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .theme-toggle {
+      display: flex;
+      gap: 8px;
+    }
+
+    .theme-toggle button {
+      padding: 8px 16px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--foreground);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+
+    .theme-toggle button:hover {
+      background: var(--accent);
+    }
+
+    .theme-toggle button.active {
+      background: var(--brand);
+      color: var(--brand-foreground);
+      border-color: var(--brand);
+    }
+
+    .section {
+      margin-bottom: 40px;
+    }
+
+    .section-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--foreground);
+    }
+
+    /* Color Palette Display */
+    .palette {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+      gap: 12px;
+    }
+
+    .color-item {
+      text-align: center;
+    }
+
+    .color-swatch {
+      height: 60px;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .color-label {
+      font-size: 12px;
+      color: var(--muted-foreground);
+    }
+
+    /* Component Examples */
+    .components {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+    }
+
+    .component-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .component-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--foreground);
+    }
+
+    /* Button Examples */
+    .buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--brand);
+      color: var(--brand-foreground);
+    }
+
+    .btn-primary:hover {
+      opacity: 0.9;
+    }
+
+    .btn-secondary {
+      background: var(--secondary);
+      color: var(--secondary-foreground);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--accent);
+    }
+
+    .btn-destructive {
+      background: var(--red-9);
+      color: white;
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--foreground);
+    }
+
+    .btn-ghost:hover {
+      background: var(--accent);
+    }
+
+    /* Input Examples */
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .input {
+      padding: 10px 12px;
+      border: 1px solid var(--input);
+      border-radius: 6px;
+      background: var(--background);
+      color: var(--foreground);
+      font-size: 14px;
+    }
+
+    .input::placeholder {
+      color: var(--muted-foreground);
+    }
+
+    .input:focus {
+      outline: none;
+      border-color: var(--ring);
+      box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+    }
+
+    /* List Examples */
+    .list {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .list-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .list-item:last-child {
+      border-bottom: none;
+    }
+
+    .list-item:hover {
+      background: var(--accent);
+    }
+
+    .list-item.selected {
+      background: rgba(13, 148, 136, 0.1);
+      color: var(--brand);
+    }
+
+    .list-item-title {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .list-item-desc {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 4px;
+    }
+
+    /* Tab Examples */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+
+    .tab {
+      padding: 8px 16px;
+      font-size: 14px;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: all 0.2s;
+    }
+
+    .tab:hover {
+      color: var(--foreground);
+    }
+
+    .tab.active {
+      color: var(--brand);
+      border-bottom-color: var(--brand);
+    }
+
+    /* Status Badge Examples */
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .badge {
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .badge-success {
+      background: rgba(34, 197, 94, 0.1);
+      color: var(--green-11);
+    }
+
+    .badge-error {
+      background: rgba(239, 68, 68, 0.1);
+      color: var(--red-11);
+    }
+
+    .badge-warning {
+      background: rgba(245, 158, 11, 0.1);
+      color: var(--amber-11);
+    }
+
+    .badge-info {
+      background: rgba(59, 130, 246, 0.1);
+      color: var(--blue-11);
+    }
+
+    /* Diff View Example */
+    .diff-view {
+      font-family: 'SF Mono', Monaco, Consolas, monospace;
+      font-size: 13px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .diff-line {
+      display: flex;
+      padding: 2px 12px;
+    }
+
+    .diff-line.added {
+      background: rgba(34, 197, 94, 0.15);
+    }
+
+    .diff-line.removed {
+      background: rgba(239, 68, 68, 0.15);
+    }
+
+    .diff-line-num {
+      width: 40px;
+      color: var(--muted-foreground);
+      text-align: right;
+      padding-right: 12px;
+      user-select: none;
+    }
+
+    .diff-line-content {
+      flex: 1;
+    }
+
+    .diff-line.added .diff-line-content {
+      color: var(--green-11);
+    }
+
+    .diff-line.removed .diff-line-content {
+      color: var(--red-11);
+    }
+
+    /* File Tree Example */
+    .file-tree {
+      font-size: 14px;
+    }
+
+    .file-tree-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+
+    .file-tree-item:hover {
+      background: var(--accent);
+    }
+
+    .file-tree-item.selected {
+      background: rgba(13, 148, 136, 0.1);
+      color: var(--brand);
+    }
+
+    .file-tree-icon {
+      width: 16px;
+      height: 16px;
+      color: var(--muted-foreground);
+    }
+
+    .file-status {
+      margin-left: auto;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .file-status.added { color: var(--green-11); }
+    .file-status.modified { color: var(--amber-11); }
+    .file-status.deleted { color: var(--red-11); }
+
+    /* Semantic Colors Grid */
+    .semantic-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    .semantic-item {
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .semantic-label {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-bottom: 4px;
+    }
+
+    .semantic-value {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    /* VS Code Comparison */
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .comparison-panel {
+      padding: 16px;
+      border-radius: 8px;
+    }
+
+    .comparison-panel.vscode {
+      background: #1e1e1e;
+      color: #d4d4d4;
+    }
+
+    .comparison-panel.cockpit {
+      background: var(--card);
+      color: var(--foreground);
+      border: 1px solid var(--border);
+    }
+
+    .comparison-title {
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      opacity: 0.7;
+    }
+
+    .comparison-sidebar {
+      background: rgba(0,0,0,0.2);
+      padding: 8px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+
+    .comparison-panel.cockpit .comparison-sidebar {
+      background: var(--secondary);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎨 Cockpit 配色体系预览</h1>
+      <div class="theme-toggle">
+        <button class="active" onclick="setTheme('light')">☀️ Light</button>
+        <button onclick="setTheme('dark')">🌙 Dark</button>
+      </div>
+    </div>
+
+    <!-- Semantic Colors -->
+    <div class="section">
+      <h2 class="section-title">语义化颜色</h2>
+      <div class="semantic-grid">
+        <div class="semantic-item" style="background: var(--background)">
+          <div class="semantic-label">--background</div>
+          <div class="semantic-value">页面背景</div>
+        </div>
+        <div class="semantic-item" style="background: var(--card)">
+          <div class="semantic-label">--card</div>
+          <div class="semantic-value">卡片背景</div>
+        </div>
+        <div class="semantic-item" style="background: var(--secondary)">
+          <div class="semantic-label">--secondary</div>
+          <div class="semantic-value">次级背景</div>
+        </div>
+        <div class="semantic-item" style="background: var(--accent)">
+          <div class="semantic-label">--accent</div>
+          <div class="semantic-value">悬停状态</div>
+        </div>
+        <div class="semantic-item" style="background: var(--brand); color: white;">
+          <div class="semantic-label">--brand</div>
+          <div class="semantic-value">品牌强调</div>
+        </div>
+        <div class="semantic-item" style="border: 2px solid var(--border)">
+          <div class="semantic-label">--border</div>
+          <div class="semantic-value">边框颜色</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slate Color Scale -->
+    <div class="section">
+      <h2 class="section-title">Slate 灰色色阶</h2>
+      <div class="palette">
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--slate-1)"></div>
+          <div class="color-label">slate-1</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--slate-2)"></div>
+          <div class="color-label">slate-2</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--slate-3)"></div>
+          <div class="color-label">slate-3</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--slate-4)"></div>
+          <div class="color-label">slate-4</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--slate-5)"></div>
+          <div class="color-label">slate-5</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--slate-6)"></div>
+          <div class="color-label">slate-6</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--slate-7)"></div>
+          <div class="color-label">slate-7</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--slate-8)"></div>
+          <div class="color-label">slate-8</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--slate-9)"></div>
+          <div class="color-label">slate-9</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--slate-10)"></div>
+          <div class="color-label">slate-10</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--slate-11)"></div>
+          <div class="color-label">slate-11</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--slate-12)"></div>
+          <div class="color-label">slate-12</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Teal Brand Color -->
+    <div class="section">
+      <h2 class="section-title">Teal 品牌色阶</h2>
+      <div class="palette">
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--teal-1)"></div>
+          <div class="color-label">teal-1</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--teal-2)"></div>
+          <div class="color-label">teal-2</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--teal-3)"></div>
+          <div class="color-label">teal-3</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--teal-4)"></div>
+          <div class="color-label">teal-4</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--teal-5)"></div>
+          <div class="color-label">teal-5</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--teal-6)"></div>
+          <div class="color-label">teal-6</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--teal-7)"></div>
+          <div class="color-label">teal-7</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--teal-8)"></div>
+          <div class="color-label">teal-8</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--teal-9)"></div>
+          <div class="color-label">teal-9</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--teal-10)"></div>
+          <div class="color-label">teal-10</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--teal-11)"></div>
+          <div class="color-label">teal-11</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--teal-12)"></div>
+          <div class="color-label">teal-12</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Colors -->
+    <div class="section">
+      <h2 class="section-title">状态颜色</h2>
+      <div class="palette" style="grid-template-columns: repeat(4, 1fr);">
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--green-9)"></div>
+          <div class="color-label">成功 / 新增</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--red-9)"></div>
+          <div class="color-label">错误 / 删除</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--amber-9)"></div>
+          <div class="color-label">警告 / 修改</div>
+        </div>
+        <div class="color-item">
+          <div class="color-swatch" style="background: var(--blue-9)"></div>
+          <div class="color-label">信息 / 链接</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Component Examples -->
+    <div class="section">
+      <h2 class="section-title">组件示例</h2>
+      <div class="components">
+        <!-- Buttons -->
+        <div class="component-card">
+          <div class="component-title">按钮</div>
+          <div class="buttons">
+            <button class="btn btn-primary">主要按钮</button>
+            <button class="btn btn-secondary">次要按钮</button>
+            <button class="btn btn-destructive">危险按钮</button>
+            <button class="btn btn-ghost">幽灵按钮</button>
+          </div>
+        </div>
+
+        <!-- Inputs -->
+        <div class="component-card">
+          <div class="component-title">输入框</div>
+          <div class="input-group">
+            <input class="input" type="text" placeholder="请输入内容...">
+            <input class="input" type="text" value="已填写内容">
+          </div>
+        </div>
+
+        <!-- Badges -->
+        <div class="component-card">
+          <div class="component-title">状态标签</div>
+          <div class="badges">
+            <span class="badge badge-success">✓ 成功</span>
+            <span class="badge badge-error">✗ 错误</span>
+            <span class="badge badge-warning">⚠ 警告</span>
+            <span class="badge badge-info">ℹ 信息</span>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="component-card">
+          <div class="component-title">标签页</div>
+          <div class="tabs">
+            <div class="tab active">目录树</div>
+            <div class="tab">最近浏览</div>
+            <div class="tab">Git 变更</div>
+            <div class="tab">Git 历史</div>
+          </div>
+          <div style="color: var(--muted-foreground); font-size: 14px;">标签内容区域</div>
+        </div>
+
+        <!-- List -->
+        <div class="component-card">
+          <div class="component-title">列表</div>
+          <div class="list">
+            <div class="list-item selected">
+              <div class="list-item-title">选中项目</div>
+              <div class="list-item-desc">这是选中状态的样式</div>
+            </div>
+            <div class="list-item">
+              <div class="list-item-title">普通项目</div>
+              <div class="list-item-desc">悬停时显示高亮背景</div>
+            </div>
+            <div class="list-item">
+              <div class="list-item-title">另一个项目</div>
+              <div class="list-item-desc">次要文字使用 muted 色</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- File Tree -->
+        <div class="component-card">
+          <div class="component-title">文件树 (Git 状态)</div>
+          <div class="file-tree">
+            <div class="file-tree-item">
+              <span>📁</span>
+              <span>src</span>
+            </div>
+            <div class="file-tree-item" style="padding-left: 28px;">
+              <span>📄</span>
+              <span>App.tsx</span>
+              <span class="file-status modified">M</span>
+            </div>
+            <div class="file-tree-item selected" style="padding-left: 28px;">
+              <span>📄</span>
+              <span>index.ts</span>
+              <span class="file-status added">A</span>
+            </div>
+            <div class="file-tree-item" style="padding-left: 28px;">
+              <span>📄</span>
+              <span>old.ts</span>
+              <span class="file-status deleted">D</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Diff View -->
+        <div class="component-card" style="grid-column: span 2;">
+          <div class="component-title">Diff 视图</div>
+          <div class="diff-view">
+            <div class="diff-line">
+              <span class="diff-line-num">1</span>
+              <span class="diff-line-content">function hello() {</span>
+            </div>
+            <div class="diff-line removed">
+              <span class="diff-line-num">2</span>
+              <span class="diff-line-content">-  console.log("Hello");</span>
+            </div>
+            <div class="diff-line added">
+              <span class="diff-line-num">3</span>
+              <span class="diff-line-content">+  console.log("Hello, World!");</span>
+            </div>
+            <div class="diff-line">
+              <span class="diff-line-num">4</span>
+              <span class="diff-line-content">}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VS Code Comparison -->
+    <div class="section">
+      <h2 class="section-title">与 VS Code Dark 对比</h2>
+      <div class="comparison">
+        <div class="comparison-panel vscode">
+          <div class="comparison-title">VS Code Default Dark</div>
+          <div class="comparison-sidebar">
+            <div style="padding: 4px 8px; font-size: 13px;">📁 src</div>
+            <div style="padding: 4px 8px 4px 24px; font-size: 13px; background: rgba(0,122,204,0.3);">📄 App.tsx</div>
+          </div>
+          <div style="font-size: 13px; font-family: monospace;">
+            <div>const <span style="color: #9cdcfe">app</span> = <span style="color: #ce9178">"hello"</span>;</div>
+          </div>
+        </div>
+        <div class="comparison-panel cockpit">
+          <div class="comparison-title">Cockpit Theme</div>
+          <div class="comparison-sidebar">
+            <div style="padding: 4px 8px; font-size: 13px;">📁 src</div>
+            <div style="padding: 4px 8px 4px 24px; font-size: 13px; background: rgba(13,148,136,0.15); color: var(--brand);">📄 App.tsx</div>
+          </div>
+          <div style="font-size: 13px; font-family: monospace;">
+            <div>const <span style="color: var(--teal-6)">app</span> = <span style="color: #ce9178">"hello"</span>;</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    function setTheme(theme) {
+      const body = document.body;
+      const buttons = document.querySelectorAll('.theme-toggle button');
+
+      if (theme === 'dark') {
+        body.classList.add('dark');
+        buttons[0].classList.remove('active');
+        buttons[1].classList.add('active');
+      } else {
+        body.classList.remove('dark');
+        buttons[0].classList.add('active');
+        buttons[1].classList.remove('active');
+      }
+    }
+
+    // Check system preference
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      setTheme('dark');
+    }
+  </script>
+</body>
+</html>

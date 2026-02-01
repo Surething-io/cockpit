@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { Chat } from './Chat';
 import { SessionSidebar } from './SessionSidebar';
 import { SessionBrowser } from './SessionBrowser';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { FileBrowserModal } from './FileBrowserModal';
+import { SettingsModal } from './SettingsModal';
 import { Tooltip } from './Tooltip';
 
 interface TabInfo {
@@ -36,6 +37,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const [isSessionBrowserOpen, setIsSessionBrowserOpen] = useState(false);
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
   const [isFileBrowserOpen, setIsFileBrowserOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [fileBrowserInitialTab, setFileBrowserInitialTab] = useState<'tree' | 'recent' | 'status' | 'history'>('tree');
 
   // 添加新标签页
@@ -100,7 +102,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
   return (
-    <div className="flex h-screen bg-white dark:bg-gray-900">
+    <div className="flex h-screen bg-card">
       {/* Sidebar - 只在有 cwd 时显示 */}
       {initialCwd && (
         <SessionSidebar
@@ -114,16 +116,16 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header with Tabs */}
-        <div className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        <div className="border-b border-border bg-card">
           {/* Top bar */}
           <div className="flex items-center justify-between px-4 py-2">
             <div className="flex items-center gap-2">
               <img src="/icons/icon-72x72.png" alt="Cockpit" className="w-6 h-6" />
               <div className="flex items-baseline gap-2">
-                <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                <h1 className="text-lg font-semibold text-foreground">
                   Cockpit
                 </h1>
-                <span className="text-xs text-gray-400 dark:text-gray-500">
+                <span className="text-xs text-muted-foreground">
                   One seat. One AI. Everything under control.
                 </span>
               </div>
@@ -132,7 +134,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               {/* 显示项目路径 */}
               {initialCwd && (
                 <span
-                  className="text-sm text-gray-700 dark:text-gray-300 max-w-md truncate cursor-help"
+                  className="text-sm text-foreground max-w-md truncate cursor-help"
                   title={`CWD: ${initialCwd}`}
                 >
                   {initialCwd}
@@ -145,7 +147,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                     setFileBrowserInitialTab('tree');
                     setIsFileBrowserOpen(true);
                   }}
-                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
                   title="文件浏览"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -160,7 +162,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                     setFileBrowserInitialTab('status');
                     setIsFileBrowserOpen(true);
                   }}
-                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
                   title="Git 变更"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -175,7 +177,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                     setFileBrowserInitialTab('history');
                     setIsFileBrowserOpen(true);
                   }}
-                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
                   title="Git 历史"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -187,7 +189,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               {initialCwd && (
                 <button
                   onClick={() => setIsProjectSessionsOpen(true)}
-                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
                   title="项目会话"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -198,11 +200,22 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               {/* 全局 Session Browser 按钮 */}
               <button
                 onClick={() => setIsSessionBrowserOpen(true)}
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
                 title="浏览所有会话"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+              </button>
+              {/* 设置按钮 */}
+              <button
+                onClick={() => setIsSettingsOpen(true)}
+                className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+                title="设置"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </button>
             </div>
@@ -215,8 +228,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                 <div
                   className={`group flex items-center gap-1 px-3 py-1.5 text-sm cursor-pointer rounded-t-lg transition-colors ${
                     tab.id === activeTabId
-                      ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground hover:bg-secondary'
                   }`}
                   onClick={() => setActiveTabId(tab.id)}
                 >
@@ -227,7 +240,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                         e.stopPropagation();
                         closeTab(tab.id);
                       }}
-                      className="ml-1 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="ml-1 p-0.5 rounded hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
                       title="关闭标签"
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -241,7 +254,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
             {/* 新建标签按钮 */}
             <button
               onClick={handleNewTab}
-              className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
               title="新建标签"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -294,6 +307,12 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           initialTab={fileBrowserInitialTab}
         />
       )}
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+      />
     </div>
   );
 }

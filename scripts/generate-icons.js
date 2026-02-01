@@ -6,61 +6,43 @@ const sizes = [72, 96, 128, 144, 152, 192, 384, 512];
 const outputDir = path.join(__dirname, '../public/icons');
 
 // 创建驾驶舱图标 SVG - 体现"掌控万物"的意境
-// 设计：同心圆 + 十字准星 + 中心控制点，象征雷达/控制界面
+// 设计：黑底圆角方形 - C 形弧线（开口向下）+ 中心控制点，象征 Cockpit 品牌 + 保护/掌控
 const createIconSvg = (size) => {
   const cx = size / 2;
   const cy = size / 2;
-  const maxRadius = size * 0.35;
+  const bgSize = size * 0.9;      // 背景方形大小
+  const bgRadius = size * 0.18;   // 圆角半径
+  const cRadius = size * 0.28;    // C 形弧线半径
+  const strokeWidth = size * 0.06; // C 形线条粗细
+
+  // C 形弧线：开口向下，从左下到右下画弧（约 270 度）
+  const startAngle = 135 * (Math.PI / 180);  // 左下 135°
+  const endAngle = 45 * (Math.PI / 180);     // 右下 45°
+
+  const startX = cx + cRadius * Math.cos(startAngle);
+  const startY = cy + cRadius * Math.sin(startAngle);
+  const endX = cx + cRadius * Math.cos(endAngle);
+  const endY = cy + cRadius * Math.sin(endAngle);
+
+  const bgOffset = (size - bgSize) / 2;
 
   return `
     <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style="stop-color:#0f172a;stop-opacity:1" />
-          <stop offset="100%" style="stop-color:#1e293b;stop-opacity:1" />
-        </linearGradient>
-        <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style="stop-color:#38bdf8;stop-opacity:1" />
-          <stop offset="100%" style="stop-color:#0ea5e9;stop-opacity:1" />
-        </linearGradient>
-      </defs>
+      <!-- 圆角方形黑色背景 -->
+      <rect x="${bgOffset}" y="${bgOffset}" width="${bgSize}" height="${bgSize}" rx="${bgRadius}" ry="${bgRadius}" fill="#18181b"/>
 
-      <!-- 背景 - 透明 -->
-      <rect width="${size}" height="${size}" fill="transparent"/>
-
-      <!-- 外圈 -->
-      <circle cx="${cx}" cy="${cy}" r="${maxRadius}"
-              fill="none" stroke="#000000" stroke-width="${size * 0.015}" opacity="0.3"/>
-
-      <!-- 中圈 -->
-      <circle cx="${cx}" cy="${cy}" r="${maxRadius * 0.65}"
-              fill="none" stroke="#000000" stroke-width="${size * 0.015}" opacity="0.5"/>
-
-      <!-- 内圈 -->
-      <circle cx="${cx}" cy="${cy}" r="${maxRadius * 0.35}"
-              fill="none" stroke="#000000" stroke-width="${size * 0.02}" opacity="0.8"/>
-
-      <!-- 十字准星 - 水平线 -->
-      <line x1="${cx - maxRadius}" y1="${cy}" x2="${cx - maxRadius * 0.5}" y2="${cy}"
-            stroke="#000000" stroke-width="${size * 0.015}" opacity="0.6"/>
-      <line x1="${cx + maxRadius * 0.5}" y1="${cy}" x2="${cx + maxRadius}" y2="${cy}"
-            stroke="#000000" stroke-width="${size * 0.015}" opacity="0.6"/>
-
-      <!-- 十字准星 - 垂直线 -->
-      <line x1="${cx}" y1="${cy - maxRadius}" x2="${cx}" y2="${cy - maxRadius * 0.5}"
-            stroke="#000000" stroke-width="${size * 0.015}" opacity="0.6"/>
-      <line x1="${cx}" y1="${cy + maxRadius * 0.5}" x2="${cx}" y2="${cy + maxRadius}"
-            stroke="#000000" stroke-width="${size * 0.015}" opacity="0.6"/>
+      <!-- C 形弧线 - 开口向下 -->
+      <path
+        d="M ${startX} ${startY} A ${cRadius} ${cRadius} 0 1 1 ${endX} ${endY}"
+        fill="none"
+        stroke="#ffffff"
+        stroke-width="${strokeWidth}"
+        stroke-linecap="round"
+      />
 
       <!-- 中心控制点 - 发光效果 -->
-      <circle cx="${cx}" cy="${cy}" r="${size * 0.06}" fill="#000000" opacity="0.3"/>
-      <circle cx="${cx}" cy="${cy}" r="${size * 0.04}" fill="#000000"/>
-
-      <!-- 四角标记点 - 象征可控制的节点 -->
-      <circle cx="${cx - maxRadius * 0.7}" cy="${cy - maxRadius * 0.7}" r="${size * 0.02}" fill="#000000" opacity="0.7"/>
-      <circle cx="${cx + maxRadius * 0.7}" cy="${cy - maxRadius * 0.7}" r="${size * 0.02}" fill="#000000" opacity="0.7"/>
-      <circle cx="${cx - maxRadius * 0.7}" cy="${cy + maxRadius * 0.7}" r="${size * 0.02}" fill="#000000" opacity="0.7"/>
-      <circle cx="${cx + maxRadius * 0.7}" cy="${cy + maxRadius * 0.7}" r="${size * 0.02}" fill="#000000" opacity="0.7"/>
+      <circle cx="${cx}" cy="${cy}" r="${size * 0.08}" fill="#ffffff" opacity="0.3"/>
+      <circle cx="${cx}" cy="${cy}" r="${size * 0.05}" fill="#ffffff"/>
     </svg>
   `;
 };

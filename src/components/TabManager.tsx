@@ -173,6 +173,9 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               }`}
               onClick={() => setActiveTabId(tab.id)}
             >
+              {tab.isLoading && (
+                <span className="inline-block w-3 h-3 border-2 border-brand border-t-transparent rounded-full animate-spin flex-shrink-0" />
+              )}
               <span className="max-w-32 truncate">{tab.title}</span>
               {tabs.length > 1 && (
                 <button

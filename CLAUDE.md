@@ -40,3 +40,4 @@ npm run lint     # Run ESLint
 - **浏览器测试**: 使用 `evaluate_script` 操作 DOM，避免使用 `take_screenshot`（消耗大量 token）
 - **非必要不截图**: 只在需要视觉确认时才截图
 - **MCP 工具**: 非必要不使用 MCP 工具，除非用户消息明确要求（如 "use xxx"）
+- **Git 提交**: 不要自动 commit 代码，需要用户明确说 "commit" 才提交

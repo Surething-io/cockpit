@@ -184,26 +184,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
     }
 
     // 如果有 initialCwd 但没有 initialSessionId，说明是新建空白会话，不加载任何历史
-    if (initialCwd) {
-      return;
-    }
-
-    // 如果没有 initialCwd（独立模式），从后端读取状态
-    const loadState = async () => {
-      try {
-        const response = await fetch('/api/state');
-        if (response.ok) {
-          const state = await response.json();
-          if (state.sessionId) {
-            setSessionId(state.sessionId);
-            loadHistory(state.sessionId);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load state:', error);
-      }
-    };
-    loadState();
+    // session 管理现在由 TabManager 负责
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // 只在组件挂载时运行一次
 
@@ -213,21 +194,6 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
       onSessionIdChange?.(sessionId);
     }
   }, [sessionId, onSessionIdChange]);
-
-  // 当 sessionId 变化时保存到后端（仅在独立模式下）
-  useEffect(() => {
-    // 如果有 initialCwd，说明是在 TabManager 中管理，不需要保存到后端
-    if (initialCwd) return;
-    if (!sessionId) return;
-
-    fetch('/api/state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId }),
-    }).catch((error) => {
-      console.error('Failed to save state:', error);
-    });
-  }, [sessionId, initialCwd]);
 
   // 当 isLoading 变化时通知父组件
   useEffect(() => {

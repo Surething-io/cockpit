@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Chat } from './Chat';
 import { SessionBrowser } from './SessionBrowser';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
@@ -23,17 +23,81 @@ interface TabManagerProps {
 }
 
 export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
-  // 初始化标签页
-  const [tabs, setTabs] = useState<TabInfo[]>(() => {
-    const initialTab: TabInfo = {
-      id: `tab-${Date.now()}`,
-      cwd: initialCwd,
-      sessionId: initialSessionId,
-      title: initialSessionId ? `Session ${initialSessionId.slice(0, 6)}...` : 'New Chat',
-    };
-    return [initialTab];
-  });
+  // 标记是否已从服务端加载过 sessions
+  const hasLoadedRef = useRef(false);
+  // 标记是否正在初始化（避免初始化过程中触发保存）
+  const isInitializingRef = useRef(true);
+
+  // 初始化标签页（先创建一个临时标签，后续会被服务端数据覆盖）
+  const [tabs, setTabs] = useState<TabInfo[]>(() => [{
+    id: `tab-${Date.now()}`,
+    cwd: initialCwd,
+    title: 'New Chat',
+  }]);
   const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id);
+
+  // 从服务端加载保存的 sessions，并与 URL 参数合并
+  useEffect(() => {
+    if (!initialCwd || hasLoadedRef.current) return;
+    hasLoadedRef.current = true;
+
+    const loadSessions = async () => {
+      try {
+        const response = await fetch(`/api/state?cwd=${encodeURIComponent(initialCwd)}`);
+        if (response.ok) {
+          const data = await response.json();
+          const savedSessions: string[] = data.sessions || [];
+
+          // 合并 URL sessionId 和 session.json 中的 sessions（去重）
+          let allSessions = [...savedSessions];
+          if (initialSessionId && !allSessions.includes(initialSessionId)) {
+            // URL 的 sessionId 放到最前面（作为当前激活的 tab）
+            allSessions = [initialSessionId, ...allSessions];
+          }
+
+          if (allSessions.length > 0) {
+            // 恢复 tabs
+            const restoredTabs: TabInfo[] = allSessions.map((sessionId: string, index: number) => ({
+              id: `tab-${Date.now()}-${index}`,
+              cwd: initialCwd,
+              sessionId,
+              title: `Session ${sessionId.slice(0, 6)}...`,
+            }));
+            setTabs(restoredTabs);
+            // 如果有 URL sessionId，激活它；否则激活第一个
+            const activeIndex = initialSessionId ? allSessions.indexOf(initialSessionId) : 0;
+            setActiveTabId(restoredTabs[activeIndex >= 0 ? activeIndex : 0].id);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load sessions:', error);
+      } finally {
+        isInitializingRef.current = false;
+      }
+    };
+
+    loadSessions();
+  }, [initialCwd, initialSessionId]);
+
+  // 当 tabs 变化时保存到服务端
+  useEffect(() => {
+    // 初始化过程中不保存
+    if (isInitializingRef.current || !initialCwd) return;
+
+    // 收集所有有 sessionId 的 tab
+    const sessionIds = tabs
+      .map(tab => tab.sessionId)
+      .filter((id): id is string => !!id);
+
+    // 保存到服务端
+    fetch('/api/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cwd: initialCwd, sessions: sessionIds }),
+    }).catch(error => {
+      console.error('Failed to save sessions:', error);
+    });
+  }, [tabs, initialCwd]);
   const [isSessionBrowserOpen, setIsSessionBrowserOpen] = useState(false);
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);

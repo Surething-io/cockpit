@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server';
 import * as fs from 'fs';
 import * as readline from 'readline';
-import * as os from 'os';
-import * as path from 'path';
+import { getClaudeSessionPath } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -64,13 +63,6 @@ interface ChatMessage {
   }>;
 }
 
-// 根据 cwd 和 sessionId 构建 session 文件路径
-function buildSessionPath(cwd: string, sessionId: string): string {
-  const homeDir = os.homedir();
-  // 对 cwd 进行编码：将 / 替换为 -（与 Claude 实际存储方式一致）
-  const encodedCwd = cwd.replace(/\//g, '-');
-  return path.join(homeDir, '.claude', 'projects', encodedCwd, `${sessionId}.jsonl`);
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -90,7 +82,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 构建完整的 session 文件路径
-    const sessionPath = buildSessionPath(cwd, sessionId);
+    const sessionPath = getClaudeSessionPath(cwd, sessionId);
 
     // 检查文件是否存在
     if (!fs.existsSync(sessionPath)) {

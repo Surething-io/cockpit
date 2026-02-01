@@ -40,6 +40,13 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     root.classList.remove('light', 'dark');
     root.classList.add(resolved);
     setResolvedTheme(resolved);
+
+    // 更新 PWA 标题栏颜色
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    const color = resolved === 'dark' ? '#111113' : '#f9f9fb';
+    if (themeColorMeta) {
+      themeColorMeta.setAttribute('content', color);
+    }
   }, []);
 
   // 设置主题

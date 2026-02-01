@@ -303,7 +303,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd }: CommitDetail
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">Commit 详情</h3>
+          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">提交详情</h3>
           <button
             onClick={onClose}
             className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
@@ -328,26 +328,26 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd }: CommitDetail
             )}
             <div className="flex flex-wrap gap-4 text-xs text-gray-500 dark:text-gray-400">
               <div className="flex items-center gap-1">
-                <span className="text-gray-400">Hash:</span>
+                <span className="text-gray-400">哈希:</span>
                 <span className="font-mono bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded">
                   {commit.hash}
                 </span>
               </div>
               <div className="flex items-center gap-1">
-                <span className="text-gray-400">Author:</span>
+                <span className="text-gray-400">作者:</span>
                 <span>{commit.author}</span>
                 <span className="text-gray-400">&lt;{commit.authorEmail}&gt;</span>
               </div>
               <div className="flex items-center gap-1">
-                <span className="text-gray-400">Date:</span>
+                <span className="text-gray-400">日期:</span>
                 <span>{displayDate}</span>
                 {commit.relativeDate && (
                   <span className="text-gray-400">({commit.relativeDate})</span>
                 )}
               </div>
               <div className="flex items-center gap-1">
-                <span className="text-gray-400">Files:</span>
-                <span>{files.length} changed</span>
+                <span className="text-gray-400">文件:</span>
+                <span>{files.length} 个变更</span>
               </div>
             </div>
           </div>
@@ -357,9 +357,9 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd }: CommitDetail
             {/* File tree */}
             <div className="w-72 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 overflow-auto">
               {isLoadingFiles ? (
-                <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">Loading files...</div>
+                <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">加载文件中...</div>
               ) : files.length === 0 ? (
-                <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">No files changed</div>
+                <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">无文件变更</div>
               ) : (
                 <div className="py-1 min-w-max">
                   {fileTree.map(node => (
@@ -380,7 +380,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd }: CommitDetail
             {/* Diff view */}
             <div className="flex-1 overflow-hidden">
               {isLoadingDiff ? (
-                <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">Loading diff...</div>
+                <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">加载差异中...</div>
               ) : fileDiff ? (
                 <DiffView
                   oldContent={fileDiff.oldContent}
@@ -391,7 +391,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd }: CommitDetail
                 />
               ) : (
                 <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">
-                  Select a file to view diff
+                  选择文件查看差异
                 </div>
               )}
             </div>

@@ -122,7 +122,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-              Sessions
+              会话列表
             </h2>
             <p className="text-xs text-gray-500 dark:text-gray-400 truncate" title={cwd}>
               {cwd}
@@ -132,7 +132,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="搜索 session..."
+              placeholder="搜索会话..."
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
               className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -157,7 +157,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                <span>Loading sessions...</span>
+                <span>加载会话中...</span>
               </div>
             </div>
           )}
@@ -171,7 +171,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
           {!isLoading && !error && filteredSessions.length === 0 && (
             <div className="flex items-center justify-center h-full">
               <div className="text-xs text-gray-500 dark:text-gray-400">
-                {searchKeyword ? 'No matching sessions' : 'No sessions found'}
+                {searchKeyword ? '未找到匹配的会话' : '暂无会话'}
               </div>
             </div>
           )}

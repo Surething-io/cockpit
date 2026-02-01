@@ -1367,9 +1367,9 @@ function BranchSelector({
           <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
-          {selectedBranch || 'Select branch...'}
+          {selectedBranch || '选择分支...'}
           {branches?.current === selectedBranch && (
-            <span className="text-xs text-green-600 dark:text-green-400">(current)</span>
+            <span className="text-xs text-green-600 dark:text-green-400">(当前)</span>
           )}
         </span>
         <svg className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1385,7 +1385,7 @@ function BranchSelector({
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search branches..."
+              placeholder="搜索分支..."
               className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400"
             />
           </div>
@@ -1393,7 +1393,7 @@ function BranchSelector({
             {filteredLocal.length > 0 && (
               <div>
                 <div className="px-3 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900 sticky top-0">
-                  Local
+                  本地分支
                 </div>
                 {filteredLocal.map(branch => (
                   <div
@@ -1407,7 +1407,7 @@ function BranchSelector({
                   >
                     <span className="truncate flex-1">{branch}</span>
                     {branch === branches?.current && (
-                      <span className="text-xs text-green-600 dark:text-green-400 flex-shrink-0">current</span>
+                      <span className="text-xs text-green-600 dark:text-green-400 flex-shrink-0">当前</span>
                     )}
                     {branch === selectedBranch && (
                       <svg className="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1421,7 +1421,7 @@ function BranchSelector({
             {filteredRemote.length > 0 && (
               <div>
                 <div className="px-3 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900 sticky top-0">
-                  Remote
+                  远程分支
                 </div>
                 {filteredRemote.map(branch => (
                   <div
@@ -1445,7 +1445,7 @@ function BranchSelector({
             )}
             {filteredLocal.length === 0 && filteredRemote.length === 0 && (
               <div className="px-3 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">
-                No branches found
+                未找到分支
               </div>
             )}
           </div>
@@ -2342,7 +2342,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
               {/* Tree Tab */}
               {activeTab === 'tree' && (
                 isLoadingFiles ? (
-                  <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">Loading...</div>
+                  <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">加载中...</div>
                 ) : fileError ? (
                   <div className="p-4 text-center text-red-500 text-sm">{fileError}</div>
                 ) : (
@@ -2488,9 +2488,9 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                     onScroll={handleCommitListScroll}
                   >
                     {isLoadingCommits ? (
-                      <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">Loading commits...</div>
+                      <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">加载提交记录中...</div>
                     ) : commits.length === 0 ? (
-                      <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">No commits</div>
+                      <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">无提交记录</div>
                     ) : (
                       <>
                         {commits.map(commit => (
@@ -2689,7 +2689,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                       <span className="mx-2">·</span>
                       <span>{selectedCommit.relativeDate} ({formatDateTime(selectedCommit.date)})</span>
                       <span className="mx-2">·</span>
-                      <span>{historyFiles.length} files changed</span>
+                      <span>{historyFiles.length} 个文件变更</span>
                     </div>
                   </div>
                   {tooltipPos && (
@@ -2708,9 +2708,9 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                           </div>
                         )}
                         <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1 border-t border-gray-200 dark:border-gray-600 pt-2">
-                          <div><span className="text-gray-400 dark:text-gray-500">Hash:</span> <span className="font-mono">{selectedCommit.hash}</span></div>
-                          <div><span className="text-gray-400 dark:text-gray-500">Author:</span> {selectedCommit.author} &lt;{selectedCommit.authorEmail}&gt;</div>
-                          <div><span className="text-gray-400 dark:text-gray-500">Date:</span> {selectedCommit.date}</div>
+                          <div><span className="text-gray-400 dark:text-gray-500">哈希:</span> <span className="font-mono">{selectedCommit.hash}</span></div>
+                          <div><span className="text-gray-400 dark:text-gray-500">作者:</span> {selectedCommit.author} &lt;{selectedCommit.authorEmail}&gt;</div>
+                          <div><span className="text-gray-400 dark:text-gray-500">日期:</span> {selectedCommit.date}</div>
                         </div>
                       </div>
                     </div>
@@ -2721,9 +2721,9 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                     {/* File tree */}
                     <div className="w-72 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 overflow-auto">
                       {isLoadingHistoryFiles ? (
-                        <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">Loading files...</div>
+                        <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">加载文件中...</div>
                       ) : historyFiles.length === 0 ? (
-                        <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">No files changed</div>
+                        <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">无文件变更</div>
                       ) : (
                         <div className="py-1 min-w-max">
                           {historyFileTree.map(node => (
@@ -2744,7 +2744,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                     {/* Diff view */}
                     <div className="flex-1 overflow-hidden">
                       {isLoadingHistoryDiff ? (
-                        <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">Loading diff...</div>
+                        <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">加载差异中...</div>
                       ) : historyFileDiff ? (
                         isImageFile(historyFileDiff.filePath) ? (
                           <div className="p-4 flex items-center justify-center h-full">
@@ -2764,7 +2764,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                           />
                         )
                       ) : (
-                        <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">Select a file to view diff</div>
+                        <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">选择文件查看差异</div>
                       )}
                     </div>
                   </div>

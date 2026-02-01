@@ -180,7 +180,7 @@ export function SessionBrowser({ isOpen, onClose }: SessionBrowserProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-            Projects
+            项目列表
           </h2>
           <div className="flex items-center gap-3">
             <input
@@ -211,7 +211,7 @@ export function SessionBrowser({ isOpen, onClose }: SessionBrowserProps) {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                <span>Loading projects...</span>
+                <span>加载项目中...</span>
               </div>
             </div>
           )}
@@ -224,7 +224,7 @@ export function SessionBrowser({ isOpen, onClose }: SessionBrowserProps) {
 
           {!isLoadingProjects && !error && projects.length === 0 && (
             <div className="flex items-center justify-center h-full">
-              <div className="text-xs text-gray-500 dark:text-gray-400">No projects found</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">未找到项目</div>
             </div>
           )}
 
@@ -275,7 +275,7 @@ export function SessionBrowser({ isOpen, onClose }: SessionBrowserProps) {
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                         </svg>
-                        <span>Loading sessions...</span>
+                        <span>加载会话中...</span>
                       </div>
                     )}
 

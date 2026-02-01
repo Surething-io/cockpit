@@ -7,6 +7,7 @@ import { ChatInput } from './ChatInput';
 import { SessionBrowser } from './SessionBrowser';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { SessionSidebar } from './SessionSidebar';
+import { GitHistoryModal } from './GitHistoryModal';
 
 interface ChatProps {
   initialCwd?: string;
@@ -26,6 +27,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isSessionBrowserOpen, setIsSessionBrowserOpen] = useState(false);
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
+  const [isGitHistoryOpen, setIsGitHistoryOpen] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -487,6 +489,18 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
                     Session: {sessionId.slice(0, 8)}...
                   </span>
                 )}
+                {/* Git History 按钮（仅当有 cwd 时显示） */}
+                {initialCwd && (
+                  <button
+                    onClick={() => setIsGitHistoryOpen(true)}
+                    className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                    title="Git History"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </button>
+                )}
                 {/* 当前项目 Sessions 按钮（仅当有 cwd 时显示） */}
                 {initialCwd && (
                   <button
@@ -580,6 +594,15 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
         <ProjectSessionsModal
           isOpen={isProjectSessionsOpen}
           onClose={() => setIsProjectSessionsOpen(false)}
+          cwd={initialCwd}
+        />
+      )}
+
+      {/* Git History Modal - 仅在不隐藏 header 且有 cwd 时显示 */}
+      {!hideHeader && initialCwd && (
+        <GitHistoryModal
+          isOpen={isGitHistoryOpen}
+          onClose={() => setIsGitHistoryOpen(false)}
           cwd={initialCwd}
         />
       )}

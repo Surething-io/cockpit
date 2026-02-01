@@ -97,8 +97,8 @@ export async function GET(request: NextRequest) {
     // 检查是否是 git 仓库
     await execAsync('git rev-parse --git-dir', { cwd });
 
-    // 获取 git status
-    const { stdout } = await execAsync('git status --porcelain=v1', { cwd });
+    // 获取 git status (-u 显示所有未跟踪文件，而不只是目录)
+    const { stdout } = await execAsync('git status --porcelain=v1 -u', { cwd });
     const { staged, unstaged } = parseGitStatus(stdout);
 
     return NextResponse.json({

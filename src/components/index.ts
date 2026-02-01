@@ -6,5 +6,4 @@ export { ToolCallModal } from './ToolCallModal';
 export { MarkdownRenderer } from './MarkdownRenderer';
 export { SessionBrowser } from './SessionBrowser';
 export { ProjectSessionsModal } from './ProjectSessionsModal';
-export { SessionSidebar } from './SessionSidebar';
 export { TabManager } from './TabManager';

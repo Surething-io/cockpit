@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from 'react';
 import { Chat } from './Chat';
-import { SessionSidebar } from './SessionSidebar';
 import { SessionBrowser } from './SessionBrowser';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { FileBrowserModal } from './FileBrowserModal';
@@ -103,16 +102,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
 
   return (
     <div className="flex h-screen bg-card">
-      {/* Sidebar - 只在有 cwd 时显示 */}
-      {initialCwd && (
-        <SessionSidebar
-          cwd={initialCwd}
-          currentSessionId={activeTab?.sessionId || null}
-          onSelectSession={handleSelectSession}
-          loadingSessionIds={tabs.filter(t => t.isLoading && t.sessionId).map(t => t.sessionId!)}
-        />
-      )}
-
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header with Tabs */}

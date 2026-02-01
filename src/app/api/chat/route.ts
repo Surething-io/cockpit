@@ -105,7 +105,9 @@ export async function POST(request: NextRequest) {
               'Grep',
               'WebFetch',
               'WebSearch',
-              'mcp__*',  // 允许所有 MCP 工具
+              'Task',      // 子代理执行复杂任务
+              'TodoWrite', // 任务管理
+              'mcp__*',    // 允许所有 MCP 工具
             ],
             // 权限模式：跳过所有权限检查
             permissionMode: 'bypassPermissions' as const,

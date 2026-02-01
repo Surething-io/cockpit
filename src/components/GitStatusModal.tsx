@@ -270,6 +270,100 @@ function HighlightedContent({
 }
 
 // Split Diff View Component
+// 迷你地图组件
+function DiffMinimap({
+  lines,
+  containerRef,
+  totalLines,
+}: {
+  lines: Array<{ type: 'unchanged' | 'removed' | 'added' }>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  totalLines: number;
+}) {
+  const minimapRef = useRef<HTMLDivElement>(null);
+  const [viewportInfo, setViewportInfo] = useState({ top: 0, height: 0 });
+
+  // 更新视口指示器位置
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const updateViewport = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const minimapHeight = minimapRef.current?.clientHeight || 0;
+
+      if (scrollHeight <= clientHeight) {
+        // 内容没有超出容器，视口覆盖整个迷你地图
+        setViewportInfo({ top: 0, height: minimapHeight });
+      } else {
+        const ratio = minimapHeight / scrollHeight;
+        setViewportInfo({
+          top: scrollTop * ratio,
+          height: clientHeight * ratio,
+        });
+      }
+    };
+
+    updateViewport();
+    container.addEventListener('scroll', updateViewport);
+    window.addEventListener('resize', updateViewport);
+
+    return () => {
+      container.removeEventListener('scroll', updateViewport);
+      window.removeEventListener('resize', updateViewport);
+    };
+  }, [containerRef, totalLines]);
+
+  // 点击跳转
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const container = containerRef.current;
+    const minimap = minimapRef.current;
+    if (!container || !minimap) return;
+
+    const rect = minimap.getBoundingClientRect();
+    const clickY = e.clientY - rect.top;
+    const ratio = clickY / rect.height;
+
+    const targetScroll = ratio * container.scrollHeight - container.clientHeight / 2;
+    container.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+  };
+
+  if (totalLines === 0) return null;
+
+  return (
+    <div
+      ref={minimapRef}
+      className="w-4 flex-shrink-0 bg-gray-100 dark:bg-gray-800 border-l border-gray-300 dark:border-gray-600 relative cursor-pointer"
+      onClick={handleClick}
+    >
+      {/* 变更指示条 */}
+      <div className="absolute inset-0 flex flex-col">
+        {lines.map((line, idx) => (
+          <div
+            key={idx}
+            className={`flex-1 ${
+              line.type === 'removed'
+                ? 'bg-red-400 dark:bg-red-500'
+                : line.type === 'added'
+                ? 'bg-green-400 dark:bg-green-500'
+                : ''
+            }`}
+            style={{ minHeight: '1px' }}
+          />
+        ))}
+      </div>
+      {/* 视口指示器 */}
+      <div
+        className="absolute left-0 right-0 bg-gray-400/30 dark:bg-gray-500/30 border-y border-gray-400 dark:border-gray-500"
+        style={{
+          top: `${viewportInfo.top}px`,
+          height: `${Math.max(viewportInfo.height, 10)}px`,
+        }}
+      />
+    </div>
+  );
+}
+
 function DiffSplitView({ oldStr, newStr, filePath, isNew, isDeleted }: {
   oldStr: string;
   newStr: string;
@@ -280,6 +374,7 @@ function DiffSplitView({ oldStr, newStr, filePath, isNew, isDeleted }: {
   const diffLines = computeLineDiff(oldStr, newStr);
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const isSyncingRef = useRef(false);
 
   // Sync scroll between left and right panels
@@ -339,13 +434,25 @@ function DiffSplitView({ oldStr, newStr, filePath, isNew, isDeleted }: {
   const allLines = diffLines.map(line => line.content);
   const highlightedLines = useLineHighlight(allLines, filePath);
 
+  // 根据文件状态调整左右比例：新增文件左25%右75%，删除文件左75%右25%，其他50%50%
+  const leftWidth = isNew ? 'w-1/4' : isDeleted ? 'w-3/4' : 'w-1/2';
+  const rightWidth = isNew ? 'w-3/4' : isDeleted ? 'w-1/4' : 'w-1/2';
+
+  // 为迷你地图准备行类型数据（使用对齐后的行数）
+  const minimapLines = leftLines.map((leftLine, idx) => {
+    const rightLine = rightLines[idx];
+    if (leftLine.type === 'removed') return { type: 'removed' as const };
+    if (rightLine?.type === 'added') return { type: 'added' as const };
+    return { type: 'unchanged' as const };
+  });
+
   return (
     <div className="font-mono flex h-full" style={{ fontSize: '0.8125rem' }}>
       {/* Left - Old */}
       <div
         ref={leftRef}
         onScroll={() => handleScroll('left')}
-        className="w-1/2 min-w-0 overflow-auto border-r border-gray-300 dark:border-gray-600"
+        className={`${leftWidth} min-w-0 overflow-auto border-r border-gray-300 dark:border-gray-600`}
       >
         <div className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-center text-xs font-medium border-b border-gray-300 dark:border-gray-600 sticky top-0 z-10">
           {isNew ? '(New File)' : isDeleted ? 'Deleted' : 'Old'}
@@ -368,9 +475,12 @@ function DiffSplitView({ oldStr, newStr, filePath, isNew, isDeleted }: {
       </div>
       {/* Right - New */}
       <div
-        ref={rightRef}
+        ref={(el) => {
+          (rightRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+          (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+        }}
         onScroll={() => handleScroll('right')}
-        className="w-1/2 min-w-0 overflow-auto"
+        className={`${rightWidth} min-w-0 overflow-auto`}
       >
         <div className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-center text-xs font-medium border-b border-gray-300 dark:border-gray-600 sticky top-0 z-10">
           {isDeleted ? '(Deleted)' : isNew ? 'New' : 'New'}
@@ -391,6 +501,12 @@ function DiffSplitView({ oldStr, newStr, filePath, isNew, isDeleted }: {
           </div>
         ))}
       </div>
+      {/* Minimap */}
+      <DiffMinimap
+        lines={minimapLines}
+        containerRef={rightRef}
+        totalLines={leftLines.length}
+      />
     </div>
   );
 }

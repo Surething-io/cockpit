@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const cwd = searchParams.get('cwd') || process.cwd();
   const filePath = searchParams.get('path');
+  const raw = searchParams.get('raw') === '1';
 
   if (!filePath) {
     return NextResponse.json(
@@ -50,6 +51,9 @@ export async function GET(request: NextRequest) {
     if (IMAGE_EXTENSIONS.has(ext)) {
       // For images, return base64 encoded content
       if (fileSize > MAX_FILE_SIZE * 5) { // Allow larger images up to 5MB
+        if (raw) {
+          return new NextResponse('Image file too large', { status: 413 });
+        }
         return NextResponse.json({
           type: 'error',
           message: '图片文件过大，无法预览',
@@ -58,9 +62,19 @@ export async function GET(request: NextRequest) {
       }
 
       const content = await readFile(fullPath);
-      const base64 = content.toString('base64');
       const mimeType = getMimeType(ext);
 
+      // If raw=1, return raw image data for <img src="..."> usage
+      if (raw) {
+        return new NextResponse(content, {
+          headers: {
+            'Content-Type': mimeType,
+            'Content-Length': String(fileSize),
+          },
+        });
+      }
+
+      const base64 = content.toString('base64');
       return NextResponse.json({
         type: 'image',
         content: `data:${mimeType};base64,${base64}`,

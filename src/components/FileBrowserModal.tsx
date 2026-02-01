@@ -2266,7 +2266,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
         {/* Content */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Panel */}
-          <div className="w-80 flex-shrink-0 border-r border-border flex flex-col">
+          <div className="w-80 flex-shrink-0 border-r border-border flex flex-col overflow-hidden">
             {/* Tabs */}
             <div className="flex border-b border-border">
               <button
@@ -2392,7 +2392,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                     <span className="text-red-500 text-sm">{statusError}</span>
                   </div>
                 ) : (
-                  <div className="flex-1 overflow-y-auto">
+                  <div className="flex-1 min-h-0 overflow-y-auto">
                     {/* Staged Section */}
                     <div className="border-b border-border">
                       <div className="flex items-center justify-between px-3 py-2 bg-secondary">

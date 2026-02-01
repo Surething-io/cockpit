@@ -13,12 +13,12 @@ interface FileNode {
   children?: FileNode[];
 }
 
-// Get all visible files using git (tracked + untracked but not ignored)
+// Get all visible files using git (tracked + untracked but not ignored + .env files)
 async function getGitVisibleFiles(cwd: string): Promise<string[] | null> {
   try {
-    // Get tracked files + untracked but not ignored files
+    // Get tracked files + untracked but not ignored files + .env* files (even if ignored, including subdirs)
     const { stdout } = await execAsync(
-      '(git ls-files && git ls-files --others --exclude-standard) | sort -u',
+      '(git ls-files && git ls-files --others --exclude-standard && find . -name ".env*" -type f 2>/dev/null | sed "s|^\\./||") | sort -u',
       { cwd, maxBuffer: 10 * 1024 * 1024 }
     );
     return stdout.split('\n').filter(Boolean).map(f => f.trim());

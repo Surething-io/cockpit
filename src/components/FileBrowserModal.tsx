@@ -113,48 +113,6 @@ interface FileDiff {
 type TabType = 'tree' | 'recent' | 'status' | 'history';
 
 // ============================================================================
-// Cache Utilities (30s TTL)
-// ============================================================================
-
-interface CacheEntry<T> {
-  data: T;
-  timestamp: number;
-}
-
-const CACHE_TTL = 30 * 1000; // 30 seconds
-
-const cache = {
-  files: new Map<string, CacheEntry<FileNode[]>>(),
-  expanded: new Map<string, CacheEntry<string[]>>(),
-  branches: new Map<string, CacheEntry<Branch>>(),
-  fileContent: new Map<string, CacheEntry<FileContent>>(),
-};
-
-function getCached<T>(map: Map<string, CacheEntry<T>>, key: string): T | null {
-  const entry = map.get(key);
-  if (entry && Date.now() - entry.timestamp < CACHE_TTL) {
-    return entry.data;
-  }
-  return null;
-}
-
-function setCache<T>(map: Map<string, CacheEntry<T>>, key: string, data: T): void {
-  map.set(key, { data, timestamp: Date.now() });
-}
-
-function clearCache(key: string): void {
-  cache.files.delete(key);
-  cache.expanded.delete(key);
-  cache.branches.delete(key);
-  // Clear all file content for this cwd
-  for (const k of cache.fileContent.keys()) {
-    if (k.startsWith(key + ':')) {
-      cache.fileContent.delete(k);
-    }
-  }
-}
-
-// ============================================================================
 // Shiki Highlighter
 // ============================================================================
 
@@ -1714,22 +1672,12 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
   }, [isOpen, onClose, showBlame]);
 
   // ========== File Browser Functions ==========
-  const loadExpandedPaths = useCallback(async (forceRefresh = false) => {
-    // Check cache first
-    if (!forceRefresh) {
-      const cached = getCached(cache.expanded, cwd);
-      if (cached && cached.length > 0) {
-        setExpandedPaths(new Set(cached));
-        return;
-      }
-    }
-
+  const loadExpandedPaths = useCallback(async () => {
     try {
       const res = await fetch(`/api/files/expanded?cwd=${encodeURIComponent(cwd)}`);
       const data = await res.json();
       if (data.paths && Array.isArray(data.paths) && data.paths.length > 0) {
         setExpandedPaths(new Set(data.paths));
-        setCache(cache.expanded, cwd, data.paths);
       }
     } catch (err) {
       console.error('Error loading expanded paths:', err);
@@ -1755,16 +1703,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
     }, 500);
   }, [cwd]);
 
-  const loadFiles = useCallback(async (forceRefresh = false) => {
-    // Check cache first
-    if (!forceRefresh) {
-      const cached = getCached(cache.files, cwd);
-      if (cached) {
-        setFiles(cached);
-        return;
-      }
-    }
-
+  const loadFiles = useCallback(async () => {
     setIsLoadingFiles(true);
     setFileError(null);
     try {
@@ -1773,9 +1712,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
       if (data.error) {
         setFileError(data.error);
       } else {
-        const filesData = data.files || [];
-        setFiles(filesData);
-        setCache(cache.files, cwd, filesData);
+        setFiles(data.files || []);
       }
     } catch (err) {
       console.error('Error loading files:', err);
@@ -1814,30 +1751,16 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
     }
   }, [cwd]);
 
-  const loadFileContent = useCallback(async (filePath: string, forceRefresh = false) => {
-    const cacheKey = `${cwd}:${filePath}`;
-
-    // Check cache first (but always reset blame state)
+  const loadFileContent = useCallback(async (filePath: string) => {
+    setIsLoadingContent(true);
+    setFileContent(null);
     setShowBlame(false);
     setBlameLines([]);
     setBlameError(null);
-
-    if (!forceRefresh) {
-      const cached = getCached(cache.fileContent, cacheKey);
-      if (cached) {
-        setFileContent(cached);
-        addToRecentFiles(filePath);
-        return;
-      }
-    }
-
-    setIsLoadingContent(true);
-    setFileContent(null);
     try {
       const res = await fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`);
       const data = await res.json();
       setFileContent(data);
-      setCache(cache.fileContent, cacheKey, data);
       addToRecentFiles(filePath);
     } catch (err) {
       console.error('Error loading file content:', err);
@@ -2081,17 +2004,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
   }, [statusSelectedFile, cwd]);
 
   // ========== Git History Functions ==========
-  const loadBranches = useCallback((forceRefresh = false) => {
-    // Check cache first
-    if (!forceRefresh) {
-      const cached = getCached(cache.branches, cwd);
-      if (cached) {
-        setBranches(cached);
-        setSelectedBranch(cached.current);
-        return;
-      }
-    }
-
+  const loadBranches = useCallback(() => {
     setIsLoadingBranches(true);
     setHistoryError(null);
     fetch(`/api/git/branches?cwd=${encodeURIComponent(cwd)}`)
@@ -2103,7 +2016,6 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
         } else if (data.local && data.current) {
           setBranches(data);
           setSelectedBranch(data.current);
-          setCache(cache.branches, cwd, data);
         } else {
           setHistoryError('无法获取分支信息');
           setBranches(null);
@@ -2301,12 +2213,12 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
   // ========== Refresh Handler ==========
   const handleRefresh = useCallback(() => {
     if (activeTab === 'tree' || activeTab === 'recent') {
-      loadFiles(true);  // Force refresh, bypass cache
+      loadFiles();
       loadRecentFiles();
     } else if (activeTab === 'status') {
       fetchStatus();
     } else if (activeTab === 'history') {
-      loadBranches(true);  // Force refresh, bypass cache
+      loadBranches();
       if (selectedBranch) {
         loadCommits(selectedBranch);
       }

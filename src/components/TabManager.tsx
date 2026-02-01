@@ -121,25 +121,20 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           <div className="flex items-center justify-between px-4 py-2">
             <div className="flex items-center gap-2">
               <img src="/icons/icon-72x72.png" alt="Cockpit" className="w-6 h-6" />
-              <div className="flex items-baseline gap-2">
-                <h1 className="text-lg font-semibold text-foreground">
-                  Cockpit
-                </h1>
-                <span className="text-xs text-muted-foreground">
-                  One seat. One AI. Everything under control.
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              {/* 显示项目路径 */}
-              {initialCwd && (
+              {initialCwd ? (
                 <span
                   className="text-sm text-foreground max-w-md truncate cursor-help"
                   title={`CWD: ${initialCwd}`}
                 >
                   {initialCwd}
                 </span>
+              ) : (
+                <h1 className="text-lg font-semibold text-foreground">
+                  Cockpit
+                </h1>
               )}
+            </div>
+            <div className="flex items-center gap-3">
               {/* 文件浏览器按钮 */}
               {initialCwd && (
                 <button

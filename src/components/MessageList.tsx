@@ -109,7 +109,7 @@ export function MessageList({ messages, isLoading, cwd }: MessageListProps) {
               <div className="flex justify-start mb-4">
                 <div className="bg-accent rounded-2xl rounded-bl-md px-4 py-3">
                   <div className="flex items-center gap-2 text-muted-foreground">
-                    <span className="inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                    <span className="inline-block w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                     <span className="text-sm">Claude 正在思考...</span>
                   </div>
                 </div>

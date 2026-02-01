@@ -287,7 +287,7 @@ function FilePreview({ filePath }: { filePath: string }) {
   if (error) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-xs text-red-500 dark:text-red-400">{error}</div>
+        <div className="text-xs text-red-11">{error}</div>
       </div>
     );
   }
@@ -580,7 +580,7 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
         )}
         {toolCall.isLoading && (
           <span className="ml-auto">
-            <span className="inline-block w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <span className="inline-block w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin" />
           </span>
         )}
         {!toolCall.isLoading && (
@@ -597,7 +597,7 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
               <span className="text-xs text-muted-foreground">输入参数:</span>
               <button
                 onClick={() => setPreviewContent({ title: `${toolCall.name}${displayPath ? ` ${displayPath}` : ''}`, content: JSON.stringify(toolCall.input, null, 2), toolName: toolCall.name })}
-                className="text-xs text-blue-500 hover:text-brand dark:hover:text-blue-300"
+                className="text-xs text-brand hover:text-teal-10"
               >
                 查看全部
               </button>
@@ -613,7 +613,7 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
                 <span className="text-xs text-muted-foreground">结果:</span>
                 <button
                   onClick={() => setPreviewContent({ title: `${toolCall.name}${displayPath ? ` ${displayPath}` : ''}`, content: toolCall.result || '', toolName: toolCall.name })}
-                  className="text-xs text-blue-500 hover:text-brand dark:hover:text-blue-300"
+                  className="text-xs text-brand hover:text-teal-10"
                 >
                   查看全部
                 </button>

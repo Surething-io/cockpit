@@ -209,11 +209,11 @@ export function ChatInput({ onSend, disabled, cwd }: ChatInputProps) {
   const getSourceColor = (source: CommandInfo['source']) => {
     switch (source) {
       case 'builtin':
-        return 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300';
+        return 'bg-brand/15 text-brand dark:bg-brand/25 dark:text-teal-11';
       case 'global':
-        return 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300';
+        return 'bg-green-9/15 text-green-11 dark:bg-green-9/25 dark:text-green-11';
       case 'project':
-        return 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300';
+        return 'bg-amber-9/15 text-amber-11 dark:bg-amber-9/25 dark:text-amber-11';
     }
   };
 
@@ -274,7 +274,7 @@ export function ChatInput({ onSend, disabled, cwd }: ChatInputProps) {
             }
           }}
           disabled={disabled}
-          className="p-2 text-green-600 hover:text-green-10 hover:bg-green-9/10 active:bg-green-9/20 active:scale-95 rounded-lg transition-all disabled:opacity-50"
+          className="p-2 text-green-11 hover:text-green-10 hover:bg-green-9/10 active:bg-green-9/20 active:scale-95 rounded-lg transition-all disabled:opacity-50"
           title="暂存所有文件 (git add -A)"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -285,7 +285,7 @@ export function ChatInput({ onSend, disabled, cwd }: ChatInputProps) {
         {/* Git 查看变更按钮 - 生成中也可点击 */}
         <button
           onClick={() => setShowGitStatus(true)}
-          className="p-2 text-blue-600 hover:text-brand hover:bg-brand/10 active:bg-brand/20 active:scale-95 rounded-lg transition-all"
+          className="p-2 text-brand hover:text-teal-10 hover:bg-brand/10 active:bg-brand/20 active:scale-95 rounded-lg transition-all"
           title="查看 Git 变更"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -301,7 +301,7 @@ export function ChatInput({ onSend, disabled, cwd }: ChatInputProps) {
           onPaste={handlePaste}
           placeholder={disabled ? "生成中... 可继续输入" : "输入消息，Enter 发送 (Shift+Enter 换行，可粘贴 PNG 图片，/ 显示命令)"}
           rows={1}
-          className="flex-1 resize-none px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-card text-foreground placeholder-slate-9"
+          className="flex-1 resize-none px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-card text-foreground placeholder-slate-9"
         />
       </div>
 

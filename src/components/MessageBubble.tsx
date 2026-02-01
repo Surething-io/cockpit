@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ChatMessage, MessageImage } from '@/types/chat';
-import { ToolCall } from './ToolCall';
+import { ToolCallModal } from './ToolCallModal';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface ImageModalProps {
@@ -113,7 +113,7 @@ export function MessageBubble({ message, cwd }: MessageBubbleProps) {
                   {toolCallsExpanded && (
                     <div className="border-t border-gray-200 dark:border-gray-600 p-2 space-y-1">
                       {message.toolCalls.map((toolCall, index) => (
-                        <ToolCall key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} />
+                        <ToolCallModal key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} />
                       ))}
                     </div>
                   )}
@@ -121,7 +121,7 @@ export function MessageBubble({ message, cwd }: MessageBubbleProps) {
               ) : (
                 // 正常模式：直接显示所有工具调用
                 message.toolCalls.map((toolCall, index) => (
-                  <ToolCall key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} />
+                  <ToolCallModal key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} />
                 ))
               )}
             </div>

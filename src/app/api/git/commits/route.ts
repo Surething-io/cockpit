@@ -9,22 +9,25 @@ export async function GET(request: NextRequest) {
   const cwd = searchParams.get('cwd') || process.cwd();
   const branch = searchParams.get('branch') || 'HEAD';
   const limit = parseInt(searchParams.get('limit') || '50', 10);
+  const offset = parseInt(searchParams.get('offset') || '0', 10);
 
   try {
     // 获取提交历史
-    // 格式: hash|shortHash|author|authorEmail|date|subject
-    const format = '%H|%h|%an|%ae|%ci|%s';
+    // 使用 %x00 (NUL) 作为字段分隔符, %x01 (SOH) 作为记录分隔符
+    // 格式: hash|shortHash|author|authorEmail|date|subject|body
+    const format = '%H%x00%h%x00%an%x00%ae%x00%ci%x00%s%x00%b%x01';
+    const skipArg = offset > 0 ? `--skip=${offset}` : '';
     const { stdout } = await execAsync(
-      `git log ${branch} --format="${format}" -n ${limit}`,
+      `git log ${branch} --format="${format}" -n ${limit} ${skipArg}`,
       { cwd, maxBuffer: 10 * 1024 * 1024 }
     );
 
     const commits = stdout
-      .split('\n')
+      .split('\x01')
       .filter(Boolean)
-      .map(line => {
-        const [hash, shortHash, author, authorEmail, date, ...subjectParts] = line.split('|');
-        const subject = subjectParts.join('|'); // 处理 subject 中可能包含 | 的情况
+      .map(record => {
+        const parts = record.trim().split('\x00');
+        const [hash, shortHash, author, authorEmail, date, subject, body = ''] = parts;
         return {
           hash,
           shortHash,
@@ -32,6 +35,7 @@ export async function GET(request: NextRequest) {
           authorEmail,
           date,
           subject,
+          body: body.trim(),
           relativeDate: getRelativeDate(new Date(date)),
         };
       });

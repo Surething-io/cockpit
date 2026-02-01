@@ -2,7 +2,7 @@ export { Chat } from './Chat';
 export { ChatInput } from './ChatInput';
 export { MessageList } from './MessageList';
 export { MessageBubble } from './MessageBubble';
-export { ToolCall } from './ToolCall';
+export { ToolCallModal } from './ToolCallModal';
 export { MarkdownRenderer } from './MarkdownRenderer';
 export { SessionBrowser } from './SessionBrowser';
 export { ProjectSessionsModal } from './ProjectSessionsModal';

@@ -265,6 +265,29 @@ body {
   display: none;
 }
 
+/* Toast 动画 */
+@keyframes slideIn {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOut {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+
 /* ---- Shiki 代码高亮样式 ---- */
 .shiki-wrapper pre {
   margin: 0;

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback
 import { ImageInfo } from '@/types/chat';
 import { ImagePreview } from './ImagePreview';
 import { GitStatusModal } from './GitStatusModal';
+import { toast } from './Toast';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -262,11 +263,14 @@ export function ChatInput({ onSend, disabled, cwd }: ChatInputProps) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ cwd, files: ['.'] }),
               });
-              if (!response.ok) {
-                console.error('Failed to stage all files');
+              if (response.ok) {
+                toast('已暂存所有文件', 'success');
+              } else {
+                toast('暂存失败', 'error');
               }
             } catch (err) {
               console.error('Error staging files:', err);
+              toast('暂存失败', 'error');
             }
           }}
           disabled={disabled}

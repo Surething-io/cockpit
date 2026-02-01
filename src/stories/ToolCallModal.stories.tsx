@@ -1,13 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { ToolCall } from '@/components/ToolCall';
+import { ToolCallModal } from '@/components/ToolCallModal';
 
 const meta = {
-  title: 'Components/ToolCall',
-  component: ToolCall,
+  title: 'Components/ToolCallModal',
+  component: ToolCallModal,
   parameters: {
     layout: 'padded',
   },
-} satisfies Meta<typeof ToolCall>;
+} satisfies Meta<typeof ToolCallModal>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;

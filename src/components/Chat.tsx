@@ -6,7 +6,6 @@ import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { SessionBrowser } from './SessionBrowser';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
-import { FileBrowserModal } from './FileBrowserModal';
 import { SettingsModal } from './SettingsModal';
 
 interface ChatProps {
@@ -17,24 +16,39 @@ interface ChatProps {
   onLoadingChange?: (isLoading: boolean) => void;
   onSessionIdChange?: (sessionId: string) => void;
   onTitleChange?: (title: string) => void;
+  onShowGitStatus?: () => void;
 }
 
-export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, onLoadingChange, onSessionIdChange, onTitleChange }: ChatProps) {
+export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus }: ChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [currentTurnIndex, setCurrentTurnIndex] = useState<number | undefined>(undefined);
+  const [totalTurns, setTotalTurns] = useState(0);
   const [isSessionBrowserOpen, setIsSessionBrowserOpen] = useState(false);
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
-  const [isGitHistoryOpen, setIsGitHistoryOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // 分页参数
+  const TURNS_PER_PAGE = 10;
+
   // 根据 cwd + sessionId 加载历史消息
   // incremental: 是否增量更新（只更新变化的部分，不触发滚动）
-  const loadHistoryByCwdAndSessionId = async (cwd: string, sid: string, incremental = false) => {
+  // limit: 每次加载的 turn 数量
+  // beforeTurnIndex: 加载此 turn 之前的消息
+  const loadHistoryByCwdAndSessionId = async (
+    cwd: string,
+    sid: string,
+    incremental = false,
+    limit?: number,
+    beforeTurnIndex?: number
+  ) => {
     if (!incremental) {
       setIsLoadingHistory(true);
     }
@@ -42,10 +56,19 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
       const response = await fetch('/api/session-by-path', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, sessionId: sid }),
+        body: JSON.stringify({ cwd, sessionId: sid, limit, beforeTurnIndex }),
       });
       if (response.ok) {
         const data = await response.json();
+
+        // 更新分页状态
+        if (data.totalTurns !== undefined) {
+          setTotalTurns(data.totalTurns);
+        }
+        if (data.hasMore !== undefined) {
+          setHasMoreHistory(data.hasMore);
+        }
+
         if (data.messages && data.messages.length > 0) {
           if (incremental) {
             // 增量更新模式：只更新变化的消息
@@ -109,11 +132,54 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
     }
   };
 
+  // 加载更多历史消息（向上滚动时调用）
+  const loadMoreHistory = useCallback(async () => {
+    if (!initialCwd || !sessionId || isLoadingMore || !hasMoreHistory) return;
+
+    setIsLoadingMore(true);
+    try {
+      // 计算当前已加载的 turn 数量
+      // 从 totalTurns 减去已加载的范围来确定 beforeTurnIndex
+      const beforeIndex = currentTurnIndex !== undefined
+        ? currentTurnIndex
+        : totalTurns - Math.ceil(messages.filter(m => m.role === 'user').length);
+
+      const response = await fetch('/api/session-by-path', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cwd: initialCwd,
+          sessionId,
+          limit: TURNS_PER_PAGE,
+          beforeTurnIndex: beforeIndex > 0 ? beforeIndex : undefined
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.messages && data.messages.length > 0) {
+          // 将新消息添加到现有消息前面
+          setMessages(prev => [...data.messages, ...prev]);
+          // 更新当前 turn 索引
+          const loadedTurns = data.messages.filter((m: ChatMessage) => m.role === 'user').length;
+          setCurrentTurnIndex(beforeIndex - loadedTurns);
+        }
+        if (data.hasMore !== undefined) {
+          setHasMoreHistory(data.hasMore);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load more history:', error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [initialCwd, sessionId, isLoadingMore, hasMoreHistory, currentTurnIndex, totalTurns, messages]);
+
   // 页面加载时加载历史消息（只运行一次）
   useEffect(() => {
-    // 如果有 initialCwd + initialSessionId，加载指定的会话历史
+    // 如果有 initialCwd + initialSessionId，加载指定的会话历史（只加载最新 10 个 turn）
     if (initialCwd && initialSessionId) {
-      loadHistoryByCwdAndSessionId(initialCwd, initialSessionId);
+      loadHistoryByCwdAndSessionId(initialCwd, initialSessionId, false, TURNS_PER_PAGE);
       return;
     }
 
@@ -446,7 +512,8 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
     <div className={`flex ${hideHeader && hideSidebar ? 'h-full' : 'h-screen'} bg-card`}>
       {/* Main Content */}
       <div
-        className="flex-1 flex flex-col min-w-0"
+        id="chat-screen"
+        className="flex-1 flex flex-col min-w-0 relative"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
@@ -480,18 +547,6 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
                   <span className="text-xs text-muted-foreground">
                     Session: {sessionId.slice(0, 8)}...
                   </span>
-                )}
-                {/* Git History 按钮（仅当有 cwd 时显示） */}
-                {initialCwd && (
-                  <button
-                    onClick={() => setIsGitHistoryOpen(true)}
-                    className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-                    title="Git 历史"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </button>
                 )}
                 {/* 当前项目 Sessions 按钮（仅当有 cwd 时显示） */}
                 {initialCwd && (
@@ -537,7 +592,14 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
             <span className="text-muted-foreground">加载历史消息...</span>
           </div>
         ) : (
-          <MessageList messages={messages} isLoading={isLoading} cwd={initialCwd} />
+          <MessageList
+            messages={messages}
+            isLoading={isLoading}
+            cwd={initialCwd}
+            hasMoreHistory={hasMoreHistory}
+            isLoadingMore={isLoadingMore}
+            onLoadMore={loadMoreHistory}
+          />
         )}
 
         {/* Token Usage Display */}
@@ -581,6 +643,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
           onSend={handleSend}
           disabled={isLoading}
           cwd={initialCwd}
+          onShowGitStatus={onShowGitStatus}
         />
       </div>
 
@@ -601,15 +664,6 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
         />
       )}
 
-      {/* Git History Modal - 仅在不隐藏 header 且有 cwd 时显示 */}
-      {!hideHeader && initialCwd && (
-        <FileBrowserModal
-          isOpen={isGitHistoryOpen}
-          onClose={() => setIsGitHistoryOpen(false)}
-          cwd={initialCwd}
-          initialTab="history"
-        />
-      )}
 
       {/* Settings Modal */}
       {!hideHeader && (

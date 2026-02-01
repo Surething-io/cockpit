@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { DiffView } from './DiffView';
+import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, type GitFileNode } from './GitFileTree';
 
 // Types
 export interface CommitInfo {
@@ -22,15 +23,6 @@ interface FileChange {
   oldPath?: string;
   additions: number;
   deletions: number;
-}
-
-interface TreeNode {
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  children: TreeNode[];
-  file?: FileChange;
-  expanded?: boolean;
 }
 
 interface FileDiff {
@@ -58,150 +50,19 @@ function formatDateTime(dateStr: string): string {
   return `${date.getFullYear()}-${month}-${day} ${hours}:${minutes}`;
 }
 
-// File status icon
-function FileStatusIcon({ status }: { status: FileChange['status'] }) {
-  const colors = {
-    added: 'text-green-11',
-    modified: 'text-amber-11',
-    deleted: 'text-red-11',
-    renamed: 'text-brand',
-  };
-  const labels = { added: 'A', modified: 'M', deleted: 'D', renamed: 'R' };
-  return (
-    <span className={`font-mono text-xs font-bold ${colors[status]}`}>
-      {labels[status]}
-    </span>
-  );
-}
-
-// Build directory tree from file list
-function buildFileTree(files: FileChange[]): TreeNode[] {
-  const root: TreeNode[] = [];
-
-  for (const file of files) {
-    const parts = file.path.split('/');
-    let currentLevel = root;
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isLast = i === parts.length - 1;
-      const currentPath = parts.slice(0, i + 1).join('/');
-
-      let existing = currentLevel.find(n => n.name === part);
-
-      if (!existing) {
-        existing = {
-          name: part,
-          path: currentPath,
-          isDirectory: !isLast,
-          children: [],
-          file: isLast ? file : undefined,
-          expanded: true,
-        };
-        currentLevel.push(existing);
-      }
-
-      if (!isLast) {
-        currentLevel = existing.children;
-      }
-    }
-  }
-
-  // Sort: directories first, then files
-  const sortNodes = (nodes: TreeNode[]) => {
-    nodes.sort((a, b) => {
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
-      return a.name.localeCompare(b.name);
-    });
-    nodes.forEach(n => sortNodes(n.children));
-  };
-
-  sortNodes(root);
-  return root;
-}
-
-// File tree item component
-function FileTreeItem({
-  node,
-  level,
-  selectedPath,
-  onSelect,
-  expandedPaths,
-  onToggle,
-}: {
-  node: TreeNode;
-  level: number;
-  selectedPath: string | null;
-  onSelect: (file: FileChange) => void;
-  expandedPaths: Set<string>;
-  onToggle: (path: string) => void;
-}) {
-  const isSelected = selectedPath === node.path;
-  const isExpanded = expandedPaths.has(node.path);
-
-  if (node.isDirectory) {
-    return (
-      <div>
-        <div
-          className="flex items-center gap-1 py-0.5 px-2 pr-3 hover:bg-accent cursor-pointer whitespace-nowrap"
-          style={{ paddingLeft: `${level * 12 + 8}px` }}
-          onClick={() => onToggle(node.path)}
-        >
-          <span className="text-slate-9 text-xs">
-            {isExpanded ? '▼' : '▶'}
-          </span>
-          <span className="text-sm text-foreground">{node.name}</span>
-        </div>
-        {isExpanded && node.children.map(child => (
-          <FileTreeItem
-            key={child.path}
-            node={child}
-            level={level + 1}
-            selectedPath={selectedPath}
-            onSelect={onSelect}
-            expandedPaths={expandedPaths}
-            onToggle={onToggle}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={`flex items-center gap-1 py-0.5 px-2 pr-3 cursor-pointer whitespace-nowrap ${
-        isSelected ? 'bg-brand/10' : 'hover:bg-accent'
-      }`}
-      style={{ paddingLeft: `${level * 12 + 8}px` }}
-      onClick={() => node.file && onSelect(node.file)}
-    >
-      <span className="text-slate-9">📄</span>
-      <span className={`text-sm ${isSelected ? 'text-brand' : 'text-foreground'}`}>
-        {node.name}
-      </span>
-      {node.file && <FileStatusIcon status={node.file.status} />}
-      {node.file && (
-        <>
-          <span className="text-xs text-green-11">+{node.file.additions}</span>
-          <span className="text-xs text-red-11">-{node.file.deletions}</span>
-        </>
-      )}
-    </div>
-  );
-}
-
 // Main component props
 interface CommitDetailPanelProps {
   isOpen: boolean;
   onClose: () => void;
   commit: CommitInfo | null;
   cwd: string;
+  embedded?: boolean; // 内嵌模式，无 Modal 包装和标题栏
+  initialFilePath?: string; // 初始选中的文件路径
 }
 
-export function CommitDetailPanel({ isOpen, onClose, commit, cwd }: CommitDetailPanelProps) {
+export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = false, initialFilePath }: CommitDetailPanelProps) {
   const [files, setFiles] = useState<FileChange[]>([]);
-  const [fileTree, setFileTree] = useState<TreeNode[]>([]);
+  const [fileTree, setFileTree] = useState<GitFileNode<unknown>[]>([]);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<FileChange | null>(null);
   const [fileDiff, setFileDiff] = useState<FileDiff | null>(null);
@@ -234,27 +95,33 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd }: CommitDetail
     fetch(`/api/git/commit-diff?cwd=${encodeURIComponent(cwd)}&hash=${commit.hash}`)
       .then(res => res.json())
       .then(data => {
-        const fileList = data.files || [];
+        const fileList: FileChange[] = data.files || [];
         setFiles(fileList);
         // Build file tree
-        const tree = buildFileTree(fileList);
+        const tree = buildGitFileTree(fileList);
         setFileTree(tree);
         // Initialize expanded paths
-        const allPaths = new Set<string>();
-        const collectPaths = (nodes: TreeNode[]) => {
-          nodes.forEach(n => {
-            if (n.isDirectory) {
-              allPaths.add(n.path);
-              collectPaths(n.children);
-            }
-          });
-        };
-        collectPaths(tree);
-        setExpandedPaths(allPaths);
+        setExpandedPaths(new Set(collectGitTreeDirPaths(tree)));
+
+        // 如果有 initialFilePath，自动选中对应的文件
+        if (initialFilePath && fileList.length > 0) {
+          const matchedFile = fileList.find(f => f.path === initialFilePath);
+          if (matchedFile) {
+            // 延迟执行以确保状态已更新
+            setTimeout(() => {
+              setSelectedFile(matchedFile);
+              // 加载 diff
+              fetch(`/api/git/commit-diff?cwd=${encodeURIComponent(cwd)}&hash=${commit.hash}&file=${encodeURIComponent(matchedFile.path)}`)
+                .then(res => res.json())
+                .then(diffData => setFileDiff(diffData))
+                .catch(console.error);
+            }, 0);
+          }
+        }
       })
       .catch(console.error)
       .finally(() => setIsLoadingFiles(false));
-  }, [isOpen, commit, cwd]);
+  }, [isOpen, commit, cwd, initialFilePath]);
 
   // Load diff when file selected
   const handleSelectFile = useCallback((file: FileChange) => {
@@ -295,6 +162,98 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd }: CommitDetail
 
   if (!isOpen || !commit) return null;
 
+  // 内容部分（共享于 embedded 和 modal 模式）
+  const content = (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Commit info header */}
+      <div className="px-4 py-3 border-b border-border bg-secondary flex-shrink-0">
+        <div className="text-sm font-medium text-foreground mb-2">
+          {commit.subject}
+        </div>
+        {commit.body && (
+          <div className="text-xs text-muted-foreground whitespace-pre-wrap mb-3 max-h-32 overflow-y-auto border-l-2 border-border pl-3">
+            {commit.body}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1">
+            <span className="text-slate-9">哈希:</span>
+            <span className="font-mono bg-accent px-1.5 py-0.5 rounded">
+              {commit.hash}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-slate-9">作者:</span>
+            <span>{commit.author}</span>
+            <span className="text-slate-9">&lt;{commit.authorEmail}&gt;</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-slate-9">日期:</span>
+            <span>{displayDate}</span>
+            {commit.relativeDate && (
+              <span className="text-slate-9">({commit.relativeDate})</span>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-slate-9">文件:</span>
+            <span>{files.length} 个变更</span>
+          </div>
+        </div>
+      </div>
+
+      {/* File tree + Diff container */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* File tree */}
+        <div className="w-72 flex-shrink-0 border-r border-border overflow-auto">
+          {isLoadingFiles ? (
+            <div className="p-4 text-center text-muted-foreground text-sm">加载文件中...</div>
+          ) : (
+            <GitFileTree
+              files={fileTree}
+              selectedPath={selectedFile?.path || null}
+              expandedPaths={expandedPaths}
+              onSelect={(node) => node.file && handleSelectFile(node.file as FileChange)}
+              onToggle={handleToggle}
+              cwd={cwd}
+              showChanges={true}
+              emptyMessage="无文件变更"
+              className="py-1 min-w-max"
+            />
+          )}
+        </div>
+
+        {/* Diff view */}
+        <div className="flex-1 overflow-hidden">
+          {isLoadingDiff ? (
+            <div className="h-full flex items-center justify-center text-muted-foreground text-sm">加载差异中...</div>
+          ) : fileDiff ? (
+            <DiffView
+              oldContent={fileDiff.oldContent}
+              newContent={fileDiff.newContent}
+              filePath={fileDiff.filePath}
+              isNew={fileDiff.isNew}
+              isDeleted={fileDiff.isDeleted}
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+              选择文件查看差异
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  // 内嵌模式：无 Modal 包装和标题栏
+  if (embedded) {
+    return (
+      <div className="bg-card w-full h-full flex flex-col">
+        {content}
+      </div>
+    );
+  }
+
+  // Modal 模式
   return (
     <div className="fixed inset-0 z-[60] bg-black/50" onClick={onClose}>
       <div
@@ -315,88 +274,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd }: CommitDetail
         </div>
 
         {/* Content */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Commit info header */}
-          <div className="px-4 py-3 border-b border-border bg-secondary flex-shrink-0">
-            <div className="text-sm font-medium text-foreground mb-2">
-              {commit.subject}
-            </div>
-            {commit.body && (
-              <div className="text-xs text-muted-foreground whitespace-pre-wrap mb-3 max-h-32 overflow-y-auto border-l-2 border-border pl-3">
-                {commit.body}
-              </div>
-            )}
-            <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <span className="text-slate-9">哈希:</span>
-                <span className="font-mono bg-accent px-1.5 py-0.5 rounded">
-                  {commit.hash}
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-slate-9">作者:</span>
-                <span>{commit.author}</span>
-                <span className="text-slate-9">&lt;{commit.authorEmail}&gt;</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-slate-9">日期:</span>
-                <span>{displayDate}</span>
-                {commit.relativeDate && (
-                  <span className="text-slate-9">({commit.relativeDate})</span>
-                )}
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-slate-9">文件:</span>
-                <span>{files.length} 个变更</span>
-              </div>
-            </div>
-          </div>
-
-          {/* File tree + Diff container */}
-          <div className="flex-1 flex overflow-hidden">
-            {/* File tree */}
-            <div className="w-72 flex-shrink-0 border-r border-border overflow-auto">
-              {isLoadingFiles ? (
-                <div className="p-4 text-center text-muted-foreground text-sm">加载文件中...</div>
-              ) : files.length === 0 ? (
-                <div className="p-4 text-center text-muted-foreground text-sm">无文件变更</div>
-              ) : (
-                <div className="py-1 min-w-max">
-                  {fileTree.map(node => (
-                    <FileTreeItem
-                      key={node.path}
-                      node={node}
-                      level={0}
-                      selectedPath={selectedFile?.path || null}
-                      onSelect={handleSelectFile}
-                      expandedPaths={expandedPaths}
-                      onToggle={handleToggle}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Diff view */}
-            <div className="flex-1 overflow-hidden">
-              {isLoadingDiff ? (
-                <div className="h-full flex items-center justify-center text-muted-foreground text-sm">加载差异中...</div>
-              ) : fileDiff ? (
-                <DiffView
-                  oldContent={fileDiff.oldContent}
-                  newContent={fileDiff.newContent}
-                  filePath={fileDiff.filePath}
-                  isNew={fileDiff.isNew}
-                  isDeleted={fileDiff.isDeleted}
-                />
-              ) : (
-                <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                  选择文件查看差异
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        {content}
       </div>
     </div>
   );

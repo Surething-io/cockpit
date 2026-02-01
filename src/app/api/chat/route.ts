@@ -59,6 +59,9 @@ export async function POST(request: NextRequest) {
     const encoder = new TextEncoder();
     let isClosed = false;
 
+    // 创建 AbortController 用于取消 query
+    const queryAbortController = new AbortController();
+
     const stream = new ReadableStream({
       async start(controller) {
         const safeEnqueue = (data: string) => {
@@ -117,6 +120,8 @@ export async function POST(request: NextRequest) {
             includePartialMessages: true,
             // 启用 1M token 上下文窗口（beta）- 解决 "Prompt is too long" 问题
             betas: ['context-1m-2025-08-07'],
+            // 传入 abortController，用于取消 query
+            abortController: queryAbortController,
           };
 
           let response;
@@ -147,6 +152,10 @@ export async function POST(request: NextRequest) {
           }
 
           for await (const message of response) {
+            // 检查是否已被取消
+            if (isClosed) {
+              break;
+            }
             // 发送 SSE 格式的数据
             const data = `data: ${JSON.stringify(message)}\n\n`;
             safeEnqueue(data);
@@ -156,6 +165,12 @@ export async function POST(request: NextRequest) {
           safeEnqueue('data: [DONE]\n\n');
           safeClose();
         } catch (error) {
+          // 如果是取消导致的错误，静默处理
+          if (queryAbortController.signal.aborted) {
+            console.log('Query aborted by user');
+            safeClose();
+            return;
+          }
           console.error('Stream error:', error);
           safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: String(error) })}\n\n`);
           safeClose();
@@ -163,6 +178,8 @@ export async function POST(request: NextRequest) {
       },
       cancel() {
         isClosed = true;
+        // 取消 query 执行
+        queryAbortController.abort();
       },
     });
 

@@ -6,6 +6,9 @@ import { createHighlighter, type Highlighter, type BundledLanguage } from 'shiki
 import { CommitDetailPanel, type CommitInfo } from './CommitDetailPanel';
 import { DiffView } from './DiffView';
 import { toast } from './Toast';
+import { FileTree, type FileNode as FileTreeNode } from './FileTree';
+import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, type GitFileNode, type GitFileStatus as GitFileStatusType } from './GitFileTree';
+import { MenuContainerProvider } from './FileContextMenu';
 
 // ============================================================================
 // Types
@@ -57,14 +60,6 @@ interface GitDiffResponse {
   isDeleted: boolean;
 }
 
-interface StatusTreeNode {
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  children: StatusTreeNode[];
-  file?: GitFileStatus;
-  expanded?: boolean;
-}
 
 // Git History Types
 interface Branch {
@@ -92,14 +87,6 @@ interface FileChange {
   deletions: number;
 }
 
-interface HistoryTreeNode {
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  children: HistoryTreeNode[];
-  file?: FileChange;
-  expanded?: boolean;
-}
 
 interface FileDiff {
   oldContent: string;
@@ -347,97 +334,6 @@ function formatDateTime(dateStr: string): string {
   return `${date.getFullYear()}-${month}-${day} ${hours}:${minutes}`;
 }
 
-// Build status file tree
-function buildStatusFileTree(files: GitFileStatus[]): StatusTreeNode[] {
-  const root: StatusTreeNode[] = [];
-
-  for (const file of files) {
-    const parts = file.path.split('/');
-    let currentLevel = root;
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isLast = i === parts.length - 1;
-      const currentPath = parts.slice(0, i + 1).join('/');
-
-      let existing = currentLevel.find(n => n.name === part);
-
-      if (!existing) {
-        existing = {
-          name: part,
-          path: currentPath,
-          isDirectory: !isLast,
-          children: [],
-          file: isLast ? file : undefined,
-          expanded: true,
-        };
-        currentLevel.push(existing);
-      }
-
-      if (!isLast) {
-        currentLevel = existing.children;
-      }
-    }
-  }
-
-  const sortNodes = (nodes: StatusTreeNode[]) => {
-    nodes.sort((a, b) => {
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
-      return a.name.localeCompare(b.name);
-    });
-    nodes.forEach(n => sortNodes(n.children));
-  };
-
-  sortNodes(root);
-  return root;
-}
-
-// Build history file tree
-function buildHistoryFileTree(files: FileChange[]): HistoryTreeNode[] {
-  const root: HistoryTreeNode[] = [];
-
-  for (const file of files) {
-    const parts = file.path.split('/');
-    let currentLevel = root;
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isLast = i === parts.length - 1;
-      const currentPath = parts.slice(0, i + 1).join('/');
-
-      let existing = currentLevel.find(n => n.name === part);
-
-      if (!existing) {
-        existing = {
-          name: part,
-          path: currentPath,
-          isDirectory: !isLast,
-          children: [],
-          file: isLast ? file : undefined,
-          expanded: true,
-        };
-        currentLevel.push(existing);
-      }
-
-      if (!isLast) {
-        currentLevel = existing.children;
-      }
-    }
-  }
-
-  const sortNodes = (nodes: HistoryTreeNode[]) => {
-    nodes.sort((a, b) => {
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
-      return a.name.localeCompare(b.name);
-    });
-    nodes.forEach(n => sortNodes(n.children));
-  };
-
-  sortNodes(root);
-  return root;
-}
 
 // ============================================================================
 // Shared Components
@@ -591,6 +487,7 @@ interface VirtualFileTreeProps {
   matchedPaths: Set<string> | null;
   onSelect: (path: string) => void;
   onToggle: (path: string) => void;
+  shouldScrollToSelected?: boolean; // 是否滚动到选中文件（仅外部触发时为 true）
 }
 
 function VirtualFileTree({
@@ -600,6 +497,7 @@ function VirtualFileTree({
   matchedPaths,
   onSelect,
   onToggle,
+  shouldScrollToSelected = false,
 }: VirtualFileTreeProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -614,15 +512,15 @@ function VirtualFileTree({
     overscan: 10,
   });
 
-  // Scroll to selected file when it changes
+  // Scroll to selected file only when shouldScrollToSelected is true
   useEffect(() => {
-    if (selectedPath && flatItems.length > 0) {
+    if (shouldScrollToSelected && selectedPath && flatItems.length > 0) {
       const index = flatItems.findIndex(item => item.node.path === selectedPath);
       if (index >= 0) {
         virtualizer.scrollToIndex(index, { align: 'center' });
       }
     }
-  }, [selectedPath, flatItems, virtualizer]);
+  }, [shouldScrollToSelected, selectedPath, flatItems, virtualizer]);
 
   if (flatItems.length === 0) {
     return (
@@ -1037,12 +935,12 @@ function CodePreview({ content, filePath }: { content: string; filePath: string 
 interface BlameViewProps {
   blameLines: BlameLine[];
   cwd: string;
+  onSelectCommit?: (commit: CommitInfo) => void;
 }
 
-function BlameView({ blameLines, cwd }: BlameViewProps) {
+function BlameView({ blameLines, cwd, onSelectCommit }: BlameViewProps) {
   const [hoveredAuthor, setHoveredAuthor] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ line: BlameLine; x: number; y: number } | null>(null);
-  const [selectedCommit, setSelectedCommit] = useState<CommitInfo | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
 
   const authorColorMap = useMemo(() => {
@@ -1083,9 +981,9 @@ function BlameView({ blameLines, cwd }: BlameViewProps) {
       body: line.message.split('\n').slice(1).join('\n').trim(),
       time: line.time,
     };
-    setSelectedCommit(commitInfo);
+    onSelectCommit?.(commitInfo);
     setTooltip(null);
-  }, []);
+  }, [onSelectCommit]);
 
   return (
     <div ref={parentRef} className="h-full overflow-auto font-mono text-xs relative">
@@ -1180,132 +1078,10 @@ function BlameView({ blameLines, cwd }: BlameViewProps) {
           </div>
         </div>
       )}
-
-      <CommitDetailPanel
-        isOpen={selectedCommit !== null}
-        onClose={() => setSelectedCommit(null)}
-        commit={selectedCommit}
-        cwd={cwd}
-      />
     </div>
   );
 }
 
-// ============================================================================
-// Git Status Components
-// ============================================================================
-
-function StatusFileTreeItem({
-  node,
-  level,
-  selectedPath,
-  onSelect,
-  onStage,
-  onUnstage,
-  type,
-  onToggle,
-}: {
-  node: StatusTreeNode;
-  level: number;
-  selectedPath: string | null;
-  onSelect: (file: GitFileStatus, type: 'staged' | 'unstaged') => void;
-  onStage?: (path: string) => void;
-  onUnstage?: (path: string) => void;
-  type: 'staged' | 'unstaged';
-  onToggle: (path: string) => void;
-}) {
-  const isSelected = selectedPath === node.path;
-
-  const getStatusIcon = (status: GitFileStatus['status']) => {
-    switch (status) {
-      case 'added':
-      case 'untracked':
-        return <span className="text-green-11 text-xs font-bold">A</span>;
-      case 'modified':
-        return <span className="text-amber-11 text-xs font-bold">M</span>;
-      case 'deleted':
-        return <span className="text-red-11 text-xs font-bold">D</span>;
-      case 'renamed':
-        return <span className="text-brand text-xs font-bold">R</span>;
-      default:
-        return null;
-    }
-  };
-
-  if (node.isDirectory) {
-    return (
-      <div>
-        <div
-          className="flex items-center gap-1 py-0.5 px-2 hover:bg-accent cursor-pointer"
-          style={{ paddingLeft: `${level * 12 + 8}px` }}
-          onClick={() => onToggle(node.path)}
-        >
-          <span className="text-slate-9 text-xs">
-            {node.expanded ? '▼' : '▶'}
-          </span>
-          <span className="text-sm text-foreground">{node.name}</span>
-        </div>
-        {node.expanded && node.children.map(child => (
-          <StatusFileTreeItem
-            key={child.path}
-            node={child}
-            level={level + 1}
-            selectedPath={selectedPath}
-            onSelect={onSelect}
-            onStage={onStage}
-            onUnstage={onUnstage}
-            type={type}
-            onToggle={onToggle}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={`flex items-center gap-1 py-0.5 px-2 cursor-pointer group ${
-        isSelected ? 'bg-brand/10' : 'hover:bg-accent'
-      }`}
-      style={{ paddingLeft: `${level * 12 + 8}px` }}
-      onClick={() => node.file && onSelect(node.file, type)}
-    >
-      <span className="text-slate-9">📄</span>
-      <span className={`text-sm flex-1 truncate ${isSelected ? 'text-brand' : 'text-foreground'}`}>
-        {node.name}
-      </span>
-      {node.file && getStatusIcon(node.file.status)}
-      {type === 'unstaged' && onStage && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onStage(node.path);
-          }}
-          className="opacity-0 group-hover:opacity-100 p-0.5 text-green-11 hover:text-green-10 hover:bg-green-9/10 dark:hover:bg-green-9/20 rounded transition-all"
-          title="暂存文件"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
-      )}
-      {type === 'staged' && onUnstage && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onUnstage(node.path);
-          }}
-          className="opacity-0 group-hover:opacity-100 p-0.5 text-amber-11 hover:text-amber-10 hover:bg-amber-9/10 dark:hover:bg-amber-9/20 rounded transition-all"
-          title="取消暂存"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-          </svg>
-        </button>
-      )}
-    </div>
-  );
-}
 
 // ============================================================================
 // Git History Components
@@ -1455,105 +1231,29 @@ function BranchSelector({
   );
 }
 
-function FileStatusIcon({ status }: { status: FileChange['status'] }) {
-  const colors = {
-    added: 'text-green-11',
-    modified: 'text-amber-11',
-    deleted: 'text-red-11',
-    renamed: 'text-brand',
-  };
-  const labels = { added: 'A', modified: 'M', deleted: 'D', renamed: 'R' };
-  return (
-    <span className={`font-mono text-xs font-bold ${colors[status]}`}>
-      {labels[status]}
-    </span>
-  );
-}
-
-function HistoryFileTreeItem({
-  node,
-  level,
-  selectedPath,
-  onSelect,
-  expandedPaths,
-  onToggle,
-}: {
-  node: HistoryTreeNode;
-  level: number;
-  selectedPath: string | null;
-  onSelect: (file: FileChange) => void;
-  expandedPaths: Set<string>;
-  onToggle: (path: string) => void;
-}) {
-  const isSelected = selectedPath === node.path;
-  const isExpanded = expandedPaths.has(node.path);
-
-  if (node.isDirectory) {
-    return (
-      <div>
-        <div
-          className="flex items-center gap-1 py-0.5 px-2 pr-3 hover:bg-accent cursor-pointer whitespace-nowrap"
-          style={{ paddingLeft: `${level * 12 + 8}px` }}
-          onClick={() => onToggle(node.path)}
-        >
-          <span className="text-slate-9 text-xs">
-            {isExpanded ? '▼' : '▶'}
-          </span>
-          <span className="text-sm text-foreground">{node.name}</span>
-        </div>
-        {isExpanded && node.children.map(child => (
-          <HistoryFileTreeItem
-            key={child.path}
-            node={child}
-            level={level + 1}
-            selectedPath={selectedPath}
-            onSelect={onSelect}
-            expandedPaths={expandedPaths}
-            onToggle={onToggle}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={`flex items-center gap-1 py-0.5 px-2 pr-3 cursor-pointer whitespace-nowrap ${
-        isSelected ? 'bg-brand/10' : 'hover:bg-accent'
-      }`}
-      style={{ paddingLeft: `${level * 12 + 8}px` }}
-      onClick={() => node.file && onSelect(node.file)}
-    >
-      <span className="text-slate-9">📄</span>
-      <span className={`text-sm ${isSelected ? 'text-brand' : 'text-foreground'}`}>
-        {node.name}
-      </span>
-      {node.file && <FileStatusIcon status={node.file.status} />}
-      {node.file && (
-        <>
-          <span className="text-xs text-green-11">+{node.file.additions}</span>
-          <span className="text-xs text-red-11">-{node.file.deletions}</span>
-        </>
-      )}
-    </div>
-  );
-}
 
 // ============================================================================
 // Main Modal Component
 // ============================================================================
 
 interface FileBrowserModalProps {
-  isOpen: boolean;
   onClose: () => void;
   cwd: string;
   initialTab?: TabType;
+  tabSwitchTrigger?: number;
 }
 
 const COMMITS_PER_PAGE = 50;
 
-export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: FileBrowserModalProps) {
+export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchTrigger }: FileBrowserModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+  const menuContainerRef = useRef<HTMLDivElement>(null);
+  const [menuContainer, setMenuContainer] = useState<HTMLElement | null>(null);
+
+  // Set menu container after mount
+  useEffect(() => {
+    setMenuContainer(menuContainerRef.current);
+  }, []);
 
   // ========== File Browser State ==========
   const [files, setFiles] = useState<FileNode[]>([]);
@@ -1566,12 +1266,15 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
   const [isLoadingContent, setIsLoadingContent] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // 是否需要滚动到选中文件（仅外部触发选择时为 true，用户在目录树中点击选择时为 false）
+  const [shouldScrollToSelected, setShouldScrollToSelected] = useState(false);
 
   // Blame state
   const [showBlame, setShowBlame] = useState(false);
   const [blameLines, setBlameLines] = useState<BlameLine[]>([]);
   const [isLoadingBlame, setIsLoadingBlame] = useState(false);
   const [blameError, setBlameError] = useState<string | null>(null);
+  const [blameSelectedCommit, setBlameSelectedCommit] = useState<CommitInfo | null>(null);
 
   // ========== Git Status State ==========
   const [status, setStatus] = useState<GitStatusResponse | null>(null);
@@ -1579,10 +1282,11 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
   const [statusError, setStatusError] = useState<string | null>(null);
   const [statusSelectedFile, setStatusSelectedFile] = useState<{ file: GitFileStatus; type: 'staged' | 'unstaged' } | null>(null);
   const [statusDiff, setStatusDiff] = useState<GitDiffResponse | null>(null);
-  const [statusDiffLoading, setStatusDiffLoading] = useState(false);
+  // Git Status 右键菜单
+    const [statusDiffLoading, setStatusDiffLoading] = useState(false);
   const [statusExpandedPaths, setStatusExpandedPaths] = useState<Set<string>>(new Set());
-  const [stagedTree, setStagedTree] = useState<StatusTreeNode[]>([]);
-  const [unstagedTree, setUnstagedTree] = useState<StatusTreeNode[]>([]);
+  const [stagedTree, setStagedTree] = useState<GitFileNode<unknown>[]>([]);
+  const [unstagedTree, setUnstagedTree] = useState<GitFileNode<unknown>[]>([]);
 
   // ========== Git History State ==========
   const [branches, setBranches] = useState<Branch | null>(null);
@@ -1590,7 +1294,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
   const [commits, setCommits] = useState<Commit[]>([]);
   const [selectedCommit, setSelectedCommit] = useState<Commit | null>(null);
   const [historyFiles, setHistoryFiles] = useState<FileChange[]>([]);
-  const [historyFileTree, setHistoryFileTree] = useState<HistoryTreeNode[]>([]);
+  const [historyFileTree, setHistoryFileTree] = useState<GitFileNode<unknown>[]>([]);
   const [historyExpandedPaths, setHistoryExpandedPaths] = useState<Set<string>>(new Set());
   const [historySelectedFile, setHistorySelectedFile] = useState<FileChange | null>(null);
   const [historyFileDiff, setHistoryFileDiff] = useState<FileDiff | null>(null);
@@ -1618,34 +1322,18 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
     return computeMatchedPaths(files, searchQuery);
   }, [files, searchQuery]);
 
-  const displayStagedTree = useMemo(() => {
-    const updateTreeExpanded = (nodes: StatusTreeNode[], paths: Set<string>): StatusTreeNode[] => {
-      return nodes.map(n => ({
-        ...n,
-        expanded: paths.has(n.path),
-        children: updateTreeExpanded(n.children, paths),
-      }));
-    };
-    return updateTreeExpanded(stagedTree, statusExpandedPaths);
-  }, [stagedTree, statusExpandedPaths]);
-
-  const displayUnstagedTree = useMemo(() => {
-    const updateTreeExpanded = (nodes: StatusTreeNode[], paths: Set<string>): StatusTreeNode[] => {
-      return nodes.map(n => ({
-        ...n,
-        expanded: paths.has(n.path),
-        children: updateTreeExpanded(n.children, paths),
-      }));
-    };
-    return updateTreeExpanded(unstagedTree, statusExpandedPaths);
-  }, [unstagedTree, statusExpandedPaths]);
 
   // ========== Update activeTab when initialTab changes ==========
   useEffect(() => {
-    if (isOpen) {
-      setActiveTab(initialTab);
-    }
-  }, [isOpen, initialTab]);
+    setActiveTab(initialTab);
+  }, [initialTab, tabSwitchTrigger]);
+
+  // ========== Tab 切换处理 ==========
+  const handleTabChange = useCallback((tab: TabType) => {
+    setActiveTab(tab);
+    // 切换 tab 时关闭 blame 详情
+    setBlameSelectedCommit(null);
+  }, []);
 
   // ========== ESC Handler ==========
   const lastEscTimeRef = useRef<number>(0);
@@ -1658,18 +1346,19 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
         }
         lastEscTimeRef.current = now;
 
-        if (showBlame) {
+        // 优先关闭 blame commit 详情
+        if (blameSelectedCommit) {
+          setBlameSelectedCommit(null);
+        } else if (showBlame) {
           setShowBlame(false);
         } else {
           onClose();
         }
       }
     };
-    if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown);
-      return () => document.removeEventListener('keydown', handleKeyDown);
-    }
-  }, [isOpen, onClose, showBlame]);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose, showBlame, blameSelectedCommit]);
 
   // ========== File Browser Functions ==========
   const loadExpandedPaths = useCallback(async () => {
@@ -1757,6 +1446,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
     setShowBlame(false);
     setBlameLines([]);
     setBlameError(null);
+    setBlameSelectedCommit(null);
     try {
       const res = await fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`);
       const data = await res.json();
@@ -1856,22 +1546,15 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
       const data: GitStatusResponse = await response.json();
       setStatus(data);
 
-      const staged = buildStatusFileTree(data.staged);
-      const unstaged = buildStatusFileTree(data.unstaged);
+      const staged = buildGitFileTree(data.staged);
+      const unstaged = buildGitFileTree(data.unstaged);
       setStagedTree(staged);
       setUnstagedTree(unstaged);
 
-      const allPaths = new Set<string>();
-      const collectPaths = (nodes: StatusTreeNode[]) => {
-        nodes.forEach(n => {
-          if (n.isDirectory) {
-            allPaths.add(n.path);
-            collectPaths(n.children);
-          }
-        });
-      };
-      collectPaths(staged);
-      collectPaths(unstaged);
+      const allPaths = new Set<string>([
+        ...collectGitTreeDirPaths(staged),
+        ...collectGitTreeDirPaths(unstaged),
+      ]);
       setStatusExpandedPaths(allPaths);
     } catch (err) {
       setStatusError(err instanceof Error ? err.message : 'Unknown error');
@@ -2085,19 +1768,9 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
       .then(data => {
         const fileList = data.files || [];
         setHistoryFiles(fileList);
-        const tree = buildHistoryFileTree(fileList);
+        const tree = buildGitFileTree(fileList);
         setHistoryFileTree(tree);
-        const allPaths = new Set<string>();
-        const collectPaths = (nodes: HistoryTreeNode[]) => {
-          nodes.forEach(n => {
-            if (n.isDirectory) {
-              allPaths.add(n.path);
-              collectPaths(n.children);
-            }
-          });
-        };
-        collectPaths(tree);
-        setHistoryExpandedPaths(allPaths);
+        setHistoryExpandedPaths(new Set(collectGitTreeDirPaths(tree)));
       })
       .catch(console.error)
       .finally(() => setIsLoadingHistoryFiles(false));
@@ -2137,21 +1810,16 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
 
   // ========== Load Data on Tab Change ==========
   useEffect(() => {
-    if (!isOpen) return;
-
     if (activeTab === 'tree' || activeTab === 'recent') {
       loadExpandedPaths();
       loadFiles();
       loadRecentFiles();
-      if (activeTab === 'tree') {
-        setTimeout(() => searchInputRef.current?.focus(), 100);
-      }
     } else if (activeTab === 'status') {
       fetchStatus();
     } else if (activeTab === 'history') {
       loadBranches();
     }
-  }, [isOpen, activeTab, loadExpandedPaths, loadFiles, loadRecentFiles, fetchStatus, loadBranches]);
+  }, [activeTab, loadExpandedPaths, loadFiles, loadRecentFiles, fetchStatus, loadBranches]);
 
   // Load commits when branch changes
   useEffect(() => {
@@ -2194,8 +1862,6 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
   // ========== Auto-select first recent file when switching to tree/recent tab ==========
   const prevTabRef = useRef<TabType>(activeTab);
   useEffect(() => {
-    if (!isOpen) return;
-
     const prevTab = prevTabRef.current;
     prevTabRef.current = activeTab;
 
@@ -2205,10 +1871,12 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
       const needsUpdate = !selectedPath || (isFromOtherTab && selectedPath !== recentFiles[0]);
 
       if (needsUpdate) {
+        // 外部触发选择，需要滚动居中
+        setShouldScrollToSelected(true);
         handleSelectFile(recentFiles[0]);
       }
     }
-  }, [isOpen, activeTab, recentFiles, selectedPath, handleSelectFile]);
+  }, [activeTab, recentFiles, selectedPath, handleSelectFile]);
 
   // ========== Refresh Handler ==========
   const handleRefresh = useCallback(() => {
@@ -2225,44 +1893,12 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
     }
   }, [activeTab, loadFiles, loadRecentFiles, fetchStatus, loadBranches, loadCommits, selectedBranch]);
 
-  if (!isOpen) return null;
-
   // Determine loading state for refresh button
   const isRefreshLoading = isLoadingFiles || statusLoading || isLoadingBranches || isLoadingCommits;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50" onClick={onClose}>
-      <div
-        className="bg-card w-full h-full flex flex-col"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h3 className="text-sm font-medium text-foreground">
-            文件浏览
-          </h3>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshLoading}
-              className="p-1 text-slate-9 hover:text-muted-foreground dark:hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-50"
-              title="刷新"
-            >
-              <svg className={`w-5 h-5 ${isRefreshLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1 text-slate-9 hover:text-muted-foreground dark:hover:text-foreground hover:bg-accent rounded transition-colors"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
+    <MenuContainerProvider container={menuContainer}>
+      <div ref={menuContainerRef} className="bg-card w-full h-full flex flex-col relative">
         {/* Content */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Panel */}
@@ -2270,7 +1906,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
             {/* Tabs */}
             <div className="flex border-b border-border">
               <button
-                onClick={() => setActiveTab('tree')}
+                onClick={() => handleTabChange('tree')}
                 className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
                   activeTab === 'tree'
                     ? 'text-brand border-b-2 border-brand'
@@ -2280,7 +1916,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                 目录树
               </button>
               <button
-                onClick={() => setActiveTab('recent')}
+                onClick={() => handleTabChange('recent')}
                 className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
                   activeTab === 'recent'
                     ? 'text-brand border-b-2 border-brand'
@@ -2290,7 +1926,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                 最近浏览
               </button>
               <button
-                onClick={() => setActiveTab('status')}
+                onClick={() => handleTabChange('status')}
                 className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
                   activeTab === 'status'
                     ? 'text-brand border-b-2 border-brand'
@@ -2300,7 +1936,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                 Git 变更
               </button>
               <button
-                onClick={() => setActiveTab('history')}
+                onClick={() => handleTabChange('history')}
                 className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
                   activeTab === 'history'
                     ? 'text-brand border-b-2 border-brand'
@@ -2327,7 +1963,6 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
 
             {activeTab === 'history' && (
               <div className="p-3 border-b border-border">
-                <label className="text-xs text-muted-foreground mb-1 block">查看分支</label>
                 <BranchSelector
                   branches={branches}
                   selectedBranch={selectedBranch}
@@ -2337,7 +1972,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
               </div>
             )}
 
-            {/* List Content */}
+            {/* List Content - 复用下面的内容 */}
             <div className="flex-1 overflow-hidden">
               {/* Tree Tab */}
               {activeTab === 'tree' && (
@@ -2346,13 +1981,19 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                 ) : fileError ? (
                   <div className="p-4 text-center text-red-11 text-sm">{fileError}</div>
                 ) : (
-                  <VirtualFileTree
+                  <FileTree
                     files={files}
                     selectedPath={selectedPath}
                     expandedPaths={expandedPaths}
                     matchedPaths={matchedPaths}
-                    onSelect={handleSelectFile}
+                    onSelect={(path) => {
+                      // 用户在目录树中点击选择，不需要滚动居中
+                      setShouldScrollToSelected(false);
+                      handleSelectFile(path);
+                    }}
                     onToggle={handleToggle}
+                    cwd={cwd}
+                    shouldScrollToSelected={shouldScrollToSelected}
                   />
                 )
               )}
@@ -2364,20 +2005,14 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                     暂无最近浏览的文件
                   </div>
                 ) : (
-                  <div className="py-1 overflow-y-auto h-full">
-                    {recentFilesTree.map(node => (
-                      <FileTreeItem
-                        key={node.path}
-                        node={node}
-                        level={0}
-                        selectedPath={selectedPath}
-                        expandedPaths={recentTreeDirPaths}
-                        matchedPaths={null}
-                        onSelect={handleSelectFile}
-                        onToggle={NOOP}
-                      />
-                    ))}
-                  </div>
+                  <FileTree
+                    files={recentFilesTree}
+                    selectedPath={selectedPath}
+                    expandedPaths={recentTreeDirPaths}
+                    onSelect={handleSelectFile}
+                    onToggle={NOOP}
+                    cwd={cwd}
+                  />
                 )
               )}
 
@@ -2408,26 +2043,30 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                           </button>
                         )}
                       </div>
-                      {displayStagedTree.length > 0 ? (
-                        <div className="py-1">
-                          {displayStagedTree.map(node => (
-                            <StatusFileTreeItem
-                              key={node.path}
-                              node={node}
-                              level={0}
-                              selectedPath={statusSelectedFile?.type === 'staged' ? statusSelectedFile.file.path : null}
-                              onSelect={handleStatusFileSelect}
-                              onUnstage={handleUnstage}
-                              type="staged"
-                              onToggle={handleStatusToggle}
-                            />
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="px-3 py-2 text-xs text-slate-9">
-                          无暂存的文件
-                        </div>
-                      )}
+                      <GitFileTree
+                        files={stagedTree}
+                        selectedPath={statusSelectedFile?.type === 'staged' ? statusSelectedFile.file.path : null}
+                        expandedPaths={statusExpandedPaths}
+                        onSelect={(node) => node.file && handleStatusFileSelect(node.file as GitFileStatus, 'staged')}
+                        onToggle={handleStatusToggle}
+                        cwd={cwd}
+                        emptyMessage="无暂存的文件"
+                        className="py-1"
+                        renderActions={(node) => !node.isDirectory ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUnstage(node.path);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-0.5 text-amber-11 hover:text-amber-10 hover:bg-amber-9/10 dark:hover:bg-amber-9/20 rounded transition-all"
+                            title="取消暂存"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                            </svg>
+                          </button>
+                        ) : null}
+                      />
                     </div>
 
                     {/* Unstaged Section */}
@@ -2445,27 +2084,32 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                           </button>
                         )}
                       </div>
-                      {displayUnstagedTree.length > 0 ? (
-                        <div className="py-1">
-                          {displayUnstagedTree.map(node => (
-                            <StatusFileTreeItem
-                              key={node.path}
-                              node={node}
-                              level={0}
-                              selectedPath={statusSelectedFile?.type === 'unstaged' ? statusSelectedFile.file.path : null}
-                              onSelect={handleStatusFileSelect}
-                              onStage={handleStage}
-                              type="unstaged"
-                              onToggle={handleStatusToggle}
-                            />
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="px-3 py-2 text-xs text-slate-9">
-                          无未暂存的变更
-                        </div>
-                      )}
+                      <GitFileTree
+                        files={unstagedTree}
+                        selectedPath={statusSelectedFile?.type === 'unstaged' ? statusSelectedFile.file.path : null}
+                        expandedPaths={statusExpandedPaths}
+                        onSelect={(node) => node.file && handleStatusFileSelect(node.file as GitFileStatus, 'unstaged')}
+                        onToggle={handleStatusToggle}
+                        cwd={cwd}
+                        emptyMessage="无未暂存的变更"
+                        className="py-1"
+                        renderActions={(node) => !node.isDirectory ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStage(node.path);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-0.5 text-green-11 hover:text-green-10 hover:bg-green-9/10 dark:hover:bg-green-9/20 rounded transition-all"
+                            title="暂存文件"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                          </button>
+                        ) : null}
+                      />
                     </div>
+
                   </div>
                 )
               )}
@@ -2533,7 +2177,17 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* File Browser / Recent - Right Panel */}
             {(activeTab === 'tree' || activeTab === 'recent') && (
-              selectedPath ? (
+              blameSelectedCommit ? (
+                // 当选中 blame commit 时，显示 commit 详情
+                <CommitDetailPanel
+                  isOpen={true}
+                  onClose={() => setBlameSelectedCommit(null)}
+                  commit={blameSelectedCommit}
+                  cwd={cwd}
+                  embedded={true}
+                  initialFilePath={selectedPath || undefined}
+                />
+              ) : selectedPath ? (
                 <>
                   <div className="px-4 py-2 bg-secondary border-b border-border flex-shrink-0 flex items-center justify-between">
                     <span className="text-xs font-mono text-muted-foreground">
@@ -2579,7 +2233,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                               </div>
                             </div>
                           ) : blameLines.length > 0 ? (
-                            <BlameView blameLines={blameLines} cwd={cwd} />
+                            <BlameView blameLines={blameLines} cwd={cwd} onSelectCommit={setBlameSelectedCommit} />
                           ) : (
                             <div className="h-full flex items-center justify-center">
                               <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
@@ -2608,30 +2262,27 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                       )
                     ) : (
                       <div className="h-full flex items-center justify-center text-muted-foreground">
-                        <span>加载失败</span>
+                        选择文件以预览
                       </div>
                     )}
                   </div>
                 </>
               ) : (
-                <div className="h-full flex items-center justify-center text-muted-foreground">
-                  <span>选择文件查看内容</span>
+                <div className="flex-1 flex items-center justify-center text-muted-foreground">
+                  <div className="text-center">
+                    <svg className="w-16 h-16 mx-auto text-slate-7 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
+                    <p>选择文件以预览</p>
+                  </div>
                 </div>
               )
             )}
 
             {/* Status - Right Panel */}
             {activeTab === 'status' && (
-              !statusSelectedFile ? (
-                <div className="flex-1 flex items-center justify-center text-slate-9">
-                  <span>选择文件查看差异</span>
-                </div>
-              ) : statusDiffLoading ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-                </div>
-              ) : statusDiff ? (
-                <div className="flex-1 overflow-hidden flex flex-col">
+              statusSelectedFile && statusDiff ? (
+                <div className="flex-1 flex flex-col overflow-hidden">
                   <div className="px-4 py-2 bg-secondary border-b border-border flex items-center gap-2">
                     <span className="text-xs font-mono text-muted-foreground">
                       {statusSelectedFile.file.path}
@@ -2666,7 +2317,7 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-slate-9">
-                  <span>加载差异失败</span>
+                  <span>选择文件查看差异</span>
                 </div>
               )
             )}
@@ -2674,110 +2325,22 @@ export function FileBrowserModal({ isOpen, onClose, cwd, initialTab = 'tree' }: 
             {/* History - Right Panel */}
             {activeTab === 'history' && !historyError && (
               selectedCommit ? (
-                <>
-                  {/* Commit info with tooltip */}
-                  <div
-                    className="px-4 py-2 border-b border-border bg-secondary flex-shrink-0 cursor-help"
-                    onMouseMove={handleCommitInfoMouseMove}
-                    onMouseLeave={handleCommitInfoMouseLeave}
-                  >
-                    <div className="text-sm font-medium text-foreground">{selectedCommit.subject}</div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      <span className="font-mono">{selectedCommit.shortHash}</span>
-                      <span className="mx-2">·</span>
-                      <span>{selectedCommit.author}</span>
-                      <span className="mx-2">·</span>
-                      <span>{selectedCommit.relativeDate} ({formatDateTime(selectedCommit.date)})</span>
-                      <span className="mx-2">·</span>
-                      <span>{historyFiles.length} 个文件变更</span>
-                    </div>
-                  </div>
-                  {tooltipPos && (
-                    <div
-                      className="fixed z-[100] pointer-events-none"
-                      style={{
-                        left: tooltipPos.x + 12,
-                        top: tooltipPos.y + 12,
-                      }}
-                    >
-                      <div className="bg-card text-foreground rounded-lg shadow-xl border border-border p-3 max-w-lg min-w-[300px]">
-                        <div className="text-sm font-medium mb-2">{selectedCommit.subject}</div>
-                        {selectedCommit.body && (
-                          <div className="text-xs text-muted-foreground dark:text-foreground mb-2 whitespace-pre-wrap border-t border-border pt-2 max-h-48 overflow-y-auto">
-                            {selectedCommit.body}
-                          </div>
-                        )}
-                        <div className="text-xs text-muted-foreground space-y-1 border-t border-border pt-2">
-                          <div><span className="text-slate-9">哈希:</span> <span className="font-mono">{selectedCommit.hash}</span></div>
-                          <div><span className="text-slate-9">作者:</span> {selectedCommit.author} &lt;{selectedCommit.authorEmail}&gt;</div>
-                          <div><span className="text-slate-9">日期:</span> {selectedCommit.date}</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* File tree + Diff container */}
-                  <div className="flex-1 flex overflow-hidden">
-                    {/* File tree */}
-                    <div className="w-72 flex-shrink-0 border-r border-border overflow-auto">
-                      {isLoadingHistoryFiles ? (
-                        <div className="p-4 text-center text-muted-foreground text-sm">加载文件中...</div>
-                      ) : historyFiles.length === 0 ? (
-                        <div className="p-4 text-center text-muted-foreground text-sm">无文件变更</div>
-                      ) : (
-                        <div className="py-1 min-w-max">
-                          {historyFileTree.map(node => (
-                            <HistoryFileTreeItem
-                              key={node.path}
-                              node={node}
-                              level={0}
-                              selectedPath={historySelectedFile?.path || null}
-                              onSelect={handleSelectHistoryFile}
-                              expandedPaths={historyExpandedPaths}
-                              onToggle={handleHistoryToggle}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Diff view */}
-                    <div className="flex-1 overflow-hidden">
-                      {isLoadingHistoryDiff ? (
-                        <div className="h-full flex items-center justify-center text-muted-foreground text-sm">加载差异中...</div>
-                      ) : historyFileDiff ? (
-                        isImageFile(historyFileDiff.filePath) ? (
-                          <div className="p-4 flex items-center justify-center h-full">
-                            <div className="text-center text-muted-foreground">
-                              <span className="text-4xl">🖼️</span>
-                              <p className="mt-2 text-sm">图片文件: {historyFileDiff.filePath.split('/').pop()}</p>
-                              <p className="text-xs mt-1">{historyFileDiff.isNew ? '新增' : historyFileDiff.isDeleted ? '删除' : '修改'}</p>
-                            </div>
-                          </div>
-                        ) : (
-                          <DiffView
-                            oldContent={historyFileDiff.oldContent}
-                            newContent={historyFileDiff.newContent}
-                            filePath={historyFileDiff.filePath}
-                            isNew={historyFileDiff.isNew}
-                            isDeleted={historyFileDiff.isDeleted}
-                          />
-                        )
-                      ) : (
-                        <div className="h-full flex items-center justify-center text-muted-foreground text-sm">选择文件查看差异</div>
-                      )}
-                    </div>
-                  </div>
-                </>
+                <CommitDetailPanel
+                  isOpen={true}
+                  onClose={() => setSelectedCommit(null)}
+                  commit={selectedCommit}
+                  cwd={cwd}
+                  embedded={true}
+                />
               ) : (
-                <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                  Select a commit to view changes
+                <div className="flex-1 flex items-center justify-center text-slate-9">
+                  <span>选择提交查看详情</span>
                 </div>
               )
             )}
           </div>
         </div>
       </div>
-    </div>
+    </MenuContainerProvider>
   );
 }

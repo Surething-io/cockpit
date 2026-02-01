@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback } from 'react';
 import { ImageInfo } from '@/types/chat';
 import { ImagePreview } from './ImagePreview';
-import { FileBrowserModal } from './FileBrowserModal';
 import { toast } from './Toast';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -18,16 +17,16 @@ interface ChatInputProps {
   onSend: (message: string, images?: ImageInfo[]) => void;
   disabled?: boolean;
   cwd?: string;
+  onShowGitStatus?: () => void;
 }
 
-export function ChatInput({ onSend, disabled, cwd }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, cwd, onShowGitStatus }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [images, setImages] = useState<ImageInfo[]>([]);
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [showCommands, setShowCommands] = useState(false);
   const [filteredCommands, setFilteredCommands] = useState<CommandInfo[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [showGitStatus, setShowGitStatus] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const commandListRef = useRef<HTMLDivElement>(null);
 
@@ -283,15 +282,17 @@ export function ChatInput({ onSend, disabled, cwd }: ChatInputProps) {
         </button>
 
         {/* Git 查看变更按钮 - 生成中也可点击 */}
-        <button
-          onClick={() => setShowGitStatus(true)}
-          className="p-2 text-brand hover:text-teal-10 hover:bg-brand/10 active:bg-brand/20 active:scale-95 rounded-lg transition-all"
-          title="查看 Git 变更"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-          </svg>
-        </button>
+        {onShowGitStatus && (
+          <button
+            onClick={onShowGitStatus}
+            className="p-2 text-brand hover:text-teal-10 hover:bg-brand/10 active:bg-brand/20 active:scale-95 rounded-lg transition-all"
+            title="查看 Git 变更"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </button>
+        )}
 
         <textarea
           ref={textareaRef}
@@ -305,19 +306,6 @@ export function ChatInput({ onSend, disabled, cwd }: ChatInputProps) {
         />
       </div>
 
-      {/* Git 状态模态框 */}
-      {showGitStatus && cwd && (
-        <FileBrowserModal
-          isOpen={showGitStatus}
-          cwd={cwd}
-          initialTab="status"
-          onClose={() => {
-            setShowGitStatus(false);
-            // 关闭后聚焦输入框
-            setTimeout(() => textareaRef.current?.focus(), 0);
-          }}
-        />
-      )}
     </div>
   );
 }

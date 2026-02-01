@@ -6,6 +6,7 @@ import { SessionSidebar } from './SessionSidebar';
 import { SessionBrowser } from './SessionBrowser';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { GitHistoryModal } from './GitHistoryModal';
+import { FileBrowserModal } from './FileBrowserModal';
 import { Tooltip } from './Tooltip';
 
 interface TabInfo {
@@ -36,6 +37,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const [isSessionBrowserOpen, setIsSessionBrowserOpen] = useState(false);
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
   const [isGitHistoryOpen, setIsGitHistoryOpen] = useState(false);
+  const [isFileBrowserOpen, setIsFileBrowserOpen] = useState(false);
 
   // 添加新标签页
   const addTab = useCallback((cwd?: string, sessionId?: string, title?: string) => {
@@ -146,6 +148,18 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                 >
                   {initialCwd}
                 </span>
+              )}
+              {/* 文件浏览器按钮 */}
+              {initialCwd && (
+                <button
+                  onClick={() => setIsFileBrowserOpen(true)}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  title="文件浏览"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  </svg>
+                </button>
               )}
               {/* Git History 按钮 */}
               {initialCwd && (
@@ -266,6 +280,15 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         <GitHistoryModal
           isOpen={isGitHistoryOpen}
           onClose={() => setIsGitHistoryOpen(false)}
+          cwd={initialCwd}
+        />
+      )}
+
+      {/* File Browser Modal */}
+      {initialCwd && (
+        <FileBrowserModal
+          isOpen={isFileBrowserOpen}
+          onClose={() => setIsFileBrowserOpen(false)}
           cwd={initialCwd}
         />
       )}

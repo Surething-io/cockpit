@@ -308,7 +308,6 @@ function FileTreeItem({
           <span className="text-gray-400 text-xs">
             {isExpanded ? '▼' : '▶'}
           </span>
-          <span className="text-yellow-500">📁</span>
           <span className="text-sm text-gray-700 dark:text-gray-300">{node.name}</span>
         </div>
         {isExpanded && node.children.map(child => (

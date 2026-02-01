@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
+import { CLAUDE_DIR } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -82,14 +82,13 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const cwd = searchParams.get('cwd');
 
-    const homeDir = os.homedir();
     const commands: CommandInfo[] = [];
 
     // 1. 内置命令
     commands.push(...BUILTIN_COMMANDS);
 
     // 2. 用户全局命令 (~/.claude/commands/)
-    const globalCommandsDir = path.join(homeDir, '.claude', 'commands');
+    const globalCommandsDir = path.join(CLAUDE_DIR, 'commands');
     commands.push(...readCommandsFromDir(globalCommandsDir, 'global'));
 
     // 3. 当前项目命令 ({cwd}/.claude/commands/)

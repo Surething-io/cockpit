@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import * as readline from 'readline';
+import { CLAUDE_PROJECTS_DIR } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -158,8 +158,7 @@ export async function GET(
       });
     }
 
-    const homeDir = os.homedir();
-    const projectPath = path.join(homeDir, '.claude', 'projects', encodedPath);
+    const projectPath = path.join(CLAUDE_PROJECTS_DIR, encodedPath);
 
     // 检查目录是否存在
     if (!fs.existsSync(projectPath)) {

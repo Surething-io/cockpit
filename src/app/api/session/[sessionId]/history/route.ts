@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server';
 import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 import * as readline from 'readline';
+import { getClaudeSessionPath } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -72,15 +71,7 @@ export async function GET(
 
     // 动态获取当前工作目录并构造 transcript 文件路径
     const cwd = process.cwd();
-    const encodedPath = cwd.replace(/\//g, '-');
-    const homeDir = os.homedir();
-    const transcriptPath = path.join(
-      homeDir,
-      '.claude',
-      'projects',
-      encodedPath,
-      `${sessionId}.jsonl`
-    );
+    const transcriptPath = getClaudeSessionPath(cwd, sessionId);
 
     // 检查文件是否存在
     if (!fs.existsSync(transcriptPath)) {

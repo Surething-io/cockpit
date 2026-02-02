@@ -18,9 +18,10 @@ interface ChatInputProps {
   disabled?: boolean;
   cwd?: string;
   onShowGitStatus?: () => void;
+  onShowComments?: () => void;
 }
 
-export function ChatInput({ onSend, disabled, cwd, onShowGitStatus }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowComments }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [images, setImages] = useState<ImageInfo[]>([]);
   const [commands, setCommands] = useState<CommandInfo[]>([]);
@@ -281,6 +282,19 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus }: ChatInputP
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
         </button>
+
+        {/* 查看评论按钮 */}
+        {onShowComments && (
+          <button
+            onClick={onShowComments}
+            className="p-2 text-amber-11 hover:text-amber-10 hover:bg-amber-9/10 active:bg-amber-9/20 active:scale-95 rounded-lg transition-all"
+            title="查看所有评论"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+            </svg>
+          </button>
+        )}
 
         {/* Git 查看变更按钮 - 生成中也可点击 */}
         {onShowGitStatus && (

@@ -7,6 +7,7 @@ import { ChatInput } from './ChatInput';
 import { SessionBrowser } from './SessionBrowser';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { SettingsModal } from './SettingsModal';
+import { CommentsListModal } from './CommentsListModal';
 
 interface ChatProps {
   initialCwd?: string;
@@ -32,6 +33,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
   const [isSessionBrowserOpen, setIsSessionBrowserOpen] = useState(false);
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isCommentsListOpen, setIsCommentsListOpen] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -610,6 +612,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
           disabled={isLoading}
           cwd={initialCwd}
           onShowGitStatus={onShowGitStatus}
+          onShowComments={initialCwd ? () => setIsCommentsListOpen(true) : undefined}
         />
       </div>
 
@@ -636,6 +639,15 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
         <SettingsModal
           isOpen={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
+        />
+      )}
+
+      {/* Comments List Modal */}
+      {initialCwd && (
+        <CommentsListModal
+          isOpen={isCommentsListOpen}
+          onClose={() => setIsCommentsListOpen(false)}
+          cwd={initialCwd}
         />
       )}
     </div>

@@ -436,7 +436,7 @@ function AddCommentInput({ x, y, range, onSubmit, onClose }: AddCommentInputProp
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
-  const handleSubmit = () => { if (content.trim()) onSubmit(content.trim()); };
+  const handleSubmit = () => { onSubmit(content.trim()); };
 
   return (
     <div ref={cardRef} className="fixed z-50 w-80 bg-card border border-border rounded-lg shadow-lg overflow-hidden" style={{ left: position.x, top: position.y }}>

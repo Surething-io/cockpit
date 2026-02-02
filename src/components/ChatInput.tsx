@@ -275,8 +275,7 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
               toast('暂存失败', 'error');
             }
           }}
-          disabled={disabled}
-          className="p-2 text-green-11 hover:text-green-10 hover:bg-green-9/10 active:bg-green-9/20 active:scale-95 rounded-lg transition-all disabled:opacity-50"
+          className="p-2 text-green-11 hover:text-green-10 hover:bg-green-9/10 active:bg-green-9/20 active:scale-95 rounded-lg transition-all"
           title="暂存所有文件 (git add -A)"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

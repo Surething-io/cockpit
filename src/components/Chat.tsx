@@ -45,6 +45,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
   const messageListRef = useRef<MessageListHandle>(null);
   // 用于从 ChatContext 调用 handleSend
   const handleSendRef = useRef<((message: string) => void) | null>(null);
+  // 用于在 handleStreamEvent 中获取最新的 sessionId
+  const sessionIdRef = useRef<string | null>(null);
 
   // 流式文本缓冲区 - 用于节流 setState
   const streamBufferRef = useRef<{ messageId: string; text: string } | null>(null);
@@ -436,11 +438,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     if (eventType === 'system' && event.subtype === 'init') {
       const newSessionId = event.session_id as string;
       setSessionId(newSessionId);
-      // 获取 session 标题（新会话第一次拿到 sessionId 时）
-      if (initialCwd && newSessionId) {
-        // 延迟一点获取，确保 session 文件已写入
-        setTimeout(() => fetchSessionTitle(newSessionId), 500);
-      }
+      sessionIdRef.current = newSessionId;
       return;
     }
 
@@ -533,6 +531,18 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
         streamFlushTimerRef.current = null;
       }
       flushStreamBuffer();
+
+      // 新会话第一条消息完成后，获取标题
+      // 判断条件：当前只有 2 条消息（1 user + 1 assistant），说明是第一轮对话
+      const currentSessionId = sessionIdRef.current;
+      if (currentSessionId && initialCwd) {
+        setMessages((prev) => {
+          if (prev.length === 2) {
+            fetchSessionTitle(currentSessionId);
+          }
+          return prev;
+        });
+      }
 
       // 捕获 token 使用信息
       const usage = event.usage as { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } | undefined;

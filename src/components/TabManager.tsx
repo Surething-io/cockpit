@@ -47,11 +47,12 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         if (response.ok) {
           const data = await response.json();
           const savedSessions: string[] = data.sessions || [];
+          const savedActiveSessionId: string | undefined = data.activeSessionId;
 
           // 合并 URL sessionId 和 session.json 中的 sessions（去重）
           let allSessions = [...savedSessions];
           if (initialSessionId && !allSessions.includes(initialSessionId)) {
-            // URL 的 sessionId 放到最前面（作为当前激活的 tab）
+            // URL 的 sessionId 放到最前面
             allSessions = [initialSessionId, ...allSessions];
           }
 
@@ -64,9 +65,12 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               title: `Session ${sessionId.slice(0, 6)}...`,
             }));
             setTabs(restoredTabs);
-            // 如果有 URL sessionId，激活它；否则激活第一个
-            const activeIndex = initialSessionId ? allSessions.indexOf(initialSessionId) : 0;
-            setActiveTabId(restoredTabs[activeIndex >= 0 ? activeIndex : 0].id);
+
+            // 激活优先级：URL sessionId > session.json activeSessionId > 第一个
+            let activeSessionToUse = initialSessionId || savedActiveSessionId;
+            let activeIndex = activeSessionToUse ? allSessions.indexOf(activeSessionToUse) : -1;
+            if (activeIndex < 0) activeIndex = 0;
+            setActiveTabId(restoredTabs[activeIndex].id);
           }
         }
       } catch (error) {
@@ -79,7 +83,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     loadSessions();
   }, [initialCwd, initialSessionId]);
 
-  // 当 tabs 变化时保存到服务端
+  // 当 tabs 或 activeTabId 变化时保存到服务端
   useEffect(() => {
     // 初始化过程中不保存
     if (isInitializingRef.current || !initialCwd) return;
@@ -89,15 +93,33 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
       .map(tab => tab.sessionId)
       .filter((id): id is string => !!id);
 
-    // 保存到服务端
+    // 获取当前激活 Tab 的 sessionId
+    const activeTab = tabs.find(t => t.id === activeTabId);
+    const activeSessionId = activeTab?.sessionId;
+
+    // 保存到服务端（包含 activeSessionId）
     fetch('/api/state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cwd: initialCwd, sessions: sessionIds }),
+      body: JSON.stringify({ cwd: initialCwd, sessions: sessionIds, activeSessionId }),
     }).catch(error => {
       console.error('Failed to save sessions:', error);
     });
-  }, [tabs, initialCwd]);
+  }, [tabs, activeTabId, initialCwd]);
+
+  // 切换 Tab 时更新 URL（使用 replaceState 避免产生浏览器历史记录）
+  useEffect(() => {
+    // 初始化过程中不更新 URL
+    if (isInitializingRef.current || !initialCwd) return;
+
+    const activeTab = tabs.find(t => t.id === activeTabId);
+    // 如果激活的 Tab 有 sessionId，更新 URL；否则保留当前 URL 不变
+    if (activeTab?.sessionId) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('sessionId', activeTab.sessionId);
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [activeTabId, tabs, initialCwd]);
   const [isSessionBrowserOpen, setIsSessionBrowserOpen] = useState(false);
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);

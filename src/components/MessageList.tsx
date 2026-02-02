@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { ChatMessage } from '@/types/chat';
 import { MessageBubble } from './MessageBubble';
 
@@ -14,7 +14,15 @@ interface MessageListProps {
   isActive?: boolean; // Tab 是否激活（用于处理隐藏 Tab 的滚动问题）
 }
 
-export function MessageList({ messages, isLoading, cwd, hasMoreHistory, isLoadingMore, onLoadMore, isActive = true }: MessageListProps) {
+// 暴露给父组件的方法
+export interface MessageListHandle {
+  scrollToMessage: (messageId: string) => void;
+}
+
+export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
+  { messages, isLoading, cwd, hasMoreHistory, isLoadingMore, onLoadMore, isActive = true },
+  ref
+) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -71,6 +79,28 @@ export function MessageList({ messages, isLoading, cwd, hasMoreHistory, isLoadin
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
+
+  // 滚动到指定消息
+  const scrollToMessage = useCallback((messageId: string) => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    // 查找消息对应的 DOM 元素
+    const messageElement = container.querySelector(`[data-message-id="${messageId}"]`);
+    if (messageElement) {
+      messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // 添加高亮效果
+      messageElement.classList.add('ring-2', 'ring-brand', 'ring-offset-2');
+      setTimeout(() => {
+        messageElement.classList.remove('ring-2', 'ring-brand', 'ring-offset-2');
+      }, 2000);
+    }
+  }, []);
+
+  // 暴露方法给父组件
+  useImperativeHandle(ref, () => ({
+    scrollToMessage,
+  }), [scrollToMessage]);
 
   // 记录上一次消息数量，用于判断是否有新消息
   const prevMessageCountRef = useRef(0);
@@ -174,7 +204,9 @@ export function MessageList({ messages, isLoading, cwd, hasMoreHistory, isLoadin
               </div>
             )}
             {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} cwd={cwd} />
+              <div key={message.id} data-message-id={message.id} className="transition-all duration-300">
+                <MessageBubble message={message} cwd={cwd} />
+              </div>
             ))}
             {isLoading && (
               <div className="flex justify-start mb-4">
@@ -218,4 +250,4 @@ export function MessageList({ messages, isLoading, cwd, hasMoreHistory, isLoadin
       )}
     </div>
   );
-}
+});

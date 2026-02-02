@@ -64,18 +64,28 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               sessionId,
               title: `Session ${sessionId.slice(0, 6)}...`,
             }));
-            setTabs(restoredTabs);
 
             // 激活优先级：URL sessionId > session.json activeSessionId > 第一个
             let activeSessionToUse = initialSessionId || savedActiveSessionId;
             let activeIndex = activeSessionToUse ? allSessions.indexOf(activeSessionToUse) : -1;
             if (activeIndex < 0) activeIndex = 0;
-            setActiveTabId(restoredTabs[activeIndex].id);
+
+            // 同时更新 tabs 和 activeTabId
+            const newActiveTabId = restoredTabs[activeIndex].id;
+            setTabs(restoredTabs);
+            setActiveTabId(newActiveTabId);
+
+            // 延迟结束初始化状态，确保 React 有时间处理 state 更新
+            // 这样 URL 更新 useEffect 才能拿到正确的 tabs 和 activeTabId
+            setTimeout(() => {
+              isInitializingRef.current = false;
+            }, 0);
+          } else {
+            isInitializingRef.current = false;
           }
         }
       } catch (error) {
         console.error('Failed to load sessions:', error);
-      } finally {
         isInitializingRef.current = false;
       }
     };
@@ -113,8 +123,11 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     if (isInitializingRef.current || !initialCwd) return;
 
     const activeTab = tabs.find(t => t.id === activeTabId);
-    // 如果激活的 Tab 有 sessionId，更新 URL；否则保留当前 URL 不变
-    if (activeTab?.sessionId) {
+    // 确保 activeTab 存在且有 sessionId
+    // 额外检查：activeTabId 必须存在于当前 tabs 中（避免竞态条件）
+    if (!activeTab) return;
+
+    if (activeTab.sessionId) {
       const url = new URL(window.location.href);
       url.searchParams.set('sessionId', activeTab.sessionId);
       window.history.replaceState({}, '', url.toString());

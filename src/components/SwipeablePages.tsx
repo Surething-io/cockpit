@@ -91,10 +91,16 @@ export function SwipeablePages({ children, currentPage, onPageChange }: Swipeabl
           if (currentPage === 0 && finalOffset < -threshold) {
             // 向左滑超过阈值，切换到第二页
             willSwitch = true;
+            // 先重置 dragOffset，避免 currentPage 变化后的一帧延迟闪烁
+            dragOffsetRef.current = 0;
+            setDragOffset(0);
             onPageChange(1);
           } else if (currentPage === 1 && finalOffset > threshold) {
             // 向右滑超过阈值，切换到第一页
             willSwitch = true;
+            // 先重置 dragOffset，避免 currentPage 变化后的一帧延迟闪烁
+            dragOffsetRef.current = 0;
+            setDragOffset(0);
             onPageChange(0);
           }
 
@@ -103,7 +109,6 @@ export function SwipeablePages({ children, currentPage, onPageChange }: Swipeabl
             dragOffsetRef.current = 0;
             setDragOffset(0);
           }
-          // 如果切换，dragOffset 会在 currentPage 变化的 useEffect 中重置
 
           // 过渡动画结束后解锁
           setTimeout(() => {

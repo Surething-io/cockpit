@@ -136,9 +136,7 @@ export function AddCommentForm({ startLine, endLine, onSubmit, onCancel }: AddCo
   }, []);
 
   const handleSubmit = () => {
-    if (content.trim()) {
-      onSubmit(content.trim());
-    }
+    onSubmit(content);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -179,8 +177,7 @@ export function AddCommentForm({ startLine, endLine, onSubmit, onCancel }: AddCo
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!content.trim()}
-            className="px-2 py-1 text-xs bg-blue-9 text-white rounded hover:bg-blue-10 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-2 py-1 text-xs bg-blue-9 text-white rounded hover:bg-blue-10"
           >
             提交
           </button>

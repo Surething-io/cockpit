@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { clearAllComments, emitCommentsChange } from '@/hooks/useAllComments';
 
 interface CodeComment {
   id: string;
@@ -60,6 +61,8 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
       );
       if (response.ok) {
         setComments(prev => prev.filter(c => c.id !== id));
+        // 触发全局刷新，让文件浏览器中的评论气泡同步更新
+        emitCommentsChange();
       }
     } catch (err) {
       console.error('Failed to delete comment:', err);
@@ -192,8 +195,9 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
           <button
             onClick={async () => {
               if (comments.length === 0) return;
-              for (const comment of comments) {
-                await handleDelete(comment.id);
+              const success = await clearAllComments(cwd);
+              if (success) {
+                setComments([]);
               }
             }}
             disabled={comments.length === 0}

@@ -17,8 +17,9 @@ interface FileNode {
 async function getGitVisibleFiles(cwd: string): Promise<string[] | null> {
   try {
     // Get tracked files + untracked but not ignored files + .env* files (even if ignored, including subdirs)
+    // 使用 -c core.quotePath=false 避免中文文件名被转义为八进制
     const { stdout } = await execAsync(
-      '(git ls-files && git ls-files --others --exclude-standard && find . -name ".env*" -type f 2>/dev/null | sed "s|^\\./||") | sort -u',
+      '(git -c core.quotePath=false ls-files && git -c core.quotePath=false ls-files --others --exclude-standard && find . -name ".env*" -type f 2>/dev/null | sed "s|^\\./||") | sort -u',
       { cwd, maxBuffer: 10 * 1024 * 1024 }
     );
     return stdout.split('\n').filter(Boolean).map(f => f.trim());

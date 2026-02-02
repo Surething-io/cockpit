@@ -225,7 +225,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchSession }: GlobalSess
                   <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${
                     session.isLoading ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground/30'
                   }`} />
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0" title={session.cwd}>
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm truncate">
                         {getProjectName(session.cwd)}
@@ -233,18 +233,15 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchSession }: GlobalSess
                       {session.isLoading && (
                         <span className="text-xs text-green-500 flex-shrink-0">运行中</span>
                       )}
+                      <span className="text-xs text-muted-foreground flex-shrink-0">
+                        {formatTime(session.lastActive)}
+                      </span>
                     </div>
                     {session.title && (
                       <div className="text-xs text-foreground/80 truncate">
                         {session.title}
                       </div>
                     )}
-                    <div className="text-xs text-muted-foreground truncate">
-                      {session.cwd}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      {formatTime(session.lastActive)}
-                    </div>
                   </div>
                 </button>
               ))

@@ -89,11 +89,6 @@ export async function POST(request: NextRequest) {
         // 用于跟踪实际的 sessionId（可能从流中获取）
         let actualSessionId = sessionId;
 
-        // 更新全局状态：开始加载
-        if (cwd && sessionId) {
-          updateGlobalState(cwd, sessionId, true).catch(() => {});
-        }
-
         try {
           // 根据是否有图片决定使用哪种方式调用 SDK
           const hasImages = images && images.length > 0;
@@ -165,12 +160,12 @@ export async function POST(request: NextRequest) {
               break;
             }
 
-            // 捕获 sessionId（从 system init 事件）
+            // 捕获 sessionId（从 system init 事件）并更新全局状态
             const msg = message as { type?: string; subtype?: string; session_id?: string };
             if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
               actualSessionId = msg.session_id;
-              // 新会话创建时更新全局状态
-              if (cwd && !sessionId) {
+              // 统一在这里标记开始加载（新会话和恢复会话都走这里）
+              if (cwd) {
                 updateGlobalState(cwd, actualSessionId, true).catch(() => {});
               }
             }
@@ -207,10 +202,16 @@ export async function POST(request: NextRequest) {
           safeClose();
         }
       },
-      cancel() {
+      async cancel() {
         isClosed = true;
         // 取消 query 执行
         queryAbortController.abort();
+        // 更新全局状态：结束加载（用户取消）
+        const actualSessionId = sessionId; // cancel 时使用传入的 sessionId
+        if (cwd && actualSessionId) {
+          const title = await getSessionTitle(cwd, actualSessionId);
+          await updateGlobalState(cwd, actualSessionId, false, title);
+        }
       },
     });
 

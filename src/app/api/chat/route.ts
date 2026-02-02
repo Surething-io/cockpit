@@ -1,5 +1,6 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { NextRequest } from 'next/server';
+import { updateGlobalState, getSessionTitle } from '@/lib/global-state';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -85,7 +86,14 @@ export async function POST(request: NextRequest) {
           }
         };
 
-        console.log("cwd============="+cwd)
+        // 用于跟踪实际的 sessionId（可能从流中获取）
+        let actualSessionId = sessionId;
+
+        // 更新全局状态：开始加载
+        if (cwd && sessionId) {
+          updateGlobalState(cwd, sessionId, true).catch(() => {});
+        }
+
         try {
           // 根据是否有图片决定使用哪种方式调用 SDK
           const hasImages = images && images.length > 0;
@@ -156,15 +164,38 @@ export async function POST(request: NextRequest) {
             if (isClosed) {
               break;
             }
+
+            // 捕获 sessionId（从 system init 事件）
+            const msg = message as { type?: string; subtype?: string; session_id?: string };
+            if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
+              actualSessionId = msg.session_id;
+              // 新会话创建时更新全局状态
+              if (cwd && !sessionId) {
+                updateGlobalState(cwd, actualSessionId, true).catch(() => {});
+              }
+            }
+
             // 发送 SSE 格式的数据
             const data = `data: ${JSON.stringify(message)}\n\n`;
             safeEnqueue(data);
+          }
+
+          // 更新全局状态：结束加载（获取标题）
+          if (cwd && actualSessionId) {
+            const title = await getSessionTitle(cwd, actualSessionId);
+            await updateGlobalState(cwd, actualSessionId, false, title);
           }
 
           // 发送结束标记
           safeEnqueue('data: [DONE]\n\n');
           safeClose();
         } catch (error) {
+          // 更新全局状态：结束加载（出错或取消）
+          if (cwd && actualSessionId) {
+            const title = await getSessionTitle(cwd, actualSessionId);
+            await updateGlobalState(cwd, actualSessionId, false, title);
+          }
+
           // 如果是取消导致的错误，静默处理
           if (queryAbortController.signal.aborted) {
             console.log('Query aborted by user');

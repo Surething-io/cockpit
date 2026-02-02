@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { createHighlighter, type Highlighter, type BundledLanguage } from 'shiki';
 import { useComments, type CodeComment } from '@/hooks/useComments';
+import { useMenuContainer } from './FileContextMenu';
 
 // ============================================
 // Types
@@ -132,6 +133,33 @@ function findMatches(
 }
 
 // ============================================
+// Add Comment Button (portal version with container-relative positioning)
+// ============================================
+
+interface AddCommentButtonPortalProps {
+  x: number;
+  y: number;
+  container: HTMLElement;
+  onClick: () => void;
+}
+
+function AddCommentButtonPortal({ x, y, container, onClick }: AddCommentButtonPortalProps) {
+  const containerRect = container.getBoundingClientRect();
+  const relX = x - containerRect.left;
+  const relY = y - containerRect.top;
+
+  return (
+    <button
+      className="absolute z-[200] px-2 py-1 text-xs bg-brand text-white rounded shadow-lg hover:bg-brand/90"
+      style={{ left: relX, top: relY }}
+      onClick={onClick}
+    >
+      添加评论
+    </button>
+  );
+}
+
+// ============================================
 // View Comment Card (for viewing existing comments)
 // ============================================
 
@@ -139,6 +167,7 @@ interface ViewCommentCardProps {
   x: number;
   y: number;
   comment: CodeComment;
+  container?: HTMLElement | null;
   onClose: () => void;
   onUpdateComment: (id: string, content: string) => Promise<boolean>;
   onDeleteComment: (id: string) => Promise<boolean>;
@@ -148,6 +177,7 @@ function ViewCommentCard({
   x,
   y,
   comment,
+  container,
   onClose,
   onUpdateComment,
   onDeleteComment,
@@ -155,22 +185,24 @@ function ViewCommentCard({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(comment.content);
   const cardRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ x, y });
+  const [position, setPosition] = useState({ x: 0, y: 0 });
 
-  // Position adjustment
+  // Position adjustment relative to container
   useEffect(() => {
-    if (cardRef.current) {
-      const rect = cardRef.current.getBoundingClientRect();
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
-      let newX = x, newY = y;
-      if (x + rect.width > viewportWidth - 16) newX = viewportWidth - rect.width - 16;
-      if (newX < 16) newX = 16;
-      if (y + rect.height > viewportHeight - 16) newY = y - rect.height - 8;
-      if (newY < 16) newY = 16;
-      setPosition({ x: newX, y: newY });
+    if (cardRef.current && container) {
+      const containerRect = container.getBoundingClientRect();
+      const cardRect = cardRef.current.getBoundingClientRect();
+      // Calculate position relative to container
+      let relX = x - containerRect.left;
+      let relY = y - containerRect.top;
+      // Avoid overflow
+      if (relX + cardRect.width > containerRect.width - 16) relX = containerRect.width - cardRect.width - 16;
+      if (relX < 16) relX = 16;
+      if (relY + cardRect.height > containerRect.height - 16) relY = relY - cardRect.height - 8;
+      if (relY < 16) relY = 16;
+      setPosition({ x: relX, y: relY });
     }
-  }, [x, y]);
+  }, [x, y, container]);
 
   // Click outside to close
   useEffect(() => {
@@ -198,7 +230,7 @@ function ViewCommentCard({
   return (
     <div
       ref={cardRef}
-      className="fixed z-50 w-96 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+      className="absolute z-[200] w-96 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
       style={{ left: position.x, top: position.y }}
     >
       <div className="p-3">
@@ -279,30 +311,33 @@ interface AddCommentInputProps {
   x: number;
   y: number;
   range: { start: number; end: number };
+  container?: HTMLElement | null;
   onSubmit: (content: string) => void;
   onClose: () => void;
 }
 
-function AddCommentInput({ x, y, range, onSubmit, onClose }: AddCommentInputProps) {
+function AddCommentInput({ x, y, range, container, onSubmit, onClose }: AddCommentInputProps) {
   const [content, setContent] = useState('');
   const cardRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [position, setPosition] = useState({ x, y });
+  const [position, setPosition] = useState({ x: 0, y: 0 });
 
-  // Position adjustment
+  // Position adjustment relative to container
   useEffect(() => {
-    if (cardRef.current) {
-      const rect = cardRef.current.getBoundingClientRect();
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
-      let newX = x, newY = y;
-      if (x + rect.width > viewportWidth - 16) newX = viewportWidth - rect.width - 16;
-      if (newX < 16) newX = 16;
-      if (y + rect.height > viewportHeight - 16) newY = y - rect.height - 8;
-      if (newY < 16) newY = 16;
-      setPosition({ x: newX, y: newY });
+    if (cardRef.current && container) {
+      const containerRect = container.getBoundingClientRect();
+      const cardRect = cardRef.current.getBoundingClientRect();
+      // Calculate position relative to container
+      let relX = x - containerRect.left;
+      let relY = y - containerRect.top;
+      // Avoid overflow
+      if (relX + cardRect.width > containerRect.width - 16) relX = containerRect.width - cardRect.width - 16;
+      if (relX < 16) relX = 16;
+      if (relY + cardRect.height > containerRect.height - 16) relY = relY - cardRect.height - 8;
+      if (relY < 16) relY = 16;
+      setPosition({ x: relX, y: relY });
     }
-  }, [x, y]);
+  }, [x, y, container]);
 
   // Auto focus
   useEffect(() => {
@@ -327,7 +362,7 @@ function AddCommentInput({ x, y, range, onSubmit, onClose }: AddCommentInputProp
   return (
     <div
       ref={cardRef}
-      className="fixed z-50 w-80 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+      className="absolute z-[200] w-80 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
       style={{ left: position.x, top: position.y }}
     >
       <div className="px-3 py-2 bg-secondary border-b border-border">
@@ -409,6 +444,9 @@ export function CodeViewer({
     y: number;
     range: { start: number; end: number };
   } | null>(null);
+
+  // Menu container for portal mounting (keeps floating elements within second screen)
+  const menuContainer = useMenuContainer();
 
   // Comments hook
   const commentsEnabled = enableComments && !!cwd;
@@ -826,18 +864,17 @@ export function CodeViewer({
         </div>
       </div>
 
-      {/* Floating elements via Portal to avoid willChange: transform issues */}
-      {isMounted && createPortal(
+      {/* Floating elements via Portal to menu container (keeps within second screen) */}
+      {isMounted && menuContainer && createPortal(
         <>
           {/* Floating "Add Comment" Button */}
           {addCommentButton && (
-            <button
-              className="fixed z-50 px-2 py-1 text-xs bg-brand text-white rounded shadow-lg hover:bg-brand/90"
-              style={{ left: addCommentButton.x, top: addCommentButton.y }}
+            <AddCommentButtonPortal
+              x={addCommentButton.x}
+              y={addCommentButton.y}
+              container={menuContainer}
               onClick={handleAddCommentButtonClick}
-            >
-              添加评论
-            </button>
+            />
           )}
 
           {/* Add Comment Input */}
@@ -846,6 +883,7 @@ export function CodeViewer({
               x={addCommentInput.x}
               y={addCommentInput.y}
               range={addCommentInput.range}
+              container={menuContainer}
               onSubmit={handleCommentSubmit}
               onClose={() => setAddCommentInput(null)}
             />
@@ -857,13 +895,14 @@ export function CodeViewer({
               x={viewingComment.x}
               y={viewingComment.y}
               comment={viewingComment.comment}
+              container={menuContainer}
               onClose={() => setViewingComment(null)}
               onUpdateComment={updateComment}
               onDeleteComment={deleteComment}
             />
           )}
         </>,
-        document.body
+        menuContainer
       )}
     </div>
   );

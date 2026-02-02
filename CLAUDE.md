@@ -5,6 +5,14 @@
 - **Dev Server Port**: 3456 (run `npm run dev`)
 - **Tech Stack**: Next.js 16, React, TypeScript, TailwindCSS
 
+## UI 布局
+
+- **双屏模式**: 第一屏是 Chat，第二屏是文件浏览
+- **UI 组件注意事项**: 在做菜单、Modal 对话框和悬浮气泡时，需要注意双屏布局的影响：
+  - 定位计算需考虑所在屏幕的边界
+  - z-index 层级需统一管理
+  - 避免组件溢出到另一屏
+
 ## Project Structure
 
 - `/src/app` - Next.js App Router pages and API routes

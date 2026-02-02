@@ -99,7 +99,7 @@ export function MessageBubble({ message, cwd }: MessageBubbleProps) {
           {/* 文本内容 - 使用 Markdown 渲染 */}
           {message.content && (
             <div className="break-words">
-              <MarkdownRenderer content={message.content} isUser={isUser} />
+              <MarkdownRenderer content={message.content} isUser={isUser} isStreaming={message.isStreaming} />
               {message.isStreaming && (
                 <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />
               )}

@@ -4,15 +4,85 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { useState, useEffect, ComponentPropsWithoutRef } from 'react';
+import { useState, useEffect, useMemo, ComponentPropsWithoutRef } from 'react';
 
 interface MarkdownRendererProps {
   content: string;
   isUser?: boolean;
+  isStreaming?: boolean;
 }
 
-export function MarkdownRenderer({ content, isUser = false }: MarkdownRendererProps) {
+/**
+ * 检测文本是否为 Markdown 表格
+ * 特征：包含 |---|、|:--|、|--:| 等分隔行
+ */
+function isMarkdownTable(text: string): boolean {
+  // Markdown 表格分隔行：| --- | 或 |:---| 或 |---:| 等
+  return /^\|[\s:|-]+\|$/m.test(text);
+}
+
+/**
+ * 检测文本是否包含 ASCII 图表
+ * 检测特征：
+ * 1. Unicode box-drawing 字符（┌┐└┘│─ 等）
+ * 2. ASCII 边框模式（+---+ 等）
+ * 3. 多行竖线模式（至少 3 行以 | 开头或结尾，但排除 Markdown 表格）
+ */
+function hasAsciiArt(text: string): boolean {
+  // 排除 Markdown 表格
+  if (isMarkdownTable(text)) {
+    return false;
+  }
+
+  // Unicode box-drawing 字符
+  if (/[┌┐└┘│─├┤┬┴┼╔╗╚╝║═╭╮╯╰▲▼◀▶△▽◁▷]/.test(text)) {
+    return true;
+  }
+
+  // ASCII 边框模式: +---+ 或 +===+
+  if (/\+[-=]{2,}\+/.test(text)) {
+    return true;
+  }
+
+  // 多行竖线模式：至少 3 行以 | 开头或结尾
+  const lines = text.split('\n');
+  const pipeLines = lines.filter(line => /^\s*\||\|\s*$/.test(line));
+  if (pipeLines.length >= 3) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * 预处理内容：将包含 ASCII 图表的内容整体包裹为代码块
+ * 简化策略：如果检测到 ASCII 图表特征，整个内容用 <pre> 渲染
+ */
+function preprocessAsciiArt(content: string): string {
+  if (!hasAsciiArt(content)) {
+    return content;
+  }
+
+  // 如果内容已经是代码块，不重复包裹
+  if (/^```[\s\S]*```$/m.test(content.trim())) {
+    return content;
+  }
+
+  // 整个内容包裹为代码块
+  return '```text\n' + content.trim() + '\n```';
+}
+
+export function MarkdownRenderer({ content, isUser = false, isStreaming = false }: MarkdownRendererProps) {
   const [isDark, setIsDark] = useState(false);
+
+  // 流式结束后或历史消息，检测并预处理 ASCII 图表
+  const processedContent = useMemo(() => {
+    // 用户消息或流式中不处理
+    if (isUser || isStreaming) {
+      return content;
+    }
+    return preprocessAsciiArt(content);
+  }, [content, isUser, isStreaming]);
 
   useEffect(() => {
     // 检测暗色模式
@@ -44,7 +114,9 @@ export function MarkdownRenderer({ content, isUser = false }: MarkdownRendererPr
         // 代码块
         code({ className, children, ...props }) {
           const match = /language-(\w+)/.exec(className || '');
-          const isInline = !match && !className;
+          // 判断是否为内联代码：没有语言标记、没有 className、且内容不包含换行符
+          const codeString = String(children);
+          const isInline = !match && !className && !codeString.includes('\n');
 
           if (isInline) {
             return (
@@ -192,7 +264,7 @@ export function MarkdownRenderer({ content, isUser = false }: MarkdownRendererPr
         },
       }}
     >
-      {content}
+      {processedContent}
     </ReactMarkdown>
     </div>
   );

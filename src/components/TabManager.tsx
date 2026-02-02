@@ -45,7 +45,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
 
     const loadSessions = async () => {
       try {
-        const response = await fetch(`/api/state?cwd=${encodeURIComponent(initialCwd)}`);
+        const response = await fetch(`/api/project-state?cwd=${encodeURIComponent(initialCwd)}`);
         if (response.ok) {
           const data = await response.json();
           const savedSessions: string[] = data.sessions || [];
@@ -110,7 +110,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     const activeSessionId = activeTab?.sessionId;
 
     // 保存到服务端（包含 activeSessionId）
-    fetch('/api/state', {
+    fetch('/api/project-state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cwd: initialCwd, sessions: sessionIds, activeSessionId }),

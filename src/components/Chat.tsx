@@ -42,7 +42,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
   const [isCommentsListOpen, setIsCommentsListOpen] = useState(false);
   const [isUserMessagesOpen, setIsUserMessagesOpen] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
-  const [sessionTitle, setSessionTitle] = useState<string | undefined>(undefined);
   const abortControllerRef = useRef<AbortController | null>(null);
   const messageListRef = useRef<MessageListHandle>(null);
   // 用于从 ChatContext 调用 handleSend
@@ -153,9 +152,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
         if (data.sessionId) {
           setSessionId(data.sessionId);
         }
-        // 通知父组件标题变化，并保存到本地状态
+        // 通知父组件标题变化
         if (data.title) {
-          setSessionTitle(data.title);
           onTitleChange?.(data.title);
         }
         // 设置 token 使用信息（从历史记录的最后一条 assistant 消息获取）
@@ -241,20 +239,12 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     }
   }, [sessionId, onSessionIdChange]);
 
-  // 当 isLoading 变化时通知父组件和 ChatContext，并更新全局状态
+  // 当 isLoading 变化时通知父组件和 ChatContext
+  // 注：全局状态更新已移至后端 /api/chat 处理
   useEffect(() => {
     onLoadingChange?.(isLoading);
     chatContext?.setIsLoading(isLoading);
-
-    // 更新全局状态（用于跨 tab 监控）
-    if (initialCwd && sessionId) {
-      fetch('/api/global-state', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd: initialCwd, sessionId, isLoading, title: sessionTitle }),
-      }).catch(() => {/* 忽略错误 */});
-    }
-  }, [isLoading, onLoadingChange, chatContext, initialCwd, sessionId, sessionTitle]);
+  }, [isLoading, onLoadingChange, chatContext]);
 
   // 注册到 ChatContext（用于从 CodeViewer 发送消息）
   useEffect(() => {
@@ -444,7 +434,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
       if (response.ok) {
         const data = await response.json();
         if (data.title) {
-          setSessionTitle(data.title);
           onTitleChange?.(data.title);
         }
       }

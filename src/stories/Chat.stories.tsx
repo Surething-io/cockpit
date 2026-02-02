@@ -43,7 +43,7 @@ Chat 是主要的聊天界面组件。
 **依赖的 API 端点：**
 - \`POST /api/session-by-path\` - 加载会话历史
 - \`POST /api/chat\` - 发送消息并流式接收响应
-- \`GET /api/state\` - 获取状态
+- \`GET /api/project-state\` - 获取项目状态
 
 **功能特点：**
 - 消息列表显示（支持分页加载历史）

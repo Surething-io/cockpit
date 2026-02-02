@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface GlobalSession {
   cwd: string;
@@ -12,31 +13,71 @@ interface GlobalSession {
 
 interface GlobalSessionMonitorProps {
   currentCwd?: string;
+  onSwitchSession?: (sessionId: string) => void;
 }
 
-export function GlobalSessionMonitor({ currentCwd }: GlobalSessionMonitorProps) {
+export function GlobalSessionMonitor({ currentCwd, onSwitchSession }: GlobalSessionMonitorProps) {
+  const router = useRouter();
   const [sessions, setSessions] = useState<GlobalSession[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // 轮询获取全局状态
+  // 注册 Service Worker 并监听全局状态更新
   useEffect(() => {
-    const fetchSessions = async () => {
-      try {
-        const response = await fetch('/api/global-state');
-        if (response.ok) {
-          const data = await response.json();
-          setSessions(data.sessions || []);
-        }
-      } catch {
-        // 忽略错误
+    if (!('serviceWorker' in navigator)) return;
+
+    // 处理来自 SW 的消息
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'GLOBAL_STATE_UPDATE') {
+        setSessions(event.data.state?.sessions || []);
       }
     };
 
-    fetchSessions();
-    const interval = setInterval(fetchSessions, 3000);
-    return () => clearInterval(interval);
+    navigator.serviceWorker.addEventListener('message', handleMessage);
+
+    // 注册 SW 并请求初始状态
+    navigator.serviceWorker.register('/sw.js').then(async () => {
+      const registration = await navigator.serviceWorker.ready;
+      if (registration.active) {
+        // 请求当前状态
+        const messageChannel = new MessageChannel();
+        messageChannel.port1.onmessage = (event) => {
+          if (event.data?.type === 'GLOBAL_STATE_UPDATE') {
+            setSessions(event.data.state?.sessions || []);
+          }
+        };
+        registration.active.postMessage(
+          { type: 'GET_GLOBAL_STATE' },
+          [messageChannel.port2]
+        );
+      }
+    }).catch(() => {
+      // 忽略注册错误
+    });
+
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleMessage);
+    };
   }, []);
+
+  // 监听 BroadcastChannel，处理跨 tab session 切换
+  useEffect(() => {
+    const channel = new BroadcastChannel('session-switch');
+
+    const handleMessage = (event: MessageEvent) => {
+      const { targetCwd, sessionId } = event.data || {};
+      // 只有当前项目匹配时才处理
+      if (targetCwd === currentCwd && sessionId && onSwitchSession) {
+        onSwitchSession(sessionId);
+      }
+    };
+
+    channel.addEventListener('message', handleMessage);
+    return () => {
+      channel.removeEventListener('message', handleMessage);
+      channel.close();
+    };
+  }, [currentCwd, onSwitchSession]);
 
   // 点击外部关闭
   useEffect(() => {
@@ -56,68 +97,71 @@ export function GlobalSessionMonitor({ currentCwd }: GlobalSessionMonitorProps) 
   const handleSessionClick = useCallback(async (session: GlobalSession) => {
     const targetUrl = `/?cwd=${encodeURIComponent(session.cwd)}&sessionId=${encodeURIComponent(session.sessionId)}`;
 
-    // 如果是当前项目，直接通过 URL 切换
+    // 如果是同项目，通过回调切换 session（无刷新）
     if (currentCwd === session.cwd) {
-      window.location.href = targetUrl;
+      if (onSwitchSession) {
+        onSwitchSession(session.sessionId);
+      } else {
+        router.push(targetUrl);
+      }
       setIsOpen(false);
       return;
     }
 
     // 检查 Service Worker 是否可用
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-      // 通过 Service Worker 查找是否有匹配的 tab
-      const registration = await navigator.serviceWorker.ready;
+    if ('serviceWorker' in navigator) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
 
-      // 创建一个消息通道来接收响应
-      const messageChannel = new MessageChannel();
+        if (registration.active) {
+          const messageChannel = new MessageChannel();
 
-      const response = await new Promise<{ found: boolean }>((resolve) => {
-        messageChannel.port1.onmessage = (event) => {
-          resolve(event.data);
-        };
+          const response = await new Promise<{ found: boolean }>((resolve) => {
+            messageChannel.port1.onmessage = (event) => {
+              resolve(event.data);
+            };
 
-        registration.active?.postMessage(
-          {
-            type: 'FIND_TAB',
-            cwd: session.cwd,
-            sessionId: session.sessionId,
-          },
-          [messageChannel.port2]
-        );
+            registration.active!.postMessage(
+              {
+                type: 'FIND_TAB',
+                cwd: session.cwd,
+                sessionId: session.sessionId,
+              },
+              [messageChannel.port2]
+            );
 
-        // 超时处理
-        setTimeout(() => resolve({ found: false }), 500);
-      });
-
-      if (response.found) {
-        // 已有 tab，发送通知让用户点击切换
-        if (Notification.permission === 'granted') {
-          const projectName = session.cwd.split('/').pop() || session.cwd;
-          registration.showNotification(`切换到 ${projectName}`, {
-            body: '点击切换到该项目',
-            tag: `switch-${session.cwd}`,
-            data: { cwd: session.cwd, sessionId: session.sessionId },
+            // 超时处理
+            setTimeout(() => resolve({ found: false }), 500);
           });
-        } else if (Notification.permission === 'default') {
-          const permission = await Notification.requestPermission();
-          if (permission === 'granted') {
-            const projectName = session.cwd.split('/').pop() || session.cwd;
-            registration.showNotification(`切换到 ${projectName}`, {
-              body: '点击切换到该项目',
-              tag: `switch-${session.cwd}`,
-              data: { cwd: session.cwd, sessionId: session.sessionId },
-            });
+
+          if (response.found) {
+            // 已有 tab，发送通知让用户点击切换
+            let permission = Notification.permission;
+            if (permission === 'default') {
+              permission = await Notification.requestPermission();
+            }
+
+            if (permission === 'granted') {
+              const projectName = session.cwd.split('/').pop() || session.cwd;
+              await registration.showNotification(`切换到 ${projectName}`, {
+                body: '点击切换到该项目',
+                tag: `switch-${session.cwd}`,
+                data: { cwd: session.cwd, sessionId: session.sessionId },
+              });
+            }
+            setIsOpen(false);
+            return;
           }
         }
-        setIsOpen(false);
-        return;
+      } catch {
+        // 忽略 SW 错误
       }
     }
 
     // 没有找到或 SW 不可用，打开新 tab
     window.open(targetUrl, '_blank');
     setIsOpen(false);
-  }, [currentCwd]);
+  }, [currentCwd, onSwitchSession, router]);
 
   const loadingCount = sessions.filter(s => s.isLoading).length;
 

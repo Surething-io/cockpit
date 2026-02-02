@@ -70,16 +70,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     streamFlushTimerRef.current = null;
   }, []);
 
-  // 注册 Service Worker
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {
-        // 忽略注册错误
-      });
-    }
-  }, []);
-
-  // 分页参数
+    // 分页参数
   const TURNS_PER_PAGE = 10;
 
   // 根据 cwd + sessionId 加载历史消息

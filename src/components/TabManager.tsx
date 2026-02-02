@@ -239,7 +239,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
             </button>
           )}
           {/* 全局会话监控 */}
-          <GlobalSessionMonitor currentCwd={activeTab?.cwd} />
+          <GlobalSessionMonitor currentCwd={activeTab?.cwd} onSwitchSession={handleSelectSession} />
           {/* 全局 Session Browser 按钮 */}
           <button
             onClick={() => setIsSessionBrowserOpen(true)}

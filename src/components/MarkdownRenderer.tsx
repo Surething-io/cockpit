@@ -4,7 +4,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { useState, useEffect, useMemo, ComponentPropsWithoutRef } from 'react';
+import { useState, useMemo, ComponentPropsWithoutRef } from 'react';
+import { useTheme } from './ThemeProvider';
 
 interface MarkdownRendererProps {
   content: string;
@@ -72,8 +73,73 @@ function preprocessAsciiArt(content: string): string {
   return '```text\n' + content.trim() + '\n```';
 }
 
+// 提取 Markdown 组件配置，避免重复定义
+function createMarkdownComponents(isDark: boolean) {
+  return {
+    // 代码块
+    code({ className, children, ...props }: ComponentPropsWithoutRef<'code'> & { className?: string }) {
+      const match = /language-(\w+)/.exec(className || '');
+      const codeString = String(children);
+      const isInline = !match && !className && !codeString.includes('\n');
+
+      if (isInline) {
+        return (
+          <code className="px-1.5 py-0.5 mx-0.5 rounded bg-accent text-sm font-mono" {...props}>
+            {children}
+          </code>
+        );
+      }
+
+      const code = String(children).replace(/\n$/, '');
+      const language = match?.[1] || 'text';
+      return (
+        <SyntaxHighlighter
+          style={isDark ? oneDark : oneLight}
+          language={language}
+          PreTag="div"
+          customStyle={{ margin: '0.75rem 0', borderRadius: '0.375rem', fontSize: '0.875rem' }}
+        >
+          {code}
+        </SyntaxHighlighter>
+      );
+    },
+    p: ({ children }: { children?: React.ReactNode }) => <p className="mb-3 last:mb-0">{children}</p>,
+    h1: ({ children }: { children?: React.ReactNode }) => <h1 className="text-xl font-bold mb-3 mt-4 first:mt-0">{children}</h1>,
+    h2: ({ children }: { children?: React.ReactNode }) => <h2 className="text-lg font-bold mb-2 mt-3 first:mt-0">{children}</h2>,
+    h3: ({ children }: { children?: React.ReactNode }) => <h3 className="text-base font-bold mb-2 mt-3 first:mt-0">{children}</h3>,
+    ul: ({ children }: { children?: React.ReactNode }) => <ul className="list-disc list-inside mb-3 space-y-1">{children}</ul>,
+    ol: ({ children }: { children?: React.ReactNode }) => <ol className="list-decimal list-inside mb-3 space-y-1">{children}</ol>,
+    li: ({ children }: { children?: React.ReactNode }) => <li className="leading-relaxed">{children}</li>,
+    blockquote: ({ children }: { children?: React.ReactNode }) => (
+      <blockquote className="border-l-4 border-border pl-4 my-3 italic text-muted-foreground">{children}</blockquote>
+    ),
+    a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">{children}</a>
+    ),
+    table: ({ children }: { children?: React.ReactNode }) => (
+      <div className="overflow-x-auto my-3"><table className="min-w-full border border-border">{children}</table></div>
+    ),
+    thead: ({ children }: { children?: React.ReactNode }) => <thead className="bg-accent">{children}</thead>,
+    th: ({ children }: { children?: React.ReactNode }) => (
+      <th className="px-4 py-2 text-left font-semibold border-b border-border">{children}</th>
+    ),
+    td: ({ children }: { children?: React.ReactNode }) => (
+      <td className="px-4 py-2 border-b border-border">{children}</td>
+    ),
+    hr: () => <hr className="my-4 border-border" />,
+    img: ({ src, alt, ...props }: ComponentPropsWithoutRef<'img'>) => (
+      <img src={src} alt={alt || ''} className="max-w-full h-auto rounded-lg my-3" {...props} />
+    ),
+    strong: ({ children }: { children?: React.ReactNode }) => <strong className="font-bold">{children}</strong>,
+    em: ({ children }: { children?: React.ReactNode }) => <em className="italic">{children}</em>,
+    del: ({ children }: { children?: React.ReactNode }) => <del className="line-through">{children}</del>,
+  };
+}
+
 export function MarkdownRenderer({ content, isUser = false, isStreaming = false }: MarkdownRendererProps) {
-  const [isDark, setIsDark] = useState(false);
+  // 使用全局 Theme Context，避免每个组件都创建 MutationObserver
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
 
   // 流式结束后或历史消息，检测并预处理 ASCII 图表
   const processedContent = useMemo(() => {
@@ -84,183 +150,49 @@ export function MarkdownRenderer({ content, isUser = false, isStreaming = false 
     return preprocessAsciiArt(content);
   }, [content, isUser, isStreaming]);
 
-  useEffect(() => {
-    // 检测暗色模式
-    const checkDarkMode = () => {
-      setIsDark(document.documentElement.classList.contains('dark'));
-    };
-    checkDarkMode();
-
-    // 监听暗色模式变化
-    const observer = new MutationObserver(checkDarkMode);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-
-    return () => observer.disconnect();
-  }, []);
-
   // 用户消息使用简化样式
   if (isUser) {
     return <div className="whitespace-pre-wrap break-words">{content}</div>;
+  }
+
+  // 流式输出中：已完成的行用 Markdown 渲染，最后一行用纯文本（避免频繁重解析）
+  if (isStreaming) {
+    const lastNewlineIndex = content.lastIndexOf('\n');
+
+    // 没有换行符，全部用纯文本
+    if (lastNewlineIndex === -1) {
+      return <div className="whitespace-pre-wrap break-words">{content}</div>;
+    }
+
+    // 分割为已完成行和当前行
+    const completedLines = content.slice(0, lastNewlineIndex + 1);
+    const currentLine = content.slice(lastNewlineIndex + 1);
+
+    return (
+      <div className="markdown-body">
+        {/* 已完成的行用 Markdown 渲染 */}
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={createMarkdownComponents(isDark)}
+        >
+          {completedLines}
+        </ReactMarkdown>
+        {/* 当前正在输入的行用纯文本 */}
+        {currentLine && (
+          <span className="whitespace-pre-wrap">{currentLine}</span>
+        )}
+      </div>
+    );
   }
 
   return (
     <div className="markdown-body">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        components={{
-        // 代码块
-        code({ className, children, ...props }) {
-          const match = /language-(\w+)/.exec(className || '');
-          // 判断是否为内联代码：没有语言标记、没有 className、且内容不包含换行符
-          const codeString = String(children);
-          const isInline = !match && !className && !codeString.includes('\n');
-
-          if (isInline) {
-            return (
-              <code
-                className="px-1.5 py-0.5 mx-0.5 rounded bg-accent text-sm font-mono"
-                {...props}
-              >
-                {children}
-              </code>
-            );
-          }
-
-          // 代码块使用语法高亮
-          const code = String(children).replace(/\n$/, '');
-          const language = match?.[1] || 'text';
-          return (
-            <SyntaxHighlighter
-              style={isDark ? oneDark : oneLight}
-              language={language}
-              PreTag="div"
-              customStyle={{
-                margin: '0.75rem 0',
-                borderRadius: '0.375rem',
-                fontSize: '0.875rem',
-              }}
-            >
-              {code}
-            </SyntaxHighlighter>
-          );
-        },
-
-        // 段落
-        p({ children }) {
-          return <p className="mb-3 last:mb-0">{children}</p>;
-        },
-
-        // 标题
-        h1({ children }) {
-          return <h1 className="text-xl font-bold mb-3 mt-4 first:mt-0">{children}</h1>;
-        },
-        h2({ children }) {
-          return <h2 className="text-lg font-bold mb-2 mt-3 first:mt-0">{children}</h2>;
-        },
-        h3({ children }) {
-          return <h3 className="text-base font-bold mb-2 mt-3 first:mt-0">{children}</h3>;
-        },
-
-        // 列表
-        ul({ children }) {
-          return <ul className="list-disc list-inside mb-3 space-y-1">{children}</ul>;
-        },
-        ol({ children }) {
-          return <ol className="list-decimal list-inside mb-3 space-y-1">{children}</ol>;
-        },
-        li({ children }) {
-          return <li className="leading-relaxed">{children}</li>;
-        },
-
-        // 引用
-        blockquote({ children }) {
-          return (
-            <blockquote className="border-l-4 border-border pl-4 my-3 italic text-muted-foreground">
-              {children}
-            </blockquote>
-          );
-        },
-
-        // 链接
-        a({ href, children }) {
-          return (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-brand hover:underline"
-            >
-              {children}
-            </a>
-          );
-        },
-
-        // 表格
-        table({ children }) {
-          return (
-            <div className="overflow-x-auto my-3">
-              <table className="min-w-full border border-border">
-                {children}
-              </table>
-            </div>
-          );
-        },
-        thead({ children }) {
-          return <thead className="bg-accent">{children}</thead>;
-        },
-        th({ children }) {
-          return (
-            <th className="px-4 py-2 text-left font-semibold border-b border-border">
-              {children}
-            </th>
-          );
-        },
-        td({ children }) {
-          return (
-            <td className="px-4 py-2 border-b border-border">
-              {children}
-            </td>
-          );
-        },
-
-        // 分隔线
-        hr() {
-          return <hr className="my-4 border-border" />;
-        },
-
-        // 图片
-        img({ src, alt, ...props }: ComponentPropsWithoutRef<'img'>) {
-          return (
-            <img
-              src={src}
-              alt={alt || ''}
-              className="max-w-full h-auto rounded-lg my-3"
-              {...props}
-            />
-          );
-        },
-
-        // 粗体
-        strong({ children }) {
-          return <strong className="font-bold">{children}</strong>;
-        },
-
-        // 斜体
-        em({ children }) {
-          return <em className="italic">{children}</em>;
-        },
-
-        // 删除线
-        del({ children }) {
-          return <del className="line-through">{children}</del>;
-        },
-      }}
-    >
-      {processedContent}
-    </ReactMarkdown>
+        components={createMarkdownComponents(isDark)}
+      >
+        {processedContent}
+      </ReactMarkdown>
     </div>
   );
 }

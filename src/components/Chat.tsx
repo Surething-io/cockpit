@@ -38,6 +38,27 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, is
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // 流式文本缓冲区 - 用于节流 setState
+  const streamBufferRef = useRef<{ messageId: string; text: string } | null>(null);
+  const streamFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 刷新缓冲区到 state
+  const flushStreamBuffer = useCallback(() => {
+    const buffer = streamBufferRef.current;
+    if (buffer && buffer.text) {
+      const { messageId, text } = buffer;
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId
+            ? { ...msg, content: (msg.content || '') + text }
+            : msg
+        )
+      );
+      streamBufferRef.current = { messageId, text: '' };
+    }
+    streamFlushTimerRef.current = null;
+  }, []);
+
   // 分页参数
   const TURNS_PER_PAGE = 10;
 
@@ -386,18 +407,23 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, is
       return;
     }
 
-    // 处理流式文本块（打字机效果）
+    // 处理流式文本块（打字机效果）- 使用缓冲区节流
     if (eventType === 'stream_event') {
       const streamEvent = event.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
       if (streamEvent?.type === 'content_block_delta' && streamEvent.delta?.type === 'text_delta') {
         const deltaText = streamEvent.delta.text || '';
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === messageId
-              ? { ...msg, content: (msg.content || '') + deltaText }
-              : msg
-          )
-        );
+
+        // 累积到缓冲区
+        if (!streamBufferRef.current || streamBufferRef.current.messageId !== messageId) {
+          streamBufferRef.current = { messageId, text: deltaText };
+        } else {
+          streamBufferRef.current.text += deltaText;
+        }
+
+        // 节流：每 50ms 刷新一次
+        if (!streamFlushTimerRef.current) {
+          streamFlushTimerRef.current = setTimeout(flushStreamBuffer, 50);
+        }
       }
       return;
     }
@@ -464,6 +490,13 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, is
 
     // 处理最终结果
     if (eventType === 'result') {
+      // 流结束，立即刷新缓冲区
+      if (streamFlushTimerRef.current) {
+        clearTimeout(streamFlushTimerRef.current);
+        streamFlushTimerRef.current = null;
+      }
+      flushStreamBuffer();
+
       // 捕获 token 使用信息
       const usage = event.usage as { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } | undefined;
       const totalCostUsd = event.total_cost_usd as number | undefined;

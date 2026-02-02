@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { ChatMessage, MessageImage } from '@/types/chat';
 import { ToolCallModal } from './ToolCallModal';
@@ -59,7 +59,8 @@ interface MessageBubbleProps {
 // 工具调用折叠显示的阈值
 const TOOL_CALLS_COLLAPSE_THRESHOLD = 3;
 
-export function MessageBubble({ message, cwd }: MessageBubbleProps) {
+// 使用 memo 优化，只有当 message 或 cwd 变化时才重新渲染
+export const MessageBubble = memo(function MessageBubble({ message, cwd }: MessageBubbleProps) {
   const [previewImage, setPreviewImage] = useState<MessageImage | null>(null);
   const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
   const isUser = message.role === 'user';
@@ -149,4 +150,4 @@ export function MessageBubble({ message, cwd }: MessageBubbleProps) {
       )}
     </>
   );
-}
+});

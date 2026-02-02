@@ -318,6 +318,7 @@ interface AddCommentInputProps {
 
 function AddCommentInput({ x, y, range, container, onSubmit, onClose }: AddCommentInputProps) {
   const [content, setContent] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -344,19 +345,22 @@ function AddCommentInput({ x, y, range, container, onSubmit, onClose }: AddComme
     textareaRef.current?.focus();
   }, []);
 
-  // Click outside to close
+  // Click outside to close (only when not submitting)
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+      if (!isSubmitting && cardRef.current && !cardRef.current.contains(e.target as Node)) {
         onClose();
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose]);
+  }, [onClose, isSubmitting]);
 
   const handleSubmit = () => {
+    if (isSubmitting || !content.trim()) return;
+    setIsSubmitting(true);
     onSubmit(content.trim());
+    // 组件会被父组件卸载，不需要 setIsSubmitting(false)
   };
 
   return (
@@ -374,20 +378,21 @@ function AddCommentInput({ x, y, range, container, onSubmit, onClose }: AddComme
           value={content}
           onChange={(e) => setContent(e.target.value)}
           placeholder="输入评论..."
-          className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card resize-none focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
           rows={2}
+          disabled={isSubmitting}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               handleSubmit();
             }
-            if (e.key === 'Escape') {
+            if (e.key === 'Escape' && !isSubmitting) {
               onClose();
             }
           }}
         />
         <div className="mt-1 text-xs text-muted-foreground">
-          Enter 提交 · Shift+Enter 换行
+          {isSubmitting ? '提交中...' : 'Enter 提交 · Shift+Enter 换行'}
         </div>
       </div>
     </div>

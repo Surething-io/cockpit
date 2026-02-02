@@ -295,6 +295,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                       tabId={tab.id}
                       cwd={tab.cwd}
                       sessionId={tab.sessionId}
+                      isActive={tab.id === activeTabId}
                       onStateChange={updateTabState}
                       onShowGitStatus={() => {
                         setFileBrowserInitialTab('status');
@@ -329,6 +330,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                     tabId={tab.id}
                     cwd={tab.cwd}
                     sessionId={tab.sessionId}
+                    isActive={tab.id === activeTabId}
                     onStateChange={updateTabState}
                   />
                 </div>
@@ -369,11 +371,12 @@ interface ChatPanelProps {
   tabId: string;
   cwd?: string;
   sessionId?: string;
+  isActive?: boolean; // Tab 是否激活
   onStateChange: (tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string }) => void;
   onShowGitStatus?: () => void;
 }
 
-function ChatPanel({ tabId, cwd, sessionId, onStateChange, onShowGitStatus }: ChatPanelProps) {
+function ChatPanel({ tabId, cwd, sessionId, isActive, onStateChange, onShowGitStatus }: ChatPanelProps) {
   // 使用 useCallback 稳定回调函数引用，避免无限循环
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
@@ -393,6 +396,7 @@ function ChatPanel({ tabId, cwd, sessionId, onStateChange, onShowGitStatus }: Ch
       initialSessionId={sessionId}
       hideHeader
       hideSidebar
+      isActive={isActive}
       onLoadingChange={handleLoadingChange}
       onSessionIdChange={handleSessionIdChange}
       onTitleChange={handleTitleChange}

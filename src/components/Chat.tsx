@@ -14,13 +14,14 @@ interface ChatProps {
   initialSessionId?: string;
   hideHeader?: boolean;
   hideSidebar?: boolean;
+  isActive?: boolean; // Tab 是否激活（用于处理隐藏 Tab 的滚动问题）
   onLoadingChange?: (isLoading: boolean) => void;
   onSessionIdChange?: (sessionId: string) => void;
   onTitleChange?: (title: string) => void;
   onShowGitStatus?: () => void;
 }
 
-export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus }: ChatProps) {
+export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus }: ChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -350,12 +351,38 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
     [sessionId, initialCwd]
   );
 
+  // 获取 session 标题
+  const fetchSessionTitle = useCallback(async (sid: string) => {
+    if (!initialCwd) return;
+    try {
+      const response = await fetch('/api/session-by-path', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cwd: initialCwd, sessionId: sid }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.title) {
+          onTitleChange?.(data.title);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch session title:', error);
+    }
+  }, [initialCwd, onTitleChange]);
+
   const handleStreamEvent = (event: Record<string, unknown>, messageId: string) => {
     const eventType = event.type as string;
 
     // 处理 session_id
     if (eventType === 'system' && event.subtype === 'init') {
-      setSessionId(event.session_id as string);
+      const newSessionId = event.session_id as string;
+      setSessionId(newSessionId);
+      // 获取 session 标题（新会话第一次拿到 sessionId 时）
+      if (initialCwd && newSessionId) {
+        // 延迟一点获取，确保 session 文件已写入
+        setTimeout(() => fetchSessionTitle(newSessionId), 500);
+      }
       return;
     }
 
@@ -567,6 +594,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, on
             hasMoreHistory={hasMoreHistory}
             isLoadingMore={isLoadingMore}
             onLoadMore={loadMoreHistory}
+            isActive={isActive}
           />
         )}
 

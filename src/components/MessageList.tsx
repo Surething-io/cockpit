@@ -11,9 +11,10 @@ interface MessageListProps {
   hasMoreHistory?: boolean;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
+  isActive?: boolean; // Tab 是否激活（用于处理隐藏 Tab 的滚动问题）
 }
 
-export function MessageList({ messages, isLoading, cwd, hasMoreHistory, isLoadingMore, onLoadMore }: MessageListProps) {
+export function MessageList({ messages, isLoading, cwd, hasMoreHistory, isLoadingMore, onLoadMore, isActive = true }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -76,17 +77,14 @@ export function MessageList({ messages, isLoading, cwd, hasMoreHistory, isLoadin
   // 标记是否是初次加载
   const isInitialLoadRef = useRef(true);
 
-  // 消息变化时滚动逻辑
+  // 消息变化时滚动逻辑（仅处理新消息，初次加载由下面的 useEffect 处理）
   useEffect(() => {
     const prevCount = prevMessageCountRef.current;
     const currentCount = messages.length;
     prevMessageCountRef.current = currentCount;
 
-    // 初次加载（从 0 变为有消息）：直接滚动到底部
-    if (isInitialLoadRef.current && currentCount > 0) {
-      isInitialLoadRef.current = false;
-      // 使用 instant 而不是 smooth，避免加载时的滚动动画
-      bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+    // 初次加载由单独的 useEffect 处理
+    if (isInitialLoadRef.current) {
       return;
     }
 
@@ -115,6 +113,30 @@ export function MessageList({ messages, isLoading, cwd, hasMoreHistory, isLoadin
       }
     }
   }, [messages, isLoadingMore]);
+
+  // 标记是否需要在激活时滚动到底部
+  const needsScrollOnActivateRef = useRef(false);
+
+  // 当 Tab 激活时，如果之前因为隐藏而无法滚动，现在补偿滚动
+  useEffect(() => {
+    if (isActive && needsScrollOnActivateRef.current && messages.length > 0) {
+      needsScrollOnActivateRef.current = false;
+      bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+    }
+  }, [isActive, messages.length]);
+
+  // 修改初次加载逻辑：如果 Tab 隐藏，标记需要在激活时滚动
+  useEffect(() => {
+    if (isInitialLoadRef.current && messages.length > 0) {
+      isInitialLoadRef.current = false;
+      if (isActive) {
+        bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+      } else {
+        // Tab 隐藏时，标记需要在激活时滚动
+        needsScrollOnActivateRef.current = true;
+      }
+    }
+  }, [messages.length, isActive]);
 
   return (
     <div className="relative flex-1 overflow-hidden">

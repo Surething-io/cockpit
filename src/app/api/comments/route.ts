@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { cwd, filePath, startLine, endLine, content } = body;
 
-    if (!cwd || !filePath || startLine === undefined || endLine === undefined || !content) {
+    if (!cwd || !filePath || startLine === undefined || endLine === undefined || content === undefined) {
       return NextResponse.json(
         { error: 'cwd, filePath, startLine, endLine, and content are required' },
         { status: 400 }

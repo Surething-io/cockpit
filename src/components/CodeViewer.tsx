@@ -321,9 +321,7 @@ function AddCommentInput({ x, y, range, onSubmit, onClose }: AddCommentInputProp
   }, [onClose]);
 
   const handleSubmit = () => {
-    if (content.trim()) {
-      onSubmit(content.trim());
-    }
+    onSubmit(content.trim());
   };
 
   return (

@@ -1245,6 +1245,62 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     }
   }, [cwd, status, fetchStatus]);
 
+  // 放弃单个文件的变更
+  const handleDiscardFile = useCallback(async (file: GitFileStatus) => {
+    try {
+      const isUntracked = file.status === 'untracked';
+      const response = await fetch('/api/git/discard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cwd, files: [file.path], isUntracked }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to discard file');
+      }
+      await fetchStatus();
+      toast(isUntracked ? '已删除文件' : '已放弃变更', 'success');
+    } catch (err) {
+      console.error('Error discarding file:', err);
+      toast('放弃变更失败', 'error');
+    }
+  }, [cwd, fetchStatus]);
+
+  // 放弃工作区所有变更
+  const handleDiscardAll = useCallback(async () => {
+    if (!status?.unstaged.length) return;
+    if (!confirm(`确定要放弃工作区的 ${status.unstaged.length} 个文件的变更吗？此操作不可恢复。`)) return;
+
+    try {
+      // 分离 untracked 和已跟踪文件
+      const untrackedFiles = status.unstaged.filter(f => f.status === 'untracked').map(f => f.path);
+      const trackedFiles = status.unstaged.filter(f => f.status !== 'untracked').map(f => f.path);
+
+      // 放弃已跟踪文件的变更
+      if (trackedFiles.length > 0) {
+        await fetch('/api/git/discard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cwd, files: trackedFiles, isUntracked: false }),
+        });
+      }
+
+      // 删除 untracked 文件
+      if (untrackedFiles.length > 0) {
+        await fetch('/api/git/discard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cwd, files: untrackedFiles, isUntracked: true }),
+        });
+      }
+
+      await fetchStatus();
+      toast(`已放弃 ${status.unstaged.length} 个文件的变更`, 'success');
+    } catch (err) {
+      console.error('Error discarding all:', err);
+      toast('放弃变更失败', 'error');
+    }
+  }, [cwd, status, fetchStatus]);
+
   // Fetch status diff
   useEffect(() => {
     if (!statusSelectedFile) {
@@ -1747,12 +1803,20 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           工作区 ({status?.unstaged.length || 0})
                         </span>
                         {(status?.unstaged.length || 0) > 0 && (
-                          <button
-                            onClick={handleStageAll}
-                            className="text-xs text-green-11 hover:text-green-10 hover:underline"
-                          >
-                            全部暂存
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={handleDiscardAll}
+                              className="text-xs text-red-11 hover:text-red-10 hover:underline"
+                            >
+                              放弃所有
+                            </button>
+                            <button
+                              onClick={handleStageAll}
+                              className="text-xs text-green-11 hover:text-green-10 hover:underline"
+                            >
+                              全部暂存
+                            </button>
+                          </div>
                         )}
                       </div>
                       <GitFileTree
@@ -1764,19 +1828,33 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         cwd={cwd}
                         emptyMessage="无未暂存的变更"
                         className="py-1"
-                        renderActions={(node) => !node.isDirectory ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleStage(node.path);
-                            }}
-                            className="opacity-0 group-hover:opacity-100 p-0.5 text-green-11 hover:text-green-10 hover:bg-green-9/10 dark:hover:bg-green-9/20 rounded transition-all"
-                            title="暂存文件"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                            </svg>
-                          </button>
+                        renderActions={(node) => !node.isDirectory && node.file ? (
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDiscardFile(node.file as GitFileStatus);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 text-red-11 hover:text-red-10 hover:bg-red-9/10 dark:hover:bg-red-9/20 rounded transition-all"
+                              title="放弃变更"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStage(node.path);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 text-green-11 hover:text-green-10 hover:bg-green-9/10 dark:hover:bg-green-9/20 rounded transition-all"
+                              title="暂存文件"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                              </svg>
+                            </button>
+                          </div>
                         ) : null}
                       />
                     </div>

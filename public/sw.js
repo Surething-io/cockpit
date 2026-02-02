@@ -65,7 +65,12 @@ self.addEventListener('message', async (event) => {
     // 确保轮询已启动
     startPolling();
 
-    // 立即返回缓存的状态
+    // 如果缓存为空，先 fetch 一次
+    if (globalStateCache.sessions.length === 0) {
+      await fetchGlobalState();
+    }
+
+    // 返回状态
     event.ports[0].postMessage({
       type: 'GLOBAL_STATE_UPDATE',
       state: globalStateCache,

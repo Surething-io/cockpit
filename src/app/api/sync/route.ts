@@ -23,9 +23,10 @@ export interface SyncCheckResponse {
 async function getGitFingerprint(cwd: string): Promise<string> {
   try {
     // 获取 HEAD hash 和 status 输出
+    // -c core.quotePath=false 避免中文文件名被转义为八进制
     const [headResult, statusResult] = await Promise.all([
       execAsync('git rev-parse HEAD', { cwd }).catch(() => ({ stdout: '' })),
-      execAsync('git status --porcelain -u', { cwd }).catch(() => ({ stdout: '' })),
+      execAsync('git -c core.quotePath=false status --porcelain -u', { cwd }).catch(() => ({ stdout: '' })),
     ]);
 
     const combined = `${headResult.stdout.trim()}\n${statusResult.stdout}`;

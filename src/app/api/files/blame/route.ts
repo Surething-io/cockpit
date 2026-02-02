@@ -36,8 +36,9 @@ export async function GET(request: NextRequest) {
 
   try {
     // Use git blame with porcelain format for easy parsing
+    // -c core.quotePath=false 避免中文文件名被转义为八进制
     const { stdout } = await execAsync(
-      `git blame --porcelain "${path}"`,
+      `git -c core.quotePath=false blame --porcelain "${path}"`,
       { cwd, maxBuffer: 10 * 1024 * 1024 }
     );
 
@@ -77,7 +78,7 @@ export async function GET(request: NextRequest) {
       // Use git log to get full messages for all commits at once
       // Format: hash<NUL>message<NUL>hash<NUL>message...
       const { stdout: logOutput } = await execAsync(
-        `git log --format="%H%x00%B%x00" --no-walk ${uniqueHashes.join(' ')}`,
+        `git -c core.quotePath=false log --format="%H%x00%B%x00" --no-walk ${uniqueHashes.join(' ')}`,
         { cwd, maxBuffer: 10 * 1024 * 1024 }
       );
 

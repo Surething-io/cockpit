@@ -3,6 +3,7 @@
 import React, { useMemo, useRef, useEffect, useCallback, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { FileContextMenu, useFileContextMenu } from './FileContextMenu';
+import { FileIcon } from './FileIcon';
 
 // ============================================================================
 // Types
@@ -25,20 +26,6 @@ interface FlatTreeItem {
 // ============================================================================
 
 const ROW_HEIGHT = 26;
-
-const FILE_ICONS: Record<string, string> = {
-  ts: '📘', tsx: '⚛️', js: '📒', jsx: '⚛️',
-  json: '📋', md: '📝', css: '🎨', scss: '🎨',
-  html: '🌐', py: '🐍', go: '🔵', rs: '🦀',
-  java: '☕', rb: '💎', php: '🐘',
-  png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', svg: '🖼️', webp: '🖼️',
-  sh: '⚙️', bash: '⚙️', yml: '⚙️', yaml: '⚙️',
-};
-
-export function getFileIcon(name: string): string {
-  const ext = name.split('.').pop()?.toLowerCase();
-  return FILE_ICONS[ext || ''] || '📄';
-}
 
 // ============================================================================
 // Helper Functions
@@ -105,19 +92,24 @@ const VirtualTreeRow = React.memo(function VirtualTreeRow({
 
   return (
     <div
-      className={`flex items-center gap-1 py-0.5 px-2 cursor-pointer hover:bg-accent ${
+      className={`flex items-center gap-1.5 py-0.5 px-2 cursor-pointer hover:bg-accent ${
         isSelected ? 'bg-brand/10' : ''
       }`}
-      style={{ paddingLeft: `${level * 12 + (node.isDirectory ? 8 : 20)}px` }}
+      style={{ paddingLeft: `${level * 12 + 8}px` }}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
     >
-      {node.isDirectory && (
-        <span className="text-slate-9 text-xs w-3">
-          {isExpanded ? '▼' : '▶'}
-        </span>
+      {node.isDirectory ? (
+        <svg
+          className={`w-4 h-4 flex-shrink-0 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+          viewBox="0 0 16 16"
+          fill="none"
+        >
+          <path d="M6 4 L10 8 L6 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <FileIcon name={node.name} size={16} className="flex-shrink-0 ml-4" />
       )}
-      {!node.isDirectory && <span>{getFileIcon(node.name)}</span>}
       <span className={`text-sm truncate ${isSelected && !node.isDirectory ? 'text-brand' : 'text-foreground'}`}>
         {node.name}
       </span>

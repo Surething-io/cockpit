@@ -30,6 +30,11 @@ function parseGitStatus(output: string): { staged: GitFileStatus[]; unstaged: Gi
     const workTreeStatus = line[1]; // 工作区状态
     let filePath = line.slice(3);
 
+    // 去除引号（git 对包含空格的文件名会加引号）
+    if (filePath.startsWith('"') && filePath.endsWith('"')) {
+      filePath = filePath.slice(1, -1);
+    }
+
     // 处理重命名情况 (R 状态)
     let oldPath: string | undefined;
     if (filePath.includes(' -> ')) {
@@ -98,7 +103,8 @@ export async function GET(request: NextRequest) {
     await execAsync('git rev-parse --git-dir', { cwd });
 
     // 获取 git status (-u 显示所有未跟踪文件，而不只是目录)
-    const { stdout } = await execAsync('git status --porcelain=v1 -u', { cwd });
+    // -c core.quotePath=false 避免中文文件名被转义为八进制
+    const { stdout } = await execAsync('git -c core.quotePath=false status --porcelain=v1 -u', { cwd });
     const { staged, unstaged } = parseGitStatus(stdout);
 
     return NextResponse.json({

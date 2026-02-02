@@ -233,7 +233,8 @@ html {
 body {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
-  font-family: var(--font-sans);
+  /* 直接使用 --font-inter 变量（由 Next.js font 在 body 上定义）*/
+  font-family: var(--font-inter), "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
 /* ---- 滚动条样式 ---- */

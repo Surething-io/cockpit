@@ -149,7 +149,12 @@
   /* 字体 */
   --font-sans: var(--font-inter), "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-serif: var(--font-lora), "PingFang SC", "Microsoft YaHei", serif;
-  --font-mono: var(--font-jetbrains-mono), "Menlo", "Consolas", monospace;
+  /*
+   * 等宽字体：优先使用 Maple Mono CN（中英文 2:1 完美对齐）
+   * 安装方式：brew install --cask font-maple-mono-nf-cn
+   * 备选：Sarasa Mono SC (brew install --cask font-sarasa-gothic)
+   */
+  --font-mono: "Maple Mono CN", "Maple Mono NF CN", "Sarasa Mono SC", var(--font-jetbrains-mono), "Menlo", "Consolas", monospace;
 
   /* 颜色 */
   --color-background: hsl(var(--background));

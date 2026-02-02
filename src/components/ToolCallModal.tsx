@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ToolCallInfo } from '@/types/chat';
 import { DiffView, DiffUnifiedView } from './DiffView';
-import { CodeViewer } from './CodeViewer';
+import { CodeViewer, getHighlighter, getLanguageFromPath } from './CodeViewer';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 // 检查是否是有效的 JSON
 function isValidJson(content: string): boolean {
@@ -126,14 +127,48 @@ function getFilePath(content: string): string | null {
   return null;
 }
 
-// 文件预览组件 - 使用统一的 CodeViewer
-function FilePreview({ filePath }: { filePath: string }) {
+// 检测是否为 Markdown 文件
+function isMarkdownFile(filePath: string): boolean {
+  return filePath.toLowerCase().endsWith('.md');
+}
+
+// Markdown 预览模式类型
+type MdViewMode = 'source' | 'preview' | 'split';
+
+// 文件预览组件 - 使用统一的 CodeViewer，Markdown 文件支持多种预览模式
+interface FilePreviewProps {
+  filePath: string;
+  mdViewMode?: MdViewMode;
+  onMdViewModeChange?: (mode: MdViewMode) => void;
+}
+
+function FilePreview({ filePath, mdViewMode = 'source' }: FilePreviewProps) {
   const [fileContent, setFileContent] = useState<string | null>(null);
+  const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isDark, setIsDark] = useState(false);
+
+  // 双栏滚动同步
+  const leftPanelRef = useRef<HTMLDivElement>(null);
+  const rightPanelRef = useRef<HTMLDivElement>(null);
+  const isSyncingRef = useRef(false);
 
   // 防止 StrictMode 下重复请求
   const fetchingRef = useRef(false);
+
+  const isMd = isMarkdownFile(filePath);
+
+  // 检测暗色模式
+  useEffect(() => {
+    const checkDarkMode = () => {
+      setIsDark(document.documentElement.classList.contains('dark'));
+    };
+    checkDarkMode();
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     // 防止重复请求
@@ -160,6 +195,45 @@ function FilePreview({ filePath }: { filePath: string }) {
     loadFile();
   }, [filePath]);
 
+  // 高亮 Markdown 源码（用于双栏模式）
+  useEffect(() => {
+    if (!fileContent || !isMd || mdViewMode !== 'split') return;
+
+    const highlight = async () => {
+      try {
+        const highlighter = await getHighlighter();
+        const lang = getLanguageFromPath(filePath);
+        const html = highlighter.codeToHtml(fileContent, {
+          lang,
+          theme: isDark ? 'github-dark' : 'github-light',
+        });
+        setHighlightedHtml(html);
+      } catch {
+        // 高亮失败，使用纯文本
+        setHighlightedHtml(null);
+      }
+    };
+    highlight();
+  }, [fileContent, filePath, isDark, isMd, mdViewMode]);
+
+  // 滚动同步处理
+  const handleScroll = useCallback((source: 'left' | 'right') => {
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
+
+    const sourceEl = source === 'left' ? leftPanelRef.current : rightPanelRef.current;
+    const targetEl = source === 'left' ? rightPanelRef.current : leftPanelRef.current;
+
+    if (sourceEl && targetEl) {
+      const scrollRatio = sourceEl.scrollTop / (sourceEl.scrollHeight - sourceEl.clientHeight || 1);
+      targetEl.scrollTop = scrollRatio * (targetEl.scrollHeight - targetEl.clientHeight);
+    }
+
+    requestAnimationFrame(() => {
+      isSyncingRef.current = false;
+    });
+  }, []);
+
   if (error) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -184,6 +258,50 @@ function FilePreview({ filePath }: { filePath: string }) {
     );
   }
 
+  // Markdown 文件的多模式预览
+  if (isMd) {
+    // 纯预览模式
+    if (mdViewMode === 'preview') {
+      return (
+        <div className="h-full overflow-auto p-4">
+          <MarkdownRenderer content={fileContent} />
+        </div>
+      );
+    }
+
+    // 双栏模式
+    if (mdViewMode === 'split') {
+      return (
+        <div className="h-full flex">
+          {/* 左侧：原文（带语法高亮） */}
+          <div
+            ref={leftPanelRef}
+            className="w-1/2 h-full overflow-auto border-r border-border p-4 bg-secondary"
+            onScroll={() => handleScroll('left')}
+          >
+            {highlightedHtml ? (
+              <div
+                className="font-mono text-sm [&_pre]:!bg-transparent [&_pre]:!p-0 [&_pre]:!m-0"
+                dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+              />
+            ) : (
+              <pre className="font-mono text-sm text-foreground whitespace-pre-wrap">{fileContent}</pre>
+            )}
+          </div>
+          {/* 右侧：预览 */}
+          <div
+            ref={rightPanelRef}
+            className="w-1/2 h-full overflow-auto p-4"
+            onScroll={() => handleScroll('right')}
+          >
+            <MarkdownRenderer content={fileContent} />
+          </div>
+        </div>
+      );
+    }
+  }
+
+  // 原文模式（默认）
   return (
     <CodeViewer
       content={fileContent}
@@ -211,7 +329,10 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
   const filePath = getFilePath(content);
   const hasDiffMode = !!editInput;
   const hasFileMode = !!filePath;
-  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
+  const isMdFile = filePath ? isMarkdownFile(filePath) : false;
+
+  // Markdown 预览模式状态（默认原文，用户点击双栏时再触发预览渲染）
+  const [mdViewMode, setMdViewMode] = useState<MdViewMode>('source');
 
   // 默认模式：Read/Write 工具默认 file 模式，Edit 工具默认 diff 模式，其他用可读模式
   const getDefaultMode = (): ViewMode => {
@@ -222,12 +343,6 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
   };
 
   const [viewMode, setViewMode] = useState<ViewMode>(getDefaultMode());
-
-  // 获取 Portal 容器（Chat 屏幕）
-  useEffect(() => {
-    const container = document.getElementById('chat-screen');
-    setPortalContainer(container);
-  }, []);
 
   // ESC 键关闭
   useEffect(() => {
@@ -246,7 +361,7 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
 
   const renderContent = () => {
     if (viewMode === 'file' && filePath) {
-      return <FilePreview filePath={filePath} />;
+      return <FilePreview filePath={filePath} mdViewMode={mdViewMode} />;
     }
     if (viewMode === 'diff-unified' && editInput) {
       return <DiffUnifiedView oldContent={editInput.old_string} newContent={editInput.new_string} filePath={editInput.file_path} />;
@@ -273,11 +388,11 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
 
   const modalContent = (
     <div
-      className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
     >
       <div
-        className={`bg-card rounded-lg shadow-xl w-full ${modalWidth} h-[90%] flex flex-col transition-all`}
+        className={`bg-card rounded-lg shadow-xl w-full ${modalWidth} h-[90vh] flex flex-col transition-all`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -348,6 +463,44 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
                 </button>
               </div>
             )}
+            {/* Markdown 预览模式切换（仅在 file 模式且为 .md 文件时显示） */}
+            {viewMode === 'file' && isMdFile && (
+              <div className="flex items-center gap-1 bg-accent rounded p-0.5">
+                <button
+                  onClick={() => setMdViewMode('source')}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                    mdViewMode === 'source'
+                      ? 'bg-card text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  title="原文"
+                >
+                  原文
+                </button>
+                <button
+                  onClick={() => setMdViewMode('preview')}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                    mdViewMode === 'preview'
+                      ? 'bg-card text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  title="预览"
+                >
+                  预览
+                </button>
+                <button
+                  onClick={() => setMdViewMode('split')}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                    mdViewMode === 'split'
+                      ? 'bg-card text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  title="双栏"
+                >
+                  双栏
+                </button>
+              </div>
+            )}
             <button
               onClick={onClose}
               className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"
@@ -366,40 +519,8 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
     </div>
   );
 
-  // 使用 Portal 渲染到 Chat 屏幕容器，如果容器不存在则回退到 body
-  if (portalContainer) {
-    return createPortal(modalContent, portalContainer);
-  }
-
-  // 回退：直接渲染（fixed 定位到整个视口）
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
-    >
-      <div
-        className={`bg-card rounded-lg shadow-xl w-full ${modalWidth} h-[90vh] flex flex-col transition-all`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h3 className="text-sm font-medium text-foreground">{title}</h3>
-          <button
-            onClick={onClose}
-            className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        {/* Content */}
-        <div className="flex-1 overflow-auto p-4">
-          {renderContent()}
-        </div>
-      </div>
-    </div>
-  );
+  // 直接使用 Portal 渲染到 body
+  return createPortal(modalContent, document.body);
 }
 
 interface ToolCallProps {
@@ -523,14 +644,14 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-muted-foreground">结果:</span>
                 <button
-                  onClick={() => setPreviewContent({ title: `${toolCall.name}${displayPath ? ` ${displayPath}` : ''}`, content: toolCall.result || '', toolName: toolCall.name })}
+                  onClick={() => setPreviewContent({ title: `${toolCall.name}${displayPath ? ` ${displayPath}` : ''}`, content: typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2), toolName: toolCall.name })}
                   className="text-xs text-brand hover:text-teal-10"
                 >
                   查看全部
                 </button>
               </div>
               <pre className="text-xs bg-secondary p-2 rounded overflow-x-auto max-h-24 overflow-y-auto text-foreground">
-                {toolCall.result}
+                {typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2)}
               </pre>
             </div>
           )}

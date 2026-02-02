@@ -10,6 +10,7 @@ import { SettingsModal } from './SettingsModal';
 import { CommentsListModal } from './CommentsListModal';
 import { UserMessagesModal } from './UserMessagesModal';
 import { useChatContextOptional } from './ChatContext';
+import { GlobalSessionMonitor } from './GlobalSessionMonitor';
 
 interface ChatProps {
   tabId?: string; // Tab ID，用于注册到 ChatContext
@@ -41,6 +42,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
   const [isCommentsListOpen, setIsCommentsListOpen] = useState(false);
   const [isUserMessagesOpen, setIsUserMessagesOpen] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
+  const [sessionTitle, setSessionTitle] = useState<string | undefined>(undefined);
   const abortControllerRef = useRef<AbortController | null>(null);
   const messageListRef = useRef<MessageListHandle>(null);
   // 用于从 ChatContext 调用 handleSend
@@ -67,6 +69,15 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
       streamBufferRef.current = { messageId, text: '' };
     }
     streamFlushTimerRef.current = null;
+  }, []);
+
+  // 注册 Service Worker
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {
+        // 忽略注册错误
+      });
+    }
   }, []);
 
   // 分页参数
@@ -142,8 +153,9 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
         if (data.sessionId) {
           setSessionId(data.sessionId);
         }
-        // 通知父组件标题变化
+        // 通知父组件标题变化，并保存到本地状态
         if (data.title) {
+          setSessionTitle(data.title);
           onTitleChange?.(data.title);
         }
         // 设置 token 使用信息（从历史记录的最后一条 assistant 消息获取）
@@ -229,11 +241,20 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     }
   }, [sessionId, onSessionIdChange]);
 
-  // 当 isLoading 变化时通知父组件和 ChatContext
+  // 当 isLoading 变化时通知父组件和 ChatContext，并更新全局状态
   useEffect(() => {
     onLoadingChange?.(isLoading);
     chatContext?.setIsLoading(isLoading);
-  }, [isLoading, onLoadingChange, chatContext]);
+
+    // 更新全局状态（用于跨 tab 监控）
+    if (initialCwd && sessionId) {
+      fetch('/api/global-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cwd: initialCwd, sessionId, isLoading, title: sessionTitle }),
+      }).catch(() => {/* 忽略错误 */});
+    }
+  }, [isLoading, onLoadingChange, chatContext, initialCwd, sessionId, sessionTitle]);
 
   // 注册到 ChatContext（用于从 CodeViewer 发送消息）
   useEffect(() => {
@@ -423,6 +444,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
       if (response.ok) {
         const data = await response.json();
         if (data.title) {
+          setSessionTitle(data.title);
           onTitleChange?.(data.title);
         }
       }
@@ -635,6 +657,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
                     </svg>
                   </button>
                 )}
+                {/* 全局会话监控 */}
+                <GlobalSessionMonitor currentCwd={initialCwd} />
                 {/* 全局 Session Browser 按钮 */}
                 <button
                   onClick={() => setIsSessionBrowserOpen(true)}

@@ -9,6 +9,7 @@ import { SettingsModal } from './SettingsModal';
 import { Tooltip } from './Tooltip';
 import { SwipeablePages } from './SwipeablePages';
 import { ChatProvider } from './ChatContext';
+import { GlobalSessionMonitor } from './GlobalSessionMonitor';
 
 interface TabInfo {
   id: string;
@@ -237,6 +238,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               </svg>
             </button>
           )}
+          {/* 全局会话监控 */}
+          <GlobalSessionMonitor currentCwd={activeTab?.cwd} />
           {/* 全局 Session Browser 按钮 */}
           <button
             onClick={() => setIsSessionBrowserOpen(true)}

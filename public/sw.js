@@ -60,11 +60,11 @@ async function broadcastState() {
 
 // 处理来自页面的消息
 self.addEventListener('message', async (event) => {
+  // 任何消息都确保轮询已启动
+  startPolling();
+
   // 获取当前全局状态
   if (event.data.type === 'GET_GLOBAL_STATE') {
-    // 确保轮询已启动
-    startPolling();
-
     // 如果缓存为空，先 fetch 一次
     if (globalStateCache.sessions.length === 0) {
       await fetchGlobalState();

@@ -9,8 +9,10 @@ import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { SettingsModal } from './SettingsModal';
 import { CommentsListModal } from './CommentsListModal';
 import { UserMessagesModal } from './UserMessagesModal';
+import { useChatContextOptional } from './ChatContext';
 
 interface ChatProps {
+  tabId?: string; // Tab ID，用于注册到 ChatContext
   initialCwd?: string;
   initialSessionId?: string;
   hideHeader?: boolean;
@@ -22,7 +24,8 @@ interface ChatProps {
   onShowGitStatus?: () => void;
 }
 
-export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus }: ChatProps) {
+  const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -40,6 +43,8 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, is
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const messageListRef = useRef<MessageListHandle>(null);
+  // 用于从 ChatContext 调用 handleSend
+  const handleSendRef = useRef<((message: string) => void) | null>(null);
 
   // 流式文本缓冲区 - 用于节流 setState
   const streamBufferRef = useRef<{ messageId: string; text: string } | null>(null);
@@ -222,10 +227,34 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, is
     }
   }, [sessionId, onSessionIdChange]);
 
-  // 当 isLoading 变化时通知父组件
+  // 当 isLoading 变化时通知父组件和 ChatContext
   useEffect(() => {
     onLoadingChange?.(isLoading);
-  }, [isLoading, onLoadingChange]);
+    chatContext?.setIsLoading(isLoading);
+  }, [isLoading, onLoadingChange, chatContext]);
+
+  // 注册到 ChatContext（用于从 CodeViewer 发送消息）
+  useEffect(() => {
+    if (!tabId || !chatContext) return;
+
+    // 注册 sendMessage 方法
+    chatContext.registerChat((message: string) => {
+      // 直接调用 handleSend，但需要确保 handleSend 已定义
+      // 使用 ref 来获取最新的 handleSend
+      handleSendRef.current?.(message);
+    }, tabId);
+
+    return () => {
+      chatContext.unregisterChat(tabId);
+    };
+  }, [tabId, chatContext]);
+
+  // 当 Tab 激活时，通知 ChatContext
+  useEffect(() => {
+    if (tabId && isActive && chatContext) {
+      chatContext.setActiveTab(tabId);
+    }
+  }, [tabId, isActive, chatContext]);
 
   // 加载历史消息
   const loadHistory = async (sid: string) => {
@@ -374,6 +403,11 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, is
     },
     [sessionId, initialCwd]
   );
+
+  // 更新 handleSendRef，供 ChatContext 调用
+  useEffect(() => {
+    handleSendRef.current = handleSend;
+  }, [handleSend]);
 
   // 获取 session 标题
   const fetchSessionTitle = useCallback(async (sid: string) => {

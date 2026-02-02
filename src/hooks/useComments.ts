@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { CodeComment } from '@/app/api/comments/route';
+import { subscribeCommentsChange } from './useAllComments';
 
 export type { CodeComment };
 
@@ -51,6 +52,13 @@ export function useComments({ cwd, filePath }: UseCommentsOptions): UseCommentsR
   // 初始加载
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  // 订阅全局评论变更事件
+  useEffect(() => {
+    return subscribeCommentsChange(() => {
+      refresh();
+    });
   }, [refresh]);
 
   // 添加评论

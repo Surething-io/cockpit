@@ -8,6 +8,7 @@ import { FileBrowserModal } from './FileBrowserModal';
 import { SettingsModal } from './SettingsModal';
 import { Tooltip } from './Tooltip';
 import { SwipeablePages } from './SwipeablePages';
+import { ChatProvider } from './ChatContext';
 
 interface TabInfo {
   id: string;
@@ -308,6 +309,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   );
 
   return (
+    <ChatProvider>
     <div className="flex h-screen bg-card">
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -398,6 +400,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         onClose={() => setIsSettingsOpen(false)}
       />
     </div>
+    </ChatProvider>
   );
 }
 
@@ -427,6 +430,7 @@ function ChatPanel({ tabId, cwd, sessionId, isActive, onStateChange, onShowGitSt
 
   return (
     <Chat
+      tabId={tabId}
       initialCwd={cwd}
       initialSessionId={sessionId}
       hideHeader

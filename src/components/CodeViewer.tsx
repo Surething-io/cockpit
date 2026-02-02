@@ -5,7 +5,9 @@ import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { createHighlighter, type Highlighter, type BundledLanguage } from 'shiki';
 import { useComments, type CodeComment } from '@/hooks/useComments';
+import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, type CodeReference } from '@/hooks/useAllComments';
 import { useMenuContainer } from './FileContextMenu';
+import { useChatContextOptional } from './ChatContext';
 
 // ============================================
 // Types
@@ -133,29 +135,43 @@ function findMatches(
 }
 
 // ============================================
-// Add Comment Button (portal version with container-relative positioning)
+// Floating Toolbar (portal version with container-relative positioning)
 // ============================================
 
-interface AddCommentButtonPortalProps {
+interface FloatingToolbarProps {
   x: number;
   y: number;
   container: HTMLElement;
-  onClick: () => void;
+  onAddComment: () => void;
+  onSendToAI: () => void;
+  isChatLoading?: boolean;
 }
 
-function AddCommentButtonPortal({ x, y, container, onClick }: AddCommentButtonPortalProps) {
+function FloatingToolbar({ x, y, container, onAddComment, onSendToAI, isChatLoading }: FloatingToolbarProps) {
   const containerRect = container.getBoundingClientRect();
   const relX = x - containerRect.left;
   const relY = y - containerRect.top;
 
   return (
-    <button
-      className="absolute z-[200] px-2 py-1 text-xs bg-brand text-white rounded shadow-lg hover:bg-brand/90"
+    <div
+      className="absolute z-[200] flex items-center gap-1 bg-card border border-border rounded-lg shadow-lg p-1"
       style={{ left: relX, top: relY }}
-      onClick={onClick}
     >
-      添加评论
-    </button>
+      <button
+        className="px-2 py-1 text-xs bg-amber-9/20 text-amber-11 rounded hover:bg-amber-9/30 transition-colors"
+        onClick={onAddComment}
+      >
+        添加评论
+      </button>
+      <button
+        className="px-2 py-1 text-xs bg-brand/20 text-brand rounded hover:bg-brand/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        onClick={onSendToAI}
+        disabled={isChatLoading}
+        title={isChatLoading ? '正在生成中，请稍候' : '发送到 AI'}
+      >
+        发送 AI
+      </button>
+    </div>
   );
 }
 
@@ -357,9 +373,9 @@ function AddCommentInput({ x, y, range, container, onSubmit, onClose }: AddComme
   }, [onClose, isSubmitting]);
 
   const handleSubmit = () => {
-    if (isSubmitting || !content.trim()) return;
+    if (isSubmitting) return;
     setIsSubmitting(true);
-    onSubmit(content.trim());
+    onSubmit(content);
     // 组件会被父组件卸载，不需要 setIsSubmitting(false)
   };
 
@@ -400,6 +416,118 @@ function AddCommentInput({ x, y, range, container, onSubmit, onClose }: AddComme
 }
 
 // ============================================
+// Send to AI Input (for sending code context to AI)
+// ============================================
+
+interface SendToAIInputProps {
+  x: number;
+  y: number;
+  range: { start: number; end: number };
+  filePath: string;
+  codeContent: string;
+  container?: HTMLElement | null;
+  onSubmit: (question: string) => void;
+  onClose: () => void;
+  isChatLoading?: boolean;
+}
+
+function SendToAIInput({ x, y, range, filePath, codeContent, container, onSubmit, onClose, isChatLoading }: SendToAIInputProps) {
+  const [content, setContent] = useState('');
+  const cardRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+
+  // Position adjustment relative to container
+  useEffect(() => {
+    if (cardRef.current && container) {
+      const containerRect = container.getBoundingClientRect();
+      const cardRect = cardRef.current.getBoundingClientRect();
+      // Calculate position relative to container
+      let relX = x - containerRect.left;
+      let relY = y - containerRect.top;
+      // Avoid overflow
+      if (relX + cardRect.width > containerRect.width - 16) relX = containerRect.width - cardRect.width - 16;
+      if (relX < 16) relX = 16;
+      if (relY + cardRect.height > containerRect.height - 16) relY = relY - cardRect.height - 8;
+      if (relY < 16) relY = 16;
+      setPosition({ x: relX, y: relY });
+    }
+  }, [x, y, container]);
+
+  // Auto focus
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  // Click outside to close
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
+
+  const handleSubmit = () => {
+    if (isChatLoading || !content.trim()) return;
+    onSubmit(content.trim());
+    onClose();
+  };
+
+  // 截取代码内容（如果太长则显示前几行）
+  const displayCode = codeContent.split('\n').slice(0, 5).join('\n');
+  const hasMoreLines = codeContent.split('\n').length > 5;
+
+  return (
+    <div
+      ref={cardRef}
+      className="absolute z-[200] w-96 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+      style={{ left: position.x, top: position.y }}
+    >
+      <div className="px-3 py-2 bg-brand/10 border-b border-border">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-brand">提问 AI</span>
+          <span className="text-xs text-muted-foreground">行 {range.start}-{range.end}</span>
+        </div>
+        <div className="mt-1 text-xs text-muted-foreground truncate">{filePath}</div>
+      </div>
+      {/* 代码预览 */}
+      <div className="px-3 py-2 bg-secondary/50 border-b border-border max-h-24 overflow-hidden">
+        <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all">
+          {displayCode}
+          {hasMoreLines && <span className="text-muted-foreground/50">...</span>}
+        </pre>
+      </div>
+      <div className="p-2">
+        <textarea
+          ref={textareaRef}
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="输入你的问题..."
+          className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card resize-none focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
+          rows={2}
+          disabled={isChatLoading}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSubmit();
+            }
+            if (e.key === 'Escape') {
+              onClose();
+            }
+          }}
+        />
+        <div className="mt-1 text-xs text-muted-foreground">
+          {isChatLoading ? '正在生成中，请稍候...' : 'Enter 发送 · Shift+Enter 换行'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
 // CodeViewer Component
 // ============================================
 
@@ -418,6 +546,9 @@ export function CodeViewer({
   const parentRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // ChatContext for sending messages to AI
+  const chatContext = useChatContextOptional();
 
   // Track mount state for Portal rendering
   useEffect(() => {
@@ -438,7 +569,8 @@ export function CodeViewer({
     y: number;
   } | null>(null);
 
-  const [addCommentButton, setAddCommentButton] = useState<{
+  // Floating toolbar state (replaces addCommentButton)
+  const [floatingToolbar, setFloatingToolbar] = useState<{
     x: number;
     y: number;
     range: { start: number; end: number };
@@ -450,12 +582,20 @@ export function CodeViewer({
     range: { start: number; end: number };
   } | null>(null);
 
+  // Send to AI input state
+  const [sendToAIInput, setSendToAIInput] = useState<{
+    x: number;
+    y: number;
+    range: { start: number; end: number };
+    codeContent: string;
+  } | null>(null);
+
   // Menu container for portal mounting (keeps floating elements within second screen)
   const menuContainer = useMenuContainer();
 
   // Comments hook
   const commentsEnabled = enableComments && !!cwd;
-  const { comments, addComment, updateComment, deleteComment } = useComments({
+  const { comments, addComment, updateComment, deleteComment, refresh: refreshComments } = useComments({
     cwd: cwd || '',
     filePath,
   });
@@ -572,10 +712,12 @@ export function CodeViewer({
         if (isSearchVisible) {
           setIsSearchVisible(false);
           setSearchQuery('');
+        } else if (sendToAIInput) {
+          setSendToAIInput(null);
         } else if (addCommentInput) {
           setAddCommentInput(null);
-        } else if (addCommentButton) {
-          setAddCommentButton(null);
+        } else if (floatingToolbar) {
+          setFloatingToolbar(null);
         } else if (viewingComment) {
           setViewingComment(null);
         }
@@ -587,7 +729,7 @@ export function CodeViewer({
       container.addEventListener('keydown', handleKeyDown);
       return () => container.removeEventListener('keydown', handleKeyDown);
     }
-  }, [showSearch, isSearchVisible, addCommentInput, addCommentButton, viewingComment]);
+  }, [showSearch, isSearchVisible, sendToAIInput, addCommentInput, floatingToolbar, viewingComment]);
 
   // Navigate to current match
   useEffect(() => {
@@ -631,8 +773,9 @@ export function CodeViewer({
     if (!commentsEnabled) return;
     e.stopPropagation();
     setViewingComment({ comment, x: e.clientX, y: e.clientY });
-    setAddCommentButton(null);
+    setFloatingToolbar(null);
     setAddCommentInput(null);
+    setSendToAIInput(null);
   }, [commentsEnabled]);
 
   // Text selection handler - show "add comment" button
@@ -643,7 +786,7 @@ export function CodeViewer({
     const handleMouseUp = (e: MouseEvent) => {
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed || !selection.toString().trim()) {
-        setAddCommentButton(null);
+        setFloatingToolbar(null);
         return;
       }
 
@@ -679,7 +822,7 @@ export function CodeViewer({
       if (startLine && endLine) {
         const minLine = Math.min(startLine, endLine);
         const maxLine = Math.max(startLine, endLine);
-        setAddCommentButton({
+        setFloatingToolbar({
           x: e.clientX,
           y: e.clientY,
           range: { start: minLine, end: maxLine },
@@ -691,18 +834,37 @@ export function CodeViewer({
     return () => document.removeEventListener('mouseup', handleMouseUp);
   }, [commentsEnabled]);
 
-  // Click "add comment" button - show input
-  const handleAddCommentButtonClick = useCallback(() => {
-    if (!addCommentButton) return;
+  // Click "add comment" in toolbar - show input
+  const handleToolbarAddComment = useCallback(() => {
+    if (!floatingToolbar) return;
     setAddCommentInput({
-      x: addCommentButton.x,
-      y: addCommentButton.y,
-      range: addCommentButton.range,
+      x: floatingToolbar.x,
+      y: floatingToolbar.y,
+      range: floatingToolbar.range,
     });
-    setAddCommentButton(null);
+    setFloatingToolbar(null);
     // Clear text selection
     window.getSelection()?.removeAllRanges();
-  }, [addCommentButton]);
+  }, [floatingToolbar]);
+
+  // Click "send to AI" in toolbar - show input
+  const handleToolbarSendToAI = useCallback(() => {
+    if (!floatingToolbar) return;
+    // 获取选中的代码内容
+    const { start, end } = floatingToolbar.range;
+    const selectedLines = lines.slice(start - 1, end);
+    const codeContent = selectedLines.join('\n');
+
+    setSendToAIInput({
+      x: floatingToolbar.x,
+      y: floatingToolbar.y,
+      range: floatingToolbar.range,
+      codeContent,
+    });
+    setFloatingToolbar(null);
+    // Clear text selection
+    window.getSelection()?.removeAllRanges();
+  }, [floatingToolbar, lines]);
 
   // Submit new comment
   const handleCommentSubmit = useCallback(async (content: string) => {
@@ -710,6 +872,52 @@ export function CodeViewer({
     await addComment(addCommentInput.range.start, addCommentInput.range.end, content);
     setAddCommentInput(null);
   }, [addCommentInput, addComment]);
+
+  // Submit question to AI
+  const handleSendToAISubmit = useCallback(async (question: string) => {
+    if (!sendToAIInput || !chatContext || !cwd) return;
+
+    try {
+      // 1. 获取所有历史评论（带代码）
+      const allComments = await fetchAllCommentsWithCode(cwd);
+
+      // 2. 构建代码引用列表
+      const references: CodeReference[] = [];
+
+      // 添加历史评论作为引用
+      for (const comment of allComments) {
+        references.push({
+          filePath: comment.filePath,
+          startLine: comment.startLine,
+          endLine: comment.endLine,
+          codeContent: comment.codeContent,
+          note: comment.content || undefined, // 如果有评论内容则添加备注
+        });
+      }
+
+      // 添加当前选中的代码作为最后一个引用
+      references.push({
+        filePath,
+        startLine: sendToAIInput.range.start,
+        endLine: sendToAIInput.range.end,
+        codeContent: sendToAIInput.codeContent,
+      });
+
+      // 3. 构建并发送消息
+      const message = buildAIMessage(references, question);
+      chatContext.sendMessage(message);
+
+      // 4. 清空所有评论
+      await clearAllComments(cwd);
+
+      // 5. 刷新本地评论状态
+      refreshComments();
+
+      setSendToAIInput(null);
+    } catch (err) {
+      console.error('Failed to send to AI:', err);
+    }
+  }, [sendToAIInput, chatContext, filePath, cwd, refreshComments]);
 
   const lineNumberWidth = showLineNumbers ? Math.max(3, String(lines.length).length) * 10 + 24 : 0;
 
@@ -872,13 +1080,15 @@ export function CodeViewer({
       {/* Floating elements via Portal to menu container (keeps within second screen) */}
       {isMounted && menuContainer && createPortal(
         <>
-          {/* Floating "Add Comment" Button */}
-          {addCommentButton && (
-            <AddCommentButtonPortal
-              x={addCommentButton.x}
-              y={addCommentButton.y}
+          {/* Floating Toolbar */}
+          {floatingToolbar && (
+            <FloatingToolbar
+              x={floatingToolbar.x}
+              y={floatingToolbar.y}
               container={menuContainer}
-              onClick={handleAddCommentButtonClick}
+              onAddComment={handleToolbarAddComment}
+              onSendToAI={handleToolbarSendToAI}
+              isChatLoading={chatContext?.isLoading}
             />
           )}
 
@@ -891,6 +1101,21 @@ export function CodeViewer({
               container={menuContainer}
               onSubmit={handleCommentSubmit}
               onClose={() => setAddCommentInput(null)}
+            />
+          )}
+
+          {/* Send to AI Input */}
+          {sendToAIInput && (
+            <SendToAIInput
+              x={sendToAIInput.x}
+              y={sendToAIInput.y}
+              range={sendToAIInput.range}
+              filePath={filePath}
+              codeContent={sendToAIInput.codeContent}
+              container={menuContainer}
+              onSubmit={handleSendToAISubmit}
+              onClose={() => setSendToAIInput(null)}
+              isChatLoading={chatContext?.isLoading}
             />
           )}
 

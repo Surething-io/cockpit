@@ -85,7 +85,7 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const { cwd, id, content } = body;
 
-    if (!cwd || !id || !content) {
+    if (!cwd || !id || content === undefined) {
       return NextResponse.json(
         { error: 'cwd, id, and content are required' },
         { status: 400 }
@@ -116,17 +116,31 @@ export async function PUT(request: NextRequest) {
 }
 
 // DELETE - 删除评论
-// ?cwd=xxx&id=xxx
+// ?cwd=xxx&id=xxx 删除单个评论
+// ?cwd=xxx&all=true 清空所有评论
 export async function DELETE(request: NextRequest) {
   const cwd = request.nextUrl.searchParams.get('cwd');
   const id = request.nextUrl.searchParams.get('id');
+  const all = request.nextUrl.searchParams.get('all');
 
-  if (!cwd || !id) {
-    return NextResponse.json({ error: 'cwd and id are required' }, { status: 400 });
+  if (!cwd) {
+    return NextResponse.json({ error: 'cwd is required' }, { status: 400 });
   }
 
   try {
     const dataPath = getCommentsFilePath(cwd);
+
+    // 清空所有评论
+    if (all === 'true') {
+      await writeJsonFile(dataPath, { comments: [] });
+      return NextResponse.json({ success: true });
+    }
+
+    // 删除单个评论
+    if (!id) {
+      return NextResponse.json({ error: 'id is required' }, { status: 400 });
+    }
+
     const data = await readJsonFile<CommentsData>(dataPath, { comments: [] });
 
     const commentIndex = data.comments.findIndex(c => c.id === id);

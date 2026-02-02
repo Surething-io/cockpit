@@ -2,7 +2,7 @@
 
 import React, { useCallback, ReactNode } from 'react';
 import { FileContextMenu, useFileContextMenu } from './FileContextMenu';
-import { getFileIcon } from './FileTree';
+import { FileIcon } from './FileIcon';
 
 // ============================================================================
 // Types
@@ -121,14 +121,14 @@ const GitFileTreeItem = React.memo(function GitFileTreeItem({
 
   return (
     <div
-      className={`flex items-center gap-1 py-0.5 px-2 pr-3 cursor-pointer whitespace-nowrap group ${
+      className={`flex items-center gap-1.5 py-0.5 px-2 pr-3 cursor-pointer whitespace-nowrap group ${
         isSelected ? 'bg-brand/10' : 'hover:bg-accent'
       }`}
       style={{ paddingLeft: `${level * 12 + 8}px` }}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
     >
-      <span>{getFileIcon(node.name)}</span>
+      <FileIcon name={node.name} size={16} className="flex-shrink-0" />
       <span className={`text-sm flex-1 truncate ${isSelected ? 'text-brand' : 'text-foreground'}`}>
         {node.name}
       </span>

@@ -9,6 +9,8 @@ import { FileTree, type FileNode as FileTreeNode } from './FileTree';
 import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, type GitFileNode, type GitFileStatus as GitFileStatusType } from './GitFileTree';
 import { MenuContainerProvider } from './FileContextMenu';
 import { CodeViewer } from './CodeViewer';
+import { MarkdownFileViewer, isMarkdownFile } from './MarkdownFileViewer';
+import { FileIcon } from './FileIcon';
 
 // ============================================================================
 // Types
@@ -161,20 +163,6 @@ function collectAllDirPaths(nodes: FileNode[]): string[] {
   };
   traverse(nodes);
   return paths;
-}
-
-const FILE_ICONS: Record<string, string> = {
-  ts: '📘', tsx: '⚛️', js: '📒', jsx: '⚛️',
-  json: '📋', md: '📝', css: '🎨', scss: '🎨',
-  html: '🌐', py: '🐍', go: '🔵', rs: '🦀',
-  java: '☕', rb: '💎', php: '🐘',
-  png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', svg: '🖼️', webp: '🖼️',
-  sh: '⚙️', bash: '⚙️', yml: '⚙️', yaml: '⚙️',
-};
-
-function getFileIcon(name: string): string {
-  const ext = name.split('.').pop()?.toLowerCase();
-  return FILE_ICONS[ext || ''] || '📄';
 }
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp']);
@@ -335,13 +323,13 @@ const VirtualTreeRow = React.memo(function VirtualTreeRow({
 
   return (
     <div
-      className={`flex items-center gap-1 px-2 cursor-pointer hover:bg-accent ${
+      className={`flex items-center gap-1.5 px-2 cursor-pointer hover:bg-accent ${
         isSelected ? 'bg-brand/10' : ''
       }`}
       style={{ paddingLeft: `${level * 12 + 20}px`, height: ROW_HEIGHT }}
       onClick={() => onSelect(node.path)}
     >
-      <span>{getFileIcon(node.name)}</span>
+      <FileIcon name={node.name} size={16} className="flex-shrink-0" />
       <span className={`text-sm truncate ${isSelected ? 'text-brand' : 'text-foreground'}`}>
         {node.name}
       </span>
@@ -413,13 +401,13 @@ const FileTreeItem = React.memo(function FileTreeItem({
 
   return (
     <div
-      className={`flex items-center gap-1 py-0.5 px-2 cursor-pointer hover:bg-accent ${
+      className={`flex items-center gap-1.5 py-0.5 px-2 cursor-pointer hover:bg-accent ${
         isSelected ? 'bg-brand/10' : ''
       }`}
       style={{ paddingLeft: `${level * 12 + 20}px` }}
       onClick={() => onSelect(node.path)}
     >
-      <span>{getFileIcon(node.name)}</span>
+      <FileIcon name={node.name} size={16} className="flex-shrink-0" />
       <span className={`text-sm truncate ${isSelected ? 'text-brand' : 'text-foreground'}`}>
         {node.name}
       </span>
@@ -1016,7 +1004,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     // Optimistically update local state (move to front, avoid duplicates)
     setRecentFiles(prev => {
       const filtered = prev.filter(f => f !== filePath);
-      return [filePath, ...filtered].slice(0, 50); // Keep max 50 recent files
+      return [filePath, ...filtered].slice(0, 15); // Keep max 15 recent files (same as API)
     });
 
     // Persist to server (fire and forget)
@@ -1988,6 +1976,8 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                             </div>
                           )
+                        ) : isMarkdownFile(selectedPath) ? (
+                          <MarkdownFileViewer content={fileContent.content} filePath={selectedPath} className="h-full" />
                         ) : (
                           <CodeViewer content={fileContent.content} filePath={selectedPath} cwd={cwd} enableComments={true} />
                         )

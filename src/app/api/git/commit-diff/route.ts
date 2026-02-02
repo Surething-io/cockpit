@@ -4,6 +4,14 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
+// 去除 git 对包含空格的文件名加的引号
+function unquotePath(path: string): string {
+  if (path.startsWith('"') && path.endsWith('"')) {
+    return path.slice(1, -1);
+  }
+  return path;
+}
+
 interface FileChange {
   path: string;
   status: 'added' | 'modified' | 'deleted' | 'renamed';
@@ -57,13 +65,14 @@ async function getChangedFiles(cwd: string, hash: string) {
   let nameStatusCmd: string;
   let numstatCmd: string;
 
+  // -c core.quotePath=false 避免中文文件名被转义为八进制
   if (isMergeCommit) {
     // 对于 merge commit，显示与第一个父提交的差异
-    nameStatusCmd = `git diff ${hash}^1 ${hash} --name-status`;
-    numstatCmd = `git diff ${hash}^1 ${hash} --numstat`;
+    nameStatusCmd = `git -c core.quotePath=false diff ${hash}^1 ${hash} --name-status`;
+    numstatCmd = `git -c core.quotePath=false diff ${hash}^1 ${hash} --numstat`;
   } else {
-    nameStatusCmd = `git show ${hash} --name-status --format=""`;
-    numstatCmd = `git show ${hash} --numstat --format=""`;
+    nameStatusCmd = `git -c core.quotePath=false show ${hash} --name-status --format=""`;
+    numstatCmd = `git -c core.quotePath=false show ${hash} --numstat --format=""`;
   }
 
   const { stdout: nameStatus } = await execAsync(
@@ -83,7 +92,8 @@ async function getChangedFiles(cwd: string, hash: string) {
     if (parts.length >= 3) {
       const additions = parts[0] === '-' ? 0 : parseInt(parts[0], 10);
       const deletions = parts[1] === '-' ? 0 : parseInt(parts[1], 10);
-      const filename = parts.slice(2).join('\t'); // 处理文件名中可能有 tab 的情况
+      let filename = parts.slice(2).join('\t'); // 处理文件名中可能有 tab 的情况
+      filename = unquotePath(filename);
       statsMap.set(filename, { additions, deletions });
     }
   });
@@ -102,10 +112,10 @@ async function getChangedFiles(cwd: string, hash: string) {
     if (statusCode.startsWith('R')) {
       // 重命名: R100\told_name\tnew_name
       status = 'renamed';
-      oldPath = parts[1];
-      path = parts[2];
+      oldPath = unquotePath(parts[1]);
+      path = unquotePath(parts[2]);
     } else {
-      path = parts[1];
+      path = unquotePath(parts[1]);
       switch (statusCode) {
         case 'A':
           status = 'added';

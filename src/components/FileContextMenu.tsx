@@ -15,6 +15,11 @@ export function MenuContainerProvider({ container, children }: { container: HTML
   );
 }
 
+// Hook to access the menu container for portal mounting
+export function useMenuContainer() {
+  return useContext(MenuContainerContext);
+}
+
 interface FileContextMenuProps {
   x: number;
   y: number;

@@ -22,42 +22,30 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchSession }: GlobalSess
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // 注册 Service Worker 并监听全局状态更新
+  // 轮询获取全局状态（前端轮询，避免 SW 休眠问题）
   useEffect(() => {
-    if (!('serviceWorker' in navigator)) return;
-
-    // 处理来自 SW 的消息
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'GLOBAL_STATE_UPDATE') {
-        setSessions(event.data.state?.sessions || []);
+    const fetchSessions = async () => {
+      try {
+        const response = await fetch('/api/global-state');
+        if (response.ok) {
+          const data = await response.json();
+          setSessions(data.sessions || []);
+        }
+      } catch {
+        // 忽略错误
       }
     };
 
-    navigator.serviceWorker.addEventListener('message', handleMessage);
+    fetchSessions();
+    const interval = setInterval(fetchSessions, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
-    // 注册 SW 并请求初始状态
-    navigator.serviceWorker.register('/sw.js').then(async () => {
-      const registration = await navigator.serviceWorker.ready;
-      if (registration.active) {
-        // 请求当前状态
-        const messageChannel = new MessageChannel();
-        messageChannel.port1.onmessage = (event) => {
-          if (event.data?.type === 'GLOBAL_STATE_UPDATE') {
-            setSessions(event.data.state?.sessions || []);
-          }
-        };
-        registration.active.postMessage(
-          { type: 'GET_GLOBAL_STATE' },
-          [messageChannel.port2]
-        );
-      }
-    }).catch(() => {
-      // 忽略注册错误
-    });
-
-    return () => {
-      navigator.serviceWorker.removeEventListener('message', handleMessage);
-    };
+  // 注册 Service Worker（仅用于跨 Tab 通信）
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
   }, []);
 
   // 监听 BroadcastChannel，处理跨 tab session 切换

@@ -2,12 +2,13 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { ChatMessage, ToolCallInfo, ImageInfo, MessageImage, TokenUsage } from '@/types/chat';
-import { MessageList } from './MessageList';
+import { MessageList, MessageListHandle } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { SessionBrowser } from './SessionBrowser';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { SettingsModal } from './SettingsModal';
 import { CommentsListModal } from './CommentsListModal';
+import { UserMessagesModal } from './UserMessagesModal';
 
 interface ChatProps {
   initialCwd?: string;
@@ -35,8 +36,10 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, is
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isCommentsListOpen, setIsCommentsListOpen] = useState(false);
+  const [isUserMessagesOpen, setIsUserMessagesOpen] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const messageListRef = useRef<MessageListHandle>(null);
 
   // 流式文本缓冲区 - 用于节流 setState
   const streamBufferRef = useRef<{ messageId: string; text: string } | null>(null);
@@ -621,6 +624,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, is
           </div>
         ) : (
           <MessageList
+            ref={messageListRef}
             messages={messages}
             isLoading={isLoading}
             cwd={initialCwd}
@@ -674,6 +678,7 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, is
           cwd={initialCwd}
           onShowGitStatus={onShowGitStatus}
           onShowComments={initialCwd ? () => setIsCommentsListOpen(true) : undefined}
+          onShowUserMessages={() => setIsUserMessagesOpen(true)}
         />
       </div>
 
@@ -711,6 +716,16 @@ export function Chat({ initialCwd, initialSessionId, hideHeader, hideSidebar, is
           cwd={initialCwd}
         />
       )}
+
+      {/* User Messages Modal */}
+      <UserMessagesModal
+        isOpen={isUserMessagesOpen}
+        onClose={() => setIsUserMessagesOpen(false)}
+        messages={messages}
+        onSelectMessage={(messageId) => {
+          messageListRef.current?.scrollToMessage(messageId);
+        }}
+      />
     </div>
   );
 }

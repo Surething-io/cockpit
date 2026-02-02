@@ -19,9 +19,10 @@ interface ChatInputProps {
   cwd?: string;
   onShowGitStatus?: () => void;
   onShowComments?: () => void;
+  onShowUserMessages?: () => void;
 }
 
-export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowComments }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowComments, onShowUserMessages }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [images, setImages] = useState<ImageInfo[]>([]);
   const [commands, setCommands] = useState<CommandInfo[]>([]);
@@ -283,6 +284,23 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
           </svg>
         </button>
 
+        {/* Git 查看变更按钮 - 生成中也可点击 */}
+        {onShowGitStatus && (
+          <button
+            onClick={onShowGitStatus}
+            className="p-2 text-brand hover:text-teal-10 hover:bg-brand/10 active:bg-brand/20 active:scale-95 rounded-lg transition-all"
+            title="查看 Git 变更"
+          >
+            {/* Git 分支图标 */}
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <circle cx="6" cy="6" r="2" strokeWidth={2} />
+              <circle cx="18" cy="6" r="2" strokeWidth={2} />
+              <circle cx="6" cy="18" r="2" strokeWidth={2} />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 8v10M18 8v4c0 2-2 4-6 4" />
+            </svg>
+          </button>
+        )}
+
         {/* 查看评论按钮 */}
         {onShowComments && (
           <button
@@ -296,15 +314,15 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
           </button>
         )}
 
-        {/* Git 查看变更按钮 - 生成中也可点击 */}
-        {onShowGitStatus && (
+        {/* 用户消息列表按钮 */}
+        {onShowUserMessages && (
           <button
-            onClick={onShowGitStatus}
-            className="p-2 text-brand hover:text-teal-10 hover:bg-brand/10 active:bg-brand/20 active:scale-95 rounded-lg transition-all"
-            title="查看 Git 变更"
+            onClick={onShowUserMessages}
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
+            title="用户消息列表"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
         )}

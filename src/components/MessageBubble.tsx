@@ -74,7 +74,7 @@ export function MessageBubble({ message, cwd }: MessageBubbleProps) {
           className={`max-w-[80%] ${
             isUser
               ? 'bg-accent text-foreground border border-brand rounded-2xl rounded-br-md'
-              : 'bg-accent text-foreground rounded-2xl rounded-bl-md'
+              : 'bg-accent text-foreground dark:text-slate-11 rounded-2xl rounded-bl-md'
           } px-4 py-2`}
         >
           {/* 图片内容 */}

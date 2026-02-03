@@ -218,7 +218,11 @@ export function FileTree({
     if (shouldScrollToSelected && selectedPath && flatItems.length > 0) {
       const index = flatItems.findIndex(item => item.node.path === selectedPath);
       if (index >= 0) {
-        virtualizer.scrollToIndex(index, { align: 'center' });
+        // 延迟执行确保 DOM 已渲染（tab 切换后需要等待 hidden 状态移除）
+        const timer = setTimeout(() => {
+          virtualizer.scrollToIndex(index, { align: 'center' });
+        }, 150);
+        return () => clearTimeout(timer);
       }
     }
   }, [shouldScrollToSelected, selectedPath, flatItems, virtualizer]);

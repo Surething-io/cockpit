@@ -745,7 +745,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
   });
 
   return (
-    <div className="font-mono flex flex-col h-full" style={{ fontSize: '0.8125rem' }}>
+    <div className="font-mono flex flex-col h-full text-sm">
       {/* Header row - fixed */}
       <div className="flex flex-shrink-0 border-b border-border">
         <div className={`${leftWidth} min-w-0 px-2 py-1 bg-accent text-muted-foreground text-center text-xs font-medium border-r border-border`}>
@@ -904,7 +904,7 @@ export function DiffUnifiedView({ oldContent, newContent, filePath }: Omit<DiffV
   const highlightedLines = useLineHighlight(allLines, filePath);
 
   return (
-    <div className="font-mono" style={{ fontSize: '0.8125rem' }}>
+    <div className="font-mono text-sm">
       {diffLines.map((line, idx) => (
         <div
           key={idx}

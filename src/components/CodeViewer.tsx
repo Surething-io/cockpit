@@ -23,6 +23,12 @@ interface CodeViewerProps {
   // 评论功能需要 cwd
   cwd?: string;
   enableComments?: boolean;
+  // 跳转到指定行号
+  scrollToLine?: number | null;
+  // 行号跳转完成后的回调
+  onScrollToLineComplete?: () => void;
+  // 高亮关键词（从外部搜索传入）
+  highlightKeyword?: string | null;
 }
 
 interface SearchMatch {
@@ -411,6 +417,9 @@ export function CodeViewer({
   className = '',
   cwd,
   enableComments = false,
+  scrollToLine = null,
+  onScrollToLineComplete,
+  highlightKeyword = null,
 }: CodeViewerProps) {
   const [highlightedLines, setHighlightedLines] = useState<string[]>([]);
   const [isDark, setIsDark] = useState(false);
@@ -630,6 +639,27 @@ export function CodeViewer({
     setCurrentMatchIndex(prev => (prev - 1 + matches.length) % matches.length);
   }, [matches.length]);
 
+  // 跳转到指定行号
+  const scrollToLineRef = useRef(scrollToLine);
+  scrollToLineRef.current = scrollToLine;
+
+  useEffect(() => {
+    // 当 rowData 准备好且有目标行号时执行跳转
+    if (scrollToLineRef.current !== null && scrollToLineRef.current > 0 && rowData.length > 0) {
+      const targetLine = scrollToLineRef.current;
+      // 行号从 1 开始，lineIndex 从 0 开始
+      const targetLineIndex = targetLine - 1;
+      const rowIndex = rowData.findIndex(r => r.type === 'code' && r.lineIndex === targetLineIndex);
+      if (rowIndex >= 0) {
+        // 延迟一点确保 virtualizer 已准备好
+        setTimeout(() => {
+          virtualizer.scrollToIndex(rowIndex, { align: 'center' });
+          onScrollToLineComplete?.();
+        }, 150);
+      }
+    }
+  }, [scrollToLine, rowData.length, virtualizer, onScrollToLineComplete]);
+
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -826,30 +856,36 @@ export function CodeViewer({
 
   const lineNumberWidth = showLineNumbers ? Math.max(3, String(lines.length).length) * 10 + 24 : 0;
 
-  // Highlight match in line
+  // Highlight match in line (supports both internal search and external keyword)
   const getHighlightedLineHtml = useCallback((lineIndex: number, html: string): string => {
-    if (!searchQuery || matches.length === 0) return html;
-
-    const lineMatches = matches.filter(m => m.lineIndex === lineIndex);
-    if (lineMatches.length === 0) return html;
-
     let result = html;
     const line = lines[lineIndex];
 
-    for (const match of lineMatches.reverse()) {
-      const isCurrentMatch = matches[currentMatchIndex]?.lineIndex === lineIndex &&
-        matches[currentMatchIndex]?.startCol === match.startCol;
+    // 1. 内部搜索高亮
+    if (searchQuery && matches.length > 0) {
+      const lineMatches = matches.filter(m => m.lineIndex === lineIndex);
+      for (const match of lineMatches.reverse()) {
+        const isCurrentMatch = matches[currentMatchIndex]?.lineIndex === lineIndex &&
+          matches[currentMatchIndex]?.startCol === match.startCol;
 
-      const matchText = line.substring(match.startCol, match.endCol);
-      const escapedMatch = escapeHtml(matchText);
-      const highlightClass = isCurrentMatch ? 'bg-amber-9/50' : 'bg-amber-9/30';
+        const matchText = line.substring(match.startCol, match.endCol);
+        const escapedMatch = escapeHtml(matchText);
+        const highlightClass = isCurrentMatch ? 'bg-amber-9/50' : 'bg-amber-9/30';
 
-      const regex = new RegExp(escapedMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-      result = result.replace(regex, `<span class="${highlightClass}">${escapedMatch}</span>`);
+        const regex = new RegExp(escapedMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+        result = result.replace(regex, `<span class="${highlightClass}">${escapedMatch}</span>`);
+      }
+    }
+
+    // 2. 外部关键词高亮（来自搜索 tab）
+    if (highlightKeyword && !searchQuery) {
+      const escapedKeyword = escapeHtml(highlightKeyword).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(${escapedKeyword})`, 'gi');
+      result = result.replace(regex, '<span class="bg-amber-9/40 rounded px-0.5">$1</span>');
     }
 
     return result;
-  }, [searchQuery, matches, currentMatchIndex, lines]);
+  }, [searchQuery, matches, currentMatchIndex, lines, highlightKeyword]);
 
   return (
     <div ref={containerRef} className={`h-full flex flex-col ${className}`} tabIndex={0}>
@@ -911,7 +947,7 @@ export function CodeViewer({
       {/* Code Content */}
       <div
         ref={parentRef}
-        className="flex-1 overflow-auto font-mono text-xs bg-secondary"
+        className="flex-1 overflow-auto font-mono text-sm bg-secondary"
       >
         <div
           style={{
@@ -1084,7 +1120,7 @@ export function SimpleCodeBlock({ content, filePath, className = '' }: SimpleCod
   if (highlightedHtml) {
     return (
       <div
-        className={`overflow-auto text-xs font-mono ${className}`}
+        className={`overflow-auto text-sm font-mono ${className}`}
         dangerouslySetInnerHTML={{ __html: highlightedHtml }}
       />
     );
@@ -1094,7 +1130,7 @@ export function SimpleCodeBlock({ content, filePath, className = '' }: SimpleCod
   const lineNumberWidth = String(lines.length).length;
 
   return (
-    <pre className={`overflow-auto text-xs font-mono bg-secondary p-2 ${className}`}>
+    <pre className={`overflow-auto text-sm font-mono bg-secondary p-2 ${className}`}>
       {lines.map((line, i) => (
         <div key={i} className="flex">
           <span className="text-slate-9 select-none pr-4 text-right" style={{ minWidth: `${lineNumberWidth + 2}ch` }}>

@@ -101,7 +101,27 @@ interface FileDiff {
 }
 
 // Tab type
-type TabType = 'tree' | 'recent' | 'status' | 'history';
+type TabType = 'tree' | 'search' | 'recent' | 'status' | 'history';
+
+// 搜索结果类型
+interface SearchMatch {
+  lineNumber: number;
+  content: string;
+}
+
+interface SearchResult {
+  path: string;
+  matches: SearchMatch[];
+}
+
+interface SearchResponse {
+  results: SearchResult[];
+  query: string;
+  totalFiles: number;
+  totalMatches: number;
+  truncated: boolean;
+  error?: string;
+}
 
 
 // ============================================================================
@@ -567,7 +587,7 @@ function BlameView({ blameLines, cwd, onSelectCommit }: BlameViewProps) {
   }, [onSelectCommit]);
 
   return (
-    <div ref={parentRef} className="h-full overflow-auto font-mono text-xs relative">
+    <div ref={parentRef} className="h-full overflow-auto font-mono text-sm relative">
       <div
         style={{
           height: `${virtualizer.getTotalSize()}px`,
@@ -849,6 +869,8 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const searchInputRef = useRef<HTMLInputElement>(null);
   // 是否需要滚动到选中文件（仅外部触发选择时为 true，用户在目录树中点击选择时为 false）
   const [shouldScrollToSelected, setShouldScrollToSelected] = useState(false);
+  // 跳转到的目标行号（搜索结果点击时使用）
+  const [targetLineNumber, setTargetLineNumber] = useState<number | null>(null);
 
   // Blame state
   const [showBlame, setShowBlame] = useState(false);
@@ -894,6 +916,21 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const [historyError, setHistoryError] = useState<string | null>(null);
   const commitListRef = useRef<HTMLDivElement>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+
+  // ========== Content Search State ==========
+  const [contentSearchQuery, setContentSearchQuery] = useState('');
+  const [contentSearchResults, setContentSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchExpandedPaths, setSearchExpandedPaths] = useState<Set<string>>(new Set());
+  const [searchOptions, setSearchOptions] = useState({
+    caseSensitive: false,
+    wholeWord: false,
+    regex: false,
+    fileType: '',
+  });
+  const [searchStats, setSearchStats] = useState<{ totalFiles: number; totalMatches: number; truncated: boolean } | null>(null);
+  const contentSearchInputRef = useRef<HTMLInputElement>(null);
 
   // ========== Memoized Values ==========
   const recentFilesTree = useMemo(() => {
@@ -1107,8 +1144,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     }
   }, [showBlame, blameLines.length, loadBlame]);
 
-  const handleSelectFile = useCallback((path: string) => {
+  const handleSelectFile = useCallback((path: string, lineNumber?: number) => {
     setSelectedPath(path);
+    setTargetLineNumber(lineNumber ?? null);
     loadFileContent(path);
 
     // Auto-expand parent directories
@@ -1147,6 +1185,64 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       return next;
     });
   }, [saveExpandedPaths]);
+
+  // ========== Content Search Functions ==========
+  const performContentSearch = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setContentSearchResults([]);
+      setSearchStats(null);
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchError(null);
+
+    try {
+      const params = new URLSearchParams({
+        cwd,
+        q: query,
+        caseSensitive: String(searchOptions.caseSensitive),
+        wholeWord: String(searchOptions.wholeWord),
+        regex: String(searchOptions.regex),
+        fileType: searchOptions.fileType,
+      });
+
+      const response = await fetch(`/api/files/search?${params}`);
+      const data: SearchResponse = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      setContentSearchResults(data.results);
+      setSearchStats({
+        totalFiles: data.totalFiles,
+        totalMatches: data.totalMatches,
+        truncated: data.truncated,
+      });
+
+      // 默认展开所有搜索结果
+      const expandedPaths = new Set(data.results.map(r => r.path));
+      setSearchExpandedPaths(expandedPaths);
+    } catch (err) {
+      setSearchError(err instanceof Error ? err.message : 'Search failed');
+      setContentSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [cwd, searchOptions]);
+
+  const handleSearchToggle = useCallback((path: string) => {
+    setSearchExpandedPaths(prev => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
 
   // ========== Git Status Functions ==========
   const fetchStatus = useCallback(async () => {
@@ -1747,6 +1843,16 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                 目录树
               </button>
               <button
+                onClick={() => handleTabChange('search')}
+                className={`flex-1 px-2 py-2 text-sm font-medium transition-colors ${
+                  activeTab === 'search'
+                    ? 'text-brand border-b-2 border-brand'
+                    : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
+                }`}
+              >
+                搜索
+              </button>
+              <button
                 onClick={() => handleTabChange('recent')}
                 className={`flex-1 px-2 py-2 text-sm font-medium transition-colors ${
                   activeTab === 'recent'
@@ -1754,7 +1860,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
                 }`}
               >
-                最近浏览
+                最近
               </button>
               <button
                 onClick={() => handleTabChange('status')}
@@ -1764,7 +1870,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
                 }`}
               >
-                Git 变更
+                变更
               </button>
               <button
                 onClick={() => handleTabChange('history')}
@@ -1774,7 +1880,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
                 }`}
               >
-                Git 历史
+                历史
               </button>
             </div>
 
@@ -1789,6 +1895,69 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   placeholder="搜索文件..."
                   className="w-full px-3 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring"
                 />
+              </div>
+            )}
+
+            {activeTab === 'search' && (
+              <div className="p-2 border-b border-border space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    ref={contentSearchInputRef}
+                    type="text"
+                    value={contentSearchQuery}
+                    onChange={e => setContentSearchQuery(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        performContentSearch(contentSearchQuery);
+                      }
+                    }}
+                    placeholder="搜索文件内容..."
+                    className="flex-1 px-3 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  <button
+                    onClick={() => performContentSearch(contentSearchQuery)}
+                    disabled={isSearching || !contentSearchQuery.trim()}
+                    className="px-3 py-1.5 text-sm bg-brand text-white rounded hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSearching ? '...' : '搜索'}
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <label className="flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={searchOptions.caseSensitive}
+                      onChange={e => setSearchOptions(prev => ({ ...prev, caseSensitive: e.target.checked }))}
+                      className="w-3 h-3"
+                    />
+                    <span className="text-muted-foreground">区分大小写</span>
+                  </label>
+                  <label className="flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={searchOptions.wholeWord}
+                      onChange={e => setSearchOptions(prev => ({ ...prev, wholeWord: e.target.checked }))}
+                      className="w-3 h-3"
+                    />
+                    <span className="text-muted-foreground">完整词</span>
+                  </label>
+                  <label className="flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={searchOptions.regex}
+                      onChange={e => setSearchOptions(prev => ({ ...prev, regex: e.target.checked }))}
+                      className="w-3 h-3"
+                    />
+                    <span className="text-muted-foreground">正则</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={searchOptions.fileType}
+                    onChange={e => setSearchOptions(prev => ({ ...prev, fileType: e.target.value }))}
+                    placeholder="文件类型 (ts,tsx)"
+                    className="w-24 px-2 py-0.5 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9"
+                  />
+                </div>
               </div>
             )}
 
@@ -1827,6 +1996,76 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     cwd={cwd}
                     shouldScrollToSelected={shouldScrollToSelected}
                   />
+                )}
+              </div>
+
+              {/* Search Tab */}
+              <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'search' ? '' : 'hidden'}`}>
+                {isSearching ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : searchError ? (
+                  <div className="p-4 text-center text-red-11 text-sm">{searchError}</div>
+                ) : contentSearchResults.length === 0 ? (
+                  <div className="p-4 text-center text-muted-foreground text-sm">
+                    {contentSearchQuery ? '无匹配结果' : '输入关键词搜索文件内容'}
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto">
+                    {/* 搜索统计 */}
+                    {searchStats && (
+                      <div className="px-3 py-1.5 text-xs text-muted-foreground bg-secondary border-b border-border">
+                        {searchStats.totalFiles} 个文件，{searchStats.totalMatches} 处匹配
+                        {searchStats.truncated && <span className="text-amber-11 ml-1">(结果已截断)</span>}
+                      </div>
+                    )}
+                    {/* 搜索结果列表 */}
+                    {contentSearchResults.map((result) => (
+                      <div key={result.path} className="border-b border-border">
+                        {/* 文件头 */}
+                        <div
+                          className="flex items-center gap-2 px-3 py-1.5 bg-secondary hover:bg-accent cursor-pointer"
+                          onClick={() => handleSearchToggle(result.path)}
+                        >
+                          <svg
+                            className={`w-3 h-3 flex-shrink-0 text-muted-foreground transition-transform ${
+                              searchExpandedPaths.has(result.path) ? 'rotate-90' : ''
+                            }`}
+                            viewBox="0 0 16 16"
+                            fill="none"
+                          >
+                            <path d="M6 4 L10 8 L6 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                          <FileIcon name={result.path.split('/').pop() || ''} size={14} className="flex-shrink-0" />
+                          <span className="text-sm text-foreground truncate flex-1">{result.path}</span>
+                          <span className="text-xs text-muted-foreground">{result.matches.length}</span>
+                        </div>
+                        {/* 匹配行 */}
+                        {searchExpandedPaths.has(result.path) && (
+                          <div className="bg-card">
+                            {result.matches.map((match, idx) => (
+                              <div
+                                key={idx}
+                                className="flex items-start gap-2 px-3 py-1 hover:bg-accent cursor-pointer text-sm font-mono"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSelectFile(result.path, match.lineNumber);
+                                }}
+                              >
+                                <span className="text-muted-foreground w-8 text-right flex-shrink-0">
+                                  {match.lineNumber}
+                                </span>
+                                <span className="text-foreground truncate">
+                                  {match.content}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -2085,8 +2324,8 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
           {/* Right Panel */}
           <div className="flex-1 flex flex-col overflow-hidden">
-            {/* File Browser / Recent - Right Panel */}
-            {(activeTab === 'tree' || activeTab === 'recent') && (
+            {/* File Browser / Recent / Search - Right Panel */}
+            {(activeTab === 'tree' || activeTab === 'search' || activeTab === 'recent') && (
               blameSelectedCommit ? (
                 // 当选中 blame commit 时，显示 commit 详情
                 <CommitDetailPanel
@@ -2115,6 +2354,39 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      </button>
+                      {/* 定位按钮 - 跳转到目录树并展开定位 */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // 展开所有父目录
+                          const parts = selectedPath.split('/');
+                          if (parts.length > 1) {
+                            const parentPaths: string[] = [];
+                            for (let i = 1; i < parts.length; i++) {
+                              parentPaths.push(parts.slice(0, i).join('/'));
+                            }
+                            setExpandedPaths(prev => {
+                              const next = new Set(prev);
+                              for (const p of parentPaths) {
+                                next.add(p);
+                              }
+                              saveExpandedPaths(next);
+                              return next;
+                            });
+                          }
+                          // 切换到目录树 tab 并触发滚动
+                          setShouldScrollToSelected(true);
+                          setActiveTab('tree');
+                        }}
+                        className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
+                        title="在目录树中定位"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <circle cx="12" cy="12" r="10" strokeWidth={2} />
+                          <circle cx="12" cy="12" r="3" strokeWidth={2} />
+                          <path strokeLinecap="round" strokeWidth={2} d="M12 2v4m0 12v4M2 12h4m12 0h4" />
                         </svg>
                       </button>
                     </div>
@@ -2188,7 +2460,15 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             </div>
                           )
                         ) : (
-                          <CodeViewer content={fileContent.content} filePath={selectedPath} cwd={cwd} enableComments={true} />
+                          <CodeViewer
+                            content={fileContent.content}
+                            filePath={selectedPath}
+                            cwd={cwd}
+                            enableComments={true}
+                            scrollToLine={targetLineNumber}
+                            onScrollToLineComplete={() => setTargetLineNumber(null)}
+                            highlightKeyword={activeTab === 'search' ? contentSearchQuery : null}
+                          />
                         )
                       ) : fileContent.type === 'image' && fileContent.content ? (
                         <div className="h-full flex items-center justify-center p-4 bg-secondary">

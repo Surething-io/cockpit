@@ -7,3 +7,4 @@ export { MarkdownRenderer } from './MarkdownRenderer';
 export { SessionBrowser } from './SessionBrowser';
 export { ProjectSessionsModal } from './ProjectSessionsModal';
 export { TabManager } from './TabManager';
+export { ServicePanel } from './ServicePanel';

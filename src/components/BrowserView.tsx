@@ -13,6 +13,7 @@ interface BrowserTab {
 
 interface BrowserViewProps {
   cwd: string;
+  openUrl?: string; // 外部传入的 URL，用于打开新标签
 }
 
 // ============================================================================
@@ -100,7 +101,7 @@ function generateTabId(): string {
 // BrowserView Component
 // ============================================================================
 
-export function BrowserView({ cwd }: BrowserViewProps) {
+export function BrowserView({ cwd, openUrl }: BrowserViewProps) {
   const [tabs, setTabs] = useState<BrowserTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [urlInput, setUrlInput] = useState('');
@@ -110,6 +111,7 @@ export function BrowserView({ cwd }: BrowserViewProps) {
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openUrlProcessedRef = useRef<string | null>(null); // 记录已处理的 openUrl
 
   // Get active tab
   const activeTab = tabs.find(t => t.id === activeTabId);
@@ -173,6 +175,29 @@ export function BrowserView({ cwd }: BrowserViewProps) {
       }
     }, 500);
   }, [cwd]);
+
+  // ========== Handle external openUrl request ==========
+  useEffect(() => {
+    // 只在初始化完成后且 openUrl 存在且未处理过时才执行
+    if (!isInitialized || !openUrl || openUrlProcessedRef.current === openUrl) {
+      return;
+    }
+
+    // 标记为已处理
+    openUrlProcessedRef.current = openUrl;
+
+    // 创建新标签页并打开 URL
+    const newTabId = generateTabId();
+    const newTab: BrowserTab = { id: newTabId, url: openUrl };
+    const newTabs = [...tabs, newTab];
+
+    setTabs(newTabs);
+    setActiveTabId(newTabId);
+    setUrlInput(openUrl);
+
+    // 保存到服务器
+    saveTabs(newTabs, newTabId);
+  }, [isInitialized, openUrl, tabs, saveTabs]);
 
   // ========== Tab Management ==========
   const addTab = useCallback(() => {

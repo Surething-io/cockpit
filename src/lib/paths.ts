@@ -72,6 +72,27 @@ export function getBrowserTabsPath(cwd: string): string {
   return join(getCockpitProjectDir(cwd), 'browser-tabs.json');
 }
 
+/**
+ * Get the services config path for a project
+ */
+export function getServicesConfigPath(cwd: string): string {
+  return join(getCockpitProjectDir(cwd), 'services.json');
+}
+
+/**
+ * Get the logs directory for a project
+ */
+export function getLogsDir(cwd: string): string {
+  return join(getCockpitProjectDir(cwd), 'logs');
+}
+
+/**
+ * Get the log file path for a specific service command
+ */
+export function getServiceLogPath(cwd: string, commandHash: string): string {
+  return join(getLogsDir(cwd), `${commandHash}.log`);
+}
+
 // ============================================
 // Claude Project Paths (~/.claude/projects/<encoded-cwd>/...)
 // ============================================

@@ -5,6 +5,21 @@ import { dirname, basename, join } from 'path';
 
 const execAsync = promisify(exec);
 
+// 生成随机可读单词（辅音 + 元音/韵母，2组）
+function generateRandomWord(): string {
+  const consonants = 'bcdfghjklmnprstvwz';
+  const vowels = ['a', 'e', 'i', 'o', 'u', 'ai', 'au', 'ea', 'ee', 'ia', 'io', 'oa', 'oo', 'ou', 'ui'];
+
+  let word = '';
+  // 生成 2 组（辅音 + 元音/韵母）
+  for (let i = 0; i < 2; i++) {
+    word += consonants[Math.floor(Math.random() * consonants.length)];
+    word += vowels[Math.floor(Math.random() * vowels.length)];
+  }
+
+  return word;
+}
+
 export interface WorktreeInfo {
   path: string;
   head: string;
@@ -55,24 +70,27 @@ function parseWorktreeList(output: string): WorktreeInfo[] {
   return worktrees;
 }
 
-// 生成下一个可用的 worktree 路径
-async function getNextWorktreePath(cwd: string): Promise<string> {
-  const parentDir = dirname(cwd);
-  const projectName = basename(cwd);
+// 生成下一个可用的 worktree 路径（格式：{主仓库父目录}/{主仓库目录名}-{随机单词}）
+async function getNextWorktreePath(cwd: string, worktrees: WorktreeInfo[]): Promise<{ path: string; randomWord: string }> {
+  // 主仓库是 worktree 列表中的第一个
+  const mainRepoPath = worktrees.length > 0 ? worktrees[0].path : cwd;
+  const parentDir = dirname(mainRepoPath);
+  const projectName = basename(mainRepoPath);
 
-  // 检查 1-99 哪个序号可用
-  for (let i = 1; i <= 99; i++) {
-    const candidatePath = join(parentDir, `${projectName}${i}`);
+  // 最多尝试 50 次生成不重复的随机单词
+  for (let i = 0; i < 50; i++) {
+    const randomWord = generateRandomWord();
+    const candidatePath = join(parentDir, `${projectName}-${randomWord}`);
     try {
       await execAsync(`test -e "${candidatePath}"`);
-      // 路径存在，继续检查下一个
+      // 路径存在，继续尝试
     } catch {
       // 路径不存在，可以使用
-      return candidatePath;
+      return { path: candidatePath, randomWord };
     }
   }
 
-  throw new Error('No available worktree path (1-99 all used)');
+  throw new Error('No available worktree path (too many attempts)');
 }
 
 // GET: 列出所有 worktree
@@ -91,10 +109,22 @@ export async function GET(request: NextRequest) {
     const { stdout } = await execAsync('git worktree list --porcelain', { cwd });
     const worktrees = parseWorktreeList(stdout);
 
-    // 获取下一个可用路径
+    // 获取下一个可用路径和随机单词（基于主仓库路径）
     let nextPath: string | null = null;
+    let nextRandomWord: string | null = null;
     try {
-      nextPath = await getNextWorktreePath(cwd);
+      const result = await getNextWorktreePath(cwd, worktrees);
+      nextPath = result.path;
+      nextRandomWord = result.randomWord;
+    } catch {
+      // 忽略错误
+    }
+
+    // 获取 git user.name
+    let gitUserName = '';
+    try {
+      const { stdout: userName } = await execAsync('git config user.name', { cwd });
+      gitUserName = userName.trim().toLowerCase().replace(/\s+/g, '');
     } catch {
       // 忽略错误
     }
@@ -103,7 +133,9 @@ export async function GET(request: NextRequest) {
       isGitRepo: true,
       worktrees,
       nextPath,
+      nextRandomWord,
       currentPath: cwd,
+      gitUserName,
     });
   } catch (error) {
     console.error('Error listing worktrees:', error);

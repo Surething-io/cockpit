@@ -97,7 +97,7 @@ class TaskManager:
         return [t for t in self._tasks if not t.completed]`;
 
 const jsonCode = `{
-  "name": "chat-demo",
+  "name": "cockpit",
   "version": "1.0.0",
   "description": "A chat demo application",
   "scripts": {
@@ -192,7 +192,7 @@ export const WithComments: Story = {
     filePath: 'hooks/useUser.ts',
     showLineNumbers: true,
     showSearch: true,
-    cwd: '/Users/ka/Work/continic/Run/chat-demo',
+    cwd: '/Users/ka/Work/continic/Run/cockpit',
     enableComments: true,
   },
   parameters: {

@@ -61,7 +61,7 @@ export const WithMessages: Story = {
             id: 'tool-2',
             name: 'Read',
             input: { file_path: '/package.json' },
-            result: '{\n  "name": "chat-demo",\n  "version": "1.0.0",\n  "dependencies": {\n    "next": "^14.0.0"\n  }\n}',
+            result: '{\n  "name": "cockpit",\n  "version": "1.0.0",\n  "dependencies": {\n    "next": "^14.0.0"\n  }\n}',
             isLoading: false,
           },
         ],

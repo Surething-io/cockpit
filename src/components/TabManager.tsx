@@ -274,6 +274,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         </div>
         {/* 右侧：会话相关 + 设置 */}
         <div className="flex items-center gap-2">
+          {/* 全局会话监控（运行中的会话） */}
+          <GlobalSessionMonitor currentCwd={activeTab?.cwd} onSwitchSession={handleSelectSession} />
           {/* 当前项目 Sessions 按钮 */}
           {initialCwd && (
             <button
@@ -286,8 +288,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               </svg>
             </button>
           )}
-          {/* 全局会话监控 */}
-          <GlobalSessionMonitor currentCwd={activeTab?.cwd} onSwitchSession={handleSelectSession} />
           {/* 全局 Session Browser 按钮 */}
           <button
             onClick={() => setIsSessionBrowserOpen(true)}
@@ -296,6 +296,28 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+          </button>
+          {/* Cursor 打开按钮 */}
+          <button
+            onClick={async () => {
+              if (activeTab?.cwd) {
+                try {
+                  await fetch('/api/open-cursor', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cwd: activeTab.cwd }),
+                  });
+                } catch {
+                  // 忽略错误
+                }
+              }
+            }}
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            title="在 Cursor 中打开"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M4.5 2L20.5 12L4.5 22V2Z" />
             </svg>
           </button>
           {/* 设置按钮 */}

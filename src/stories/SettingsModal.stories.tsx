@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { SettingsModal } from '@/components/SettingsModal';
 import { ThemeProvider } from '@/components/ThemeProvider';
 
-const meta = {
+const meta: Meta<typeof SettingsModal> = {
   title: 'Components/SettingsModal',
   component: SettingsModal,
   parameters: {
@@ -18,10 +18,10 @@ const meta = {
       </ThemeProvider>
     ),
   ],
-} satisfies Meta<typeof SettingsModal>;
+};
 
 export default meta;
-type Story = StoryObj<typeof meta>;
+type Story = StoryObj<typeof SettingsModal>;
 
 export const Default: Story = {
   args: {

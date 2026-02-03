@@ -6,7 +6,7 @@ import { CommitDetailPanel, type CommitInfo } from './CommitDetailPanel';
 import { DiffView } from './DiffView';
 import { toast } from './Toast';
 import { FileTree, type FileNode as FileTreeNode } from './FileTree';
-import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, type GitFileNode, type GitFileStatus as GitFileStatusType } from './GitFileTree';
+import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, collectFilesUnderNode, type GitFileNode, type GitFileStatus as GitFileStatusType } from './GitFileTree';
 import { MenuContainerProvider } from './FileContextMenu';
 import { CodeViewer } from './CodeViewer';
 import { isMarkdownFile } from './MarkdownFileViewer';
@@ -1203,6 +1203,85 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     }
   }, [cwd, fetchStatus]);
 
+  // 批量暂存（目录下所有文件）
+  const handleStageFiles = useCallback(async (paths: string[]) => {
+    if (paths.length === 0) return;
+    try {
+      const response = await fetch('/api/git/stage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cwd, files: paths }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to stage files');
+      }
+      await fetchStatus();
+      toast(`已暂存 ${paths.length} 个文件`, 'success');
+    } catch (err) {
+      console.error('Error staging files:', err);
+      toast('暂存失败', 'error');
+    }
+  }, [cwd, fetchStatus]);
+
+  // 批量取消暂存（目录下所有文件）
+  const handleUnstageFiles = useCallback(async (paths: string[]) => {
+    if (paths.length === 0) return;
+    try {
+      const response = await fetch('/api/git/unstage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cwd, files: paths }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to unstage files');
+      }
+      await fetchStatus();
+      toast(`已取消暂存 ${paths.length} 个文件`, 'success');
+    } catch (err) {
+      console.error('Error unstaging files:', err);
+      toast('取消暂存失败', 'error');
+    }
+  }, [cwd, fetchStatus]);
+
+  // 批量放弃变更（目录下所有文件）
+  const handleDiscardFiles = useCallback(async (files: GitFileStatus[]) => {
+    if (files.length === 0) return;
+    try {
+      const untrackedFiles = files.filter(f => f.status === 'untracked').map(f => f.path);
+      const trackedFiles = files.filter(f => f.status !== 'untracked').map(f => f.path);
+
+      // 删除 untracked 文件
+      if (untrackedFiles.length > 0) {
+        const response = await fetch('/api/git/discard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cwd, files: untrackedFiles, isUntracked: true }),
+        });
+        if (!response.ok) {
+          throw new Error('Failed to discard untracked files');
+        }
+      }
+
+      // checkout tracked 文件
+      if (trackedFiles.length > 0) {
+        const response = await fetch('/api/git/discard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cwd, files: trackedFiles, isUntracked: false }),
+        });
+        if (!response.ok) {
+          throw new Error('Failed to discard tracked files');
+        }
+      }
+
+      await fetchStatus();
+      toast(`已放弃 ${files.length} 个文件的变更`, 'success');
+    } catch (err) {
+      console.error('Error discarding files:', err);
+      toast('放弃变更失败', 'error');
+    }
+  }, [cwd, fetchStatus]);
+
   const handleStageAll = useCallback(async () => {
     if (!status?.unstaged.length) return;
     try {
@@ -1775,20 +1854,40 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         cwd={cwd}
                         emptyMessage="无暂存的文件"
                         className="py-1"
-                        renderActions={(node) => !node.isDirectory ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUnstage(node.path);
-                            }}
-                            className="opacity-0 group-hover:opacity-100 p-0.5 text-amber-11 hover:text-amber-10 hover:bg-amber-9/10 dark:hover:bg-amber-9/20 rounded transition-all"
-                            title="取消暂存"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                            </svg>
-                          </button>
-                        ) : null}
+                        renderActions={(node) => {
+                          if (node.isDirectory) {
+                            const files = collectFilesUnderNode(node);
+                            if (files.length === 0) return null;
+                            return (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleUnstageFiles(files.map(f => f.path));
+                                }}
+                                className="opacity-0 group-hover:opacity-100 p-0.5 text-amber-11 hover:text-amber-10 hover:bg-amber-9/10 dark:hover:bg-amber-9/20 rounded transition-all"
+                                title={`取消暂存 ${files.length} 个文件`}
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                                </svg>
+                              </button>
+                            );
+                          }
+                          return (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUnstage(node.path);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 text-amber-11 hover:text-amber-10 hover:bg-amber-9/10 dark:hover:bg-amber-9/20 rounded transition-all"
+                              title="取消暂存"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                              </svg>
+                            </button>
+                          );
+                        }}
                       />
                     </div>
 
@@ -1824,34 +1923,70 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         cwd={cwd}
                         emptyMessage="无未暂存的变更"
                         className="py-1"
-                        renderActions={(node) => !node.isDirectory && node.file ? (
-                          <div className="flex items-center gap-0.5">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDiscardFile(node.file as GitFileStatus);
-                              }}
-                              className="opacity-0 group-hover:opacity-100 p-0.5 text-red-11 hover:text-red-10 hover:bg-red-9/10 dark:hover:bg-red-9/20 rounded transition-all"
-                              title="放弃变更"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleStage(node.path);
-                              }}
-                              className="opacity-0 group-hover:opacity-100 p-0.5 text-green-11 hover:text-green-10 hover:bg-green-9/10 dark:hover:bg-green-9/20 rounded transition-all"
-                              title="暂存文件"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                              </svg>
-                            </button>
-                          </div>
-                        ) : null}
+                        renderActions={(node) => {
+                          if (node.isDirectory) {
+                            const files = collectFilesUnderNode(node);
+                            if (files.length === 0) return null;
+                            const fileObjects = files.map(f => f.file as GitFileStatus).filter(Boolean);
+                            return (
+                              <div className="flex items-center gap-0.5">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDiscardFiles(fileObjects);
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 p-0.5 text-red-11 hover:text-red-10 hover:bg-red-9/10 dark:hover:bg-red-9/20 rounded transition-all"
+                                  title={`放弃 ${files.length} 个文件的变更`}
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStageFiles(files.map(f => f.path));
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 p-0.5 text-green-11 hover:text-green-10 hover:bg-green-9/10 dark:hover:bg-green-9/20 rounded transition-all"
+                                  title={`暂存 ${files.length} 个文件`}
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                  </svg>
+                                </button>
+                              </div>
+                            );
+                          }
+                          if (!node.file) return null;
+                          return (
+                            <div className="flex items-center gap-0.5">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDiscardFile(node.file as GitFileStatus);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 p-0.5 text-red-11 hover:text-red-10 hover:bg-red-9/10 dark:hover:bg-red-9/20 rounded transition-all"
+                                title="放弃变更"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStage(node.path);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 p-0.5 text-green-11 hover:text-green-10 hover:bg-green-9/10 dark:hover:bg-green-9/20 rounded transition-all"
+                                title="暂存文件"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                              </button>
+                            </div>
+                          );
+                        }}
                       />
                     </div>
 

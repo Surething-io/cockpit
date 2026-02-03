@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { FileContextMenu, FileContextMenuWrapper, MenuContainerProvider } from '@/components/FileContextMenu';
 import { ToastProvider } from '@/components/Toast';
 
-const meta = {
+const meta: Meta<typeof FileContextMenu> = {
   title: 'Components/FileContextMenu',
   component: FileContextMenu,
   parameters: {
@@ -16,10 +16,10 @@ const meta = {
       </ToastProvider>
     ),
   ],
-} satisfies Meta<typeof FileContextMenu>;
+};
 
 export default meta;
-type Story = StoryObj<typeof meta>;
+type Story = StoryObj<typeof FileContextMenu>;
 
 // Interactive demo component
 function ContextMenuDemo({ path, isDirectory }: { path: string; isDirectory: boolean }) {

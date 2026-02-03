@@ -54,7 +54,7 @@ export const MessageWithToolCall: Story = {
           id: 'tool-1',
           name: 'Read',
           input: { file_path: '/package.json' },
-          result: '{\n  "name": "chat-demo",\n  "version": "1.0.0"\n}',
+          result: '{\n  "name": "cockpit",\n  "version": "1.0.0"\n}',
           isLoading: false,
         },
       ],

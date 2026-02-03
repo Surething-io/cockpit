@@ -723,7 +723,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
     if (!floatingToolbar) return;
     setAddCommentInput({ x: floatingToolbar.x, y: floatingToolbar.y, range: floatingToolbar.range });
     setFloatingToolbar(null);
-    window.getSelection()?.removeAllRanges();
+    // 不清除文本选择，保留高亮显示选中的行
   }, [floatingToolbar]);
 
   const handleToolbarSendToAI = useCallback(() => {
@@ -735,7 +735,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
       codeContent: floatingToolbar.codeContent,
     });
     setFloatingToolbar(null);
-    window.getSelection()?.removeAllRanges();
+    // 不清除文本选择，保留高亮显示选中的行
   }, [floatingToolbar]);
 
   const handleSendToAISubmit = useCallback(async (question: string) => {

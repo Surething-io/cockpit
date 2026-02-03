@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
+import { createPortal, flushSync } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { createHighlighter, type Highlighter, type BundledLanguage } from 'shiki';
 import { useComments, type CodeComment } from '@/hooks/useComments';
@@ -528,6 +528,85 @@ function SendToAIInput({ x, y, range, filePath, codeContent, container, onSubmit
 }
 
 // ============================================
+// Memoized Code Line Component - 避免 floatingToolbar 状态变化触发重渲染
+// ============================================
+
+interface CodeLineProps {
+  virtualKey: React.Key;
+  lineNum: number;
+  highlightedHtml: string;
+  hasComments: boolean;
+  firstComment?: CodeComment;
+  lineCommentsCount?: number;
+  isInRange: boolean;
+  showLineNumbers: boolean;
+  lineNumberWidth: number;
+  commentsEnabled: boolean;
+  virtualItemSize: number;
+  virtualItemStart: number;
+  onCommentBubbleClick: (comment: CodeComment, e: React.MouseEvent) => void;
+}
+
+const CodeLine = memo(function CodeLine({
+  virtualKey,
+  lineNum,
+  highlightedHtml,
+  hasComments,
+  firstComment,
+  lineCommentsCount,
+  isInRange,
+  showLineNumbers,
+  lineNumberWidth,
+  commentsEnabled,
+  virtualItemSize,
+  virtualItemStart,
+  onCommentBubbleClick,
+}: CodeLineProps) {
+  return (
+    <div
+      key={virtualKey}
+      data-line={lineNum}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: `${virtualItemSize}px`,
+        transform: `translateY(${virtualItemStart}px)`,
+      }}
+      className={`flex ${isInRange ? 'bg-blue-9/20' : hasComments ? 'bg-amber-9/10' : 'hover:bg-accent/50'}`}
+    >
+      {showLineNumbers && (
+        <span
+          className={`flex-shrink-0 flex items-center justify-end gap-0.5 pr-1 select-none border-r border-border ${
+            isInRange ? 'bg-blue-9/30 text-blue-11' : 'bg-card/50 text-slate-9'
+          }`}
+          style={{ width: lineNumberWidth }}
+        >
+          {commentsEnabled && hasComments && firstComment && (
+            <button
+              onClick={(e) => onCommentBubbleClick(firstComment, e)}
+              className="w-4 h-4 flex items-center justify-center rounded hover:bg-accent text-amber-9"
+              title={`${lineCommentsCount} 条评论`}
+            >
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+              </svg>
+            </button>
+          )}
+          {commentsEnabled && !hasComments && <span className="w-4" />}
+          <span className="w-6 text-right">{lineNum}</span>
+        </span>
+      )}
+      <span
+        className="flex-1 px-3 whitespace-pre overflow-x-auto"
+        dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+      />
+    </div>
+  );
+});
+
+// ============================================
 // CodeViewer Component
 // ============================================
 
@@ -569,12 +648,15 @@ export function CodeViewer({
     y: number;
   } | null>(null);
 
-  // Floating toolbar state (replaces addCommentButton)
-  const [floatingToolbar, setFloatingToolbar] = useState<{
+  // Floating toolbar - 使用 ref 存储数据，避免触发 CodeViewer 重渲染
+  // toolbarVersion 仅用于触发 FloatingToolbarWrapper 组件更新
+  const floatingToolbarRef = useRef<{
     x: number;
     y: number;
     range: { start: number; end: number };
+    selectedText: string;
   } | null>(null);
+  const [toolbarVersion, setToolbarVersion] = useState(0);
 
   const [addCommentInput, setAddCommentInput] = useState<{
     x: number;
@@ -716,8 +798,9 @@ export function CodeViewer({
           setSendToAIInput(null);
         } else if (addCommentInput) {
           setAddCommentInput(null);
-        } else if (floatingToolbar) {
-          setFloatingToolbar(null);
+        } else if (floatingToolbarRef.current) {
+          floatingToolbarRef.current = null;
+          setToolbarVersion(v => v + 1);
         } else if (viewingComment) {
           setViewingComment(null);
         }
@@ -729,7 +812,7 @@ export function CodeViewer({
       container.addEventListener('keydown', handleKeyDown);
       return () => container.removeEventListener('keydown', handleKeyDown);
     }
-  }, [showSearch, isSearchVisible, sendToAIInput, addCommentInput, floatingToolbar, viewingComment]);
+  }, [showSearch, isSearchVisible, sendToAIInput, addCommentInput, viewingComment]);
 
   // Navigate to current match
   useEffect(() => {
@@ -773,20 +856,35 @@ export function CodeViewer({
     if (!commentsEnabled) return;
     e.stopPropagation();
     setViewingComment({ comment, x: e.clientX, y: e.clientY });
-    setFloatingToolbar(null);
+    floatingToolbarRef.current = null;
+    setToolbarVersion(v => v + 1);
     setAddCommentInput(null);
     setSendToAIInput(null);
   }, [commentsEnabled]);
 
-  // Text selection handler - show "add comment" button
+  // Text selection handler - show floating toolbar
   // Use document-level mouseup to catch selections even when mouse is released outside code area
   useEffect(() => {
     if (!commentsEnabled) return;
 
     const handleMouseUp = (e: MouseEvent) => {
       const selection = window.getSelection();
-      if (!selection || selection.isCollapsed || !selection.toString().trim()) {
-        setFloatingToolbar(null);
+      if (!selection || selection.isCollapsed) {
+        // 使用 ref，不触发 CodeViewer 重渲染
+        if (floatingToolbarRef.current) {
+          floatingToolbarRef.current = null;
+          setToolbarVersion(v => v + 1);
+        }
+        return;
+      }
+
+      // 立即保存选中的文本内容（避免虚拟滚动重渲染后 selection 失效）
+      const selectedText = selection.toString();
+      if (!selectedText.trim()) {
+        if (floatingToolbarRef.current) {
+          floatingToolbarRef.current = null;
+          setToolbarVersion(v => v + 1);
+        }
         return;
       }
 
@@ -800,18 +898,21 @@ export function CodeViewer({
         return;
       }
 
-      // Find line numbers from DOM
+      // Find line numbers from DOM - 检查节点是否仍在 document 中
       const startNode = range.startContainer;
       const endNode = range.endContainer;
 
       const getLineFromNode = (node: Node): number | null => {
+        // 检查节点是否仍在 document 中（虚拟滚动可能导致节点脱离）
+        if (!document.contains(node)) return null;
+
         let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node as Element;
-        while (el && el !== container) {
-          const lineRow = el.closest('[data-line]');
-          if (lineRow) {
-            return parseInt(lineRow.getAttribute('data-line') || '0', 10);
-          }
-          el = el.parentElement;
+        if (!el) return null;
+
+        // 直接使用 closest 查找，不需要循环
+        const lineRow = el.closest('[data-line]');
+        if (lineRow) {
+          return parseInt(lineRow.getAttribute('data-line') || '0', 10);
         }
         return null;
       };
@@ -822,10 +923,19 @@ export function CodeViewer({
       if (startLine && endLine) {
         const minLine = Math.min(startLine, endLine);
         const maxLine = Math.max(startLine, endLine);
-        setFloatingToolbar({
-          x: e.clientX,
-          y: e.clientY,
-          range: { start: minLine, end: maxLine },
+
+        // 直接更新 ref，不触发 CodeViewer 重渲染
+        // 使用 requestAnimationFrame 确保在下一帧渲染 toolbar，此时选区已稳定
+        requestAnimationFrame(() => {
+          floatingToolbarRef.current = {
+            x: e.clientX,
+            y: e.clientY,
+            range: { start: minLine, end: maxLine },
+            selectedText,
+          };
+          // 只更新 toolbarVersion 触发 FloatingToolbar 显示
+          // 这不会触发 virtualizer 重新计算
+          setToolbarVersion(v => v + 1);
         });
       }
     };
@@ -836,35 +946,35 @@ export function CodeViewer({
 
   // Click "add comment" in toolbar - show input
   const handleToolbarAddComment = useCallback(() => {
-    if (!floatingToolbar) return;
+    const toolbar = floatingToolbarRef.current;
+    if (!toolbar) return;
     setAddCommentInput({
-      x: floatingToolbar.x,
-      y: floatingToolbar.y,
-      range: floatingToolbar.range,
+      x: toolbar.x,
+      y: toolbar.y,
+      range: toolbar.range,
     });
-    setFloatingToolbar(null);
-    // Clear text selection
-    window.getSelection()?.removeAllRanges();
-  }, [floatingToolbar]);
+    floatingToolbarRef.current = null;
+    setToolbarVersion(v => v + 1);
+    // 不清除文本选择，保留高亮显示选中的行
+  }, []);
 
   // Click "send to AI" in toolbar - show input
   const handleToolbarSendToAI = useCallback(() => {
-    if (!floatingToolbar) return;
-    // 获取选中的代码内容
-    const { start, end } = floatingToolbar.range;
-    const selectedLines = lines.slice(start - 1, end);
-    const codeContent = selectedLines.join('\n');
+    const toolbar = floatingToolbarRef.current;
+    if (!toolbar) return;
+    // 使用保存的选中文本（避免虚拟滚动导致的选区丢失问题）
+    const codeContent = toolbar.selectedText;
 
     setSendToAIInput({
-      x: floatingToolbar.x,
-      y: floatingToolbar.y,
-      range: floatingToolbar.range,
+      x: toolbar.x,
+      y: toolbar.y,
+      range: toolbar.range,
       codeContent,
     });
-    setFloatingToolbar(null);
-    // Clear text selection
-    window.getSelection()?.removeAllRanges();
-  }, [floatingToolbar, lines]);
+    floatingToolbarRef.current = null;
+    setToolbarVersion(v => v + 1);
+    // 不清除文本选择，保留高亮显示选中的行
+  }, []);
 
   // Submit new comment
   const handleCommentSubmit = useCallback(async (content: string) => {
@@ -1027,51 +1137,25 @@ export function CodeViewer({
             const hasComments = linesWithComments.has(lineNum);
             const lineComments = commentsByEndLine.get(lineNum);
             const firstComment = lineComments?.[0];
-            const isInRange = addCommentInput && lineNum >= addCommentInput.range.start && lineNum <= addCommentInput.range.end;
+            const isInRange = !!(addCommentInput && lineNum >= addCommentInput.range.start && lineNum <= addCommentInput.range.end);
 
             return (
-              <div
+              <CodeLine
                 key={virtualItem.key}
-                data-line={lineNum}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: `${virtualItem.size}px`,
-                  transform: `translateY(${virtualItem.start}px)`,
-                }}
-                className={`flex ${isInRange ? 'bg-blue-9/20' : hasComments ? 'bg-amber-9/10' : 'hover:bg-accent/50'}`}
-              >
-                {showLineNumbers && (
-                  <span
-                    className={`flex-shrink-0 flex items-center justify-end gap-0.5 pr-1 select-none border-r border-border ${
-                      isInRange ? 'bg-blue-9/30 text-blue-11' : 'bg-card/50 text-slate-9'
-                    }`}
-                    style={{ width: lineNumberWidth }}
-                  >
-                    {/* Comment bubble - only show when line has comments */}
-                    {commentsEnabled && hasComments && firstComment && (
-                      <button
-                        onClick={(e) => handleCommentBubbleClick(firstComment, e)}
-                        className="w-4 h-4 flex items-center justify-center rounded hover:bg-accent text-amber-9"
-                        title={`${lineComments?.length} 条评论`}
-                      >
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                    )}
-                    {/* Placeholder for alignment when no comments */}
-                    {commentsEnabled && !hasComments && <span className="w-4" />}
-                    <span className="w-6 text-right">{lineNum}</span>
-                  </span>
-                )}
-                <span
-                  className="flex-1 px-3 whitespace-pre overflow-x-auto"
-                  dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-                />
-              </div>
+                virtualKey={virtualItem.key}
+                lineNum={lineNum}
+                highlightedHtml={highlightedHtml}
+                hasComments={hasComments}
+                firstComment={firstComment}
+                lineCommentsCount={lineComments?.length}
+                isInRange={isInRange}
+                showLineNumbers={showLineNumbers}
+                lineNumberWidth={lineNumberWidth}
+                commentsEnabled={commentsEnabled}
+                virtualItemSize={virtualItem.size}
+                virtualItemStart={virtualItem.start}
+                onCommentBubbleClick={handleCommentBubbleClick}
+              />
             );
           })}
         </div>
@@ -1080,11 +1164,12 @@ export function CodeViewer({
       {/* Floating elements via Portal to menu container (keeps within second screen) */}
       {isMounted && menuContainer && createPortal(
         <>
-          {/* Floating Toolbar */}
-          {floatingToolbar && (
+          {/* Floating Toolbar - 使用 ref 获取数据，toolbarVersion 仅用于触发更新 */}
+          {floatingToolbarRef.current && (
             <FloatingToolbar
-              x={floatingToolbar.x}
-              y={floatingToolbar.y}
+              key={toolbarVersion}
+              x={floatingToolbarRef.current.x}
+              y={floatingToolbarRef.current.y}
               container={menuContainer}
               onAddComment={handleToolbarAddComment}
               onSendToAI={handleToolbarSendToAI}

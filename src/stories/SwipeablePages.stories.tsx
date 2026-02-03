@@ -2,16 +2,16 @@ import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { useState } from 'react';
 import { SwipeablePages } from '@/components/SwipeablePages';
 
-const meta = {
+const meta: Meta<typeof SwipeablePages> = {
   title: 'Components/SwipeablePages',
   component: SwipeablePages,
   parameters: {
     layout: 'fullscreen',
   },
-} satisfies Meta<typeof SwipeablePages>;
+};
 
 export default meta;
-type Story = StoryObj<typeof meta>;
+type Story = StoryObj<typeof SwipeablePages>;
 
 // Interactive demo component
 function SwipeableDemo() {

@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { FileTree, type FileNode } from '@/components/FileTree';
 import { ToastProvider } from '@/components/Toast';
 
-const meta = {
+const meta: Meta<typeof FileTree> = {
   title: 'Components/FileTree',
   component: FileTree,
   parameters: {
@@ -18,10 +18,10 @@ const meta = {
       </ToastProvider>
     ),
   ],
-} satisfies Meta<typeof FileTree>;
+};
 
 export default meta;
-type Story = StoryObj<typeof meta>;
+type Story = StoryObj<typeof FileTree>;
 
 // Mock file tree data
 const simpleTree: FileNode[] = [
@@ -123,16 +123,52 @@ const manyFilesTree: FileNode[] = [
 ];
 
 // Interactive demo
-function FileTreeDemo({ tree }: { tree: FileNode[] }) {
+function FileTreeDemo({ tree, searchKeyword }: { tree: FileNode[]; searchKeyword?: string }) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => {
+    // Auto-expand root directories
+    const paths = new Set<string>();
+    for (const node of tree) {
+      if (node.isDirectory) {
+        paths.add(node.path);
+      }
+    }
+    return paths;
+  });
+
+  const handleToggle = (path: string) => {
+    setExpandedPaths(prev => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="h-full flex flex-col">
       <FileTree
-        tree={tree}
+        files={tree}
         selectedPath={selectedPath}
-        onSelectFile={setSelectedPath}
+        expandedPaths={expandedPaths}
+        onSelect={setSelectedPath}
+        onToggle={handleToggle}
         cwd="/Users/demo/project"
+        matchedPaths={searchKeyword ? new Set(
+          tree.flatMap(function collectPaths(node: FileNode): string[] {
+            const matches: string[] = [];
+            if (node.name.toLowerCase().includes(searchKeyword.toLowerCase())) {
+              matches.push(node.path);
+            }
+            if (node.children) {
+              matches.push(...node.children.flatMap(collectPaths));
+            }
+            return matches;
+          })
+        ) : null}
       />
       {selectedPath && (
         <div className="flex-shrink-0 p-2 border-t border-border text-xs text-muted-foreground">
@@ -165,7 +201,22 @@ export const ManyFiles: Story = {
 export const WithSearch: Story = {
   render: () => {
     const [selectedPath, setSelectedPath] = useState<string | null>(null);
+    const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set(['src', 'src/components', 'src/components/ui']));
     const [search, setSearch] = useState('');
+
+    // Collect matching paths
+    const matchedPaths = search ? new Set(
+      deepTree.flatMap(function collectPaths(node: FileNode): string[] {
+        const matches: string[] = [];
+        if (node.name.toLowerCase().includes(search.toLowerCase())) {
+          matches.push(node.path);
+        }
+        if (node.children) {
+          matches.push(...node.children.flatMap(collectPaths));
+        }
+        return matches;
+      })
+    ) : null;
 
     return (
       <div className="h-full flex flex-col">
@@ -180,11 +231,20 @@ export const WithSearch: Story = {
         </div>
         <div className="flex-1 overflow-hidden">
           <FileTree
-            tree={deepTree}
+            files={deepTree}
             selectedPath={selectedPath}
-            onSelectFile={setSelectedPath}
+            expandedPaths={expandedPaths}
+            matchedPaths={matchedPaths}
+            onSelect={setSelectedPath}
+            onToggle={(path) => {
+              setExpandedPaths(prev => {
+                const next = new Set(prev);
+                if (next.has(path)) next.delete(path);
+                else next.add(path);
+                return next;
+              });
+            }}
             cwd="/Users/demo/project"
-            searchKeyword={search}
           />
         </div>
       </div>
@@ -193,10 +253,28 @@ export const WithSearch: Story = {
 };
 
 export const PreSelected: Story = {
-  args: {
-    tree: deepTree,
-    selectedPath: 'src/components/ui/Button.tsx',
-    onSelectFile: () => {},
-    cwd: '/Users/demo/project',
+  render: () => {
+    const [selectedPath, setSelectedPath] = useState<string | null>('src/components/ui/Button.tsx');
+    const [expandedPaths, setExpandedPaths] = useState<Set<string>>(
+      new Set(['src', 'src/components', 'src/components/ui'])
+    );
+
+    return (
+      <FileTree
+        files={deepTree}
+        selectedPath={selectedPath}
+        expandedPaths={expandedPaths}
+        onSelect={setSelectedPath}
+        onToggle={(path) => {
+          setExpandedPaths(prev => {
+            const next = new Set(prev);
+            if (next.has(path)) next.delete(path);
+            else next.add(path);
+            return next;
+          });
+        }}
+        cwd="/Users/demo/project"
+      />
+    );
   },
 };

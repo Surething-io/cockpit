@@ -5,6 +5,7 @@ import { Chat } from './Chat';
 import { SessionBrowser } from './SessionBrowser';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { FileBrowserModal } from './FileBrowserModal';
+import { BrowserView } from './BrowserView';
 import { SettingsModal } from './SettingsModal';
 import { Tooltip } from './Tooltip';
 import { SwipeablePages } from './SwipeablePages';
@@ -316,7 +317,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     <div className="flex h-screen bg-card">
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* 双屏滑动布局 */}
+        {/* 三屏滑动布局 */}
         {initialCwd ? (
           <SwipeablePages
             currentPage={currentPage}
@@ -355,6 +356,9 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               initialTab={fileBrowserInitialTab}
               tabSwitchTrigger={tabSwitchTrigger}
             />
+
+            {/* 第三屏：BrowserView */}
+            <BrowserView cwd={initialCwd} />
           </SwipeablePages>
         ) : (
           /* 无 cwd 时，只显示 Header + Chat */

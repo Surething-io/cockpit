@@ -12,6 +12,7 @@ import { CodeViewer } from './CodeViewer';
 import { isMarkdownFile } from './MarkdownFileViewer';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { FileIcon } from './FileIcon';
+import { FileEditorModal } from './FileEditorModal';
 
 // ============================================================================
 // Types
@@ -858,6 +859,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
   // Markdown 预览 Modal
   const [showMarkdownPreview, setShowMarkdownPreview] = useState(false);
+
+  // 编辑 Modal
+  const [showEditor, setShowEditor] = useState(false);
 
   // ========== Git Status State ==========
   const [status, setStatus] = useState<GitStatusResponse | null>(null);
@@ -1950,6 +1954,16 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       </button>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
+                      {/* 编辑按钮 */}
+                      {fileContent?.type === 'text' && (
+                        <button
+                          onClick={() => setShowEditor(true)}
+                          className="px-2 py-1 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
+                          title="编辑文件"
+                        >
+                          编辑
+                        </button>
+                      )}
                       {/* Markdown 预览按钮 */}
                       {fileContent?.type === 'text' && isMarkdownFile(selectedPath) && (
                         <button
@@ -2151,6 +2165,21 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               </div>
             </div>
           </div>
+        )}
+
+        {/* 文件编辑 Modal */}
+        {selectedPath && fileContent?.type === 'text' && (
+          <FileEditorModal
+            isOpen={showEditor}
+            onClose={() => setShowEditor(false)}
+            filePath={selectedPath}
+            initialContent={fileContent.content || ''}
+            cwd={cwd}
+            onSaved={() => {
+              // 保存后重新加载文件内容
+              loadFileContent(selectedPath);
+            }}
+          />
         )}
       </div>
     </MenuContainerProvider>

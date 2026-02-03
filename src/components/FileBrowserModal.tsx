@@ -5,7 +5,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { CommitDetailPanel, type CommitInfo } from './CommitDetailPanel';
 import { DiffView } from './DiffView';
 import { toast } from './Toast';
-import { FileTree, type FileNode as FileTreeNode } from './FileTree';
+import { FileTree, type FileNode as FileTreeNode, type GitStatusMap, type GitStatusCode } from './FileTree';
 import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, collectFilesUnderNode, type GitFileNode, type GitFileStatus as GitFileStatusType } from './GitFileTree';
 import { MenuContainerProvider } from './FileContextMenu';
 import { CodeViewer } from './CodeViewer';
@@ -904,6 +904,35 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     return new Set(collectAllDirPaths(recentFilesTree));
   }, [recentFilesTree]);
 
+  // 为目录树创建 Git 状态映射
+  const gitStatusMap = useMemo<GitStatusMap | null>(() => {
+    if (!status) return null;
+    const map = new Map<string, GitStatusCode>();
+
+    // 状态转换函数
+    const toStatusCode = (s: GitFileStatus['status']): GitStatusCode => {
+      switch (s) {
+        case 'modified': return 'M';
+        case 'added': return 'A';
+        case 'deleted': return 'D';
+        case 'renamed': return 'R';
+        case 'untracked': return '?';
+        default: return 'M';
+      }
+    };
+
+    // 合并 staged 和 unstaged（不区分）
+    for (const file of status.staged) {
+      map.set(file.path, toStatusCode(file.status));
+    }
+    for (const file of status.unstaged) {
+      // unstaged 优先（因为更能反映当前工作区状态）
+      map.set(file.path, toStatusCode(file.status));
+    }
+
+    return map;
+  }, [status]);
+
   const matchedPaths = useMemo(() => {
     if (!searchQuery) return null;
     return computeMatchedPaths(files, searchQuery);
@@ -1709,7 +1738,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
             <div className="flex border-b border-border">
               <button
                 onClick={() => handleTabChange('tree')}
-                className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
+                className={`flex-1 px-2 py-2 text-sm font-medium transition-colors ${
                   activeTab === 'tree'
                     ? 'text-brand border-b-2 border-brand'
                     : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
@@ -1719,7 +1748,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               </button>
               <button
                 onClick={() => handleTabChange('recent')}
-                className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
+                className={`flex-1 px-2 py-2 text-sm font-medium transition-colors ${
                   activeTab === 'recent'
                     ? 'text-brand border-b-2 border-brand'
                     : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
@@ -1729,7 +1758,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               </button>
               <button
                 onClick={() => handleTabChange('status')}
-                className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
+                className={`flex-1 px-2 py-2 text-sm font-medium transition-colors ${
                   activeTab === 'status'
                     ? 'text-brand border-b-2 border-brand'
                     : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
@@ -1739,7 +1768,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               </button>
               <button
                 onClick={() => handleTabChange('history')}
-                className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
+                className={`flex-1 px-2 py-2 text-sm font-medium transition-colors ${
                   activeTab === 'history'
                     ? 'text-brand border-b-2 border-brand'
                     : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
@@ -1788,6 +1817,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     selectedPath={selectedPath}
                     expandedPaths={expandedPaths}
                     matchedPaths={matchedPaths}
+                    gitStatusMap={gitStatusMap}
                     onSelect={(path) => {
                       // 用户在目录树中点击选择，不需要滚动居中
                       setShouldScrollToSelected(false);
@@ -1833,13 +1863,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     {/* Staged Section */}
                     <div className="border-b border-border">
                       <div className="flex items-center justify-between px-3 py-2 bg-secondary">
-                        <span className="text-xs font-medium text-muted-foreground">
+                        <span className="text-sm font-medium text-muted-foreground">
                           暂存区 ({status?.staged.length || 0})
                         </span>
                         {(status?.staged.length || 0) > 0 && (
                           <button
                             onClick={handleUnstageAll}
-                            className="text-xs text-amber-11 hover:text-amber-10 hover:underline"
+                            className="text-sm text-amber-11 hover:text-amber-10 hover:underline"
                           >
                             全部取消
                           </button>
@@ -1894,20 +1924,20 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     {/* Unstaged Section */}
                     <div>
                       <div className="flex items-center justify-between px-3 py-2 bg-secondary">
-                        <span className="text-xs font-medium text-muted-foreground">
+                        <span className="text-sm font-medium text-muted-foreground">
                           工作区 ({status?.unstaged.length || 0})
                         </span>
                         {(status?.unstaged.length || 0) > 0 && (
                           <div className="flex items-center gap-2">
                             <button
                               onClick={handleDiscardAll}
-                              className="text-xs text-red-11 hover:text-red-10 hover:underline"
+                              className="text-sm text-red-11 hover:text-red-10 hover:underline"
                             >
                               放弃所有
                             </button>
                             <button
                               onClick={handleStageAll}
-                              className="text-xs text-green-11 hover:text-green-10 hover:underline"
+                              className="text-sm text-green-11 hover:text-green-10 hover:underline"
                             >
                               全部暂存
                             </button>
@@ -2071,7 +2101,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                 <>
                   <div className="px-4 py-2 bg-secondary border-b border-border flex-shrink-0 flex items-center justify-between">
                     <div className="flex items-center gap-1 min-w-0">
-                      <span className="text-xs text-muted-foreground truncate">
+                      <span className="text-sm text-muted-foreground truncate">
                         {selectedPath}
                       </span>
                       <button
@@ -2093,7 +2123,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       {fileContent?.type === 'text' && (
                         <button
                           onClick={() => setShowEditor(true)}
-                          className="px-2 py-1 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
+                          className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
                           title="编辑文件"
                         >
                           编辑
@@ -2103,7 +2133,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       {fileContent?.type === 'text' && isMarkdownFile(selectedPath) && (
                         <button
                           onClick={() => setShowMarkdownPreview(true)}
-                          className="px-2 py-1 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
+                          className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
                           title="预览 Markdown 渲染效果"
                         >
                           预览
@@ -2114,7 +2144,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         <button
                           onClick={handleToggleBlame}
                           disabled={isLoadingBlame}
-                          className={`px-2 py-1 text-xs rounded transition-colors ${
+                          className={`px-2 py-1 text-sm rounded transition-colors ${
                             showBlame
                               ? 'bg-brand text-white'
                               : 'text-muted-foreground hover:bg-accent'

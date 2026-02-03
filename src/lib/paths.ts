@@ -65,6 +65,13 @@ export function getCommentsFilePath(cwd: string): string {
   return join(getCockpitProjectDir(cwd), 'comments.json');
 }
 
+/**
+ * Get the browser-tabs.json path for a project
+ */
+export function getBrowserTabsPath(cwd: string): string {
+  return join(getCockpitProjectDir(cwd), 'browser-tabs.json');
+}
+
 // ============================================
 // Claude Project Paths (~/.claude/projects/<encoded-cwd>/...)
 // ============================================

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { clearAllComments, emitCommentsChange } from '@/hooks/useAllComments';
+import { clearAllComments, emitCommentsChange, fetchAllCommentsWithCode } from '@/hooks/useAllComments';
 
 interface CodeComment {
   id: string;
@@ -10,8 +10,8 @@ interface CodeComment {
   startLine: number;
   endLine: number;
   content: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: number;
+  updatedAt?: number;
 }
 
 interface CommentsListModalProps {
@@ -21,10 +21,41 @@ interface CommentsListModalProps {
   onNavigateToComment?: (comment: CodeComment) => void;
 }
 
+// 复制用的评论数据结构
+interface CopyableComment {
+  filePath: string;
+  startLine: number;
+  endLine: number;
+  content: string;
+  codeContent: string;
+}
+
+// 格式化评论为复制文本
+function formatCommentsForCopy(comments: CopyableComment[]): string {
+  if (comments.length === 0) return '';
+
+  const parts: string[] = ['代码引用:', ''];
+
+  comments.forEach((comment, index) => {
+    parts.push(`[${index + 1}] ${comment.filePath}:${comment.startLine}-${comment.endLine}`);
+    parts.push('```');
+    parts.push(comment.codeContent);
+    parts.push('```');
+    if (comment.content) {
+      parts.push(`备注: ${comment.content}`);
+    }
+    parts.push('');
+  });
+
+  return parts.join('\n').trim();
+}
+
 export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }: CommentsListModalProps) {
   const [comments, setComments] = useState<CodeComment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [copyingId, setCopyingId] = useState<string | null>(null); // 正在复制的评论 ID
+  const [copyingAll, setCopyingAll] = useState(false); // 正在复制全部
 
   useEffect(() => {
     setIsMounted(true);
@@ -69,6 +100,53 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
     }
   };
 
+  // 复制单条评论
+  const handleCopySingle = async (comment: CodeComment) => {
+    setCopyingId(comment.id);
+    try {
+      // 获取代码内容
+      const fileResponse = await fetch(
+        `/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(comment.filePath)}`
+      );
+      if (!fileResponse.ok) {
+        throw new Error('Failed to read file');
+      }
+      const fileData = await fileResponse.json();
+      const lines = (fileData.content || '').split('\n');
+      const codeContent = lines.slice(comment.startLine - 1, comment.endLine).join('\n');
+
+      const copyable: CopyableComment = {
+        filePath: comment.filePath,
+        startLine: comment.startLine,
+        endLine: comment.endLine,
+        content: comment.content,
+        codeContent,
+      };
+
+      const text = formatCommentsForCopy([copyable]);
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      console.error('Failed to copy comment:', err);
+    } finally {
+      setCopyingId(null);
+    }
+  };
+
+  // 复制全部评论
+  const handleCopyAll = async () => {
+    if (comments.length === 0) return;
+    setCopyingAll(true);
+    try {
+      const commentsWithCode = await fetchAllCommentsWithCode(cwd);
+      const text = formatCommentsForCopy(commentsWithCode);
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      console.error('Failed to copy all comments:', err);
+    } finally {
+      setCopyingAll(false);
+    }
+  };
+
   // Group comments by file
   const commentsByFile = comments.reduce((acc, comment) => {
     if (!acc[comment.filePath]) {
@@ -78,8 +156,9 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
     return acc;
   }, {} as Record<string, CodeComment[]>);
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
+  const formatDate = (timestamp: number | undefined) => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
     return date.toLocaleString('zh-CN', {
       month: 'numeric',
       day: 'numeric',
@@ -101,7 +180,25 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary">
-          <h2 className="text-lg font-semibold text-foreground">所有评论</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-foreground">所有评论</h2>
+            {comments.length > 0 && (
+              <button
+                onClick={handleCopyAll}
+                disabled={copyingAll}
+                className="p-1 rounded hover:bg-accent text-muted-foreground disabled:opacity-50"
+                title="复制全部评论"
+              >
+                {copyingAll ? (
+                  <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                )}
+              </button>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="p-1 rounded hover:bg-accent text-muted-foreground"
@@ -158,13 +255,30 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
                                 ({comment.endLine - comment.startLine + 1} 行)
                               </span>
                               <span className="text-xs text-muted-foreground">
-                                {formatDate(comment.updatedAt)}
+                                {formatDate(comment.updatedAt || comment.createdAt)}
                               </span>
                             </div>
                             <p className="text-sm text-foreground line-clamp-2">
                               {comment.content || <span className="text-muted-foreground italic">（无内容）</span>}
                             </p>
                           </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopySingle(comment);
+                            }}
+                            disabled={copyingId === comment.id}
+                            className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-accent text-muted-foreground transition-opacity disabled:opacity-50"
+                            title="复制"
+                          >
+                            {copyingId === comment.id ? (
+                              <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                          </button>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { clearAllComments, emitCommentsChange, fetchAllCommentsWithCode } from '@/hooks/useAllComments';
+import { toast } from './Toast';
 
 interface CodeComment {
   id: string;
@@ -125,6 +126,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
 
       const text = formatCommentsForCopy([copyable]);
       await navigator.clipboard.writeText(text);
+      toast('已复制评论');
     } catch (err) {
       console.error('Failed to copy comment:', err);
     } finally {
@@ -140,6 +142,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
       const commentsWithCode = await fetchAllCommentsWithCode(cwd);
       const text = formatCommentsForCopy(commentsWithCode);
       await navigator.clipboard.writeText(text);
+      toast('已复制全部评论');
     } catch (err) {
       console.error('Failed to copy all comments:', err);
     } finally {

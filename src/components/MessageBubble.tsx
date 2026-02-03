@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { ChatMessage, MessageImage } from '@/types/chat';
 import { ToolCallModal } from './ToolCallModal';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { toast } from './Toast';
 
 interface ImageModalProps {
   image: MessageImage;
@@ -68,9 +69,29 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd }: Messa
   const toolCallsCount = message.toolCalls?.length || 0;
   const shouldCollapseToolCalls = toolCallsCount > TOOL_CALLS_COLLAPSE_THRESHOLD;
 
+  // 复制消息内容
+  const handleCopy = () => {
+    if (message.content) {
+      navigator.clipboard.writeText(message.content);
+      toast('已复制消息');
+    }
+  };
+
   return (
     <>
-      <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
+      <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 group`}>
+        {/* 用户消息的复制按钮在左边 */}
+        {isUser && message.content && (
+          <button
+            onClick={handleCopy}
+            className="self-start mt-2 mr-1 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent opacity-0 group-hover:opacity-100 transition-opacity"
+            title="复制消息"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          </button>
+        )}
         <div
           className={`max-w-[80%] ${
             isUser
@@ -142,6 +163,18 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd }: Messa
             </div>
           )}
         </div>
+        {/* AI 消息的复制按钮在右边 */}
+        {!isUser && message.content && (
+          <button
+            onClick={handleCopy}
+            className="self-start mt-2 ml-1 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent opacity-0 group-hover:opacity-100 transition-opacity"
+            title="复制消息"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* 图片预览模态窗口 */}

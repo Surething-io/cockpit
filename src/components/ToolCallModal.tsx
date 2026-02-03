@@ -508,29 +508,66 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
             </span>
           </>
         )}
-        {toolCall.isLoading && (
-          <span className="ml-auto">
+        {/* 右侧操作区 */}
+        <span className="ml-auto flex items-center gap-2">
+          {/* 查看全部按钮 - 仅展开时显示 */}
+          {expanded && !toolCall.isLoading && (
+            <>
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPreviewContent({ title: `${toolCall.name}${displayPath ? ` ${displayPath}` : ''} - 输入参数`, content: JSON.stringify(toolCall.input, null, 2), toolName: toolCall.name });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.stopPropagation();
+                    setPreviewContent({ title: `${toolCall.name}${displayPath ? ` ${displayPath}` : ''} - 输入参数`, content: JSON.stringify(toolCall.input, null, 2), toolName: toolCall.name });
+                  }
+                }}
+                className="text-xs text-brand hover:text-teal-10 cursor-pointer"
+                title="查看输入参数"
+              >
+                输入
+              </span>
+              {toolCall.result && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPreviewContent({ title: `${toolCall.name}${displayPath ? ` ${displayPath}` : ''} - 结果`, content: typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2), toolName: toolCall.name });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.stopPropagation();
+                      setPreviewContent({ title: `${toolCall.name}${displayPath ? ` ${displayPath}` : ''} - 结果`, content: typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2), toolName: toolCall.name });
+                    }
+                  }}
+                  className="text-xs text-brand hover:text-teal-10 cursor-pointer"
+                  title="查看结果"
+                >
+                  结果
+                </span>
+              )}
+            </>
+          )}
+          {toolCall.isLoading ? (
             <span className="inline-block w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-          </span>
-        )}
-        {!toolCall.isLoading && (
-          <span className="ml-auto text-slate-9 text-xs">
-            {expanded ? '▲' : '▼'}
-          </span>
-        )}
+          ) : (
+            <span className="text-slate-9 text-xs">
+              {expanded ? '▲' : '▼'}
+            </span>
+          )}
+        </span>
       </button>
 
       {expanded && (
         <div className="border-t border-border">
           <div className="px-3 py-2">
-            <div className="flex items-center justify-between mb-1">
+            <div className="mb-1">
               <span className="text-xs text-muted-foreground">输入参数:</span>
-              <button
-                onClick={() => setPreviewContent({ title: `${toolCall.name}${displayPath ? ` ${displayPath}` : ''}`, content: JSON.stringify(toolCall.input, null, 2), toolName: toolCall.name })}
-                className="text-xs text-brand hover:text-teal-10"
-              >
-                查看全部
-              </button>
             </div>
             <pre className="text-xs bg-secondary p-2 rounded overflow-x-auto max-h-24 overflow-y-auto text-foreground">
               {JSON.stringify(toolCall.input, null, 2)}
@@ -539,14 +576,8 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
 
           {toolCall.result && (
             <div className="px-3 py-2 border-t border-border">
-              <div className="flex items-center justify-between mb-1">
+              <div className="mb-1">
                 <span className="text-xs text-muted-foreground">结果:</span>
-                <button
-                  onClick={() => setPreviewContent({ title: `${toolCall.name}${displayPath ? ` ${displayPath}` : ''}`, content: typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2), toolName: toolCall.name })}
-                  className="text-xs text-brand hover:text-teal-10"
-                >
-                  查看全部
-                </button>
               </div>
               <pre className="text-xs bg-secondary p-2 rounded overflow-x-auto max-h-24 overflow-y-auto text-foreground">
                 {typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2)}

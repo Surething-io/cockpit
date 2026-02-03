@@ -32,7 +32,11 @@ self.addEventListener('notificationclick', async (event) => {
   const { cwd, sessionId } = event.notification.data || {};
   if (!cwd) return;
 
-  const targetUrl = `/?cwd=${encodeURIComponent(cwd)}&sessionId=${encodeURIComponent(sessionId)}`;
+  // 构建目标 URL
+  let targetUrl = `/?cwd=${encodeURIComponent(cwd)}`;
+  if (sessionId) {
+    targetUrl += `&sessionId=${encodeURIComponent(sessionId)}`;
+  }
 
   event.waitUntil(
     clients.matchAll({ type: 'window' }).then(async (allClients) => {
@@ -43,11 +47,15 @@ self.addEventListener('notificationclick', async (event) => {
         if (clientCwd === cwd) {
           // 先 focus 目标 tab
           await client.focus();
-          // 延迟一点让 tab 切换完成，再发消息切换 session
-          await new Promise(resolve => setTimeout(resolve, 300));
-          const channel = new BroadcastChannel('session-switch');
-          channel.postMessage({ targetCwd: cwd, sessionId });
-          channel.close();
+
+          // 如果有 sessionId，发消息切换 session
+          if (sessionId) {
+            // 延迟一点让 tab 切换完成，再发消息切换 session
+            await new Promise(resolve => setTimeout(resolve, 300));
+            const channel = new BroadcastChannel('session-switch');
+            channel.postMessage({ targetCwd: cwd, sessionId });
+            channel.close();
+          }
           return;
         }
       }

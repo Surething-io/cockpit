@@ -150,8 +150,8 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
       }
     }
 
-    // 普通发送
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // 普通发送（排除 IME 组合状态）
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSend();
     }

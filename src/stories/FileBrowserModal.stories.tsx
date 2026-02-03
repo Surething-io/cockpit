@@ -36,7 +36,6 @@ type Story = StoryObj<typeof meta>;
 
 export const TreeTab: Story = {
   args: {
-    isOpen: true,
     onClose: () => console.log('Close clicked'),
     cwd: '/Users/demo/project',
     initialTab: 'tree',
@@ -61,7 +60,6 @@ export const TreeTab: Story = {
 
 export const RecentTab: Story = {
   args: {
-    isOpen: true,
     onClose: () => console.log('Close clicked'),
     cwd: '/Users/demo/project',
     initialTab: 'recent',
@@ -77,7 +75,6 @@ export const RecentTab: Story = {
 
 export const StatusTab: Story = {
   args: {
-    isOpen: true,
     onClose: () => console.log('Close clicked'),
     cwd: '/Users/demo/project',
     initialTab: 'status',
@@ -100,7 +97,6 @@ Git 变更标签页
 
 export const HistoryTab: Story = {
   args: {
-    isOpen: true,
     onClose: () => console.log('Close clicked'),
     cwd: '/Users/demo/project',
     initialTab: 'history',
@@ -121,25 +117,10 @@ Git 历史标签页
   },
 };
 
-export const Closed: Story = {
-  args: {
-    isOpen: false,
-    onClose: () => console.log('Close clicked'),
-    cwd: '/Users/demo/project',
-  },
-  parameters: {
-    docs: {
-      description: {
-        story: 'isOpen=false 时不渲染任何内容',
-      },
-    },
-  },
-};
-
-// Interactive demo
+// Interactive demo - FileBrowserModal 不再有 isOpen 属性，直接渲染
 function InteractiveDemo() {
-  const [isOpen, setIsOpen] = useState(true);
   const [tab, setTab] = useState<'tree' | 'recent' | 'status' | 'history'>('tree');
+  const [key, setKey] = useState(0);
 
   return (
     <>
@@ -150,7 +131,7 @@ function InteractiveDemo() {
               key={t}
               onClick={() => {
                 setTab(t);
-                setIsOpen(true);
+                setKey(k => k + 1);
               }}
               className={`px-3 py-1 rounded text-sm ${
                 tab === t ? 'bg-brand text-white' : 'bg-accent'
@@ -161,12 +142,12 @@ function InteractiveDemo() {
           ))}
         </div>
         <p className="text-sm text-muted-foreground">
-          点击按钮打开对应标签页
+          点击按钮切换标签页
         </p>
       </div>
       <FileBrowserModal
-        isOpen={isOpen}
-        onClose={() => setIsOpen(false)}
+        key={key}
+        onClose={() => console.log('Close clicked')}
         cwd="/Users/demo/project"
         initialTab={tab}
       />
@@ -175,5 +156,9 @@ function InteractiveDemo() {
 }
 
 export const Interactive: Story = {
+  args: {
+    onClose: () => console.log('Close clicked'),
+    cwd: '/Users/demo/project',
+  },
   render: () => <InteractiveDemo />,
 };

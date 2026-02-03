@@ -7,6 +7,7 @@ import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { FileBrowserModal } from './FileBrowserModal';
 import { BrowserView } from './BrowserView';
 import { SettingsModal } from './SettingsModal';
+import { GitWorktreeModal } from './GitWorktreeModal';
 import { Tooltip } from './Tooltip';
 import { SwipeablePages } from './SwipeablePages';
 import { ChatProvider } from './ChatContext';
@@ -139,6 +140,9 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const [isSessionBrowserOpen, setIsSessionBrowserOpen] = useState(false);
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isWorktreeOpen, setIsWorktreeOpen] = useState(false);
+  const [currentBranch, setCurrentBranch] = useState<string | null>(null);
+  const [isGitRepo, setIsGitRepo] = useState(false);
   const [fileBrowserInitialTab, setFileBrowserInitialTab] = useState<'tree' | 'recent' | 'status' | 'history'>('tree');
   // 用于强制触发 tab 切换（解决重复点击同一 tab 时 useEffect 不触发的问题）
   const [tabSwitchTrigger, setTabSwitchTrigger] = useState(0);
@@ -206,27 +210,70 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
+  // 加载 Git 仓库信息（分支）
+  useEffect(() => {
+    if (!initialCwd) return;
+
+    const loadGitInfo = async () => {
+      try {
+        const response = await fetch(`/api/git/worktree?cwd=${encodeURIComponent(initialCwd)}`);
+        if (response.ok) {
+          const data = await response.json();
+          setIsGitRepo(data.isGitRepo);
+          if (data.isGitRepo && data.worktrees.length > 0) {
+            // 找到当前 cwd 对应的 worktree
+            const currentWorktree = data.worktrees.find((w: { path: string }) => w.path === initialCwd);
+            if (currentWorktree) {
+              setCurrentBranch(currentWorktree.branch);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load git info:', error);
+      }
+    };
+
+    loadGitInfo();
+  }, [initialCwd]);
+
   // Header 组件，用于第一屏内部
   const Header = (
     <div className="border-b border-border bg-card shrink-0">
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-2">
-        <div className="flex items-center gap-2">
-          <img src="/icons/icon-72x72.png" alt="Cockpit" className="w-6 h-6" />
-          {initialCwd ? (
-            <span
-              className="text-sm text-foreground max-w-md truncate cursor-help"
-              title={`CWD: ${initialCwd}`}
+        {/* 左侧：Logo + 项目路径 + Git 分支 */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <img src="/icons/icon-72x72.png" alt="Cockpit" className="w-6 h-6" />
+            {initialCwd ? (
+              <span
+                className="text-sm text-foreground max-w-md truncate cursor-help"
+                title={`CWD: ${initialCwd}`}
+              >
+                {initialCwd}
+              </span>
+            ) : (
+              <h1 className="text-lg font-semibold text-foreground">
+                Cockpit
+              </h1>
+            )}
+          </div>
+          {/* Git Worktree 按钮 */}
+          {isGitRepo && (
+            <button
+              onClick={() => setIsWorktreeOpen(true)}
+              className="flex items-center gap-1.5 px-2 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+              title="Git Worktrees"
             >
-              {initialCwd}
-            </span>
-          ) : (
-            <h1 className="text-lg font-semibold text-foreground">
-              Cockpit
-            </h1>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0l-4-4m4 4l-4 4M3 7v6a4 4 0 004 4h5" />
+              </svg>
+              <span className="text-sm">{currentBranch || 'main'}</span>
+            </button>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        {/* 右侧：会话相关 + 设置 */}
+        <div className="flex items-center gap-2">
           {/* 当前项目 Sessions 按钮 */}
           {initialCwd && (
             <button
@@ -406,6 +453,15 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
       />
+
+      {/* Git Worktree Modal */}
+      {initialCwd && isGitRepo && (
+        <GitWorktreeModal
+          isOpen={isWorktreeOpen}
+          onClose={() => setIsWorktreeOpen(false)}
+          cwd={initialCwd}
+        />
+      )}
     </div>
     </ChatProvider>
   );

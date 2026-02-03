@@ -259,7 +259,7 @@ function ViewCommentCard({
               rows={3}
               autoFocus
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   handleSave();
                 }
@@ -398,7 +398,7 @@ function AddCommentInput({ x, y, range, container, onSubmit, onClose }: AddComme
           rows={2}
           disabled={isSubmitting}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               handleSubmit();
             }
@@ -510,7 +510,7 @@ function SendToAIInput({ x, y, range, filePath, codeContent, container, onSubmit
           rows={2}
           disabled={isChatLoading}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               handleSubmit();
             }

@@ -388,7 +388,7 @@ function SendToAIInput({ x, y, range, container, onSubmit, onClose }: SendToAIIn
           className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card resize-none focus:outline-none focus:ring-1 focus:ring-ring"
           rows={2}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSubmit(); }
             if (e.key === 'Escape') onClose();
           }}
         />
@@ -474,7 +474,7 @@ function ViewCommentCard({
               rows={3}
               autoFocus
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSave(); }
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSave(); }
                 if (e.key === 'Escape') { setIsEditing(false); setEditContent(comment.content); }
               }}
             />
@@ -563,7 +563,7 @@ function AddCommentInput({ x, y, range, container, onSubmit, onClose }: AddComme
           className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card resize-none focus:outline-none focus:ring-1 focus:ring-ring"
           rows={2}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSubmit(); }
             if (e.key === 'Escape') onClose();
           }}
         />

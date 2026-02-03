@@ -9,7 +9,8 @@ import { FileTree, type FileNode as FileTreeNode } from './FileTree';
 import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, type GitFileNode, type GitFileStatus as GitFileStatusType } from './GitFileTree';
 import { MenuContainerProvider } from './FileContextMenu';
 import { CodeViewer } from './CodeViewer';
-import { MarkdownFileViewer, isMarkdownFile } from './MarkdownFileViewer';
+import { isMarkdownFile } from './MarkdownFileViewer';
+import { MarkdownRenderer } from './MarkdownRenderer';
 import { FileIcon } from './FileIcon';
 
 // ============================================================================
@@ -854,6 +855,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const [isLoadingBlame, setIsLoadingBlame] = useState(false);
   const [blameError, setBlameError] = useState<string | null>(null);
   const [blameSelectedCommit, setBlameSelectedCommit] = useState<CommitInfo | null>(null);
+
+  // Markdown 预览 Modal
+  const [showMarkdownPreview, setShowMarkdownPreview] = useState(false);
 
   // ========== Git Status State ==========
   const [status, setStatus] = useState<GitStatusResponse | null>(null);
@@ -1927,27 +1931,40 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               ) : selectedPath ? (
                 <>
                   <div className="px-4 py-2 bg-secondary border-b border-border flex-shrink-0 flex items-center justify-between">
-                    <span className="text-xs font-mono text-muted-foreground">
+                    <span className="text-xs text-muted-foreground truncate">
                       {selectedPath}
                     </span>
-                    {fileContent?.type === 'text' && (
-                      <button
-                        onClick={handleToggleBlame}
-                        disabled={isLoadingBlame}
-                        className={`px-2 py-1 text-xs rounded transition-colors ${
-                          showBlame
-                            ? 'bg-brand text-white'
-                            : 'text-muted-foreground hover:bg-accent'
-                        } disabled:opacity-50`}
-                        title="查看每行代码的修改记录"
-                      >
-                        {isLoadingBlame ? (
-                          <span className="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          'Blame'
-                        )}
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {/* Markdown 预览按钮 */}
+                      {fileContent?.type === 'text' && isMarkdownFile(selectedPath) && (
+                        <button
+                          onClick={() => setShowMarkdownPreview(true)}
+                          className="px-2 py-1 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
+                          title="预览 Markdown 渲染效果"
+                        >
+                          预览
+                        </button>
+                      )}
+                      {/* Blame 按钮 */}
+                      {fileContent?.type === 'text' && (
+                        <button
+                          onClick={handleToggleBlame}
+                          disabled={isLoadingBlame}
+                          className={`px-2 py-1 text-xs rounded transition-colors ${
+                            showBlame
+                              ? 'bg-brand text-white'
+                              : 'text-muted-foreground hover:bg-accent'
+                          } disabled:opacity-50`}
+                          title="查看每行代码的修改记录"
+                        >
+                          {isLoadingBlame ? (
+                            <span className="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            'Blame'
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="flex-1 overflow-hidden">
                     {isLoadingContent ? (
@@ -1976,8 +1993,6 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                             </div>
                           )
-                        ) : isMarkdownFile(selectedPath) ? (
-                          <MarkdownFileViewer content={fileContent.content} filePath={selectedPath} className="h-full" />
                         ) : (
                           <CodeViewer content={fileContent.content} filePath={selectedPath} cwd={cwd} enableComments={true} />
                         )
@@ -2081,6 +2096,34 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
             )}
           </div>
         </div>
+
+        {/* Markdown 预览 Modal */}
+        {showMarkdownPreview && fileContent?.type === 'text' && selectedPath && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowMarkdownPreview(false)}>
+            <div
+              className="bg-card rounded-lg shadow-xl w-full max-w-[70%] h-full flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
+                <span className="text-sm font-medium text-foreground truncate">{selectedPath}</span>
+                <button
+                  onClick={() => setShowMarkdownPreview(false)}
+                  className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                  title="关闭"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              {/* Modal Content */}
+              <div className="flex-1 overflow-auto p-6">
+                <MarkdownRenderer content={fileContent.content} />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </MenuContainerProvider>
   );

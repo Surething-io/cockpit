@@ -9,7 +9,6 @@ import { BrowserView } from './BrowserView';
 import { SettingsModal } from './SettingsModal';
 import { GitWorktreeModal } from './GitWorktreeModal';
 import { Tooltip } from './Tooltip';
-import { SwipeablePages } from './SwipeablePages';
 import { ChatProvider } from './ChatContext';
 import { GlobalSessionMonitor } from './GlobalSessionMonitor';
 import { ServicePanel } from './ServicePanel';
@@ -150,8 +149,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const [fileBrowserInitialTab, setFileBrowserInitialTab] = useState<'tree' | 'recent' | 'status' | 'history'>('tree');
   // 用于强制触发 tab 切换（解决重复点击同一 tab 时 useEffect 不触发的问题）
   const [tabSwitchTrigger, setTabSwitchTrigger] = useState(0);
-  // 双屏滑动状态：0 = Chat, 1 = FileBrowser
-  const [currentPage, setCurrentPage] = useState(0);
+  // 视图切换状态：agent (Chat), explorer (FileBrowser), browser (BrowserView)
+  const [activeView, setActiveView] = useState<'agent' | 'explorer' | 'browser'>('agent');
 
   // 添加新标签页
   const addTab = useCallback((cwd?: string, sessionId?: string, title?: string) => {
@@ -264,11 +263,31 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     return () => clearInterval(timer);
   }, [initialCwd]);
 
-  // Header 组件，用于第一屏内部
-  const Header = (
+  // 键盘快捷键：Cmd+1/2/3 切换视图
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+        if (e.key === '1') {
+          e.preventDefault();
+          setActiveView('agent');
+        } else if (e.key === '2') {
+          e.preventDefault();
+          setActiveView('explorer');
+        } else if (e.key === '3') {
+          e.preventDefault();
+          setActiveView('browser');
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Top bar 组件（主标题栏，始终显示）
+  const TopBar = (
     <div className="border-b border-border bg-card shrink-0">
-      {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-2">
+      <div className="flex items-center justify-between px-4 py-2 relative">
         {/* 左侧：Logo + 项目路径 + Git 分支 */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
@@ -300,6 +319,41 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
             </button>
           )}
         </div>
+
+        {/* 中间：视图切换按钮 - 绝对定位居中 */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex gap-4">
+          <button
+            onClick={() => setActiveView('agent')}
+            className={`px-4 py-1 text-sm font-medium transition-colors ${
+              activeView === 'agent'
+                ? 'border-b-2 border-brand text-brand'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            AGENT
+          </button>
+          <button
+            onClick={() => setActiveView('explorer')}
+            className={`px-4 py-1 text-sm font-medium transition-colors ${
+              activeView === 'explorer'
+                ? 'border-b-2 border-brand text-brand'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            EXPLORER
+          </button>
+          <button
+            onClick={() => setActiveView('browser')}
+            className={`px-4 py-1 text-sm font-medium transition-colors ${
+              activeView === 'browser'
+                ? 'border-b-2 border-brand text-brand'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            BROWSER
+          </button>
+        </div>
+
         {/* 右侧：会话相关 + 设置 */}
         <div className="flex items-center gap-2">
           {/* 全局会话监控（运行中的会话） */}
@@ -376,8 +430,12 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           </button>
         </div>
       </div>
+    </div>
+  );
 
-      {/* Tab bar */}
+  // Tab bar 组件（标签页，仅在 AGENT 视图显示）
+  const TabBar = (
+    <div className="border-b border-border bg-card shrink-0">
       <div className="flex items-center px-2 gap-1 overflow-x-auto">
         {tabs.map((tab) => (
           <Tooltip key={tab.id} content={tab.title} delay={200}>
@@ -429,15 +487,15 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     <div className="flex h-screen bg-card">
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* 三屏滑动布局 */}
+        {/* Top bar - 始终显示 */}
+        {TopBar}
+
+        {/* 内容区域 - 根据 activeView 切换 */}
         {initialCwd ? (
-          <SwipeablePages
-            currentPage={currentPage}
-            onPageChange={setCurrentPage}
-          >
-            {/* 第一屏：Header + Chat */}
-            <div className="h-full flex flex-col overflow-hidden">
-              {Header}
+          <div className="flex-1 overflow-hidden">
+            {/* AGENT 视图：Tab bar + Chat */}
+            <div className={`h-full flex flex-col ${activeView === 'agent' ? '' : 'hidden'}`}>
+              {TabBar}
               <div className="flex-1 overflow-hidden relative">
                 {tabs.map((tab) => (
                   <div
@@ -453,7 +511,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                       onShowGitStatus={() => {
                         setFileBrowserInitialTab('status');
                         setTabSwitchTrigger(n => n + 1);
-                        setCurrentPage(1);
+                        setActiveView('explorer');
                       }}
                     />
                   </div>
@@ -461,21 +519,25 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               </div>
             </div>
 
-            {/* 第二屏：FileBrowser */}
-            <FileBrowserModal
-              onClose={() => setCurrentPage(0)}
-              cwd={initialCwd}
-              initialTab={fileBrowserInitialTab}
-              tabSwitchTrigger={tabSwitchTrigger}
-            />
+            {/* EXPLORER 视图：FileBrowser */}
+            <div className={`h-full ${activeView === 'explorer' ? '' : 'hidden'}`}>
+              <FileBrowserModal
+                onClose={() => setActiveView('agent')}
+                cwd={initialCwd}
+                initialTab={fileBrowserInitialTab}
+                tabSwitchTrigger={tabSwitchTrigger}
+              />
+            </div>
 
-            {/* 第三屏：BrowserView */}
-            <BrowserView cwd={initialCwd} openUrl={browserOpenUrl} />
-          </SwipeablePages>
+            {/* BROWSER 视图：BrowserView */}
+            <div className={`h-full ${activeView === 'browser' ? '' : 'hidden'}`}>
+              <BrowserView cwd={initialCwd} openUrl={browserOpenUrl} />
+            </div>
+          </div>
         ) : (
-          /* 无 cwd 时，只显示 Header + Chat */
+          /* 无 cwd 时，只显示 Tab bar + Chat */
           <div className="flex-1 flex flex-col overflow-hidden">
-            {Header}
+            {TabBar}
             <div className="flex-1 overflow-hidden relative">
               {tabs.map((tab) => (
                 <div
@@ -536,8 +598,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         onOpenBrowser={(url) => {
           // 关闭服务面板
           setIsServicePanelOpen(false);
-          // 跳转到第三屏
-          setCurrentPage(2);
+          // 切换到 BROWSER 视图
+          setActiveView('browser');
           // 传递 URL 给 BrowserView
           setBrowserOpenUrl(url);
         }}

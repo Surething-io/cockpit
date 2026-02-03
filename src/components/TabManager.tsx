@@ -12,6 +12,7 @@ import { Tooltip } from './Tooltip';
 import { SwipeablePages } from './SwipeablePages';
 import { ChatProvider } from './ChatContext';
 import { GlobalSessionMonitor } from './GlobalSessionMonitor';
+import { ServicePanel } from './ServicePanel';
 
 interface TabInfo {
   id: string;
@@ -141,6 +142,9 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isWorktreeOpen, setIsWorktreeOpen] = useState(false);
+  const [isServicePanelOpen, setIsServicePanelOpen] = useState(false);
+  const [runningServicesCount, setRunningServicesCount] = useState(0);
+  const [browserOpenUrl, setBrowserOpenUrl] = useState<string | undefined>(undefined);
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [isGitRepo, setIsGitRepo] = useState(false);
   const [fileBrowserInitialTab, setFileBrowserInitialTab] = useState<'tree' | 'recent' | 'status' | 'history'>('tree');
@@ -236,6 +240,30 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     loadGitInfo();
   }, [initialCwd]);
 
+  // 轮询运行中的服务数量（每3秒）
+  useEffect(() => {
+    if (!initialCwd) return;
+
+    const loadServicesCount = async () => {
+      try {
+        const res = await fetch(`/api/services/status?cwd=${encodeURIComponent(initialCwd)}`);
+        if (res.ok) {
+          const data = await res.json();
+          // 只统计当前项目的服务数量
+          const count = data.filter((s: { cwd: string }) => s.cwd === initialCwd).length;
+          setRunningServicesCount(count);
+        }
+      } catch (error) {
+        console.error('Failed to load services count:', error);
+      }
+    };
+
+    loadServicesCount();
+    const timer = setInterval(loadServicesCount, 3000);
+
+    return () => clearInterval(timer);
+  }, [initialCwd]);
+
   // Header 组件，用于第一屏内部
   const Header = (
     <div className="border-b border-border bg-card shrink-0">
@@ -319,6 +347,21 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
               <path d="M4.5 2L20.5 12L4.5 22V2Z" />
             </svg>
+          </button>
+          {/* 后台服务按钮 */}
+          <button
+            onClick={() => setIsServicePanelOpen(true)}
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors relative"
+            title="后台服务"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+            </svg>
+            {runningServicesCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-9 text-white text-xs font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                {runningServicesCount}
+              </span>
+            )}
           </button>
           {/* 设置按钮 */}
           <button
@@ -427,7 +470,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
             />
 
             {/* 第三屏：BrowserView */}
-            <BrowserView cwd={initialCwd} />
+            <BrowserView cwd={initialCwd} openUrl={browserOpenUrl} />
           </SwipeablePages>
         ) : (
           /* 无 cwd 时，只显示 Header + Chat */
@@ -484,6 +527,21 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           cwd={initialCwd}
         />
       )}
+
+      {/* Service Panel */}
+      <ServicePanel
+        isOpen={isServicePanelOpen}
+        onClose={() => setIsServicePanelOpen(false)}
+        initialCwd={initialCwd}
+        onOpenBrowser={(url) => {
+          // 关闭服务面板
+          setIsServicePanelOpen(false);
+          // 跳转到第三屏
+          setCurrentPage(2);
+          // 传递 URL 给 BrowserView
+          setBrowserOpenUrl(url);
+        }}
+      />
     </div>
     </ChatProvider>
   );

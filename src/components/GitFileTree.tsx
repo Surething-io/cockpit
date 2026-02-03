@@ -91,7 +91,7 @@ const GitFileTreeItem = React.memo(function GitFileTreeItem({
     return (
       <div>
         <div
-          className="flex items-center gap-1 py-0.5 px-2 hover:bg-accent cursor-pointer whitespace-nowrap"
+          className="flex items-center gap-1 py-0.5 px-2 pr-3 hover:bg-accent cursor-pointer whitespace-nowrap group"
           style={{ paddingLeft: `${level * 12 + 8}px` }}
           onClick={handleClick}
           onContextMenu={handleContextMenu}
@@ -99,7 +99,8 @@ const GitFileTreeItem = React.memo(function GitFileTreeItem({
           <span className="text-slate-9 text-xs">
             {isExpanded ? '▼' : '▶'}
           </span>
-          <span className="text-sm text-foreground">{node.name}</span>
+          <span className="text-sm text-foreground flex-1">{node.name}</span>
+          {renderActions && renderActions(node)}
         </div>
         {isExpanded && node.children.map(child => (
           <GitFileTreeItem
@@ -291,4 +292,20 @@ export function collectGitTreeDirPaths<T>(nodes: GitFileNode<T>[]): string[] {
   };
   traverse(nodes);
   return paths;
+}
+
+// Collect all file paths under a directory node (recursive)
+export function collectFilesUnderNode<T>(node: GitFileNode<T>): GitFileNode<T>[] {
+  const files: GitFileNode<T>[] = [];
+  const traverse = (n: GitFileNode<T>) => {
+    if (n.isDirectory) {
+      for (const child of n.children) {
+        traverse(child);
+      }
+    } else {
+      files.push(n);
+    }
+  };
+  traverse(node);
+  return files;
 }

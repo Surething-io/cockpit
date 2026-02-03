@@ -58,7 +58,7 @@ function MultipleToastsDemo() {
   );
 }
 
-const meta = {
+const meta: Meta<typeof ToastProvider> = {
   title: 'Components/Toast',
   component: ToastProvider,
   parameters: {
@@ -71,10 +71,10 @@ const meta = {
       </ToastProvider>
     ),
   ],
-} satisfies Meta<typeof ToastProvider>;
+};
 
 export default meta;
-type Story = StoryObj<typeof meta>;
+type Story = StoryObj<typeof ToastProvider>;
 
 export const Success: Story = {
   render: () => <AutoShowDemo type="success" message="操作成功！" />,

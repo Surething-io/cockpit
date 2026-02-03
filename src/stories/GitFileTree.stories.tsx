@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { GitFileTree, buildGitFileTree, type GitFileNode, type GitFileStatus } from '@/components/GitFileTree';
 import { ToastProvider } from '@/components/Toast';
 
-const meta = {
+const meta: Meta<typeof GitFileTree> = {
   title: 'Components/GitFileTree',
   component: GitFileTree,
   parameters: {
@@ -18,10 +18,10 @@ const meta = {
       </ToastProvider>
     ),
   ],
-} satisfies Meta<typeof GitFileTree>;
+};
 
 export default meta;
-type Story = StoryObj<typeof meta>;
+type Story = StoryObj<typeof GitFileTree>;
 
 // Mock git file changes
 interface MockFileChange {
@@ -143,14 +143,28 @@ export const UntrackedFiles: Story = {
 };
 
 export const Empty: Story = {
-  args: {
-    files: [],
-    selectedPath: null,
-    expandedPaths: new Set(),
-    onSelect: () => {},
-    onToggle: () => {},
-    cwd: '/Users/demo/project',
-    emptyMessage: '没有文件变更',
+  render: () => {
+    const [selectedPath, setSelectedPath] = useState<string | null>(null);
+    const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+
+    return (
+      <GitFileTree
+        files={[]}
+        selectedPath={selectedPath}
+        expandedPaths={expandedPaths}
+        onSelect={(node) => setSelectedPath(node.path)}
+        onToggle={(path) => {
+          setExpandedPaths(prev => {
+            const next = new Set(prev);
+            if (next.has(path)) next.delete(path);
+            else next.add(path);
+            return next;
+          });
+        }}
+        cwd="/Users/demo/project"
+        emptyMessage="没有文件变更"
+      />
+    );
   },
 };
 

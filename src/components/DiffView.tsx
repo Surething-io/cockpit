@@ -8,6 +8,7 @@ import { useComments, type CodeComment } from '@/hooks/useComments';
 import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, type CodeReference } from '@/hooks/useAllComments';
 import { useMenuContainer } from './FileContextMenu';
 import { useChatContextOptional } from './ChatContext';
+import { AddCommentInput, SendToAIInput } from './CodeInputCards';
 
 // ============================================
 // Types
@@ -330,74 +331,6 @@ function FloatingToolbar({ x, y, container, onAddComment, onSendToAI, isChatLoad
   );
 }
 
-interface SendToAIInputProps {
-  x: number;
-  y: number;
-  range: { start: number; end: number };
-  container?: HTMLElement | null;
-  onSubmit: (question: string) => void;
-  onClose: () => void;
-}
-
-function SendToAIInput({ x, y, range, container, onSubmit, onClose }: SendToAIInputProps) {
-  const [content, setContent] = useState('');
-  const cardRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-
-  useEffect(() => {
-    if (cardRef.current && container) {
-      const containerRect = container.getBoundingClientRect();
-      const cardRect = cardRef.current.getBoundingClientRect();
-      let relX = x - containerRect.left;
-      let relY = y - containerRect.top;
-      if (relX + cardRect.width > containerRect.width - 16) relX = containerRect.width - cardRect.width - 16;
-      if (relX < 16) relX = 16;
-      if (relY + cardRect.height > containerRect.height - 16) relY = relY - cardRect.height - 8;
-      if (relY < 16) relY = 16;
-      setPosition({ x: relX, y: relY });
-    }
-  }, [x, y, container]);
-
-  useEffect(() => { textareaRef.current?.focus(); }, []);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (cardRef.current && !cardRef.current.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose]);
-
-  const handleSubmit = () => {
-    onSubmit(content);
-  };
-
-  return (
-    <div ref={cardRef} className="absolute z-[200] w-80 bg-card border border-border rounded-lg shadow-lg overflow-hidden" style={{ left: position.x, top: position.y }}>
-      <div className="px-3 py-2 bg-secondary border-b border-border">
-        <span className="text-xs text-brand font-medium">发送到 AI</span>
-        <span className="text-xs text-muted-foreground ml-2">行 {range.start}-{range.end}</span>
-      </div>
-      <div className="p-2">
-        <textarea
-          ref={textareaRef}
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="输入你的问题..."
-          className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card resize-none focus:outline-none focus:ring-1 focus:ring-ring"
-          rows={2}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSubmit(); }
-            if (e.key === 'Escape') onClose();
-          }}
-        />
-        <div className="mt-1 text-xs text-muted-foreground">Enter 发送 · Shift+Enter 换行</div>
-      </div>
-    </div>
-  );
-}
-
 interface ViewCommentCardProps {
   x: number;
   y: number;
@@ -508,71 +441,6 @@ function ViewCommentCard({
   );
 }
 
-interface AddCommentInputProps {
-  x: number;
-  y: number;
-  range: { start: number; end: number };
-  container?: HTMLElement | null;
-  onSubmit: (content: string) => void;
-  onClose: () => void;
-}
-
-function AddCommentInput({ x, y, range, container, onSubmit, onClose }: AddCommentInputProps) {
-  const [content, setContent] = useState('');
-  const cardRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-
-  useEffect(() => {
-    if (cardRef.current && container) {
-      const containerRect = container.getBoundingClientRect();
-      const cardRect = cardRef.current.getBoundingClientRect();
-      let relX = x - containerRect.left;
-      let relY = y - containerRect.top;
-      if (relX + cardRect.width > containerRect.width - 16) relX = containerRect.width - cardRect.width - 16;
-      if (relX < 16) relX = 16;
-      if (relY + cardRect.height > containerRect.height - 16) relY = relY - cardRect.height - 8;
-      if (relY < 16) relY = 16;
-      setPosition({ x: relX, y: relY });
-    }
-  }, [x, y, container]);
-
-  useEffect(() => { textareaRef.current?.focus(); }, []);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (cardRef.current && !cardRef.current.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose]);
-
-  const handleSubmit = () => { onSubmit(content.trim()); };
-
-  return (
-    <div ref={cardRef} className="absolute z-[200] w-80 bg-card border border-border rounded-lg shadow-lg overflow-hidden" style={{ left: position.x, top: position.y }}>
-      <div className="px-3 py-2 bg-secondary border-b border-border">
-        <span className="text-xs text-muted-foreground">行 {range.start}-{range.end}</span>
-      </div>
-      <div className="p-2">
-        <textarea
-          ref={textareaRef}
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="输入评论..."
-          className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card resize-none focus:outline-none focus:ring-1 focus:ring-ring"
-          rows={2}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSubmit(); }
-            if (e.key === 'Escape') onClose();
-          }}
-        />
-        <div className="mt-1 text-xs text-muted-foreground">Enter 提交 · Shift+Enter 换行</div>
-      </div>
-    </div>
-  );
-}
-
 // ============================================
 // Main DiffView Component (Split View)
 // ============================================
@@ -614,6 +482,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
     x: number;
     y: number;
     range: { start: number; end: number };
+    codeContent: string;
   } | null>(null);
 
   const [sendToAIInput, setSendToAIInput] = useState<{
@@ -721,7 +590,12 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
 
   const handleToolbarAddComment = useCallback(() => {
     if (!floatingToolbar) return;
-    setAddCommentInput({ x: floatingToolbar.x, y: floatingToolbar.y, range: floatingToolbar.range });
+    setAddCommentInput({
+      x: floatingToolbar.x,
+      y: floatingToolbar.y,
+      range: floatingToolbar.range,
+      codeContent: floatingToolbar.codeContent,
+    });
     setFloatingToolbar(null);
     // 不清除文本选择，保留高亮显示选中的行
   }, [floatingToolbar]);
@@ -985,6 +859,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
               x={addCommentInput.x}
               y={addCommentInput.y}
               range={addCommentInput.range}
+              codeContent={addCommentInput.codeContent}
               container={menuContainer}
               onSubmit={handleCommentSubmit}
               onClose={() => setAddCommentInput(null)}

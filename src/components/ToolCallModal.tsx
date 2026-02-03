@@ -6,6 +6,7 @@ import { ToolCallInfo } from '@/types/chat';
 import { DiffView, DiffUnifiedView } from './DiffView';
 import { CodeViewer } from './CodeViewer';
 import { MarkdownFileViewer, isMarkdownFile } from './MarkdownFileViewer';
+import { toast } from './Toast';
 
 // 检查是否是有效的 JSON
 function isValidJson(content: string): boolean {
@@ -288,7 +289,23 @@ function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) 
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h3 className="text-sm font-medium text-foreground">{title}</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-medium text-foreground">{title}</h3>
+            {filePath && (
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(filePath);
+                  toast('已复制路径');
+                }}
+                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                title="复制绝对路径"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-3">
             {/* 视图模式切换 */}
             {isJson && (
@@ -456,12 +473,40 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
           {toolCall.name}
         </span>
         {displayPath && (
-          <span
-            className="text-xs text-muted-foreground truncate flex-1 min-w-0"
-            title={displayInfo || ''}
-          >
-            {displayPath}
-          </span>
+          <>
+            <span
+              className="text-xs text-muted-foreground truncate flex-1 min-w-0"
+              title={displayInfo || ''}
+            >
+              {displayPath}
+            </span>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (displayInfo) {
+                  navigator.clipboard.writeText(displayInfo);
+                  toast('已复制路径');
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.stopPropagation();
+                  if (displayInfo) {
+                    navigator.clipboard.writeText(displayInfo);
+                    toast('已复制路径');
+                  }
+                }
+              }}
+              className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0 cursor-pointer"
+              title="复制绝对路径"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </span>
+          </>
         )}
         {toolCall.isLoading && (
           <span className="ml-auto">

@@ -9,6 +9,7 @@ const withPWA = withPWAInit({
 });
 
 const nextConfig: NextConfig = {
+  // 空配置以兼容 next-pwa 的 webpack 配置
   turbopack: {},
 };
 

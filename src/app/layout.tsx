@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Lora, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { ThemeProvider } from "@/components/ThemeProvider";
+import { Providers } from "@/components/Providers";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -53,9 +53,9 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${lora.variable} ${jetbrainsMono.variable} antialiased`}
       >
-        <ThemeProvider>
+        <Providers>
           {children}
-        </ThemeProvider>
+        </Providers>
       </body>
     </html>
   );

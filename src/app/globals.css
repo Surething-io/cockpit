@@ -235,6 +235,8 @@ body {
   color: hsl(var(--foreground));
   /* 直接使用 --font-inter 变量（由 Next.js font 在 body 上定义）*/
   font-family: var(--font-inter), "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* 禁用浏览器默认的双指滑动前进后退 */
+  overscroll-behavior-x: none;
 }
 
 /* ---- 滚动条样式 ---- */

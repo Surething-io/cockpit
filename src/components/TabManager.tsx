@@ -12,6 +12,7 @@ import { Tooltip } from './Tooltip';
 import { ChatProvider } from './ChatContext';
 import { GlobalSessionMonitor } from './GlobalSessionMonitor';
 import { ServicePanel } from './ServicePanel';
+import { SwipeableViewContainer, SwipeableContent, ViewSwitcherBar, type ViewType } from './SwipeableViewContainer';
 
 interface TabInfo {
   id: string;
@@ -150,7 +151,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   // 用于强制触发 tab 切换（解决重复点击同一 tab 时 useEffect 不触发的问题）
   const [tabSwitchTrigger, setTabSwitchTrigger] = useState(0);
   // 视图切换状态：agent (Chat), explorer (FileBrowser), browser (BrowserView)
-  const [activeView, setActiveView] = useState<'agent' | 'explorer' | 'browser'>('agent');
+  const [activeView, setActiveView] = useState<ViewType>('agent');
 
   // 添加新标签页
   const addTab = useCallback((cwd?: string, sessionId?: string, title?: string) => {
@@ -321,37 +322,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         </div>
 
         {/* 中间：视图切换按钮 - 绝对定位居中 */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex gap-4">
-          <button
-            onClick={() => setActiveView('agent')}
-            className={`px-4 py-1 text-sm font-medium transition-colors ${
-              activeView === 'agent'
-                ? 'border-b-2 border-brand text-brand'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            AGENT
-          </button>
-          <button
-            onClick={() => setActiveView('explorer')}
-            className={`px-4 py-1 text-sm font-medium transition-colors ${
-              activeView === 'explorer'
-                ? 'border-b-2 border-brand text-brand'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            EXPLORER
-          </button>
-          <button
-            onClick={() => setActiveView('browser')}
-            className={`px-4 py-1 text-sm font-medium transition-colors ${
-              activeView === 'browser'
-                ? 'border-b-2 border-brand text-brand'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            BROWSER
-          </button>
+        <div className="absolute left-1/2 -translate-x-1/2">
+          <ViewSwitcherBar />
         </div>
 
         {/* 右侧：会话相关 + 设置 */}
@@ -484,17 +456,18 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
 
   return (
     <ChatProvider>
+    <SwipeableViewContainer activeView={activeView} onViewChange={setActiveView}>
     <div className="flex h-screen bg-card">
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar - 始终显示 */}
         {TopBar}
 
-        {/* 内容区域 - 根据 activeView 切换 */}
+        {/* 内容区域 - 根据 activeView 切换（滑动效果） */}
         {initialCwd ? (
-          <div className="flex-1 overflow-hidden">
+          <SwipeableContent>
             {/* AGENT 视图：Tab bar + Chat */}
-            <div className={`h-full flex flex-col ${activeView === 'agent' ? '' : 'hidden'}`}>
+            <div className="w-1/3 h-full flex flex-col overflow-hidden">
               {TabBar}
               <div className="flex-1 overflow-hidden relative">
                 {tabs.map((tab) => (
@@ -506,7 +479,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                       tabId={tab.id}
                       cwd={tab.cwd}
                       sessionId={tab.sessionId}
-                      isActive={tab.id === activeTabId}
+                      isActive={tab.id === activeTabId && activeView === 'agent'}
                       onStateChange={updateTabState}
                       onShowGitStatus={() => {
                         setFileBrowserInitialTab('status');
@@ -520,7 +493,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
             </div>
 
             {/* EXPLORER 视图：FileBrowser */}
-            <div className={`h-full ${activeView === 'explorer' ? '' : 'hidden'}`}>
+            <div className="w-1/3 h-full overflow-hidden">
               <FileBrowserModal
                 onClose={() => setActiveView('agent')}
                 cwd={initialCwd}
@@ -530,12 +503,12 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
             </div>
 
             {/* BROWSER 视图：BrowserView */}
-            <div className={`h-full ${activeView === 'browser' ? '' : 'hidden'}`}>
+            <div className="w-1/3 h-full overflow-hidden">
               <BrowserView cwd={initialCwd} openUrl={browserOpenUrl} />
             </div>
-          </div>
+          </SwipeableContent>
         ) : (
-          /* 无 cwd 时，只显示 Tab bar + Chat */
+          /* 无 cwd 时，只显示 Tab bar + Chat（不需要滑动） */
           <div className="flex-1 flex flex-col overflow-hidden">
             {TabBar}
             <div className="flex-1 overflow-hidden relative">
@@ -605,6 +578,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         }}
       />
     </div>
+    </SwipeableViewContainer>
     </ChatProvider>
   );
 }

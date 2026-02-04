@@ -8,6 +8,7 @@ interface GlobalSession {
   lastActive: number;
   isLoading: boolean;
   title?: string;
+  lastUserMessage?: string;
 }
 
 interface GlobalState {
@@ -116,14 +117,89 @@ export async function getSessionTitle(cwd: string, sessionId: string): Promise<s
 }
 
 /**
- * 过滤掉消息中的命令标签
+ * 从 transcript 文件获取最后一条用户消息
+ */
+export async function getLastUserMessage(cwd: string, sessionId: string): Promise<string | undefined> {
+  const filePath = getClaudeSessionPath(cwd, sessionId);
+
+  if (!existsSync(filePath)) {
+    return undefined;
+  }
+
+  try {
+    const fileStream = createReadStream(filePath);
+    const rl = createInterface({
+      input: fileStream,
+      crlfDelay: Infinity,
+    });
+
+    let lastUserMessage: string | undefined;
+
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+
+      try {
+        const entry = JSON.parse(line);
+
+        // 提取 user 消息文本
+        if (entry.type === 'user') {
+          const message = entry.message;
+          if (message?.content) {
+            let text = '';
+            if (typeof message.content === 'string') {
+              text = message.content;
+            } else if (Array.isArray(message.content)) {
+              for (const block of message.content) {
+                if (block.type === 'text' && block.text) {
+                  text = block.text;
+                  break; // 只取第一个文本块
+                }
+              }
+            }
+            if (text) {
+              // 过滤命令标签
+              const filtered = filterCommandTags(text);
+              // 检查是否是有效的用户消息
+              if (filtered && isValidUserMessage(filtered)) {
+                lastUserMessage = filtered;
+              }
+            }
+          }
+        }
+      } catch {
+        // 忽略解析错误
+      }
+    }
+
+    return lastUserMessage;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 过滤掉消息中的命令和系统标签
  */
 function filterCommandTags(text: string): string {
   // 移除 <command-*> 标签及其内容
   let filtered = text.replace(/<command-[^>]*>[\s\S]*?<\/command-[^>]*>/g, '');
+  // 移除 <local-command-*> 标签及其内容
+  filtered = filtered.replace(/<local-command-[^>]*>[\s\S]*?<\/local-command-[^>]*>/g, '');
   // 移除多余空白
   filtered = filtered.trim();
   return filtered;
+}
+
+/**
+ * 检查消息是否是有效的用户消息（非系统消息）
+ */
+function isValidUserMessage(text: string): boolean {
+  // 过滤掉系统上下文消息
+  if (text.startsWith('This session is being continued')) return false;
+  if (text.startsWith('Caveat: The messages below')) return false;
+  // 过滤空消息
+  if (!text.trim()) return false;
+  return true;
 }
 
 /**

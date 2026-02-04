@@ -1,6 +1,9 @@
 import { Metadata } from 'next';
 import { TabManager } from '@/components/TabManager';
 
+// 禁用静态预渲染，改为动态渲染（解决 SSR hooks 问题）
+export const dynamic = 'force-dynamic';
+
 interface HomeProps {
   searchParams: Promise<{ cwd?: string; sessionId?: string }>;
 }

@@ -9,6 +9,7 @@ interface GlobalSession {
   lastActive: number;
   isLoading: boolean;
   title?: string;
+  lastUserMessage?: string;
 }
 
 interface GlobalSessionMonitorProps {
@@ -225,9 +226,9 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchSession }: GlobalSess
                         {formatTime(session.lastActive)}
                       </span>
                     </div>
-                    {session.title && (
+                    {(session.lastUserMessage || session.title) && (
                       <div className="text-xs text-foreground/80 truncate">
-                        {session.title}
+                        {session.lastUserMessage || session.title}
                       </div>
                     )}
                   </div>

@@ -169,6 +169,7 @@ export function SwipeableViewContainer({ activeView, onViewChange, children }: S
 
   // 计算下划线偏移量（-1 到 1 范围，用于 ViewSwitcherBar）
   const getUnderlineOffset = () => {
+    if (typeof window === 'undefined') return 0;
     const pageWidth = window.innerWidth;
     return dragOffsetPx / pageWidth;
   };

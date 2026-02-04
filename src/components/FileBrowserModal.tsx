@@ -128,6 +128,36 @@ interface SearchResponse {
 // Utility Functions
 // ============================================================================
 
+/**
+ * 递归查找文件节点
+ */
+function findNodeByPath(nodes: FileNode[], path: string): FileNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node;
+    if (node.children) {
+      const found = findNodeByPath(node.children, path);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * 获取目标目录路径（用于新建文件/文件夹）
+ * 如果选中的是目录，返回该目录路径
+ * 如果选中的是文件，返回其父目录路径
+ * 如果没有选中，返回空字符串（根目录）
+ */
+function getTargetDirPath(selectedPath: string | null, files: FileNode[]): string {
+  if (!selectedPath) return '';
+  const node = findNodeByPath(files, selectedPath);
+  if (node?.isDirectory) return selectedPath;
+  // 文件的父目录
+  const parts = selectedPath.split('/');
+  parts.pop();
+  return parts.join('/');
+}
+
 function buildTreeFromPaths(filePaths: string[]): FileNode[] {
   const root: FileNode[] = [];
 
@@ -863,6 +893,8 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+  // 新建文件/文件夹状态
+  const [creatingItem, setCreatingItem] = useState<{ type: 'file' | 'folder'; parentPath: string } | null>(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [isLoadingContent, setIsLoadingContent] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -1886,15 +1918,64 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
             {/* Tab-specific content above list */}
             {activeTab === 'tree' && (
-              <div className="p-2 border-b border-border">
+              <div className="p-2 border-b border-border flex items-center gap-2">
                 <input
                   ref={searchInputRef}
                   type="text"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   placeholder="搜索文件..."
-                  className="w-full px-3 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="flex-1 px-3 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring"
                 />
+                {/* 功能按钮组 */}
+                <div className="flex items-center gap-0.5">
+                  {/* 新建文件 */}
+                  <button
+                    onClick={() => {
+                      const targetDir = getTargetDirPath(selectedPath, files);
+                      setCreatingItem({ type: 'file', parentPath: targetDir });
+                    }}
+                    className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                    title="新建文件"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </button>
+                  {/* 新建文件夹 */}
+                  <button
+                    onClick={() => {
+                      const targetDir = getTargetDirPath(selectedPath, files);
+                      setCreatingItem({ type: 'folder', parentPath: targetDir });
+                    }}
+                    className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                    title="新建文件夹"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                    </svg>
+                  </button>
+                  {/* 刷新 */}
+                  <button
+                    onClick={() => loadFiles()}
+                    className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                    title="刷新目录树"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+                  {/* 折叠所有 */}
+                  <button
+                    onClick={() => setExpandedPaths(new Set())}
+                    className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                    title="折叠所有目录"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1976,6 +2057,57 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
             <div className="flex-1 overflow-hidden flex flex-col">
               {/* Tree Tab */}
               <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'tree' ? '' : 'hidden'}`}>
+                {/* 新建文件/文件夹输入框 */}
+                {creatingItem && (
+                  <div className="px-2 py-1.5 border-b border-border bg-secondary flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {creatingItem.type === 'file' ? '新建文件' : '新建文件夹'}
+                      {creatingItem.parentPath && ` (在 ${creatingItem.parentPath}/)`}
+                    </span>
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder={creatingItem.type === 'file' ? '文件名...' : '文件夹名...'}
+                      className="flex-1 px-2 py-1 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      onKeyDown={async (e) => {
+                        if (e.key === 'Enter') {
+                          const name = (e.target as HTMLInputElement).value.trim();
+                          if (!name) return;
+                          const fullPath = creatingItem.parentPath ? `${creatingItem.parentPath}/${name}` : name;
+                          try {
+                            const res = await fetch('/api/files/save', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                cwd,
+                                path: fullPath,
+                                content: creatingItem.type === 'file' ? '' : null, // null 表示创建文件夹
+                                createDir: creatingItem.type === 'folder',
+                              }),
+                            });
+                            if (res.ok) {
+                              toast(`已创建 ${creatingItem.type === 'file' ? '文件' : '文件夹'}: ${name}`, 'success');
+                              setCreatingItem(null);
+                              loadFiles(); // 刷新目录树
+                              // 如果是文件夹，展开父目录
+                              if (creatingItem.parentPath) {
+                                setExpandedPaths(prev => new Set([...prev, creatingItem.parentPath]));
+                              }
+                            } else {
+                              const data = await res.json();
+                              toast(data.error || '创建失败', 'error');
+                            }
+                          } catch (err) {
+                            toast('创建失败', 'error');
+                          }
+                        } else if (e.key === 'Escape') {
+                          setCreatingItem(null);
+                        }
+                      }}
+                      onBlur={() => setCreatingItem(null)}
+                    />
+                  </div>
+                )}
                 {isLoadingFiles ? (
                   <div className="p-4 text-center text-muted-foreground text-sm">加载中...</div>
                 ) : fileError ? (

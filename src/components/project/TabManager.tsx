@@ -120,21 +120,20 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     });
   }, [tabs, activeTabId, initialCwd]);
 
-  // 切换 Tab 时更新 URL（使用 replaceState 避免产生浏览器历史记录）
+  // 切换 Tab 时通知父级 Workspace（由父级统一更新 URL）
   useEffect(() => {
-    // 初始化过程中不更新 URL
+    // 初始化过程中不通知
     if (isInitializingRef.current || !initialCwd) return;
 
     const activeTab = tabs.find(t => t.id === activeTabId);
-    // 确保 activeTab 存在且有 sessionId
-    // 额外检查：activeTabId 必须存在于当前 tabs 中（避免竞态条件）
-    if (!activeTab) return;
+    if (!activeTab?.sessionId) return;
 
-    if (activeTab.sessionId) {
-      const url = new URL(window.location.href);
-      url.searchParams.set('sessionId', activeTab.sessionId);
-      window.history.replaceState({}, '', url.toString());
-    }
+    // 通知父级 Workspace 更新 sessionId（父级负责更新 URL）
+    window.parent.postMessage({
+      type: 'SESSION_CHANGE',
+      cwd: initialCwd,
+      sessionId: activeTab.sessionId,
+    }, '*');
   }, [activeTabId, tabs, initialCwd]);
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
   const [isWorktreeOpen, setIsWorktreeOpen] = useState(false);

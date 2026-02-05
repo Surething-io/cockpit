@@ -151,6 +151,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   // Tab 拖拽状态
   const [dragTabIndex, setDragTabIndex] = useState<number | null>(null);
   const [dragOverTabIndex, setDragOverTabIndex] = useState<number | null>(null);
+  // 未读 Tab（会话完成但未切换查看）
+  const [unreadTabs, setUnreadTabs] = useState<Set<string>>(new Set());
 
   // 添加新标签页（插入到当前标签的右边）
   const addTab = useCallback((cwd?: string, sessionId?: string, title?: string) => {
@@ -219,12 +221,18 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
 
   // 更新标签页状态（loading、sessionId）
   const updateTabState = useCallback((tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string }) => {
-    setTabs((prev) =>
-      prev.map((tab) =>
+    setTabs((prev) => {
+      const oldTab = prev.find(t => t.id === tabId);
+      // 检测会话完成：从 loading 变为非 loading
+      if (oldTab?.isLoading && updates.isLoading === false && tabId !== activeTabId) {
+        // 非当前 tab 完成，添加未读标记
+        setUnreadTabs(u => new Set(u).add(tabId));
+      }
+      return prev.map((tab) =>
         tab.id === tabId ? { ...tab, ...updates } : tab
-      )
-    );
-  }, []);
+      );
+    });
+  }, [activeTabId]);
 
   // Tab 拖拽排序
   const handleTabDragStart = useCallback((index: number) => {
@@ -477,8 +485,20 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               } ${dragTabIndex === index ? 'opacity-50' : ''} ${
                 dragOverTabIndex === index ? 'border-l-2 border-brand' : ''
               }`}
-              onClick={() => setActiveTabId(tab.id)}
+              onClick={() => {
+                setActiveTabId(tab.id);
+                // 清除未读标记
+                setUnreadTabs(u => {
+                  const next = new Set(u);
+                  next.delete(tab.id);
+                  return next;
+                });
+              }}
             >
+              {/* 未读红点 - 仅在非活跃且有未读时显示 */}
+              {unreadTabs.has(tab.id) && tab.id !== activeTabId && (
+                <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+              )}
               {tab.isLoading && (
                 <span className="inline-block w-3 h-3 border-2 border-brand border-t-transparent rounded-full animate-spin flex-shrink-0" />
               )}

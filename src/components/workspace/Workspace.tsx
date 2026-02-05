@@ -12,7 +12,12 @@ interface ProjectsData {
   collapsed: boolean;
 }
 
-export function Workspace() {
+interface WorkspaceProps {
+  initialCwd?: string;
+  initialSessionId?: string;
+}
+
+export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [collapsed, setCollapsed] = useState(false);
@@ -21,6 +26,10 @@ export function Workspace() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [unreadProjects, setUnreadProjects] = useState<Set<string>>(new Set());
   const iframeRefs = useRef<Map<string, HTMLIFrameElement>>(new Map());
+  // 待发送给 iframe 的 sessionId（iframe 加载完成后发送 SWITCH_SESSION）
+  const pendingSessionIdsRef = useRef<Map<string, string>>(new Map());
+  // 跟踪每个项目当前的 sessionId（用于更新 URL，不用于 iframe src）
+  const projectSessionIdsRef = useRef<Map<string, string>>(new Map());
 
   // 加载项目列表
   const loadProjects = useCallback(async () => {
@@ -61,9 +70,57 @@ export function Workspace() {
     loadProjects();
   }, [loadProjects]);
 
-  // 监听 iframe 发来的 SESSION_COMPLETE 消息
+  // 更新 URL 地址栏的工具函数
+  const updateUrl = useCallback((cwd: string, sessionId?: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('cwd', cwd);
+    if (sessionId) {
+      url.searchParams.set('sessionId', sessionId);
+    } else {
+      url.searchParams.delete('sessionId');
+    }
+    window.history.replaceState({}, '', url.toString());
+  }, []);
+
+  // 处理 URL 参数中的 cwd 和 sessionId
+  const hasHandledInitialRef = useRef(false);
+  useEffect(() => {
+    if (!isLoaded || hasHandledInitialRef.current || !initialCwd) return;
+    hasHandledInitialRef.current = true;
+
+    // 如果有 initialSessionId，记录到待发送列表和跟踪列表
+    if (initialSessionId) {
+      pendingSessionIdsRef.current.set(initialCwd, initialSessionId);
+      projectSessionIdsRef.current.set(initialCwd, initialSessionId);
+    }
+
+    // 检查项目是否已存在
+    const existingIndex = projects.findIndex(p => p.cwd === initialCwd);
+
+    if (existingIndex >= 0) {
+      // 项目已存在，切换到该项目
+      if (existingIndex !== activeIndex) {
+        setActiveIndex(existingIndex);
+        saveProjects(projects, existingIndex, collapsed);
+      }
+    } else {
+      // 新项目，添加到列表
+      const newProject: ProjectInfo = { cwd: initialCwd };
+      const newProjects = [...projects, newProject];
+      const newActiveIndex = newProjects.length - 1;
+      setProjects(newProjects);
+      setActiveIndex(newActiveIndex);
+      saveProjects(newProjects, newActiveIndex, collapsed);
+    }
+
+    // 更新 URL
+    updateUrl(initialCwd, initialSessionId);
+  }, [isLoaded, initialCwd, initialSessionId, projects, activeIndex, collapsed, saveProjects, updateUrl]);
+
+  // 监听 iframe 发来的消息
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      // 会话完成通知
       if (event.data?.type === 'SESSION_COMPLETE' && event.data?.cwd) {
         const completedCwd = event.data.cwd;
         // 如果不是当前活跃项目，添加到未读列表
@@ -72,26 +129,40 @@ export function Workspace() {
           setUnreadProjects(prev => new Set(prev).add(completedCwd));
         }
       }
+      // sessionId 变化通知（iframe 内切换 tab）
+      if (event.data?.type === 'SESSION_CHANGE' && event.data?.cwd && event.data?.sessionId) {
+        const { cwd, sessionId } = event.data;
+        // 记录该项目的当前 sessionId
+        projectSessionIdsRef.current.set(cwd, sessionId);
+        // 如果是当前活跃项目，更新 URL
+        const currentProject = projects[activeIndex];
+        if (currentProject?.cwd === cwd) {
+          updateUrl(cwd, sessionId);
+        }
+      }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [projects, activeIndex]);
+  }, [projects, activeIndex, updateUrl]);
 
   // 选择项目
   const handleSelectProject = useCallback((index: number) => {
     setActiveIndex(index);
     saveProjects(projects, index, collapsed);
-    // 清除该项目的未读状态
-    const selectedCwd = projects[index]?.cwd;
-    if (selectedCwd) {
+    // 清除该项目的未读状态，并更新 URL
+    const selectedProject = projects[index];
+    if (selectedProject?.cwd) {
       setUnreadProjects(prev => {
         const next = new Set(prev);
-        next.delete(selectedCwd);
+        next.delete(selectedProject.cwd);
         return next;
       });
+      // 更新 URL（使用跟踪的 sessionId）
+      const sessionId = projectSessionIdsRef.current.get(selectedProject.cwd);
+      updateUrl(selectedProject.cwd, sessionId);
     }
-  }, [projects, collapsed, saveProjects]);
+  }, [projects, collapsed, saveProjects, updateUrl]);
 
   // 移除项目
   const handleRemoveProject = useCallback((index: number) => {
@@ -130,70 +201,96 @@ export function Workspace() {
 
   // 添加项目（从 SessionBrowser 或 EmptyState 选择）
   const handleAddProject = useCallback((cwd: string, sessionId: string) => {
+    // 跟踪 sessionId
+    projectSessionIdsRef.current.set(cwd, sessionId);
+
     // 检查是否已存在该项目
     const existingIndex = projects.findIndex(p => p.cwd === cwd);
 
     if (existingIndex >= 0) {
-      // 已存在，更新 sessionId 并切换到该项目
-      const newProjects = [...projects];
-      newProjects[existingIndex] = { ...newProjects[existingIndex], sessionId };
-      setProjects(newProjects);
+      // 已存在，通知 iframe 切换 session
+      const iframe = iframeRefs.current.get(cwd);
+      if (iframe?.contentWindow) {
+        iframe.contentWindow.postMessage({
+          type: 'SWITCH_SESSION',
+          sessionId,
+        }, '*');
+      }
       setActiveIndex(existingIndex);
-      saveProjects(newProjects, existingIndex, collapsed);
+      saveProjects(projects, existingIndex, collapsed);
     } else {
       // 新项目，添加到列表末尾
-      const newProject: ProjectInfo = { cwd, sessionId };
+      const newProject: ProjectInfo = { cwd };
       const newProjects = [...projects, newProject];
       const newActiveIndex = newProjects.length - 1;
       setProjects(newProjects);
       setActiveIndex(newActiveIndex);
       saveProjects(newProjects, newActiveIndex, collapsed);
+      // 记录待发送的 sessionId（iframe 加载后发送）
+      pendingSessionIdsRef.current.set(cwd, sessionId);
     }
 
+    // 更新 URL
+    updateUrl(cwd, sessionId);
     // 关闭 SessionBrowser
     setIsSessionBrowserOpen(false);
-  }, [projects, collapsed, saveProjects]);
+  }, [projects, collapsed, saveProjects, updateUrl]);
 
   // 切换项目/会话（从 GlobalSessionMonitor 调用）
   const handleSwitchProject = useCallback((cwd: string, sessionId: string) => {
+    // 跟踪 sessionId
+    projectSessionIdsRef.current.set(cwd, sessionId);
+
     const existingIndex = projects.findIndex(p => p.cwd === cwd);
 
     if (existingIndex >= 0) {
-      // 项目已存在
-      if (existingIndex === activeIndex) {
-        // 同一个项目，通知 iframe 切换 session
-        const iframe = iframeRefs.current.get(cwd);
-        if (iframe?.contentWindow) {
-          iframe.contentWindow.postMessage({
-            type: 'SWITCH_SESSION',
-            sessionId,
-          }, '*');
-        }
-      } else {
-        // 不同项目，切换到该项目
+      // 项目已存在，通知 iframe 切换 session
+      const iframe = iframeRefs.current.get(cwd);
+      if (iframe?.contentWindow) {
+        iframe.contentWindow.postMessage({
+          type: 'SWITCH_SESSION',
+          sessionId,
+        }, '*');
+      }
+      if (existingIndex !== activeIndex) {
         setActiveIndex(existingIndex);
         saveProjects(projects, existingIndex, collapsed);
       }
     } else {
       // 新项目，添加到列表
-      const newProject: ProjectInfo = { cwd, sessionId };
+      const newProject: ProjectInfo = { cwd };
       const newProjects = [...projects, newProject];
       const newActiveIndex = newProjects.length - 1;
       setProjects(newProjects);
       setActiveIndex(newActiveIndex);
       saveProjects(newProjects, newActiveIndex, collapsed);
+      // 记录待发送的 sessionId（iframe 加载后发送）
+      pendingSessionIdsRef.current.set(cwd, sessionId);
     }
-  }, [projects, activeIndex, collapsed, saveProjects]);
 
-  // 构建 iframe URL
+    // 更新 URL
+    updateUrl(cwd, sessionId);
+  }, [projects, activeIndex, collapsed, saveProjects, updateUrl]);
+
+  // 构建 iframe URL（只包含 cwd，sessionId 由 iframe 内部管理）
   const getProjectUrl = (project: ProjectInfo) => {
-    const params = new URLSearchParams();
-    params.set('cwd', project.cwd);
-    if (project.sessionId) {
-      params.set('sessionId', project.sessionId);
-    }
-    return `/project?${params.toString()}`;
+    return `/project?cwd=${encodeURIComponent(project.cwd)}`;
   };
+
+  // iframe 加载完成后，发送待发送的 sessionId
+  const handleIframeLoad = useCallback((cwd: string) => {
+    const pendingSessionId = pendingSessionIdsRef.current.get(cwd);
+    if (pendingSessionId) {
+      const iframe = iframeRefs.current.get(cwd);
+      if (iframe?.contentWindow) {
+        iframe.contentWindow.postMessage({
+          type: 'SWITCH_SESSION',
+          sessionId: pendingSessionId,
+        }, '*');
+      }
+      pendingSessionIdsRef.current.delete(cwd);
+    }
+  }, []);
 
   // 等待加载完成
   if (!isLoaded) {
@@ -247,6 +344,7 @@ export function Workspace() {
                   }
                 }}
                 src={getProjectUrl(project)}
+                onLoad={() => handleIframeLoad(project.cwd)}
                 className={`absolute inset-0 w-full h-full border-0 ${
                   index === activeIndex ? 'block' : 'hidden'
                 }`}

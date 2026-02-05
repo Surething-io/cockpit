@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { MarkdownRenderer } from '@/components/MarkdownRenderer';
+import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer';
 
 const meta = {
   title: 'Components/MarkdownRenderer',

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { Tooltip } from '@/components/Tooltip';
+import { Tooltip } from '@/components/shared/Tooltip';
 
 const meta = {
   title: 'Components/Tooltip',

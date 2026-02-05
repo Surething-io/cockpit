@@ -4,8 +4,8 @@ import { useState, useEffect, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { ChatMessage, MessageImage } from '@/types/chat';
 import { ToolCallModal } from './ToolCallModal';
-import { MarkdownRenderer } from './MarkdownRenderer';
-import { toast } from './Toast';
+import { MarkdownRenderer } from '../shared/MarkdownRenderer';
+import { toast } from '../shared/Toast';
 
 interface ImageModalProps {
   image: MessageImage;

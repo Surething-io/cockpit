@@ -4,13 +4,12 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { ChatMessage, ToolCallInfo, ImageInfo, MessageImage, TokenUsage } from '@/types/chat';
 import { MessageList, MessageListHandle } from './MessageList';
 import { ChatInput } from './ChatInput';
-import { SessionBrowser } from './SessionBrowser';
+import { SessionBrowser } from '../shared/SessionBrowser';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
-import { SettingsModal } from './SettingsModal';
+import { SettingsModal } from '../shared/SettingsModal';
 import { CommentsListModal } from './CommentsListModal';
 import { UserMessagesModal } from './UserMessagesModal';
 import { useChatContextOptional } from './ChatContext';
-import { GlobalSessionMonitor } from './GlobalSessionMonitor';
 
 interface ChatProps {
   tabId?: string; // Tab ID，用于注册到 ChatContext
@@ -50,6 +49,9 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
   const handleSendRef = useRef<((message: string) => void) | null>(null);
   // 用于在 handleStreamEvent 中获取最新的 sessionId
   const sessionIdRef = useRef<string | null>(null);
+  // 用于确保 onTitleChange 使用最新的回调引用
+  const onTitleChangeRef = useRef(onTitleChange);
+  onTitleChangeRef.current = onTitleChange;
 
   // 流式文本缓冲区 - 用于节流 setState
   const streamBufferRef = useRef<{ messageId: string; text: string } | null>(null);
@@ -147,7 +149,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
         }
         // 通知父组件标题变化
         if (data.title) {
-          onTitleChange?.(data.title);
+          onTitleChangeRef.current?.(data.title);
         }
         // 设置 token 使用信息（从历史记录的最后一条 assistant 消息获取）
         if (data.usage) {
@@ -234,10 +236,20 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
 
   // 当 isLoading 变化时通知父组件和 ChatContext
   // 注：全局状态更新已移至后端 /api/chat 处理
+  const prevIsLoadingRef = useRef(false);
   useEffect(() => {
     onLoadingChange?.(isLoading);
     chatContext?.setIsLoading(isLoading);
-  }, [isLoading, onLoadingChange, chatContext]);
+
+    // 当会话完成时（从 loading 变为 非 loading），通知父级 Workspace
+    if (prevIsLoadingRef.current && !isLoading && initialCwd) {
+      window.parent.postMessage({
+        type: 'SESSION_COMPLETE',
+        cwd: initialCwd,
+      }, '*');
+    }
+    prevIsLoadingRef.current = isLoading;
+  }, [isLoading, onLoadingChange, chatContext, initialCwd]);
 
   // 注册到 ChatContext（用于从 CodeViewer 发送消息）
   useEffect(() => {
@@ -427,13 +439,13 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
       if (response.ok) {
         const data = await response.json();
         if (data.title) {
-          onTitleChange?.(data.title);
+          onTitleChangeRef.current?.(data.title);
         }
       }
     } catch (error) {
       console.error('Failed to fetch session title:', error);
     }
-  }, [initialCwd, onTitleChange]);
+  }, [initialCwd]);
 
   const handleStreamEvent = (event: Record<string, unknown>, messageId: string) => {
     const eventType = event.type as string;
@@ -671,8 +683,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
                     </svg>
                   </button>
                 )}
-                {/* 全局会话监控 */}
-                <GlobalSessionMonitor currentCwd={initialCwd} />
                 {/* 全局 Session Browser 按钮 */}
                 <button
                   onClick={() => setIsSessionBrowserOpen(true)}

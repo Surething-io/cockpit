@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { clearAllComments, emitCommentsChange, fetchAllCommentsWithCode } from '@/hooks/useAllComments';
-import { toast } from './Toast';
+import { toast } from '../shared/Toast';
 
 interface CodeComment {
   id: string;

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 
 interface GlobalSession {
   cwd: string;
@@ -14,16 +13,16 @@ interface GlobalSession {
 
 interface GlobalSessionMonitorProps {
   currentCwd?: string;
-  onSwitchSession?: (sessionId: string) => void;
+  onSwitchProject: (cwd: string, sessionId: string) => void;
+  collapsed?: boolean;
 }
 
-export function GlobalSessionMonitor({ currentCwd, onSwitchSession }: GlobalSessionMonitorProps) {
-  const router = useRouter();
+export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed }: GlobalSessionMonitorProps) {
   const [sessions, setSessions] = useState<GlobalSession[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // 轮询获取全局状态（前端轮询，避免 SW 休眠问题）
+  // 轮询获取全局状态（1秒一次）
   useEffect(() => {
     const fetchSessions = async () => {
       try {
@@ -38,119 +37,38 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchSession }: GlobalSess
     };
 
     fetchSessions();
-    const interval = setInterval(fetchSessions, 3000);
+    const interval = setInterval(fetchSessions, 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // 注册 Service Worker（仅用于跨 Tab 通信）
+  // 点击外部关闭（包括点击 iframe）
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
-    }
-  }, []);
+    if (!isOpen) return;
 
-  // 监听 BroadcastChannel，处理跨 tab session 切换
-  useEffect(() => {
-    const channel = new BroadcastChannel('session-switch');
-
-    const handleMessage = (event: MessageEvent) => {
-      const { targetCwd, sessionId } = event.data || {};
-      // 只有当前项目匹配时才处理
-      if (targetCwd === currentCwd && sessionId && onSwitchSession) {
-        onSwitchSession(sessionId);
-      }
-    };
-
-    channel.addEventListener('message', handleMessage);
-    return () => {
-      channel.removeEventListener('message', handleMessage);
-      channel.close();
-    };
-  }, [currentCwd, onSwitchSession]);
-
-  // 点击外部关闭
-  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     };
 
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
+    // 点击 iframe 会导致父窗口失焦
+    const handleBlur = () => {
+      setIsOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('blur', handleBlur);
+    };
   }, [isOpen]);
 
   // 切换到指定 session
-  const handleSessionClick = useCallback(async (session: GlobalSession) => {
-    const targetUrl = `/?cwd=${encodeURIComponent(session.cwd)}&sessionId=${encodeURIComponent(session.sessionId)}`;
-
-    // 如果是同项目，通过回调切换 session（无刷新）
-    if (currentCwd === session.cwd) {
-      if (onSwitchSession) {
-        onSwitchSession(session.sessionId);
-      } else {
-        router.push(targetUrl);
-      }
-      setIsOpen(false);
-      return;
-    }
-
-    // 检查 Service Worker 是否可用
-    if ('serviceWorker' in navigator) {
-      try {
-        const registration = await navigator.serviceWorker.ready;
-
-        if (registration.active) {
-          const messageChannel = new MessageChannel();
-
-          const response = await new Promise<{ found: boolean }>((resolve) => {
-            messageChannel.port1.onmessage = (event) => {
-              resolve(event.data);
-            };
-
-            registration.active!.postMessage(
-              {
-                type: 'FIND_TAB',
-                cwd: session.cwd,
-                sessionId: session.sessionId,
-              },
-              [messageChannel.port2]
-            );
-
-            // 超时处理
-            setTimeout(() => resolve({ found: false }), 500);
-          });
-
-          if (response.found) {
-            // 已有 tab，发送通知让用户点击切换
-            let permission = Notification.permission;
-            if (permission === 'default') {
-              permission = await Notification.requestPermission();
-            }
-
-            if (permission === 'granted') {
-              const projectName = session.cwd.split('/').pop() || session.cwd;
-              await registration.showNotification(`切换到 ${projectName}`, {
-                body: '点击切换到该项目',
-                tag: `switch-${session.cwd}`,
-                data: { cwd: session.cwd, sessionId: session.sessionId },
-              });
-            }
-            setIsOpen(false);
-            return;
-          }
-        }
-      } catch {
-        // 忽略 SW 错误
-      }
-    }
-
-    // 没有找到或 SW 不可用，打开新 tab
-    window.open(targetUrl, '_blank');
+  const handleSessionClick = useCallback((session: GlobalSession) => {
+    onSwitchProject(session.cwd, session.sessionId);
     setIsOpen(false);
-  }, [currentCwd, onSwitchSession, router]);
+  }, [onSwitchProject]);
 
   const loadingCount = sessions.filter(s => s.isLoading).length;
 
@@ -172,24 +90,29 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchSession }: GlobalSess
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="relative p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-        title="运行中的会话"
+        className={`relative flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
+          collapsed ? 'w-full justify-center' : 'w-full'
+        }`}
+        title="最近会话"
       >
         {/* 闪电图标表示活动状态 */}
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
+        {!collapsed && <span className="text-sm flex-1 text-left">最近会话</span>}
         {/* 红点 badge */}
         {loadingCount > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-xs font-medium rounded-full flex items-center justify-center">
+          <span className={`min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-xs font-medium rounded-full flex items-center justify-center ${
+            collapsed ? 'absolute -top-1 -right-1' : ''
+          }`}>
             {loadingCount}
           </span>
         )}
       </button>
 
-      {/* 下拉列表 */}
+      {/* 下拉列表 - 向右上弹出 */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-80 bg-popover border border-border rounded-lg shadow-lg z-50 overflow-hidden">
+        <div className="absolute left-full bottom-0 ml-2 w-80 bg-popover border border-border rounded-lg shadow-lg z-50 overflow-hidden">
           <div className="px-3 py-2 border-b border-border bg-muted/50">
             <span className="text-sm font-medium">最近会话</span>
             {loadingCount > 0 && (

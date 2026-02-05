@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { useState } from 'react';
-import { FileTree, type FileNode } from '@/components/FileTree';
-import { ToastProvider } from '@/components/Toast';
+import { FileTree, type FileNode } from '@/components/project/FileTree';
+import { ToastProvider } from '@/components/shared/Toast';
 
 const meta: Meta<typeof FileTree> = {
   title: 'Components/FileTree',

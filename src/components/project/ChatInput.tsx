@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback } from 'react';
 import { ImageInfo } from '@/types/chat';
-import { ImagePreview } from './ImagePreview';
-import { toast } from './Toast';
+import { ImagePreview } from '../shared/ImagePreview';
+import { toast } from '../shared/Toast';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 

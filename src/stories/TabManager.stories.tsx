@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { TabManager } from '@/components/TabManager';
-import { ThemeProvider } from '@/components/ThemeProvider';
-import { ToastProvider } from '@/components/Toast';
+import { TabManager } from '@/components/project/TabManager';
+import { ThemeProvider } from '@/components/shared/ThemeProvider';
+import { ToastProvider } from '@/components/shared/Toast';
 
 const meta = {
   title: 'Pages/TabManager',

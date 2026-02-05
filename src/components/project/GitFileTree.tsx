@@ -2,7 +2,7 @@
 
 import React, { useCallback, ReactNode } from 'react';
 import { FileContextMenu, useFileContextMenu } from './FileContextMenu';
-import { FileIcon } from './FileIcon';
+import { FileIcon } from '../shared/FileIcon';
 
 // ============================================================================
 // Types

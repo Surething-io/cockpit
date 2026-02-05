@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { ToastProvider, useToast } from '@/components/Toast';
+import { ToastProvider, useToast } from '@/components/shared/Toast';
 import { useEffect } from 'react';
 
 // Demo component that triggers toasts

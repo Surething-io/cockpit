@@ -1,10 +1,14 @@
-export { Chat } from './Chat';
-export { ChatInput } from './ChatInput';
-export { MessageList } from './MessageList';
-export { MessageBubble } from './MessageBubble';
-export { ToolCallModal } from './ToolCallModal';
-export { MarkdownRenderer } from './MarkdownRenderer';
-export { SessionBrowser } from './SessionBrowser';
-export { ProjectSessionsModal } from './ProjectSessionsModal';
-export { TabManager } from './TabManager';
-export { ServicePanel } from './ServicePanel';
+// Re-export from subdirectories for backwards compatibility
+export * from './project/Chat';
+export * from './project/ChatInput';
+export * from './project/MessageList';
+export * from './project/MessageBubble';
+export * from './project/ToolCallModal';
+export * from './project/ProjectSessionsModal';
+export * from './project/TabManager';
+export * from './project/ServicePanel';
+
+export * from './shared/MarkdownRenderer';
+export * from './shared/SessionBrowser';
+export * from './shared/Toast';
+export * from './shared/Tooltip';

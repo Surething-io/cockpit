@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { SessionBrowser } from '@/components/SessionBrowser';
+import { SessionBrowser } from '@/components/shared/SessionBrowser';
 
 const meta = {
   title: 'Components/SessionBrowser',

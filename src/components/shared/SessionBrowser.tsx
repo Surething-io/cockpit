@@ -27,9 +27,10 @@ interface ProjectState {
 interface SessionBrowserProps {
   isOpen: boolean;
   onClose: () => void;
+  onSelectSession?: (cwd: string, sessionId: string) => void;
 }
 
-export function SessionBrowser({ isOpen, onClose }: SessionBrowserProps) {
+export function SessionBrowser({ isOpen, onClose, onSelectSession }: SessionBrowserProps) {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [projectStates, setProjectStates] = useState<Record<string, ProjectState>>({});
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
@@ -150,8 +151,14 @@ export function SessionBrowser({ isOpen, onClose }: SessionBrowserProps) {
     // 从 sessionPath 中提取 sessionId（文件名去掉 .jsonl）
     const fileName = sessionPath.split('/').pop() || '';
     const sessionId = fileName.replace('.jsonl', '');
-    const url = `/?cwd=${encodeURIComponent(cwd)}&sessionId=${encodeURIComponent(sessionId)}`;
-    window.open(url, '_blank');
+
+    // 如果有 onSelectSession 回调，使用它；否则打开新窗口
+    if (onSelectSession) {
+      onSelectSession(cwd, sessionId);
+    } else {
+      const url = `/?cwd=${encodeURIComponent(cwd)}&sessionId=${encodeURIComponent(sessionId)}`;
+      window.open(url, '_blank');
+    }
   };
 
   const formatDate = (isoString: string) => {

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { CommitDetailPanel, type CommitInfo } from '@/components/CommitDetailPanel';
+import { CommitDetailPanel, type CommitInfo } from '@/components/project/CommitDetailPanel';
 
 const meta = {
   title: 'Components/CommitDetailPanel',

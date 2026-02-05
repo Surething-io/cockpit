@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { useState } from 'react';
-import { GitFileTree, buildGitFileTree, type GitFileNode, type GitFileStatus } from '@/components/GitFileTree';
-import { ToastProvider } from '@/components/Toast';
+import { GitFileTree, buildGitFileTree, type GitFileNode, type GitFileStatus } from '@/components/project/GitFileTree';
+import { ToastProvider } from '@/components/shared/Toast';
 
 const meta: Meta<typeof GitFileTree> = {
   title: 'Components/GitFileTree',

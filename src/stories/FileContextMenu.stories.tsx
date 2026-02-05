@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { useState } from 'react';
-import { FileContextMenu, FileContextMenuWrapper, MenuContainerProvider } from '@/components/FileContextMenu';
-import { ToastProvider } from '@/components/Toast';
+import { FileContextMenu, FileContextMenuWrapper, MenuContainerProvider } from '@/components/project/FileContextMenu';
+import { ToastProvider } from '@/components/shared/Toast';
 
 const meta: Meta<typeof FileContextMenu> = {
   title: 'Components/FileContextMenu',

@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { Chat } from '@/components/Chat';
-import { ThemeProvider } from '@/components/ThemeProvider';
-import { ToastProvider } from '@/components/Toast';
+import { Chat } from '@/components/project/Chat';
+import { ThemeProvider } from '@/components/shared/ThemeProvider';
+import { ToastProvider } from '@/components/shared/Toast';
 
 const meta = {
   title: 'Pages/Chat',

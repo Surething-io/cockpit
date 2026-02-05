@@ -6,7 +6,7 @@ import { ToolCallInfo } from '@/types/chat';
 import { DiffView, DiffUnifiedView } from './DiffView';
 import { CodeViewer } from './CodeViewer';
 import { MarkdownFileViewer, isMarkdownFile } from './MarkdownFileViewer';
-import { toast } from './Toast';
+import { toast } from '../shared/Toast';
 
 // 检查是否是有效的 JSON
 function isValidJson(content: string): boolean {

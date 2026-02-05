@@ -56,6 +56,12 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
 
     const resolved = newTheme === 'system' ? getSystemTheme() : newTheme;
     applyTheme(resolved);
+
+    // 通知所有子 iframe 更新主题
+    const iframes = document.querySelectorAll('iframe');
+    iframes.forEach((iframe) => {
+      iframe.contentWindow?.postMessage({ type: 'THEME_CHANGE', theme: newTheme }, '*');
+    });
   }, [getSystemTheme, applyTheme]);
 
   // 初始化主题
@@ -80,6 +86,22 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     mediaQuery.addEventListener('change', handler);
     return () => mediaQuery.removeEventListener('change', handler);
   }, [theme, applyTheme]);
+
+  // 监听父窗口发来的主题变更消息（iframe 场景）
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'THEME_CHANGE') {
+        const newTheme = event.data.theme as Theme;
+        setThemeState(newTheme);
+        localStorage.setItem('theme', newTheme);
+        const resolved = newTheme === 'system' ? getSystemTheme() : newTheme;
+        applyTheme(resolved);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [getSystemTheme, applyTheme]);
 
   return (
     <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { DiffView, DiffUnifiedView } from '@/components/DiffView';
+import { DiffView, DiffUnifiedView } from '@/components/project/DiffView';
 
 const meta = {
   title: 'Components/DiffView',

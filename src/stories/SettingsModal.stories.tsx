@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { useState } from 'react';
-import { SettingsModal } from '@/components/SettingsModal';
-import { ThemeProvider } from '@/components/ThemeProvider';
+import { SettingsModal } from '@/components/shared/SettingsModal';
+import { ThemeProvider } from '@/components/shared/ThemeProvider';
 
 const meta: Meta<typeof SettingsModal> = {
   title: 'Components/SettingsModal',

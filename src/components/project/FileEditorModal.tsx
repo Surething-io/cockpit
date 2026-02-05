@@ -3,8 +3,8 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Editor, { OnMount, OnChange } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
-import { useTheme } from './ThemeProvider';
-import { toast } from './Toast';
+import { useTheme } from '../shared/ThemeProvider';
+import { toast } from '../shared/Toast';
 
 interface FileEditorModalProps {
   isOpen: boolean;

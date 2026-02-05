@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { CodeViewer, SimpleCodeBlock } from '@/components/CodeViewer';
+import { CodeViewer, SimpleCodeBlock } from '@/components/project/CodeViewer';
 
 const meta = {
   title: 'Components/CodeViewer',

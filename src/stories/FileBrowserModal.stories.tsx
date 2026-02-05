@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { useState } from 'react';
-import { FileBrowserModal } from '@/components/FileBrowserModal';
-import { ThemeProvider } from '@/components/ThemeProvider';
-import { ToastProvider } from '@/components/Toast';
+import { FileBrowserModal } from '@/components/project/FileBrowserModal';
+import { ThemeProvider } from '@/components/shared/ThemeProvider';
+import { ToastProvider } from '@/components/shared/Toast';
 
 const meta = {
   title: 'Pages/FileBrowserModal',

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { MessageList } from '@/components/MessageList';
+import { MessageList } from '@/components/project/MessageList';
 
 const meta = {
   title: 'Components/MessageList',

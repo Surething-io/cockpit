@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getHighlighter, getLanguageFromPath } from './CodeViewer';
-import { MarkdownRenderer } from './MarkdownRenderer';
+import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 
 type MdViewMode = 'source' | 'preview' | 'split';
 

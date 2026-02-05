@@ -4,14 +4,14 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { CommitDetailPanel, type CommitInfo } from './CommitDetailPanel';
 import { DiffView } from './DiffView';
-import { toast } from './Toast';
+import { toast } from '../shared/Toast';
 import { FileTree, type FileNode as FileTreeNode, type GitStatusMap, type GitStatusCode } from './FileTree';
 import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, collectFilesUnderNode, type GitFileNode, type GitFileStatus as GitFileStatusType } from './GitFileTree';
 import { MenuContainerProvider } from './FileContextMenu';
 import { CodeViewer } from './CodeViewer';
 import { isMarkdownFile } from './MarkdownFileViewer';
-import { MarkdownRenderer } from './MarkdownRenderer';
-import { FileIcon } from './FileIcon';
+import { MarkdownRenderer } from '../shared/MarkdownRenderer';
+import { FileIcon } from '../shared/FileIcon';
 import { FileEditorModal } from './FileEditorModal';
 
 // ============================================================================

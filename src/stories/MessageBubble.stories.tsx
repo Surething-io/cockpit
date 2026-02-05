@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { MessageBubble } from '@/components/MessageBubble';
+import { MessageBubble } from '@/components/project/MessageBubble';
 
 const meta = {
   title: 'Components/MessageBubble',

@@ -2,18 +2,15 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Chat } from './Chat';
-import { SessionBrowser } from './SessionBrowser';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { FileBrowserModal } from './FileBrowserModal';
 import { BrowserView } from './BrowserView';
-import { SettingsModal } from './SettingsModal';
 import { GitWorktreeModal } from './GitWorktreeModal';
-import { Tooltip } from './Tooltip';
+import { Tooltip } from '../shared/Tooltip';
 import { ChatProvider } from './ChatContext';
-import { GlobalSessionMonitor } from './GlobalSessionMonitor';
 import { ServicePanel } from './ServicePanel';
 import { SwipeableViewContainer, SwipeableContent, ViewSwitcherBar, type ViewType } from './SwipeableViewContainer';
-import { toast } from './Toast';
+import { toast } from '../shared/Toast';
 
 interface TabInfo {
   id: string;
@@ -139,9 +136,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
       window.history.replaceState({}, '', url.toString());
     }
   }, [activeTabId, tabs, initialCwd]);
-  const [isSessionBrowserOpen, setIsSessionBrowserOpen] = useState(false);
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isWorktreeOpen, setIsWorktreeOpen] = useState(false);
   const [isServicePanelOpen, setIsServicePanelOpen] = useState(false);
   const [runningServicesCount, setRunningServicesCount] = useState(0);
@@ -153,6 +148,9 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const [tabSwitchTrigger, setTabSwitchTrigger] = useState(0);
   // 视图切换状态：agent (Chat), explorer (FileBrowser), browser (BrowserView)
   const [activeView, setActiveView] = useState<ViewType>('agent');
+  // Tab 拖拽状态
+  const [dragTabIndex, setDragTabIndex] = useState<number | null>(null);
+  const [dragOverTabIndex, setDragOverTabIndex] = useState<number | null>(null);
 
   // 添加新标签页（插入到当前标签的右边）
   const addTab = useCallback((cwd?: string, sessionId?: string, title?: string) => {
@@ -228,6 +226,36 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     );
   }, []);
 
+  // Tab 拖拽排序
+  const handleTabDragStart = useCallback((index: number) => {
+    setDragTabIndex(index);
+  }, []);
+
+  const handleTabDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (dragTabIndex !== null && dragTabIndex !== index) {
+      setDragOverTabIndex(index);
+    }
+  }, [dragTabIndex]);
+
+  const handleTabDrop = useCallback((targetIndex: number) => {
+    if (dragTabIndex !== null && dragTabIndex !== targetIndex) {
+      setTabs((prev) => {
+        const newTabs = [...prev];
+        const [removed] = newTabs.splice(dragTabIndex, 1);
+        newTabs.splice(targetIndex, 0, removed);
+        return newTabs;
+      });
+    }
+    setDragTabIndex(null);
+    setDragOverTabIndex(null);
+  }, [dragTabIndex]);
+
+  const handleTabDragEnd = useCallback(() => {
+    setDragTabIndex(null);
+    setDragOverTabIndex(null);
+  }, []);
+
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
   // 加载 Git 仓库信息（分支）
@@ -301,6 +329,21 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // 监听父窗口消息（用于 Workspace 切换 session）
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'SWITCH_SESSION') {
+        const { sessionId } = event.data;
+        if (sessionId) {
+          handleSelectSession(sessionId);
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [handleSelectSession]);
+
   // Top bar 组件（主标题栏，始终显示）
   const TopBar = (
     <div className="border-b border-border bg-card shrink-0">
@@ -342,10 +385,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           <ViewSwitcherBar />
         </div>
 
-        {/* 右侧：会话相关 + 设置 */}
+        {/* 右侧：会话相关 */}
         <div className="flex items-center gap-2">
-          {/* 全局会话监控（运行中的会话） */}
-          <GlobalSessionMonitor currentCwd={activeTab?.cwd} onSwitchSession={handleSelectSession} />
           {/* 当前项目 Sessions 按钮 */}
           {initialCwd && (
             <button
@@ -358,16 +399,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               </svg>
             </button>
           )}
-          {/* 全局 Session Browser 按钮 */}
-          <button
-            onClick={() => setIsSessionBrowserOpen(true)}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-            title="浏览所有会话"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-          </button>
           {/* Cursor 打开按钮 */}
           <button
             onClick={async () => {
@@ -422,17 +453,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               </svg>
             </button>
           )}
-          {/* 设置按钮 */}
-          <button
-            onClick={() => setIsSettingsOpen(true)}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-            title="设置"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </button>
         </div>
       </div>
     </div>
@@ -442,13 +462,20 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const TabBar = (
     <div className="border-b border-border bg-card shrink-0">
       <div className="flex items-center px-2 gap-1 overflow-x-auto">
-        {tabs.map((tab) => (
+        {tabs.map((tab, index) => (
           <Tooltip key={tab.id} content={tab.title} delay={200}>
             <div
+              draggable
+              onDragStart={() => handleTabDragStart(index)}
+              onDragOver={(e) => handleTabDragOver(e, index)}
+              onDrop={() => handleTabDrop(index)}
+              onDragEnd={handleTabDragEnd}
               className={`group flex items-center gap-1 px-3 py-1.5 text-sm cursor-pointer rounded-t-lg transition-colors ${
                 tab.id === activeTabId
                   ? 'bg-accent text-foreground'
                   : 'text-muted-foreground hover:bg-secondary'
+              } ${dragTabIndex === index ? 'opacity-50' : ''} ${
+                dragOverTabIndex === index ? 'border-l-2 border-brand' : ''
               }`}
               onClick={() => setActiveTabId(tab.id)}
             >
@@ -566,12 +593,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         )}
       </div>
 
-      {/* Session Browser Modal */}
-      <SessionBrowser
-        isOpen={isSessionBrowserOpen}
-        onClose={() => setIsSessionBrowserOpen(false)}
-      />
-
       {/* Project Sessions Modal */}
       {initialCwd && (
         <ProjectSessionsModal
@@ -583,11 +604,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
       )}
 
 
-      {/* Settings Modal */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-      />
 
       {/* Git Worktree Modal */}
       {initialCwd && isGitRepo && (

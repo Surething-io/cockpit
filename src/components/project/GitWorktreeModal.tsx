@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { toast } from './Toast';
+import { toast } from '../shared/Toast';
 
 // 生成随机可读单词（辅音 + 元音/韵母，2组）
 function generateRandomWord(): string {

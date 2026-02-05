@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, ReactNode, createContext, useContext } from 'react';
 import { createPortal } from 'react-dom';
-import { toast } from './Toast';
+import { toast } from '../shared/Toast';
 
 // Context for menu container - allows FileContextMenu to portal to a specific container
 const MenuContainerContext = createContext<HTMLElement | null>(null);

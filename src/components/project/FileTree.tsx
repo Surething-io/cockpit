@@ -3,7 +3,7 @@
 import React, { useMemo, useRef, useEffect, useCallback, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { FileContextMenu, useFileContextMenu } from './FileContextMenu';
-import { FileIcon } from './FileIcon';
+import { FileIcon } from '../shared/FileIcon';
 
 // ============================================================================
 // Types

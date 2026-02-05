@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { ImagePreview } from '@/components/ImagePreview';
+import { ImagePreview } from '@/components/shared/ImagePreview';
 import { ImageInfo } from '@/types/chat';
 
 // 生成示例图片数据（1x1 像素的 PNG）

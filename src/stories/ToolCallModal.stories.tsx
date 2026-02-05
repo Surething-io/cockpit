@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { ToolCallModal } from '@/components/ToolCallModal';
+import { ToolCallModal } from '@/components/project/ToolCallModal';
 
 const meta = {
   title: 'Components/ToolCallModal',

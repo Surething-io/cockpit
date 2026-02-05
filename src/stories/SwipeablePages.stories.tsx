@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { useState } from 'react';
-import { SwipeablePages } from '@/components/SwipeablePages';
+import { SwipeablePages } from '@/components/project/SwipeablePages';
 
 const meta: Meta<typeof SwipeablePages> = {
   title: 'Components/SwipeablePages',

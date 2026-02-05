@@ -80,6 +80,10 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
       url.searchParams.delete('sessionId');
     }
     window.history.replaceState({}, '', url.toString());
+
+    // 更新浏览器标签页标题
+    const dirName = cwd.split('/').filter(Boolean).pop();
+    document.title = dirName ? `Cockpit - ${dirName}` : 'Cockpit';
   }, []);
 
   // 处理 URL 参数中的 cwd 和 sessionId

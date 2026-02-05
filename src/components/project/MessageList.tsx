@@ -57,7 +57,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     const atBottom = checkIfAtBottom();
     const atTop = checkIfAtTop();
     setShouldAutoScroll(atBottom);
-    setShowTopButton(!atTop && !hasMoreHistory); // 如果还有更多历史，不显示跳顶按钮
+    setShowTopButton(!atTop); // 不在顶部时显示跳顶按钮
     setShowBottomButton(!atBottom);
 
     // 当滚动到顶部且有更多历史时，触发加载更多
@@ -70,7 +70,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       }
       onLoadMore();
     }
-  }, [checkIfAtBottom, checkIfAtTop, hasMoreHistory, isLoadingMore, onLoadMore]);
+  }, [checkIfAtBottom, checkIfAtTop, hasMoreHistory, isLoadingMore, onLoadMore]); // hasMoreHistory still needed for loading more logic
 
   // 跳转到顶部
   const scrollToTop = useCallback(() => {

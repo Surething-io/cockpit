@@ -165,9 +165,9 @@ export async function POST(request: NextRequest) {
 
         let cmd: string;
         if (newBranch) {
-          // 基于 baseBranch 创建新分支
+          // 基于 baseBranch 创建新分支（--no-track 确保不跟踪远程分支）
           const base = baseBranch || 'origin/main';
-          cmd = `git worktree add -b "${newBranch}" "${path}" "${base}"`;
+          cmd = `git worktree add --no-track -b "${newBranch}" "${path}" "${base}"`;
         } else if (branch) {
           // 使用已有分支
           cmd = `git worktree add "${path}" "${branch}"`;

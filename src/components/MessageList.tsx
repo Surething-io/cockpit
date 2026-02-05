@@ -8,9 +8,11 @@ interface MessageListProps {
   messages: ChatMessage[];
   isLoading?: boolean;
   cwd?: string;
+  sessionId?: string | null;
   hasMoreHistory?: boolean;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
+  onFork?: (messageId: string) => void;
   isActive?: boolean; // Tab 是否激活（用于处理隐藏 Tab 的滚动问题）
 }
 
@@ -20,7 +22,7 @@ export interface MessageListHandle {
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
-  { messages, isLoading, cwd, hasMoreHistory, isLoadingMore, onLoadMore, isActive = true },
+  { messages, isLoading, cwd, sessionId, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true },
   ref
 ) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -205,7 +207,12 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
             )}
             {messages.map((message) => (
               <div key={message.id} data-message-id={message.id} className="transition-all duration-300">
-                <MessageBubble message={message} cwd={cwd} />
+                <MessageBubble
+                  message={message}
+                  cwd={cwd}
+                  sessionId={sessionId}
+                  onFork={onFork}
+                />
               </div>
             ))}
             {isLoading && (

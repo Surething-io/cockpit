@@ -13,6 +13,7 @@ import { ChatProvider } from './ChatContext';
 import { GlobalSessionMonitor } from './GlobalSessionMonitor';
 import { ServicePanel } from './ServicePanel';
 import { SwipeableViewContainer, SwipeableContent, ViewSwitcherBar, type ViewType } from './SwipeableViewContainer';
+import { toast } from './Toast';
 
 interface TabInfo {
   id: string;
@@ -153,7 +154,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   // 视图切换状态：agent (Chat), explorer (FileBrowser), browser (BrowserView)
   const [activeView, setActiveView] = useState<ViewType>('agent');
 
-  // 添加新标签页
+  // 添加新标签页（插入到当前标签的右边）
   const addTab = useCallback((cwd?: string, sessionId?: string, title?: string) => {
     const newTab: TabInfo = {
       id: `tab-${Date.now()}`,
@@ -161,9 +162,19 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
       sessionId,
       title: title || (sessionId ? `Session ${sessionId.slice(0, 6)}...` : 'New Chat'),
     };
-    setTabs((prev) => [...prev, newTab]);
+    setTabs((prev) => {
+      const currentIndex = prev.findIndex((t) => t.id === activeTabId);
+      if (currentIndex === -1) {
+        // 没有当前标签，添加到末尾
+        return [...prev, newTab];
+      }
+      // 插入到当前标签的右边
+      const newTabs = [...prev];
+      newTabs.splice(currentIndex + 1, 0, newTab);
+      return newTabs;
+    });
     setActiveTabId(newTab.id);
-  }, []);
+  }, [activeTabId]);
 
   // 关闭标签页
   const closeTab = useCallback((tabId: string) => {
@@ -201,6 +212,11 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   // 新建空白标签
   const handleNewTab = useCallback(() => {
     addTab(initialCwd);
+  }, [initialCwd, addTab]);
+
+  // 打开新 session（用于 Fork，总是创建新标签）
+  const handleOpenSession = useCallback((sid: string, title?: string) => {
+    addTab(initialCwd, sid, title);
   }, [initialCwd, addTab]);
 
   // 更新标签页状态（loading、sessionId）
@@ -389,6 +405,23 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               </span>
             )}
           </button>
+          {/* 复制 claude -r 命令按钮 */}
+          {activeTab?.sessionId && (
+            <button
+              onClick={() => {
+                const command = `claude -r ${activeTab.sessionId}`;
+                navigator.clipboard.writeText(command).then(() => {
+                  toast('已复制: ' + command, 'success');
+                });
+              }}
+              className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+              title={`复制命令: claude -r ${activeTab.sessionId}`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </button>
+          )}
           {/* 设置按钮 */}
           <button
             onClick={() => setIsSettingsOpen(true)}
@@ -486,6 +519,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                         setTabSwitchTrigger(n => n + 1);
                         setActiveView('explorer');
                       }}
+                      onOpenSession={handleOpenSession}
                     />
                   </div>
                 ))}
@@ -523,6 +557,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                     sessionId={tab.sessionId}
                     isActive={tab.id === activeTabId}
                     onStateChange={updateTabState}
+                    onOpenSession={handleOpenSession}
                   />
                 </div>
               ))}
@@ -591,9 +626,10 @@ interface ChatPanelProps {
   isActive?: boolean; // Tab 是否激活
   onStateChange: (tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string }) => void;
   onShowGitStatus?: () => void;
+  onOpenSession?: (sessionId: string, title?: string) => void;
 }
 
-function ChatPanel({ tabId, cwd, sessionId, isActive, onStateChange, onShowGitStatus }: ChatPanelProps) {
+function ChatPanel({ tabId, cwd, sessionId, isActive, onStateChange, onShowGitStatus, onOpenSession }: ChatPanelProps) {
   // 使用 useCallback 稳定回调函数引用，避免无限循环
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
@@ -619,6 +655,7 @@ function ChatPanel({ tabId, cwd, sessionId, isActive, onStateChange, onShowGitSt
       onSessionIdChange={handleSessionIdChange}
       onTitleChange={handleTitleChange}
       onShowGitStatus={onShowGitStatus}
+      onOpenSession={onOpenSession}
     />
   );
 }

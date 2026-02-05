@@ -55,19 +55,22 @@ function ImageModal({ image, onClose }: ImageModalProps) {
 interface MessageBubbleProps {
   message: ChatMessage;
   cwd?: string;
+  sessionId?: string | null;
+  onFork?: (messageId: string) => void;
 }
 
 // 工具调用折叠显示的阈值
 const TOOL_CALLS_COLLAPSE_THRESHOLD = 3;
 
 // 使用 memo 优化，只有当 message 或 cwd 变化时才重新渲染
-export const MessageBubble = memo(function MessageBubble({ message, cwd }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork }: MessageBubbleProps) {
   const [previewImage, setPreviewImage] = useState<MessageImage | null>(null);
   const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
   const isUser = message.role === 'user';
   const hasImages = message.images && message.images.length > 0;
   const toolCallsCount = message.toolCalls?.length || 0;
   const shouldCollapseToolCalls = toolCallsCount > TOOL_CALLS_COLLAPSE_THRESHOLD;
+  const canFork = !!sessionId && !!cwd && !!onFork;
 
   // 复制消息内容
   const handleCopy = () => {
@@ -77,20 +80,47 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd }: Messa
     }
   };
 
+  // Fork 会话（从此消息点分叉）
+  const handleFork = () => {
+    if (canFork) {
+      onFork!(message.id);
+    }
+  };
+
   return (
     <>
       <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 group`}>
-        {/* 用户消息的复制按钮在左边 */}
-        {isUser && message.content && (
-          <button
-            onClick={handleCopy}
-            className="self-start mt-2 mr-1 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent opacity-0 group-hover:opacity-100 transition-opacity"
-            title="复制消息"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
-          </button>
+        {/* 用户消息的操作按钮在左边 */}
+        {isUser && (
+          <div className="self-start mt-2 mr-1 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            {message.content && (
+              <button
+                onClick={handleCopy}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+                title="复制消息"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
+            )}
+            {canFork && (
+              <button
+                onClick={handleFork}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+                title="从此处分叉会话"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  {/* Git fork icon */}
+                  <circle cx="12" cy="18" r="3" />
+                  <circle cx="6" cy="6" r="3" />
+                  <circle cx="18" cy="6" r="3" />
+                  <path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9" />
+                  <path d="M12 12v3" />
+                </svg>
+              </button>
+            )}
+          </div>
         )}
         <div
           className={`max-w-[80%] ${
@@ -163,17 +193,36 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd }: Messa
             </div>
           )}
         </div>
-        {/* AI 消息的复制按钮在右边 */}
-        {!isUser && message.content && (
-          <button
-            onClick={handleCopy}
-            className="self-start mt-2 ml-1 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent opacity-0 group-hover:opacity-100 transition-opacity"
-            title="复制消息"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
-          </button>
+        {/* AI 消息的操作按钮在右边 */}
+        {!isUser && (
+          <div className="self-start mt-2 ml-1 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            {message.content && (
+              <button
+                onClick={handleCopy}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+                title="复制消息"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
+            )}
+            {canFork && (
+              <button
+                onClick={handleFork}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+                title="从此处分叉会话"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="18" r="3" />
+                  <circle cx="6" cy="6" r="3" />
+                  <circle cx="18" cy="6" r="3" />
+                  <path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9" />
+                  <path d="M12 12v3" />
+                </svg>
+              </button>
+            )}
+          </div>
         )}
       </div>
 

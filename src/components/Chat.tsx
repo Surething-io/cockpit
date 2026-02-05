@@ -23,9 +23,10 @@ interface ChatProps {
   onSessionIdChange?: (sessionId: string) => void;
   onTitleChange?: (title: string) => void;
   onShowGitStatus?: () => void;
+  onOpenSession?: (sessionId: string, title?: string) => void; // 打开新的 session（用于 Fork）
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenSession }: ChatProps) {
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -42,6 +43,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
   const [isCommentsListOpen, setIsCommentsListOpen] = useState(false);
   const [isUserMessagesOpen, setIsUserMessagesOpen] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
+  const [copiedCommand, setCopiedCommand] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const messageListRef = useRef<MessageListHandle>(null);
   // 用于从 ChatContext 调用 handleSend
@@ -585,6 +587,38 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     }
   }, [initialCwd]);
 
+  // 从指定消息点分叉会话
+  const handleFork = useCallback(async (messageId: string) => {
+    if (!initialCwd || !sessionId) return;
+
+    try {
+      const response = await fetch(`/api/session/${sessionId}/fork`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cwd: initialCwd,
+          fromMessageUuid: messageId,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // 如果有 onOpenSession 回调（TabManager 模式），使用它打开新标签
+        if (onOpenSession) {
+          onOpenSession(data.newSessionId, 'Fork');
+        } else {
+          // 否则在新窗口打开
+          const url = `/?cwd=${encodeURIComponent(initialCwd)}&sessionId=${data.newSessionId}`;
+          window.open(url, '_blank');
+        }
+      } else {
+        console.error('Fork failed:', await response.text());
+      }
+    } catch (error) {
+      console.error('Fork error:', error);
+    }
+  }, [initialCwd, sessionId, onOpenSession]);
+
   return (
     <div className={`flex ${hideHeader && hideSidebar ? 'h-full' : 'h-screen'} bg-card`}>
       {/* Main Content */}
@@ -649,6 +683,34 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                   </svg>
                 </button>
+                {/* 复制 claude -r 命令按钮 */}
+                {sessionId && (
+                  <button
+                    onClick={() => {
+                      const command = `claude -r ${sessionId}`;
+                      navigator.clipboard.writeText(command).then(() => {
+                        setCopiedCommand(true);
+                        setTimeout(() => setCopiedCommand(false), 2000);
+                      });
+                    }}
+                    className={`p-2 rounded-lg transition-colors ${
+                      copiedCommand
+                        ? 'text-green-500 bg-green-500/10'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                    }`}
+                    title={copiedCommand ? '已复制!' : `复制命令: claude -r ${sessionId}`}
+                  >
+                    {copiedCommand ? (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                      </svg>
+                    )}
+                  </button>
+                )}
                 {/* 设置按钮 */}
                 <button
                   onClick={() => setIsSettingsOpen(true)}
@@ -676,9 +738,11 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
             messages={messages}
             isLoading={isLoading}
             cwd={initialCwd}
+            sessionId={sessionId}
             hasMoreHistory={hasMoreHistory}
             isLoadingMore={isLoadingMore}
             onLoadMore={loadMoreHistory}
+            onFork={handleFork}
             isActive={isActive}
           />
         )}

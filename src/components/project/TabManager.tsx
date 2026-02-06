@@ -20,6 +20,32 @@ interface TabInfo {
   isLoading?: boolean;
 }
 
+// Tab 圆圈编号图标组件
+function TabNumberIcon({ number, isActive }: { number: number; isActive: boolean }) {
+  return (
+    <svg
+      className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-brand' : 'text-muted-foreground'}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <circle cx="12" cy="12" r="9" />
+      <text
+        x="12"
+        y="16"
+        textAnchor="middle"
+        fill="currentColor"
+        stroke="none"
+        fontSize="12"
+        fontWeight="500"
+      >
+        {number}
+      </text>
+    </svg>
+  );
+}
+
 interface TabManagerProps {
   initialCwd?: string;
   initialSessionId?: string;
@@ -508,10 +534,14 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                 });
               }}
             >
-              {/* 未读红点 - 仅在非活跃且有未读时显示 */}
-              {unreadTabs.has(tab.id) && tab.id !== activeTabId && (
-                <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
-              )}
+              {/* 圆圈编号 + 未读角标 */}
+              <div className="relative flex-shrink-0">
+                <TabNumberIcon number={index + 1} isActive={tab.id === activeTabId} />
+                {/* 未读红点角标 - 左上角 */}
+                {unreadTabs.has(tab.id) && tab.id !== activeTabId && (
+                  <span className="absolute -top-1 -left-1 w-2 h-2 rounded-full bg-red-500" />
+                )}
+              </div>
               {tab.isLoading && (
                 <span className="inline-block w-3 h-3 border-2 border-brand border-t-transparent rounded-full animate-spin flex-shrink-0" />
               )}

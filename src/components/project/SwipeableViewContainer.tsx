@@ -168,9 +168,16 @@ export function SwipeableViewContainer({ activeView, onViewChange, children }: S
   }, [currentIndex, maxPage, onViewChange]);
 
   // 计算下划线偏移量（-1 到 1 范围，用于 ViewSwitcherBar）
+  // 使用 state 来确保 SSR 和客户端一致
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const getUnderlineOffset = () => {
-    if (typeof window === 'undefined') return 0;
+    if (!mounted) return 0;
     const pageWidth = window.innerWidth;
+    if (!pageWidth) return 0;
     return dragOffsetPx / pageWidth;
   };
 
@@ -179,7 +186,7 @@ export function SwipeableViewContainer({ activeView, onViewChange, children }: S
     activeView,
     onViewChange,
     dragOffset: getUnderlineOffset(),
-    isDragging,
+    isDragging: mounted && isDragging,
   };
 
   return (
@@ -226,7 +233,8 @@ export function SwipeableContent({ children }: SwipeableContentProps) {
     const basePercent = -currentIndex * pagePercent;
     // dragOffset is already -1 to 1, convert to percentage of total width
     const offsetPercent = (dragOffset / pageCount) * 100;
-    return `translateX(${basePercent + offsetPercent}%)`;
+    const totalPercent = basePercent + (Number.isFinite(offsetPercent) ? offsetPercent : 0);
+    return `translateX(${totalPercent}%)`;
   };
 
   return (
@@ -240,9 +248,9 @@ export function SwipeableContent({ children }: SwipeableContentProps) {
         className={isDragging ? 'flex' : 'flex transition-transform duration-100 ease-out'}
         style={{
           position: 'absolute',
-          top: 0,
-          bottom: 0,
-          left: 0,
+          top: '0px',
+          bottom: '0px',
+          left: '0px',
           width: '300%',
           transform: getTransform(),
         }}
@@ -280,7 +288,8 @@ export function ViewSwitcherBar() {
 
     // dragOffset is -1 to 1, negative means swiping right (to previous view)
     // We need to invert it for the underline position
-    const effectiveIndex = Math.max(0, Math.min(2, currentIndex - dragOffset));
+    const safeOffset = Number.isFinite(dragOffset) ? dragOffset : 0;
+    const effectiveIndex = Math.max(0, Math.min(2, currentIndex - safeOffset));
 
     const leftIndex = Math.floor(effectiveIndex);
     const rightIndex = Math.ceil(effectiveIndex);
@@ -317,7 +326,9 @@ export function ViewSwitcherBar() {
   }, [currentIndex, dragOffset]);
 
   // 计算当前有效索引（考虑滑动偏移）
-  const effectiveIndex = Math.max(0, Math.min(2, currentIndex - dragOffset));
+  // 当 dragOffset 为 0 或 NaN 时，使用 currentIndex
+  const safeOffset = Number.isFinite(dragOffset) ? dragOffset : 0;
+  const effectiveIndex = Math.max(0, Math.min(2, currentIndex - safeOffset));
   const nearestIndex = Math.round(effectiveIndex);
 
   return (

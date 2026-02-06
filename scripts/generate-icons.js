@@ -4,10 +4,11 @@ const path = require('path');
 
 const sizes = [72, 96, 128, 144, 152, 192, 384, 512];
 const outputDir = path.join(__dirname, '../public/icons');
+const devOutputDir = path.join(__dirname, '../public/icons/dev');
 
 // 创建驾驶舱图标 SVG - 体现"掌控万物"的意境
 // 设计：黑底圆角方形 - C 形弧线（开口向下）+ 中心控制点，象征 Cockpit 品牌 + 保护/掌控
-const createIconSvg = (size) => {
+const createIconSvg = (size, isDev = false) => {
   const cx = size / 2;
   const cy = size / 2;
   const bgSize = size * 0.9;      // 背景方形大小
@@ -43,6 +44,19 @@ const createIconSvg = (size) => {
       <!-- 中心控制点 - 发光效果 -->
       <circle cx="${cx}" cy="${cy}" r="${size * 0.08}" fill="#ffffff" opacity="0.3"/>
       <circle cx="${cx}" cy="${cy}" r="${size * 0.05}" fill="#ffffff"/>
+
+      ${isDev ? `
+      <!-- Dev 环境四角星角标 -->
+      <path d="M ${size * 0.78} ${size * 0.13}
+               L ${size * 0.81} ${size * 0.19}
+               L ${size * 0.87} ${size * 0.22}
+               L ${size * 0.81} ${size * 0.25}
+               L ${size * 0.78} ${size * 0.31}
+               L ${size * 0.75} ${size * 0.25}
+               L ${size * 0.69} ${size * 0.22}
+               L ${size * 0.75} ${size * 0.19}
+               Z" fill="#f97316"/>
+      ` : ''}
     </svg>
   `;
 };
@@ -52,17 +66,28 @@ async function generateIcons() {
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
+  if (!fs.existsSync(devOutputDir)) {
+    fs.mkdirSync(devOutputDir, { recursive: true });
+  }
 
   for (const size of sizes) {
-    const svg = createIconSvg(size);
+    // 生成 production 图标
+    const svg = createIconSvg(size, false);
     const outputPath = path.join(outputDir, `icon-${size}x${size}.png`);
-
     await sharp(Buffer.from(svg))
       .resize(size, size)
       .png()
       .toFile(outputPath);
-
     console.log(`Generated: icon-${size}x${size}.png`);
+
+    // 生成 dev 图标（带橙色角标）
+    const devSvg = createIconSvg(size, true);
+    const devOutputPath = path.join(devOutputDir, `icon-${size}x${size}.png`);
+    await sharp(Buffer.from(devSvg))
+      .resize(size, size)
+      .png()
+      .toFile(devOutputPath);
+    console.log(`Generated: dev/icon-${size}x${size}.png`);
   }
 
   // 生成 favicon

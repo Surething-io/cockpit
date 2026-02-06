@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react';
 import { ChatMessage } from '@/types/chat';
 import { MessageBubble } from './MessageBubble';
 
@@ -31,6 +31,16 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const [showTopButton, setShowTopButton] = useState(false);
   const [showBottomButton, setShowBottomButton] = useState(false);
+
+  // 去重消息（防止重复 key 警告）
+  const uniqueMessages = useMemo(() => {
+    const seen = new Set<string>();
+    return messages.filter((msg) => {
+      if (seen.has(msg.id)) return false;
+      seen.add(msg.id);
+      return true;
+    });
+  }, [messages]);
 
   // 记录加载更多前的滚动位置，用于保持滚动位置
   const scrollHeightBeforeLoadRef = useRef(0);
@@ -205,7 +215,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                 )}
               </div>
             )}
-            {messages.map((message) => (
+            {uniqueMessages.map((message) => (
               <div key={message.id} data-message-id={message.id} className="transition-all duration-300">
                 <MessageBubble
                   message={message}

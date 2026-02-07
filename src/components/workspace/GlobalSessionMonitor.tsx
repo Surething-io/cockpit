@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-interface GlobalSession {
+export interface GlobalSession {
   cwd: string;
   sessionId: string;
   lastActive: number;
@@ -15,31 +15,12 @@ interface GlobalSessionMonitorProps {
   currentCwd?: string;
   onSwitchProject: (cwd: string, sessionId: string) => void;
   collapsed?: boolean;
+  sessions: GlobalSession[];
 }
 
-export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed }: GlobalSessionMonitorProps) {
-  const [sessions, setSessions] = useState<GlobalSession[]>([]);
+export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, sessions }: GlobalSessionMonitorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // 轮询获取全局状态（1秒一次）
-  useEffect(() => {
-    const fetchSessions = async () => {
-      try {
-        const response = await fetch('/api/global-state');
-        if (response.ok) {
-          const data = await response.json();
-          setSessions(data.sessions || []);
-        }
-      } catch {
-        // 忽略错误
-      }
-    };
-
-    fetchSessions();
-    const interval = setInterval(fetchSessions, 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   // 点击外部关闭（包括点击 iframe）
   useEffect(() => {

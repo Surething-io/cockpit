@@ -75,9 +75,9 @@ export function ProjectItem({
         {hasUnread && !isActive && !isLoading && (
           <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500" />
         )}
-        {/* 运行中红点 - 数字右上角 */}
+        {/* 运行中黄点 - 数字右上角 */}
         {isLoading && (
-          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
         )}
       </div>
 

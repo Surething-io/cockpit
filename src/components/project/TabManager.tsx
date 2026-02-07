@@ -537,9 +537,9 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               {/* 圆圈编号 + 状态角标（右上角） */}
               <div className="relative flex-shrink-0">
                 <TabNumberIcon number={index + 1} isActive={tab.id === activeTabId} />
-                {/* Loading 红点闪烁 - 右上角 */}
+                {/* Loading 黄点闪烁 - 右上角 */}
                 {tab.isLoading && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
                 )}
                 {/* 未读红点角标 - 右上角（loading 时不显示，避免重叠） */}
                 {!tab.isLoading && unreadTabs.has(tab.id) && tab.id !== activeTabId && (

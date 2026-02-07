@@ -86,11 +86,11 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
         {!collapsed && <span className="text-sm flex-1 text-left">最近会话</span>}
-        {/* 红点 badge：loading 闪烁 + 未读静态 */}
+        {/* badge：loading 黄色闪烁 + 未读红色静态 */}
         {badgeCount > 0 && (
-          <span className={`min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-xs font-medium rounded-full flex items-center justify-center ${
+          <span className={`min-w-[18px] h-[18px] px-1 text-white text-xs font-medium rounded-full flex items-center justify-center ${
             collapsed ? 'absolute -top-1 -right-1' : ''
-          } ${loadingCount > 0 ? 'animate-pulse' : ''}`}>
+          } ${loadingCount > 0 ? 'bg-amber-500 animate-pulse' : 'bg-red-500'}`}>
             {badgeCount}
           </span>
         )}
@@ -102,7 +102,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
           <div className="px-3 py-2 border-b border-border bg-muted/50 flex-shrink-0 rounded-t-lg">
             <span className="text-sm font-medium">最近会话</span>
             {loadingCount > 0 && (
-              <span className="ml-2 text-xs text-red-500">({loadingCount} 运行中)</span>
+              <span className="ml-2 text-xs text-amber-500">({loadingCount} 运行中)</span>
             )}
             {unreadCount > 0 && (
               <span className="ml-2 text-xs text-red-500">({unreadCount} 未读)</span>
@@ -125,7 +125,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
                   {/* 状态指示器：loading 闪烁红点 / 未读静态红点 / 普通灰点 */}
                   <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${
                     session.isLoading
-                      ? 'bg-red-500 animate-pulse'
+                      ? 'bg-amber-500 animate-pulse'
                       : unreadSessionIds?.has(session.sessionId)
                         ? 'bg-red-500'
                         : 'bg-muted-foreground/30'
@@ -136,7 +136,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
                         {getProjectName(session.cwd)}
                       </span>
                       {session.isLoading && (
-                        <span className="text-xs text-red-500 flex-shrink-0">运行中</span>
+                        <span className="text-xs text-amber-500 flex-shrink-0">运行中</span>
                       )}
                       {!session.isLoading && unreadSessionIds?.has(session.sessionId) && (
                         <span className="text-xs text-red-500 flex-shrink-0">完成</span>

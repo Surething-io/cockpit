@@ -78,9 +78,11 @@ function getProjectPathFromJsonl(projectDir: string): string | null {
   return null;
 }
 
-// 回退方案：简单替换 - 为 /
-function fallbackDecodeProjectPath(encodedPath: string): string {
-  return '/' + encodedPath.slice(1).replace(/-/g, '/');
+// 回退方案：不再简单替换 - 为 /（会把 ai-assistant-sionea 错误解码为 ai/assistant/sionea）
+// 只依赖 sessions-index.json 和 jsonl 中的 cwd 字段获取真实路径
+// 如果都没有，返回 null 跳过该项目
+function fallbackDecodeProjectPath(_encodedPath: string): string | null {
+  return null;
 }
 
 export async function GET() {
@@ -106,9 +108,13 @@ export async function GET() {
       const projectPath = path.join(projectsDir, projectDirName);
 
       // 优先从 sessions-index.json 获取真实路径，其次从 jsonl 文件读取 cwd
+      // 不使用 fallback 解码（- 替换为 / 会导致路径错误）
       const fullPath = getProjectPathFromIndex(projectPath)
         || getProjectPathFromJsonl(projectPath)
         || fallbackDecodeProjectPath(projectDirName);
+
+      // 无法确定真实路径时跳过该项目
+      if (!fullPath) continue;
 
       // 获取最后一级目录名
       const projectName = path.basename(fullPath);

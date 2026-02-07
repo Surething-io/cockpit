@@ -45,7 +45,7 @@ interface TranscriptMessage {
 
 interface MessageImage {
   type: 'base64';
-  media_type: 'image/png';
+  media_type: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
   data: string;
 }
 
@@ -312,7 +312,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
         if (imageBlocks.length > 0) {
           userMessage.images = imageBlocks.map((b) => ({
             type: 'base64' as const,
-            media_type: (b.source?.media_type || 'image/png') as 'image/png',
+            media_type: (b.source?.media_type || 'image/png') as MessageImage['media_type'],
             data: b.source?.data || '',
           }));
         }

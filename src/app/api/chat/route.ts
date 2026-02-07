@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 interface ImageData {
   type: 'base64';
-  media_type: 'image/png';
+  media_type: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
   data: string;
 }
 

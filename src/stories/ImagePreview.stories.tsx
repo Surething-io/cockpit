@@ -23,6 +23,7 @@ const createMockImage = (id: string, color: string): ImageInfo => {
     id,
     data: preview.replace('data:image/png;base64,', ''),
     preview,
+    media_type: 'image/png',
   };
 };
 

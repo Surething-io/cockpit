@@ -395,11 +395,11 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                 </span>
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(`cd ${initialCwd}`);
-                    toast('已复制 cd 命令');
+                    navigator.clipboard.writeText(initialCwd);
+                    toast('已复制目录路径');
                   }}
                   className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-                  title="复制 cd 命令"
+                  title="复制目录路径"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -609,6 +609,9 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                         setTabSwitchTrigger(n => n + 1);
                         setActiveView('explorer');
                       }}
+                      onOpenNote={initialCwd ? () => {
+                        window.parent.postMessage({ type: 'OPEN_NOTE', cwd: initialCwd }, '*');
+                      } : undefined}
                       onOpenSession={handleOpenSession}
                     />
                   </div>
@@ -705,10 +708,11 @@ interface ChatPanelProps {
   isActive?: boolean; // Tab 是否激活
   onStateChange: (tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string }) => void;
   onShowGitStatus?: () => void;
+  onOpenNote?: () => void;
   onOpenSession?: (sessionId: string, title?: string) => void;
 }
 
-function ChatPanel({ tabId, cwd, sessionId, isActive, onStateChange, onShowGitStatus, onOpenSession }: ChatPanelProps) {
+function ChatPanel({ tabId, cwd, sessionId, isActive, onStateChange, onShowGitStatus, onOpenNote, onOpenSession }: ChatPanelProps) {
   // 使用 useCallback 稳定回调函数引用，避免无限循环
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
@@ -734,6 +738,7 @@ function ChatPanel({ tabId, cwd, sessionId, isActive, onStateChange, onShowGitSt
       onSessionIdChange={handleSessionIdChange}
       onTitleChange={handleTitleChange}
       onShowGitStatus={onShowGitStatus}
+      onOpenNote={onOpenNote}
       onOpenSession={onOpenSession}
     />
   );

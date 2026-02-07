@@ -448,9 +448,11 @@ function SlashCommandMenu({
 interface NoteModalProps {
   isOpen: boolean;
   onClose: () => void;
+  projectCwd?: string | null;
+  projectName?: string | null;
 }
 
-export function NoteModal({ isOpen, onClose }: NoteModalProps) {
+export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModalProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -460,11 +462,16 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
   const [slashMenu, setSlashMenu] = useState<{ query: string; position: { top: number; left: number } } | null>(null);
   const slashStartPos = useRef<number | null>(null);
 
+  // API URL（全局笔记 vs 项目笔记）
+  const noteApiUrl = projectCwd
+    ? `/api/note?cwd=${encodeURIComponent(projectCwd)}`
+    : '/api/note';
+
   // 保存笔记
   const saveNote = useCallback(async (content: string) => {
     setIsSaving(true);
     try {
-      await fetch('/api/note', {
+      await fetch(noteApiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),
@@ -475,7 +482,7 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
     } finally {
       setIsSaving(false);
     }
-  }, []);
+  }, [noteApiUrl]);
 
   // 5 秒防抖保存
   const debouncedSave = useCallback((content: string) => {
@@ -608,7 +615,7 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
     setIsLoading(true);
     setSlashMenu(null);
     slashStartPos.current = null;
-    fetch('/api/note')
+    fetch(noteApiUrl)
       .then(res => res.json())
       .then(data => {
         editor.commands.setContent(data.content || '');
@@ -616,7 +623,7 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
       })
       .catch(err => console.error('Failed to load note:', err))
       .finally(() => setIsLoading(false));
-  }, [isOpen, editor]);
+  }, [isOpen, editor, noteApiUrl]);
 
   // 关闭时保存
   const handleClose = useCallback(() => {
@@ -671,7 +678,7 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-medium text-foreground">笔记</h2>
+            <h2 className="text-sm font-medium text-foreground">{projectName ? `${projectName} - 笔记` : '笔记'}</h2>
             {isSaving && (
               <span className="text-xs text-muted-foreground">保存中...</span>
             )}

@@ -12,6 +12,7 @@ interface ProjectItemProps {
   isLoading?: boolean;
   onClick: () => void;
   onRemove: () => void;
+  onOpenNote?: () => void;
 }
 
 // 数字 SVG 图标组件
@@ -50,6 +51,7 @@ export function ProjectItem({
   isLoading,
   onClick,
   onRemove,
+  onOpenNote,
 }: ProjectItemProps) {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -73,9 +75,9 @@ export function ProjectItem({
         {hasUnread && !isActive && !isLoading && (
           <span className="absolute -top-0.5 -left-0.5 w-2 h-2 rounded-full bg-red-500" />
         )}
-        {/* 运行中绿点 - 折叠模式下显示在图标上 */}
+        {/* 运行中红点 - 折叠模式下显示在图标上 */}
         {isLoading && collapsed && (
-          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
         )}
       </div>
 
@@ -83,29 +85,47 @@ export function ProjectItem({
         <>
           <span className="flex-1 truncate text-sm">{name}</span>
 
-          {/* 状态指示器：运行中(绿色闪烁) > 活跃(品牌色) */}
+          {/* 状态指示器：运行中(红色闪烁) > 活跃(品牌色) */}
           {isLoading ? (
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0" />
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
           ) : isActive ? (
             <span className="w-2 h-2 rounded-full bg-brand flex-shrink-0" />
           ) : null}
         </>
       )}
 
-      {/* 关闭按钮 - 展开状态悬停时显示 */}
+      {/* 操作按钮 - 展开状态悬停时显示 */}
       {isHovered && !collapsed && (
-        <button
-          className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-500 transition-colors"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          title="关闭项目"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+          {/* 笔记按钮 */}
+          {onOpenNote && (
+            <button
+              className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenNote();
+              }}
+              title="项目笔记"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
+          )}
+          {/* 关闭按钮 */}
+          <button
+            className="p-1 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-500 transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            title="关闭项目"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       )}
     </div>
   );

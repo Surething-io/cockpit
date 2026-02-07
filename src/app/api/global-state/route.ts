@@ -21,9 +21,12 @@ export async function GET() {
   // 按 lastActive 降序排序
   state.sessions.sort((a, b) => b.lastActive - a.lastActive);
 
+  // 只保留最近 15 条
+  const recentSessions = state.sessions.slice(0, 15);
+
   // 为每个 session 获取最后一条用户消息（并行执行）
   const sessionsWithLastMessage = await Promise.all(
-    state.sessions.map(async (session) => {
+    recentSessions.map(async (session) => {
       const lastUserMessage = await getLastUserMessage(session.cwd, session.sessionId);
       return { ...session, lastUserMessage };
     })

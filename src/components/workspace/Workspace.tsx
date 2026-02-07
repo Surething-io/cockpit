@@ -25,6 +25,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   const [isSessionBrowserOpen, setIsSessionBrowserOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNoteOpen, setIsNoteOpen] = useState(false);
+  const [noteProjectCwd, setNoteProjectCwd] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [unreadProjects, setUnreadProjects] = useState<Set<string>>(new Set());
   const iframeRefs = useRef<Map<string, HTMLIFrameElement>>(new Map());
@@ -145,6 +146,12 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         if (currentProject?.cwd === cwd) {
           updateUrl(cwd, sessionId);
         }
+      }
+      // 打开项目笔记
+      if (event.data?.type === 'OPEN_NOTE' && event.data?.cwd) {
+        const cwd = event.data.cwd;
+        setNoteProjectCwd(cwd);
+        setIsNoteOpen(true);
       }
     };
 
@@ -328,7 +335,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         onToggleCollapse={handleToggleCollapse}
         onOpenSessionBrowser={() => setIsSessionBrowserOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenNote={() => setIsNoteOpen(true)}
+        onOpenNote={(cwd) => { setNoteProjectCwd(cwd ?? null); setIsNoteOpen(true); }}
         onSwitchProject={handleSwitchProject}
       />
 
@@ -378,7 +385,9 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
       {/* Note Modal */}
       <NoteModal
         isOpen={isNoteOpen}
-        onClose={() => setIsNoteOpen(false)}
+        onClose={() => { setIsNoteOpen(false); setNoteProjectCwd(null); }}
+        projectCwd={noteProjectCwd}
+        projectName={noteProjectCwd ? noteProjectCwd.split('/').pop() : null}
       />
     </div>
   );

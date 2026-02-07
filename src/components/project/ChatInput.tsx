@@ -20,9 +20,10 @@ interface ChatInputProps {
   onShowGitStatus?: () => void;
   onShowComments?: () => void;
   onShowUserMessages?: () => void;
+  onOpenNote?: () => void;
 }
 
-export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowComments, onShowUserMessages }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowComments, onShowUserMessages, onOpenNote }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [images, setImages] = useState<ImageInfo[]>([]);
   const [commands, setCommands] = useState<CommandInfo[]>([]);
@@ -328,6 +329,19 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        )}
+
+        {/* 项目笔记按钮 */}
+        {onOpenNote && (
+          <button
+            onClick={onOpenNote}
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
+            title="项目笔记"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
           </button>
         )}

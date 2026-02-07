@@ -22,10 +22,11 @@ interface ChatProps {
   onSessionIdChange?: (sessionId: string) => void;
   onTitleChange?: (title: string) => void;
   onShowGitStatus?: () => void;
+  onOpenNote?: () => void;
   onOpenSession?: (sessionId: string, title?: string) => void; // 打开新的 session（用于 Fork）
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenSession }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onOpenSession }: ChatProps) {
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -801,6 +802,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
           onShowGitStatus={onShowGitStatus}
           onShowComments={initialCwd ? () => setIsCommentsListOpen(true) : undefined}
           onShowUserMessages={() => setIsUserMessagesOpen(true)}
+          onOpenNote={onOpenNote}
         />
       </div>
 

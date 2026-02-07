@@ -246,10 +246,19 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
     </div>
   );
 
-  // 内嵌模式：无 Modal 包装和标题栏
+  // 内嵌模式：无 Modal 包装和标题栏，但右上角有关闭按钮
   if (embedded) {
     return (
-      <div className="bg-card w-full h-full flex flex-col">
+      <div className="bg-card w-full h-full flex flex-col relative">
+        <button
+          onClick={onClose}
+          className="absolute top-2 right-2 z-10 p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"
+          title="关闭"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
         {content}
       </div>
     );

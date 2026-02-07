@@ -21,7 +21,7 @@ interface ProjectSidebarProps {
   onToggleCollapse: () => void;
   onOpenSessionBrowser: () => void;
   onOpenSettings: () => void;
-  onOpenNote: () => void;
+  onOpenNote: (cwd?: string) => void;
   onSwitchProject: (cwd: string, sessionId: string) => void;
 }
 
@@ -192,6 +192,7 @@ export function ProjectSidebar({
               isLoading={loadingCwds.has(project.cwd)}
               onClick={() => onSelectProject(index)}
               onRemove={() => onRemoveProject(index)}
+              onOpenNote={() => onOpenNote(project.cwd)}
             />
           </div>
         ))}
@@ -211,7 +212,7 @@ export function ProjectSidebar({
           className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
             collapsed ? 'justify-center' : ''
           }`}
-          onClick={onOpenNote}
+          onClick={() => onOpenNote()}
           title="笔记"
         >
           <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

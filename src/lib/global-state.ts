@@ -15,7 +15,7 @@ interface GlobalState {
   sessions: GlobalSession[];
 }
 
-const MAX_SESSIONS = 10;
+const MAX_SESSIONS = 15;
 
 /**
  * 更新全局 session 状态

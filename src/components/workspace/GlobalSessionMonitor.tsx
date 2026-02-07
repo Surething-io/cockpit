@@ -100,7 +100,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
               <span className="ml-2 text-xs text-red-500">({loadingCount} 运行中)</span>
             )}
           </div>
-          <div>
+          <div className="max-h-[60vh] overflow-y-auto">
             {sessions.length === 0 ? (
               <div className="px-3 py-4 text-sm text-muted-foreground text-center">
                 暂无会话记录

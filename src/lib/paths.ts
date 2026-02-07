@@ -81,6 +81,13 @@ export function getServicesConfigPath(cwd: string): string {
 }
 
 /**
+ * Get the note.md path for a project
+ */
+export function getProjectNotePath(cwd: string): string {
+  return join(getCockpitProjectDir(cwd), 'note.md');
+}
+
+/**
  * Get the logs directory for a project
  */
 export function getLogsDir(cwd: string): string {

@@ -317,7 +317,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
       // 转换图片格式
       const messageImages: MessageImage[] | undefined = images?.map((img) => ({
         type: 'base64' as const,
-        media_type: 'image/png' as const,
+        media_type: img.media_type,
         data: img.data,
       }));
 

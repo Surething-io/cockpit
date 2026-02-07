@@ -161,9 +161,11 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
     const items = e.clipboardData?.items;
     if (!items) return;
 
+    const supportedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;
+
     for (const item of Array.from(items)) {
-      // 仅支持 PNG 格式
-      if (item.type === 'image/png') {
+      const mediaType = supportedTypes.find((t) => item.type === t);
+      if (mediaType) {
         e.preventDefault();
 
         const file = item.getAsFile();
@@ -180,10 +182,14 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
           const dataUrl = event.target?.result as string;
           if (!dataUrl) return;
 
+          // 从 data URL 中提取 base64 部分（兼容所有 MIME 类型）
+          const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+
           const newImage: ImageInfo = {
             id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-            data: dataUrl.replace('data:image/png;base64,', ''),
+            data: base64Data,
             preview: dataUrl,
+            media_type: mediaType,
           };
 
           setImages((prev) => [...prev, newImage]);
@@ -332,7 +338,7 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder={disabled ? "生成中... 可继续输入" : "输入消息，Enter 发送 (Shift+Enter 换行，可粘贴 PNG 图片，/ 显示命令)"}
+          placeholder={disabled ? "生成中... 可继续输入" : "输入消息，Enter 发送 (Shift+Enter 换行，可粘贴图片，/ 显示命令)"}
           rows={1}
           className="flex-1 resize-none px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-card text-foreground placeholder-slate-9"
         />

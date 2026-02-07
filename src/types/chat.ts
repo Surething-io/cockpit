@@ -10,17 +10,21 @@ export interface ToolCallInfo {
   isLoading?: boolean;
 }
 
+// 支持的图片 MIME 类型
+export type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+
 // 图片信息（前端状态管理用）
 export interface ImageInfo {
   id: string;           // 唯一标识
   data: string;         // base64 数据（不含前缀）
   preview: string;      // 完整的 data URL（用于预览）
+  media_type: ImageMediaType;  // 图片 MIME 类型
 }
 
 // 消息中的图片（用于历史记录和 API）
 export interface MessageImage {
   type: 'base64';
-  media_type: 'image/png';
+  media_type: ImageMediaType;
   data: string;
 }
 

@@ -16,9 +16,11 @@ interface GlobalSessionMonitorProps {
   onSwitchProject: (cwd: string, sessionId: string) => void;
   collapsed?: boolean;
   sessions: GlobalSession[];
+  unreadSessionIds?: Set<string>;
+  onClearUnread?: (sessionId: string) => void;
 }
 
-export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, sessions }: GlobalSessionMonitorProps) {
+export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, sessions, unreadSessionIds, onClearUnread }: GlobalSessionMonitorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -48,10 +50,13 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
   // 切换到指定 session
   const handleSessionClick = useCallback((session: GlobalSession) => {
     onSwitchProject(session.cwd, session.sessionId);
+    onClearUnread?.(session.sessionId);
     setIsOpen(false);
-  }, [onSwitchProject]);
+  }, [onSwitchProject, onClearUnread]);
 
   const loadingCount = sessions.filter(s => s.isLoading).length;
+  const unreadCount = sessions.filter(s => !s.isLoading && unreadSessionIds?.has(s.sessionId)).length;
+  const badgeCount = loadingCount + unreadCount;
 
   // 格式化时间
   const formatTime = (timestamp: number) => {
@@ -81,12 +86,12 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
         {!collapsed && <span className="text-sm flex-1 text-left">最近会话</span>}
-        {/* 红点 badge */}
-        {loadingCount > 0 && (
+        {/* 红点 badge：loading 闪烁 + 未读静态 */}
+        {badgeCount > 0 && (
           <span className={`min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-xs font-medium rounded-full flex items-center justify-center ${
             collapsed ? 'absolute -top-1 -right-1' : ''
-          }`}>
-            {loadingCount}
+          } ${loadingCount > 0 ? 'animate-pulse' : ''}`}>
+            {badgeCount}
           </span>
         )}
       </button>
@@ -98,6 +103,9 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
             <span className="text-sm font-medium">最近会话</span>
             {loadingCount > 0 && (
               <span className="ml-2 text-xs text-red-500">({loadingCount} 运行中)</span>
+            )}
+            {unreadCount > 0 && (
+              <span className="ml-2 text-xs text-red-500">({unreadCount} 未读)</span>
             )}
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto">
@@ -114,9 +122,13 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
                     index !== sessions.length - 1 ? 'border-b border-border/50' : ''
                   } ${currentCwd === session.cwd ? 'bg-accent/50' : ''}`}
                 >
-                  {/* 状态指示器 */}
+                  {/* 状态指示器：loading 闪烁红点 / 未读静态红点 / 普通灰点 */}
                   <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${
-                    session.isLoading ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground/30'
+                    session.isLoading
+                      ? 'bg-red-500 animate-pulse'
+                      : unreadSessionIds?.has(session.sessionId)
+                        ? 'bg-red-500'
+                        : 'bg-muted-foreground/30'
                   }`} />
                   <div className="flex-1 min-w-0" title={session.cwd}>
                     <div className="flex items-center gap-2">
@@ -124,7 +136,10 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
                         {getProjectName(session.cwd)}
                       </span>
                       {session.isLoading && (
-                        <span className="text-xs text-green-500 flex-shrink-0">运行中</span>
+                        <span className="text-xs text-red-500 flex-shrink-0">运行中</span>
+                      )}
+                      {!session.isLoading && unreadSessionIds?.has(session.sessionId) && (
+                        <span className="text-xs text-red-500 flex-shrink-0">完成</span>
                       )}
                       <span className="text-xs text-muted-foreground flex-shrink-0">
                         {formatTime(session.lastActive)}

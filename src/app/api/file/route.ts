@@ -20,11 +20,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Not a file' }, { status: 400 });
     }
 
-    // 检查文件大小，限制为 1MB
-    const maxSize = 1024 * 1024;
+    // 检查文件大小，限制为 10MB
+    const maxSize = 10 * 1024 * 1024;
     if (stat.size > maxSize) {
       return NextResponse.json({
-        error: `File too large (${(stat.size / 1024 / 1024).toFixed(2)}MB). Max size is 1MB.`
+        error: `File too large (${(stat.size / 1024 / 1024).toFixed(2)}MB). Max size is 10MB.`
       }, { status: 400 });
     }
 

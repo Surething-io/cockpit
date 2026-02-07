@@ -534,17 +534,18 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                 });
               }}
             >
-              {/* 圆圈编号 + 未读角标 */}
+              {/* 圆圈编号 + 状态角标（右上角） */}
               <div className="relative flex-shrink-0">
                 <TabNumberIcon number={index + 1} isActive={tab.id === activeTabId} />
-                {/* 未读红点角标 - 左上角 */}
-                {unreadTabs.has(tab.id) && tab.id !== activeTabId && (
-                  <span className="absolute -top-1 -left-1 w-2 h-2 rounded-full bg-red-500" />
+                {/* Loading 红点闪烁 - 右上角 */}
+                {tab.isLoading && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                )}
+                {/* 未读红点角标 - 右上角（loading 时不显示，避免重叠） */}
+                {!tab.isLoading && unreadTabs.has(tab.id) && tab.id !== activeTabId && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500" />
                 )}
               </div>
-              {tab.isLoading && (
-                <span className="inline-block w-3 h-3 border-2 border-brand border-t-transparent rounded-full animate-spin flex-shrink-0" />
-              )}
               <span className="max-w-32 truncate">{tab.title}</span>
               {tabs.length > 1 && (
                 <button

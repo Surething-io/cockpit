@@ -93,14 +93,14 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
 
       {/* 下拉列表 - 向右上弹出 */}
       {isOpen && (
-        <div className="absolute left-full bottom-0 ml-2 w-80 bg-popover border border-border rounded-lg shadow-lg z-50 overflow-hidden">
-          <div className="px-3 py-2 border-b border-border bg-muted/50">
+        <div className="absolute left-full bottom-0 ml-2 w-80 h-[450px] bg-popover border border-border rounded-lg shadow-lg z-50 flex flex-col">
+          <div className="px-3 py-2 border-b border-border bg-muted/50 flex-shrink-0 rounded-t-lg">
             <span className="text-sm font-medium">最近会话</span>
             {loadingCount > 0 && (
               <span className="ml-2 text-xs text-red-500">({loadingCount} 运行中)</span>
             )}
           </div>
-          <div className="max-h-[60vh] overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             {sessions.length === 0 ? (
               <div className="px-3 py-4 text-sm text-muted-foreground text-center">
                 暂无会话记录

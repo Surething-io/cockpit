@@ -26,6 +26,11 @@ export async function updateGlobalState(
   isLoading: boolean,
   title?: string
 ): Promise<void> {
+  // 防御：跳过不存在的路径（避免写入错误解码的 cwd）
+  if (!existsSync(cwd)) {
+    return;
+  }
+
   const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
 
   // 查找是否已存在

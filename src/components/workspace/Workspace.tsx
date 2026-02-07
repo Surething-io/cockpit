@@ -5,6 +5,7 @@ import { ProjectSidebar, ProjectInfo } from './ProjectSidebar';
 import { EmptyState } from './EmptyState';
 import { SessionBrowser } from '../shared/SessionBrowser';
 import { SettingsModal } from '../shared/SettingsModal';
+import { NoteModal } from '../shared/NoteModal';
 
 interface ProjectsData {
   projects: ProjectInfo[];
@@ -23,6 +24,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [isSessionBrowserOpen, setIsSessionBrowserOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isNoteOpen, setIsNoteOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [unreadProjects, setUnreadProjects] = useState<Set<string>>(new Set());
   const iframeRefs = useRef<Map<string, HTMLIFrameElement>>(new Map());
@@ -326,6 +328,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         onToggleCollapse={handleToggleCollapse}
         onOpenSessionBrowser={() => setIsSessionBrowserOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenNote={() => setIsNoteOpen(true)}
         onSwitchProject={handleSwitchProject}
       />
 
@@ -370,6 +373,12 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      {/* Note Modal */}
+      <NoteModal
+        isOpen={isNoteOpen}
+        onClose={() => setIsNoteOpen(false)}
       />
     </div>
   );

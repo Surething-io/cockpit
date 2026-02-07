@@ -11,6 +11,7 @@ export const HOME_DIR = homedir();
 export const COCKPIT_DIR = join(HOME_DIR, '.cockpit');
 export const COCKPIT_PROJECTS_DIR = join(COCKPIT_DIR, 'projects');
 export const GLOBAL_STATE_FILE = join(COCKPIT_DIR, 'state.json');
+export const NOTE_FILE = join(COCKPIT_DIR, 'note.md');
 export const CLAUDE_DIR = join(HOME_DIR, '.claude');
 export const CLAUDE_PROJECTS_DIR = join(CLAUDE_DIR, 'projects');
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { readFile, stat } from 'fs/promises';
 import { join, extname } from 'path';
 
-const MAX_FILE_SIZE = 1024 * 1024; // 1MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 // Image extensions that can be previewed
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp']);
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
     if (fileSize > MAX_FILE_SIZE) {
       return NextResponse.json({
         type: 'error',
-        message: '文件过大，无法预览（超过 1MB）',
+        message: '文件过大，无法预览（超过 10MB）',
         size: fileSize,
       });
     }

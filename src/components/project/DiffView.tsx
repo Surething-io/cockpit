@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { type BundledLanguage } from 'shiki';
 import { getHighlighter, getLanguageFromPath } from './CodeViewer';
 import { useComments, type CodeComment } from '@/hooks/useComments';
@@ -310,17 +311,17 @@ function FloatingToolbar({ x, y, container, onAddComment, onSendToAI, isChatLoad
 
   return (
     <div
-      className="absolute z-[200] flex items-center gap-1 bg-card border border-border rounded-lg shadow-lg p-1"
+      className="absolute z-[200] flex items-center gap-1.5 bg-card border border-border rounded-lg shadow-xl p-1.5"
       style={{ left: relX, top: relY }}
     >
       <button
-        className="px-2 py-1 text-xs bg-amber-9/20 text-amber-11 rounded hover:bg-amber-9/30 transition-colors"
+        className="px-3 py-1.5 text-xs font-medium border border-brand text-brand rounded-md hover:bg-brand/10 transition-colors"
         onClick={onAddComment}
       >
         添加评论
       </button>
       <button
-        className="px-2 py-1 text-xs bg-brand/20 text-brand rounded hover:bg-brand/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="px-3 py-1.5 text-xs font-medium border border-brand text-brand rounded-md hover:bg-brand/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         onClick={onSendToAI}
         disabled={isChatLoading}
         title={isChatLoading ? 'AI 正在响应中...' : '发送到 AI'}
@@ -442,14 +443,20 @@ function ViewCommentCard({
 }
 
 // ============================================
+// Row height constant
+// ============================================
+const ROW_HEIGHT = 20;
+
+// ============================================
 // Main DiffView Component (Split View)
 // ============================================
 
 export function DiffView({ oldContent, newContent, filePath, isNew = false, isDeleted = false, cwd, enableComments = false }: DiffViewProps) {
-  const diffLines = computeLineDiff(oldContent, newContent);
+  const diffLines = useMemo(() => computeLineDiff(oldContent, newContent), [oldContent, newContent]);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
-  const isSyncingRef = useRef(false);
+  const isSyncingHScrollRef = useRef(false);
   const [isMounted, setIsMounted] = useState(false);
 
   // Menu container for portal mounting (keeps floating elements within second screen)
@@ -536,6 +543,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
 
       // Find line numbers from DOM
       const getLineFromNode = (node: Node): number | null => {
+        if (!document.contains(node)) return null;
         let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node as Element;
         while (el && el !== container) {
           const lineRow = el.closest('[data-new-line]');
@@ -597,7 +605,6 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
       codeContent: floatingToolbar.codeContent,
     });
     setFloatingToolbar(null);
-    // 不清除文本选择，保留高亮显示选中的行
   }, [floatingToolbar]);
 
   const handleToolbarSendToAI = useCallback(() => {
@@ -609,7 +616,6 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
       codeContent: floatingToolbar.codeContent,
     });
     setFloatingToolbar(null);
-    // 不清除文本选择，保留高亮显示选中的行
   }, [floatingToolbar]);
 
   const handleSendToAISubmit = useCallback(async (question: string) => {
@@ -663,24 +669,23 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
     setAddCommentInput(null);
   }, [addCommentInput, addComment]);
 
-  // Sync both vertical and horizontal scroll between left and right panels
+  // Sync horizontal scroll between left and right panels
   useEffect(() => {
     const leftPanel = leftPanelRef.current;
     const rightPanel = rightPanelRef.current;
     if (!leftPanel || !rightPanel) return;
 
-    const syncScroll = (source: HTMLDivElement, target: HTMLDivElement) => {
-      if (isSyncingRef.current) return;
-      isSyncingRef.current = true;
-      target.scrollTop = source.scrollTop;
+    const syncHScroll = (source: HTMLDivElement, target: HTMLDivElement) => {
+      if (isSyncingHScrollRef.current) return;
+      isSyncingHScrollRef.current = true;
       target.scrollLeft = source.scrollLeft;
       requestAnimationFrame(() => {
-        isSyncingRef.current = false;
+        isSyncingHScrollRef.current = false;
       });
     };
 
-    const handleLeftScroll = () => syncScroll(leftPanel, rightPanel);
-    const handleRightScroll = () => syncScroll(rightPanel, leftPanel);
+    const handleLeftScroll = () => syncHScroll(leftPanel, rightPanel);
+    const handleRightScroll = () => syncHScroll(rightPanel, leftPanel);
 
     leftPanel.addEventListener('scroll', handleLeftScroll);
     rightPanel.addEventListener('scroll', handleRightScroll);
@@ -692,57 +697,72 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
   }, []);
 
   // Split into left and right columns
-  const leftLines: { lineNum: number; content: string; type: 'unchanged' | 'removed'; originalIdx: number }[] = [];
-  const rightLines: { lineNum: number; content: string; type: 'unchanged' | 'added'; originalIdx: number }[] = [];
+  const { leftLines, rightLines } = useMemo(() => {
+    const left: { lineNum: number; content: string; type: 'unchanged' | 'removed'; originalIdx: number }[] = [];
+    const right: { lineNum: number; content: string; type: 'unchanged' | 'added'; originalIdx: number }[] = [];
 
-  let leftIdx = 0;
-  let rightIdx = 0;
+    let leftIdx = 0;
+    let rightIdx = 0;
 
-  for (let i = 0; i < diffLines.length; i++) {
-    const line = diffLines[i];
-    if (line.type === 'unchanged') {
-      // Align: pad with empty lines if needed
-      while (leftLines.length < rightLines.length) {
-        leftLines.push({ lineNum: 0, content: '', type: 'unchanged', originalIdx: -1 });
+    for (let i = 0; i < diffLines.length; i++) {
+      const line = diffLines[i];
+      if (line.type === 'unchanged') {
+        // Align: pad with empty lines if needed
+        while (left.length < right.length) {
+          left.push({ lineNum: 0, content: '', type: 'unchanged', originalIdx: -1 });
+        }
+        while (right.length < left.length) {
+          right.push({ lineNum: 0, content: '', type: 'unchanged', originalIdx: -1 });
+        }
+        leftIdx++;
+        rightIdx++;
+        left.push({ lineNum: leftIdx, content: line.content, type: 'unchanged', originalIdx: i });
+        right.push({ lineNum: rightIdx, content: line.content, type: 'unchanged', originalIdx: i });
+      } else if (line.type === 'removed') {
+        leftIdx++;
+        left.push({ lineNum: leftIdx, content: line.content, type: 'removed', originalIdx: i });
+      } else if (line.type === 'added') {
+        rightIdx++;
+        right.push({ lineNum: rightIdx, content: line.content, type: 'added', originalIdx: i });
       }
-      while (rightLines.length < leftLines.length) {
-        rightLines.push({ lineNum: 0, content: '', type: 'unchanged', originalIdx: -1 });
-      }
-      leftIdx++;
-      rightIdx++;
-      leftLines.push({ lineNum: leftIdx, content: line.content, type: 'unchanged', originalIdx: i });
-      rightLines.push({ lineNum: rightIdx, content: line.content, type: 'unchanged', originalIdx: i });
-    } else if (line.type === 'removed') {
-      leftIdx++;
-      leftLines.push({ lineNum: leftIdx, content: line.content, type: 'removed', originalIdx: i });
-    } else if (line.type === 'added') {
-      rightIdx++;
-      rightLines.push({ lineNum: rightIdx, content: line.content, type: 'added', originalIdx: i });
     }
-  }
 
-  // Final alignment
-  while (leftLines.length < rightLines.length) {
-    leftLines.push({ lineNum: 0, content: '', type: 'unchanged', originalIdx: -1 });
-  }
-  while (rightLines.length < leftLines.length) {
-    rightLines.push({ lineNum: 0, content: '', type: 'unchanged', originalIdx: -1 });
-  }
+    // Final alignment
+    while (left.length < right.length) {
+      left.push({ lineNum: 0, content: '', type: 'unchanged', originalIdx: -1 });
+    }
+    while (right.length < left.length) {
+      right.push({ lineNum: 0, content: '', type: 'unchanged', originalIdx: -1 });
+    }
 
-  const allLines = diffLines.map(line => line.content);
+    return { leftLines: left, rightLines: right };
+  }, [diffLines]);
+
+  const allLines = useMemo(() => diffLines.map(line => line.content), [diffLines]);
   const highlightedLines = useLineHighlight(allLines, filePath);
+
+  // Virtual scrolling
+  const virtualizer = useVirtualizer({
+    count: leftLines.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 20,
+  });
 
   // Adjust left/right width based on file status: new file 25%/75%, deleted 75%/25%, otherwise 50%/50%
   const leftWidth = isNew ? 'w-1/4' : isDeleted ? 'w-3/4' : 'w-1/2';
   const rightWidth = isNew ? 'w-3/4' : isDeleted ? 'w-1/4' : 'w-1/2';
 
   // Prepare minimap line types
-  const minimapLines = leftLines.map((leftLine, idx) => {
+  const minimapLines = useMemo(() => leftLines.map((leftLine, idx) => {
     const rightLine = rightLines[idx];
     if (leftLine.type === 'removed') return { type: 'removed' as const };
     if (rightLine?.type === 'added') return { type: 'added' as const };
     return { type: 'unchanged' as const };
-  });
+  }), [leftLines, rightLines]);
+
+  const totalSize = virtualizer.getTotalSize();
+  const virtualItems = virtualizer.getVirtualItems();
 
   return (
     <div className="font-mono flex flex-col h-full text-sm">
@@ -756,88 +776,113 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
         </div>
         <div className="w-4 flex-shrink-0 bg-accent" />
       </div>
-      {/* Content row - two independent scroll panels with synced vertical scroll */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left Panel - Old */}
-        <div
-          ref={leftPanelRef}
-          className={`${leftWidth} overflow-auto border-r border-border`}
-        >
-          <div className="min-w-max">
-            {leftLines.map((line, idx) => (
-              <div
-                key={idx}
-                className={`flex ${line.type === 'removed' ? 'bg-red-9/15 dark:bg-red-9/25' : ''}`}
-              >
-                <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
-                  {line.lineNum || ''}
-                </span>
-                <HighlightedContent
-                  content={line.content}
-                  highlightedLine={line.originalIdx >= 0 ? highlightedLines.get(line.originalIdx) : undefined}
-                  className="whitespace-pre pl-2"
-                />
+      {/* Content row - flex-1 with min-h-0 to prevent flex stretch */}
+      <div className="flex-1 min-h-0 flex">
+        {/* Scroll wrapper - single vertical scroll container for virtualized rendering */}
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="flex" style={{ height: `${totalSize}px` }}>
+            {/* Left Panel - Old (horizontal scroll only) */}
+            <div
+              ref={leftPanelRef}
+              className={`${leftWidth} overflow-x-auto border-r border-border`}
+            >
+              <div className="min-w-max h-full" style={{ position: 'relative' }}>
+                {virtualItems.map((virtualItem) => {
+                  const line = leftLines[virtualItem.index];
+                  return (
+                    <div
+                      key={virtualItem.key}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: `${virtualItem.size}px`,
+                        transform: `translateY(${virtualItem.start}px)`,
+                      }}
+                      className={`flex ${line.type === 'removed' ? 'bg-red-9/15 dark:bg-red-9/25' : ''}`}
+                    >
+                      <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
+                        {line.lineNum || ''}
+                      </span>
+                      <HighlightedContent
+                        content={line.content}
+                        highlightedLine={line.originalIdx >= 0 ? highlightedLines.get(line.originalIdx) : undefined}
+                        className="whitespace-pre pl-2"
+                      />
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-        </div>
-        {/* Right Panel - New */}
-        <div
-          ref={rightPanelRef}
-          className={`${rightWidth} overflow-auto`}
-        >
-          <div className="min-w-max">
-            {rightLines.map((line, idx) => {
-              const lineNum = line?.lineNum || 0;
-              const hasComments = lineNum > 0 && linesWithComments.has(lineNum);
-              const lineComments = commentsByEndLine.get(lineNum);
-              const firstComment = lineComments?.[0];
-              const isInCommentRange = addCommentInput && lineNum >= addCommentInput.range.start && lineNum <= addCommentInput.range.end;
-              const isInAIRange = sendToAIInput && lineNum >= sendToAIInput.range.start && lineNum <= sendToAIInput.range.end;
-              const isInRange = isInCommentRange || isInAIRange;
+            </div>
+            {/* Right Panel - New (horizontal scroll only) */}
+            <div
+              ref={rightPanelRef}
+              className={`${rightWidth} overflow-x-auto`}
+            >
+              <div className="min-w-max h-full" style={{ position: 'relative' }}>
+                {virtualItems.map((virtualItem) => {
+                  const line = rightLines[virtualItem.index];
+                  const lineNum = line?.lineNum || 0;
+                  const hasComments = lineNum > 0 && linesWithComments.has(lineNum);
+                  const lineComments = commentsByEndLine.get(lineNum);
+                  const firstComment = lineComments?.[0];
+                  const isInCommentRange = addCommentInput && lineNum >= addCommentInput.range.start && lineNum <= addCommentInput.range.end;
+                  const isInAIRange = sendToAIInput && lineNum >= sendToAIInput.range.start && lineNum <= sendToAIInput.range.end;
+                  const isInRange = isInCommentRange || isInAIRange;
 
-              return (
-                <div
-                  key={idx}
-                  data-new-line={lineNum || undefined}
-                  className={`flex ${
-                    isInRange ? 'bg-blue-9/20' :
-                    hasComments ? 'bg-amber-9/10' :
-                    line?.type === 'added' ? 'bg-green-9/15 dark:bg-green-9/25' : ''
-                  }`}
-                >
-                  <span className={`flex-shrink-0 flex items-center gap-0.5 pr-1 text-slate-9 select-none border-r border-border ${
-                    isInRange ? 'bg-blue-9/30' : ''
-                  }`} style={{ width: commentsEnabled ? '52px' : '40px' }}>
-                    {/* Comment bubble */}
-                    {commentsEnabled && lineNum > 0 && hasComments && firstComment && (
-                      <button
-                        onClick={(e) => handleCommentBubbleClick(firstComment, e)}
-                        className="w-4 h-4 flex items-center justify-center rounded hover:bg-accent text-amber-9"
-                        title={`${lineComments?.length} 条评论`}
-                      >
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                    )}
-                    {commentsEnabled && lineNum > 0 && !hasComments && <span className="w-4" />}
-                    <span className="flex-1 text-right pr-1">{lineNum || ''}</span>
-                  </span>
-                  <HighlightedContent
-                    content={line?.content || ''}
-                    highlightedLine={line?.originalIdx >= 0 ? highlightedLines.get(line.originalIdx) : undefined}
-                    className="whitespace-pre pl-2"
-                  />
-                </div>
-              );
-            })}
+                  return (
+                    <div
+                      key={virtualItem.key}
+                      data-new-line={lineNum || undefined}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: `${virtualItem.size}px`,
+                        transform: `translateY(${virtualItem.start}px)`,
+                      }}
+                      className={`flex ${
+                        isInRange ? 'bg-blue-9/20' :
+                        hasComments ? 'bg-amber-9/10' :
+                        line?.type === 'added' ? 'bg-green-9/15 dark:bg-green-9/25' : ''
+                      }`}
+                    >
+                      <span className={`flex-shrink-0 flex items-center gap-0.5 pr-1 text-slate-9 select-none border-r border-border ${
+                        isInRange ? 'bg-blue-9/30' : ''
+                      }`} style={{ width: commentsEnabled ? '52px' : '40px' }}>
+                        {/* Comment bubble */}
+                        {commentsEnabled && lineNum > 0 && hasComments && firstComment && (
+                          <button
+                            onClick={(e) => handleCommentBubbleClick(firstComment, e)}
+                            className="w-4 h-4 flex items-center justify-center rounded hover:bg-accent text-amber-9"
+                            title={`${lineComments?.length} 条评论`}
+                          >
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                            </svg>
+                          </button>
+                        )}
+                        {commentsEnabled && lineNum > 0 && !hasComments && <span className="w-4" />}
+                        <span className="flex-1 text-right pr-1">{lineNum || ''}</span>
+                      </span>
+                      <HighlightedContent
+                        content={line?.content || ''}
+                        highlightedLine={line?.originalIdx >= 0 ? highlightedLines.get(line.originalIdx) : undefined}
+                        className="whitespace-pre pl-2"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
-        {/* Minimap */}
+        {/* Minimap - outside scroll container, fixed height */}
         <DiffMinimap
           lines={minimapLines}
-          containerRef={leftPanelRef}
+          containerRef={scrollContainerRef}
         />
       </div>
 
@@ -894,55 +939,76 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
 }
 
 // ============================================
-// Unified Diff View Component (optional export)
+// Unified Diff View Component (with virtual scrolling)
 // ============================================
 
 export function DiffUnifiedView({ oldContent, newContent, filePath }: Omit<DiffViewProps, 'isNew' | 'isDeleted'>) {
-  const diffLines = computeLineDiff(oldContent, newContent);
+  const diffLines = useMemo(() => computeLineDiff(oldContent, newContent), [oldContent, newContent]);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const allLines = diffLines.map(line => line.content);
+  const allLines = useMemo(() => diffLines.map(line => line.content), [diffLines]);
   const highlightedLines = useLineHighlight(allLines, filePath);
 
+  const virtualizer = useVirtualizer({
+    count: diffLines.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 20,
+  });
+
   return (
-    <div className="font-mono text-sm">
-      {diffLines.map((line, idx) => (
-        <div
-          key={idx}
-          className={`flex ${
-            line.type === 'removed'
-              ? 'bg-red-9/15 dark:bg-red-9/25'
-              : line.type === 'added'
-              ? 'bg-green-9/15 dark:bg-green-9/25'
-              : ''
-          }`}
-        >
-          {/* Line numbers */}
-          <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
-            {line.type !== 'added' ? line.oldLineNum : ''}
-          </span>
-          <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
-            {line.type !== 'removed' ? line.newLineNum : ''}
-          </span>
-          {/* Symbol */}
-          <span
-            className={`w-6 flex-shrink-0 text-center select-none ${
-              line.type === 'removed'
-                ? 'text-red-11'
-                : line.type === 'added'
-                ? 'text-green-11'
-                : 'text-slate-9'
-            }`}
-          >
-            {line.type === 'removed' ? '-' : line.type === 'added' ? '+' : ' '}
-          </span>
-          {/* Content with syntax highlighting */}
-          <HighlightedContent
-            content={line.content}
-            highlightedLine={highlightedLines.get(idx)}
-            className="flex-1 whitespace-pre pl-1"
-          />
-        </div>
-      ))}
+    <div ref={scrollContainerRef} className="font-mono text-sm overflow-auto h-full">
+      <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
+        {virtualizer.getVirtualItems().map((virtualItem) => {
+          const line = diffLines[virtualItem.index];
+          return (
+            <div
+              key={virtualItem.key}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: `${virtualItem.size}px`,
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+              className={`flex ${
+                line.type === 'removed'
+                  ? 'bg-red-9/15 dark:bg-red-9/25'
+                  : line.type === 'added'
+                  ? 'bg-green-9/15 dark:bg-green-9/25'
+                  : ''
+              }`}
+            >
+              {/* Line numbers */}
+              <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
+                {line.type !== 'added' ? line.oldLineNum : ''}
+              </span>
+              <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
+                {line.type !== 'removed' ? line.newLineNum : ''}
+              </span>
+              {/* Symbol */}
+              <span
+                className={`w-6 flex-shrink-0 text-center select-none ${
+                  line.type === 'removed'
+                    ? 'text-red-11'
+                    : line.type === 'added'
+                    ? 'text-green-11'
+                    : 'text-slate-9'
+                }`}
+              >
+                {line.type === 'removed' ? '-' : line.type === 'added' ? '+' : ' '}
+              </span>
+              {/* Content with syntax highlighting */}
+              <HighlightedContent
+                content={line.content}
+                highlightedLine={highlightedLines.get(virtualItem.index)}
+                className="flex-1 whitespace-pre pl-1"
+              />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

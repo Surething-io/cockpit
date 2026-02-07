@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ProjectItem } from './ProjectItem';
 import { GlobalSessionMonitor, GlobalSession } from './GlobalSessionMonitor';
 
@@ -50,6 +50,9 @@ export function ProjectSidebar({
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [sessions, setSessions] = useState<GlobalSession[]>([]);
+  // 按 sessionId 追踪未读状态（跟随 chat tab 的红点逻辑）
+  const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(new Set());
+  const prevLoadingSessionIdsRef = useRef<Set<string>>(new Set());
 
   // 轮询获取全局状态（1秒一次）
   useEffect(() => {
@@ -58,7 +61,37 @@ export function ProjectSidebar({
         const response = await fetch('/api/global-state');
         if (response.ok) {
           const data = await response.json();
-          setSessions(data.sessions || []);
+          const newSessions: GlobalSession[] = data.sessions || [];
+          setSessions(newSessions);
+
+          // 按 sessionId 检测 loading → complete 的转换，标记为未读
+          const currentLoadingIds = new Set(
+            newSessions.filter(s => s.isLoading).map(s => s.sessionId)
+          );
+          const prevLoading = prevLoadingSessionIdsRef.current;
+
+          if (prevLoading.size > 0) {
+            const newlyCompleted: string[] = [];
+            prevLoading.forEach(sessionId => {
+              // 之前在 loading，现在不在了
+              if (!currentLoadingIds.has(sessionId)) {
+                // 找到对应 session，排除当前活跃项目的当前 session
+                const session = newSessions.find(s => s.sessionId === sessionId);
+                if (session && session.cwd !== currentCwd) {
+                  newlyCompleted.push(sessionId);
+                }
+              }
+            });
+            if (newlyCompleted.length > 0) {
+              setUnreadSessionIds(prev => {
+                const next = new Set(prev);
+                newlyCompleted.forEach(id => next.add(id));
+                return next;
+              });
+            }
+          }
+
+          prevLoadingSessionIdsRef.current = currentLoadingIds;
         }
       } catch {
         // 忽略错误
@@ -68,6 +101,29 @@ export function ProjectSidebar({
     fetchSessions();
     const interval = setInterval(fetchSessions, 1000);
     return () => clearInterval(interval);
+  }, [currentCwd]);
+
+  // 当切换到某个项目时，清除该项目当前 session 的未读状态
+  useEffect(() => {
+    if (!currentCwd) return;
+    const currentSession = sessions.find(s => s.cwd === currentCwd);
+    if (currentSession && unreadSessionIds.has(currentSession.sessionId)) {
+      setUnreadSessionIds(prev => {
+        const next = new Set(prev);
+        next.delete(currentSession.sessionId);
+        return next;
+      });
+    }
+  }, [currentCwd, sessions, unreadSessionIds]);
+
+  // 清除指定 session 的未读状态（点击切换时调用）
+  const handleClearUnread = useCallback((sessionId: string) => {
+    setUnreadSessionIds(prev => {
+      if (!prev.has(sessionId)) return prev;
+      const next = new Set(prev);
+      next.delete(sessionId);
+      return next;
+    });
   }, []);
 
   // 构建 cwd -> isLoading 的映射
@@ -206,6 +262,8 @@ export function ProjectSidebar({
           onSwitchProject={onSwitchProject}
           collapsed={collapsed}
           sessions={sessions}
+          unreadSessionIds={unreadSessionIds}
+          onClearUnread={handleClearUnread}
         />
         {/* 笔记 */}
         <button

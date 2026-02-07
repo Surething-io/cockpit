@@ -71,12 +71,12 @@ export function ProjectItem({
     >
       <div className="relative flex-shrink-0">
         <NumberIcon number={index + 1} isActive={isActive} />
-        {/* 未读红点 - 仅在非活跃且有未读时显示（优先级低于运行指示） */}
+        {/* 未读红点 - 数字右上角（loading 时不显示，避免重叠） */}
         {hasUnread && !isActive && !isLoading && (
-          <span className="absolute -top-0.5 -left-0.5 w-2 h-2 rounded-full bg-red-500" />
+          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500" />
         )}
-        {/* 运行中红点 - 折叠模式下显示在图标上 */}
-        {isLoading && collapsed && (
+        {/* 运行中红点 - 数字右上角 */}
+        {isLoading && (
           <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
         )}
       </div>
@@ -85,10 +85,8 @@ export function ProjectItem({
         <>
           <span className="flex-1 truncate text-sm">{name}</span>
 
-          {/* 状态指示器：运行中(红色闪烁) > 活跃(品牌色) */}
-          {isLoading ? (
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
-          ) : isActive ? (
+          {/* 状态指示器：活跃(品牌色)，loading 红点已移到数字右上角 */}
+          {!isLoading && isActive ? (
             <span className="w-2 h-2 rounded-full bg-brand flex-shrink-0" />
           ) : null}
         </>

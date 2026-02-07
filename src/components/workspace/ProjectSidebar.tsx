@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ProjectItem } from './ProjectItem';
-import { GlobalSessionMonitor } from './GlobalSessionMonitor';
+import { GlobalSessionMonitor, GlobalSession } from './GlobalSessionMonitor';
 
 export interface ProjectInfo {
   cwd: string;
@@ -47,6 +47,31 @@ export function ProjectSidebar({
   const [isHovered, setIsHovered] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [sessions, setSessions] = useState<GlobalSession[]>([]);
+
+  // 轮询获取全局状态（1秒一次）
+  useEffect(() => {
+    const fetchSessions = async () => {
+      try {
+        const response = await fetch('/api/global-state');
+        if (response.ok) {
+          const data = await response.json();
+          setSessions(data.sessions || []);
+        }
+      } catch {
+        // 忽略错误
+      }
+    };
+
+    fetchSessions();
+    const interval = setInterval(fetchSessions, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // 构建 cwd -> isLoading 的映射
+  const loadingCwds = new Set(
+    sessions.filter(s => s.isLoading).map(s => s.cwd)
+  );
 
   // 拖拽开始
   const handleDragStart = useCallback((index: number) => {
@@ -162,6 +187,7 @@ export function ProjectSidebar({
               isActive={index === activeIndex}
               collapsed={collapsed}
               hasUnread={unreadProjects.has(project.cwd)}
+              isLoading={loadingCwds.has(project.cwd)}
               onClick={() => onSelectProject(index)}
               onRemove={() => onRemoveProject(index)}
             />
@@ -176,6 +202,7 @@ export function ProjectSidebar({
           currentCwd={currentCwd}
           onSwitchProject={onSwitchProject}
           collapsed={collapsed}
+          sessions={sessions}
         />
         {/* 设置按钮 */}
         <button

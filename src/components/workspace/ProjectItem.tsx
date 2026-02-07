@@ -9,6 +9,7 @@ interface ProjectItemProps {
   isActive: boolean;
   collapsed: boolean;
   hasUnread?: boolean;
+  isLoading?: boolean;
   onClick: () => void;
   onRemove: () => void;
 }
@@ -46,6 +47,7 @@ export function ProjectItem({
   isActive,
   collapsed,
   hasUnread,
+  isLoading,
   onClick,
   onRemove,
 }: ProjectItemProps) {
@@ -67,9 +69,13 @@ export function ProjectItem({
     >
       <div className="relative flex-shrink-0">
         <NumberIcon number={index + 1} isActive={isActive} />
-        {/* 未读红点 - 仅在非活跃且有未读时显示 */}
-        {hasUnread && !isActive && (
+        {/* 未读红点 - 仅在非活跃且有未读时显示（优先级低于运行指示） */}
+        {hasUnread && !isActive && !isLoading && (
           <span className="absolute -top-0.5 -left-0.5 w-2 h-2 rounded-full bg-red-500" />
+        )}
+        {/* 运行中绿点 - 折叠模式下显示在图标上 */}
+        {isLoading && collapsed && (
+          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-500 animate-pulse" />
         )}
       </div>
 
@@ -77,10 +83,12 @@ export function ProjectItem({
         <>
           <span className="flex-1 truncate text-sm">{name}</span>
 
-          {/* 活跃指示器 */}
-          {isActive && (
+          {/* 状态指示器：运行中(绿色闪烁) > 活跃(品牌色) */}
+          {isLoading ? (
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0" />
+          ) : isActive ? (
             <span className="w-2 h-2 rounded-full bg-brand flex-shrink-0" />
-          )}
+          ) : null}
         </>
       )}
 

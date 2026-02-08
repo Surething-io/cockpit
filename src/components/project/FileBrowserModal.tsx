@@ -917,6 +917,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   // 编辑 Modal
   const [showEditor, setShowEditor] = useState(false);
 
+  // Git 变更 Diff Markdown 预览
+  const [showStatusDiffPreview, setShowStatusDiffPreview] = useState(false);
+
   // ========== Git Status State ==========
   const [status, setStatus] = useState<GitStatusResponse | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
@@ -2667,6 +2670,17 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     }`}>
                       {statusSelectedFile.type === 'staged' ? '已暂存' : '未暂存'}
                     </span>
+                    <div className="flex-1" />
+                    {/* Markdown 预览按钮 */}
+                    {isMarkdownFile(statusSelectedFile.file.path) && statusDiff && !statusDiff.isDeleted && (
+                      <button
+                        onClick={() => setShowStatusDiffPreview(true)}
+                        className="px-2 py-1 text-xs rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-accent"
+                        title="预览 Markdown 渲染效果"
+                      >
+                        预览
+                      </button>
+                    )}
                   </div>
                   <div className="flex-1 overflow-auto">
                     {isImageFile(statusSelectedFile.file.path) ? (
@@ -2689,6 +2703,31 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       />
                     )}
                   </div>
+                  {/* Git 变更 Markdown 预览 Modal */}
+                  {showStatusDiffPreview && statusDiff && (
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowStatusDiffPreview(false)}>
+                      <div
+                        className="bg-card rounded-lg shadow-xl w-full max-w-[70%] h-full flex flex-col"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
+                          <span className="text-sm font-medium text-foreground truncate">{statusDiff.filePath}</span>
+                          <button
+                            onClick={() => setShowStatusDiffPreview(false)}
+                            className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                            title="关闭"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                        <div className="flex-1 overflow-auto p-6">
+                          <MarkdownRenderer content={statusDiff.newContent} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-slate-9">

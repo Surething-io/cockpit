@@ -221,64 +221,14 @@ export function GitWorktreeModal({
     }
   };
 
-  // 点击 worktree 切换
-  const handleClickWorktree = async (worktree: WorktreeInfo) => {
+  // 点击 worktree 切换 - 通知父级 Workspace 打开/切换项目
+  const handleClickWorktree = (worktree: WorktreeInfo) => {
     if (worktree.path === cwd) return; // 当前已在该 worktree
 
-    const targetPath = worktree.path;
-    const targetUrl = `/?cwd=${encodeURIComponent(targetPath)}`;
-
-    // 检查 Service Worker 是否可用
-    if ('serviceWorker' in navigator) {
-      try {
-        const registration = await navigator.serviceWorker.ready;
-
-        if (registration.active) {
-          const messageChannel = new MessageChannel();
-
-          const response = await new Promise<{ found: boolean }>((resolve) => {
-            messageChannel.port1.onmessage = (event) => {
-              resolve(event.data);
-            };
-
-            registration.active!.postMessage(
-              {
-                type: 'FIND_TAB',
-                cwd: targetPath,
-              },
-              [messageChannel.port2]
-            );
-
-            // 超时处理
-            setTimeout(() => resolve({ found: false }), 500);
-          });
-
-          if (response.found) {
-            // 已有 tab，发送通知让用户点击切换
-            let permission = Notification.permission;
-            if (permission === 'default') {
-              permission = await Notification.requestPermission();
-            }
-
-            if (permission === 'granted') {
-              const projectName = targetPath.split('/').pop() || targetPath;
-              await registration.showNotification(`切换到 ${projectName}`, {
-                body: `点击切换到 ${worktree.branch || 'worktree'}`,
-                tag: `switch-worktree-${targetPath}`,
-                data: { cwd: targetPath },
-              });
-            }
-            onClose();
-            return;
-          }
-        }
-      } catch {
-        // 忽略 SW 错误
-      }
-    }
-
-    // 没有找到或 SW 不可用，打开新 tab
-    window.open(targetUrl, '_blank');
+    window.parent.postMessage({
+      type: 'OPEN_PROJECT',
+      cwd: worktree.path,
+    }, '*');
     onClose();
   };
 

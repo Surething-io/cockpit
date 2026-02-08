@@ -78,9 +78,12 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
       onSelectSession(sessionId, session.title);
       onClose();
     } else {
-      // 否则打开新浏览器标签页
-      const url = `/?cwd=${encodeURIComponent(cwd)}&sessionId=${encodeURIComponent(sessionId)}`;
-      window.open(url, '_blank');
+      // 否则通知父级 Workspace 打开
+      window.parent.postMessage({
+        type: 'OPEN_PROJECT',
+        cwd,
+        sessionId,
+      }, '*');
     }
   };
 

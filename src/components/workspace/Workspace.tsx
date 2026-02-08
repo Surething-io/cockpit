@@ -153,11 +153,44 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         setNoteProjectCwd(cwd);
         setIsNoteOpen(true);
       }
+      // iframe 内请求打开/切换项目（worktree 切换、session 打开等）
+      if (event.data?.type === 'OPEN_PROJECT' && event.data?.cwd) {
+        const { cwd, sessionId } = event.data;
+        const targetSessionId = sessionId || '';
+        projectSessionIdsRef.current.set(cwd, targetSessionId);
+
+        const existingIndex = projects.findIndex(p => p.cwd === cwd);
+        if (existingIndex >= 0) {
+          // 项目已存在，切换到该 iframe
+          if (targetSessionId) {
+            const iframe = iframeRefs.current.get(cwd);
+            if (iframe?.contentWindow) {
+              iframe.contentWindow.postMessage({ type: 'SWITCH_SESSION', sessionId: targetSessionId }, '*');
+            }
+          }
+          if (existingIndex !== activeIndex) {
+            setActiveIndex(existingIndex);
+            saveProjects(projects, existingIndex, collapsed);
+          }
+        } else {
+          // 新项目，添加到列表
+          const newProject: ProjectInfo = { cwd };
+          const newProjects = [...projects, newProject];
+          const newActiveIndex = newProjects.length - 1;
+          setProjects(newProjects);
+          setActiveIndex(newActiveIndex);
+          saveProjects(newProjects, newActiveIndex, collapsed);
+          if (targetSessionId) {
+            pendingSessionIdsRef.current.set(cwd, targetSessionId);
+          }
+        }
+        updateUrl(cwd, targetSessionId);
+      }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [projects, activeIndex, updateUrl]);
+  }, [projects, activeIndex, collapsed, updateUrl, saveProjects]);
 
   // 选择项目
   const handleSelectProject = useCallback((index: number) => {

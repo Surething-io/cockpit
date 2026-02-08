@@ -592,11 +592,14 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     }
   };
 
-  // 处理侧边栏点击 session - 打开新标签页
+  // 处理侧边栏点击 session - 通知父级 Workspace 打开
   const handleSelectSession = useCallback((sid: string, _title?: string) => {
     if (initialCwd) {
-      const url = `/?cwd=${encodeURIComponent(initialCwd)}&sessionId=${sid}`;
-      window.open(url, '_blank');
+      window.parent.postMessage({
+        type: 'OPEN_PROJECT',
+        cwd: initialCwd,
+        sessionId: sid,
+      }, '*');
     }
   }, [initialCwd]);
 
@@ -620,9 +623,12 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
         if (onOpenSession) {
           onOpenSession(data.newSessionId, 'Fork');
         } else {
-          // 否则在新窗口打开
-          const url = `/?cwd=${encodeURIComponent(initialCwd)}&sessionId=${data.newSessionId}`;
-          window.open(url, '_blank');
+          // 否则通知父级 Workspace 打开
+          window.parent.postMessage({
+            type: 'OPEN_PROJECT',
+            cwd: initialCwd,
+            sessionId: data.newSessionId,
+          }, '*');
         }
       } else {
         console.error('Fork failed:', await response.text());

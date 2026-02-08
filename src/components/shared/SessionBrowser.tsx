@@ -152,12 +152,15 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession }: SessionBrow
     const fileName = sessionPath.split('/').pop() || '';
     const sessionId = fileName.replace('.jsonl', '');
 
-    // 如果有 onSelectSession 回调，使用它；否则打开新窗口
+    // 如果有 onSelectSession 回调，使用它；否则通知父级 Workspace 打开
     if (onSelectSession) {
       onSelectSession(cwd, sessionId);
     } else {
-      const url = `/?cwd=${encodeURIComponent(cwd)}&sessionId=${encodeURIComponent(sessionId)}`;
-      window.open(url, '_blank');
+      window.parent.postMessage({
+        type: 'OPEN_PROJECT',
+        cwd,
+        sessionId,
+      }, '*');
     }
   };
 

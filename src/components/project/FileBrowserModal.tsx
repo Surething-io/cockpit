@@ -1255,6 +1255,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
             onClose={() => fileTree.setShowEditor(false)}
             filePath={fileTree.selectedPath}
             initialContent={fileTree.fileContent.content || ''}
+            initialMtime={fileTree.fileContent.mtime}
             cwd={cwd}
             onSaved={() => {
               fileTree.loadFileContent(fileTree.selectedPath!);

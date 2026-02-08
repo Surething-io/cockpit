@@ -11,6 +11,7 @@ interface FileEditorModalProps {
   onClose: () => void;
   filePath: string;
   initialContent: string;
+  initialMtime?: number; // 文件打开时的 mtime
   cwd: string;
   onSaved?: () => void;
 }
@@ -109,6 +110,7 @@ export function FileEditorModal({
   onClose,
   filePath,
   initialContent,
+  initialMtime,
   cwd,
   onSaved,
 }: FileEditorModalProps) {
@@ -116,15 +118,23 @@ export function FileEditorModal({
   const [content, setContent] = useState(initialContent);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [conflictState, setConflictState] = useState<{
+    show: boolean;
+    diskContent?: string;
+  }>({ show: false });
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  // 追踪当前文件的 mtime — 打开时记录，保存成功后更新
+  const mtimeRef = useRef<number | undefined>(initialMtime);
 
   // Reset state when modal opens with new content
   useEffect(() => {
     if (isOpen) {
       setContent(initialContent);
       setIsDirty(false);
+      setConflictState({ show: false });
+      mtimeRef.current = initialMtime;
     }
-  }, [isOpen, initialContent]);
+  }, [isOpen, initialContent, initialMtime]);
 
   const handleEditorMount: OnMount = useCallback((editor) => {
     editorRef.current = editor;
@@ -138,22 +148,50 @@ export function FileEditorModal({
     setIsDirty(newContent !== initialContent);
   }, [initialContent]);
 
-  const handleSave = useCallback(async () => {
-    if (!isDirty || isSaving) return;
-
+  // 实际执行保存（可选跳过冲突检测）
+  const doSave = useCallback(async (skipConflictCheck = false) => {
     setIsSaving(true);
     try {
       const response = await fetch('/api/files/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, path: filePath, content }),
+        body: JSON.stringify({
+          cwd,
+          path: filePath,
+          content,
+          // 强制覆盖时不传 expectedMtime
+          expectedMtime: skipConflictCheck ? undefined : mtimeRef.current,
+        }),
       });
+
+      const data = await response.json();
+
+      // 409 冲突：文件在编辑期间被外部修改
+      if (response.status === 409 && data.conflict) {
+        // 获取磁盘上的最新内容用于对比提示
+        try {
+          const readRes = await fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`);
+          const readData = await readRes.json();
+          setConflictState({
+            show: true,
+            diskContent: readData.type === 'text' ? readData.content : undefined,
+          });
+        } catch {
+          setConflictState({ show: true });
+        }
+        return;
+      }
 
       if (!response.ok) {
         throw new Error('Failed to save file');
       }
 
+      // 保存成功，更新 mtime
+      if (data.mtime) {
+        mtimeRef.current = data.mtime;
+      }
       setIsDirty(false);
+      setConflictState({ show: false });
       toast('已保存', 'success');
       onSaved?.();
     } catch (error) {
@@ -162,7 +200,33 @@ export function FileEditorModal({
     } finally {
       setIsSaving(false);
     }
-  }, [cwd, filePath, content, isDirty, isSaving, onSaved]);
+  }, [cwd, filePath, content, onSaved]);
+
+  const handleSave = useCallback(async () => {
+    if (!isDirty || isSaving) return;
+    await doSave(false);
+  }, [isDirty, isSaving, doSave]);
+
+  // 强制覆盖（用户确认后）
+  const handleForceOverwrite = useCallback(async () => {
+    setConflictState({ show: false });
+    await doSave(true);
+  }, [doSave]);
+
+  // 放弃本地修改，使用磁盘版本
+  const handleRevertToDisk = useCallback(() => {
+    if (conflictState.diskContent !== undefined) {
+      setContent(conflictState.diskContent);
+      // 重新加载后如果内容跟 initialContent 一样，则不 dirty
+      setIsDirty(conflictState.diskContent !== initialContent);
+      if (editorRef.current) {
+        editorRef.current.setValue(conflictState.diskContent);
+      }
+    }
+    setConflictState({ show: false });
+    // 刷新以获取最新 mtime
+    onSaved?.();
+  }, [conflictState.diskContent, initialContent, onSaved]);
 
   // Keyboard shortcut: Cmd/Ctrl + S to save
   useEffect(() => {
@@ -231,6 +295,34 @@ export function FileEditorModal({
             </button>
           </div>
         </div>
+
+        {/* 冲突提示条 */}
+        {conflictState.show && (
+          <div className="px-4 py-2 bg-amber-500/15 border-b border-amber-500/30 flex items-center gap-3 flex-shrink-0">
+            <svg className="w-5 h-5 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <span className="text-sm text-foreground flex-1">
+              文件已被外部修改，保存将覆盖外部更改
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRevertToDisk}
+                className="px-3 py-1 text-sm rounded border border-border hover:bg-accent transition-colors"
+                title="放弃你的修改，使用磁盘上的最新版本"
+              >
+                使用磁盘版本
+              </button>
+              <button
+                onClick={handleForceOverwrite}
+                className="px-3 py-1 text-sm rounded bg-amber-500 text-white hover:bg-amber-600 transition-colors"
+                title="忽略外部修改，强制保存你的版本"
+              >
+                强制覆盖
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Editor */}
         <div className="flex-1 overflow-hidden">

@@ -116,6 +116,7 @@ export async function GET(request: NextRequest) {
       type: 'text',
       content,
       size: fileSize,
+      mtime: stats.mtimeMs,
     });
   } catch (error) {
     console.error('Error reading file:', error);

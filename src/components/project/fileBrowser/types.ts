@@ -10,6 +10,7 @@ export interface FileContent {
   content?: string;
   message?: string;
   size?: number;
+  mtime?: number; // 文件最后修改时间 (ms)，用于保存冲突检测
 }
 
 export interface BlameLine {

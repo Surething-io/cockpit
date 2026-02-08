@@ -155,7 +155,7 @@ const VirtualTreeRow = React.memo(function VirtualTreeRow({
       ) : (
         <FileIcon name={node.name} size={16} className="flex-shrink-0 ml-4" />
       )}
-      <span className={`text-sm truncate flex-1 ${nameColorClass}`}>
+      <span className={`text-sm truncate flex-1 ${nameColorClass}`} data-tooltip={node.path}>
         {node.name}
       </span>
       {/* 文件的 Git 状态标识（靠右） */}

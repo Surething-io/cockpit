@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { createPortal } from 'react-dom';
 import { CommitDetailPanel, type CommitInfo } from './CommitDetailPanel';
 import { DiffView } from './DiffView';
 import { toast } from '../shared/Toast';
-import { FileTree, type FileNode as FileTreeNode, type GitStatusMap, type GitStatusCode } from './FileTree';
-import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, collectFilesUnderNode, type GitFileNode, type GitFileStatus as GitFileStatusType } from './GitFileTree';
+import { FileTree, type GitStatusMap, type GitStatusCode } from './FileTree';
+import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, collectFilesUnderNode } from './GitFileTree';
 import { MenuContainerProvider } from './FileContextMenu';
 import { CodeViewer } from './CodeViewer';
 import { isMarkdownFile } from './MarkdownFileViewer';
@@ -14,974 +14,33 @@ import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { FileIcon } from '../shared/FileIcon';
 import { FileEditorModal } from './FileEditorModal';
 
-// ============================================================================
-// Types
-// ============================================================================
-
-interface FileNode {
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  children?: FileNode[];
-}
-
-interface FileContent {
-  type: 'text' | 'image' | 'binary' | 'error';
-  content?: string;
-  message?: string;
-  size?: number;
-}
-
-interface BlameLine {
-  hash: string;
-  hashFull: string;
-  author: string;
-  authorEmail: string;
-  time: number;
-  message: string;
-  line: number;
-  content: string;
-}
-
-// Git Status Types
-interface GitFileStatus {
-  path: string;
-  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked';
-  oldPath?: string;
-}
-
-interface GitStatusResponse {
-  staged: GitFileStatus[];
-  unstaged: GitFileStatus[];
-  cwd: string;
-}
-
-interface GitDiffResponse {
-  oldContent: string;
-  newContent: string;
-  filePath: string;
-  isNew: boolean;
-  isDeleted: boolean;
-}
-
-
-// Git History Types
-interface Branch {
-  current: string;
-  local: string[];
-  remote: string[];
-}
-
-interface Commit {
-  hash: string;
-  shortHash: string;
-  author: string;
-  authorEmail: string;
-  date: string;
-  subject: string;
-  body: string;
-  relativeDate: string;
-}
-
-interface FileChange {
-  path: string;
-  status: 'added' | 'modified' | 'deleted' | 'renamed';
-  oldPath?: string;
-  additions: number;
-  deletions: number;
-}
-
-
-interface FileDiff {
-  oldContent: string;
-  newContent: string;
-  filePath: string;
-  isNew: boolean;
-  isDeleted: boolean;
-}
-
-// Tab type
-type TabType = 'tree' | 'search' | 'recent' | 'status' | 'history';
-
-// 搜索结果类型
-interface SearchMatch {
-  lineNumber: number;
-  content: string;
-}
-
-interface SearchResult {
-  path: string;
-  matches: SearchMatch[];
-}
-
-interface SearchResponse {
-  results: SearchResult[];
-  query: string;
-  totalFiles: number;
-  totalMatches: number;
-  truncated: boolean;
-  error?: string;
-}
-
-
-// ============================================================================
-// Utility Functions
-// ============================================================================
-
-/**
- * 递归查找文件节点
- */
-function findNodeByPath(nodes: FileNode[], path: string): FileNode | null {
-  for (const node of nodes) {
-    if (node.path === path) return node;
-    if (node.children) {
-      const found = findNodeByPath(node.children, path);
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
-/**
- * 获取目标目录路径（用于新建文件/文件夹）
- * 如果选中的是目录，返回该目录路径
- * 如果选中的是文件，返回其父目录路径
- * 如果没有选中，返回空字符串（根目录）
- */
-function getTargetDirPath(selectedPath: string | null, files: FileNode[]): string {
-  if (!selectedPath) return '';
-  const node = findNodeByPath(files, selectedPath);
-  if (node?.isDirectory) return selectedPath;
-  // 文件的父目录
-  const parts = selectedPath.split('/');
-  parts.pop();
-  return parts.join('/');
-}
-
-function buildTreeFromPaths(filePaths: string[]): FileNode[] {
-  const root: FileNode[] = [];
-
-  for (const filePath of filePaths) {
-    const parts = filePath.split('/');
-    let currentLevel = root;
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isLast = i === parts.length - 1;
-      const currentPath = parts.slice(0, i + 1).join('/');
-
-      let existing = currentLevel.find(n => n.name === part);
-
-      if (!existing) {
-        existing = {
-          name: part,
-          path: currentPath,
-          isDirectory: !isLast,
-          children: isLast ? undefined : [],
-        };
-        currentLevel.push(existing);
-      }
-
-      if (!isLast && existing.children) {
-        currentLevel = existing.children;
-      }
-    }
-  }
-
-  const sortNodes = (nodes: FileNode[]) => {
-    nodes.sort((a, b) => {
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
-      return a.name.localeCompare(b.name);
-    });
-    nodes.forEach(n => {
-      if (n.children) sortNodes(n.children);
-    });
-  };
-
-  sortNodes(root);
-  return root;
-}
-
-function collectAllDirPaths(nodes: FileNode[]): string[] {
-  const paths: string[] = [];
-  const traverse = (nodeList: FileNode[]) => {
-    for (const node of nodeList) {
-      if (node.isDirectory) {
-        paths.push(node.path);
-        if (node.children) traverse(node.children);
-      }
-    }
-  };
-  traverse(nodes);
-  return paths;
-}
-
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp']);
-
-function isImageFile(filePath: string): boolean {
-  const ext = filePath.split('.').pop()?.toLowerCase();
-  return IMAGE_EXTENSIONS.has(ext || '');
-}
-
-function computeMatchedPaths(nodes: FileNode[], searchQuery: string): Set<string> {
-  const matched = new Set<string>();
-  if (!searchQuery) return matched;
-
-  const query = searchQuery.toLowerCase();
-
-  const traverse = (node: FileNode, ancestors: string[]): boolean => {
-    const nameMatches = node.name.toLowerCase().includes(query);
-    let childMatches = false;
-
-    if (node.children) {
-      for (const child of node.children) {
-        if (traverse(child, [...ancestors, node.path])) {
-          childMatches = true;
-        }
-      }
-    }
-
-    if (nameMatches || childMatches) {
-      matched.add(node.path);
-      ancestors.forEach(p => matched.add(p));
-      return true;
-    }
-    return false;
-  };
-
-  for (const node of nodes) {
-    traverse(node, []);
-  }
-
-  return matched;
-}
-
-interface FlatTreeItem {
-  node: FileNode;
-  level: number;
-}
-
-function flattenTree(
-  nodes: FileNode[],
-  expandedPaths: Set<string>,
-  matchedPaths: Set<string> | null,
-  level: number = 0
-): FlatTreeItem[] {
-  const result: FlatTreeItem[] = [];
-
-  for (const node of nodes) {
-    if (matchedPaths !== null && !matchedPaths.has(node.path)) {
-      continue;
-    }
-
-    result.push({ node, level });
-
-    if (node.isDirectory && node.children && expandedPaths.has(node.path)) {
-      result.push(...flattenTree(node.children, expandedPaths, matchedPaths, level + 1));
-    }
-  }
-
-  return result;
-}
-
-const NOOP = () => {};
-const ROW_HEIGHT = 24;
-
-function formatRelativeTime(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp * 1000;
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-  const months = Math.floor(days / 30);
-  const years = Math.floor(days / 365);
-
-  if (years > 0) return `${years}y ago`;
-  if (months > 0) return `${months}mo ago`;
-  if (days > 0) return `${days}d ago`;
-  if (hours > 0) return `${hours}h ago`;
-  if (minutes > 0) return `${minutes}m ago`;
-  return 'just now';
-}
-
-function formatDateTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const isThisYear = date.getFullYear() === now.getFullYear();
-
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-
-  if (isThisYear) {
-    return `${month}-${day} ${hours}:${minutes}`;
-  }
-  return `${date.getFullYear()}-${month}-${day} ${hours}:${minutes}`;
-}
-
-
-// ============================================================================
-// Shared Components
-// ============================================================================
-
-const AUTHOR_COLORS = [
-  { bg: 'rgba(59, 130, 246, 0.15)', border: 'rgb(59, 130, 246)' },
-  { bg: 'rgba(16, 185, 129, 0.15)', border: 'rgb(16, 185, 129)' },
-  { bg: 'rgba(245, 158, 11, 0.15)', border: 'rgb(245, 158, 11)' },
-  { bg: 'rgba(239, 68, 68, 0.15)', border: 'rgb(239, 68, 68)' },
-  { bg: 'rgba(168, 85, 247, 0.15)', border: 'rgb(168, 85, 247)' },
-  { bg: 'rgba(236, 72, 153, 0.15)', border: 'rgb(236, 72, 153)' },
-  { bg: 'rgba(20, 184, 166, 0.15)', border: 'rgb(20, 184, 166)' },
-  { bg: 'rgba(249, 115, 22, 0.15)', border: 'rgb(249, 115, 22)' },
-];
-
-// Virtual Tree Row
-interface VirtualTreeRowProps {
-  node: FileNode;
-  level: number;
-  isSelected: boolean;
-  isExpanded: boolean;
-  onSelect: (path: string) => void;
-  onToggle: (path: string) => void;
-}
-
-const VirtualTreeRow = React.memo(function VirtualTreeRow({
-  node,
-  level,
-  isSelected,
-  isExpanded,
-  onSelect,
-  onToggle,
-}: VirtualTreeRowProps) {
-  if (node.isDirectory) {
-    return (
-      <div
-        className={`flex items-center gap-1 px-2 cursor-pointer hover:bg-accent ${
-          isSelected ? 'bg-brand/10' : ''
-        }`}
-        style={{ paddingLeft: `${level * 12 + 8}px`, height: ROW_HEIGHT }}
-        onClick={() => onToggle(node.path)}
-      >
-        <span className="text-slate-9 text-xs w-3">
-          {isExpanded ? '▼' : '▶'}
-        </span>
-        <span className="text-sm text-foreground truncate">{node.name}</span>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={`flex items-center gap-1.5 px-2 cursor-pointer hover:bg-accent ${
-        isSelected ? 'bg-brand/10' : ''
-      }`}
-      style={{ paddingLeft: `${level * 12 + 20}px`, height: ROW_HEIGHT }}
-      onClick={() => onSelect(node.path)}
-    >
-      <FileIcon name={node.name} size={16} className="flex-shrink-0" />
-      <span className={`text-sm truncate ${isSelected ? 'text-brand' : 'text-foreground'}`}>
-        {node.name}
-      </span>
-    </div>
-  );
-});
-
-// File Tree Item (recursive, for small lists)
-interface FileTreeItemProps {
-  node: FileNode;
-  level: number;
-  selectedPath: string | null;
-  expandedPaths: Set<string>;
-  matchedPaths: Set<string> | null;
-  onSelect: (path: string) => void;
-  onToggle: (path: string) => void;
-}
-
-const FileTreeItem = React.memo(function FileTreeItem({
-  node,
-  level,
-  selectedPath,
-  expandedPaths,
-  matchedPaths,
-  onSelect,
-  onToggle,
-}: FileTreeItemProps) {
-  const isSelected = selectedPath === node.path;
-  const isExpanded = expandedPaths.has(node.path);
-
-  if (matchedPaths !== null && !matchedPaths.has(node.path)) {
-    return null;
-  }
-
-  if (node.isDirectory) {
-    return (
-      <div>
-        <div
-          className={`flex items-center gap-1 py-0.5 px-2 cursor-pointer hover:bg-accent ${
-            isSelected ? 'bg-brand/10' : ''
-          }`}
-          style={{ paddingLeft: `${level * 12 + 8}px` }}
-          onClick={() => onToggle(node.path)}
-        >
-          <span className="text-slate-9 text-xs w-3">
-            {isExpanded ? '▼' : '▶'}
-          </span>
-          <span className="text-sm text-foreground truncate">{node.name}</span>
-        </div>
-        {isExpanded && node.children && (
-          <div>
-            {node.children.map(child => (
-              <FileTreeItem
-                key={child.path}
-                node={child}
-                level={level + 1}
-                selectedPath={selectedPath}
-                expandedPaths={expandedPaths}
-                matchedPaths={matchedPaths}
-                onSelect={onSelect}
-                onToggle={onToggle}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={`flex items-center gap-1.5 py-0.5 px-2 cursor-pointer hover:bg-accent ${
-        isSelected ? 'bg-brand/10' : ''
-      }`}
-      style={{ paddingLeft: `${level * 12 + 20}px` }}
-      onClick={() => onSelect(node.path)}
-    >
-      <FileIcon name={node.name} size={16} className="flex-shrink-0" />
-      <span className={`text-sm truncate ${isSelected ? 'text-brand' : 'text-foreground'}`}>
-        {node.name}
-      </span>
-    </div>
-  );
-});
-
-// Virtual File Tree
-interface VirtualFileTreeProps {
-  files: FileNode[];
-  selectedPath: string | null;
-  expandedPaths: Set<string>;
-  matchedPaths: Set<string> | null;
-  onSelect: (path: string) => void;
-  onToggle: (path: string) => void;
-  shouldScrollToSelected?: boolean; // 是否滚动到选中文件（仅外部触发时为 true）
-}
-
-function VirtualFileTree({
-  files,
-  selectedPath,
-  expandedPaths,
-  matchedPaths,
-  onSelect,
-  onToggle,
-  shouldScrollToSelected = false,
-}: VirtualFileTreeProps) {
-  const parentRef = useRef<HTMLDivElement>(null);
-
-  const flatItems = useMemo(() => {
-    return flattenTree(files, expandedPaths, matchedPaths);
-  }, [files, expandedPaths, matchedPaths]);
-
-  const virtualizer = useVirtualizer({
-    count: flatItems.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 10,
-  });
-
-  // Scroll to selected file only when shouldScrollToSelected is true
-  useEffect(() => {
-    if (shouldScrollToSelected && selectedPath && flatItems.length > 0) {
-      const index = flatItems.findIndex(item => item.node.path === selectedPath);
-      if (index >= 0) {
-        virtualizer.scrollToIndex(index, { align: 'center' });
-      }
-    }
-  }, [shouldScrollToSelected, selectedPath, flatItems, virtualizer]);
-
-  if (flatItems.length === 0) {
-    return (
-      <div className="p-4 text-center text-muted-foreground text-sm">
-        No files
-      </div>
-    );
-  }
-
-  return (
-    <div
-      ref={parentRef}
-      className="h-full overflow-y-auto"
-      style={{ willChange: 'transform' }}
-    >
-      <div
-        style={{
-          height: `${virtualizer.getTotalSize()}px`,
-          width: '100%',
-          position: 'relative',
-        }}
-      >
-        {virtualizer.getVirtualItems().map((virtualItem) => {
-          const item = flatItems[virtualItem.index];
-          return (
-            <div
-              key={item.node.path}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: `${virtualItem.size}px`,
-                transform: `translateY(${virtualItem.start}px)`,
-              }}
-            >
-              <VirtualTreeRow
-                node={item.node}
-                level={item.level}
-                isSelected={selectedPath === item.node.path}
-                isExpanded={expandedPaths.has(item.node.path)}
-                onSelect={onSelect}
-                onToggle={onToggle}
-              />
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-
-// Blame View
-interface BlameViewProps {
-  blameLines: BlameLine[];
-  cwd: string;
-  onSelectCommit?: (commit: CommitInfo) => void;
-}
-
-function BlameView({ blameLines, cwd, onSelectCommit }: BlameViewProps) {
-  const [hoveredAuthor, setHoveredAuthor] = useState<string | null>(null);
-  const [tooltip, setTooltip] = useState<{ line: BlameLine; x: number; y: number } | null>(null);
-  const parentRef = useRef<HTMLDivElement>(null);
-
-  const authorColorMap = useMemo(() => {
-    const authors = [...new Set(blameLines.map(l => l.author))];
-    const map = new Map<string, typeof AUTHOR_COLORS[0]>();
-    authors.forEach((author, index) => {
-      map.set(author, AUTHOR_COLORS[index % AUTHOR_COLORS.length]);
-    });
-    return map;
-  }, [blameLines]);
-
-  const virtualizer = useVirtualizer({
-    count: blameLines.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 20,
-    overscan: 20,
-  });
-
-  const handleMouseEnter = useCallback((line: BlameLine, e: React.MouseEvent) => {
-    setHoveredAuthor(line.author);
-    const rect = e.currentTarget.getBoundingClientRect();
-    setTooltip({ line, x: rect.right + 8, y: rect.top });
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    setHoveredAuthor(null);
-    setTooltip(null);
-  }, []);
-
-  const handleClick = useCallback((line: BlameLine) => {
-    const commitInfo: CommitInfo = {
-      hash: line.hashFull,
-      shortHash: line.hash,
-      author: line.author,
-      authorEmail: line.authorEmail,
-      date: new Date(line.time * 1000).toISOString(),
-      subject: line.message.split('\n')[0] || '',
-      body: line.message.split('\n').slice(1).join('\n').trim(),
-      time: line.time,
-    };
-    onSelectCommit?.(commitInfo);
-    setTooltip(null);
-  }, [onSelectCommit]);
-
-  return (
-    <div ref={parentRef} className="h-full overflow-auto font-mono text-sm relative">
-      <div
-        style={{
-          height: `${virtualizer.getTotalSize()}px`,
-          width: '100%',
-          position: 'relative',
-        }}
-      >
-        {virtualizer.getVirtualItems().map((virtualItem) => {
-          const line = blameLines[virtualItem.index];
-          const prevLine = virtualItem.index > 0 ? blameLines[virtualItem.index - 1] : null;
-          const showBlameInfo = !prevLine || prevLine.hash !== line.hash;
-          const authorColor = authorColorMap.get(line.author) || AUTHOR_COLORS[0];
-          const isHovered = hoveredAuthor === line.author;
-
-          return (
-            <div
-              key={virtualItem.index}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: `${virtualItem.size}px`,
-                transform: `translateY(${virtualItem.start}px)`,
-                backgroundColor: isHovered ? authorColor.bg : undefined,
-              }}
-              className="flex hover:bg-accent/50"
-            >
-              <div
-                className="w-1 flex-shrink-0"
-                style={{ backgroundColor: authorColor.border }}
-              />
-              <div
-                className="w-48 flex-shrink-0 px-2 flex items-center gap-2 border-r border-border text-muted-foreground cursor-pointer hover:bg-accent"
-                onMouseEnter={(e) => handleMouseEnter(line, e)}
-                onMouseLeave={handleMouseLeave}
-                onClick={() => handleClick(line)}
-                title="点击查看 commit 详情"
-              >
-                {showBlameInfo ? (
-                  <>
-                    <span className="font-medium" style={{ color: authorColor.border }}>{line.hash}</span>
-                    <span className="truncate flex-1">{line.author.split(' ')[0]}</span>
-                    <span className="text-slate-9">{formatRelativeTime(line.time)}</span>
-                  </>
-                ) : null}
-              </div>
-              <div className="w-10 flex-shrink-0 px-2 text-right text-slate-9 select-none">
-                {line.line}
-              </div>
-              <pre className="flex-1 px-2 overflow-hidden whitespace-pre">
-                <code className="text-foreground">{line.content}</code>
-              </pre>
-            </div>
-          );
-        })}
-      </div>
-
-      {tooltip && (
-        <div
-          className="fixed z-50 bg-card border border-border rounded-lg shadow-lg p-3 max-w-lg"
-          style={{
-            left: Math.min(tooltip.x, window.innerWidth - 450),
-            top: Math.max(8, Math.min(tooltip.y, window.innerHeight - 200)),
-          }}
-        >
-          <div className="flex items-start gap-3">
-            <div
-              className="px-2 py-0.5 rounded text-xs font-mono font-medium text-white flex-shrink-0"
-              style={{ backgroundColor: authorColorMap.get(tooltip.line.author)?.border || '#666' }}
-            >
-              {tooltip.line.hash}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-foreground">
-                {tooltip.line.author}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {tooltip.line.authorEmail}
-              </div>
-            </div>
-          </div>
-          <div className="mt-2 text-sm text-foreground whitespace-pre-wrap max-h-48 overflow-y-auto">
-            {tooltip.line.message}
-          </div>
-          <div className="mt-2 text-xs text-muted-foreground border-t border-border pt-2">
-            {new Date(tooltip.line.time * 1000).toLocaleString()}
-            <span className="ml-2 text-brand">点击查看详情</span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-// ============================================================================
-// Git History Components
-// ============================================================================
-
-function BranchSelector({
-  branches,
-  selectedBranch,
-  onSelect,
-  isLoading,
-}: {
-  branches: Branch | null;
-  selectedBranch: string;
-  onSelect: (branch: string) => void;
-  isLoading: boolean;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (isOpen && inputRef.current) {
-      inputRef.current.focus();
-    }
-  }, [isOpen]);
-
-  const filteredLocal = branches?.local.filter(b =>
-    b.toLowerCase().includes(search.toLowerCase())
-  ) || [];
-  const filteredRemote = branches?.remote.filter(b =>
-    b.toLowerCase().includes(search.toLowerCase())
-  ) || [];
-
-  const handleSelect = (branch: string) => {
-    onSelect(branch);
-    setIsOpen(false);
-    setSearch('');
-  };
-
-  return (
-    <div className="relative" ref={dropdownRef}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        disabled={isLoading}
-        className="w-full px-3 py-1.5 text-sm border border-border rounded bg-card text-foreground text-left flex items-center justify-between hover:border-slate-6 dark:hover:border-slate-6 transition-colors"
-      >
-        <span className="truncate flex items-center gap-2">
-          <svg className="w-4 h-4 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-          {selectedBranch || '选择分支...'}
-          {branches?.current === selectedBranch && (
-            <span className="text-xs text-green-11">(当前)</span>
-          )}
-        </span>
-        <svg className={`w-4 h-4 text-slate-9 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {isOpen && (
-        <div className="absolute z-50 mt-1 w-full bg-card border border-border rounded-lg shadow-lg max-h-80 flex flex-col">
-          <div className="p-2 border-b border-border">
-            <input
-              ref={inputRef}
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="搜索分支..."
-              className="w-full px-2 py-1 text-sm border border-border rounded bg-secondary text-foreground placeholder-slate-9"
-            />
-          </div>
-          <div className="overflow-y-auto flex-1">
-            {filteredLocal.length > 0 && (
-              <div>
-                <div className="px-3 py-1 text-xs font-medium text-muted-foreground bg-secondary sticky top-0">
-                  本地分支
-                </div>
-                {filteredLocal.map(branch => (
-                  <div
-                    key={branch}
-                    onClick={() => handleSelect(branch)}
-                    className={`px-3 py-1.5 text-sm cursor-pointer flex items-center gap-2 ${
-                      branch === selectedBranch
-                        ? 'bg-brand/10 text-brand'
-                        : 'hover:bg-accent text-foreground'
-                    }`}
-                  >
-                    <span className="truncate flex-1">{branch}</span>
-                    {branch === branches?.current && (
-                      <span className="text-xs text-green-11 flex-shrink-0">当前</span>
-                    )}
-                    {branch === selectedBranch && (
-                      <svg className="w-4 h-4 text-brand flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            {filteredRemote.length > 0 && (
-              <div>
-                <div className="px-3 py-1 text-xs font-medium text-muted-foreground bg-secondary sticky top-0">
-                  远程分支
-                </div>
-                {filteredRemote.map(branch => (
-                  <div
-                    key={branch}
-                    onClick={() => handleSelect(branch)}
-                    className={`px-3 py-1.5 text-sm cursor-pointer flex items-center gap-2 ${
-                      branch === selectedBranch
-                        ? 'bg-brand/10 text-brand'
-                        : 'hover:bg-accent text-foreground'
-                    }`}
-                  >
-                    <span className="truncate flex-1">{branch}</span>
-                    {branch === selectedBranch && (
-                      <svg className="w-4 h-4 text-brand flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            {filteredLocal.length === 0 && filteredRemote.length === 0 && (
-              <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                未找到分支
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-// ============================================================================
-// Main Modal Component
-// ============================================================================
-
-interface FileBrowserModalProps {
-  onClose: () => void;
-  cwd: string;
-  initialTab?: TabType;
-  tabSwitchTrigger?: number;
-}
-
-const COMMITS_PER_PAGE = 50;
+import type { TabType, GitFileStatus, GitStatusResponse, FileBrowserModalProps } from './fileBrowser/types';
+import { getTargetDirPath, isImageFile, formatDateTime, NOOP, COMMITS_PER_PAGE } from './fileBrowser/utils';
+import { BlameView } from './fileBrowser/BlameView';
+import { BranchSelector } from './fileBrowser/BranchSelector';
+
+import { useFileTree } from '../../hooks/useFileTree';
+import { useContentSearch } from '../../hooks/useContentSearch';
+import { useGitStatus } from '../../hooks/useGitStatus';
+import { useGitHistory } from '../../hooks/useGitHistory';
 
 export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchTrigger }: FileBrowserModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const menuContainerRef = useRef<HTMLDivElement>(null);
   const [menuContainer, setMenuContainer] = useState<HTMLElement | null>(null);
+  const [hoverTooltip, setHoverTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 
-  // Set menu container after mount
-  useEffect(() => {
-    setMenuContainer(menuContainerRef.current);
-  }, []);
+  // ========== Hooks ==========
+  const fileTree = useFileTree({ cwd });
+  const contentSearch = useContentSearch({ cwd });
+  const gitStatus = useGitStatus({ cwd, addToRecentFiles: fileTree.addToRecentFiles });
+  const gitHistory = useGitHistory({ cwd, addToRecentFiles: fileTree.addToRecentFiles });
 
-  // ========== File Browser State ==========
-  const [files, setFiles] = useState<FileNode[]>([]);
-  const [recentFiles, setRecentFiles] = useState<string[]>([]);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [fileContent, setFileContent] = useState<FileContent | null>(null);
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
-  const [searchQuery, setSearchQuery] = useState('');
-  // 新建文件/文件夹状态
-  const [creatingItem, setCreatingItem] = useState<{ type: 'file' | 'folder'; parentPath: string } | null>(null);
-  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
-  const [isLoadingContent, setIsLoadingContent] = useState(false);
-  const [fileError, setFileError] = useState<string | null>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  // 是否需要滚动到选中文件（仅外部触发选择时为 true，用户在目录树中点击选择时为 false）
-  const [shouldScrollToSelected, setShouldScrollToSelected] = useState(false);
-  // 跳转到的目标行号（搜索结果点击时使用）
-  const [targetLineNumber, setTargetLineNumber] = useState<number | null>(null);
-
-  // Blame state
-  const [showBlame, setShowBlame] = useState(false);
-  const [blameLines, setBlameLines] = useState<BlameLine[]>([]);
-  const [isLoadingBlame, setIsLoadingBlame] = useState(false);
-  const [blameError, setBlameError] = useState<string | null>(null);
-  const [blameSelectedCommit, setBlameSelectedCommit] = useState<CommitInfo | null>(null);
-
-  // Markdown 预览 Modal
-  const [showMarkdownPreview, setShowMarkdownPreview] = useState(false);
-
-  // 编辑 Modal
-  const [showEditor, setShowEditor] = useState(false);
-
-  // Git 变更 Diff Markdown 预览
-  const [showStatusDiffPreview, setShowStatusDiffPreview] = useState(false);
-
-  // ========== Git Status State ==========
-  const [status, setStatus] = useState<GitStatusResponse | null>(null);
-  const [statusLoading, setStatusLoading] = useState(false);
-  const [statusError, setStatusError] = useState<string | null>(null);
-  const [statusSelectedFile, setStatusSelectedFile] = useState<{ file: GitFileStatus; type: 'staged' | 'unstaged' } | null>(null);
-  const [statusDiff, setStatusDiff] = useState<GitDiffResponse | null>(null);
-  // Git Status 右键菜单
-    const [statusDiffLoading, setStatusDiffLoading] = useState(false);
-  const [statusExpandedPaths, setStatusExpandedPaths] = useState<Set<string>>(new Set());
-  const [stagedTree, setStagedTree] = useState<GitFileNode<unknown>[]>([]);
-  const [unstagedTree, setUnstagedTree] = useState<GitFileNode<unknown>[]>([]);
-
-  // ========== Git History State ==========
-  const [branches, setBranches] = useState<Branch | null>(null);
-  const [selectedBranch, setSelectedBranch] = useState<string>('');
-  const [commits, setCommits] = useState<Commit[]>([]);
-  const [selectedCommit, setSelectedCommit] = useState<Commit | null>(null);
-  const [historyFiles, setHistoryFiles] = useState<FileChange[]>([]);
-  const [historyFileTree, setHistoryFileTree] = useState<GitFileNode<unknown>[]>([]);
-  const [historyExpandedPaths, setHistoryExpandedPaths] = useState<Set<string>>(new Set());
-  const [historySelectedFile, setHistorySelectedFile] = useState<FileChange | null>(null);
-  const [historyFileDiff, setHistoryFileDiff] = useState<FileDiff | null>(null);
-  const [isLoadingBranches, setIsLoadingBranches] = useState(false);
-  const [isLoadingCommits, setIsLoadingCommits] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMoreCommits, setHasMoreCommits] = useState(true);
-  const [isLoadingHistoryFiles, setIsLoadingHistoryFiles] = useState(false);
-  const [isLoadingHistoryDiff, setIsLoadingHistoryDiff] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const commitListRef = useRef<HTMLDivElement>(null);
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
-
-  // ========== Content Search State ==========
-  const [contentSearchQuery, setContentSearchQuery] = useState('');
-  const [contentSearchResults, setContentSearchResults] = useState<SearchResult[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [searchExpandedPaths, setSearchExpandedPaths] = useState<Set<string>>(new Set());
-  const [searchOptions, setSearchOptions] = useState({
-    caseSensitive: false,
-    wholeWord: false,
-    regex: false,
-    fileType: '',
-  });
-  const [searchStats, setSearchStats] = useState<{ totalFiles: number; totalMatches: number; truncated: boolean } | null>(null);
-  const contentSearchInputRef = useRef<HTMLInputElement>(null);
-
-  // ========== Memoized Values ==========
-  const recentFilesTree = useMemo(() => {
-    return buildTreeFromPaths(recentFiles);
-  }, [recentFiles]);
-
-  const recentTreeDirPaths = useMemo(() => {
-    return new Set(collectAllDirPaths(recentFilesTree));
-  }, [recentFilesTree]);
-
-  // 为目录树创建 Git 状态映射
+  // ========== gitStatusMap (depends on both useFileTree and useGitStatus) ==========
   const gitStatusMap = useMemo<GitStatusMap | null>(() => {
-    if (!status) return null;
+    if (!gitStatus.status) return null;
     const map = new Map<string, GitStatusCode>();
 
-    // 状态转换函数
     const toStatusCode = (s: GitFileStatus['status']): GitStatusCode => {
       switch (s) {
         case 'modified': return 'M';
@@ -993,23 +52,64 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       }
     };
 
-    // 合并 staged 和 unstaged（不区分）
-    for (const file of status.staged) {
+    for (const file of gitStatus.status.staged) {
       map.set(file.path, toStatusCode(file.status));
     }
-    for (const file of status.unstaged) {
-      // unstaged 优先（因为更能反映当前工作区状态）
+    for (const file of gitStatus.status.unstaged) {
       map.set(file.path, toStatusCode(file.status));
     }
 
     return map;
-  }, [status]);
+  }, [gitStatus.status]);
 
-  const matchedPaths = useMemo(() => {
-    if (!searchQuery) return null;
-    return computeMatchedPaths(files, searchQuery);
-  }, [files, searchQuery]);
+  // ========== Set menu container after mount ==========
+  useEffect(() => {
+    setMenuContainer(menuContainerRef.current);
+  }, []);
 
+  // ========== 全局 data-tooltip 事件代理 ==========
+  useEffect(() => {
+    const container = menuContainerRef.current;
+    if (!container) return;
+    const findTooltip = (target: EventTarget | null): string | null => {
+      let el = target as HTMLElement | null;
+      while (el && el !== container) {
+        if (el.dataset.tooltip) return el.dataset.tooltip;
+        el = el.parentElement;
+      }
+      return null;
+    };
+    const onOver = (e: MouseEvent) => {
+      const text = findTooltip(e.target);
+      if (text) {
+        setHoverTooltip({ text, x: e.clientX, y: e.clientY });
+      } else {
+        setHoverTooltip(null);
+      }
+    };
+    const onMove = (e: MouseEvent) => {
+      setHoverTooltip(prev => {
+        if (!prev) return null;
+        const text = findTooltip(e.target);
+        if (!text) return null;
+        return { text, x: e.clientX, y: e.clientY };
+      });
+    };
+    const onOut = (e: MouseEvent) => {
+      const related = e.relatedTarget as HTMLElement | null;
+      if (!related || !container.contains(related) || !findTooltip(related)) {
+        setHoverTooltip(null);
+      }
+    };
+    container.addEventListener('mouseover', onOver);
+    container.addEventListener('mousemove', onMove);
+    container.addEventListener('mouseout', onOut);
+    return () => {
+      container.removeEventListener('mouseover', onOver);
+      container.removeEventListener('mousemove', onMove);
+      container.removeEventListener('mouseout', onOut);
+    };
+  }, []);
 
   // ========== Update activeTab when initialTab changes ==========
   useEffect(() => {
@@ -1019,9 +119,8 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   // ========== Tab 切换处理 ==========
   const handleTabChange = useCallback((tab: TabType) => {
     setActiveTab(tab);
-    // 切换 tab 时关闭 blame 详情
-    setBlameSelectedCommit(null);
-  }, []);
+    fileTree.setBlameSelectedCommit(null);
+  }, [fileTree]);
 
   // ========== ESC Handler ==========
   const lastEscTimeRef = useRef<number>(0);
@@ -1034,11 +133,10 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         }
         lastEscTimeRef.current = now;
 
-        // 优先关闭 blame commit 详情
-        if (blameSelectedCommit) {
-          setBlameSelectedCommit(null);
-        } else if (showBlame) {
-          setShowBlame(false);
+        if (fileTree.blameSelectedCommit) {
+          fileTree.setBlameSelectedCommit(null);
+        } else if (fileTree.showBlame) {
+          fileTree.setShowBlame(false);
         } else {
           onClose();
         }
@@ -1046,697 +144,24 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, showBlame, blameSelectedCommit]);
-
-  // ========== File Browser Functions ==========
-  const loadExpandedPaths = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/files/expanded?cwd=${encodeURIComponent(cwd)}`);
-      const data = await res.json();
-      if (data.paths && Array.isArray(data.paths) && data.paths.length > 0) {
-        setExpandedPaths(new Set(data.paths));
-      }
-    } catch (err) {
-      console.error('Error loading expanded paths:', err);
-    }
-  }, [cwd]);
-
-  const saveExpandedPathsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saveExpandedPaths = useCallback((paths: Set<string>) => {
-    // Debounce save to avoid too many requests
-    if (saveExpandedPathsTimeoutRef.current) {
-      clearTimeout(saveExpandedPathsTimeoutRef.current);
-    }
-    saveExpandedPathsTimeoutRef.current = setTimeout(async () => {
-      try {
-        await fetch('/api/files/expanded', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cwd, paths: Array.from(paths) }),
-        });
-      } catch (err) {
-        console.error('Error saving expanded paths:', err);
-      }
-    }, 500);
-  }, [cwd]);
-
-  const loadFiles = useCallback(async () => {
-    setIsLoadingFiles(true);
-    setFileError(null);
-    try {
-      const res = await fetch(`/api/files/list?cwd=${encodeURIComponent(cwd)}`);
-      const data = await res.json();
-      if (data.error) {
-        setFileError(data.error);
-      } else {
-        setFiles(data.files || []);
-      }
-    } catch (err) {
-      console.error('Error loading files:', err);
-      setFileError('Failed to load files');
-    } finally {
-      setIsLoadingFiles(false);
-    }
-  }, [cwd]);
-
-  const loadRecentFiles = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/files/recent?cwd=${encodeURIComponent(cwd)}`);
-      const data = await res.json();
-      setRecentFiles(data.files || []);
-    } catch (err) {
-      console.error('Error loading recent files:', err);
-    }
-  }, [cwd]);
-
-  const addToRecentFiles = useCallback(async (filePath: string) => {
-    // Optimistically update local state (move to front, avoid duplicates)
-    setRecentFiles(prev => {
-      const filtered = prev.filter(f => f !== filePath);
-      return [filePath, ...filtered].slice(0, 15); // Keep max 15 recent files (same as API)
-    });
-
-    // Persist to server (fire and forget)
-    try {
-      await fetch('/api/files/recent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, file: filePath }),
-      });
-    } catch (err) {
-      console.error('Error adding to recent files:', err);
-    }
-  }, [cwd]);
-
-  const loadFileContent = useCallback(async (filePath: string) => {
-    setIsLoadingContent(true);
-    setFileContent(null);
-    setShowBlame(false);
-    setBlameLines([]);
-    setBlameError(null);
-    setBlameSelectedCommit(null);
-    try {
-      const res = await fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`);
-      const data = await res.json();
-      setFileContent(data);
-      addToRecentFiles(filePath);
-    } catch (err) {
-      console.error('Error loading file content:', err);
-      setFileContent({ type: 'error', message: 'Failed to load file' });
-    } finally {
-      setIsLoadingContent(false);
-    }
-  }, [cwd, addToRecentFiles]);
-
-  const loadBlame = useCallback(async () => {
-    if (!selectedPath) return;
-    setIsLoadingBlame(true);
-    setBlameError(null);
-    try {
-      const res = await fetch(`/api/files/blame?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(selectedPath)}`);
-      const data = await res.json();
-      if (data.error) {
-        setBlameError(data.error);
-      } else {
-        setBlameLines(data.blame || []);
-      }
-    } catch (err) {
-      console.error('Error loading blame:', err);
-      setBlameError('Failed to load blame info');
-    } finally {
-      setIsLoadingBlame(false);
-    }
-  }, [cwd, selectedPath]);
-
-  const handleToggleBlame = useCallback(() => {
-    if (showBlame) {
-      setShowBlame(false);
-    } else {
-      setShowBlame(true);
-      if (blameLines.length === 0) {
-        loadBlame();
-      }
-    }
-  }, [showBlame, blameLines.length, loadBlame]);
-
-  const handleSelectFile = useCallback((path: string, lineNumber?: number) => {
-    setSelectedPath(path);
-    setTargetLineNumber(lineNumber ?? null);
-    loadFileContent(path);
-
-    // Auto-expand parent directories
-    const parts = path.split('/');
-    if (parts.length > 1) {
-      const parentPaths: string[] = [];
-      for (let i = 1; i < parts.length; i++) {
-        parentPaths.push(parts.slice(0, i).join('/'));
-      }
-      setExpandedPaths(prev => {
-        const next = new Set(prev);
-        let changed = false;
-        for (const p of parentPaths) {
-          if (!next.has(p)) {
-            next.add(p);
-            changed = true;
-          }
-        }
-        if (changed) {
-          saveExpandedPaths(next);
-        }
-        return changed ? next : prev;
-      });
-    }
-  }, [loadFileContent, saveExpandedPaths]);
-
-  const handleToggle = useCallback((path: string) => {
-    setExpandedPaths(prev => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      saveExpandedPaths(next);
-      return next;
-    });
-  }, [saveExpandedPaths]);
-
-  // ========== Content Search Functions ==========
-  const performContentSearch = useCallback(async (query: string) => {
-    if (!query.trim()) {
-      setContentSearchResults([]);
-      setSearchStats(null);
-      return;
-    }
-
-    setIsSearching(true);
-    setSearchError(null);
-
-    try {
-      const params = new URLSearchParams({
-        cwd,
-        q: query,
-        caseSensitive: String(searchOptions.caseSensitive),
-        wholeWord: String(searchOptions.wholeWord),
-        regex: String(searchOptions.regex),
-        fileType: searchOptions.fileType,
-      });
-
-      const response = await fetch(`/api/files/search?${params}`);
-      const data: SearchResponse = await response.json();
-
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      setContentSearchResults(data.results);
-      setSearchStats({
-        totalFiles: data.totalFiles,
-        totalMatches: data.totalMatches,
-        truncated: data.truncated,
-      });
-
-      // 默认展开所有搜索结果
-      const expandedPaths = new Set(data.results.map(r => r.path));
-      setSearchExpandedPaths(expandedPaths);
-    } catch (err) {
-      setSearchError(err instanceof Error ? err.message : 'Search failed');
-      setContentSearchResults([]);
-    } finally {
-      setIsSearching(false);
-    }
-  }, [cwd, searchOptions]);
-
-  const handleSearchToggle = useCallback((path: string) => {
-    setSearchExpandedPaths(prev => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
-  }, []);
-
-  // ========== Git Status Functions ==========
-  const fetchStatus = useCallback(async () => {
-    setStatusLoading(true);
-    setStatusError(null);
-    try {
-      const url = `/api/git/status?cwd=${encodeURIComponent(cwd)}`;
-      const response = await fetch(url);
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to fetch git status');
-      }
-      const data: GitStatusResponse = await response.json();
-      setStatus(data);
-
-      const staged = buildGitFileTree(data.staged);
-      const unstaged = buildGitFileTree(data.unstaged);
-      setStagedTree(staged);
-      setUnstagedTree(unstaged);
-
-      const allPaths = new Set<string>([
-        ...collectGitTreeDirPaths(staged),
-        ...collectGitTreeDirPaths(unstaged),
-      ]);
-      setStatusExpandedPaths(allPaths);
-    } catch (err) {
-      setStatusError(err instanceof Error ? err.message : 'Unknown error');
-    } finally {
-      setStatusLoading(false);
-    }
-  }, [cwd]);
-
-  const handleStatusToggle = useCallback((path: string) => {
-    setStatusExpandedPaths(prev => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
-  }, []);
-
-  const handleStatusFileSelect = useCallback((file: GitFileStatus, type: 'staged' | 'unstaged') => {
-    setStatusSelectedFile({ file, type });
-    addToRecentFiles(file.path);
-  }, [addToRecentFiles]);
-
-  const handleStage = useCallback(async (path: string) => {
-    try {
-      const response = await fetch('/api/git/stage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, files: [path] }),
-      });
-      if (!response.ok) {
-        throw new Error('Failed to stage file');
-      }
-      await fetchStatus();
-      toast('已暂存', 'success');
-    } catch (err) {
-      console.error('Error staging file:', err);
-      toast('暂存失败', 'error');
-    }
-  }, [cwd, fetchStatus]);
-
-  const handleUnstage = useCallback(async (path: string) => {
-    try {
-      const response = await fetch('/api/git/unstage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, files: [path] }),
-      });
-      if (!response.ok) {
-        throw new Error('Failed to unstage file');
-      }
-      await fetchStatus();
-      toast('已取消暂存', 'success');
-    } catch (err) {
-      console.error('Error unstaging file:', err);
-      toast('取消暂存失败', 'error');
-    }
-  }, [cwd, fetchStatus]);
-
-  // 批量暂存（目录下所有文件）
-  const handleStageFiles = useCallback(async (paths: string[]) => {
-    if (paths.length === 0) return;
-    try {
-      const response = await fetch('/api/git/stage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, files: paths }),
-      });
-      if (!response.ok) {
-        throw new Error('Failed to stage files');
-      }
-      await fetchStatus();
-      toast(`已暂存 ${paths.length} 个文件`, 'success');
-    } catch (err) {
-      console.error('Error staging files:', err);
-      toast('暂存失败', 'error');
-    }
-  }, [cwd, fetchStatus]);
-
-  // 批量取消暂存（目录下所有文件）
-  const handleUnstageFiles = useCallback(async (paths: string[]) => {
-    if (paths.length === 0) return;
-    try {
-      const response = await fetch('/api/git/unstage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, files: paths }),
-      });
-      if (!response.ok) {
-        throw new Error('Failed to unstage files');
-      }
-      await fetchStatus();
-      toast(`已取消暂存 ${paths.length} 个文件`, 'success');
-    } catch (err) {
-      console.error('Error unstaging files:', err);
-      toast('取消暂存失败', 'error');
-    }
-  }, [cwd, fetchStatus]);
-
-  // 批量放弃变更（目录下所有文件）
-  const handleDiscardFiles = useCallback(async (files: GitFileStatus[]) => {
-    if (files.length === 0) return;
-    try {
-      const untrackedFiles = files.filter(f => f.status === 'untracked').map(f => f.path);
-      const trackedFiles = files.filter(f => f.status !== 'untracked').map(f => f.path);
-
-      // 删除 untracked 文件
-      if (untrackedFiles.length > 0) {
-        const response = await fetch('/api/git/discard', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cwd, files: untrackedFiles, isUntracked: true }),
-        });
-        if (!response.ok) {
-          throw new Error('Failed to discard untracked files');
-        }
-      }
-
-      // checkout tracked 文件
-      if (trackedFiles.length > 0) {
-        const response = await fetch('/api/git/discard', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cwd, files: trackedFiles, isUntracked: false }),
-        });
-        if (!response.ok) {
-          throw new Error('Failed to discard tracked files');
-        }
-      }
-
-      await fetchStatus();
-      toast(`已放弃 ${files.length} 个文件的变更`, 'success');
-    } catch (err) {
-      console.error('Error discarding files:', err);
-      toast('放弃变更失败', 'error');
-    }
-  }, [cwd, fetchStatus]);
-
-  const handleStageAll = useCallback(async () => {
-    if (!status?.unstaged.length) return;
-    try {
-      const response = await fetch('/api/git/stage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, files: status.unstaged.map(f => f.path) }),
-      });
-      if (!response.ok) {
-        throw new Error('Failed to stage all files');
-      }
-      await fetchStatus();
-      toast(`已暂存 ${status.unstaged.length} 个文件`, 'success');
-    } catch (err) {
-      console.error('Error staging all files:', err);
-      toast('暂存失败', 'error');
-    }
-  }, [cwd, status, fetchStatus]);
-
-  const handleUnstageAll = useCallback(async () => {
-    if (!status?.staged.length) return;
-    try {
-      const response = await fetch('/api/git/unstage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, files: status.staged.map(f => f.path) }),
-      });
-      if (!response.ok) {
-        throw new Error('Failed to unstage all files');
-      }
-      await fetchStatus();
-      toast(`已取消暂存 ${status.staged.length} 个文件`, 'success');
-    } catch (err) {
-      console.error('Error unstaging all files:', err);
-      toast('取消暂存失败', 'error');
-    }
-  }, [cwd, status, fetchStatus]);
-
-  // 放弃单个文件的变更
-  const handleDiscardFile = useCallback(async (file: GitFileStatus) => {
-    try {
-      const isUntracked = file.status === 'untracked';
-      const response = await fetch('/api/git/discard', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, files: [file.path], isUntracked }),
-      });
-      if (!response.ok) {
-        throw new Error('Failed to discard file');
-      }
-      await fetchStatus();
-      toast(isUntracked ? '已删除文件' : '已放弃变更', 'success');
-    } catch (err) {
-      console.error('Error discarding file:', err);
-      toast('放弃变更失败', 'error');
-    }
-  }, [cwd, fetchStatus]);
-
-  // 放弃工作区所有变更
-  const handleDiscardAll = useCallback(async () => {
-    if (!status?.unstaged.length) return;
-    if (!confirm(`确定要放弃工作区的 ${status.unstaged.length} 个文件的变更吗？此操作不可恢复。`)) return;
-
-    try {
-      // 分离 untracked 和已跟踪文件
-      const untrackedFiles = status.unstaged.filter(f => f.status === 'untracked').map(f => f.path);
-      const trackedFiles = status.unstaged.filter(f => f.status !== 'untracked').map(f => f.path);
-
-      // 放弃已跟踪文件的变更
-      if (trackedFiles.length > 0) {
-        await fetch('/api/git/discard', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cwd, files: trackedFiles, isUntracked: false }),
-        });
-      }
-
-      // 删除 untracked 文件
-      if (untrackedFiles.length > 0) {
-        await fetch('/api/git/discard', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cwd, files: untrackedFiles, isUntracked: true }),
-        });
-      }
-
-      await fetchStatus();
-      toast(`已放弃 ${status.unstaged.length} 个文件的变更`, 'success');
-    } catch (err) {
-      console.error('Error discarding all:', err);
-      toast('放弃变更失败', 'error');
-    }
-  }, [cwd, status, fetchStatus]);
-
-  // Fetch status diff
-  useEffect(() => {
-    if (!statusSelectedFile) {
-      setStatusDiff(null);
-      return;
-    }
-
-    const fetchDiff = async () => {
-      setStatusDiffLoading(true);
-      try {
-        const params = new URLSearchParams({
-          file: statusSelectedFile.file.path,
-          type: statusSelectedFile.type,
-        });
-        params.set('cwd', cwd);
-
-        const response = await fetch(`/api/git/diff?${params}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch diff');
-        }
-        const data: GitDiffResponse = await response.json();
-        setStatusDiff(data);
-      } catch (err) {
-        console.error('Error fetching diff:', err);
-      } finally {
-        setStatusDiffLoading(false);
-      }
-    };
-
-    fetchDiff();
-  }, [statusSelectedFile, cwd]);
-
-  // ========== Git History Functions ==========
-  const loadBranches = useCallback(() => {
-    setIsLoadingBranches(true);
-    setHistoryError(null);
-    fetch(`/api/git/branches?cwd=${encodeURIComponent(cwd)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.error) {
-          setHistoryError(data.error === 'Failed to get branches' ? '当前目录不是 Git 仓库' : data.error);
-          setBranches(null);
-        } else if (data.local && data.current) {
-          setBranches(data);
-          setSelectedBranch(data.current);
-        } else {
-          setHistoryError('无法获取分支信息');
-          setBranches(null);
-        }
-      })
-      .catch(err => {
-        console.error(err);
-        setHistoryError('获取分支信息失败');
-        setBranches(null);
-      })
-      .finally(() => setIsLoadingBranches(false));
-  }, [cwd]);
-
-  const loadCommits = useCallback((branch: string) => {
-    setIsLoadingCommits(true);
-    setSelectedCommit(null);
-    setHistoryFiles([]);
-    setHistoryFileTree([]);
-    setHistorySelectedFile(null);
-    setHistoryFileDiff(null);
-    setHasMoreCommits(true);
-    fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(branch)}&limit=${COMMITS_PER_PAGE}`)
-      .then(res => res.json())
-      .then(data => {
-        const newCommits = data.commits || [];
-        setCommits(newCommits);
-        setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
-      })
-      .catch(console.error)
-      .finally(() => setIsLoadingCommits(false));
-  }, [cwd]);
-
-  const loadMoreCommits = useCallback(() => {
-    if (isLoadingMore || !hasMoreCommits || !selectedBranch) return;
-
-    setIsLoadingMore(true);
-    const offset = commits.length;
-
-    fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(selectedBranch)}&limit=${COMMITS_PER_PAGE}&offset=${offset}`)
-      .then(res => res.json())
-      .then(data => {
-        const newCommits = data.commits || [];
-        if (newCommits.length > 0) {
-          setCommits(prev => [...prev, ...newCommits]);
-        }
-        setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
-      })
-      .catch(console.error)
-      .finally(() => setIsLoadingMore(false));
-  }, [cwd, selectedBranch, commits.length, isLoadingMore, hasMoreCommits]);
-
-  const handleCommitListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLDivElement;
-    const { scrollTop, scrollHeight, clientHeight } = target;
-    if (scrollHeight - scrollTop - clientHeight < 100) {
-      loadMoreCommits();
-    }
-  }, [loadMoreCommits]);
-
-  const handleSelectCommit = useCallback((commit: Commit) => {
-    setSelectedCommit(commit);
-    setHistorySelectedFile(null);
-    setHistoryFileDiff(null);
-    setIsLoadingHistoryFiles(true);
-    fetch(`/api/git/commit-diff?cwd=${encodeURIComponent(cwd)}&hash=${commit.hash}`)
-      .then(res => res.json())
-      .then(data => {
-        const fileList = data.files || [];
-        setHistoryFiles(fileList);
-        const tree = buildGitFileTree(fileList);
-        setHistoryFileTree(tree);
-        setHistoryExpandedPaths(new Set(collectGitTreeDirPaths(tree)));
-      })
-      .catch(console.error)
-      .finally(() => setIsLoadingHistoryFiles(false));
-  }, [cwd]);
-
-  const handleSelectHistoryFile = useCallback((file: FileChange) => {
-    if (!selectedCommit) return;
-    setHistorySelectedFile(file);
-    addToRecentFiles(file.path);
-    setIsLoadingHistoryDiff(true);
-    fetch(`/api/git/commit-diff?cwd=${encodeURIComponent(cwd)}&hash=${selectedCommit.hash}&file=${encodeURIComponent(file.path)}`)
-      .then(res => res.json())
-      .then(data => setHistoryFileDiff(data))
-      .catch(console.error)
-      .finally(() => setIsLoadingHistoryDiff(false));
-  }, [cwd, selectedCommit, addToRecentFiles]);
-
-  const handleHistoryToggle = useCallback((path: string) => {
-    setHistoryExpandedPaths(prev => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
-  }, []);
-
-  const handleCommitInfoMouseMove = useCallback((e: React.MouseEvent) => {
-    setTooltipPos({ x: e.clientX, y: e.clientY });
-  }, []);
-
-  const handleCommitInfoMouseLeave = useCallback(() => {
-    setTooltipPos(null);
-  }, []);
+  }, [onClose, fileTree.showBlame, fileTree.blameSelectedCommit, fileTree]);
 
   // ========== Initial Data Load (once on mount) ==========
   useEffect(() => {
-    loadExpandedPaths();
-    loadFiles();
-    loadRecentFiles();
-    fetchStatus();
-    loadBranches();
+    fileTree.loadExpandedPaths();
+    fileTree.loadFiles();
+    fileTree.loadRecentFiles();
+    gitStatus.fetchStatus();
+    gitHistory.loadBranches();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load commits when branch changes (user selects a different branch)
+  // Load commits when branch changes
   useEffect(() => {
-    if (selectedBranch) {
-      loadCommits(selectedBranch);
+    if (gitHistory.selectedBranch) {
+      gitHistory.loadCommits(gitHistory.selectedBranch);
     }
-  }, [selectedBranch, loadCommits]);
-
-  // Search auto-expand
-  useEffect(() => {
-    if (searchQuery) {
-      const expandMatching = (nodes: FileNode[], toExpand: Set<string>) => {
-        for (const node of nodes) {
-          if (node.isDirectory && node.children) {
-            const hasMatch = node.children.some(child => {
-              if (child.name.toLowerCase().includes(searchQuery.toLowerCase())) {
-                return true;
-              }
-              if (child.isDirectory && child.children) {
-                expandMatching([child], toExpand);
-                return toExpand.has(child.path);
-              }
-              return false;
-            });
-            if (hasMatch) {
-              toExpand.add(node.path);
-            }
-          }
-        }
-      };
-
-      const toExpand = new Set<string>();
-      expandMatching(files, toExpand);
-      if (toExpand.size > 0) {
-        setExpandedPaths(prev => new Set([...prev, ...toExpand]));
-      }
-    }
-  }, [searchQuery, files]);
+  }, [gitHistory.selectedBranch, gitHistory.loadCommits]);
 
   // ========== Auto-select first recent file when switching to tree/recent tab ==========
   const prevTabRef = useRef<TabType>(activeTab);
@@ -1744,119 +169,125 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     const prevTab = prevTabRef.current;
     prevTabRef.current = activeTab;
 
-    // When switching from status/history to tree/recent, select the most recent file
-    if ((activeTab === 'tree' || activeTab === 'recent') && recentFiles.length > 0) {
+    if ((activeTab === 'tree' || activeTab === 'recent') && fileTree.recentFiles.length > 0) {
       const isFromOtherTab = prevTab === 'status' || prevTab === 'history';
-      const needsUpdate = !selectedPath || (isFromOtherTab && selectedPath !== recentFiles[0]);
+      const needsUpdate = !fileTree.selectedPath || (isFromOtherTab && fileTree.selectedPath !== fileTree.recentFiles[0]);
 
       if (needsUpdate) {
-        // 外部触发选择，需要滚动居中
-        setShouldScrollToSelected(true);
-        handleSelectFile(recentFiles[0]);
+        fileTree.setShouldScrollToSelected(true);
+        fileTree.handleSelectFile(fileTree.recentFiles[0]);
       }
     }
-  }, [activeTab, recentFiles, selectedPath, handleSelectFile]);
+  }, [activeTab, fileTree.recentFiles, fileTree.selectedPath, fileTree.handleSelectFile, fileTree]);
 
   // ========== Refresh Handler ==========
   const handleRefresh = useCallback(() => {
     if (activeTab === 'tree' || activeTab === 'recent') {
-      loadFiles();
-      loadRecentFiles();
+      fileTree.loadFiles();
+      fileTree.loadRecentFiles();
     } else if (activeTab === 'status') {
-      fetchStatus();
+      gitStatus.fetchStatus();
     } else if (activeTab === 'history') {
-      loadBranches();
-      if (selectedBranch) {
-        loadCommits(selectedBranch);
+      gitHistory.loadBranches();
+      if (gitHistory.selectedBranch) {
+        gitHistory.loadCommits(gitHistory.selectedBranch);
       }
     }
-  }, [activeTab, loadFiles, loadRecentFiles, fetchStatus, loadBranches, loadCommits, selectedBranch]);
+  }, [activeTab, fileTree, gitStatus, gitHistory]);
 
-  // Determine loading state for refresh button
-  const isRefreshLoading = isLoadingFiles || statusLoading || isLoadingBranches || isLoadingCommits;
+  const isRefreshLoading = fileTree.isLoadingFiles || gitStatus.statusLoading || gitHistory.isLoadingBranches || gitHistory.isLoadingCommits;
 
   // ========== Auto-sync with fingerprint detection ==========
   const lastFingerprintRef = useRef<string>('');
 
   const silentRefresh = useCallback(async () => {
     try {
-      // 1. Check if anything changed using fingerprint
       const checkRes = await fetch(`/api/sync?cwd=${encodeURIComponent(cwd)}&since=${encodeURIComponent(lastFingerprintRef.current)}`);
       const { changed, fingerprint } = await checkRes.json();
 
-      if (!changed) {
-        // No changes, skip refresh
-        return;
-      }
+      if (!changed) return;
 
-      // Update fingerprint
       lastFingerprintRef.current = fingerprint;
 
-      // 2. Refresh all data since something changed
       const [filesRes, recentRes, statusRes, commitsRes] = await Promise.all([
         fetch(`/api/files/list?cwd=${encodeURIComponent(cwd)}`),
         fetch(`/api/files/recent?cwd=${encodeURIComponent(cwd)}`),
         fetch(`/api/git/status?cwd=${encodeURIComponent(cwd)}`),
-        selectedBranch
-          ? fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(selectedBranch)}&limit=${COMMITS_PER_PAGE}`)
+        gitHistory.selectedBranch
+          ? fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(gitHistory.selectedBranch)}&limit=${COMMITS_PER_PAGE}`)
           : Promise.resolve(null),
       ]);
 
-      // Process files
       const filesData = await filesRes.json();
       if (!filesData.error) {
-        setFiles(filesData.files || []);
+        fileTree.setFiles(filesData.files || []);
       }
 
-      // Process recent files
       const recentData = await recentRes.json();
-      setRecentFiles(recentData.files || []);
+      fileTree.setRecentFiles(recentData.files || []);
 
-      // Process Git status
       if (statusRes.ok) {
         const statusData: GitStatusResponse = await statusRes.json();
-        setStatus(statusData);
+        gitStatus.setStatus(statusData);
         const staged = buildGitFileTree(statusData.staged);
         const unstaged = buildGitFileTree(statusData.unstaged);
-        setStagedTree(staged);
-        setUnstagedTree(unstaged);
+        gitStatus.setStagedTree(staged);
+        gitStatus.setUnstagedTree(unstaged);
         const newPaths = new Set<string>([
           ...collectGitTreeDirPaths(staged),
           ...collectGitTreeDirPaths(unstaged),
         ]);
-        setStatusExpandedPaths(prev => new Set([...prev, ...newPaths]));
+        gitStatus.setStatusExpandedPaths(prev => new Set([...prev, ...newPaths]));
       }
 
-      // Process Git commits
       if (commitsRes) {
         const commitsData = await commitsRes.json();
         const newCommits = commitsData.commits || [];
-        setCommits(newCommits);
-        setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
+        gitHistory.setCommits(newCommits);
+        gitHistory.setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
       }
 
-      // Refresh current preview file content (if selected)
-      if (selectedPath && fileContent?.type === 'text') {
-        const contentRes = await fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(selectedPath)}`);
+      if (fileTree.selectedPath && fileTree.fileContent?.type === 'text') {
+        const contentRes = await fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(fileTree.selectedPath)}`);
         const contentData = await contentRes.json();
         if (contentData.type === 'text') {
-          setFileContent(contentData);
+          fileTree.setFileContent(contentData);
         }
       }
     } catch (err) {
-      // Silent fail - don't show errors for auto-refresh
       console.error('Silent refresh error:', err);
     }
-  }, [cwd, selectedBranch, selectedPath, fileContent?.type]);
+  }, [cwd, gitHistory.selectedBranch, fileTree.selectedPath, fileTree.fileContent?.type, fileTree, gitStatus, gitHistory]);
 
   // ========== Auto-sync polling (every 5s) ==========
   useEffect(() => {
     const intervalId = setInterval(() => {
       silentRefresh();
     }, 5000);
-
     return () => clearInterval(intervalId);
   }, [silentRefresh]);
+
+  // ========== Helper: locate in tree ==========
+  const locateInTree = useCallback((filePath: string) => {
+    const parts = filePath.split('/');
+    if (parts.length > 1) {
+      const parentPaths: string[] = [];
+      for (let i = 1; i < parts.length; i++) {
+        parentPaths.push(parts.slice(0, i).join('/'));
+      }
+      fileTree.setExpandedPaths(prev => {
+        const next = new Set(prev);
+        for (const p of parentPaths) {
+          next.add(p);
+        }
+        fileTree.saveExpandedPaths(next);
+        return next;
+      });
+    }
+    fileTree.setSelectedPath(filePath);
+    fileTree.setShouldScrollToSelected(true);
+    setActiveTab('tree');
+  }, [fileTree]);
 
   return (
     <MenuContainerProvider container={menuContainer}>
@@ -1922,21 +353,46 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
             {/* Tab-specific content above list */}
             {activeTab === 'tree' && (
               <div className="p-2 border-b border-border flex items-center gap-2">
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="搜索文件..."
-                  className="flex-1 px-3 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring"
-                />
+                <div className="flex-1 relative">
+                  <input
+                    ref={fileTree.searchInputRef}
+                    type="text"
+                    value={fileTree.searchQuery}
+                    onChange={e => fileTree.setSearchQuery(e.target.value)}
+                    placeholder="搜索文件..."
+                    className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  {fileTree.searchQuery && (
+                    <button
+                      onClick={() => fileTree.setSearchQuery('')}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-9 hover:text-foreground rounded-sm transition-colors"
+                      title="清除"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                {/* 目录全匹配开关 */}
+                <button
+                  onClick={() => fileTree.setSearchDirExact(v => !v)}
+                  className={`px-1 py-0.5 rounded transition-colors text-xs font-mono font-bold border ${
+                    fileTree.searchExactMatch
+                      ? 'border-brand text-brand bg-brand/10'
+                      : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-accent'
+                  }`}
+                  title={fileTree.searchExactMatch ? '全词匹配（已开启）' : '全词匹配（已关闭）'}
+                >
+                  ab
+                </button>
                 {/* 功能按钮组 */}
                 <div className="flex items-center gap-0.5">
                   {/* 新建文件 */}
                   <button
                     onClick={() => {
-                      const targetDir = getTargetDirPath(selectedPath, files);
-                      setCreatingItem({ type: 'file', parentPath: targetDir });
+                      const targetDir = getTargetDirPath(fileTree.selectedPath, fileTree.files);
+                      fileTree.setCreatingItem({ type: 'file', parentPath: targetDir });
                     }}
                     className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
                     title="新建文件"
@@ -1948,8 +404,8 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   {/* 新建文件夹 */}
                   <button
                     onClick={() => {
-                      const targetDir = getTargetDirPath(selectedPath, files);
-                      setCreatingItem({ type: 'folder', parentPath: targetDir });
+                      const targetDir = getTargetDirPath(fileTree.selectedPath, fileTree.files);
+                      fileTree.setCreatingItem({ type: 'folder', parentPath: targetDir });
                     }}
                     className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
                     title="新建文件夹"
@@ -1960,7 +416,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   </button>
                   {/* 刷新 */}
                   <button
-                    onClick={() => loadFiles()}
+                    onClick={() => fileTree.loadFiles()}
                     className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
                     title="刷新目录树"
                   >
@@ -1970,7 +426,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   </button>
                   {/* 折叠所有 */}
                   <button
-                    onClick={() => setExpandedPaths(new Set())}
+                    onClick={() => fileTree.searchTreeExpandedPaths ? fileTree.setSearchTreeExpandedPaths(new Set()) : fileTree.setExpandedPaths(new Set())}
                     className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
                     title="折叠所有目录"
                   >
@@ -1985,33 +441,46 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
             {activeTab === 'search' && (
               <div className="p-2 border-b border-border space-y-2">
                 <div className="flex gap-2">
-                  <input
-                    ref={contentSearchInputRef}
-                    type="text"
-                    value={contentSearchQuery}
-                    onChange={e => setContentSearchQuery(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        performContentSearch(contentSearchQuery);
-                      }
-                    }}
-                    placeholder="搜索文件内容..."
-                    className="flex-1 px-3 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
+                  <div className="flex-1 relative">
+                    <input
+                      ref={contentSearch.contentSearchInputRef}
+                      type="text"
+                      value={contentSearch.contentSearchQuery}
+                      onChange={e => contentSearch.setContentSearchQuery(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          contentSearch.performContentSearch(contentSearch.contentSearchQuery);
+                        }
+                      }}
+                      placeholder="搜索文件内容..."
+                      className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                    {contentSearch.contentSearchQuery && (
+                      <button
+                        onClick={() => contentSearch.setContentSearchQuery('')}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-9 hover:text-foreground rounded-sm transition-colors"
+                        title="清除"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                   <button
-                    onClick={() => performContentSearch(contentSearchQuery)}
-                    disabled={isSearching || !contentSearchQuery.trim()}
+                    onClick={() => contentSearch.performContentSearch(contentSearch.contentSearchQuery)}
+                    disabled={contentSearch.isSearching || !contentSearch.contentSearchQuery.trim()}
                     className="px-3 py-1.5 text-sm bg-brand text-white rounded hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isSearching ? '...' : '搜索'}
+                    {contentSearch.isSearching ? '...' : '搜索'}
                   </button>
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs">
                   <label className="flex items-center gap-1 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={searchOptions.caseSensitive}
-                      onChange={e => setSearchOptions(prev => ({ ...prev, caseSensitive: e.target.checked }))}
+                      checked={contentSearch.searchOptions.caseSensitive}
+                      onChange={e => contentSearch.setSearchOptions(prev => ({ ...prev, caseSensitive: e.target.checked }))}
                       className="w-3 h-3"
                     />
                     <span className="text-muted-foreground">区分大小写</span>
@@ -2019,8 +488,8 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   <label className="flex items-center gap-1 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={searchOptions.wholeWord}
-                      onChange={e => setSearchOptions(prev => ({ ...prev, wholeWord: e.target.checked }))}
+                      checked={contentSearch.searchOptions.wholeWord}
+                      onChange={e => contentSearch.setSearchOptions(prev => ({ ...prev, wholeWord: e.target.checked }))}
                       className="w-3 h-3"
                     />
                     <span className="text-muted-foreground">完整词</span>
@@ -2028,16 +497,16 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   <label className="flex items-center gap-1 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={searchOptions.regex}
-                      onChange={e => setSearchOptions(prev => ({ ...prev, regex: e.target.checked }))}
+                      checked={contentSearch.searchOptions.regex}
+                      onChange={e => contentSearch.setSearchOptions(prev => ({ ...prev, regex: e.target.checked }))}
                       className="w-3 h-3"
                     />
                     <span className="text-muted-foreground">正则</span>
                   </label>
                   <input
                     type="text"
-                    value={searchOptions.fileType}
-                    onChange={e => setSearchOptions(prev => ({ ...prev, fileType: e.target.value }))}
+                    value={contentSearch.searchOptions.fileType}
+                    onChange={e => contentSearch.setSearchOptions(prev => ({ ...prev, fileType: e.target.value }))}
                     placeholder="文件类型 (ts,tsx)"
                     className="w-24 px-2 py-0.5 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9"
                   />
@@ -2048,10 +517,10 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
             {activeTab === 'history' && (
               <div className="p-3 border-b border-border">
                 <BranchSelector
-                  branches={branches}
-                  selectedBranch={selectedBranch}
-                  onSelect={setSelectedBranch}
-                  isLoading={isLoadingBranches}
+                  branches={gitHistory.branches}
+                  selectedBranch={gitHistory.selectedBranch}
+                  onSelect={gitHistory.setSelectedBranch}
+                  isLoading={gitHistory.isLoadingBranches}
                 />
               </div>
             )}
@@ -2061,22 +530,22 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               {/* Tree Tab */}
               <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'tree' ? '' : 'hidden'}`}>
                 {/* 新建文件/文件夹输入框 */}
-                {creatingItem && (
+                {fileTree.creatingItem && (
                   <div className="px-2 py-1.5 border-b border-border bg-secondary flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">
-                      {creatingItem.type === 'file' ? '新建文件' : '新建文件夹'}
-                      {creatingItem.parentPath && ` (在 ${creatingItem.parentPath}/)`}
+                      {fileTree.creatingItem.type === 'file' ? '新建文件' : '新建文件夹'}
+                      {fileTree.creatingItem.parentPath && ` (在 ${fileTree.creatingItem.parentPath}/)`}
                     </span>
                     <input
                       type="text"
                       autoFocus
-                      placeholder={creatingItem.type === 'file' ? '文件名...' : '文件夹名...'}
+                      placeholder={fileTree.creatingItem.type === 'file' ? '文件名...' : '文件夹名...'}
                       className="flex-1 px-2 py-1 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                       onKeyDown={async (e) => {
                         if (e.key === 'Enter') {
                           const name = (e.target as HTMLInputElement).value.trim();
                           if (!name) return;
-                          const fullPath = creatingItem.parentPath ? `${creatingItem.parentPath}/${name}` : name;
+                          const fullPath = fileTree.creatingItem!.parentPath ? `${fileTree.creatingItem!.parentPath}/${name}` : name;
                           try {
                             const res = await fetch('/api/files/save', {
                               method: 'POST',
@@ -2084,17 +553,16 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               body: JSON.stringify({
                                 cwd,
                                 path: fullPath,
-                                content: creatingItem.type === 'file' ? '' : null, // null 表示创建文件夹
-                                createDir: creatingItem.type === 'folder',
+                                content: fileTree.creatingItem!.type === 'file' ? '' : null,
+                                createDir: fileTree.creatingItem!.type === 'folder',
                               }),
                             });
                             if (res.ok) {
-                              toast(`已创建 ${creatingItem.type === 'file' ? '文件' : '文件夹'}: ${name}`, 'success');
-                              setCreatingItem(null);
-                              loadFiles(); // 刷新目录树
-                              // 如果是文件夹，展开父目录
-                              if (creatingItem.parentPath) {
-                                setExpandedPaths(prev => new Set([...prev, creatingItem.parentPath]));
+                              toast(`已创建 ${fileTree.creatingItem!.type === 'file' ? '文件' : '文件夹'}: ${name}`, 'success');
+                              fileTree.setCreatingItem(null);
+                              fileTree.loadFiles();
+                              if (fileTree.creatingItem!.parentPath) {
+                                fileTree.setExpandedPaths(prev => new Set([...prev, fileTree.creatingItem!.parentPath]));
                               }
                             } else {
                               const data = await res.json();
@@ -2104,68 +572,68 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             toast('创建失败', 'error');
                           }
                         } else if (e.key === 'Escape') {
-                          setCreatingItem(null);
+                          fileTree.setCreatingItem(null);
                         }
                       }}
-                      onBlur={() => setCreatingItem(null)}
+                      onBlur={() => fileTree.setCreatingItem(null)}
                     />
                   </div>
                 )}
-                {isLoadingFiles ? (
+                {fileTree.isLoadingFiles ? (
                   <div className="p-4 text-center text-muted-foreground text-sm">加载中...</div>
-                ) : fileError ? (
-                  <div className="p-4 text-center text-red-11 text-sm">{fileError}</div>
+                ) : fileTree.fileError ? (
+                  <div className="p-4 text-center text-red-11 text-sm">{fileTree.fileError}</div>
                 ) : (
                   <FileTree
-                    files={files}
-                    selectedPath={selectedPath}
-                    expandedPaths={expandedPaths}
-                    matchedPaths={matchedPaths}
+                    files={fileTree.files}
+                    selectedPath={fileTree.selectedPath}
+                    expandedPaths={fileTree.effectiveExpandedPaths}
+                    matchedPaths={fileTree.matchedPaths}
                     gitStatusMap={gitStatusMap}
                     onSelect={(path) => {
-                      // 用户在目录树中点击选择，不需要滚动居中
-                      setShouldScrollToSelected(false);
-                      handleSelectFile(path);
+                      fileTree.setShouldScrollToSelected(false);
+                      fileTree.handleSelectFile(path);
                     }}
-                    onToggle={handleToggle}
+                    onToggle={fileTree.handleToggle}
                     cwd={cwd}
-                    shouldScrollToSelected={shouldScrollToSelected}
+                    shouldScrollToSelected={fileTree.shouldScrollToSelected}
                   />
                 )}
               </div>
 
               {/* Search Tab */}
               <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'search' ? '' : 'hidden'}`}>
-                {isSearching ? (
+                {contentSearch.isSearching ? (
                   <div className="flex-1 flex items-center justify-center">
                     <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                   </div>
-                ) : searchError ? (
-                  <div className="p-4 text-center text-red-11 text-sm">{searchError}</div>
-                ) : contentSearchResults.length === 0 ? (
+                ) : contentSearch.searchError ? (
+                  <div className="p-4 text-center text-red-11 text-sm">{contentSearch.searchError}</div>
+                ) : contentSearch.contentSearchResults.length === 0 ? (
                   <div className="p-4 text-center text-muted-foreground text-sm">
-                    {contentSearchQuery ? '无匹配结果' : '输入关键词搜索文件内容'}
+                    {contentSearch.contentSearchQuery ? '无匹配结果' : '输入关键词搜索文件内容'}
                   </div>
                 ) : (
                   <div className="flex-1 overflow-y-auto">
                     {/* 搜索统计 */}
-                    {searchStats && (
+                    {contentSearch.searchStats && (
                       <div className="px-3 py-1.5 text-xs text-muted-foreground bg-secondary border-b border-border">
-                        {searchStats.totalFiles} 个文件，{searchStats.totalMatches} 处匹配
-                        {searchStats.truncated && <span className="text-amber-11 ml-1">(结果已截断)</span>}
+                        {contentSearch.searchStats.totalFiles} 个文件，{contentSearch.searchStats.totalMatches} 处匹配
+                        {contentSearch.searchStats.truncated && <span className="text-amber-11 ml-1">(结果已截断)</span>}
                       </div>
                     )}
                     {/* 搜索结果列表 */}
-                    {contentSearchResults.map((result) => (
+                    {contentSearch.contentSearchResults.map((result) => (
                       <div key={result.path} className="border-b border-border">
                         {/* 文件头 */}
                         <div
                           className="flex items-center gap-2 px-3 py-1.5 bg-secondary hover:bg-accent cursor-pointer"
-                          onClick={() => handleSearchToggle(result.path)}
+                          onClick={() => contentSearch.handleSearchToggle(result.path)}
+                          data-tooltip={result.path}
                         >
                           <svg
                             className={`w-3 h-3 flex-shrink-0 text-muted-foreground transition-transform ${
-                              searchExpandedPaths.has(result.path) ? 'rotate-90' : ''
+                              contentSearch.searchExpandedPaths.has(result.path) ? 'rotate-90' : ''
                             }`}
                             viewBox="0 0 16 16"
                             fill="none"
@@ -2177,7 +645,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           <span className="text-xs text-muted-foreground">{result.matches.length}</span>
                         </div>
                         {/* 匹配行 */}
-                        {searchExpandedPaths.has(result.path) && (
+                        {contentSearch.searchExpandedPaths.has(result.path) && (
                           <div className="bg-card">
                             {result.matches.map((match, idx) => (
                               <div
@@ -2185,8 +653,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                 className="flex items-start gap-2 px-3 py-1 hover:bg-accent cursor-pointer text-sm font-mono"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleSelectFile(result.path, match.lineNumber);
+                                  fileTree.handleSelectFile(result.path, match.lineNumber);
                                 }}
+                                data-tooltip={match.content.trim()}
                               >
                                 <span className="text-muted-foreground w-8 text-right flex-shrink-0">
                                   {match.lineNumber}
@@ -2206,16 +675,16 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
               {/* Recent Tab */}
               <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'recent' ? '' : 'hidden'}`}>
-                {recentFiles.length === 0 ? (
+                {fileTree.recentFiles.length === 0 ? (
                   <div className="p-4 text-center text-muted-foreground text-sm">
                     暂无最近浏览的文件
                   </div>
                 ) : (
                   <FileTree
-                    files={recentFilesTree}
-                    selectedPath={selectedPath}
-                    expandedPaths={recentTreeDirPaths}
-                    onSelect={handleSelectFile}
+                    files={fileTree.recentFilesTree}
+                    selectedPath={fileTree.selectedPath}
+                    expandedPaths={fileTree.recentTreeDirPaths}
+                    onSelect={fileTree.handleSelectFile}
                     onToggle={NOOP}
                     cwd={cwd}
                   />
@@ -2224,13 +693,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
               {/* Status Tab */}
               <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'status' ? '' : 'hidden'}`}>
-                {statusLoading ? (
+                {gitStatus.statusLoading ? (
                   <div className="flex-1 flex items-center justify-center">
                     <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                   </div>
-                ) : statusError ? (
+                ) : gitStatus.statusError ? (
                   <div className="flex-1 flex items-center justify-center p-4">
-                    <span className="text-red-11 text-sm">{statusError}</span>
+                    <span className="text-red-11 text-sm">{gitStatus.statusError}</span>
                   </div>
                 ) : (
                   <div className="flex-1 min-h-0 overflow-y-auto">
@@ -2238,11 +707,11 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     <div className="border-b border-border">
                       <div className="flex items-center justify-between px-3 py-2 bg-secondary">
                         <span className="text-sm font-medium text-muted-foreground">
-                          暂存区 ({status?.staged.length || 0})
+                          暂存区 ({gitStatus.status?.staged.length || 0})
                         </span>
-                        {(status?.staged.length || 0) > 0 && (
+                        {(gitStatus.status?.staged.length || 0) > 0 && (
                           <button
-                            onClick={handleUnstageAll}
+                            onClick={gitStatus.handleUnstageAll}
                             className="text-sm text-amber-11 hover:text-amber-10 hover:underline"
                           >
                             全部取消
@@ -2250,11 +719,11 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         )}
                       </div>
                       <GitFileTree
-                        files={stagedTree}
-                        selectedPath={statusSelectedFile?.type === 'staged' ? statusSelectedFile.file.path : null}
-                        expandedPaths={statusExpandedPaths}
-                        onSelect={(node) => node.file && handleStatusFileSelect(node.file as GitFileStatus, 'staged')}
-                        onToggle={handleStatusToggle}
+                        files={gitStatus.stagedTree}
+                        selectedPath={gitStatus.statusSelectedFile?.type === 'staged' ? gitStatus.statusSelectedFile.file.path : null}
+                        expandedPaths={gitStatus.statusExpandedPaths}
+                        onSelect={(node) => node.file && gitStatus.handleStatusFileSelect(node.file as GitFileStatus, 'staged')}
+                        onToggle={gitStatus.handleStatusToggle}
                         cwd={cwd}
                         emptyMessage="无暂存的文件"
                         className="py-1"
@@ -2266,7 +735,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleUnstageFiles(files.map(f => f.path));
+                                  gitStatus.handleUnstageFiles(files.map(f => f.path));
                                 }}
                                 className="opacity-0 group-hover:opacity-100 p-0.5 text-amber-11 hover:text-amber-10 hover:bg-amber-9/10 dark:hover:bg-amber-9/20 rounded transition-all"
                                 title={`取消暂存 ${files.length} 个文件`}
@@ -2281,7 +750,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleUnstage(node.path);
+                                gitStatus.handleUnstage(node.path);
                               }}
                               className="opacity-0 group-hover:opacity-100 p-0.5 text-amber-11 hover:text-amber-10 hover:bg-amber-9/10 dark:hover:bg-amber-9/20 rounded transition-all"
                               title="取消暂存"
@@ -2299,18 +768,18 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     <div>
                       <div className="flex items-center justify-between px-3 py-2 bg-secondary">
                         <span className="text-sm font-medium text-muted-foreground">
-                          工作区 ({status?.unstaged.length || 0})
+                          工作区 ({gitStatus.status?.unstaged.length || 0})
                         </span>
-                        {(status?.unstaged.length || 0) > 0 && (
+                        {(gitStatus.status?.unstaged.length || 0) > 0 && (
                           <div className="flex items-center gap-2">
                             <button
-                              onClick={handleDiscardAll}
+                              onClick={gitStatus.handleDiscardAll}
                               className="text-sm text-red-11 hover:text-red-10 hover:underline"
                             >
                               放弃所有
                             </button>
                             <button
-                              onClick={handleStageAll}
+                              onClick={gitStatus.handleStageAll}
                               className="text-sm text-green-11 hover:text-green-10 hover:underline"
                             >
                               全部暂存
@@ -2319,11 +788,11 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         )}
                       </div>
                       <GitFileTree
-                        files={unstagedTree}
-                        selectedPath={statusSelectedFile?.type === 'unstaged' ? statusSelectedFile.file.path : null}
-                        expandedPaths={statusExpandedPaths}
-                        onSelect={(node) => node.file && handleStatusFileSelect(node.file as GitFileStatus, 'unstaged')}
-                        onToggle={handleStatusToggle}
+                        files={gitStatus.unstagedTree}
+                        selectedPath={gitStatus.statusSelectedFile?.type === 'unstaged' ? gitStatus.statusSelectedFile.file.path : null}
+                        expandedPaths={gitStatus.statusExpandedPaths}
+                        onSelect={(node) => node.file && gitStatus.handleStatusFileSelect(node.file as GitFileStatus, 'unstaged')}
+                        onToggle={gitStatus.handleStatusToggle}
                         cwd={cwd}
                         emptyMessage="无未暂存的变更"
                         className="py-1"
@@ -2337,7 +806,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleDiscardFiles(fileObjects);
+                                    gitStatus.handleDiscardFiles(fileObjects);
                                   }}
                                   className="opacity-0 group-hover:opacity-100 p-0.5 text-red-11 hover:text-red-10 hover:bg-red-9/10 dark:hover:bg-red-9/20 rounded transition-all"
                                   title={`放弃 ${files.length} 个文件的变更`}
@@ -2349,7 +818,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleStageFiles(files.map(f => f.path));
+                                    gitStatus.handleStageFiles(files.map(f => f.path));
                                   }}
                                   className="opacity-0 group-hover:opacity-100 p-0.5 text-green-11 hover:text-green-10 hover:bg-green-9/10 dark:hover:bg-green-9/20 rounded transition-all"
                                   title={`暂存 ${files.length} 个文件`}
@@ -2367,7 +836,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleDiscardFile(node.file as GitFileStatus);
+                                  gitStatus.handleDiscardFile(node.file as GitFileStatus);
                                 }}
                                 className="opacity-0 group-hover:opacity-100 p-0.5 text-red-11 hover:text-red-10 hover:bg-red-9/10 dark:hover:bg-red-9/20 rounded transition-all"
                                 title="放弃变更"
@@ -2379,7 +848,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleStage(node.path);
+                                  gitStatus.handleStage(node.path);
                                 }}
                                 className="opacity-0 group-hover:opacity-100 p-0.5 text-green-11 hover:text-green-10 hover:bg-green-9/10 dark:hover:bg-green-9/20 rounded transition-all"
                                 title="暂存文件"
@@ -2400,33 +869,33 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
               {/* History Tab */}
               <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'history' ? '' : 'hidden'}`}>
-                {historyError ? (
+                {gitHistory.historyError ? (
                   <div className="flex-1 flex items-center justify-center">
                     <div className="text-center">
                       <svg className="w-16 h-16 mx-auto text-slate-7 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                       </svg>
-                      <p className="text-muted-foreground">{historyError}</p>
+                      <p className="text-muted-foreground">{gitHistory.historyError}</p>
                     </div>
                   </div>
                 ) : (
                   <div
-                    ref={commitListRef}
+                    ref={gitHistory.commitListRef}
                     className="flex-1 overflow-y-auto"
-                    onScroll={handleCommitListScroll}
+                    onScroll={gitHistory.handleCommitListScroll}
                   >
-                    {isLoadingCommits ? (
+                    {gitHistory.isLoadingCommits ? (
                       <div className="p-4 text-center text-muted-foreground text-sm">加载提交记录中...</div>
-                    ) : commits.length === 0 ? (
+                    ) : gitHistory.commits.length === 0 ? (
                       <div className="p-4 text-center text-muted-foreground text-sm">无提交记录</div>
                     ) : (
                       <>
-                        {commits.map(commit => (
+                        {gitHistory.commits.map(commit => (
                           <div
                             key={commit.hash}
-                            onClick={() => handleSelectCommit(commit)}
+                            onClick={() => gitHistory.handleSelectCommit(commit)}
                             className={`px-3 py-2 border-b border-border cursor-pointer hover:bg-accent ${
-                              selectedCommit?.hash === commit.hash ? 'bg-brand/10' : ''
+                              gitHistory.selectedCommit?.hash === commit.hash ? 'bg-brand/10' : ''
                             }`}
                           >
                             <div className="flex items-center gap-2">
@@ -2435,18 +904,18 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                 {commit.relativeDate} · {formatDateTime(commit.date)}
                               </span>
                             </div>
-                            <div className="text-sm text-foreground truncate mt-0.5">{commit.subject}</div>
+                            <div className="text-sm text-foreground truncate mt-0.5" data-tooltip={commit.subject}>{commit.subject}</div>
                             <div className="text-xs text-muted-foreground mt-0.5">{commit.author}</div>
                           </div>
                         ))}
-                        {isLoadingMore && (
+                        {gitHistory.isLoadingMore && (
                           <div className="p-3 text-center">
                             <span className="inline-block w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                           </div>
                         )}
-                        {!hasMoreCommits && commits.length > 0 && (
+                        {!gitHistory.hasMoreCommits && gitHistory.commits.length > 0 && (
                           <div className="p-3 text-center text-xs text-slate-9">
-                            已加载全部 {commits.length} 条记录
+                            已加载全部 {gitHistory.commits.length} 条记录
                           </div>
                         )}
                       </>
@@ -2461,27 +930,26 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* File Browser / Recent / Search - Right Panel */}
             {(activeTab === 'tree' || activeTab === 'search' || activeTab === 'recent') && (
-              blameSelectedCommit ? (
-                // 当选中 blame commit 时，显示 commit 详情
+              fileTree.blameSelectedCommit ? (
                 <CommitDetailPanel
                   isOpen={true}
-                  onClose={() => setBlameSelectedCommit(null)}
-                  commit={blameSelectedCommit}
+                  onClose={() => fileTree.setBlameSelectedCommit(null)}
+                  commit={fileTree.blameSelectedCommit}
                   cwd={cwd}
                   embedded={true}
-                  initialFilePath={selectedPath || undefined}
+                  initialFilePath={fileTree.selectedPath || undefined}
                 />
-              ) : selectedPath ? (
+              ) : fileTree.selectedPath ? (
                 <>
                   <div className="px-4 py-2 bg-secondary border-b border-border flex-shrink-0 flex items-center justify-between">
                     <div className="flex items-center gap-1 min-w-0">
                       <span className="text-sm text-muted-foreground truncate">
-                        {selectedPath}
+                        {fileTree.selectedPath}
                       </span>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          navigator.clipboard.writeText(`${cwd}/${selectedPath}`);
+                          navigator.clipboard.writeText(`${cwd}/${fileTree.selectedPath}`);
                           toast('已复制路径');
                         }}
                         className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
@@ -2491,29 +959,11 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                         </svg>
                       </button>
-                      {/* 定位按钮 - 跳转到目录树并展开定位 */}
+                      {/* 定位按钮 */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          // 展开所有父目录
-                          const parts = selectedPath.split('/');
-                          if (parts.length > 1) {
-                            const parentPaths: string[] = [];
-                            for (let i = 1; i < parts.length; i++) {
-                              parentPaths.push(parts.slice(0, i).join('/'));
-                            }
-                            setExpandedPaths(prev => {
-                              const next = new Set(prev);
-                              for (const p of parentPaths) {
-                                next.add(p);
-                              }
-                              saveExpandedPaths(next);
-                              return next;
-                            });
-                          }
-                          // 切换到目录树 tab 并触发滚动
-                          setShouldScrollToSelected(true);
-                          setActiveTab('tree');
+                          locateInTree(fileTree.selectedPath!);
                         }}
                         className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
                         title="在目录树中定位"
@@ -2527,9 +977,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {/* 编辑按钮 */}
-                      {fileContent?.type === 'text' && (
+                      {fileTree.fileContent?.type === 'text' && (
                         <button
-                          onClick={() => setShowEditor(true)}
+                          onClick={() => fileTree.setShowEditor(true)}
                           className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
                           title="编辑文件"
                         >
@@ -2537,9 +987,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         </button>
                       )}
                       {/* Markdown 预览按钮 */}
-                      {fileContent?.type === 'text' && isMarkdownFile(selectedPath) && (
+                      {fileTree.fileContent?.type === 'text' && isMarkdownFile(fileTree.selectedPath) && (
                         <button
-                          onClick={() => setShowMarkdownPreview(true)}
+                          onClick={() => fileTree.setShowMarkdownPreview(true)}
                           className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
                           title="预览 Markdown 渲染效果"
                         >
@@ -2547,18 +997,18 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         </button>
                       )}
                       {/* Blame 按钮 */}
-                      {fileContent?.type === 'text' && (
+                      {fileTree.fileContent?.type === 'text' && (
                         <button
-                          onClick={handleToggleBlame}
-                          disabled={isLoadingBlame}
+                          onClick={fileTree.handleToggleBlame}
+                          disabled={fileTree.isLoadingBlame}
                           className={`px-2 py-1 text-sm rounded transition-colors ${
-                            showBlame
+                            fileTree.showBlame
                               ? 'bg-brand text-white'
                               : 'text-muted-foreground hover:bg-accent'
                           } disabled:opacity-50`}
                           title="查看每行代码的修改记录"
                         >
-                          {isLoadingBlame ? (
+                          {fileTree.isLoadingBlame ? (
                             <span className="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
                           ) : (
                             'Blame'
@@ -2568,27 +1018,27 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     </div>
                   </div>
                   <div className="flex-1 overflow-hidden">
-                    {isLoadingContent ? (
+                    {fileTree.isLoadingContent ? (
                       <div className="h-full flex items-center justify-center">
                         <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                       </div>
-                    ) : fileContent ? (
-                      fileContent.type === 'text' && fileContent.content ? (
-                        showBlame ? (
-                          blameError ? (
+                    ) : fileTree.fileContent ? (
+                      fileTree.fileContent.type === 'text' && fileTree.fileContent.content ? (
+                        fileTree.showBlame ? (
+                          fileTree.blameError ? (
                             <div className="h-full flex items-center justify-center text-muted-foreground">
                               <div className="text-center">
-                                <p className="text-red-11">{blameError}</p>
+                                <p className="text-red-11">{fileTree.blameError}</p>
                                 <button
-                                  onClick={() => setShowBlame(false)}
+                                  onClick={() => fileTree.setShowBlame(false)}
                                   className="mt-2 text-brand hover:underline text-sm"
                                 >
                                   返回预览
                                 </button>
                               </div>
                             </div>
-                          ) : blameLines.length > 0 ? (
-                            <BlameView blameLines={blameLines} cwd={cwd} onSelectCommit={setBlameSelectedCommit} />
+                          ) : fileTree.blameLines.length > 0 ? (
+                            <BlameView blameLines={fileTree.blameLines} cwd={cwd} onSelectCommit={fileTree.setBlameSelectedCommit} />
                           ) : (
                             <div className="h-full flex items-center justify-center">
                               <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
@@ -2596,20 +1046,20 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           )
                         ) : (
                           <CodeViewer
-                            content={fileContent.content}
-                            filePath={selectedPath}
+                            content={fileTree.fileContent.content}
+                            filePath={fileTree.selectedPath}
                             cwd={cwd}
                             enableComments={true}
-                            scrollToLine={targetLineNumber}
-                            onScrollToLineComplete={() => setTargetLineNumber(null)}
-                            highlightKeyword={activeTab === 'search' ? contentSearchQuery : null}
+                            scrollToLine={fileTree.targetLineNumber}
+                            onScrollToLineComplete={() => fileTree.setTargetLineNumber(null)}
+                            highlightKeyword={activeTab === 'search' ? contentSearch.contentSearchQuery : null}
                           />
                         )
-                      ) : fileContent.type === 'image' && fileContent.content ? (
+                      ) : fileTree.fileContent.type === 'image' && fileTree.fileContent.content ? (
                         <div className="h-full flex items-center justify-center p-4 bg-secondary">
                           <img
-                            src={fileContent.content}
-                            alt={selectedPath}
+                            src={fileTree.fileContent.content}
+                            alt={fileTree.selectedPath}
                             className="max-w-full max-h-full object-contain"
                           />
                         </div>
@@ -2619,7 +1069,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             <svg className="w-16 h-16 mx-auto text-slate-7 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
-                            <p>{fileContent.message || '无法预览此文件'}</p>
+                            <p>{fileTree.fileContent.message || '无法预览此文件'}</p>
                           </div>
                         </div>
                       )
@@ -2644,16 +1094,16 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
             {/* Status - Right Panel */}
             {activeTab === 'status' && (
-              statusSelectedFile && statusDiff ? (
+              gitStatus.statusSelectedFile && gitStatus.statusDiff ? (
                 <div className="flex-1 flex flex-col overflow-hidden">
                   <div className="px-4 py-2 bg-secondary border-b border-border flex items-center gap-2">
                     <span className="text-xs font-mono text-muted-foreground">
-                      {statusSelectedFile.file.path}
+                      {gitStatus.statusSelectedFile.file.path}
                     </span>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigator.clipboard.writeText(`${cwd}/${statusSelectedFile.file.path}`);
+                        navigator.clipboard.writeText(`${cwd}/${gitStatus.statusSelectedFile!.file.path}`);
                         toast('已复制路径');
                       }}
                       className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
@@ -2663,18 +1113,33 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                       </svg>
                     </button>
+                    {/* 在目录树中定位 */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        locateInTree(gitStatus.statusSelectedFile!.file.path);
+                      }}
+                      className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
+                      title="在目录树中定位"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10" strokeWidth={2} />
+                        <circle cx="12" cy="12" r="3" strokeWidth={2} />
+                        <path strokeLinecap="round" strokeWidth={2} d="M12 2v4m0 12v4M2 12h4m12 0h4" />
+                      </svg>
+                    </button>
                     <span className={`text-xs px-1.5 py-0.5 rounded ${
-                      statusSelectedFile.type === 'staged'
+                      gitStatus.statusSelectedFile.type === 'staged'
                         ? 'bg-green-9/15 text-green-11 dark:bg-green-9/25'
                         : 'bg-amber-9/15 text-amber-11 dark:bg-amber-9/25'
                     }`}>
-                      {statusSelectedFile.type === 'staged' ? '已暂存' : '未暂存'}
+                      {gitStatus.statusSelectedFile.type === 'staged' ? '已暂存' : '未暂存'}
                     </span>
                     <div className="flex-1" />
                     {/* Markdown 预览按钮 */}
-                    {isMarkdownFile(statusSelectedFile.file.path) && statusDiff && !statusDiff.isDeleted && (
+                    {isMarkdownFile(gitStatus.statusSelectedFile.file.path) && gitStatus.statusDiff && !gitStatus.statusDiff.isDeleted && (
                       <button
-                        onClick={() => setShowStatusDiffPreview(true)}
+                        onClick={() => gitStatus.setShowStatusDiffPreview(true)}
                         className="px-2 py-1 text-xs rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-accent"
                         title="预览 Markdown 渲染效果"
                       >
@@ -2683,37 +1148,37 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     )}
                   </div>
                   <div className="flex-1 overflow-auto">
-                    {isImageFile(statusSelectedFile.file.path) ? (
+                    {isImageFile(gitStatus.statusSelectedFile.file.path) ? (
                       <div className="p-4 flex items-center justify-center">
                         <img
-                          src={`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(statusSelectedFile.file.path)}&raw=1`}
-                          alt={statusSelectedFile.file.path}
+                          src={`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(gitStatus.statusSelectedFile.file.path)}&raw=1`}
+                          alt={gitStatus.statusSelectedFile.file.path}
                           className="max-w-full max-h-[60vh] object-contain"
                         />
                       </div>
                     ) : (
                       <DiffView
-                        oldContent={statusDiff.oldContent}
-                        newContent={statusDiff.newContent}
-                        filePath={statusDiff.filePath}
-                        isNew={statusDiff.isNew}
-                        isDeleted={statusDiff.isDeleted}
+                        oldContent={gitStatus.statusDiff.oldContent}
+                        newContent={gitStatus.statusDiff.newContent}
+                        filePath={gitStatus.statusDiff.filePath}
+                        isNew={gitStatus.statusDiff.isNew}
+                        isDeleted={gitStatus.statusDiff.isDeleted}
                         cwd={cwd}
                         enableComments={true}
                       />
                     )}
                   </div>
                   {/* Git 变更 Markdown 预览 Modal */}
-                  {showStatusDiffPreview && statusDiff && (
-                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowStatusDiffPreview(false)}>
+                  {gitStatus.showStatusDiffPreview && gitStatus.statusDiff && (
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => gitStatus.setShowStatusDiffPreview(false)}>
                       <div
                         className="bg-card rounded-lg shadow-xl w-full max-w-[70%] h-full flex flex-col"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
-                          <span className="text-sm font-medium text-foreground truncate">{statusDiff.filePath}</span>
+                          <span className="text-sm font-medium text-foreground truncate">{gitStatus.statusDiff.filePath}</span>
                           <button
-                            onClick={() => setShowStatusDiffPreview(false)}
+                            onClick={() => gitStatus.setShowStatusDiffPreview(false)}
                             className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
                             title="关闭"
                           >
@@ -2723,7 +1188,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           </button>
                         </div>
                         <div className="flex-1 overflow-auto p-6">
-                          <MarkdownRenderer content={statusDiff.newContent} />
+                          <MarkdownRenderer content={gitStatus.statusDiff.newContent} />
                         </div>
                       </div>
                     </div>
@@ -2737,12 +1202,12 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
             )}
 
             {/* History - Right Panel */}
-            {activeTab === 'history' && !historyError && (
-              selectedCommit ? (
+            {activeTab === 'history' && !gitHistory.historyError && (
+              gitHistory.selectedCommit ? (
                 <CommitDetailPanel
                   isOpen={true}
-                  onClose={() => setSelectedCommit(null)}
-                  commit={selectedCommit}
+                  onClose={() => gitHistory.setSelectedCommit(null)}
+                  commit={gitHistory.selectedCommit}
                   cwd={cwd}
                   embedded={true}
                 />
@@ -2756,17 +1221,17 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         </div>
 
         {/* Markdown 预览 Modal */}
-        {showMarkdownPreview && fileContent?.type === 'text' && selectedPath && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowMarkdownPreview(false)}>
+        {fileTree.showMarkdownPreview && fileTree.fileContent?.type === 'text' && fileTree.selectedPath && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => fileTree.setShowMarkdownPreview(false)}>
             <div
               className="bg-card rounded-lg shadow-xl w-full max-w-[70%] h-full flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Modal Header */}
               <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
-                <span className="text-sm font-medium text-foreground truncate">{selectedPath}</span>
+                <span className="text-sm font-medium text-foreground truncate">{fileTree.selectedPath}</span>
                 <button
-                  onClick={() => setShowMarkdownPreview(false)}
+                  onClick={() => fileTree.setShowMarkdownPreview(false)}
                   className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
                   title="关闭"
                 >
@@ -2777,27 +1242,36 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               </div>
               {/* Modal Content */}
               <div className="flex-1 overflow-auto p-6">
-                <MarkdownRenderer content={fileContent.content || ''} />
+                <MarkdownRenderer content={fileTree.fileContent.content || ''} />
               </div>
             </div>
           </div>
         )}
 
         {/* 文件编辑 Modal */}
-        {selectedPath && fileContent?.type === 'text' && (
+        {fileTree.selectedPath && fileTree.fileContent?.type === 'text' && (
           <FileEditorModal
-            isOpen={showEditor}
-            onClose={() => setShowEditor(false)}
-            filePath={selectedPath}
-            initialContent={fileContent.content || ''}
+            isOpen={fileTree.showEditor}
+            onClose={() => fileTree.setShowEditor(false)}
+            filePath={fileTree.selectedPath}
+            initialContent={fileTree.fileContent.content || ''}
             cwd={cwd}
             onSaved={() => {
-              // 保存后重新加载文件内容
-              loadFileContent(selectedPath);
+              fileTree.loadFileContent(fileTree.selectedPath!);
             }}
           />
         )}
       </div>
+      {/* 全局 tooltip - portal 到 body 顶层 */}
+      {hoverTooltip && createPortal(
+        <div
+          className="fixed z-[9999] px-2 py-1 bg-popover text-popover-foreground text-xs font-mono rounded shadow-lg border border-brand whitespace-nowrap pointer-events-none"
+          style={{ left: hoverTooltip.x + 12, top: hoverTooltip.y + 16 }}
+        >
+          {hoverTooltip.text}
+        </div>,
+        document.body
+      )}
     </MenuContainerProvider>
   );
 }

@@ -99,7 +99,7 @@ const GitFileTreeItem = React.memo(function GitFileTreeItem({
           <span className="text-slate-9 text-xs">
             {isExpanded ? '▼' : '▶'}
           </span>
-          <span className="text-sm text-foreground flex-1">{node.name}</span>
+          <span className="text-sm text-foreground flex-1" data-tooltip={node.path}>{node.name}</span>
           {renderActions && renderActions(node)}
         </div>
         {isExpanded && node.children.map(child => (
@@ -130,7 +130,7 @@ const GitFileTreeItem = React.memo(function GitFileTreeItem({
       onContextMenu={handleContextMenu}
     >
       <FileIcon name={node.name} size={16} className="flex-shrink-0" />
-      <span className={`text-sm flex-1 truncate ${isSelected ? 'text-brand' : 'text-foreground'}`}>
+      <span className={`text-sm flex-1 truncate ${isSelected ? 'text-brand' : 'text-foreground'}`} data-tooltip={node.path}>
         {node.name}
       </span>
       {node.status && <StatusIcon status={node.status} />}

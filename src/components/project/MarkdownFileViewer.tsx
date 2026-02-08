@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { getHighlighter, getLanguageFromPath } from './CodeViewer';
+import { getHighlighter, getLanguageFromPath } from './codeHighlighter';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 
 type MdViewMode = 'source' | 'preview' | 'split';

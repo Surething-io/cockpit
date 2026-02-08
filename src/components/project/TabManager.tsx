@@ -1,50 +1,17 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { Chat } from './Chat';
+import { useState, useEffect, useCallback } from 'react';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { FileBrowserModal } from './FileBrowserModal';
 import { BrowserView } from './BrowserView';
 import { GitWorktreeModal } from './GitWorktreeModal';
-import { Tooltip } from '../shared/Tooltip';
 import { ChatProvider } from './ChatContext';
 import { ServicePanel } from './ServicePanel';
-import { SwipeableViewContainer, SwipeableContent, ViewSwitcherBar, type ViewType } from './SwipeableViewContainer';
-import { toast } from '../shared/Toast';
-
-interface TabInfo {
-  id: string;
-  cwd?: string;
-  sessionId?: string;
-  title: string;
-  isLoading?: boolean;
-}
-
-// Tab 圆圈编号图标组件
-function TabNumberIcon({ number, isActive }: { number: number; isActive: boolean }) {
-  return (
-    <svg
-      className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-brand' : 'text-muted-foreground'}`}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-    >
-      <circle cx="12" cy="12" r="9" />
-      <text
-        x="12"
-        y="16"
-        textAnchor="middle"
-        fill="currentColor"
-        stroke="none"
-        fontSize="12"
-        fontWeight="500"
-      >
-        {number}
-      </text>
-    </svg>
-  );
-}
+import { SwipeableViewContainer, SwipeableContent, type ViewType } from './SwipeableViewContainer';
+import { useTabState } from './useTabState';
+import { TabManagerTopBar } from './TabManagerTopBar';
+import { TabBar } from './TabBar';
+import { ChatPanel } from './ChatPanel';
 
 interface TabManagerProps {
   initialCwd?: string;
@@ -52,115 +19,27 @@ interface TabManagerProps {
 }
 
 export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
-  // 标记是否已从服务端加载过 sessions
-  const hasLoadedRef = useRef(false);
-  // 标记是否正在初始化（避免初始化过程中触发保存）
-  const isInitializingRef = useRef(true);
+  // Tab 状态管理
+  const {
+    tabs,
+    activeTabId,
+    activeTab,
+    unreadTabs,
+    dragTabIndex,
+    dragOverTabIndex,
+    closeTab,
+    switchTab,
+    handleSelectSession,
+    handleNewTab,
+    handleOpenSession,
+    updateTabState,
+    handleTabDragStart,
+    handleTabDragOver,
+    handleTabDrop,
+    handleTabDragEnd,
+  } = useTabState({ initialCwd, initialSessionId });
 
-  // 初始化标签页（先创建一个临时标签，后续会被服务端数据覆盖）
-  const [tabs, setTabs] = useState<TabInfo[]>(() => [{
-    id: `tab-${Date.now()}`,
-    cwd: initialCwd,
-    title: 'New Chat',
-  }]);
-  const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id);
-
-  // 从服务端加载保存的 sessions，并与 URL 参数合并
-  useEffect(() => {
-    if (!initialCwd || hasLoadedRef.current) return;
-    hasLoadedRef.current = true;
-
-    const loadSessions = async () => {
-      try {
-        const response = await fetch(`/api/project-state?cwd=${encodeURIComponent(initialCwd)}`);
-        if (response.ok) {
-          const data = await response.json();
-          const savedSessions: string[] = data.sessions || [];
-          const savedActiveSessionId: string | undefined = data.activeSessionId;
-
-          // 合并 URL sessionId 和 session.json 中的 sessions（去重）
-          let allSessions = [...savedSessions];
-          if (initialSessionId && !allSessions.includes(initialSessionId)) {
-            // URL 的 sessionId 放到最前面
-            allSessions = [initialSessionId, ...allSessions];
-          }
-
-          if (allSessions.length > 0) {
-            // 恢复 tabs
-            const restoredTabs: TabInfo[] = allSessions.map((sessionId: string, index: number) => ({
-              id: `tab-${Date.now()}-${index}`,
-              cwd: initialCwd,
-              sessionId,
-              title: `Session ${sessionId.slice(0, 6)}...`,
-            }));
-
-            // 激活优先级：URL sessionId > session.json activeSessionId > 第一个
-            let activeSessionToUse = initialSessionId || savedActiveSessionId;
-            let activeIndex = activeSessionToUse ? allSessions.indexOf(activeSessionToUse) : -1;
-            if (activeIndex < 0) activeIndex = 0;
-
-            // 同时更新 tabs 和 activeTabId
-            const newActiveTabId = restoredTabs[activeIndex].id;
-            setTabs(restoredTabs);
-            setActiveTabId(newActiveTabId);
-
-            // 延迟结束初始化状态，确保 React 有时间处理 state 更新
-            // 这样 URL 更新 useEffect 才能拿到正确的 tabs 和 activeTabId
-            setTimeout(() => {
-              isInitializingRef.current = false;
-            }, 0);
-          } else {
-            isInitializingRef.current = false;
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load sessions:', error);
-        isInitializingRef.current = false;
-      }
-    };
-
-    loadSessions();
-  }, [initialCwd, initialSessionId]);
-
-  // 当 tabs 或 activeTabId 变化时保存到服务端
-  useEffect(() => {
-    // 初始化过程中不保存
-    if (isInitializingRef.current || !initialCwd) return;
-
-    // 收集所有有 sessionId 的 tab
-    const sessionIds = tabs
-      .map(tab => tab.sessionId)
-      .filter((id): id is string => !!id);
-
-    // 获取当前激活 Tab 的 sessionId
-    const activeTab = tabs.find(t => t.id === activeTabId);
-    const activeSessionId = activeTab?.sessionId;
-
-    // 保存到服务端（包含 activeSessionId）
-    fetch('/api/project-state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cwd: initialCwd, sessions: sessionIds, activeSessionId }),
-    }).catch(error => {
-      console.error('Failed to save sessions:', error);
-    });
-  }, [tabs, activeTabId, initialCwd]);
-
-  // 切换 Tab 时通知父级 Workspace（由父级统一更新 URL）
-  useEffect(() => {
-    // 初始化过程中不通知
-    if (isInitializingRef.current || !initialCwd) return;
-
-    const activeTab = tabs.find(t => t.id === activeTabId);
-    if (!activeTab?.sessionId) return;
-
-    // 通知父级 Workspace 更新 sessionId（父级负责更新 URL）
-    window.parent.postMessage({
-      type: 'SESSION_CHANGE',
-      cwd: initialCwd,
-      sessionId: activeTab.sessionId,
-    }, '*');
-  }, [activeTabId, tabs, initialCwd]);
+  // UI 状态
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
   const [isWorktreeOpen, setIsWorktreeOpen] = useState(false);
   const [isServicePanelOpen, setIsServicePanelOpen] = useState(false);
@@ -169,127 +48,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [isGitRepo, setIsGitRepo] = useState(false);
   const [fileBrowserInitialTab, setFileBrowserInitialTab] = useState<'tree' | 'recent' | 'status' | 'history'>('tree');
-  // 用于强制触发 tab 切换（解决重复点击同一 tab 时 useEffect 不触发的问题）
   const [tabSwitchTrigger, setTabSwitchTrigger] = useState(0);
-  // 视图切换状态：agent (Chat), explorer (FileBrowser), browser (BrowserView)
   const [activeView, setActiveView] = useState<ViewType>('agent');
-  // Tab 拖拽状态
-  const [dragTabIndex, setDragTabIndex] = useState<number | null>(null);
-  const [dragOverTabIndex, setDragOverTabIndex] = useState<number | null>(null);
-  // 未读 Tab（会话完成但未切换查看）
-  const [unreadTabs, setUnreadTabs] = useState<Set<string>>(new Set());
-
-  // 添加新标签页（插入到当前标签的右边）
-  const addTab = useCallback((cwd?: string, sessionId?: string, title?: string) => {
-    const newTab: TabInfo = {
-      id: `tab-${Date.now()}`,
-      cwd,
-      sessionId,
-      title: title || (sessionId ? `Session ${sessionId.slice(0, 6)}...` : 'New Chat'),
-    };
-    setTabs((prev) => {
-      const currentIndex = prev.findIndex((t) => t.id === activeTabId);
-      if (currentIndex === -1) {
-        // 没有当前标签，添加到末尾
-        return [...prev, newTab];
-      }
-      // 插入到当前标签的右边
-      const newTabs = [...prev];
-      newTabs.splice(currentIndex + 1, 0, newTab);
-      return newTabs;
-    });
-    setActiveTabId(newTab.id);
-  }, [activeTabId]);
-
-  // 关闭标签页
-  const closeTab = useCallback((tabId: string) => {
-    setTabs((prev) => {
-      const newTabs = prev.filter((t) => t.id !== tabId);
-      // 如果关闭的是当前激活的标签，切换到最后一个标签
-      if (tabId === activeTabId && newTabs.length > 0) {
-        setActiveTabId(newTabs[newTabs.length - 1].id);
-      }
-      // 至少保留一个标签
-      if (newTabs.length === 0) {
-        const newTab: TabInfo = {
-          id: `tab-${Date.now()}`,
-          cwd: initialCwd,
-          title: 'New Chat',
-        };
-        setActiveTabId(newTab.id);
-        return [newTab];
-      }
-      return newTabs;
-    });
-  }, [activeTabId, initialCwd]);
-
-  // 处理侧边栏点击 session - 添加新标签
-  const handleSelectSession = useCallback((sid: string, title?: string) => {
-    // 检查是否已经有这个 session 的标签
-    const existingTab = tabs.find((t) => t.sessionId === sid);
-    if (existingTab) {
-      setActiveTabId(existingTab.id);
-    } else {
-      addTab(initialCwd, sid, title);
-    }
-  }, [tabs, initialCwd, addTab]);
-
-  // 新建空白标签
-  const handleNewTab = useCallback(() => {
-    addTab(initialCwd);
-  }, [initialCwd, addTab]);
-
-  // 打开新 session（用于 Fork，总是创建新标签）
-  const handleOpenSession = useCallback((sid: string, title?: string) => {
-    addTab(initialCwd, sid, title);
-  }, [initialCwd, addTab]);
-
-  // 更新标签页状态（loading、sessionId）
-  const updateTabState = useCallback((tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string }) => {
-    setTabs((prev) => {
-      const oldTab = prev.find(t => t.id === tabId);
-      // 检测会话完成：从 loading 变为非 loading
-      if (oldTab?.isLoading && updates.isLoading === false && tabId !== activeTabId) {
-        // 非当前 tab 完成，添加未读标记
-        setUnreadTabs(u => new Set(u).add(tabId));
-      }
-      return prev.map((tab) =>
-        tab.id === tabId ? { ...tab, ...updates } : tab
-      );
-    });
-  }, [activeTabId]);
-
-  // Tab 拖拽排序
-  const handleTabDragStart = useCallback((index: number) => {
-    setDragTabIndex(index);
-  }, []);
-
-  const handleTabDragOver = useCallback((e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    if (dragTabIndex !== null && dragTabIndex !== index) {
-      setDragOverTabIndex(index);
-    }
-  }, [dragTabIndex]);
-
-  const handleTabDrop = useCallback((targetIndex: number) => {
-    if (dragTabIndex !== null && dragTabIndex !== targetIndex) {
-      setTabs((prev) => {
-        const newTabs = [...prev];
-        const [removed] = newTabs.splice(dragTabIndex, 1);
-        newTabs.splice(targetIndex, 0, removed);
-        return newTabs;
-      });
-    }
-    setDragTabIndex(null);
-    setDragOverTabIndex(null);
-  }, [dragTabIndex]);
-
-  const handleTabDragEnd = useCallback(() => {
-    setDragTabIndex(null);
-    setDragOverTabIndex(null);
-  }, []);
-
-  const activeTab = tabs.find((t) => t.id === activeTabId);
 
   // 加载 Git 仓库信息（分支）
   useEffect(() => {
@@ -302,7 +62,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           const data = await response.json();
           setIsGitRepo(data.isGitRepo);
           if (data.isGitRepo && data.worktrees.length > 0) {
-            // 找到当前 cwd 对应的 worktree
             const currentWorktree = data.worktrees.find((w: { path: string }) => w.path === initialCwd);
             if (currentWorktree) {
               setCurrentBranch(currentWorktree.branch);
@@ -326,7 +85,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         const res = await fetch(`/api/services/status?cwd=${encodeURIComponent(initialCwd)}`);
         if (res.ok) {
           const data = await res.json();
-          // 只统计当前项目的服务数量
           const count = data.filter((s: { cwd: string }) => s.cwd === initialCwd).length;
           setRunningServicesCount(count);
         }
@@ -337,7 +95,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
 
     loadServicesCount();
     const timer = setInterval(loadServicesCount, 3000);
-
     return () => clearInterval(timer);
   }, [initialCwd]);
 
@@ -377,206 +134,17 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     return () => window.removeEventListener('message', handleMessage);
   }, [handleSelectSession]);
 
-  // Top bar 组件（主标题栏，始终显示）
-  const TopBar = (
-    <div className="border-b border-border bg-card shrink-0">
-      <div className="flex items-center justify-between px-4 py-2 relative">
-        {/* 左侧：Logo + 项目路径 + Git 分支 */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <img src="/icons/icon-72x72.png" alt="Cockpit" className="w-6 h-6" />
-            {initialCwd ? (
-              <>
-                <span
-                  className="text-sm text-foreground max-w-md truncate cursor-help"
-                  title={`CWD: ${initialCwd}`}
-                >
-                  {initialCwd}
-                </span>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(initialCwd);
-                    toast('已复制目录路径');
-                  }}
-                  className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-                  title="复制目录路径"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                </button>
-              </>
-            ) : (
-              <h1 className="text-lg font-semibold text-foreground">
-                Cockpit
-              </h1>
-            )}
-          </div>
-          {/* Git Worktree 按钮 */}
-          {isGitRepo && (
-            <button
-              onClick={() => setIsWorktreeOpen(true)}
-              className="flex items-center gap-1.5 px-2 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-              title="Git Worktrees"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0l-4-4m4 4l-4 4M3 7v6a4 4 0 004 4h5" />
-              </svg>
-              <span className="text-sm">{currentBranch || 'main'}</span>
-            </button>
-          )}
-        </div>
+  // 打开 Git Status 视图
+  const handleShowGitStatus = useCallback(() => {
+    setFileBrowserInitialTab('status');
+    setTabSwitchTrigger(n => n + 1);
+    setActiveView('explorer');
+  }, []);
 
-        {/* 中间：视图切换按钮 - 绝对定位居中 */}
-        <div className="absolute left-1/2 -translate-x-1/2">
-          <ViewSwitcherBar />
-        </div>
-
-        {/* 右侧：会话相关 */}
-        <div className="flex items-center gap-2">
-          {/* 当前项目 Sessions 按钮 */}
-          {initialCwd && (
-            <button
-              onClick={() => setIsProjectSessionsOpen(true)}
-              className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-              title="项目会话"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </button>
-          )}
-          {/* Cursor 打开按钮 */}
-          <button
-            onClick={async () => {
-              if (activeTab?.cwd) {
-                try {
-                  await fetch('/api/open-cursor', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cwd: activeTab.cwd }),
-                  });
-                } catch {
-                  // 忽略错误
-                }
-              }
-            }}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-            title="在 Cursor 中打开"
-          >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M4.5 2L20.5 12L4.5 22V2Z" />
-            </svg>
-          </button>
-          {/* 后台服务按钮 */}
-          <button
-            onClick={() => setIsServicePanelOpen(true)}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors relative"
-            title="后台服务"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-            </svg>
-            {runningServicesCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-9 text-white text-xs font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                {runningServicesCount}
-              </span>
-            )}
-          </button>
-          {/* 复制 claude -r 命令按钮 */}
-          {activeTab?.sessionId && (
-            <button
-              onClick={() => {
-                const command = `claude -r ${activeTab.sessionId}`;
-                navigator.clipboard.writeText(command).then(() => {
-                  toast('已复制: ' + command, 'success');
-                });
-              }}
-              className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-              title={`复制命令: claude -r ${activeTab.sessionId}`}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-
-  // Tab bar 组件（标签页，仅在 AGENT 视图显示）
-  const TabBar = (
-    <div className="border-b border-border bg-card shrink-0">
-      <div className="flex items-center px-2 gap-1 overflow-x-auto">
-        {tabs.map((tab, index) => (
-          <Tooltip key={tab.id} content={tab.title} delay={200}>
-            <div
-              draggable
-              onDragStart={() => handleTabDragStart(index)}
-              onDragOver={(e) => handleTabDragOver(e, index)}
-              onDrop={() => handleTabDrop(index)}
-              onDragEnd={handleTabDragEnd}
-              className={`group flex items-center gap-1 px-3 py-1.5 text-sm cursor-pointer rounded-t-lg transition-colors ${
-                tab.id === activeTabId
-                  ? 'bg-accent text-foreground'
-                  : 'text-muted-foreground hover:bg-secondary'
-              } ${dragTabIndex === index ? 'opacity-50' : ''} ${
-                dragOverTabIndex === index ? 'border-l-2 border-brand' : ''
-              }`}
-              onClick={() => {
-                setActiveTabId(tab.id);
-                // 清除未读标记
-                setUnreadTabs(u => {
-                  const next = new Set(u);
-                  next.delete(tab.id);
-                  return next;
-                });
-              }}
-            >
-              {/* 圆圈编号 + 状态角标（右上角） */}
-              <div className="relative flex-shrink-0">
-                <TabNumberIcon number={index + 1} isActive={tab.id === activeTabId} />
-                {/* Loading 黄点闪烁 - 右上角 */}
-                {tab.isLoading && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                )}
-                {/* 未读红点角标 - 右上角（loading 时不显示，避免重叠） */}
-                {!tab.isLoading && unreadTabs.has(tab.id) && tab.id !== activeTabId && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500" />
-                )}
-              </div>
-              <span className="max-w-32 truncate">{tab.title}</span>
-              {tabs.length > 1 && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    closeTab(tab.id);
-                  }}
-                  className="ml-1 p-0.5 rounded hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="关闭标签"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
-            </div>
-          </Tooltip>
-        ))}
-        {/* 新建标签按钮 */}
-        <button
-          onClick={handleNewTab}
-          className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-          title="新建标签"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
-      </div>
-    </div>
-  );
+  // 打开笔记
+  const handleOpenNote = initialCwd ? useCallback(() => {
+    window.parent.postMessage({ type: 'OPEN_NOTE', cwd: initialCwd }, '*');
+  }, [initialCwd]) : undefined;
 
   return (
     <ChatProvider>
@@ -585,14 +153,36 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar - 始终显示 */}
-        {TopBar}
+        <TabManagerTopBar
+          initialCwd={initialCwd}
+          activeTab={activeTab}
+          isGitRepo={isGitRepo}
+          currentBranch={currentBranch}
+          runningServicesCount={runningServicesCount}
+          onOpenWorktree={() => setIsWorktreeOpen(true)}
+          onOpenProjectSessions={() => setIsProjectSessionsOpen(true)}
+          onOpenServicePanel={() => setIsServicePanelOpen(true)}
+        />
 
         {/* 内容区域 - 根据 activeView 切换（滑动效果） */}
         {initialCwd ? (
           <SwipeableContent>
             {/* AGENT 视图：Tab bar + Chat */}
             <div className="w-1/3 h-full flex flex-col overflow-hidden">
-              {TabBar}
+              <TabBar
+                tabs={tabs}
+                activeTabId={activeTabId}
+                unreadTabs={unreadTabs}
+                dragTabIndex={dragTabIndex}
+                dragOverTabIndex={dragOverTabIndex}
+                onSwitchTab={switchTab}
+                onCloseTab={closeTab}
+                onNewTab={handleNewTab}
+                onDragStart={handleTabDragStart}
+                onDragOver={handleTabDragOver}
+                onDrop={handleTabDrop}
+                onDragEnd={handleTabDragEnd}
+              />
               <div className="flex-1 overflow-hidden relative">
                 {tabs.map((tab) => (
                   <div
@@ -605,14 +195,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                       sessionId={tab.sessionId}
                       isActive={tab.id === activeTabId && activeView === 'agent'}
                       onStateChange={updateTabState}
-                      onShowGitStatus={() => {
-                        setFileBrowserInitialTab('status');
-                        setTabSwitchTrigger(n => n + 1);
-                        setActiveView('explorer');
-                      }}
-                      onOpenNote={initialCwd ? () => {
-                        window.parent.postMessage({ type: 'OPEN_NOTE', cwd: initialCwd }, '*');
-                      } : undefined}
+                      onShowGitStatus={handleShowGitStatus}
+                      onOpenNote={handleOpenNote}
                       onOpenSession={handleOpenSession}
                     />
                   </div>
@@ -636,9 +220,22 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
             </div>
           </SwipeableContent>
         ) : (
-          /* 无 cwd 时，只显示 Tab bar + Chat（不需要滑动） */
+          /* 无 cwd 时，只显示 Tab bar + Chat */
           <div className="flex-1 flex flex-col overflow-hidden">
-            {TabBar}
+            <TabBar
+              tabs={tabs}
+              activeTabId={activeTabId}
+              unreadTabs={unreadTabs}
+              dragTabIndex={dragTabIndex}
+              dragOverTabIndex={dragOverTabIndex}
+              onSwitchTab={switchTab}
+              onCloseTab={closeTab}
+              onNewTab={handleNewTab}
+              onDragStart={handleTabDragStart}
+              onDragOver={handleTabDragOver}
+              onDrop={handleTabDrop}
+              onDragEnd={handleTabDragEnd}
+            />
             <div className="flex-1 overflow-hidden relative">
               {tabs.map((tab) => (
                 <div
@@ -670,8 +267,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         />
       )}
 
-
-
       {/* Git Worktree Modal */}
       {initialCwd && isGitRepo && (
         <GitWorktreeModal
@@ -687,60 +282,13 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         onClose={() => setIsServicePanelOpen(false)}
         initialCwd={initialCwd}
         onOpenBrowser={(url) => {
-          // 关闭服务面板
           setIsServicePanelOpen(false);
-          // 切换到 BROWSER 视图
           setActiveView('browser');
-          // 传递 URL 给 BrowserView
           setBrowserOpenUrl(url);
         }}
       />
     </div>
     </SwipeableViewContainer>
     </ChatProvider>
-  );
-}
-
-// 简化的 Chat 面板，不包含 header 和 sidebar
-interface ChatPanelProps {
-  tabId: string;
-  cwd?: string;
-  sessionId?: string;
-  isActive?: boolean; // Tab 是否激活
-  onStateChange: (tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string }) => void;
-  onShowGitStatus?: () => void;
-  onOpenNote?: () => void;
-  onOpenSession?: (sessionId: string, title?: string) => void;
-}
-
-function ChatPanel({ tabId, cwd, sessionId, isActive, onStateChange, onShowGitStatus, onOpenNote, onOpenSession }: ChatPanelProps) {
-  // 使用 useCallback 稳定回调函数引用，避免无限循环
-  const handleLoadingChange = useCallback((isLoading: boolean) => {
-    onStateChange(tabId, { isLoading });
-  }, [tabId, onStateChange]);
-
-  const handleSessionIdChange = useCallback((newSessionId: string) => {
-    onStateChange(tabId, { sessionId: newSessionId });
-  }, [tabId, onStateChange]);
-
-  const handleTitleChange = useCallback((title: string) => {
-    onStateChange(tabId, { title });
-  }, [tabId, onStateChange]);
-
-  return (
-    <Chat
-      tabId={tabId}
-      initialCwd={cwd}
-      initialSessionId={sessionId}
-      hideHeader
-      hideSidebar
-      isActive={isActive}
-      onLoadingChange={handleLoadingChange}
-      onSessionIdChange={handleSessionIdChange}
-      onTitleChange={handleTitleChange}
-      onShowGitStatus={onShowGitStatus}
-      onOpenNote={onOpenNote}
-      onOpenSession={onOpenSession}
-    />
   );
 }

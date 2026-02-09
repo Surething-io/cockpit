@@ -1,7 +1,9 @@
 {
   "name": "cockpit",
   "version": "0.1.0",
-  "private": true,
+  "bin": {
+    "cock": "./bin/cock.mjs"
+  },
   "scripts": {
     "dev": "COCKPIT_ENV=dev next dev -p 3456",
     "build": "next build --webpack",

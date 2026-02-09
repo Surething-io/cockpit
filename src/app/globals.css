@@ -527,3 +527,8 @@ body {
   text-decoration: line-through;
   color: hsl(var(--muted-foreground));
 }
+
+/* ---- Code search highlight classes (short names to reduce HTML size) ---- */
+.hl-cur { background: rgba(217, 119, 6, 0.5); }   /* current match */
+.hl-m { background: rgba(217, 119, 6, 0.3); }     /* other matches */
+.hl-kw { background: rgba(217, 119, 6, 0.4); border-radius: 2px; padding: 0 2px; } /* keyword */

@@ -21,9 +21,15 @@ export function useContentSearch({ cwd }: UseContentSearchOptions) {
   const contentSearchInputRef = useRef<HTMLInputElement>(null);
 
   const performContentSearch = useCallback(async (query: string) => {
-    if (!query.trim()) {
+    const trimmed = query.trim();
+    if (!trimmed) {
       setContentSearchResults([]);
       setSearchStats(null);
+      return;
+    }
+    // 最少 2 个字符才触发搜索，防止单字符搜索产生海量结果
+    if (trimmed.length < 2) {
+      setSearchError('搜索内容至少需要 2 个字符');
       return;
     }
 

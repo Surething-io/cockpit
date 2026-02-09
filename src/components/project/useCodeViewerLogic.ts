@@ -439,35 +439,85 @@ export function useCodeViewerLogic({
     }
   }, [sendToAIInput, chatContext, filePath, cwd, refreshComments]);
 
-  // Highlight match in line
+  // Highlight match in line — 基于纯文本位置拼接，避免在 HTML 上做正则替换导致指数膨胀
   const getHighlightedLineHtml = useCallback((lineIndex: number, html: string, highlightKeyword: string | null | undefined): string => {
-    let result = html;
     const line = lines[lineIndex];
+    if (!line) return html;
+
+    // 收集需要高亮的区间 [startCol, endCol, className]
+    type Segment = { start: number; end: number; cls: string };
+    const segments: Segment[] = [];
 
     // 1. 内部搜索高亮
     if (searchQuery && matches.length > 0) {
       const lineMatches = matches.filter(m => m.lineIndex === lineIndex);
-      for (const match of lineMatches.reverse()) {
-        const isCurrentMatch = matches[currentMatchIndex]?.lineIndex === lineIndex &&
+      for (const match of lineMatches) {
+        const isCurrent = matches[currentMatchIndex]?.lineIndex === lineIndex &&
           matches[currentMatchIndex]?.startCol === match.startCol;
-
-        const matchText = line.substring(match.startCol, match.endCol);
-        const escapedMatch = escapeHtml(matchText);
-        const highlightClass = isCurrentMatch ? 'bg-amber-9/50' : 'bg-amber-9/30';
-
-        const regex = new RegExp(escapedMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-        result = result.replace(regex, `<span class="${highlightClass}">${escapedMatch}</span>`);
+        segments.push({ start: match.startCol, end: match.endCol, cls: isCurrent ? 'hl-cur' : 'hl-m' });
       }
     }
 
-    // 2. 外部关键词高亮
-    if (highlightKeyword && !searchQuery) {
-      const escapedKeyword = escapeHtml(highlightKeyword).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`(${escapedKeyword})`, 'gi');
-      result = result.replace(regex, '<span class="bg-amber-9/40 rounded px-0.5">$1</span>');
+    // 2. 外部关键词高亮（搜索不活跃时）
+    if (highlightKeyword && !searchQuery && highlightKeyword.length >= 1) {
+      const kwLower = highlightKeyword.toLowerCase();
+      const lineLower = line.toLowerCase();
+      let idx = 0;
+      while ((idx = lineLower.indexOf(kwLower, idx)) !== -1) {
+        segments.push({ start: idx, end: idx + highlightKeyword.length, cls: 'hl-kw' });
+        idx += 1;
+      }
     }
 
-    return result;
+    if (segments.length === 0) return html;
+
+    // 按位置排序，去重重叠
+    segments.sort((a, b) => a.start - b.start || a.end - b.end);
+
+    // 基于纯文本位置切分，逐段 escapeHtml + 包裹高亮标签
+    const parts: string[] = [];
+    let cursor = 0;
+    for (const seg of segments) {
+      if (seg.start < cursor) continue; // 跳过重叠
+      if (seg.start > cursor) {
+        parts.push(escapeHtml(line.substring(cursor, seg.start)));
+      }
+      const matchText = escapeHtml(line.substring(seg.start, seg.end));
+      parts.push(`<span class="${seg.cls}">${matchText}</span>`);
+      cursor = seg.end;
+    }
+    if (cursor < line.length) {
+      parts.push(escapeHtml(line.substring(cursor)));
+    }
+
+    // 如果有 Shiki 高亮的 HTML（含 <span style=...> 标签），则保留 Shiki HTML；
+    // 只有当 html !== escapeHtml(line) 时才表示有语法高亮
+    const plainHtml = escapeHtml(line);
+    if (html !== plainHtml) {
+      // Shiki HTML 模式：用安全的单次正则替换纯文本段
+      // 为避免在 HTML 标签上误替换，采用混合策略：
+      // 对每个高亮段，精确替换第一个纯文本匹配
+      let result = html;
+      for (const seg of segments) {
+        const matchText = line.substring(seg.start, seg.end);
+        const escapedMatch = escapeHtml(matchText);
+        const escapedForRegex = escapedMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // 只替换不在 HTML 标签内的第一个匹配（不用 'g' 标志）
+        const safeRegex = new RegExp(`(?<=>)([^<]*?)(${escapedForRegex})`, '');
+        const replacement = `$1<span class="${seg.cls}">${escapedMatch}</span>`;
+        const newResult = result.replace(safeRegex, replacement);
+        // 安全检查：如果替换后字符串长度异常增长则跳过
+        if (newResult.length > result.length + 200) {
+          // 单次替换不应增长超过 ~100 字符，如果超过说明匹配到了错误位置
+          continue;
+        }
+        result = newResult;
+      }
+      return result;
+    }
+
+    // 纯文本模式（没有 Shiki 高亮）：直接用拼接结果
+    return parts.join('');
   }, [searchQuery, matches, currentMatchIndex, lines]);
 
   return {

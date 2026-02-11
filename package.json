@@ -5,9 +5,9 @@
     "cock": "./bin/cock.mjs"
   },
   "scripts": {
-    "dev": "NODE_OPTIONS='--max-old-space-size=4096' COCKPIT_ENV=dev next dev -p 3456",
-    "build": "NODE_OPTIONS='--max-old-space-size=4096' next build --webpack",
-    "start": "NODE_OPTIONS='--max-old-space-size=4096' next start -p 3457",
+    "dev": "COCKPIT_ENV=dev next dev -p 3456",
+    "build": "next build --webpack",
+    "start": "next start -p 3457",
     "lint": "eslint",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",

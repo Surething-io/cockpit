@@ -3,6 +3,8 @@ export interface FileNode {
   path: string;
   isDirectory: boolean;
   children?: FileNode[];
+  isSymlink?: boolean;
+  symlinkTarget?: string;
 }
 
 export interface FileContent {
@@ -11,6 +13,8 @@ export interface FileContent {
   message?: string;
   size?: number;
   mtime?: number; // 文件最后修改时间 (ms)，用于保存冲突检测
+  isSymlink?: boolean;
+  symlinkTarget?: string;
 }
 
 export interface BlameLine {

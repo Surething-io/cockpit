@@ -14,6 +14,8 @@ export interface FileNode {
   path: string;
   isDirectory: boolean;
   children?: FileNode[];
+  isSymlink?: boolean;
+  symlinkTarget?: string;
 }
 
 // Git 状态类型: M=修改, A=新增, D=删除, ?=未跟踪, R=重命名
@@ -127,10 +129,13 @@ const VirtualTreeRow = React.memo(function VirtualTreeRow({
   }, [node.path, node.isDirectory, onContextMenu]);
 
   // 文件名的颜色类（文件和目录都支持变色）
+  const isEnvFile = !node.isDirectory && (node.name === '.env' || node.name.startsWith('.env.'));
   const nameColorClass = gitStatus
     ? statusColors!.text
     : hasChangedChildren
     ? 'text-amber-11'  // 目录下有变更文件时目录名变色
+    : isEnvFile
+    ? 'text-yellow-600 dark:text-yellow-500'  // .env 敏感文件高亮
     : isSelected && !node.isDirectory
     ? 'text-brand'
     : 'text-foreground';
@@ -155,9 +160,12 @@ const VirtualTreeRow = React.memo(function VirtualTreeRow({
       ) : (
         <FileIcon name={node.name} size={16} className="flex-shrink-0 ml-4" />
       )}
-      <span className={`text-sm truncate flex-1 ${nameColorClass}`} data-tooltip={node.path}>
+      <span className={`text-sm truncate flex-1 ${nameColorClass}`} data-tooltip={node.isSymlink && node.symlinkTarget ? `${node.path} → ${node.symlinkTarget}` : node.path}>
         {node.name}
       </span>
+      {node.isSymlink && (
+        <span className="text-xs text-muted-foreground flex-shrink-0">→</span>
+      )}
       {/* 文件的 Git 状态标识（靠右） */}
       {gitStatus && (
         <span className={`text-xs font-mono px-1 rounded ${statusColors!.text} ${statusColors!.bg} flex-shrink-0`}>

@@ -13,6 +13,7 @@ import { isMarkdownFile } from './MarkdownFileViewer';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { FileIcon } from '../shared/FileIcon';
 import { FileEditorModal } from './FileEditorModal';
+import { QuickFileOpen } from './QuickFileOpen';
 
 import type { TabType, GitFileStatus, GitStatusResponse, FileBrowserModalProps } from './fileBrowser/types';
 import { getTargetDirPath, isImageFile, formatDateTime, NOOP, COMMITS_PER_PAGE } from './fileBrowser/utils';
@@ -28,6 +29,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const menuContainerRef = useRef<HTMLDivElement>(null);
   const [menuContainer, setMenuContainer] = useState<HTMLElement | null>(null);
+  const [showQuickOpen, setShowQuickOpen] = useState(false);
   const [hoverTooltip, setHoverTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 
   // ========== Hooks ==========
@@ -122,11 +124,24 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     fileTree.setBlameSelectedCommit(null);
   }, [fileTree]);
 
-  // ========== ESC Handler ==========
+  // ========== Keyboard Shortcuts ==========
   const lastEscTimeRef = useRef<number>(0);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd+P / Ctrl+P → Quick file open
+      if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
+        e.preventDefault();
+        setShowQuickOpen(prev => !prev);
+        return;
+      }
+
       if (e.key === 'Escape') {
+        // Close quick open first
+        if (showQuickOpen) {
+          setShowQuickOpen(false);
+          return;
+        }
+
         const now = Date.now();
         if (now - lastEscTimeRef.current < 3000) {
           return;
@@ -144,7 +159,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, fileTree.showBlame, fileTree.blameSelectedCommit, fileTree]);
+  }, [onClose, fileTree.showBlame, fileTree.blameSelectedCommit, fileTree, showQuickOpen]);
 
   // ========== Initial Data Load (once on mount) ==========
   useEffect(() => {
@@ -1260,6 +1275,20 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
             onSaved={() => {
               fileTree.loadFileContent(fileTree.selectedPath!);
             }}
+          />
+        )}
+
+        {/* Quick File Open (Cmd+P) */}
+        {showQuickOpen && (
+          <QuickFileOpen
+            files={fileTree.files}
+            recentFiles={fileTree.recentFiles}
+            onSelectFile={(path) => {
+              fileTree.handleSelectFile(path);
+              fileTree.setShouldScrollToSelected(true);
+              setActiveTab('tree');
+            }}
+            onClose={() => setShowQuickOpen(false)}
           />
         )}
       </div>

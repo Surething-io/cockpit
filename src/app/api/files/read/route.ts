@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFile, stat } from 'fs/promises';
+import { readFile, stat, lstat, readlink } from 'fs/promises';
 import { join, extname } from 'path';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -35,7 +35,18 @@ export async function GET(request: NextRequest) {
     const fullPath = join(cwd, filePath);
     const ext = extname(filePath).toLowerCase();
 
-    // Get file stats
+    // Detect symlink before stat (which follows the link)
+    let isSymlink = false;
+    let symlinkTarget: string | undefined;
+    try {
+      const lstats = await lstat(fullPath);
+      if (lstats.isSymbolicLink()) {
+        isSymlink = true;
+        symlinkTarget = await readlink(fullPath);
+      }
+    } catch { /* file may not exist, stat below will handle */ }
+
+    // Get file stats (follows symlinks)
     const stats = await stat(fullPath);
 
     if (stats.isDirectory()) {
@@ -117,6 +128,7 @@ export async function GET(request: NextRequest) {
       content,
       size: fileSize,
       mtime: stats.mtimeMs,
+      ...(isSymlink ? { isSymlink: true, symlinkTarget } : {}),
     });
   } catch (error) {
     console.error('Error reading file:', error);

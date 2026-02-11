@@ -35,7 +35,14 @@ export function getHighlighter(): Promise<Highlighter> {
 }
 
 export function getLanguageFromPath(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase();
+  const fileName = filePath.split('/').pop()?.toLowerCase() || '';
+  const ext = fileName.split('.').pop()?.toLowerCase();
+
+  // 特殊文件名匹配（优先于扩展名）
+  if (fileName === '.env' || fileName.startsWith('.env.')) return 'bash';
+  if (fileName === 'dockerfile' || fileName.startsWith('dockerfile.')) return 'bash';
+  if (fileName === 'makefile') return 'bash';
+
   const map: Record<string, string> = {
     ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
     mjs: 'javascript', cjs: 'javascript',
@@ -48,7 +55,6 @@ export function getLanguageFromPath(filePath: string): string {
     md: 'markdown', mdx: 'markdown', sql: 'sql',
     swift: 'swift', dart: 'dart', lua: 'lua',
     graphql: 'graphql', gql: 'graphql',
-    dockerfile: 'bash',
     toml: 'yaml', sass: 'scss', less: 'css',
     scala: 'java', r: 'python', vim: 'bash',
     env: 'bash',

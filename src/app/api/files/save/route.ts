@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, mkdir, stat, rename, unlink } from 'fs/promises';
+import { writeFile, mkdir, stat, lstat, realpath, rename, unlink } from 'fs/promises';
 import { join, dirname } from 'path';
 import { randomUUID } from 'crypto';
 
@@ -52,15 +52,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // P2: Symlink 保护 — 如果是符号链接，写入真实目标文件
+    let writePath = fullPath;
+    try {
+      const lstats = await lstat(fullPath);
+      if (lstats.isSymbolicLink()) {
+        writePath = await realpath(fullPath);
+      }
+    } catch {
+      // 文件不存在，正常创建
+    }
+
     // Ensure directory exists
-    const dir = dirname(fullPath);
+    const dir = dirname(writePath);
     await mkdir(dir, { recursive: true });
 
     // P1: 原子写入 — 先写临时文件，再 rename
-    const tmpPath = `${fullPath}.${randomUUID()}.tmp`;
+    const tmpPath = `${writePath}.${randomUUID()}.tmp`;
     try {
       await writeFile(tmpPath, content, 'utf-8');
-      await rename(tmpPath, fullPath);
+      await rename(tmpPath, writePath);
     } catch (error) {
       // 清理临时文件
       try { await unlink(tmpPath); } catch { /* ignore */ }

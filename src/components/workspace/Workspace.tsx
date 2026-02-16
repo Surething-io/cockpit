@@ -28,6 +28,8 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   const [noteProjectCwd, setNoteProjectCwd] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [unreadProjects, setUnreadProjects] = useState<Set<string>>(new Set());
+  // 懒加载：只渲染曾被激活过的项目 iframe（只增不减）
+  const [loadedCwds, setLoadedCwds] = useState<Set<string>>(new Set());
   const iframeRefs = useRef<Map<string, HTMLIFrameElement>>(new Map());
   // 待发送给 iframe 的 sessionId（iframe 加载完成后发送 SWITCH_SESSION）
   const pendingSessionIdsRef = useRef<Map<string, string>>(new Map());
@@ -67,6 +69,14 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
       console.error('Failed to save projects:', error);
     }
   }, []);
+
+  // 当 activeIndex 变化时，将对应项目加入已加载集合
+  useEffect(() => {
+    const cwd = projects[activeIndex]?.cwd;
+    if (cwd) {
+      setLoadedCwds(prev => prev.has(cwd) ? prev : new Set(prev).add(cwd));
+    }
+  }, [activeIndex, projects]);
 
   // 初始化加载
   useEffect(() => {
@@ -378,25 +388,27 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
           // 空状态：显示所有会话列表
           <EmptyState onSelectSession={handleAddProject} />
         ) : (
-          // 项目 iframe 容器
+          // 项目 iframe 容器（懒加载：只渲染曾被激活过的项目）
           <div className="flex-1 relative">
             {projects.map((project, index) => (
-              <iframe
-                key={project.cwd}
-                ref={(el) => {
-                  if (el) {
-                    iframeRefs.current.set(project.cwd, el);
-                  } else {
-                    iframeRefs.current.delete(project.cwd);
-                  }
-                }}
-                src={getProjectUrl(project)}
-                onLoad={() => handleIframeLoad(project.cwd)}
-                className={`absolute inset-0 w-full h-full border-0 ${
-                  index === activeIndex ? 'block' : 'hidden'
-                }`}
-                title={`Project: ${project.cwd}`}
-              />
+              loadedCwds.has(project.cwd) && (
+                <iframe
+                  key={project.cwd}
+                  ref={(el) => {
+                    if (el) {
+                      iframeRefs.current.set(project.cwd, el);
+                    } else {
+                      iframeRefs.current.delete(project.cwd);
+                    }
+                  }}
+                  src={getProjectUrl(project)}
+                  onLoad={() => handleIframeLoad(project.cwd)}
+                  className={`absolute inset-0 w-full h-full border-0 ${
+                    index === activeIndex ? 'block' : 'hidden'
+                  }`}
+                  title={`Project: ${project.cwd}`}
+                />
+              )
             ))}
           </div>
         )}

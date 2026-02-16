@@ -87,9 +87,30 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     }
   };
 
+  // 格式化时间：01-15 14:30
+  const formatTime = (ts?: string) => {
+    if (!ts) return '';
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return '';
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${month}-${day} ${hours}:${minutes}`;
+  };
+
+  const timeStr = formatTime(message.timestamp);
+
   return (
     <>
-      <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 group`}>
+      <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} mb-4 group`}>
+        {/* 消息时间 - hover 时显示 */}
+        {timeStr && (
+          <span className="text-[11px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity mb-0.5 px-1">
+            {timeStr}
+          </span>
+        )}
+        <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} w-full`}>
         {/* 用户消息的操作按钮在左边 */}
         {isUser && (
           <div className="self-start mt-2 mr-1 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -224,6 +245,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             )}
           </div>
         )}
+        </div>
       </div>
 
       {/* 图片预览模态窗口 */}

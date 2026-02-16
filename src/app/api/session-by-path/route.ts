@@ -54,6 +54,7 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   images?: MessageImage[];
+  timestamp?: string;
   toolCalls?: Array<{
     id: string;
     name: string;
@@ -287,6 +288,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
           id: msg.uuid || `user-${Date.now()}`,
           role: 'user',
           content: content,
+          timestamp: msg.timestamp,
         };
         chatMessages.push(userMessage);
         continue;
@@ -307,6 +309,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
           id: msg.uuid || `user-${Date.now()}`,
           role: 'user',
           content: textBlocks.map((b) => b.text || '').join('\n'),
+          timestamp: msg.timestamp,
         };
 
         if (imageBlocks.length > 0) {
@@ -337,6 +340,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
             id: msg.uuid || `assistant-${Date.now()}`,
             role: 'assistant',
             content: textBlocks.map((b) => b.text || '').join('\n'),
+            timestamp: msg.timestamp,
             toolCalls: [],
           };
         }
@@ -348,6 +352,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
             id: msg.uuid || `assistant-${Date.now()}`,
             role: 'assistant',
             content: '',
+            timestamp: msg.timestamp,
             toolCalls: [],
           };
         }

@@ -35,6 +35,7 @@ export interface ChatMessage {
   images?: MessageImage[];  // 消息中的图片
   toolCalls?: ToolCallInfo[];
   isStreaming?: boolean;
+  timestamp?: string;  // 消息创建时间（ISO 格式）
 }
 
 export interface ChatSession {

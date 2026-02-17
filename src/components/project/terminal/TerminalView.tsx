@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Settings, Terminal } from 'lucide-react';
+import { Settings, Terminal, Zap, Plus, X, Play, Loader, Square } from 'lucide-react';
 import { CommandBubble, ResultBubble } from './TerminalBubble';
 import { EnvManager } from './EnvManager';
 import { AliasManager } from './AliasManager';
+import { Tooltip } from '@/components/shared/Tooltip';
 import { executeCommand as execCmd, interruptCommand as interruptCmd } from '@/lib/terminal/SSEConnectionManager';
 
 // 生成唯一ID的辅助函数
@@ -41,6 +42,12 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [showEnvManager, setShowEnvManager] = useState(false);
   const [showAliasManager, setShowAliasManager] = useState(false);
+  const [showQuickCommands, setShowQuickCommands] = useState(false);
+  const [showRunningCommands, setShowRunningCommands] = useState(false);
+  const [quickCustomCommands, setQuickCustomCommands] = useState<string[]>([]);
+  const [quickScripts, setQuickScripts] = useState<Record<string, string>>({});
+  const [quickCommandInput, setQuickCommandInput] = useState('');
+  const [isAddingCommand, setIsAddingCommand] = useState(false);
   const [customEnv, setCustomEnv] = useState<Record<string, string>>({});
   const [aliases, setAliases] = useState<Record<string, string>>({});
   const [showTopButton, setShowTopButton] = useState(false);
@@ -56,6 +63,8 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
   const commandOutputRef = useRef<Map<string, string>>(new Map());
   const commandLineCountRef = useRef<Map<string, number>>(new Map());
   const commandHistoryRef = useRef<string[]>([]);
+  const quickCommandsRef = useRef<HTMLDivElement>(null);
+  const runningCommandsRef = useRef<HTMLDivElement>(null);
 
   // RAF 节流的状态更新
   const flushPendingOutput = useCallback(() => {
@@ -249,6 +258,39 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
     }
   };
 
+  // 加载快捷命令
+  const loadQuickCommands = useCallback(async () => {
+    try {
+      const [configRes, scriptsRes] = await Promise.all([
+        fetch(`/api/services/config?cwd=${encodeURIComponent(cwd)}`),
+        fetch(`/api/services/scripts?cwd=${encodeURIComponent(cwd)}`),
+      ]);
+      if (configRes.ok) {
+        const data = await configRes.json();
+        setQuickCustomCommands(data.customCommands || []);
+      }
+      if (scriptsRes.ok) {
+        const data = await scriptsRes.json();
+        setQuickScripts(data.scripts || {});
+      }
+    } catch (error) {
+      console.error('Failed to load quick commands:', error);
+    }
+  }, [cwd]);
+
+  const saveCustomCommands = useCallback(async (commands: string[]) => {
+    setQuickCustomCommands(commands);
+    try {
+      await fetch('/api/services/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cwd, customCommands: commands }),
+      });
+    } catch (error) {
+      console.error('Failed to save custom commands:', error);
+    }
+  }, [cwd]);
+
   // 构建命令历史数组（用于上下箭头导航）
   useEffect(() => {
     const historyCommands = commands
@@ -388,6 +430,12 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
     }
   }, [currentCwd, scrollToBottom, saveCdToHistory, aliases, customEnv, tabId, cwd, appendOutput, flushAndGetOutput, cleanupOutputRefs]);
 
+  // 快捷命令执行
+  const handleQuickCommand = useCallback((command: string) => {
+    setShowQuickCommands(false);
+    executeCommand(command);
+  }, [executeCommand]);
+
   // 中断命令
   const interruptCommand = useCallback(async (commandId: string) => {
     const command = commands.find((cmd) => cmd.id === commandId);
@@ -399,6 +447,22 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
       console.error('Failed to interrupt command:', error);
     }
   }, [commands]);
+
+  // 删除单条历史记录（state + JSONL + outputFile）
+  const deleteCommand = useCallback(async (commandId: string) => {
+    setCommands((prev) => prev.filter((cmd) => cmd.id !== commandId));
+    cleanupOutputRefs(commandId);
+    if (tabId) {
+      try {
+        await fetch(
+          `/api/terminal/history?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}&commandId=${encodeURIComponent(commandId)}`,
+          { method: 'DELETE' },
+        );
+      } catch (error) {
+        console.error('Failed to delete command:', error);
+      }
+    }
+  }, [cwd, tabId, cleanupOutputRefs]);
 
   // 处理输入提交
   const handleSubmit = useCallback((e: React.FormEvent) => {
@@ -526,6 +590,39 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
     };
   }, []);
 
+  // 点击外部关闭快捷命令弹窗
+  useEffect(() => {
+    if (!showQuickCommands) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (quickCommandsRef.current && !quickCommandsRef.current.contains(e.target as Node)) {
+        setShowQuickCommands(false);
+        setIsAddingCommand(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showQuickCommands]);
+
+  // 没有运行中命令时自动关闭弹窗
+  const runningCount = commands.filter((cmd) => cmd.isRunning).length;
+  useEffect(() => {
+    if (runningCount === 0 && showRunningCommands) {
+      setShowRunningCommands(false);
+    }
+  }, [runningCount, showRunningCommands]);
+
+  // 点击外部关闭运行中命令弹窗
+  useEffect(() => {
+    if (!showRunningCommands) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (runningCommandsRef.current && !runningCommandsRef.current.contains(e.target as Node)) {
+        setShowRunningCommands(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showRunningCommands]);
+
   // 清理 RAF
   useEffect(() => {
     return () => {
@@ -592,8 +689,12 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
               </div>
             )}
             {commands.map((cmd) => (
-              <div key={cmd.id}>
-                <CommandBubble command={cmd.command} timestamp={cmd.timestamp} />
+              <div key={cmd.id} className="group/cmd">
+                <CommandBubble
+                  command={cmd.command}
+                  timestamp={cmd.timestamp}
+                  onDelete={!cmd.isRunning ? () => deleteCommand(cmd.id) : undefined}
+                />
                 <ResultBubble
                   output={cmd.output}
                   exitCode={cmd.exitCode}
@@ -656,6 +757,178 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
           </button>
+
+          {/* 快捷命令按钮 */}
+          <div className="relative" ref={quickCommandsRef}>
+            <button
+              type="button"
+              onClick={() => {
+                if (!showQuickCommands) loadQuickCommands();
+                setShowQuickCommands(!showQuickCommands);
+                setIsAddingCommand(false);
+                setQuickCommandInput('');
+              }}
+              className={`p-2 rounded-lg transition-all ${
+                showQuickCommands
+                  ? 'text-brand bg-brand/10'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95'
+              }`}
+              title="快捷命令"
+            >
+              <Zap className="w-4 h-4" />
+            </button>
+
+            {/* 快捷命令弹窗 */}
+            {showQuickCommands && (
+              <div className="absolute bottom-full left-0 mb-2 w-72 bg-popover border border-border rounded-lg shadow-lg z-50 max-h-[70vh] overflow-y-auto">
+                {/* 自定义命令 */}
+                <div className="p-2 border-b border-border">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-medium text-muted-foreground px-1">自定义命令</span>
+                    <button
+                      type="button"
+                      onClick={() => { setIsAddingCommand(true); setQuickCommandInput(''); }}
+                      className="p-0.5 text-muted-foreground hover:text-foreground rounded"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  {isAddingCommand && (
+                    <input
+                      type="text"
+                      value={quickCommandInput}
+                      onChange={(e) => setQuickCommandInput(e.target.value)}
+                      placeholder="输入命令, Enter 确认..."
+                      className="w-full px-2 py-1 mb-1 text-xs font-mono rounded border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (quickCommandInput.trim()) {
+                            saveCustomCommands([...quickCustomCommands, quickCommandInput.trim()]);
+                            setQuickCommandInput('');
+                            setIsAddingCommand(false);
+                          }
+                        } else if (e.key === 'Escape') {
+                          setIsAddingCommand(false);
+                          setQuickCommandInput('');
+                        }
+                      }}
+                    />
+                  )}
+                  {quickCustomCommands.length === 0 && !isAddingCommand && (
+                    <div className="text-xs text-muted-foreground px-1 py-1">暂无自定义命令</div>
+                  )}
+                  {quickCustomCommands.map((cmd, i) => (
+                    <Tooltip key={i} content={cmd}>
+                      <div className="flex items-center group">
+                        <button
+                          type="button"
+                          onClick={() => handleQuickCommand(cmd)}
+                          className="flex-1 flex items-center gap-2 px-2 py-1.5 text-left text-sm font-mono rounded hover:bg-accent transition-colors"
+                        >
+                          <Play className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
+                          <span className="truncate">{cmd}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => saveCustomCommands(quickCustomCommands.filter((_, j) => j !== i))}
+                          className="p-1 text-muted-foreground hover:text-destructive rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </Tooltip>
+                  ))}
+                </div>
+
+                {/* package.json scripts */}
+                {Object.keys(quickScripts).length > 0 && (
+                  <div className="p-2">
+                    <span className="text-xs font-medium text-muted-foreground px-1 mb-1 block">package.json scripts</span>
+                    {Object.entries(quickScripts).map(([name, script]) => (
+                      <Tooltip key={name} content={`npm run ${name} → ${script}`}>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickCommand(`npm run ${name}`)}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 text-left text-sm rounded hover:bg-accent transition-colors"
+                        >
+                          <Play className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
+                          <span className="font-mono">{name}</span>
+                        </button>
+                      </Tooltip>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 运行中命令按钮 */}
+          {(() => {
+            const runningCmds = commands.filter((cmd) => cmd.isRunning);
+            if (runningCmds.length === 0) return null;
+            return (
+              <div className="relative" ref={runningCommandsRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowRunningCommands(!showRunningCommands)}
+                  className={`relative p-2 rounded-lg transition-all ${
+                    showRunningCommands
+                      ? 'text-brand bg-brand/10'
+                      : 'text-orange-500 hover:text-orange-600 hover:bg-orange-500/10 active:scale-95'
+                  }`}
+                  title={`${runningCmds.length} 个命令运行中`}
+                >
+                  <Loader className="w-4 h-4 animate-spin" />
+                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 flex items-center justify-center text-[10px] font-bold bg-orange-500 text-white rounded-full px-1">
+                    {runningCmds.length}
+                  </span>
+                </button>
+
+                {/* 运行中命令弹窗 */}
+                {showRunningCommands && (
+                  <div className="absolute bottom-full left-0 mb-2 w-80 bg-popover border border-border rounded-lg shadow-lg z-50 max-h-[70vh] overflow-y-auto">
+                    <div className="p-2">
+                      <div className="flex items-center justify-between mb-2 px-1">
+                        <span className="text-xs font-medium text-muted-foreground">运行中的命令</span>
+                        {runningCmds.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              runningCmds.forEach((cmd) => interruptCommand(cmd.id));
+                            }}
+                            className="text-[11px] text-destructive hover:text-destructive/80 font-medium px-2 py-0.5 rounded hover:bg-destructive/10 transition-colors"
+                          >
+                            全部停止
+                          </button>
+                        )}
+                      </div>
+                      {runningCmds.map((cmd) => (
+                        <div
+                          key={cmd.id}
+                          className="flex items-center gap-2 px-2 py-2 rounded hover:bg-accent transition-colors group"
+                        >
+                          <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse flex-shrink-0" />
+                          <span className="flex-1 text-sm font-mono truncate">{cmd.command}</span>
+                          <button
+                            type="button"
+                            onClick={() => interruptCommand(cmd.id)}
+                            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 rounded transition-colors flex-shrink-0"
+                            title="Ctrl+C 停止"
+                          >
+                            <Square className="w-3 h-3" />
+                            <span>停止</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <input
             ref={inputRef}

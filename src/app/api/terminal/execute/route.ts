@@ -46,15 +46,20 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const processEnv = {
-    ...process.env,
-    ...env,
+  // 不继承 process.env（Next.js dev server 会污染 TURBOPACK、NODE_ENV 等）
+  // login shell（--login）会从 ~/.zshrc / ~/.bash_profile 加载用户完整环境
+  // 这里只传 shell 启动所需的最小变量 + 颜色控制
+  const childEnv: Record<string, string | undefined> = {
+    HOME: process.env.HOME,
+    USER: process.env.USER,
+    SHELL: process.env.SHELL,
+    TERM: 'xterm-256color',
     FORCE_COLOR: '1',
     CLICOLOR: '1',
     CLICOLOR_FORCE: '1',
     PYTHONUNBUFFERED: '1',
     npm_config_color: 'always',
-    TERM: 'xterm-256color',
+    ...env,
   };
 
   const encoder = new TextEncoder();
@@ -73,7 +78,7 @@ export async function POST(request: NextRequest) {
         const userShell = process.env.SHELL || '/bin/bash';
         const child = spawn(userShell, ['--login', '-c', command], {
           cwd,
-          env: processEnv,
+          env: childEnv as NodeJS.ProcessEnv,
           stdio: ['ignore', 'pipe', 'pipe'],
         });
 

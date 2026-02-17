@@ -8,6 +8,7 @@ import { AnsiUp } from 'ansi_up';
 interface CommandBubbleProps {
   command: string;
   timestamp?: string;
+  onDelete?: () => void;
 }
 
 interface ResultBubbleProps {
@@ -31,7 +32,7 @@ const formatTime = (ts?: string) => {
 };
 
 // 命令气泡（右侧，用户样式）
-export const CommandBubble = memo(function CommandBubble({ command, timestamp }: CommandBubbleProps) {
+export const CommandBubble = memo(function CommandBubble({ command, timestamp, onDelete }: CommandBubbleProps) {
   const timeStr = formatTime(timestamp);
 
   // 复制命令
@@ -41,16 +42,16 @@ export const CommandBubble = memo(function CommandBubble({ command, timestamp }:
   };
 
   return (
-    <div className="flex flex-col items-end mb-4 group">
+    <div className="flex flex-col items-end mb-4">
       {/* 时间 - hover 时显示 */}
       {timeStr && (
-        <span className="text-[11px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity mb-0.5 px-1">
+        <span className="text-[11px] text-muted-foreground opacity-0 group-hover/cmd:opacity-100 transition-opacity mb-0.5 px-1">
           {timeStr}
         </span>
       )}
       <div className="flex justify-end w-full">
         {/* 操作按钮在左边 */}
-        <div className="self-start mt-2 mr-1 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="self-start mt-2 mr-1 flex flex-col gap-0.5 opacity-0 group-hover/cmd:opacity-100 transition-opacity">
           <button
             onClick={handleCopy}
             className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -60,6 +61,17 @@ export const CommandBubble = memo(function CommandBubble({ command, timestamp }:
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
           </button>
+          {onDelete && (
+            <button
+              onClick={onDelete}
+              className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent"
+              title="删除记录"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          )}
         </div>
 
         <div className="max-w-[80%] bg-accent text-foreground border border-brand rounded-2xl rounded-br-md px-4 py-2">
@@ -161,10 +173,10 @@ export const ResultBubble = memo(function ResultBubble({
   };
 
   return (
-    <div className="flex flex-col items-start mb-4 group">
+    <div className="flex flex-col items-start mb-4">
       {/* 时间 - hover 时显示 */}
       {timeStr && (
-        <span className="text-[11px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity mb-0.5 px-1">
+        <span className="text-[11px] text-muted-foreground opacity-0 group-hover/cmd:opacity-100 transition-opacity mb-0.5 px-1">
           {timeStr}
         </span>
       )}
@@ -210,7 +222,7 @@ export const ResultBubble = memo(function ResultBubble({
         </div>
 
         {/* 操作按钮在右边 */}
-        <div className="self-start mt-2 ml-1 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="self-start mt-2 ml-1 flex flex-col gap-0.5 opacity-0 group-hover/cmd:opacity-100 transition-opacity">
           {output && (
             <button
               onClick={handleCopy}

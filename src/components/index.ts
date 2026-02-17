@@ -6,7 +6,6 @@ export * from './project/MessageBubble';
 export * from './project/ToolCallModal';
 export * from './project/ProjectSessionsModal';
 export * from './project/TabManager';
-export * from './project/ServicePanel';
 
 export * from './shared/MarkdownRenderer';
 export * from './shared/SessionBrowser';

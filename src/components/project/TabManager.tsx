@@ -7,7 +7,6 @@ import { BrowserView } from './BrowserView';
 import { GitWorktreeModal } from './GitWorktreeModal';
 import { TerminalTabManager } from './terminal/TerminalTabManager';
 import { ChatProvider } from './ChatContext';
-import { ServicePanel } from './ServicePanel';
 import { SwipeableViewContainer, SwipeableContent, type ViewType } from './SwipeableViewContainer';
 import { useTabState } from './useTabState';
 import { TabManagerTopBar } from './TabManagerTopBar';
@@ -43,8 +42,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   // UI 状态
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
   const [isWorktreeOpen, setIsWorktreeOpen] = useState(false);
-  const [isServicePanelOpen, setIsServicePanelOpen] = useState(false);
-  const [runningServicesCount, setRunningServicesCount] = useState(0);
   const [browserOpenUrl, setBrowserOpenUrl] = useState<string | undefined>(undefined);
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [isGitRepo, setIsGitRepo] = useState(false);
@@ -75,28 +72,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     };
 
     loadGitInfo();
-  }, [initialCwd]);
-
-  // 轮询运行中的服务数量（每3秒）
-  useEffect(() => {
-    if (!initialCwd) return;
-
-    const loadServicesCount = async () => {
-      try {
-        const res = await fetch(`/api/services/status?cwd=${encodeURIComponent(initialCwd)}`);
-        if (res.ok) {
-          const data = await res.json();
-          const count = data.filter((s: { cwd: string }) => s.cwd === initialCwd).length;
-          setRunningServicesCount(count);
-        }
-      } catch (error) {
-        console.error('Failed to load services count:', error);
-      }
-    };
-
-    loadServicesCount();
-    const timer = setInterval(loadServicesCount, 3000);
-    return () => clearInterval(timer);
   }, [initialCwd]);
 
   // 键盘快捷键：Cmd+1/2/3/4 切换视图
@@ -162,10 +137,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           activeTab={activeTab}
           isGitRepo={isGitRepo}
           currentBranch={currentBranch}
-          runningServicesCount={runningServicesCount}
           onOpenWorktree={() => setIsWorktreeOpen(true)}
           onOpenProjectSessions={() => setIsProjectSessionsOpen(true)}
-          onOpenServicePanel={() => setIsServicePanelOpen(true)}
         />
 
         {/* 内容区域 - 根据 activeView 切换（滑动效果） */}
@@ -285,17 +258,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         />
       )}
 
-      {/* Service Panel */}
-      <ServicePanel
-        isOpen={isServicePanelOpen}
-        onClose={() => setIsServicePanelOpen(false)}
-        initialCwd={initialCwd}
-        onOpenBrowser={(url) => {
-          setIsServicePanelOpen(false);
-          setActiveView('browser');
-          setBrowserOpenUrl(url);
-        }}
-      />
     </div>
     </SwipeableViewContainer>
     </ChatProvider>

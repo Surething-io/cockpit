@@ -110,12 +110,14 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// DELETE: 清空当前 tab 的命令历史及其输出文件
+// DELETE: 删除命令历史
+// 有 commandId 参数时删除单条；无 commandId 时清空整个 tab 历史
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const cwd = searchParams.get('cwd');
     const tabId = searchParams.get('tabId');
+    const commandId = searchParams.get('commandId');
 
     if (!cwd || !tabId) {
       return new Response(JSON.stringify({ error: 'Missing cwd or tabId parameter' }), {
@@ -126,25 +128,55 @@ export async function DELETE(request: NextRequest) {
 
     const historyPath = getTerminalHistoryPath(cwd, tabId);
 
-    // 先读取历史，找出所有独立输出文件并删除
-    try {
-      const content = await fs.readFile(historyPath, 'utf-8');
-      const lines = content.trim().split('\n').filter(Boolean);
-      for (const line of lines) {
-        try {
-          const entry = JSON.parse(line);
-          if (entry.outputFile) {
-            await fs.unlink(entry.outputFile).catch(() => {});
-          }
-        } catch { /* ignore parse errors */ }
-      }
-    } catch { /* file may not exist */ }
+    if (commandId) {
+      // 单条删除
+      try {
+        const content = await fs.readFile(historyPath, 'utf-8');
+        const lines = content.trim().split('\n').filter(Boolean);
+        const remaining: string[] = [];
 
-    // 删除历史文件本身
-    try {
-      await fs.unlink(historyPath);
-    } catch (e: any) {
-      if (e.code !== 'ENOENT') throw e;
+        for (const line of lines) {
+          try {
+            const entry = JSON.parse(line);
+            if (entry.id === commandId) {
+              // 删除关联的输出文件
+              if (entry.outputFile) {
+                await fs.unlink(entry.outputFile).catch(() => {});
+              }
+              continue; // 跳过该条
+            }
+          } catch { /* 保留无法解析的行 */ }
+          remaining.push(line);
+        }
+
+        if (remaining.length > 0) {
+          await fs.writeFile(historyPath, remaining.join('\n') + '\n', 'utf-8');
+        } else {
+          await fs.unlink(historyPath).catch(() => {});
+        }
+      } catch (e: any) {
+        if (e.code !== 'ENOENT') throw e;
+      }
+    } else {
+      // 清空整个 tab 历史
+      try {
+        const content = await fs.readFile(historyPath, 'utf-8');
+        const lines = content.trim().split('\n').filter(Boolean);
+        for (const line of lines) {
+          try {
+            const entry = JSON.parse(line);
+            if (entry.outputFile) {
+              await fs.unlink(entry.outputFile).catch(() => {});
+            }
+          } catch { /* ignore parse errors */ }
+        }
+      } catch { /* file may not exist */ }
+
+      try {
+        await fs.unlink(historyPath);
+      } catch (e: any) {
+        if (e.code !== 'ENOENT') throw e;
+      }
     }
 
     return new Response(JSON.stringify({ success: true }), {

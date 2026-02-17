@@ -14,10 +14,8 @@ interface TabManagerTopBarProps {
   activeTab?: TabInfo;
   isGitRepo: boolean;
   currentBranch: string | null;
-  runningServicesCount: number;
   onOpenWorktree: () => void;
   onOpenProjectSessions: () => void;
-  onOpenServicePanel: () => void;
 }
 
 export function TabManagerTopBar({
@@ -25,10 +23,8 @@ export function TabManagerTopBar({
   activeTab,
   isGitRepo,
   currentBranch,
-  runningServicesCount,
   onOpenWorktree,
   onOpenProjectSessions,
-  onOpenServicePanel,
 }: TabManagerTopBarProps) {
   return (
     <div className="border-b border-border bg-card shrink-0">
@@ -119,21 +115,6 @@ export function TabManagerTopBar({
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
               <path d="M4.5 2L20.5 12L4.5 22V2Z" />
             </svg>
-          </button>
-          {/* 后台服务按钮 */}
-          <button
-            onClick={onOpenServicePanel}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors relative"
-            title="后台服务"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-            </svg>
-            {runningServicesCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-9 text-white text-xs font-medium rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                {runningServicesCount}
-              </span>
-            )}
           </button>
           {/* 复制 claude -r 命令按钮 */}
           {activeTab?.sessionId && (

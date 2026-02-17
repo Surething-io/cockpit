@@ -2,12 +2,13 @@
 
 import { useRef, useEffect, useState, ReactNode, createContext, useContext, useMemo } from 'react';
 
-export type ViewType = 'agent' | 'explorer' | 'browser';
+export type ViewType = 'agent' | 'explorer' | 'terminal' | 'browser';
 
-const VIEWS: ViewType[] = ['agent', 'explorer', 'browser'];
+const VIEWS: ViewType[] = ['agent', 'explorer', 'terminal', 'browser'];
 const VIEW_LABELS: Record<ViewType, string> = {
   agent: 'AGENT',
   explorer: 'EXPLORER',
+  terminal: 'TERMINAL',
   browser: 'BROWSER',
 };
 
@@ -67,7 +68,7 @@ export function SwipeableViewContainer({ activeView, onViewChange, children }: S
   const [isDragging, setIsDragging] = useState(false);
 
   const currentIndex = VIEWS.indexOf(activeView);
-  const pageCount = 3;
+  const pageCount = 4;
   const maxPage = pageCount - 1;
 
   // 参数
@@ -210,7 +211,7 @@ export function SwipeableContent({ children }: SwipeableContentProps) {
   const innerRef = useRef<HTMLDivElement>(null);
 
   const currentIndex = VIEWS.indexOf(activeView);
-  const pageCount = 3;
+  const pageCount = 4;
 
   // 防止浏览器自动滚动
   useEffect(() => {
@@ -251,7 +252,7 @@ export function SwipeableContent({ children }: SwipeableContentProps) {
           top: '0px',
           bottom: '0px',
           left: '0px',
-          width: '300%',
+          width: '400%',
           transform: getTransform(),
         }}
       >
@@ -282,14 +283,14 @@ export function ViewSwitcherBar() {
     const containerRect = containerRef.current.getBoundingClientRect();
     const buttons = buttonRefs.current.filter(Boolean) as HTMLButtonElement[];
 
-    if (buttons.length !== 3) {
+    if (buttons.length !== 4) {
       return { left: 0, width: 0 };
     }
 
     // dragOffset is -1 to 1, negative means swiping right (to previous view)
     // We need to invert it for the underline position
     const safeOffset = Number.isFinite(dragOffset) ? dragOffset : 0;
-    const effectiveIndex = Math.max(0, Math.min(2, currentIndex - safeOffset));
+    const effectiveIndex = Math.max(0, Math.min(3, currentIndex - safeOffset));
 
     const leftIndex = Math.floor(effectiveIndex);
     const rightIndex = Math.ceil(effectiveIndex);
@@ -328,7 +329,7 @@ export function ViewSwitcherBar() {
   // 计算当前有效索引（考虑滑动偏移）
   // 当 dragOffset 为 0 或 NaN 时，使用 currentIndex
   const safeOffset = Number.isFinite(dragOffset) ? dragOffset : 0;
-  const effectiveIndex = Math.max(0, Math.min(2, currentIndex - safeOffset));
+  const effectiveIndex = Math.max(0, Math.min(3, currentIndex - safeOffset));
   const nearestIndex = Math.round(effectiveIndex);
 
   return (

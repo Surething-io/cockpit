@@ -1,0 +1,719 @@
+'use client';
+
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Settings, Terminal } from 'lucide-react';
+import { CommandBubble, ResultBubble } from './TerminalBubble';
+import { EnvManager } from './EnvManager';
+import { AliasManager } from './AliasManager';
+import { executeCommand as execCmd, interruptCommand as interruptCmd } from '@/lib/terminal/SSEConnectionManager';
+
+// 生成唯一ID的辅助函数
+function generateUniqueCommandId(): string {
+  return `cmd-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+interface Command {
+  id: string;
+  command: string;
+  output: string;
+  exitCode?: number;
+  isRunning: boolean;
+  pid?: number;
+  timestamp: string;
+}
+
+interface TerminalViewProps {
+  cwd: string;
+  tabId?: string;
+}
+
+export function TerminalView({ cwd, tabId }: TerminalViewProps) {
+  const [commands, setCommands] = useState<Command[]>([]);
+  const [inputValue, setInputValue] = useState('');
+  const [currentCwd, setCurrentCwd] = useState(cwd);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [temporaryInput, setTemporaryInput] = useState('');
+  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<string[]>([]);
+  const [autocompleteIndex, setAutocompleteIndex] = useState(0);
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [showEnvManager, setShowEnvManager] = useState(false);
+  const [showAliasManager, setShowAliasManager] = useState(false);
+  const [customEnv, setCustomEnv] = useState<Record<string, string>>({});
+  const [aliases, setAliases] = useState<Record<string, string>>({});
+  const [showTopButton, setShowTopButton] = useState(false);
+  const [showBottomButton, setShowBottomButton] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const topRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  // per-command AbortController（用于中断 SSE stream）
+  const abortMapRef = useRef<Map<string, AbortController>>(new Map());
+  const rafIdRef = useRef<number | null>(null);
+  const pendingOutputRef = useRef<Map<string, string>>(new Map());
+  const commandOutputRef = useRef<Map<string, string>>(new Map());
+  const commandLineCountRef = useRef<Map<string, number>>(new Map());
+  const commandHistoryRef = useRef<string[]>([]);
+
+  // RAF 节流的状态更新
+  const flushPendingOutput = useCallback(() => {
+    if (pendingOutputRef.current.size > 0) {
+      const updates = new Map(pendingOutputRef.current);
+      pendingOutputRef.current.clear();
+
+      setCommands((prev) =>
+        prev.map((cmd) => {
+          const newOutput = updates.get(cmd.id);
+          if (newOutput !== undefined) {
+            return { ...cmd, output: newOutput };
+          }
+          return cmd;
+        })
+      );
+    }
+    rafIdRef.current = null;
+  }, []);
+
+  // 累积输出并调度 RAF 更新（在数据源头做 5000 行限制）
+  const MAX_DISPLAY_LINES = 5000;
+  const appendOutput = useCallback((commandId: string, data: string) => {
+    const currentOutput = commandOutputRef.current.get(commandId) || '';
+    const newOutput = currentOutput + data;
+
+    // 增量计算新增的换行符数量
+    let addedNewlines = 0;
+    for (let i = 0; i < data.length; i++) {
+      if (data[i] === '\n') addedNewlines++;
+    }
+    const lineCount = (commandLineCountRef.current.get(commandId) || 0) + addedNewlines;
+
+    if (lineCount > MAX_DISPLAY_LINES) {
+      const lines = newOutput.split('\n');
+      const truncated = lines.slice(-MAX_DISPLAY_LINES).join('\n');
+      commandOutputRef.current.set(commandId, truncated);
+      pendingOutputRef.current.set(commandId, truncated);
+      commandLineCountRef.current.set(commandId, MAX_DISPLAY_LINES);
+    } else {
+      commandOutputRef.current.set(commandId, newOutput);
+      pendingOutputRef.current.set(commandId, newOutput);
+      commandLineCountRef.current.set(commandId, lineCount);
+    }
+
+    if (rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(flushPendingOutput);
+    }
+  }, [flushPendingOutput]);
+
+  // 清理某个命令的 output refs
+  const cleanupOutputRefs = useCallback((commandId: string) => {
+    commandOutputRef.current.delete(commandId);
+    commandLineCountRef.current.delete(commandId);
+    pendingOutputRef.current.delete(commandId);
+  }, []);
+
+  // 强制刷新 + 获取最终输出
+  const flushAndGetOutput = useCallback((commandId: string) => {
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    flushPendingOutput();
+    return commandOutputRef.current.get(commandId) || '';
+  }, [flushPendingOutput]);
+
+  const checkIfAtBottom = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container) return true;
+    return container.scrollHeight - container.scrollTop - container.clientHeight < 50;
+  }, []);
+
+  const checkIfAtTop = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container) return true;
+    return container.scrollTop < 50;
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    setShowTopButton(!checkIfAtTop());
+    setShowBottomButton(!checkIfAtBottom());
+  }, [checkIfAtBottom, checkIfAtTop]);
+
+  const scrollToTop = useCallback(() => {
+    topRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, []);
+
+  // 加载历史记录
+  const loadHistory = useCallback(async (page: number = 0) => {
+    if (!tabId) return;
+
+    setIsLoadingHistory(true);
+    try {
+      const response = await fetch(
+        `/api/terminal/history?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}&page=${page}&pageSize=20`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        const historyCommands: Command[] = data.entries.map((entry: any) => ({
+          id: entry.id.includes('-') && entry.id.split('-').length === 3
+            ? entry.id
+            : generateUniqueCommandId(),
+          command: entry.command,
+          output: entry.output,
+          exitCode: entry.exitCode,
+          isRunning: false,
+          timestamp: entry.timestamp,
+        }));
+
+        if (page === 0) {
+          setCommands(historyCommands);
+        } else {
+          setCommands((prev) => {
+            const existingIds = new Set(prev.map((cmd) => cmd.id));
+            const newCommands = historyCommands.filter((cmd) => !existingIds.has(cmd.id));
+            return [...prev, ...newCommands];
+          });
+        }
+        setHasMoreHistory(data.hasMore);
+        setCurrentPage(page);
+      }
+    } catch (error) {
+      console.error('Failed to load history:', error);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }, [cwd, tabId]);
+
+  // 保存 cd 命令到历史
+  const saveCdToHistory = useCallback(async (command: Command) => {
+    if (!tabId) return;
+    try {
+      await fetch('/api/terminal/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cwd,
+          tabId,
+          entry: {
+            id: command.id,
+            command: command.command,
+            output: command.output,
+            exitCode: command.exitCode,
+            timestamp: command.timestamp,
+            cwd: currentCwd,
+          },
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to save cd history:', error);
+    }
+  }, [cwd, tabId, currentCwd]);
+
+  // 初始化
+  useEffect(() => {
+    loadHistory(0);
+    loadEnv();
+    loadAliases();
+  }, [loadHistory]);
+
+  const loadEnv = async () => {
+    try {
+      const params = new URLSearchParams({ cwd });
+      if (tabId) params.set('tabId', tabId);
+      const response = await fetch(`/api/terminal/env?${params}`);
+      if (response.ok) {
+        const data = await response.json();
+        setCustomEnv(data.env || {});
+      }
+    } catch (error) {
+      console.error('Failed to load env:', error);
+    }
+  };
+
+  const loadAliases = async () => {
+    try {
+      const response = await fetch(`/api/terminal/aliases?cwd=${encodeURIComponent(cwd)}`);
+      if (response.ok) {
+        const data = await response.json();
+        setAliases(data.aliases || {});
+      }
+    } catch (error) {
+      console.error('Failed to load aliases:', error);
+    }
+  };
+
+  // 构建命令历史数组（用于上下箭头导航）
+  useEffect(() => {
+    const historyCommands = commands
+      .filter((cmd) => !cmd.isRunning && cmd.command.trim())
+      .map((cmd) => cmd.command);
+    commandHistoryRef.current = historyCommands;
+  }, [commands]);
+
+  // 执行命令
+  const executeCommand = useCallback(async (command: string) => {
+    const parts = command.trim().split(/\s+/);
+    const firstWord = parts[0];
+    let actualCommand = command;
+
+    if (aliases[firstWord]) {
+      actualCommand = aliases[firstWord] + (parts.length > 1 ? ' ' + parts.slice(1).join(' ') : '');
+    }
+
+    const commandId = generateUniqueCommandId();
+    const timestamp = new Date().toISOString();
+
+    const newCommand: Command = {
+      id: commandId,
+      command,
+      output: actualCommand !== command ? `→ ${actualCommand}\n` : '',
+      isRunning: true,
+      timestamp,
+    };
+
+    setCommands((prev) => {
+      if (prev.some((cmd) => cmd.id === commandId)) return prev;
+      return [...prev, newCommand];
+    });
+    commandOutputRef.current.set(commandId, newCommand.output);
+    commandLineCountRef.current.set(commandId, 0);
+    setTimeout(scrollToBottom, 100);
+
+    // cd 命令特殊处理
+    if (actualCommand.trim().startsWith('cd ')) {
+      const targetDir = actualCommand.trim().substring(3).trim();
+      let newCwd = currentCwd;
+      if (targetDir.startsWith('/')) {
+        newCwd = targetDir;
+      } else if (targetDir === '..') {
+        newCwd = currentCwd.split('/').slice(0, -1).join('/') || '/';
+      } else if (targetDir !== '.') {
+        newCwd = `${currentCwd}/${targetDir}`.replace(/\/+/g, '/');
+      }
+
+      setCurrentCwd(newCwd);
+      setCommands((prev) =>
+        prev.map((cmd) => {
+          if (cmd.id === commandId) {
+            const finishedCmd = { ...cmd, output: `Changed directory to: ${newCwd}`, exitCode: 0, isRunning: false };
+            saveCdToHistory(finishedCmd);
+            return finishedCmd;
+          }
+          return cmd;
+        })
+      );
+      return;
+    }
+
+    // Per-command SSE 执行
+    try {
+      const abortController = await execCmd({
+        cwd: currentCwd,
+        command: actualCommand,
+        commandId,
+        tabId: tabId || '',
+        projectCwd: cwd,
+        env: customEnv,
+        onData: (type, data) => {
+          if (type === 'pid') {
+            setCommands((prev) =>
+              prev.map((cmd) => (cmd.id === commandId ? { ...cmd, pid: data.pid } : cmd))
+            );
+          } else if (type === 'stdout' || type === 'stderr') {
+            appendOutput(commandId, data.data);
+          } else if (type === 'exit') {
+            const finalOutput = flushAndGetOutput(commandId);
+            cleanupOutputRefs(commandId);
+            abortMapRef.current.delete(commandId);
+
+            setCommands((prev) =>
+              prev.map((cmd) => {
+                if (cmd.id === commandId) {
+                  return { ...cmd, output: finalOutput, exitCode: data.code, isRunning: false, pid: undefined };
+                }
+                return cmd;
+              })
+            );
+          } else if (type === 'error') {
+            const finalOutput = flushAndGetOutput(commandId);
+            cleanupOutputRefs(commandId);
+            abortMapRef.current.delete(commandId);
+
+            setCommands((prev) =>
+              prev.map((cmd) => {
+                if (cmd.id === commandId) {
+                  return { ...cmd, output: finalOutput + `\nError: ${data.error}`, exitCode: 1, isRunning: false, pid: undefined };
+                }
+                return cmd;
+              })
+            );
+          }
+        },
+        onError: (error) => {
+          const finalOutput = flushAndGetOutput(commandId);
+          cleanupOutputRefs(commandId);
+          abortMapRef.current.delete(commandId);
+
+          setCommands((prev) =>
+            prev.map((cmd) => {
+              if (cmd.id === commandId) {
+                return { ...cmd, output: finalOutput + `\nError: ${error}`, exitCode: 1, isRunning: false, pid: undefined };
+              }
+              return cmd;
+            })
+          );
+        },
+      });
+
+      abortMapRef.current.set(commandId, abortController);
+    } catch (error) {
+      const finalOutput = flushAndGetOutput(commandId);
+      cleanupOutputRefs(commandId);
+
+      setCommands((prev) =>
+        prev.map((cmd) => {
+          if (cmd.id === commandId) {
+            return { ...cmd, output: finalOutput + `\nError: ${(error as Error).message}`, exitCode: 1, isRunning: false, pid: undefined };
+          }
+          return cmd;
+        })
+      );
+    }
+  }, [currentCwd, scrollToBottom, saveCdToHistory, aliases, customEnv, tabId, cwd, appendOutput, flushAndGetOutput, cleanupOutputRefs]);
+
+  // 中断命令
+  const interruptCommand = useCallback(async (commandId: string) => {
+    const command = commands.find((cmd) => cmd.id === commandId);
+    if (!command?.pid) return;
+
+    try {
+      await interruptCmd(command.pid);
+    } catch (error) {
+      console.error('Failed to interrupt command:', error);
+    }
+  }, [commands]);
+
+  // 处理输入提交
+  const handleSubmit = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputValue.trim()) return;
+    executeCommand(inputValue);
+    setInputValue('');
+    setHistoryIndex(-1);
+    setTemporaryInput('');
+  }, [inputValue, executeCommand]);
+
+  // Tab 键自动补全
+  const handleAutocomplete = useCallback(async () => {
+    if (!inputRef.current) return;
+    const cursorPosition = inputRef.current.selectionStart || 0;
+
+    try {
+      const response = await fetch('/api/terminal/autocomplete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cwd: currentCwd, input: inputValue, cursorPosition }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.suggestions && data.suggestions.length > 0) {
+          setAutocompleteSuggestions(data.suggestions);
+          setAutocompleteIndex(0);
+          setShowAutocomplete(true);
+
+          if (data.suggestions.length === 1) {
+            const before = inputValue.substring(0, data.replaceStart);
+            const after = inputValue.substring(data.replaceEnd);
+            const newValue = before + data.suggestions[0] + after;
+            setInputValue(newValue);
+            setShowAutocomplete(false);
+
+            setTimeout(() => {
+              if (inputRef.current) {
+                const newPos = data.replaceStart + data.suggestions[0].length;
+                inputRef.current.setSelectionRange(newPos, newPos);
+              }
+            }, 0);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Autocomplete error:', error);
+    }
+  }, [currentCwd, inputValue]);
+
+  const applyAutocompleteSuggestion = useCallback((suggestion: string) => {
+    if (!inputRef.current) return;
+    const cursorPosition = inputRef.current.selectionStart || 0;
+    const beforeCursor = inputValue.substring(0, cursorPosition);
+    const afterCursor = inputValue.substring(cursorPosition);
+    const words = beforeCursor.split(/\s+/);
+    const lastWord = words[words.length - 1] || '';
+    const replaceStart = cursorPosition - lastWord.length;
+    const before = inputValue.substring(0, replaceStart);
+    const newValue = before + suggestion + afterCursor;
+    setInputValue(newValue);
+    setShowAutocomplete(false);
+
+    setTimeout(() => {
+      if (inputRef.current) {
+        const newPos = replaceStart + suggestion.length;
+        inputRef.current.setSelectionRange(newPos, newPos);
+      }
+    }, 0);
+  }, [inputValue]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      if (showAutocomplete && autocompleteSuggestions.length > 0) {
+        const newIndex = (autocompleteIndex + 1) % autocompleteSuggestions.length;
+        setAutocompleteIndex(newIndex);
+        applyAutocompleteSuggestion(autocompleteSuggestions[newIndex]);
+      } else {
+        handleAutocomplete();
+      }
+      return;
+    }
+
+    if (e.key === 'Escape' && showAutocomplete) {
+      e.preventDefault();
+      setShowAutocomplete(false);
+      return;
+    }
+
+    const history = commandHistoryRef.current;
+    if (history.length === 0) return;
+
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (historyIndex === -1) setTemporaryInput(inputValue);
+      const newIndex = historyIndex === -1 ? history.length - 1 : Math.max(0, historyIndex - 1);
+      setHistoryIndex(newIndex);
+      setInputValue(history[newIndex]);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (historyIndex === -1) return;
+      const newIndex = historyIndex + 1;
+      if (newIndex >= history.length) {
+        setHistoryIndex(-1);
+        setInputValue(temporaryInput);
+      } else {
+        setHistoryIndex(newIndex);
+        setInputValue(history[newIndex]);
+      }
+    }
+  }, [historyIndex, inputValue, temporaryInput, showAutocomplete, autocompleteSuggestions, autocompleteIndex, handleAutocomplete, applyAutocompleteSuggestion]);
+
+  // 聚焦输入框
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  // 组件卸载时 abort 所有运行中的 SSE 流
+  useEffect(() => {
+    return () => {
+      abortMapRef.current.forEach((ac) => ac.abort());
+      abortMapRef.current.clear();
+    };
+  }, []);
+
+  // 清理 RAF
+  useEffect(() => {
+    return () => {
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <div className="h-full flex flex-col bg-background relative">
+      {/* 顶部工具栏 */}
+      <div className="border-b border-border px-4 py-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">Terminal</span>
+          <span className="text-xs text-muted-foreground font-mono">{currentCwd}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {Object.keys(customEnv).length > 0 && (
+            <span className="text-xs text-brand px-2 py-0.5 rounded-full bg-brand/10">
+              {Object.keys(customEnv).length} 个环境变量
+            </span>
+          )}
+          {Object.keys(aliases).length > 0 && (
+            <span className="text-xs text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full bg-green-600/10 dark:bg-green-400/10">
+              {Object.keys(aliases).length} 个别名
+            </span>
+          )}
+          <button
+            onClick={() => setShowAliasManager(true)}
+            className="p-1.5 rounded hover:bg-accent transition-colors"
+            title="命令别名"
+          >
+            <Terminal className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setShowEnvManager(true)}
+            className="p-1.5 rounded hover:bg-accent transition-colors"
+            title="环境变量"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* 命令历史区域 */}
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto py-4 px-4">
+        {commands.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+            输入命令开始使用终端
+          </div>
+        ) : (
+          <>
+            <div ref={topRef} />
+            {hasMoreHistory && (
+              <div className="flex justify-center mb-4">
+                <button
+                  onClick={() => loadHistory(currentPage + 1)}
+                  disabled={isLoadingHistory}
+                  className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {isLoadingHistory ? '加载中...' : '加载更多历史'}
+                </button>
+              </div>
+            )}
+            {commands.map((cmd) => (
+              <div key={cmd.id}>
+                <CommandBubble command={cmd.command} timestamp={cmd.timestamp} />
+                <ResultBubble
+                  output={cmd.output}
+                  exitCode={cmd.exitCode}
+                  isRunning={cmd.isRunning}
+                  onInterrupt={cmd.isRunning ? () => interruptCommand(cmd.id) : undefined}
+                  timestamp={cmd.timestamp}
+                />
+              </div>
+            ))}
+            <div ref={bottomRef} />
+          </>
+        )}
+      </div>
+
+      {/* 跳转按钮 */}
+      {showTopButton && commands.length > 0 && (
+        <button
+          onClick={scrollToTop}
+          className="absolute top-14 left-1/2 -translate-x-1/2 p-2 bg-card text-muted-foreground hover:text-foreground shadow-md rounded-full transition-all hover:shadow-lg active:scale-95 z-10"
+          title="跳转到开始"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+          </svg>
+        </button>
+      )}
+      {showBottomButton && commands.length > 0 && (
+        <button
+          onClick={scrollToBottom}
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 p-2 bg-card text-muted-foreground hover:text-foreground shadow-md rounded-full transition-all hover:shadow-lg active:scale-95 z-10"
+          title="跳转到最新"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      )}
+
+      {/* 底部输入区域 */}
+      <div className="border-t border-border p-4">
+        <form onSubmit={handleSubmit} className="relative flex gap-2 items-center">
+          <button
+            type="button"
+            onClick={async () => {
+              setCommands([]);
+              commandOutputRef.current.clear();
+              pendingOutputRef.current.clear();
+              if (tabId) {
+                try {
+                  await fetch(`/api/terminal/history?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}`, { method: 'DELETE' });
+                } catch (e) {
+                  console.error('Failed to delete history:', e);
+                }
+              }
+            }}
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
+            title="清空历史"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+
+          <input
+            ref={inputRef}
+            type="text"
+            value={inputValue}
+            onChange={(e) => {
+              setInputValue(e.target.value);
+              if (historyIndex !== -1) {
+                setHistoryIndex(-1);
+                setTemporaryInput('');
+              }
+              setShowAutocomplete(false);
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder="输入命令并按 Enter 执行... (↑↓ 历史, Tab 补全)"
+            className="flex-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring font-mono"
+          />
+
+          {showAutocomplete && autocompleteSuggestions.length > 1 && (
+            <div className="absolute bottom-full left-0 mb-1 bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto z-50">
+              <div className="py-1">
+                {autocompleteSuggestions.map((suggestion, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => applyAutocompleteSuggestion(suggestion)}
+                    className={`w-full px-3 py-1.5 text-left text-sm font-mono hover:bg-accent transition-colors ${
+                      index === autocompleteIndex ? 'bg-accent' : ''
+                    }`}
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+              <div className="border-t border-border px-3 py-1 text-xs text-muted-foreground">
+                Tab 切换 · Esc 关闭
+              </div>
+            </div>
+          )}
+        </form>
+      </div>
+
+      {showEnvManager && (
+        <EnvManager
+          cwd={cwd}
+          tabId={tabId}
+          onClose={() => setShowEnvManager(false)}
+          onSave={(newEnv) => setCustomEnv(newEnv)}
+        />
+      )}
+
+      {showAliasManager && (
+        <AliasManager
+          cwd={cwd}
+          onClose={() => setShowAliasManager(false)}
+          onSave={(newAliases) => setAliases(newAliases)}
+        />
+      )}
+    </div>
+  );
+}

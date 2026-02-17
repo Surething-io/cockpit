@@ -5,6 +5,7 @@ import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { FileBrowserModal } from './FileBrowserModal';
 import { BrowserView } from './BrowserView';
 import { GitWorktreeModal } from './GitWorktreeModal';
+import { TerminalTabManager } from './terminal/TerminalTabManager';
 import { ChatProvider } from './ChatContext';
 import { ServicePanel } from './ServicePanel';
 import { SwipeableViewContainer, SwipeableContent, type ViewType } from './SwipeableViewContainer';
@@ -98,7 +99,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     return () => clearInterval(timer);
   }, [initialCwd]);
 
-  // 键盘快捷键：Cmd+1/2/3 切换视图
+  // 键盘快捷键：Cmd+1/2/3/4 切换视图
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
@@ -109,6 +110,9 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           e.preventDefault();
           setActiveView('explorer');
         } else if (e.key === '3') {
+          e.preventDefault();
+          setActiveView('terminal');
+        } else if (e.key === '4') {
           e.preventDefault();
           setActiveView('browser');
         }
@@ -168,7 +172,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         {initialCwd ? (
           <SwipeableContent>
             {/* AGENT 视图：Tab bar + Chat */}
-            <div className="w-1/3 h-full flex flex-col overflow-hidden">
+            <div className="w-1/4 h-full flex flex-col overflow-hidden">
               <TabBar
                 tabs={tabs}
                 activeTabId={activeTabId}
@@ -205,7 +209,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
             </div>
 
             {/* EXPLORER 视图：FileBrowser */}
-            <div className="w-1/3 h-full overflow-hidden">
+            <div className="w-1/4 h-full overflow-hidden">
               <FileBrowserModal
                 onClose={() => setActiveView('agent')}
                 cwd={initialCwd}
@@ -214,8 +218,13 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               />
             </div>
 
+            {/* TERMINAL 视图：TerminalTabManager */}
+            <div className="w-1/4 h-full overflow-hidden">
+              <TerminalTabManager initialCwd={initialCwd} />
+            </div>
+
             {/* BROWSER 视图：BrowserView */}
-            <div className="w-1/3 h-full overflow-hidden">
+            <div className="w-1/4 h-full overflow-hidden">
               <BrowserView cwd={initialCwd} openUrl={browserOpenUrl} />
             </div>
           </SwipeableContent>

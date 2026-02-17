@@ -101,6 +101,43 @@ export function getServiceLogPath(cwd: string, commandHash: string): string {
   return join(getLogsDir(cwd), `${commandHash}.log`);
 }
 
+/**
+ * Get the terminal history file path for a project tab
+ */
+export function getTerminalHistoryPath(cwd: string, tabId: string): string {
+  return join(getCockpitProjectDir(cwd), `terminal-history-${tabId}.jsonl`);
+}
+
+/**
+ * Get the terminal output file path for a specific command
+ * Long outputs (> 4KB) are stored in separate files to keep JSONL small
+ */
+export function getTerminalOutputPath(cwd: string, commandId: string): string {
+  return join(getCockpitProjectDir(cwd), `terminal-output-${commandId}.txt`);
+}
+
+/**
+ * Get the terminal environment variables file path
+ */
+export function getTerminalEnvPath(cwd: string, tabId?: string): string {
+  const fileName = tabId ? `terminal-env-${tabId}.json` : 'terminal-env-global.json';
+  return join(getCockpitProjectDir(cwd), fileName);
+}
+
+/**
+ * Get the terminal aliases file path
+ */
+export function getTerminalAliasesPath(cwd: string): string {
+  return join(getCockpitProjectDir(cwd), 'terminal-aliases.json');
+}
+
+/**
+ * Get the terminal tabs file path
+ */
+export function getTerminalTabsPath(cwd: string): string {
+  return join(getCockpitProjectDir(cwd), 'terminal-tabs.json');
+}
+
 // ============================================
 // Claude Project Paths (~/.claude/projects/<encoded-cwd>/...)
 // ============================================

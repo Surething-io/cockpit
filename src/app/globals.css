@@ -532,3 +532,60 @@ body {
 .hl-cur { background: rgba(217, 119, 6, 0.5); }   /* current match */
 .hl-m { background: rgba(217, 119, 6, 0.3); }     /* other matches */
 .hl-kw { background: rgba(217, 119, 6, 0.4); border-radius: 2px; padding: 0 2px; } /* keyword */
+
+/* ============================================
+   ANSI Terminal Color Classes (ansi_up)
+   ============================================ */
+
+/* Styles */
+.ansi-bold { font-weight: bold; }
+.ansi-dim { opacity: 0.7; }
+.ansi-italic { font-style: italic; }
+.ansi-underline { text-decoration: underline; }
+.ansi-strikethrough { text-decoration: line-through; }
+
+/* Standard foreground colors */
+.ansi-black-fg { color: #3c3c3c; }
+.ansi-red-fg { color: #e55561; }
+.ansi-green-fg { color: #8cc265; }
+.ansi-yellow-fg { color: #d18f52; }
+.ansi-blue-fg { color: #4aa5f0; }
+.ansi-magenta-fg { color: #c162de; }
+.ansi-cyan-fg { color: #42b3c2; }
+.ansi-white-fg { color: #d0d0d0; }
+
+/* Bright foreground colors */
+.ansi-bright-black-fg { color: #666666; }
+.ansi-bright-red-fg { color: #ef8080; }
+.ansi-bright-green-fg { color: #a5e075; }
+.ansi-bright-yellow-fg { color: #e5c07b; }
+.ansi-bright-blue-fg { color: #61afef; }
+.ansi-bright-magenta-fg { color: #d68fd6; }
+.ansi-bright-cyan-fg { color: #56d4dd; }
+.ansi-bright-white-fg { color: #ffffff; }
+
+/* Standard background colors */
+.ansi-black-bg { background-color: #1e1e1e; }
+.ansi-red-bg { background-color: #e55561; }
+.ansi-green-bg { background-color: #8cc265; }
+.ansi-yellow-bg { background-color: #d18f52; }
+.ansi-blue-bg { background-color: #4aa5f0; }
+.ansi-magenta-bg { background-color: #c162de; }
+.ansi-cyan-bg { background-color: #42b3c2; }
+.ansi-white-bg { background-color: #d0d0d0; }
+
+/* Bright background colors */
+.ansi-bright-black-bg { background-color: #666666; }
+.ansi-bright-red-bg { background-color: #ef8080; }
+.ansi-bright-green-bg { background-color: #a5e075; }
+.ansi-bright-yellow-bg { background-color: #e5c07b; }
+.ansi-bright-blue-bg { background-color: #61afef; }
+.ansi-bright-magenta-bg { background-color: #d68fd6; }
+.ansi-bright-cyan-bg { background-color: #56d4dd; }
+.ansi-bright-white-bg { background-color: #ffffff; }
+
+/* Light theme overrides */
+:root .ansi-black-fg { color: #1e1e1e; }
+:root .ansi-white-fg { color: #6b7280; }
+:root .ansi-bright-black-fg { color: #4b5563; }
+:root .ansi-bright-white-fg { color: #374151; }

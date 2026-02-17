@@ -700,6 +700,7 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
                   exitCode={cmd.exitCode}
                   isRunning={cmd.isRunning}
                   onInterrupt={cmd.isRunning ? () => interruptCommand(cmd.id) : undefined}
+                  onDelete={!cmd.isRunning ? () => deleteCommand(cmd.id) : undefined}
                   timestamp={cmd.timestamp}
                 />
               </div>

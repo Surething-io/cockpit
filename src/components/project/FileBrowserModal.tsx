@@ -14,6 +14,7 @@ import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { FileIcon } from '../shared/FileIcon';
 import { FileEditorModal } from './FileEditorModal';
 import { QuickFileOpen } from './QuickFileOpen';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 import type { TabType, GitFileStatus, GitStatusResponse, FileBrowserModalProps } from './fileBrowser/types';
 import { getTargetDirPath, isImageFile, formatDateTime, NOOP, COMMITS_PER_PAGE } from './fileBrowser/utils';
@@ -221,96 +222,85 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const fileContentTypeRef = useRef(fileTree.fileContent?.type);
   fileContentTypeRef.current = fileTree.fileContent?.type;
 
-  useEffect(() => {
-    const eventSource = new EventSource(`/api/watch?cwd=${encodeURIComponent(cwd)}`);
+  const handleWatchMessage = useCallback(async (msg: unknown) => {
+    try {
+      const { data: events } = msg as { type: string; data: Array<{ type: 'file' | 'git' }> };
+      if (!events) return;
 
-    eventSource.onmessage = async (e) => {
-      try {
-        const events: Array<{ type: 'file' | 'git' }> = JSON.parse(e.data);
+      const hasGitChange = events.some(ev => ev.type === 'git');
+      const hasFileChange = events.some(ev => ev.type === 'file');
 
-        const hasGitChange = events.some(ev => ev.type === 'git');
-        const hasFileChange = events.some(ev => ev.type === 'file');
+      const promises: Promise<void>[] = [];
 
-        // 构建并行请求
-        const promises: Promise<void>[] = [];
+      if (hasFileChange || hasGitChange) {
+        promises.push(
+          fetch(`/api/files/list?cwd=${encodeURIComponent(cwd)}`)
+            .then(res => res.json())
+            .then(data => { if (!data.error) fileTree.setFiles(data.files || []); })
+        );
+        promises.push(
+          fetch(`/api/files/recent?cwd=${encodeURIComponent(cwd)}`)
+            .then(res => res.json())
+            .then(data => { fileTree.setRecentFiles(data.files || []); })
+        );
+      }
 
-        // 文件变更 → 刷新目录树和最近文件
-        if (hasFileChange || hasGitChange) {
+      if (hasGitChange) {
+        promises.push(
+          fetch(`/api/git/status?cwd=${encodeURIComponent(cwd)}`)
+            .then(res => {
+              if (!res.ok) return;
+              return res.json().then((statusData: GitStatusResponse) => {
+                gitStatus.setStatus(statusData);
+                const staged = buildGitFileTree(statusData.staged);
+                const unstaged = buildGitFileTree(statusData.unstaged);
+                gitStatus.setStagedTree(staged);
+                gitStatus.setUnstagedTree(unstaged);
+                const newPaths = new Set<string>([
+                  ...collectGitTreeDirPaths(staged),
+                  ...collectGitTreeDirPaths(unstaged),
+                ]);
+                gitStatus.setStatusExpandedPaths(prev => new Set([...prev, ...newPaths]));
+              });
+            })
+        );
+
+        const branch = selectedBranchRef.current;
+        if (branch) {
           promises.push(
-            fetch(`/api/files/list?cwd=${encodeURIComponent(cwd)}`)
+            fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(branch)}&limit=${COMMITS_PER_PAGE}`)
               .then(res => res.json())
-              .then(data => { if (!data.error) fileTree.setFiles(data.files || []); })
-          );
-          promises.push(
-            fetch(`/api/files/recent?cwd=${encodeURIComponent(cwd)}`)
-              .then(res => res.json())
-              .then(data => { fileTree.setRecentFiles(data.files || []); })
-          );
-        }
-
-        // git 变更 → 刷新 git status 和 commits
-        if (hasGitChange) {
-          promises.push(
-            fetch(`/api/git/status?cwd=${encodeURIComponent(cwd)}`)
-              .then(res => {
-                if (!res.ok) return;
-                return res.json().then((statusData: GitStatusResponse) => {
-                  gitStatus.setStatus(statusData);
-                  const staged = buildGitFileTree(statusData.staged);
-                  const unstaged = buildGitFileTree(statusData.unstaged);
-                  gitStatus.setStagedTree(staged);
-                  gitStatus.setUnstagedTree(unstaged);
-                  const newPaths = new Set<string>([
-                    ...collectGitTreeDirPaths(staged),
-                    ...collectGitTreeDirPaths(unstaged),
-                  ]);
-                  gitStatus.setStatusExpandedPaths(prev => new Set([...prev, ...newPaths]));
-                });
+              .then(data => {
+                const newCommits = data.commits || [];
+                gitHistory.setCommits(newCommits);
+                gitHistory.setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
               })
           );
-
-          const branch = selectedBranchRef.current;
-          if (branch) {
-            promises.push(
-              fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(branch)}&limit=${COMMITS_PER_PAGE}`)
-                .then(res => res.json())
-                .then(data => {
-                  const newCommits = data.commits || [];
-                  gitHistory.setCommits(newCommits);
-                  gitHistory.setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
-                })
-            );
-          }
         }
-
-        // 当前打开的文件：有任何变化都刷新内容
-        const currentPath = selectedPathRef.current;
-        const currentType = fileContentTypeRef.current;
-        if (currentPath && currentType === 'text') {
-          promises.push(
-            fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(currentPath)}`)
-              .then(res => res.json())
-              .then(data => { if (data.type === 'text') fileTree.setFileContent(data); })
-          );
-        }
-
-        await Promise.all(promises);
-      } catch (err) {
-        console.error('File watch SSE handler error:', err);
       }
-    };
 
-    eventSource.onerror = () => {
-      // EventSource 会自动重连，这里只做日志
-      console.warn('File watch SSE connection error, will auto-reconnect');
-    };
+      const currentPath = selectedPathRef.current;
+      const currentType = fileContentTypeRef.current;
+      if (currentPath && currentType === 'text') {
+        promises.push(
+          fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(currentPath)}`)
+            .then(res => res.json())
+            .then(data => { if (data.type === 'text') fileTree.setFileContent(data); })
+        );
+      }
 
-    return () => {
-      eventSource.close();
-    };
+      await Promise.all(promises);
+    } catch (err) {
+      console.error('File watch handler error:', err);
+    }
   // fileTree/gitStatus/gitHistory 是 hooks 返回的稳定对象引用，不会频繁变化
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd]);
+
+  useWebSocket({
+    url: `/ws/watch?cwd=${encodeURIComponent(cwd)}`,
+    onMessage: handleWatchMessage,
+  });
 
   // ========== Helper: locate in tree ==========
   const locateInTree = useCallback((filePath: string) => {
@@ -1032,6 +1022,19 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       </button>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
+                      {/* 复制文件内容按钮 */}
+                      {fileTree.fileContent?.type === 'text' && fileTree.fileContent.content && (
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(fileTree.fileContent!.content!);
+                            toast('已复制文件内容');
+                          }}
+                          className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
+                          title="复制文件内容"
+                        >
+                          复制
+                        </button>
+                      )}
                       {/* 编辑按钮 */}
                       {fileTree.fileContent?.type === 'text' && (
                         <button

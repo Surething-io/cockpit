@@ -21,10 +21,12 @@ export const CLAUDE_PROJECTS_DIR = join(CLAUDE_DIR, 'projects');
 
 /**
  * Encode a path to a safe directory name
+ * Must match Claude CLI's encoding: replace both / and . with -
  * e.g., /Users/ka/Work -> -Users-ka-Work
+ * e.g., /foo/bar.worktrees/baz -> -foo-bar-worktrees-baz
  */
 export function encodePath(path: string): string {
-  return path.replace(/\//g, '-');
+  return path.replace(/[/.]/g, '-');
 }
 
 // ============================================

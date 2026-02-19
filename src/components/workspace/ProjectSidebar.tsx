@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ProjectItem } from './ProjectItem';
 import { GlobalSessionMonitor, GlobalSession } from './GlobalSessionMonitor';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 export interface ProjectInfo {
   cwd: string;
@@ -58,54 +59,47 @@ export function ProjectSidebar({
   const currentCwdRef = useRef(currentCwd);
   currentCwdRef.current = currentCwd;
 
-  useEffect(() => {
-    const eventSource = new EventSource('/api/global-state/watch');
+  const handleGlobalStateMessage = useCallback((msg: unknown) => {
+    try {
+      const { data } = msg as { type: string; data: { sessions: GlobalSession[] } };
+      if (!data) return;
+      const newSessions: GlobalSession[] = data.sessions || [];
+      setSessions(newSessions);
 
-    eventSource.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        const newSessions: GlobalSession[] = data.sessions || [];
-        setSessions(newSessions);
+      const currentLoadingIds = new Set(
+        newSessions.filter(s => s.isLoading).map(s => s.sessionId)
+      );
+      const prevLoading = prevLoadingSessionIdsRef.current;
 
-        // 按 sessionId 检测 loading → complete 的转换，标记为未读
-        const currentLoadingIds = new Set(
-          newSessions.filter(s => s.isLoading).map(s => s.sessionId)
-        );
-        const prevLoading = prevLoadingSessionIdsRef.current;
-
-        if (prevLoading.size > 0) {
-          const newlyCompleted: string[] = [];
-          prevLoading.forEach(sessionId => {
-            // 之前在 loading，现在不在了
-            if (!currentLoadingIds.has(sessionId)) {
-              // 找到对应 session，排除当前活跃项目的当前 session
-              const session = newSessions.find(s => s.sessionId === sessionId);
-              if (session && session.cwd !== currentCwdRef.current) {
-                newlyCompleted.push(sessionId);
-              }
+      if (prevLoading.size > 0) {
+        const newlyCompleted: string[] = [];
+        prevLoading.forEach(sessionId => {
+          if (!currentLoadingIds.has(sessionId)) {
+            const session = newSessions.find(s => s.sessionId === sessionId);
+            if (session && session.cwd !== currentCwdRef.current) {
+              newlyCompleted.push(sessionId);
             }
-          });
-          if (newlyCompleted.length > 0) {
-            setUnreadSessionIds(prev => {
-              const next = new Set(prev);
-              newlyCompleted.forEach(id => next.add(id));
-              return next;
-            });
           }
+        });
+        if (newlyCompleted.length > 0) {
+          setUnreadSessionIds(prev => {
+            const next = new Set(prev);
+            newlyCompleted.forEach(id => next.add(id));
+            return next;
+          });
         }
-
-        prevLoadingSessionIdsRef.current = currentLoadingIds;
-      } catch {
-        // 忽略解析错误
       }
-    };
 
-    eventSource.onerror = () => {
-      console.warn('Global state SSE connection error, will auto-reconnect');
-    };
-
-    return () => eventSource.close();
+      prevLoadingSessionIdsRef.current = currentLoadingIds;
+    } catch {
+      // 忽略解析错误
+    }
   }, []);
+
+  useWebSocket({
+    url: '/ws/global-state',
+    onMessage: handleGlobalStateMessage,
+  });
 
   // 当切换到某个项目时，清除该项目当前 session 的未读状态
   useEffect(() => {

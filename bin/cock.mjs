@@ -13,4 +13,4 @@ execSync('npm run build', { cwd: PROJECT_ROOT, stdio: 'inherit' });
 
 // Start (foreground, Ctrl+C to stop)
 console.log('Starting Cockpit...');
-spawnSync('npm', ['run', 'start'], { cwd: PROJECT_ROOT, stdio: 'inherit' });
+spawnSync('node', ['--import', 'tsx', 'server.mjs'], { cwd: PROJECT_ROOT, stdio: 'inherit' });

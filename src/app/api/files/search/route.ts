@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { join } from 'path';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+// Next.js webpack 会静态替换 __dirname / require.resolve / import.meta.url
+// process.cwd() 是运行时值，不会被 webpack 替换，且 Next.js 进程 cwd 就是项目根目录
+const RG_PATH = join(process.cwd(), 'node_modules', '@vscode', 'ripgrep', 'bin', 'rg');
 
 export interface SearchMatch {
   lineNumber: number;
@@ -14,6 +19,11 @@ export interface SearchResult {
   matches: SearchMatch[];
 }
 
+// 结果限制
+const MAX_FILES = 100;
+const MAX_MATCHES_PER_FILE = 50;
+const MAX_TOTAL_LINES = 5000;
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const cwd = searchParams.get('cwd') || process.cwd();
@@ -21,110 +31,54 @@ export async function GET(request: NextRequest) {
   const caseSensitive = searchParams.get('caseSensitive') === 'true';
   const wholeWord = searchParams.get('wholeWord') === 'true';
   const regex = searchParams.get('regex') === 'true';
-  const fileType = searchParams.get('fileType') || ''; // e.g., "ts", "tsx", "js"
+  const fileType = searchParams.get('fileType') || '';
 
   if (!query) {
     return NextResponse.json({ results: [], query: '' });
   }
 
   try {
-    // 构建 grep 命令
-    const grepArgs: string[] = [
-      '-r',           // 递归搜索
-      '-n',           // 显示行号
-      '--include="*"', // 默认包含所有文件
-    ];
+    const opts: SearchOptions = { caseSensitive, wholeWord, regex, fileType };
+    const { stdout } = await searchWithRg(RG_PATH, cwd, query, opts);
 
-    // 文件类型过滤
-    if (fileType) {
-      // 支持多个类型，用逗号分隔
-      const types = fileType.split(',').map(t => t.trim()).filter(Boolean);
-      // 清除默认的 --include="*"
-      grepArgs.pop();
-      for (const t of types) {
-        grepArgs.push(`--include="*.${t}"`);
-      }
-    }
-
-    // 区分大小写
-    if (!caseSensitive) {
-      grepArgs.push('-i');
-    }
-
-    // 完整词匹配
-    if (wholeWord) {
-      grepArgs.push('-w');
-    }
-
-    // 正则表达式 vs 固定字符串
-    if (!regex) {
-      grepArgs.push('-F'); // 固定字符串模式，不解析正则
-    } else {
-      grepArgs.push('-E'); // 扩展正则表达式
-    }
-
-    // 排除目录
-    grepArgs.push('--exclude-dir=node_modules');
-    grepArgs.push('--exclude-dir=.git');
-    grepArgs.push('--exclude-dir=.next');
-    grepArgs.push('--exclude-dir=dist');
-    grepArgs.push('--exclude-dir=build');
-    grepArgs.push('--exclude-dir=coverage');
-
-    // 转义查询字符串中的特殊字符（用于 shell）
-    const escapedQuery = query.replace(/'/g, "'\\''");
-
-    const command = `grep ${grepArgs.join(' ')} -- '${escapedQuery}' . 2>/dev/null || true`;
-
-    const { stdout } = await execAsync(command, {
-      cwd,
-      maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-      timeout: 30000, // 30s timeout
-    });
-
-    // 解析 grep 输出
-    // 格式: ./path/to/file:lineNumber:content
+    // 解析输出（统一格式: path:lineNumber:content）
     const lines = stdout.split('\n').filter(Boolean);
     const resultsMap = new Map<string, SearchMatch[]>();
+    let totalLines = 0;
 
     for (const line of lines) {
-      // 匹配格式: ./path:number:content
-      const match = line.match(/^\.\/(.+?):(\d+):(.*)$/);
+      if (totalLines >= MAX_TOTAL_LINES) break;
+
+      const match = line.match(/^(?:\.\/)?(.+?):(\d+):(.*)$/);
       if (match) {
         const [, filePath, lineNum, content] = match;
         if (!resultsMap.has(filePath)) {
+          if (resultsMap.size >= MAX_FILES) continue;
           resultsMap.set(filePath, []);
         }
-        resultsMap.get(filePath)!.push({
+        const matches = resultsMap.get(filePath)!;
+        if (matches.length >= MAX_MATCHES_PER_FILE) continue;
+        matches.push({
           lineNumber: parseInt(lineNum, 10),
-          content: content.slice(0, 500), // 限制内容长度
+          content: content.slice(0, 500),
         });
+        totalLines++;
       }
     }
 
-    // 转换为数组格式
+    // 转换为数组并排序
     const results: SearchResult[] = [];
     for (const [path, matches] of resultsMap) {
       results.push({ path, matches });
     }
-
-    // 按文件路径排序
     results.sort((a, b) => a.path.localeCompare(b.path));
 
-    // 限制结果数量
-    const maxFiles = 100;
-    const maxMatchesPerFile = 50;
-    const limitedResults = results.slice(0, maxFiles).map(r => ({
-      ...r,
-      matches: r.matches.slice(0, maxMatchesPerFile),
-    }));
-
     return NextResponse.json({
-      results: limitedResults,
+      results,
       query,
       totalFiles: results.length,
       totalMatches: results.reduce((sum, r) => sum + r.matches.length, 0),
-      truncated: results.length > maxFiles,
+      truncated: totalLines >= MAX_TOTAL_LINES || resultsMap.size >= MAX_FILES,
     });
   } catch (error) {
     console.error('Search error:', error);
@@ -134,3 +88,61 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+// ============================================
+// ripgrep 搜索
+// ============================================
+
+interface SearchOptions {
+  caseSensitive: boolean;
+  wholeWord: boolean;
+  regex: boolean;
+  fileType: string;
+}
+
+async function searchWithRg(
+  rgBin: string,
+  cwd: string,
+  query: string,
+  opts: SearchOptions,
+): Promise<{ stdout: string }> {
+  const args: string[] = [
+    '--no-heading',         // 每行输出完整路径
+    '--line-number',        // 显示行号
+    '--color', 'never',     // 无颜色
+    '--max-columns', '500', // 限制行宽，跳过超长行
+    '--max-count', String(MAX_MATCHES_PER_FILE), // 每个文件最多匹配数
+    '--max-filesize', '1M', // 跳过大文件
+  ];
+
+  // rg 默认遵守 .gitignore、跳过二进制文件、跳过隐藏文件
+
+  if (!opts.caseSensitive) args.push('-i');
+  if (opts.wholeWord) args.push('-w');
+  if (!opts.regex) args.push('-F'); // 固定字符串
+
+  // 文件类型过滤
+  if (opts.fileType) {
+    const types = opts.fileType.split(',').map(t => t.trim()).filter(Boolean);
+    for (const t of types) {
+      args.push('-g', `*.${t}`);
+    }
+  }
+
+  args.push('--', query, '.');
+
+  try {
+    return await execFileAsync(rgBin, args, {
+      cwd,
+      maxBuffer: 5 * 1024 * 1024,
+      timeout: 10000,
+    });
+  } catch (err: unknown) {
+    // rg 退出码 1 = 无匹配（不是错误）
+    if (err && typeof err === 'object' && 'code' in err && err.code === 1) {
+      return { stdout: '' };
+    }
+    throw err;
+  }
+}
+

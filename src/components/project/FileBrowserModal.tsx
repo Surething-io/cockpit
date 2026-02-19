@@ -212,75 +212,105 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
   const isRefreshLoading = fileTree.isLoadingFiles || gitStatus.statusLoading || gitHistory.isLoadingBranches || gitHistory.isLoadingCommits;
 
-  // ========== Auto-sync with fingerprint detection ==========
-  const lastFingerprintRef = useRef<string>('');
+  // ========== Auto-sync via SSE file watching ==========
+  // 用 ref 保存最新值，避免 SSE 回调依赖频繁变化的 state
+  const selectedBranchRef = useRef(gitHistory.selectedBranch);
+  selectedBranchRef.current = gitHistory.selectedBranch;
+  const selectedPathRef = useRef(fileTree.selectedPath);
+  selectedPathRef.current = fileTree.selectedPath;
+  const fileContentTypeRef = useRef(fileTree.fileContent?.type);
+  fileContentTypeRef.current = fileTree.fileContent?.type;
 
-  const silentRefresh = useCallback(async () => {
-    try {
-      const checkRes = await fetch(`/api/sync?cwd=${encodeURIComponent(cwd)}&since=${encodeURIComponent(lastFingerprintRef.current)}`);
-      const { changed, fingerprint } = await checkRes.json();
-
-      if (!changed) return;
-
-      lastFingerprintRef.current = fingerprint;
-
-      const [filesRes, recentRes, statusRes, commitsRes] = await Promise.all([
-        fetch(`/api/files/list?cwd=${encodeURIComponent(cwd)}`),
-        fetch(`/api/files/recent?cwd=${encodeURIComponent(cwd)}`),
-        fetch(`/api/git/status?cwd=${encodeURIComponent(cwd)}`),
-        gitHistory.selectedBranch
-          ? fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(gitHistory.selectedBranch)}&limit=${COMMITS_PER_PAGE}`)
-          : Promise.resolve(null),
-      ]);
-
-      const filesData = await filesRes.json();
-      if (!filesData.error) {
-        fileTree.setFiles(filesData.files || []);
-      }
-
-      const recentData = await recentRes.json();
-      fileTree.setRecentFiles(recentData.files || []);
-
-      if (statusRes.ok) {
-        const statusData: GitStatusResponse = await statusRes.json();
-        gitStatus.setStatus(statusData);
-        const staged = buildGitFileTree(statusData.staged);
-        const unstaged = buildGitFileTree(statusData.unstaged);
-        gitStatus.setStagedTree(staged);
-        gitStatus.setUnstagedTree(unstaged);
-        const newPaths = new Set<string>([
-          ...collectGitTreeDirPaths(staged),
-          ...collectGitTreeDirPaths(unstaged),
-        ]);
-        gitStatus.setStatusExpandedPaths(prev => new Set([...prev, ...newPaths]));
-      }
-
-      if (commitsRes) {
-        const commitsData = await commitsRes.json();
-        const newCommits = commitsData.commits || [];
-        gitHistory.setCommits(newCommits);
-        gitHistory.setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
-      }
-
-      if (fileTree.selectedPath && fileTree.fileContent?.type === 'text') {
-        const contentRes = await fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(fileTree.selectedPath)}`);
-        const contentData = await contentRes.json();
-        if (contentData.type === 'text') {
-          fileTree.setFileContent(contentData);
-        }
-      }
-    } catch (err) {
-      console.error('Silent refresh error:', err);
-    }
-  }, [cwd, gitHistory.selectedBranch, fileTree.selectedPath, fileTree.fileContent?.type, fileTree, gitStatus, gitHistory]);
-
-  // ========== Auto-sync polling (every 5s) ==========
   useEffect(() => {
-    const intervalId = setInterval(() => {
-      silentRefresh();
-    }, 5000);
-    return () => clearInterval(intervalId);
-  }, [silentRefresh]);
+    const eventSource = new EventSource(`/api/watch?cwd=${encodeURIComponent(cwd)}`);
+
+    eventSource.onmessage = async (e) => {
+      try {
+        const events: Array<{ type: 'file' | 'git' }> = JSON.parse(e.data);
+
+        const hasGitChange = events.some(ev => ev.type === 'git');
+        const hasFileChange = events.some(ev => ev.type === 'file');
+
+        // 构建并行请求
+        const promises: Promise<void>[] = [];
+
+        // 文件变更 → 刷新目录树和最近文件
+        if (hasFileChange || hasGitChange) {
+          promises.push(
+            fetch(`/api/files/list?cwd=${encodeURIComponent(cwd)}`)
+              .then(res => res.json())
+              .then(data => { if (!data.error) fileTree.setFiles(data.files || []); })
+          );
+          promises.push(
+            fetch(`/api/files/recent?cwd=${encodeURIComponent(cwd)}`)
+              .then(res => res.json())
+              .then(data => { fileTree.setRecentFiles(data.files || []); })
+          );
+        }
+
+        // git 变更 → 刷新 git status 和 commits
+        if (hasGitChange) {
+          promises.push(
+            fetch(`/api/git/status?cwd=${encodeURIComponent(cwd)}`)
+              .then(res => {
+                if (!res.ok) return;
+                return res.json().then((statusData: GitStatusResponse) => {
+                  gitStatus.setStatus(statusData);
+                  const staged = buildGitFileTree(statusData.staged);
+                  const unstaged = buildGitFileTree(statusData.unstaged);
+                  gitStatus.setStagedTree(staged);
+                  gitStatus.setUnstagedTree(unstaged);
+                  const newPaths = new Set<string>([
+                    ...collectGitTreeDirPaths(staged),
+                    ...collectGitTreeDirPaths(unstaged),
+                  ]);
+                  gitStatus.setStatusExpandedPaths(prev => new Set([...prev, ...newPaths]));
+                });
+              })
+          );
+
+          const branch = selectedBranchRef.current;
+          if (branch) {
+            promises.push(
+              fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(branch)}&limit=${COMMITS_PER_PAGE}`)
+                .then(res => res.json())
+                .then(data => {
+                  const newCommits = data.commits || [];
+                  gitHistory.setCommits(newCommits);
+                  gitHistory.setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
+                })
+            );
+          }
+        }
+
+        // 当前打开的文件：有任何变化都刷新内容
+        const currentPath = selectedPathRef.current;
+        const currentType = fileContentTypeRef.current;
+        if (currentPath && currentType === 'text') {
+          promises.push(
+            fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(currentPath)}`)
+              .then(res => res.json())
+              .then(data => { if (data.type === 'text') fileTree.setFileContent(data); })
+          );
+        }
+
+        await Promise.all(promises);
+      } catch (err) {
+        console.error('File watch SSE handler error:', err);
+      }
+    };
+
+    eventSource.onerror = () => {
+      // EventSource 会自动重连，这里只做日志
+      console.warn('File watch SSE connection error, will auto-reconnect');
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  // fileTree/gitStatus/gitHistory 是 hooks 返回的稳定对象引用，不会频繁变化
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cwd]);
 
   // ========== Helper: locate in tree ==========
   const locateInTree = useCallback((filePath: string) => {

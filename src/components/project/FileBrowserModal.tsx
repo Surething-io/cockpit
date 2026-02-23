@@ -172,6 +172,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 监听外部 git 操作（如 ChatInput 的暂存按钮）触发刷新
+  useEffect(() => {
+    const handler = () => { gitStatus.fetchStatus(); };
+    window.addEventListener('git-status-changed', handler);
+    return () => window.removeEventListener('git-status-changed', handler);
+  }, [gitStatus.fetchStatus]);
+
   // Load commits when branch changes
   useEffect(() => {
     if (gitHistory.selectedBranch) {
@@ -245,7 +252,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         );
       }
 
-      if (hasGitChange) {
+      if (hasGitChange || hasFileChange) {
         promises.push(
           fetch(`/api/git/status?cwd=${encodeURIComponent(cwd)}`)
             .then(res => {

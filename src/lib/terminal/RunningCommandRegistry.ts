@@ -40,12 +40,22 @@ function getRegistry(): Map<string, RunningCommand> {
 
 /**
  * 注册一个运行中的命令
+ * 自动挂载 close/error 监听确保 finalizeCommand 一定执行
  */
 export function registerCommand(cmd: Omit<RunningCommand, 'outputLines' | 'outputPartial'>): void {
   getRegistry().set(cmd.commandId, {
     ...cmd,
     outputLines: [],
     outputPartial: '',
+  });
+
+  // 永久挂载 close/error，保证进程退出时一定 finalize（不依赖 WS 连接）
+  const child = cmd.process;
+  child.on('close', async (code: number | null) => {
+    try { await finalizeCommand(cmd.commandId, code ?? 0); } catch (e) { console.error('[registry] finalize error:', e); }
+  });
+  child.on('error', async () => {
+    try { await finalizeCommand(cmd.commandId, 1); } catch (e) { console.error('[registry] finalize error:', e); }
   });
 }
 
@@ -74,6 +84,40 @@ function getBufferedOutput(cmd: RunningCommand): string {
     return lines ? lines + '\n' + cmd.outputPartial : cmd.outputPartial;
   }
   return lines;
+}
+
+/**
+ * 查询某个项目下正在运行的命令
+ */
+export function getRunningCommands(projectCwd: string): Array<{
+  commandId: string;
+  command: string;
+  cwd: string;
+  tabId: string;
+  pid: number;
+  timestamp: string;
+}> {
+  const results: ReturnType<typeof getRunningCommands> = [];
+  for (const cmd of getRegistry().values()) {
+    if (cmd.projectCwd === projectCwd) {
+      results.push({
+        commandId: cmd.commandId,
+        command: cmd.command,
+        cwd: cmd.cwd,
+        tabId: cmd.tabId,
+        pid: cmd.pid,
+        timestamp: cmd.timestamp,
+      });
+    }
+  }
+  return results;
+}
+
+/**
+ * 获取单个命令（用于 attach）
+ */
+export function getRunningCommand(commandId: string): RunningCommand | undefined {
+  return getRegistry().get(commandId);
 }
 
 /**

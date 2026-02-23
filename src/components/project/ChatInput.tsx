@@ -274,6 +274,7 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
               });
               if (response.ok) {
                 toast('已暂存所有文件', 'success');
+                window.dispatchEvent(new CustomEvent('git-status-changed'));
               } else {
                 toast('暂存失败', 'error');
               }

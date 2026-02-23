@@ -10,6 +10,8 @@ import { getTerminalHistoryPath, getTerminalOutputPath, ensureParentDir } from '
 
 const MAX_OUTPUT_LINES = 5000;
 const OUTPUT_FILE_THRESHOLD = 4096;
+/** outputPartial 最大字节数，防止无换行的大输出（如 base64）堆满内存 */
+const MAX_PARTIAL_BYTES = 64 * 1024; // 64KB
 
 export interface RunningCommand {
   commandId: string;
@@ -70,10 +72,16 @@ export function appendCommandOutput(commandId: string, data: string): void {
   const parts = text.split('\n');
   cmd.outputPartial = parts.pop() || '';
 
+  // 防止无换行的超大行（如 base64）堆满内存
+  if (cmd.outputPartial.length > MAX_PARTIAL_BYTES) {
+    cmd.outputPartial = cmd.outputPartial.slice(-MAX_PARTIAL_BYTES);
+  }
+
   if (parts.length > 0) {
     cmd.outputLines.push(...parts);
     if (cmd.outputLines.length > MAX_OUTPUT_LINES) {
-      cmd.outputLines = cmd.outputLines.slice(-MAX_OUTPUT_LINES);
+      // splice 原地删除，避免 slice 每次创建新数组对象造成 GC 压力
+      cmd.outputLines.splice(0, cmd.outputLines.length - MAX_OUTPUT_LINES);
     }
   }
 }

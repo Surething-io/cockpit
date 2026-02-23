@@ -4,6 +4,9 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
+/** git blame / log 最长允许运行时间，防止大仓库卡死事件循环 */
+const GIT_TIMEOUT_MS = 15000;
+
 interface BlameLine {
   hash: string;
   hashFull: string;
@@ -39,7 +42,7 @@ export async function GET(request: NextRequest) {
     // -c core.quotePath=false 避免中文文件名被转义为八进制
     const { stdout } = await execAsync(
       `git -c core.quotePath=false blame --porcelain "${path}"`,
-      { cwd, maxBuffer: 10 * 1024 * 1024 }
+      { cwd, maxBuffer: 10 * 1024 * 1024, timeout: GIT_TIMEOUT_MS }
     );
 
     const lines = stdout.split('\n');
@@ -85,7 +88,7 @@ export async function GET(request: NextRequest) {
       // Format: hash<NUL>message<NUL>hash<NUL>message...
       const { stdout: logOutput } = await execAsync(
         `git -c core.quotePath=false log --format="%H%x00%B%x00" --no-walk ${uniqueHashes.join(' ')}`,
-        { cwd, maxBuffer: 10 * 1024 * 1024 }
+        { cwd, maxBuffer: 10 * 1024 * 1024, timeout: GIT_TIMEOUT_MS }
       );
 
       // Parse the log output

@@ -76,6 +76,8 @@ function connect() {
   ws.onclose = () => {
     ws = null;
     if (closed) return;
+    // 防止 dispose() 之后 onclose 回调延迟触发再注册新 timer
+    if (retryTimer) clearTimeout(retryTimer);
     const delay = Math.min(1000 * Math.pow(1.5, retryCount), 10000);
     retryCount++;
     retryTimer = setTimeout(connect, delay);
@@ -152,6 +154,8 @@ export async function executeCommand(options: {
     return;
   }
 
+  // 防止同一 commandId 重复注册（rerun 场景）
+  commandCallbacks.delete(commandId);
   commandCallbacks.set(commandId, { onData, onError });
   sendMessage({ type: 'exec', commandId, command, cwd, tabId, env });
 }

@@ -7,6 +7,28 @@ const execAsync = promisify(exec);
 /** git blame / log 最长允许运行时间，防止大仓库卡死事件循环 */
 const GIT_TIMEOUT_MS = 15000;
 
+/** 最多同时运行的 git blame 进程数，防止多文件并发打开时子进程堆积 */
+const MAX_CONCURRENT = 3;
+let activeCount = 0;
+const waitQueue: Array<() => void> = [];
+
+function acquireSlot(): Promise<void> {
+  return new Promise((resolve) => {
+    if (activeCount < MAX_CONCURRENT) {
+      activeCount++;
+      resolve();
+    } else {
+      waitQueue.push(() => { activeCount++; resolve(); });
+    }
+  });
+}
+
+function releaseSlot(): void {
+  activeCount--;
+  const next = waitQueue.shift();
+  if (next) next();
+}
+
 interface BlameLine {
   hash: string;
   hashFull: string;
@@ -37,6 +59,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  await acquireSlot();
   try {
     // Use git blame with porcelain format for easy parsing
     // -c core.quotePath=false 避免中文文件名被转义为八进制
@@ -137,5 +160,7 @@ export async function GET(request: NextRequest) {
       { error: 'Failed to get blame info. File may not be tracked by git.' },
       { status: 500 }
     );
+  } finally {
+    releaseSlot();
   }
 }

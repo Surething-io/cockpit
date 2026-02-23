@@ -15,6 +15,8 @@ interface WatcherEntry {
   debounceTimer: ReturnType<typeof setTimeout> | null;
   /** 上次 flush 的时间戳，用于 cooldown 防止高频触发 */
   lastFlushTime: number;
+  /** cwd watcher 出错后的重建定时器，防止多次并发重建 */
+  cwdRestartTimer: ReturnType<typeof setTimeout> | null;
 }
 
 /** Git 关键文件，变化意味着 git 操作（commit, checkout, merge 等） */
@@ -86,9 +88,10 @@ class FileWatcherManager {
 
     entry.listeners.delete(callback);
 
-    // 最后一个 listener 退出时，关闭所有 watcher
+    // 最后一个 listener 退出时，关闭所有 watcher 并清理定时器
     if (entry.listeners.size === 0) {
       if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
+      if (entry.cwdRestartTimer) clearTimeout(entry.cwdRestartTimer);
       for (const w of entry.watchers) {
         try { w.close(); } catch { /* ignore */ }
       }
@@ -103,6 +106,7 @@ class FileWatcherManager {
       pendingEvents: [],
       debounceTimer: null,
       lastFlushTime: 0,
+      cwdRestartTimer: null,
     };
 
     const pushEvent = (event: FileEvent) => {
@@ -121,23 +125,37 @@ class FileWatcherManager {
 
     // ========== 监听 cwd（recursive）==========
     // macOS 原生支持 recursive，1 个 fd 监听整个目录树
-    // 3 秒 cooldown 防止 API 请求 → 文件变化 → 再次推送 的循环
-    try {
-      const cwdWatcher = watch(cwd, { recursive: true }, (_eventType, filename) => {
-        if (filename && (
-          filename.startsWith('.next/') ||
-          filename.startsWith('node_modules/') ||
-          filename.startsWith('.git/')
-        )) return;
-        pushEvent({ type: 'file' });
-      });
-      cwdWatcher.on('error', (err) => {
-        console.error(`File watcher error for ${cwd}:`, err);
-      });
-      entry.watchers.push(cwdWatcher);
-    } catch (err) {
-      console.error(`Failed to watch ${cwd}:`, err);
-    }
+    // 出错时（如系统 inotify 耗尽）自动重建，避免监听静默失效
+    const startCwdWatcher = () => {
+      try {
+        const cwdWatcher = watch(cwd, { recursive: true }, (_eventType, filename) => {
+          if (filename && (
+            filename.startsWith('.next/') ||
+            filename.startsWith('node_modules/') ||
+            filename.startsWith('.git/')
+          )) return;
+          pushEvent({ type: 'file' });
+        });
+        cwdWatcher.on('error', (err) => {
+          console.error(`File watcher error for ${cwd}:`, err);
+          // 从数组中移除失效的 watcher，释放引用
+          const idx = entry.watchers.indexOf(cwdWatcher);
+          if (idx !== -1) entry.watchers.splice(idx, 1);
+          try { cwdWatcher.close(); } catch { /* already closed */ }
+          // 仍有订阅者时，2 秒后重建（防止多次并发重建）
+          if (entry.listeners.size > 0 && !entry.cwdRestartTimer) {
+            entry.cwdRestartTimer = setTimeout(() => {
+              entry.cwdRestartTimer = null;
+              if (entry.listeners.size > 0) startCwdWatcher();
+            }, 2000);
+          }
+        });
+        entry.watchers.push(cwdWatcher);
+      } catch (err) {
+        console.error(`Failed to watch ${cwd}:`, err);
+      }
+    };
+    startCwdWatcher();
 
     // ========== 监听 git 关键文件 ==========
     // 支持 worktree：.git 可能是文件而非目录

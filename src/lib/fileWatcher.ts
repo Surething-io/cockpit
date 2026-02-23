@@ -1,5 +1,5 @@
-import { watch, type FSWatcher } from 'fs';
-import { join } from 'path';
+import { watch, readFileSync, statSync, type FSWatcher } from 'fs';
+import { join, resolve, dirname } from 'path';
 
 export interface FileEvent {
   /** 'file' = 普通文件变更, 'git' = .git 目录变更（意味着 git 操作） */
@@ -33,6 +33,30 @@ const GIT_WATCH_DIRS = [
 const DEBOUNCE_MS = 500;
 /** flush 后的冷却时间，防止 API 请求触发的文件变化形成循环 */
 const COOLDOWN_MS = 1000;
+
+/**
+ * 获取实际的 .git 目录路径
+ * 普通仓库: cwd/.git (目录)
+ * Worktree: cwd/.git 是文件，内容为 "gitdir: /path/to/main/.git/worktrees/xxx"
+ */
+function resolveGitDir(cwd: string): string {
+  const dotGit = join(cwd, '.git');
+  try {
+    const stat = statSync(dotGit);
+    if (stat.isDirectory()) {
+      return dotGit;
+    }
+    // .git 是文件（worktree）
+    const content = readFileSync(dotGit, 'utf-8').trim();
+    const match = content.match(/^gitdir:\s*(.+)$/);
+    if (match) {
+      return resolve(cwd, match[1]);
+    }
+  } catch {
+    // .git 不存在
+  }
+  return dotGit; // fallback
+}
 
 class FileWatcherManager {
   private watchers = new Map<string, WatcherEntry>();
@@ -116,9 +140,12 @@ class FileWatcherManager {
     }
 
     // ========== 监听 git 关键文件 ==========
+    // 支持 worktree：.git 可能是文件而非目录
+    const gitDir = resolveGitDir(cwd);
     for (const gitFile of GIT_WATCH_FILES) {
+      const filename = gitFile.replace('.git/', '');
       try {
-        const w = watch(join(cwd, gitFile), () => {
+        const w = watch(join(gitDir, filename), () => {
           pushEvent({ type: 'git' });
         });
         w.on('error', () => {
@@ -131,9 +158,10 @@ class FileWatcherManager {
     }
 
     // ========== 监听 git 关键目录 ==========
-    for (const gitDir of GIT_WATCH_DIRS) {
+    for (const gitDirName of GIT_WATCH_DIRS) {
+      const dirName = gitDirName.replace('.git/', '');
       try {
-        const w = watch(join(cwd, gitDir), { recursive: true }, () => {
+        const w = watch(join(gitDir, dirName), { recursive: true }, () => {
           pushEvent({ type: 'git' });
         });
         w.on('error', () => {

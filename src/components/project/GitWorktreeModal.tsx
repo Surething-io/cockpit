@@ -66,6 +66,12 @@ export function GitWorktreeModal({
   // Git user name（用于自动生成分支名）
   const [gitUserName, setGitUserName] = useState<string>('');
 
+  // 分支选择器状态
+  const [showBranchPicker, setShowBranchPicker] = useState(false);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [branchSearch, setBranchSearch] = useState('');
+  const [branchesLoading, setBranchesLoading] = useState(false);
+
   // 加载 worktree 列表
   const loadWorktrees = useCallback(async () => {
     setLoading(true);
@@ -149,6 +155,62 @@ export function GitWorktreeModal({
 
       if (response.ok) {
         toast(`Worktree 创建成功: ${branchName}`, 'success');
+        loadWorktrees();
+      } else {
+        const data = await response.json();
+        toast(data.error || '创建失败', 'error');
+      }
+    } catch (error) {
+      console.error('Failed to create worktree:', error);
+      toast('创建 worktree 失败', 'error');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  // 打开分支选择器
+  const handleOpenBranchPicker = async () => {
+    setBranchesLoading(true);
+    setBranchSearch('');
+    setShowBranchPicker(true);
+    try {
+      const response = await fetch(`/api/git/branches?cwd=${encodeURIComponent(cwd)}`);
+      if (response.ok) {
+        const data: BranchesResponse = await response.json();
+        // 已被 worktree 占用的分支
+        const usedBranches = new Set(worktrees.map(w => w.branch).filter(Boolean));
+        // 合并本地+远程，排除已占用的
+        const allBranches = [
+          ...data.local.filter(b => !usedBranches.has(b)),
+          ...data.remote.filter(b => !usedBranches.has(b) && !data.local.includes(b.replace(/^origin\//, ''))),
+        ];
+        setBranches(allBranches);
+      }
+    } catch {
+      toast('加载分支列表失败', 'error');
+    } finally {
+      setBranchesLoading(false);
+    }
+  };
+
+  // 使用已有分支创建 worktree
+  const handleCreateFromBranch = async (branch: string) => {
+    if (!nextPath) return;
+    setShowBranchPicker(false);
+    setIsCreating(true);
+    try {
+      const response = await fetch('/api/git/worktree', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'add',
+          cwd,
+          path: nextPath,
+          branch,
+        }),
+      });
+      if (response.ok) {
+        toast(`Worktree 创建成功: ${branch}`, 'success');
         loadWorktrees();
       } else {
         const data = await response.json();
@@ -351,26 +413,84 @@ export function GitWorktreeModal({
           )}
         </div>
 
+        {/* 分支选择器 */}
+        {showBranchPicker && (
+          <div className="border-t border-border px-4 py-3 flex-shrink-0">
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                value={branchSearch}
+                onChange={(e) => setBranchSearch(e.target.value)}
+                placeholder="搜索分支..."
+                className="flex-1 bg-secondary text-sm text-foreground rounded px-2.5 py-1.5 outline-none placeholder:text-muted-foreground"
+                autoFocus
+                autoComplete="off"
+                spellCheck="false"
+              />
+              <button
+                onClick={() => setShowBranchPicker(false)}
+                className="text-xs text-muted-foreground hover:text-foreground px-2 py-1.5"
+              >
+                取消
+              </button>
+            </div>
+            <div className="max-h-[200px] overflow-y-auto space-y-0.5">
+              {branchesLoading ? (
+                <div className="text-xs text-muted-foreground text-center py-4">加载中...</div>
+              ) : (() => {
+                const filtered = branches.filter(b => b.toLowerCase().includes(branchSearch.toLowerCase()));
+                return filtered.length === 0 ? (
+                  <div className="text-xs text-muted-foreground text-center py-4">无可用分支</div>
+                ) : (
+                  filtered.map((branch) => (
+                    <button
+                      key={branch}
+                      onClick={() => handleCreateFromBranch(branch)}
+                      className="w-full text-left px-2.5 py-1.5 text-sm rounded hover:bg-accent transition-colors truncate"
+                    >
+                      <span className={`${branch.startsWith('origin/') ? 'text-muted-foreground' : 'text-foreground'}`}>
+                        {branch}
+                      </span>
+                    </button>
+                  ))
+                );
+              })()}
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
         <div className="px-4 py-3 border-t border-border flex items-center justify-between flex-shrink-0">
           <div className="text-xs text-muted-foreground">
             {worktrees.length} 个 worktree
           </div>
-          <button
-            onClick={handleQuickCreate}
-            disabled={!nextPath || isCreating}
-            className={`px-3 py-1.5 text-sm rounded transition-colors ${
-              nextPath && !isCreating
-                ? 'bg-brand text-white hover:bg-brand/90'
-                : 'bg-secondary text-muted-foreground cursor-not-allowed'
-            }`}
-          >
-            {isCreating ? (
-              <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            ) : (
-              '+ 添加 Worktree'
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleOpenBranchPicker}
+              disabled={!nextPath || isCreating}
+              className={`px-3 py-1.5 text-sm rounded transition-colors ${
+                nextPath && !isCreating
+                  ? 'bg-secondary text-foreground hover:bg-accent'
+                  : 'bg-secondary text-muted-foreground cursor-not-allowed'
+              }`}
+            >
+              选择分支
+            </button>
+            <button
+              onClick={handleQuickCreate}
+              disabled={!nextPath || isCreating}
+              className={`px-3 py-1.5 text-sm rounded transition-colors ${
+                nextPath && !isCreating
+                  ? 'bg-brand text-white hover:bg-brand/90'
+                  : 'bg-secondary text-muted-foreground cursor-not-allowed'
+              }`}
+            >
+              {isCreating ? (
+                <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              ) : (
+                '+ 添加 Worktree'
+              )}
+            </button>
+          </div>
         </div>
 
         {/* 删除确认弹窗 */}

@@ -1,9 +1,13 @@
 'use client';
 
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
+import { FileDiff, ListTodo, MessageCircleQuestion, Circle, Loader, CheckCircle2 } from 'lucide-react';
 import { ChatMessage, MessageImage } from '@/types/chat';
 import { ToolCallModal } from './ToolCallModal';
+import { DiffViewerModal } from './DiffViewerModal';
+import { TodoViewerModal } from './TodoViewerModal';
+import { AskQuestionViewerModal } from './AskQuestionViewerModal';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { toast } from '../shared/Toast';
 
@@ -66,11 +70,34 @@ const TOOL_CALLS_COLLAPSE_THRESHOLD = 3;
 export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork }: MessageBubbleProps) {
   const [previewImage, setPreviewImage] = useState<MessageImage | null>(null);
   const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
+  const [showDiffViewer, setShowDiffViewer] = useState(false);
+  const [showTodoViewer, setShowTodoViewer] = useState(false);
+  const [showAskQuestionViewer, setShowAskQuestionViewer] = useState(false);
   const isUser = message.role === 'user';
   const hasImages = message.images && message.images.length > 0;
   const toolCallsCount = message.toolCalls?.length || 0;
   const shouldCollapseToolCalls = toolCallsCount > TOOL_CALLS_COLLAPSE_THRESHOLD;
   const canFork = !!sessionId && !!cwd && !!onFork;
+
+  // 是否有 Edit/Write 工具调用
+  const hasFileChanges = useMemo(() => {
+    return message.toolCalls?.some(tc => tc.name === 'Edit' || tc.name === 'Write') || false;
+  }, [message.toolCalls]);
+
+  // 最后一个 TodoWrite 调用
+  const lastTodoWrite = useMemo(() => {
+    if (!message.toolCalls) return null;
+    for (let i = message.toolCalls.length - 1; i >= 0; i--) {
+      if (message.toolCalls[i].name === 'TodoWrite') return message.toolCalls[i];
+    }
+    return null;
+  }, [message.toolCalls]);
+
+  // 所有 AskUserQuestion 调用
+  const askQuestionCalls = useMemo(() => {
+    if (!message.toolCalls) return [];
+    return message.toolCalls.filter(tc => tc.name === 'AskUserQuestion');
+  }, [message.toolCalls]);
 
   // 复制消息内容
   const handleCopy = () => {
@@ -179,24 +206,101 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             </div>
           )}
 
+          {/* 内联 Todo 展示 */}
+          {lastTodoWrite && (() => {
+            const todos = (lastTodoWrite.input?.todos as Array<{ content: string; status: string; activeForm?: string }>) || [];
+            const completed = todos.filter(t => t.status === 'completed').length;
+            const total = todos.length;
+            return (
+              <div
+                className={`${message.content || hasImages ? 'mt-2' : ''} cursor-pointer`}
+                onClick={() => setShowTodoViewer(true)}
+              >
+                <div className="border border-border rounded-lg overflow-hidden bg-secondary/50 px-3 py-2 space-y-1">
+                  {/* Progress header */}
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <div className="flex-1 h-1 bg-secondary rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-green-500 rounded-full transition-all duration-300"
+                        style={{ width: `${total > 0 ? (completed / total) * 100 : 0}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] text-muted-foreground flex-shrink-0">{completed}/{total}</span>
+                  </div>
+                  {/* Todo items */}
+                  {todos.map((todo, i) => (
+                    <div
+                      key={i}
+                      className={`flex items-center gap-1.5 ${
+                        todo.status === 'completed' ? 'opacity-50' : ''
+                      }`}
+                    >
+                      {todo.status === 'completed' ? (
+                        <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0" />
+                      ) : todo.status === 'in_progress' ? (
+                        <Loader className="w-3 h-3 text-brand flex-shrink-0 animate-spin" />
+                      ) : (
+                        <Circle className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                      )}
+                      <span className={`text-xs truncate ${
+                        todo.status === 'completed' ? 'text-muted-foreground' : 'text-foreground'
+                      }`}>
+                        {todo.status === 'in_progress' && todo.activeForm ? todo.activeForm : todo.content}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* 工具调用 */}
           {message.toolCalls && message.toolCalls.length > 0 && (
             <div className={`${message.content || hasImages ? 'mt-2' : ''}`}>
               {shouldCollapseToolCalls ? (
                 // 折叠模式：显示摘要和展开按钮
                 <div className="border border-border rounded-lg overflow-hidden bg-secondary">
-                  <button
-                    onClick={() => setToolCallsExpanded(!toolCallsExpanded)}
-                    className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-accent transition-colors active:bg-muted"
-                  >
-                    <span className="text-lg">🔧</span>
-                    <span className="font-medium text-foreground">
-                      {toolCallsCount} 个工具调用
-                    </span>
-                    <span className="ml-auto text-muted-foreground text-sm">
-                      {toolCallsExpanded ? '▲ 收起' : '▼ 展开'}
-                    </span>
-                  </button>
+                  <div className="flex items-center">
+                    <button
+                      onClick={() => setToolCallsExpanded(!toolCallsExpanded)}
+                      className="flex-1 px-3 py-2 flex items-center gap-2 text-left hover:bg-accent transition-colors active:bg-muted"
+                    >
+                      <span className="text-lg">🔧</span>
+                      <span className="font-medium text-foreground">
+                        {toolCallsCount} 个工具调用
+                      </span>
+                      <span className="ml-auto text-muted-foreground text-sm">
+                        {toolCallsExpanded ? '▲ 收起' : '▼ 展开'}
+                      </span>
+                    </button>
+                    {askQuestionCalls.length > 0 && (
+                      <button
+                        onClick={() => setShowAskQuestionViewer(true)}
+                        className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border-l border-border"
+                        title="查看提问"
+                      >
+                        <MessageCircleQuestion className="w-4 h-4" />
+                      </button>
+                    )}
+                    {lastTodoWrite && (
+                      <button
+                        onClick={() => setShowTodoViewer(true)}
+                        className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border-l border-border"
+                        title="查看任务列表"
+                      >
+                        <ListTodo className="w-4 h-4" />
+                      </button>
+                    )}
+                    {hasFileChanges && (
+                      <button
+                        onClick={() => setShowDiffViewer(true)}
+                        className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border-l border-border"
+                        title="查看所有文件变更"
+                      >
+                        <FileDiff className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                   {toolCallsExpanded && (
                     <div className="border-t border-border p-2 space-y-1">
                       {message.toolCalls.map((toolCall, index) => (
@@ -251,6 +355,21 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
       {/* 图片预览模态窗口 */}
       {previewImage && (
         <ImageModal image={previewImage} onClose={() => setPreviewImage(null)} />
+      )}
+
+      {/* Diff 查看器 */}
+      {showDiffViewer && message.toolCalls && (
+        <DiffViewerModal toolCalls={message.toolCalls} cwd={cwd} onClose={() => setShowDiffViewer(false)} />
+      )}
+
+      {/* Todo 查看器 */}
+      {showTodoViewer && lastTodoWrite && (
+        <TodoViewerModal toolCall={lastTodoWrite} onClose={() => setShowTodoViewer(false)} />
+      )}
+
+      {/* AskQuestion 查看器 */}
+      {showAskQuestionViewer && askQuestionCalls.length > 0 && (
+        <AskQuestionViewerModal toolCalls={askQuestionCalls} onClose={() => setShowAskQuestionViewer(false)} />
       )}
     </>
   );

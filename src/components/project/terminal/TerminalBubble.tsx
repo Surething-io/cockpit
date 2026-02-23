@@ -1,22 +1,20 @@
 'use client';
 
-import { useRef, useEffect, memo } from 'react';
-import { Terminal } from 'lucide-react';
+import { useRef, useEffect, useLayoutEffect, memo, useState } from 'react';
+import { Terminal, Maximize2, Copy, X, RotateCw } from 'lucide-react';
 import { toast } from '../../shared/Toast';
 import { AnsiUp } from 'ansi_up';
+import { OutputViewerModal } from './OutputViewerModal';
 
 interface CommandBubbleProps {
   command: string;
-  timestamp?: string;
-  onDelete?: () => void;
-}
-
-interface ResultBubbleProps {
   output: string;
   exitCode?: number;
   isRunning: boolean;
   onInterrupt?: () => void;
+  onStdin?: (data: string) => void;
   onDelete?: () => void;
+  onRerun?: () => void;
   timestamp?: string;
 }
 
@@ -32,74 +30,39 @@ const formatTime = (ts?: string) => {
   return `${month}-${day} ${hours}:${minutes}`;
 };
 
-// 命令气泡（右侧，用户样式）
-export const CommandBubble = memo(function CommandBubble({ command, timestamp, onDelete }: CommandBubbleProps) {
-  const timeStr = formatTime(timestamp);
+// 控制键映射表
+const CTRL_KEY_MAP: Record<string, string> = {
+  c: '\x03', // SIGINT
+  d: '\x04', // EOF
+  z: '\x1a', // SIGTSTP
+  l: '\x0c', // clear
+  a: '\x01', // home
+  e: '\x05', // end
+  u: '\x15', // kill line
+  w: '\x17', // kill word
+};
 
-  // 复制命令
-  const handleCopy = () => {
-    navigator.clipboard.writeText(command);
-    toast('已复制命令');
-  };
-
-  return (
-    <div className="flex flex-col items-end mb-4">
-      {/* 时间 - hover 时显示 */}
-      {timeStr && (
-        <span className="text-[11px] text-muted-foreground opacity-0 group-hover/cmd:opacity-100 transition-opacity mb-0.5 px-1">
-          {timeStr}
-        </span>
-      )}
-      <div className="flex justify-end w-full">
-        {/* 操作按钮在左边 */}
-        <div className="self-start mt-2 mr-1 flex flex-col gap-0.5 opacity-0 group-hover/cmd:opacity-100 transition-opacity">
-          <button
-            onClick={handleCopy}
-            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
-            title="复制命令"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
-          </button>
-          {onDelete && (
-            <button
-              onClick={onDelete}
-              className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent"
-              title="删除记录"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
-          )}
-        </div>
-
-        <div className="max-w-[80%] bg-accent text-foreground border border-brand rounded-2xl rounded-br-md px-4 py-2">
-          <div className="flex items-start gap-2">
-            <Terminal className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            <pre className="text-sm font-mono whitespace-pre-wrap break-words">{command}</pre>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-});
-
-// 结果气泡（左侧，助手样式）
-export const ResultBubble = memo(function ResultBubble({
+export const CommandBubble = memo(function CommandBubble({
+  command,
   output,
   exitCode,
   isRunning,
   onInterrupt,
+  onStdin,
   onDelete,
+  onRerun,
   timestamp,
-}: ResultBubbleProps) {
+}: CommandBubbleProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
   const shouldAutoScroll = useRef(true);
   const rafIdRef = useRef<number | null>(null);
+  const stdinRef = useRef<HTMLInputElement>(null);
+  const mouseDownIsSelect = useRef(false);
   const timeStr = formatTime(timestamp);
+  const [showViewer, setShowViewer] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const [stdinValue, setStdinValue] = useState('');
 
   // ANSI 解析器 & 增量追踪（用 ref 避免每帧重建）
   const ansiUpRef = useRef<AnsiUp | null>(null);
@@ -111,7 +74,8 @@ export const ResultBubble = memo(function ResultBubble({
   }
 
   // 增量 DOM 更新：只对新增部分做 ANSI 解析，直接 append 到 <pre>
-  useEffect(() => {
+  // 使用 useLayoutEffect 避免重运行时闪烁（在浏览器绘制前同步清空旧内容）
+  useLayoutEffect(() => {
     const pre = preRef.current;
     if (!pre || !ansiUpRef.current) return;
 
@@ -132,6 +96,15 @@ export const ResultBubble = memo(function ResultBubble({
 
       // 用 insertAdjacentHTML 追加，不触发全量 DOM 重建
       pre.insertAdjacentHTML('beforeend', newHtml);
+    }
+
+    // 检测是否溢出，并始终滚动到底部显示 tail
+    if (scrollRef.current) {
+      const overflow = scrollRef.current.scrollHeight > scrollRef.current.clientHeight;
+      setIsOverflowing(overflow);
+      if (overflow) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
     }
   }, [output]);
 
@@ -174,6 +147,8 @@ export const ResultBubble = memo(function ResultBubble({
     toast('已复制输出');
   };
 
+  const lineCount = output ? output.split('\n').length : 0;
+
   return (
     <div className="flex flex-col items-start mb-4">
       {/* 时间 - hover 时显示 */}
@@ -182,73 +157,137 @@ export const ResultBubble = memo(function ResultBubble({
           {timeStr}
         </span>
       )}
-      <div className="flex justify-start w-full">
-        <div className="max-w-[80%] min-w-[40%] bg-accent text-foreground dark:text-slate-11 rounded-2xl rounded-bl-md">
-          {/* 输出内容 */}
+        <div className="w-full bg-accent text-foreground dark:text-slate-11 rounded-2xl rounded-bl-md relative overflow-hidden border border-brand">
+          {/* 命令行头部 */}
+          <div className="flex items-center gap-2 px-4 py-1.5 border-b border-brand text-xs">
+            <Terminal className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+            <span
+              className="font-mono text-foreground truncate flex-1 cursor-pointer"
+              onClick={() => output && setShowViewer(true)}
+            >{command}</span>
+            {isOverflowing && !isRunning && (
+              <span className="text-muted-foreground flex-shrink-0">共 {lineCount} 行</span>
+            )}
+            {output && (
+              <button
+                onClick={handleCopy}
+                className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                title="复制输出"
+              >
+                <Copy className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {output && (
+              <button
+                onClick={() => setShowViewer(true)}
+                className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                title="查看全部输出"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {onRerun && (
+              <button
+                onClick={onRerun}
+                className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                title="重新运行"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {onDelete && (
+              <button
+                onClick={onDelete}
+                className="p-0.5 rounded text-destructive hover:text-destructive/80 transition-colors flex-shrink-0"
+                title="删除记录"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          {/* 输出内容：点击放大，拖选文本不触发 */}
           <div
             ref={scrollRef}
-            onScroll={handleScroll}
-            className="max-h-[1200px] overflow-y-auto px-4 py-2"
+            className="max-h-[600px] overflow-hidden px-4 py-2 cursor-pointer"
+            onMouseDown={() => { mouseDownIsSelect.current = false; }}
+            onMouseMove={() => { mouseDownIsSelect.current = true; }}
+            onClick={() => {
+              if (mouseDownIsSelect.current) return;
+              if (window.getSelection()?.toString()) return;
+              output && setShowViewer(true);
+            }}
           >
-            <pre ref={preRef} className="text-sm font-mono whitespace-pre-wrap break-words" />
+            <pre ref={preRef} className="text-sm font-mono whitespace-pre-wrap break-words select-text" />
           </div>
 
-          {/* 底部状态栏 */}
-          {(isRunning || exitCode !== undefined || onInterrupt) && (
-            <div className="border-t border-border px-4 py-2 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                {isRunning ? (
-                  <>
-                    <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                    <span>运行中...</span>
-                  </>
-                ) : exitCode !== undefined ? (
-                  <>
-                    <span className={`inline-block w-2 h-2 rounded-full ${exitCode === 0 ? 'bg-green-500' : 'bg-red-500'}`} />
-                    <span>退出代码: {exitCode}</span>
-                  </>
-                ) : null}
-              </div>
-
-              {/* 中断按钮 */}
-              {isRunning && onInterrupt && (
+          {/* 运行中：stdin 输入 + 中断按钮 */}
+          {isRunning && (
+            <div className="border-t border-border px-4 py-2 flex items-center gap-2">
+              <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse flex-shrink-0" />
+              {onStdin ? (
+                <input
+                  ref={stdinRef}
+                  value={stdinValue}
+                  onChange={(e) => setStdinValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Ctrl+组合键 → 发送控制字符
+                    if (e.ctrlKey && !e.metaKey && !e.altKey) {
+                      const ctrl = CTRL_KEY_MAP[e.key.toLowerCase()];
+                      if (ctrl) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onStdin(ctrl);
+                        return;
+                      }
+                    }
+                    // Enter → 发送文本 + 换行
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      onStdin(stdinValue + '\n');
+                      setStdinValue('');
+                    }
+                    // Tab → 发送 \t
+                    if (e.key === 'Tab') {
+                      e.preventDefault();
+                      onStdin('\t');
+                    }
+                  }}
+                  placeholder="stdin 输入..."
+                  className="flex-1 min-w-0 bg-transparent text-xs font-mono text-foreground outline-none placeholder:text-muted-foreground"
+                  autoComplete="off"
+                  spellCheck="false"
+                />
+              ) : (
+                <span className="text-xs text-muted-foreground">运行中...</span>
+              )}
+              {onInterrupt && (
                 <button
                   onClick={onInterrupt}
-                  className="text-xs px-3 py-1 rounded-md font-medium bg-destructive text-destructive-foreground transition-all duration-150 hover:bg-destructive/80 hover:shadow-md active:scale-95 active:bg-destructive/70 cursor-pointer select-none"
+                  className="flex-shrink-0 text-xs px-3 py-1 rounded-md font-medium bg-destructive text-destructive-foreground transition-all duration-150 hover:bg-destructive/80 hover:shadow-md active:scale-95 active:bg-destructive/70 cursor-pointer select-none"
                 >
                   Ctrl+C
                 </button>
               )}
             </div>
           )}
+
+          {/* 已结束：退出代码 */}
+          {!isRunning && exitCode !== undefined && (
+            <div className="border-t border-border px-4 py-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <span className={`inline-block w-2 h-2 rounded-full ${exitCode === 0 ? 'bg-green-500' : 'bg-red-500'}`} />
+              <span>退出代码: {exitCode}</span>
+            </div>
+          )}
         </div>
 
-        {/* 操作按钮在右边 */}
-        <div className="self-start mt-2 ml-1 flex flex-col gap-0.5 opacity-0 group-hover/cmd:opacity-100 transition-opacity">
-          {output && (
-            <button
-              onClick={handleCopy}
-              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
-              title="复制输出"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-            </button>
-          )}
-          {onDelete && (
-            <button
-              onClick={onDelete}
-              className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent"
-              title="删除记录"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
-          )}
-        </div>
-      </div>
+      {/* 输出查看器 Modal */}
+      {showViewer && (
+        <OutputViewerModal
+          output={output}
+          isRunning={isRunning}
+          onClose={() => setShowViewer(false)}
+        />
+      )}
     </div>
   );
 });

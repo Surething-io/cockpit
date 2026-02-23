@@ -2,11 +2,11 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Settings, Terminal, Zap, Plus, X, Play, Loader, Square } from 'lucide-react';
-import { CommandBubble, ResultBubble } from './TerminalBubble';
+import { CommandBubble } from './TerminalBubble';
 import { EnvManager } from './EnvManager';
 import { AliasManager } from './AliasManager';
 import { Tooltip } from '@/components/shared/Tooltip';
-import { executeCommand as execCmd, interruptCommand as interruptCmd } from '@/lib/terminal/SSEConnectionManager';
+import { executeCommand as execCmd, interruptCommand as interruptCmd, attachCommand, queryRunningCommands, sendStdin, dispose as disposeTerminalWs } from '@/lib/terminal/TerminalWsManager';
 
 // 生成唯一ID的辅助函数
 function generateUniqueCommandId(): string {
@@ -56,8 +56,7 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  // per-command AbortController（用于中断 SSE stream）
-  const abortMapRef = useRef<Map<string, AbortController>>(new Map());
+  // 已无需 per-command AbortController（WS 统一管理）
   const rafIdRef = useRef<number | null>(null);
   const pendingOutputRef = useRef<Map<string, string>>(new Map());
   const commandOutputRef = useRef<Map<string, string>>(new Map());
@@ -232,6 +231,74 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
     loadAliases();
   }, [loadHistory]);
 
+  // 恢复运行中的命令（待机/刷新后重连）
+  useEffect(() => {
+    let cancelled = false;
+
+    const reattachRunning = async () => {
+      try {
+        const runningCmds = await queryRunningCommands(cwd);
+        if (cancelled) return;
+
+        for (const cmd of runningCmds) {
+          if (tabId && cmd.tabId !== tabId) continue;
+          if (cancelled) break;
+
+          const commandId = cmd.commandId as string;
+
+          // 添加占位条目（buffered 输出由 attach WS 推送）
+          setCommands(prev => {
+            if (prev.some(c => c.id === commandId)) return prev;
+            return [...prev, {
+              id: commandId,
+              command: cmd.command as string,
+              output: '',
+              isRunning: true,
+              pid: cmd.pid as number,
+              timestamp: cmd.timestamp as string,
+            }];
+          });
+          commandOutputRef.current.set(commandId, '');
+
+          // 重新接入 WS 流
+          await attachCommand({
+            commandId,
+            projectCwd: cwd,
+            onData: (type, data) => {
+              if (type === 'pid') {
+                // 已有 pid，忽略
+              } else if (type === 'stdout' || type === 'stderr') {
+                appendOutput(commandId, data.data as string);
+              } else if (type === 'exit') {
+                const finalOutput = flushAndGetOutput(commandId);
+                cleanupOutputRefs(commandId);
+                setCommands(prev =>
+                  prev.map(c => c.id === commandId
+                    ? { ...c, output: finalOutput, exitCode: data.code as number, isRunning: false, pid: undefined }
+                    : c
+                  )
+                );
+              }
+            },
+            onError: () => {
+              setCommands(prev =>
+                prev.map(c => c.id === commandId && c.isRunning
+                  ? { ...c, isRunning: false }
+                  : c
+                )
+              );
+            },
+          });
+        }
+      } catch {
+        // 网络错误，忽略
+      }
+    };
+
+    reattachRunning();
+    return () => { cancelled = true; };
+  }, [cwd, tabId, appendOutput, flushAndGetOutput, cleanupOutputRefs]);
+
   const loadEnv = async () => {
     try {
       const params = new URLSearchParams({ cwd });
@@ -354,9 +421,9 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
       return;
     }
 
-    // Per-command SSE 执行
+    // Per-command WS 执行
     try {
-      const abortController = await execCmd({
+      await execCmd({
         cwd: currentCwd,
         command: actualCommand,
         commandId,
@@ -366,32 +433,18 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
         onData: (type, data) => {
           if (type === 'pid') {
             setCommands((prev) =>
-              prev.map((cmd) => (cmd.id === commandId ? { ...cmd, pid: data.pid } : cmd))
+              prev.map((cmd) => (cmd.id === commandId ? { ...cmd, pid: data.pid as number } : cmd))
             );
           } else if (type === 'stdout' || type === 'stderr') {
-            appendOutput(commandId, data.data);
+            appendOutput(commandId, data.data as string);
           } else if (type === 'exit') {
             const finalOutput = flushAndGetOutput(commandId);
             cleanupOutputRefs(commandId);
-            abortMapRef.current.delete(commandId);
 
             setCommands((prev) =>
               prev.map((cmd) => {
                 if (cmd.id === commandId) {
-                  return { ...cmd, output: finalOutput, exitCode: data.code, isRunning: false, pid: undefined };
-                }
-                return cmd;
-              })
-            );
-          } else if (type === 'error') {
-            const finalOutput = flushAndGetOutput(commandId);
-            cleanupOutputRefs(commandId);
-            abortMapRef.current.delete(commandId);
-
-            setCommands((prev) =>
-              prev.map((cmd) => {
-                if (cmd.id === commandId) {
-                  return { ...cmd, output: finalOutput + `\nError: ${data.error}`, exitCode: 1, isRunning: false, pid: undefined };
+                  return { ...cmd, output: finalOutput, exitCode: data.code as number, isRunning: false, pid: undefined };
                 }
                 return cmd;
               })
@@ -401,7 +454,6 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
         onError: (error) => {
           const finalOutput = flushAndGetOutput(commandId);
           cleanupOutputRefs(commandId);
-          abortMapRef.current.delete(commandId);
 
           setCommands((prev) =>
             prev.map((cmd) => {
@@ -413,8 +465,6 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
           );
         },
       });
-
-      abortMapRef.current.set(commandId, abortController);
     } catch (error) {
       const finalOutput = flushAndGetOutput(commandId);
       cleanupOutputRefs(commandId);
@@ -437,16 +487,101 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
   }, [executeCommand]);
 
   // 中断命令
-  const interruptCommand = useCallback(async (commandId: string) => {
+  const interruptCommand = useCallback((commandId: string) => {
     const command = commands.find((cmd) => cmd.id === commandId);
     if (!command?.pid) return;
-
-    try {
-      await interruptCmd(command.pid);
-    } catch (error) {
-      console.error('Failed to interrupt command:', error);
-    }
+    interruptCmd(command.pid);
   }, [commands]);
+
+  // 重新运行命令：原地重跑，不新增气泡
+  const rerunCommand = useCallback(async (commandId: string) => {
+    const cmd = commands.find((c) => c.id === commandId);
+    if (!cmd) return;
+
+    // 如果运行中，先中断
+    if (cmd.isRunning && cmd.pid) {
+      interruptCmd(cmd.pid);
+      // 等一下让进程结束
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    // 处理别名
+    const parts = cmd.command.trim().split(/\s+/);
+    const firstWord = parts[0];
+    let actualCommand = cmd.command;
+    if (aliases[firstWord]) {
+      actualCommand = aliases[firstWord] + (parts.length > 1 ? ' ' + parts.slice(1).join(' ') : '');
+    }
+
+    // 重置当前气泡状态
+    cleanupOutputRefs(commandId);
+    const initialOutput = actualCommand !== cmd.command ? `→ ${actualCommand}\n` : '';
+    commandOutputRef.current.set(commandId, initialOutput);
+    commandLineCountRef.current.set(commandId, 0);
+
+    setCommands((prev) =>
+      prev.map((c) =>
+        c.id === commandId
+          ? { ...c, output: initialOutput, exitCode: undefined, isRunning: true, pid: undefined, timestamp: new Date().toISOString() }
+          : c
+      )
+    );
+
+    // 重新执行
+    try {
+      await execCmd({
+        cwd: currentCwd,
+        command: actualCommand,
+        commandId,
+        tabId: tabId || '',
+        projectCwd: cwd,
+        env: customEnv,
+        onData: (type, data) => {
+          if (type === 'pid') {
+            setCommands((prev) =>
+              prev.map((c) => (c.id === commandId ? { ...c, pid: data.pid as number } : c))
+            );
+          } else if (type === 'stdout' || type === 'stderr') {
+            appendOutput(commandId, data.data as string);
+          } else if (type === 'exit') {
+            const finalOutput = flushAndGetOutput(commandId);
+            cleanupOutputRefs(commandId);
+            setCommands((prev) =>
+              prev.map((c) => {
+                if (c.id === commandId) {
+                  return { ...c, output: finalOutput, exitCode: data.code as number, isRunning: false, pid: undefined };
+                }
+                return c;
+              })
+            );
+          }
+        },
+        onError: (error) => {
+          const finalOutput = flushAndGetOutput(commandId);
+          cleanupOutputRefs(commandId);
+          setCommands((prev) =>
+            prev.map((c) => {
+              if (c.id === commandId) {
+                return { ...c, output: finalOutput + `\nError: ${error}`, exitCode: 1, isRunning: false, pid: undefined };
+              }
+              return c;
+            })
+          );
+        },
+      });
+    } catch (error) {
+      const finalOutput = flushAndGetOutput(commandId);
+      cleanupOutputRefs(commandId);
+      setCommands((prev) =>
+        prev.map((c) => {
+          if (c.id === commandId) {
+            return { ...c, output: finalOutput + `\nError: ${(error as Error).message}`, exitCode: 1, isRunning: false, pid: undefined };
+          }
+          return c;
+        })
+      );
+    }
+  }, [commands, aliases, currentCwd, customEnv, tabId, cwd, appendOutput, flushAndGetOutput, cleanupOutputRefs]);
 
   // 删除单条历史记录（state + JSONL + outputFile）
   const deleteCommand = useCallback(async (commandId: string) => {
@@ -582,11 +717,10 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
     inputRef.current?.focus();
   }, []);
 
-  // 组件卸载时 abort 所有运行中的 SSE 流
+  // 组件卸载时关闭 terminal WS 连接
   useEffect(() => {
     return () => {
-      abortMapRef.current.forEach((ac) => ac.abort());
-      abortMapRef.current.clear();
+      disposeTerminalWs();
     };
   }, []);
 
@@ -692,15 +826,16 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
               <div key={cmd.id} className="group/cmd">
                 <CommandBubble
                   command={cmd.command}
-                  timestamp={cmd.timestamp}
-                  onDelete={!cmd.isRunning ? () => deleteCommand(cmd.id) : undefined}
-                />
-                <ResultBubble
                   output={cmd.output}
                   exitCode={cmd.exitCode}
                   isRunning={cmd.isRunning}
                   onInterrupt={cmd.isRunning ? () => interruptCommand(cmd.id) : undefined}
-                  onDelete={!cmd.isRunning ? () => deleteCommand(cmd.id) : undefined}
+                  onStdin={cmd.isRunning ? (data: string) => sendStdin(cmd.id, data) : undefined}
+                  onDelete={() => {
+                    if (cmd.isRunning && cmd.pid) interruptCmd(cmd.pid);
+                    deleteCommand(cmd.id);
+                  }}
+                  onRerun={() => rerunCommand(cmd.id)}
                   timestamp={cmd.timestamp}
                 />
               </div>
@@ -823,11 +958,11 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
                   )}
                   {quickCustomCommands.map((cmd, i) => (
                     <Tooltip key={i} content={cmd}>
-                      <div className="flex items-center group">
+                      <div className="flex items-center group min-w-0">
                         <button
                           type="button"
                           onClick={() => handleQuickCommand(cmd)}
-                          className="flex-1 flex items-center gap-2 px-2 py-1.5 text-left text-sm font-mono rounded hover:bg-accent transition-colors"
+                          className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 text-left text-sm font-mono rounded hover:bg-accent transition-colors"
                         >
                           <Play className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
                           <span className="truncate">{cmd}</span>

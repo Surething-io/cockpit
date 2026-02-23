@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { FileNode } from './fileBrowser/types';
 import { FileIcon } from '../shared/FileIcon';
 
@@ -219,6 +220,7 @@ export function QuickFileOpen({ files, recentFiles, onSelectFile, onClose }: Qui
   }, [onSelectFile, onClose]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing) return;
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
@@ -241,7 +243,7 @@ export function QuickFileOpen({ files, recentFiles, onSelectFile, onClose }: Qui
     }
   }, [results, selectedIndex, handleSelect, onClose]);
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[300] flex items-start justify-center pt-[15vh]" onClick={onClose}>
       <div
         className="w-[680px] max-h-[60vh] bg-card border border-border rounded-lg shadow-2xl overflow-hidden flex flex-col"
@@ -283,7 +285,6 @@ export function QuickFileOpen({ files, recentFiles, onSelectFile, onClose }: Qui
                 }`}
                 data-tooltip={result.path}
                 onClick={() => handleSelect(result.path)}
-                onMouseEnter={() => setSelectedIndex(index)}
               >
                 <FileIcon name={result.path.split('/').pop() || ''} className="w-4 h-4 flex-shrink-0" />
                 <HighlightedPath path={result.path} matchedIndices={result.matchedIndices} />
@@ -310,6 +311,7 @@ export function QuickFileOpen({ files, recentFiles, onSelectFile, onClose }: Qui
           </span>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

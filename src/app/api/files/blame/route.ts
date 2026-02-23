@@ -73,7 +73,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Get full commit messages for all unique commits
-    const uniqueHashes = Array.from(commitInfoMap.keys());
+    // 过滤全零 hash（未提交的修改），git log 无法处理
+    const ZERO_HASH = '0000000000000000000000000000000000000000';
+    const uncommittedInfo = commitInfoMap.get(ZERO_HASH);
+    if (uncommittedInfo) {
+      uncommittedInfo.message = 'Not Committed Yet';
+    }
+    const uniqueHashes = Array.from(commitInfoMap.keys()).filter(h => h !== ZERO_HASH);
     if (uniqueHashes.length > 0) {
       // Use git log to get full messages for all commits at once
       // Format: hash<NUL>message<NUL>hash<NUL>message...

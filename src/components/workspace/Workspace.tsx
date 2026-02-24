@@ -78,6 +78,17 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
     }
   }, [activeIndex, projects]);
 
+  // 通知各 iframe 可见性变化（隐藏的 iframe 暂停 WebSocket 等资源消耗）
+  useEffect(() => {
+    for (const [cwd, iframe] of iframeRefs.current.entries()) {
+      const isActive = projects[activeIndex]?.cwd === cwd;
+      iframe.contentWindow?.postMessage(
+        { type: 'IFRAME_VISIBILITY', visible: isActive },
+        '*'
+      );
+    }
+  }, [activeIndex, projects]);
+
   // 初始化加载
   useEffect(() => {
     loadProjects();

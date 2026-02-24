@@ -15,6 +15,7 @@ import { FileIcon } from '../shared/FileIcon';
 import { FileEditorModal } from './FileEditorModal';
 import { QuickFileOpen } from './QuickFileOpen';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { usePageVisible } from '@/hooks/usePageVisible';
 
 import type { TabType, GitFileStatus, GitStatusResponse, FileBrowserModalProps } from './fileBrowser/types';
 import { getTargetDirPath, isImageFile, formatDateTime, NOOP, COMMITS_PER_PAGE } from './fileBrowser/utils';
@@ -34,6 +35,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const [hoverTooltip, setHoverTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 
   // ========== Hooks ==========
+  const pageVisible = usePageVisible();
   const fileTree = useFileTree({ cwd });
   const contentSearch = useContentSearch({ cwd });
   const gitStatus = useGitStatus({ cwd, addToRecentFiles: fileTree.addToRecentFiles });
@@ -179,6 +181,18 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     return () => window.removeEventListener('git-status-changed', handler);
   }, [gitStatus.fetchStatus]);
 
+  // iframe 恢复可见时，刷新一次数据（WS 暂停期间可能遗漏变更）
+  const prevVisibleRef = useRef(pageVisible);
+  useEffect(() => {
+    if (pageVisible && !prevVisibleRef.current) {
+      fileTree.loadFiles();
+      fileTree.loadRecentFiles();
+      gitStatus.fetchStatus();
+    }
+    prevVisibleRef.current = pageVisible;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageVisible]);
+
   // Load commits when branch changes
   useEffect(() => {
     if (gitHistory.selectedBranch) {
@@ -307,6 +321,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   useWebSocket({
     url: `/ws/watch?cwd=${encodeURIComponent(cwd)}`,
     onMessage: handleWatchMessage,
+    enabled: pageVisible,  // 隐藏的 iframe 暂停文件监听，避免无效并发请求
   });
 
   // ========== Helper: locate in tree ==========

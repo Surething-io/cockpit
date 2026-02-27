@@ -4,6 +4,8 @@ import next from 'next';
 const dev = process.env.COCKPIT_ENV === 'dev';
 const port = parseInt(process.env.PORT || (dev ? '3456' : '3457'), 10);
 
+process.title = dev ? 'cockpit-dev' : 'cockpit';
+
 const app = next({ dev });
 const handle = app.getRequestHandler();
 

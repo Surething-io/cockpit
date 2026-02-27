@@ -29,6 +29,7 @@ export function CodeViewer({
   scrollToLine = null,
   onScrollToLineComplete,
   highlightKeyword = null,
+  visibleLineRef,
 }: CodeViewerProps) {
   const {
     // Refs
@@ -87,12 +88,14 @@ export function CodeViewer({
     enableComments,
     scrollToLine,
     onScrollToLineComplete,
+    visibleLineRef,
   });
 
   // Menu container for portal mounting (keeps floating elements within second screen)
   const menuContainer = useMenuContainer();
 
-  const lineNumberWidth = showLineNumbers ? Math.max(3, String(lines.length).length) * 10 + 24 : 0;
+  // 行号列：最少4位数字宽度，和 Shiki/fallback 模式统一
+  const lineNumChars = Math.max(4, String(lines.length).length);
 
   return (
     <div ref={containerRef} className={`h-full flex flex-col ${className}`} tabIndex={0}>
@@ -188,7 +191,7 @@ export function CodeViewer({
                 lineCommentsCount={lineComments?.length}
                 isInRange={isInRange}
                 showLineNumbers={showLineNumbers}
-                lineNumberWidth={lineNumberWidth}
+                lineNumChars={lineNumChars}
                 commentsEnabled={commentsEnabled}
                 virtualItemSize={virtualItem.size}
                 virtualItemStart={virtualItem.start}
@@ -294,7 +297,7 @@ export function SimpleCodeBlock({ content, filePath, className = '' }: SimpleCod
         const theme = isDark ? 'github-dark' : 'github-light';
 
         const lines = content.split('\n');
-        const lineNumberWidth = String(lines.length).length;
+        const lnChars = Math.max(4, String(lines.length).length);
 
         const html = highlighter.codeToHtml(content, {
           lang: language as BundledLanguage,
@@ -302,7 +305,7 @@ export function SimpleCodeBlock({ content, filePath, className = '' }: SimpleCod
           transformers: [
             {
               line(node, line) {
-                const lineNum = String(line).padStart(lineNumberWidth, ' ');
+                const lineNum = String(line).padStart(lnChars, ' ');
                 node.children.unshift({
                   type: 'element',
                   tagName: 'span',
@@ -334,13 +337,13 @@ export function SimpleCodeBlock({ content, filePath, className = '' }: SimpleCod
   }
 
   const lines = content.split('\n');
-  const lineNumberWidth = String(lines.length).length;
+  const lnChars = Math.max(4, String(lines.length).length);
 
   return (
     <pre className={`overflow-auto text-sm font-mono bg-secondary p-2 ${className}`}>
       {lines.map((line, i) => (
         <div key={i} className="flex">
-          <span className="text-slate-9 select-none pr-4 text-right" style={{ minWidth: `${lineNumberWidth + 2}ch` }}>
+          <span className="text-slate-9 select-none pr-4 text-right" style={{ minWidth: `${lnChars + 2}ch` }}>
             {i + 1}
           </span>
           <span className="flex-1">{line}</span>

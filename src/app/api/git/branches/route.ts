@@ -18,6 +18,16 @@ export async function GET(request: NextRequest) {
     // 获取所有远程分支
     const { stdout: remoteBranches } = await execAsync('git branch -r --format="%(refname:short)"', { cwd });
 
+    // 获取当前分支的 upstream（parent）分支
+    let upstream = '';
+    try {
+      const { stdout } = await execAsync('git rev-parse --abbrev-ref @{upstream}', { cwd });
+      upstream = stdout.trim();
+    } catch {
+      // 没有设置 upstream，fallback 到 origin/main
+      upstream = 'origin/main';
+    }
+
     const local = localBranches
       .split('\n')
       .map(b => b.trim())
@@ -31,6 +41,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       current: currentBranch.trim(),
+      upstream,
       local,
       remote,
     });

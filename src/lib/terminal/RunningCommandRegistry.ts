@@ -5,6 +5,7 @@
 // 2. 子进程 exit 时写入 JSONL 历史文件
 
 import { ChildProcess } from 'child_process';
+import type { IPty } from 'node-pty';
 import fs from 'fs/promises';
 import { getTerminalHistoryPath, getTerminalOutputPath, ensureParentDir } from '@/lib/paths';
 
@@ -21,23 +22,41 @@ export interface RunningCommand {
   tabId: string;
   pid: number;
   process: ChildProcess;
+  /** PTY 进程实例（PTY 模式下设置） */
+  ptyProcess?: IPty;
+  /** 是否使用 PTY 模式 */
+  usePty?: boolean;
   outputLines: string[];
   outputPartial: string;
   timestamp: string;
 }
 
 const GLOBAL_KEY = Symbol.for('terminal_running_commands');
+const SERVER_ID_KEY = Symbol.for('terminal_server_id');
 
 type GlobalWithRegistry = typeof globalThis & {
-  [key: symbol]: Map<string, RunningCommand> | undefined;
+  [key: symbol]: Map<string, RunningCommand> | string | undefined;
 };
+
+/** 服务启动唯一 ID，用于判断是否发生了重启 */
+function getServerId(): string {
+  const g = globalThis as GlobalWithRegistry;
+  if (!g[SERVER_ID_KEY]) {
+    g[SERVER_ID_KEY] = `srv_${Date.now()}_${process.pid}`;
+    console.log(`[registry] server started, id=${g[SERVER_ID_KEY]}, pid=${process.pid}`);
+  }
+  return g[SERVER_ID_KEY] as string;
+}
+
+// 初始化时打印 server id
+getServerId();
 
 function getRegistry(): Map<string, RunningCommand> {
   const g = globalThis as GlobalWithRegistry;
   if (!g[GLOBAL_KEY]) {
     g[GLOBAL_KEY] = new Map<string, RunningCommand>();
   }
-  return g[GLOBAL_KEY]!;
+  return g[GLOBAL_KEY] as Map<string, RunningCommand>;
 }
 
 /**
@@ -45,20 +64,42 @@ function getRegistry(): Map<string, RunningCommand> {
  * 自动挂载 close/error 监听确保 finalizeCommand 一定执行
  */
 export function registerCommand(cmd: Omit<RunningCommand, 'outputLines' | 'outputPartial'>): void {
+  console.log(`[registry] register: id=${cmd.commandId}, cmd="${cmd.command}", pid=${cmd.pid}, pty=${!!cmd.ptyProcess}, server=${getServerId()}`);
   getRegistry().set(cmd.commandId, {
     ...cmd,
     outputLines: [],
     outputPartial: '',
   });
 
-  // 永久挂载 close/error，保证进程退出时一定 finalize（不依赖 WS 连接）
-  const child = cmd.process;
-  child.on('close', async (code: number | null) => {
-    try { await finalizeCommand(cmd.commandId, code ?? 0); } catch (e) { console.error('[registry] finalize error:', e); }
-  });
-  child.on('error', async () => {
-    try { await finalizeCommand(cmd.commandId, 1); } catch (e) { console.error('[registry] finalize error:', e); }
-  });
+  if (cmd.ptyProcess) {
+    // PTY 模式：单一 data 事件（stdout + stderr 混合，与真实终端一致）
+    const pty = cmd.ptyProcess;
+
+    pty.onData((data: string) => {
+      appendCommandOutput(cmd.commandId, data);
+    });
+
+    pty.onExit(async ({ exitCode }) => {
+      try { await finalizeCommand(cmd.commandId, exitCode); } catch (e) { console.error('[registry] finalize error:', e); }
+    });
+  } else {
+    // Pipe 模式：分离的 stdout/stderr
+    const child = cmd.process;
+
+    child.stdout?.on('data', (data: Buffer) => {
+      appendCommandOutput(cmd.commandId, data.toString());
+    });
+    child.stderr?.on('data', (data: Buffer) => {
+      appendCommandOutput(cmd.commandId, data.toString());
+    });
+
+    child.on('close', async (code: number | null) => {
+      try { await finalizeCommand(cmd.commandId, code ?? 0); } catch (e) { console.error('[registry] finalize error:', e); }
+    });
+    child.on('error', async () => {
+      try { await finalizeCommand(cmd.commandId, 1); } catch (e) { console.error('[registry] finalize error:', e); }
+    });
+  }
 }
 
 /**
@@ -104,6 +145,7 @@ export function getRunningCommands(projectCwd: string): Array<{
   tabId: string;
   pid: number;
   timestamp: string;
+  usePty?: boolean;
 }> {
   const results: ReturnType<typeof getRunningCommands> = [];
   for (const cmd of getRegistry().values()) {
@@ -115,6 +157,7 @@ export function getRunningCommands(projectCwd: string): Array<{
         tabId: cmd.tabId,
         pid: cmd.pid,
         timestamp: cmd.timestamp,
+        ...(cmd.usePty ? { usePty: true } : {}),
       });
     }
   }
@@ -129,6 +172,24 @@ export function getRunningCommand(commandId: string): RunningCommand | undefined
 }
 
 /**
+ * 诊断：注册表总大小
+ */
+export function getRegistrySize(): number {
+  return getRegistry().size;
+}
+
+/**
+ * 诊断：注册表中所有不同的 projectCwd
+ */
+export function getAllProjectCwds(): string[] {
+  const cwds = new Set<string>();
+  for (const cmd of getRegistry().values()) {
+    cwds.add(cmd.projectCwd);
+  }
+  return [...cwds];
+}
+
+/**
  * 命令结束时：写入 JSONL 历史，清理注册表
  */
 export async function finalizeCommand(commandId: string, exitCode: number): Promise<void> {
@@ -136,6 +197,7 @@ export async function finalizeCommand(commandId: string, exitCode: number): Prom
   const cmd = registry.get(commandId);
   if (!cmd) return; // 幂等：已 finalize 过则跳过
 
+  console.log(`[registry] finalize: id=${commandId}, exitCode=${exitCode}, cmd="${cmd.command}", server=${getServerId()}`);
   registry.delete(commandId);
 
   const output = getBufferedOutput(cmd);
@@ -147,6 +209,7 @@ export async function finalizeCommand(commandId: string, exitCode: number): Prom
     exitCode,
     timestamp: cmd.timestamp,
     cwd: cmd.cwd,
+    ...(cmd.usePty ? { usePty: true } : {}),
   };
 
   const historyPath = getTerminalHistoryPath(cmd.projectCwd, cmd.tabId);

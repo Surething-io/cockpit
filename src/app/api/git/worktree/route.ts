@@ -170,7 +170,10 @@ export async function POST(request: NextRequest) {
           cmd = `git worktree add --no-track -b "${newBranch}" "${path}" "${base}"`;
         } else if (branch) {
           // 使用已有分支
-          cmd = `git worktree add "${path}" "${branch}"`;
+          // 如果是远程分支（origin/xxx），strip 前缀用本地名
+          // git worktree add <path> <local-name> 会自动创建 tracking branch
+          const localBranch = branch.replace(/^origin\//, '');
+          cmd = `git worktree add "${path}" "${localBranch}"`;
         } else {
           return NextResponse.json({ error: 'branch or newBranch is required' }, { status: 400 });
         }

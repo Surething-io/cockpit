@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@xterm/xterm/css/xterm.css";
 
 /* ============================================
    Design System - 参考 ai-assistant 项目风格
@@ -318,7 +319,7 @@ body {
 
 .shiki-wrapper .line-number {
   display: inline-block;
-  width: 3em;
+  min-width: 4ch;
   margin-right: 1em;
   padding-right: 0.5em;
   text-align: right;
@@ -589,3 +590,15 @@ body {
 :root .ansi-white-fg { color: #6b7280; }
 :root .ansi-bright-black-fg { color: #4b5563; }
 :root .ansi-bright-white-fg { color: #374151; }
+
+/* xterm.js 嵌入气泡样式 */
+.xterm-renderer .xterm {
+  padding: 0;
+}
+.xterm-renderer .xterm-viewport {
+  background-color: transparent !important;
+  overflow-y: auto !important;
+}
+.xterm-renderer .xterm-screen {
+  background-color: transparent !important;
+}

@@ -23,6 +23,8 @@ export interface CodeViewerProps {
   scrollToLine?: number | null;
   onScrollToLineComplete?: () => void;
   highlightKeyword?: string | null;
+  /** 外部传入的 ref，CodeViewer 会持续更新为当前可见首行号（1-based） */
+  visibleLineRef?: React.MutableRefObject<number>;
 }
 
 export interface FloatingToolbarData {
@@ -62,7 +64,8 @@ export function useCodeViewerLogic({
   enableComments = false,
   scrollToLine = null,
   onScrollToLineComplete,
-}: Pick<CodeViewerProps, 'content' | 'filePath' | 'showSearch' | 'cwd' | 'enableComments' | 'scrollToLine' | 'onScrollToLineComplete'>) {
+  visibleLineRef,
+}: Pick<CodeViewerProps, 'content' | 'filePath' | 'showSearch' | 'cwd' | 'enableComments' | 'scrollToLine' | 'onScrollToLineComplete' | 'visibleLineRef'>) {
   const [highlightedLines, setHighlightedLines] = useState<string[]>([]);
   const [isDark, setIsDark] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -191,13 +194,44 @@ export function useCodeViewerLogic({
     return rows;
   }, [lines.length]);
 
+  const LINE_HEIGHT = 20;
+
   // Virtual scrolling
   const virtualizer = useVirtualizer({
     count: rowData.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 20,
+    estimateSize: () => LINE_HEIGHT,
     overscan: 10,
   });
+
+  // 持续更新外部 visibleLineRef：从 virtualizer 的可见范围中取第一个 code 行
+  useEffect(() => {
+    if (!visibleLineRef) return;
+    const el = parentRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const range = virtualizer.range;
+      if (!range) return;
+      // range.startIndex 包含 overscan，需要从 scrollTop 反推真正可见的第一行
+      const scrollTop = el.scrollTop;
+      const items = virtualizer.getVirtualItems();
+      for (const item of items) {
+        // 找到第一个 start >= scrollTop 的 item（即真正可见，不是 overscan）
+        if (item.start >= scrollTop) {
+          const row = rowData[item.index];
+          if (row?.type === 'code') {
+            visibleLineRef.current = row.lineIndex + 1;
+          }
+          return;
+        }
+      }
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    // 初始化
+    onScroll();
+    return () => el.removeEventListener('scroll', onScroll);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleLineRef, rowData]);
 
   // Keyboard shortcut for search
   useEffect(() => {
@@ -265,7 +299,7 @@ export function useCodeViewerLogic({
       const rowIndex = rowData.findIndex(r => r.type === 'code' && r.lineIndex === targetLineIndex);
       if (rowIndex >= 0) {
         setTimeout(() => {
-          virtualizer.scrollToIndex(rowIndex, { align: 'center' });
+          virtualizer.scrollToIndex(rowIndex, { align: 'start' });
           onScrollToLineComplete?.();
         }, 150);
       }

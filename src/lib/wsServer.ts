@@ -5,10 +5,11 @@ import { parse } from 'url';
 import { watch, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { spawn, execSync } from 'child_process';
+import * as nodePty from 'node-pty';
 import { fileWatcher, type FileEvent } from './fileWatcher';
 import { GLOBAL_STATE_FILE, readJsonFile } from './paths';
 import { getLastUserMessage } from './global-state';
-import { registerCommand, appendCommandOutput, finalizeCommand, getRunningCommands, getRunningCommand } from './terminal/RunningCommandRegistry';
+import { registerCommand, finalizeCommand, getRunningCommands, getRunningCommand, getRegistrySize, getAllProjectCwds } from './terminal/RunningCommandRegistry';
 
 interface GlobalSession {
   cwd: string;
@@ -221,24 +222,19 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
   }, HEARTBEAT_INTERVAL);
 
   /**
-   * 为某个子进程挂载 stdout/stderr + close/error 监听
-   * WS 断开时只清理 stdout/stderr（进程继续运行）
-   * close/error 也挂在 cleanupMap 中，但 WS close 时只调 outputCleanup
+   * 为子进程挂载输出 + 退出监听（pipe 模式）
+   * WS 断开时清理监听（进程继续运行）
    */
-  function attachAllListeners(commandId: string, child: import('child_process').ChildProcess, isNew: boolean) {
+  function attachPipeListeners(commandId: string, child: import('child_process').ChildProcess) {
     // 先清理旧监听
     const oldCleanup = cleanupMap.get(commandId);
     if (oldCleanup) oldCleanup();
 
     const onStdout = (data: Buffer) => {
-      const text = data.toString();
-      if (isNew) appendCommandOutput(commandId, text);
-      send({ type: 'stdout', commandId, data: text });
+      send({ type: 'stdout', commandId, data: data.toString() });
     };
     const onStderr = (data: Buffer) => {
-      const text = data.toString();
-      if (isNew) appendCommandOutput(commandId, text);
-      send({ type: 'stderr', commandId, data: text });
+      send({ type: 'stderr', commandId, data: data.toString() });
     };
     const onClose = async (code: number | null) => {
       const exitCode = code ?? 0;
@@ -266,6 +262,32 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
     cleanupMap.set(commandId, cleanup);
   }
 
+  /**
+   * 为 PTY 进程挂载输出 + 退出监听
+   * PTY 模式下 stdout/stderr 合并为单一 data 流
+   */
+  function attachPtyListeners(commandId: string, pty: import('node-pty').IPty) {
+    // 先清理旧监听
+    const oldCleanup = cleanupMap.get(commandId);
+    if (oldCleanup) oldCleanup();
+
+    const dataDisposable = pty.onData((data: string) => {
+      send({ type: 'stdout', commandId, data });
+    });
+
+    const exitDisposable = pty.onExit(async ({ exitCode }) => {
+      send({ type: 'exit', commandId, code: exitCode });
+      try { await finalizeCommand(commandId, exitCode); } catch (e) { console.error('[ws/terminal] finalize error:', e); }
+      cleanupMap.delete(commandId);
+    });
+
+    const cleanup = () => {
+      dataDisposable.dispose();
+      exitDisposable.dispose();
+    };
+    cleanupMap.set(commandId, cleanup);
+  }
+
   ws.on('message', (raw) => {
     let msg: Record<string, unknown>;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
@@ -273,9 +295,12 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
     const type = msg.type as string;
 
     if (type === 'exec') {
-      const { commandId, command, cwd, tabId, env } = msg as {
+      const { commandId, command, cwd, tabId, env, usePty, cols, rows } = msg as {
         commandId: string; command: string; cwd: string; tabId: string;
         env?: Record<string, string>;
+        usePty?: boolean;
+        cols?: number;
+        rows?: number;
       };
 
       if (!commandId || !command || !cwd || !tabId) {
@@ -298,29 +323,69 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
       };
 
       try {
-        const userShell = process.env.SHELL || '/bin/bash';
-        const child = spawn(userShell, ['--login', '-c', command], {
-          cwd,
-          env: childEnv as NodeJS.ProcessEnv,
-          stdio: ['pipe', 'pipe', 'pipe'],
-          detached: true,  // 独立进程组，方便 kill(-pid) 发信号给整组
-        });
+        const userShell = process.env.SHELL || '/bin/zsh';
 
-        if (child.pid) {
+        if (usePty) {
+          // PTY 模式：使用 node-pty 创建伪终端
+          // 适用于需要 TTY 的交互式命令（claude、vim、htop 等）
+          // node-pty env 必须全部为 string（不能有 undefined），且需要 PATH
+          const ptyEnv: Record<string, string> = {
+            PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+          };
+          for (const [k, v] of Object.entries(childEnv)) {
+            if (v !== undefined) ptyEnv[k] = v;
+          }
+          const ptyProcess = nodePty.spawn(userShell, ['--login', '-c', command], {
+            name: 'xterm-256color',
+            cols: cols || 120,
+            rows: rows || 30,
+            cwd,
+            env: ptyEnv,
+          });
+
+          // node-pty 需要一个 dummy ChildProcess 以兼容 attach 逻辑
+          // 创建一个不做任何事的占位 ChildProcess
+          const dummyChild = spawn('true', [], { stdio: 'ignore' });
+
           registerCommand({
             commandId,
             command,
             cwd,
             projectCwd,
             tabId,
-            pid: child.pid,
-            process: child,
+            pid: ptyProcess.pid,
+            process: dummyChild,
+            ptyProcess,
+            usePty: true,
             timestamp: new Date().toISOString(),
           });
-          send({ type: 'pid', commandId, pid: child.pid });
-          attachAllListeners(commandId, child, true);
+          send({ type: 'pid', commandId, pid: ptyProcess.pid });
+          attachPtyListeners(commandId, ptyProcess);
         } else {
-          send({ type: 'error', commandId, error: 'Failed to spawn process' });
+          // Pipe 模式：传统 spawn（默认）
+          const child = spawn(userShell, ['--login', '-c', command], {
+            cwd,
+            env: childEnv as NodeJS.ProcessEnv,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            detached: true,
+          });
+
+          if (child.pid) {
+            registerCommand({
+              commandId,
+              command,
+              cwd,
+              projectCwd,
+              tabId,
+              pid: child.pid,
+              process: child,
+              timestamp: new Date().toISOString(),
+            });
+            send({ type: 'pid', commandId, pid: child.pid });
+            attachPipeListeners(commandId, child);
+          } else {
+            send({ type: 'error', commandId, error: 'Failed to spawn process' });
+          }
         }
       } catch (e) {
         send({ type: 'error', commandId, error: (e as Error).message });
@@ -331,20 +396,25 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
       const cmd = getRunningCommand(commandId);
       if (!cmd) return;
 
-      // pipe 模式下控制字符需要转为真实信号/操作
-      if (data === '\x03' && cmd.pid) {
-        // Ctrl+C → SIGINT（发给进程组）
-        try { process.kill(-cmd.pid, 'SIGINT'); } catch {
-          try { process.kill(cmd.pid, 'SIGINT'); } catch { /* already exited */ }
+      if (cmd.usePty && cmd.ptyProcess) {
+        // PTY 模式：直接写入 PTY，控制字符由 PTY 自行处理
+        try { cmd.ptyProcess.write(data); } catch { /* already exited */ }
+      } else {
+        // Pipe 模式：控制字符需要转为真实信号/操作
+        if (data === '\x03' && cmd.pid) {
+          // Ctrl+C → SIGINT（发给进程组）
+          try { process.kill(-cmd.pid, 'SIGINT'); } catch {
+            try { process.kill(cmd.pid, 'SIGINT'); } catch { /* already exited */ }
+          }
+        } else if (data === '\x1a' && cmd.pid) {
+          // Ctrl+Z → SIGTSTP
+          try { process.kill(cmd.pid, 'SIGTSTP'); } catch { /* already exited */ }
+        } else if (data === '\x04') {
+          // Ctrl+D → 关闭 stdin（发送 EOF）
+          try { cmd.process.stdin?.end(); } catch { /* already closed */ }
+        } else if (cmd.process.stdin?.writable) {
+          cmd.process.stdin.write(data);
         }
-      } else if (data === '\x1a' && cmd.pid) {
-        // Ctrl+Z → SIGTSTP
-        try { process.kill(cmd.pid, 'SIGTSTP'); } catch { /* already exited */ }
-      } else if (data === '\x04') {
-        // Ctrl+D → 关闭 stdin（发送 EOF）
-        try { cmd.process.stdin?.end(); } catch { /* already closed */ }
-      } else if (cmd.process.stdin?.writable) {
-        cmd.process.stdin.write(data);
       }
 
     } else if (type === 'attach') {
@@ -364,8 +434,12 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
         send({ type: 'stdout', commandId, data: buffered });
       }
 
-      // 挂载所有监听（旧的已被前一个 WS 断开时清理）
-      attachAllListeners(commandId, cmd.process, false);
+      // 挂载 WS 转发监听（旧的已被前一个 WS 断开时清理）
+      if (cmd.usePty && cmd.ptyProcess) {
+        attachPtyListeners(commandId, cmd.ptyProcess);
+      } else {
+        attachPipeListeners(commandId, cmd.process);
+      }
 
     } else if (type === 'interrupt') {
       const { pid } = msg as { pid: number };
@@ -385,8 +459,21 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
         }
       }, 1000);
 
+    } else if (type === 'resize') {
+      // PTY 模式下调整终端尺寸
+      const { commandId, cols, rows } = msg as { commandId: string; cols: number; rows: number };
+      const cmd = getRunningCommand(commandId);
+      if (cmd?.usePty && cmd.ptyProcess) {
+        try { cmd.ptyProcess.resize(cols, rows); } catch { /* already exited */ }
+      }
+
     } else if (type === 'running') {
       const commands = getRunningCommands(projectCwd);
+      if (commands.length === 0) {
+        const size = getRegistrySize();
+        const cwds = getAllProjectCwds();
+        console.warn(`[ws/terminal] running query: 0 commands for projectCwd="${projectCwd}", registry total=${size}, cwds=${JSON.stringify(cwds)}`);
+      }
       send({ type: 'running', commands });
     }
   });

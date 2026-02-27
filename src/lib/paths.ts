@@ -134,10 +134,10 @@ export function getTerminalAliasesPath(cwd: string): string {
 }
 
 /**
- * Get the terminal tabs file path
+ * Get the terminal settings file path (UI preferences like layout mode)
  */
-export function getTerminalTabsPath(cwd: string): string {
-  return join(getCockpitProjectDir(cwd), 'terminal-tabs.json');
+export function getTerminalSettingsPath(cwd: string): string {
+  return join(getCockpitProjectDir(cwd), 'terminal-settings.json');
 }
 
 // ============================================

@@ -13,8 +13,8 @@ interface WatcherEntry {
   listeners: Set<FileChangeCallback>;
   pendingEvents: FileEvent[];
   debounceTimer: ReturnType<typeof setTimeout> | null;
-  /** 上次 flush 的时间戳，用于 cooldown 防止高频触发 */
-  lastFlushTime: number;
+  /** throttle 定时器：首个事件到达后最多等 THROTTLE_MS 必须 flush */
+  throttleTimer: ReturnType<typeof setTimeout> | null;
   /** cwd watcher 出错后的重建定时器，防止多次并发重建 */
   cwdRestartTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -22,7 +22,8 @@ interface WatcherEntry {
 /** Git 关键文件，变化意味着 git 操作（commit, checkout, merge 等） */
 const GIT_WATCH_FILES = [
   '.git/HEAD',
-  '.git/index',
+  // 不监听 .git/index：git status 会刷新其 stat cache 导致反馈循环
+  // commit/checkout/merge 等操作都会同时修改 HEAD 或 refs，无需靠 index 检测
   '.git/MERGE_HEAD',
   '.git/REBASE_HEAD',
 ];
@@ -33,8 +34,8 @@ const GIT_WATCH_DIRS = [
 ];
 
 const DEBOUNCE_MS = 500;
-/** flush 后的冷却时间，防止 API 请求触发的文件变化形成循环 */
-const COOLDOWN_MS = 1000;
+/** AI 编码等高频场景下，事件聚合的最大等待时间（throttle 上限） */
+const THROTTLE_MS = 3000;
 
 /**
  * 获取实际的 .git 目录路径
@@ -91,6 +92,7 @@ class FileWatcherManager {
     // 最后一个 listener 退出时，关闭所有 watcher 并清理定时器
     if (entry.listeners.size === 0) {
       if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
+      if (entry.throttleTimer) clearTimeout(entry.throttleTimer);
       if (entry.cwdRestartTimer) clearTimeout(entry.cwdRestartTimer);
       for (const w of entry.watchers) {
         try { w.close(); } catch { /* ignore */ }
@@ -105,22 +107,26 @@ class FileWatcherManager {
       listeners: new Set(),
       pendingEvents: [],
       debounceTimer: null,
-      lastFlushTime: 0,
+      throttleTimer: null,
       cwdRestartTimer: null,
     };
 
     const pushEvent = (event: FileEvent) => {
-      // cooldown：上次 flush 后 COOLDOWN_MS 内忽略新事件，防循环
-      if (Date.now() - entry.lastFlushTime < COOLDOWN_MS) return;
-
-      // 去重：同类型事件在同一个 debounce 窗口内只保留一个
+      // 去重：同类型事件在同一个窗口内只保留一个
       if (!entry.pendingEvents.some(e => e.type === event.type)) {
         entry.pendingEvents.push(event);
       }
+      // debounce：每次新事件重置，变更停止 500ms 后 flush（快速响应零星变更）
       if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
       entry.debounceTimer = setTimeout(() => {
         this.flush(entry);
       }, DEBOUNCE_MS);
+      // throttle：首个事件启动，最多等 THROTTLE_MS 后强制 flush（高频变更时不会一直等待）
+      if (!entry.throttleTimer) {
+        entry.throttleTimer = setTimeout(() => {
+          this.flush(entry);
+        }, THROTTLE_MS);
+      }
     };
 
     // ========== 监听 cwd（recursive）==========
@@ -195,9 +201,12 @@ class FileWatcherManager {
   }
 
   private flush(entry: WatcherEntry): void {
+    // 清理定时器，防止重复 flush
+    if (entry.debounceTimer) { clearTimeout(entry.debounceTimer); entry.debounceTimer = null; }
+    if (entry.throttleTimer) { clearTimeout(entry.throttleTimer); entry.throttleTimer = null; }
+
     if (entry.pendingEvents.length === 0) return;
 
-    entry.lastFlushTime = Date.now();
     const events = [...entry.pendingEvents];
     entry.pendingEvents = [];
 

@@ -1,21 +1,31 @@
 'use client';
 
-import { useRef, useEffect, useLayoutEffect, memo, useState } from 'react';
-import { Terminal, Maximize2, Copy, X, RotateCw } from 'lucide-react';
+import { useRef, useEffect, useLayoutEffect, memo, useState, lazy, Suspense, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { Copy, Clipboard, X, RotateCw } from 'lucide-react';
 import { toast } from '../../shared/Toast';
 import { AnsiUp } from 'ansi_up';
-import { OutputViewerModal } from './OutputViewerModal';
+
+const XtermRenderer = lazy(() => import('./XtermRenderer').then(m => ({ default: m.XtermRenderer })));
 
 interface CommandBubbleProps {
   command: string;
   output: string;
   exitCode?: number;
   isRunning: boolean;
+  selected?: boolean;
+  onSelect?: () => void;
   onInterrupt?: () => void;
   onStdin?: (data: string) => void;
   onDelete?: () => void;
   onRerun?: () => void;
   timestamp?: string;
+  usePty?: boolean;
+  onPtyResize?: (cols: number, rows: number) => void;
+  onToggleMaximize?: () => void;
+  maximized?: boolean;
+  /** TerminalView 根容器（用于全屏绝对定位） */
+  portalContainer?: HTMLElement | null;
 }
 
 // 格式化时间：01-15 14:30
@@ -42,29 +52,42 @@ const CTRL_KEY_MAP: Record<string, string> = {
   w: '\x17', // kill word
 };
 
+// 全屏顶栏高度（px）
+const FULLSCREEN_BAR_HEIGHT = 41;
+
 export const CommandBubble = memo(function CommandBubble({
   command,
   output,
   exitCode,
   isRunning,
+  selected,
+  onSelect,
   onInterrupt,
   onStdin,
   onDelete,
   onRerun,
   timestamp,
+  usePty,
+  onPtyResize,
+  onToggleMaximize,
+  maximized,
+  portalContainer,
 }: CommandBubbleProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
   const shouldAutoScroll = useRef(true);
   const rafIdRef = useRef<number | null>(null);
   const stdinRef = useRef<HTMLInputElement>(null);
-  const mouseDownIsSelect = useRef(false);
   const timeStr = formatTime(timestamp);
-  const [showViewer, setShowViewer] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
   const [stdinValue, setStdinValue] = useState('');
 
-  // ANSI 解析器 & 增量追踪（用 ref 避免每帧重建）
+  // xterm DOM 移动相关 ref
+  const xtermWrapperRef = useRef<HTMLDivElement>(null);  // xterm 所在的 wrapper
+  const bubbleSlotRef = useRef<HTMLDivElement>(null);     // 气泡中的插槽
+  const fullscreenXtermAreaRef = useRef<HTMLDivElement>(null); // 全屏 overlay 中的 xterm 区域
+
+  // ANSI 解析器 & 增量追踪
   const ansiUpRef = useRef<AnsiUp | null>(null);
   const parsedLenRef = useRef(0);
 
@@ -73,32 +96,24 @@ export const CommandBubble = memo(function CommandBubble({
     ansiUpRef.current.use_classes = true;
   }
 
-  // 增量 DOM 更新：只对新增部分做 ANSI 解析，直接 append 到 <pre>
-  // 使用 useLayoutEffect 避免重运行时闪烁（在浏览器绘制前同步清空旧内容）
   useLayoutEffect(() => {
     const pre = preRef.current;
     if (!pre || !ansiUpRef.current) return;
 
-    // 检测截断（行数限制导致 output 前缀被裁剪）
     if (output.length < parsedLenRef.current) {
-      // 全量重置
       ansiUpRef.current = new AnsiUp();
       ansiUpRef.current.use_classes = true;
       parsedLenRef.current = 0;
       pre.innerHTML = '';
     }
 
-    // 增量：只解析新增部分
     if (output.length > parsedLenRef.current) {
       const newPart = output.slice(parsedLenRef.current);
       const newHtml = ansiUpRef.current.ansi_to_html(newPart);
       parsedLenRef.current = output.length;
-
-      // 用 insertAdjacentHTML 追加，不触发全量 DOM 重建
       pre.insertAdjacentHTML('beforeend', newHtml);
     }
 
-    // 检测是否溢出，并始终滚动到底部显示 tail
     if (scrollRef.current) {
       const overflow = scrollRef.current.scrollHeight > scrollRef.current.clientHeight;
       setIsOverflowing(overflow);
@@ -108,13 +123,11 @@ export const CommandBubble = memo(function CommandBubble({
     }
   }, [output]);
 
-  // 自动滚动到底部（仅运行时 + 用户未手动上滚）
   useEffect(() => {
     if (isRunning && shouldAutoScroll.current && scrollRef.current) {
       if (rafIdRef.current !== null) {
         cancelAnimationFrame(rafIdRef.current);
       }
-
       rafIdRef.current = requestAnimationFrame(() => {
         if (scrollRef.current) {
           scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -122,7 +135,6 @@ export const CommandBubble = memo(function CommandBubble({
         rafIdRef.current = null;
       });
     }
-
     return () => {
       if (rafIdRef.current !== null) {
         cancelAnimationFrame(rafIdRef.current);
@@ -130,7 +142,6 @@ export const CommandBubble = memo(function CommandBubble({
     };
   }, [output, isRunning]);
 
-  // 监听用户滚动，如果用户主动滚动则停止自动滚动
   const handleScroll = () => {
     if (scrollRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
@@ -139,7 +150,6 @@ export const CommandBubble = memo(function CommandBubble({
     }
   };
 
-  // 复制输出（去除 ANSI 转义码）
   const handleCopy = () => {
     // eslint-disable-next-line no-control-regex
     const plain = output.replace(/\x1b\[[0-9;]*m/g, '');
@@ -147,48 +157,137 @@ export const CommandBubble = memo(function CommandBubble({
     toast('已复制输出');
   };
 
+  // ESC 关闭全屏
+  useEffect(() => {
+    if (!maximized) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggleMaximize?.();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, [maximized, onToggleMaximize]);
+
+  /**
+   * 原生 DOM 移动 xterm wrapper：
+   * maximized 时移入全屏 overlay 的 xterm 区域，还原时移回气泡插槽。
+   * xterm.js Terminal 实例不会被销毁（DOM 移动不触发 React unmount）。
+   *
+   * 全屏 overlay 通过 createPortal 渲染到 portalContainer（terminalRootRef），
+   * 使用 position: absolute; inset: 0 覆盖整个 terminal 区域，
+   * 不再挂载到 document.body，也不需要 position: fixed。
+   */
+  useLayoutEffect(() => {
+    if (!usePty) return;
+    const xtermWrapper = xtermWrapperRef.current;
+    if (!xtermWrapper) return;
+
+    if (maximized && fullscreenXtermAreaRef.current) {
+      // 移入全屏 overlay 的 xterm 区域
+      fullscreenXtermAreaRef.current.appendChild(xtermWrapper);
+
+      // DOM 移动后重新聚焦 xterm
+      requestAnimationFrame(() => {
+        const xtermEl = xtermWrapper.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null;
+        xtermEl?.focus();
+      });
+
+      return () => {
+        // 移回气泡插槽
+        if (bubbleSlotRef.current && xtermWrapper.parentElement) {
+          bubbleSlotRef.current.appendChild(xtermWrapper);
+        }
+      };
+    }
+  }, [maximized, usePty]);
+
   const lineCount = output ? output.split('\n').length : 0;
+
+  // 全屏 overlay：通过 createPortal 渲染到 terminalRootRef，absolute 定位覆盖整个 terminal 区域
+  const fullscreenOverlay = usePty && maximized && portalContainer ? createPortal(
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 50,
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'var(--card)',
+      }}
+    >
+      {/* 顶栏 */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card" style={{ height: FULLSCREEN_BAR_HEIGHT, flexShrink: 0 }}>
+        <span className="text-[10px] font-mono leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground">&gt;_</span>
+        <span className="flex-1 text-xs text-muted-foreground truncate font-mono">{command}</span>
+        {isRunning && (
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+            运行中
+          </span>
+        )}
+        {isRunning && onInterrupt && (
+          <button
+            onClick={onInterrupt}
+            className="text-xs px-3 py-1 rounded-md font-medium bg-destructive text-destructive-foreground transition-all duration-150 hover:bg-destructive/80 hover:shadow-md active:scale-95 active:bg-destructive/70 cursor-pointer select-none"
+          >
+            Ctrl+C
+          </button>
+        )}
+        <button
+          onClick={() => onToggleMaximize?.()}
+          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          title="还原 (⌘M / ESC)"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      {/* xterm 区域 - 原生 DOM 会将 xtermWrapper 移入此处 */}
+      <div ref={fullscreenXtermAreaRef} style={{ flex: 1, overflow: 'hidden' }} />
+    </div>,
+    portalContainer,
+  ) : null;
 
   return (
     <div className="flex flex-col items-start mb-4">
-      {/* 时间 - hover 时显示 */}
-      {timeStr && (
-        <span className="text-[11px] text-muted-foreground opacity-0 group-hover/cmd:opacity-100 transition-opacity mb-0.5 px-1">
-          {timeStr}
-        </span>
-      )}
-        <div className="w-full bg-accent text-foreground dark:text-slate-11 rounded-2xl rounded-bl-md relative overflow-hidden border border-brand">
-          {/* 命令行头部 */}
-          <div className="flex items-center gap-2 px-4 py-1.5 border-b border-brand text-xs">
-            <Terminal className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-            <span
-              className="font-mono text-foreground truncate flex-1 cursor-pointer"
-              onClick={() => output && setShowViewer(true)}
-            >{command}</span>
+        <div
+          className={`w-full bg-accent text-foreground dark:text-slate-11 rounded-2xl rounded-bl-md relative overflow-hidden border transition-colors cursor-pointer ${
+            selected ? 'border-brand' : 'border-brand/30'
+          }`}
+          onClick={onSelect}
+        >
+          {/* 命令行头部 - 最大化时隐藏 */}
+          {!maximized && (
+          <div className={`flex items-center gap-2 px-4 py-1.5 border-b text-xs transition-colors ${
+            selected ? 'border-brand' : 'border-brand/30'
+          }`}>
+            <span className="text-[10px] font-mono leading-none px-1 py-0.5 rounded flex-shrink-0 bg-muted text-muted-foreground">&gt;_</span>
+            <span className="font-mono text-foreground truncate">{command}</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(command); toast('已复制命令'); }}
+              className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+              title="复制命令"
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+            <span className="flex-1" />
             {isOverflowing && !isRunning && (
               <span className="text-muted-foreground flex-shrink-0">共 {lineCount} 行</span>
             )}
             {output && (
               <button
-                onClick={handleCopy}
+                onClick={(e) => { e.stopPropagation(); handleCopy(); }}
                 className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
                 title="复制输出"
               >
-                <Copy className="w-3.5 h-3.5" />
-              </button>
-            )}
-            {output && (
-              <button
-                onClick={() => setShowViewer(true)}
-                className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                title="查看全部输出"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
+                <Clipboard className="w-3.5 h-3.5" />
               </button>
             )}
             {onRerun && (
               <button
-                onClick={onRerun}
+                onClick={(e) => { e.stopPropagation(); onRerun(); }}
                 className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
                 title="重新运行"
               >
@@ -197,7 +296,7 @@ export const CommandBubble = memo(function CommandBubble({
             )}
             {onDelete && (
               <button
-                onClick={onDelete}
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
                 className="p-0.5 rounded text-destructive hover:text-destructive/80 transition-colors flex-shrink-0"
                 title="删除记录"
               >
@@ -205,32 +304,56 @@ export const CommandBubble = memo(function CommandBubble({
               </button>
             )}
           </div>
-          {/* 输出内容：点击放大，拖选文本不触发 */}
-          <div
-            ref={scrollRef}
-            className="max-h-[600px] overflow-hidden px-4 py-2 cursor-pointer"
-            onMouseDown={() => { mouseDownIsSelect.current = false; }}
-            onMouseMove={() => { mouseDownIsSelect.current = true; }}
-            onClick={() => {
-              if (mouseDownIsSelect.current) return;
-              if (window.getSelection()?.toString()) return;
-              output && setShowViewer(true);
-            }}
-          >
-            <pre ref={preRef} className="text-sm font-mono whitespace-pre-wrap break-words select-text" />
-          </div>
+          )}
 
-          {/* 运行中：stdin 输入 + 中断按钮 */}
-          {isRunning && (
-            <div className="border-t border-border px-4 py-2 flex items-center gap-2">
+          {/* 输出内容 */}
+          {usePty ? (
+            /**
+             * PTY: bubbleSlotRef 是气泡内的插槽。
+             * xtermWrapperRef 包含 XtermRenderer，maximized 时通过原生 DOM appendChild
+             * 移入全屏 overlay 的 xterm 区域，还原时移回此插槽。
+             * React 树位置不变 → xterm Terminal 实例不会被销毁。
+             */
+            <div ref={bubbleSlotRef}>
+              <div ref={xtermWrapperRef} style={maximized ? { height: '100%' } : undefined}>
+                <Suspense fallback={<div className="px-4 py-2 text-xs text-muted-foreground">加载终端...</div>}>
+                  <XtermRenderer output={output} isRunning={isRunning} onInput={onStdin} onResize={onPtyResize} maximized={maximized} />
+                </Suspense>
+              </div>
+            </div>
+          ) : (
+            <div
+              ref={scrollRef}
+              className="max-h-[600px] overflow-hidden px-4 py-2"
+              onScroll={handleScroll}
+            >
+              <pre ref={preRef} className="text-sm font-mono whitespace-pre-wrap break-words select-text" />
+            </div>
+          )}
+
+          {/* 运行中状态栏 - 最大化时隐藏 */}
+          {isRunning && !maximized && (
+            <div className="border-t border-border px-4 py-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
               <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse flex-shrink-0" />
-              {onStdin ? (
+              {usePty ? (
+                <>
+                  <span className="text-xs text-muted-foreground flex-1">点击终端区域输入</span>
+                  {onToggleMaximize && (
+                    <button
+                      onClick={onToggleMaximize}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                      title="最大化 (⌘M)"
+                    >
+                      最大化
+                    </button>
+                  )}
+                </>
+              ) : onStdin ? (
                 <input
                   ref={stdinRef}
                   value={stdinValue}
                   onChange={(e) => setStdinValue(e.target.value)}
                   onKeyDown={(e) => {
-                    // Ctrl+组合键 → 发送控制字符
                     if (e.ctrlKey && !e.metaKey && !e.altKey) {
                       const ctrl = CTRL_KEY_MAP[e.key.toLowerCase()];
                       if (ctrl) {
@@ -240,13 +363,11 @@ export const CommandBubble = memo(function CommandBubble({
                         return;
                       }
                     }
-                    // Enter → 发送文本 + 换行
                     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                       e.preventDefault();
                       onStdin(stdinValue + '\n');
                       setStdinValue('');
                     }
-                    // Tab → 发送 \t
                     if (e.key === 'Tab') {
                       e.preventDefault();
                       onStdin('\t');
@@ -268,26 +389,23 @@ export const CommandBubble = memo(function CommandBubble({
                   Ctrl+C
                 </button>
               )}
+              {timeStr && <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeStr}</span>}
             </div>
           )}
 
-          {/* 已结束：退出代码 */}
-          {!isRunning && exitCode !== undefined && (
+          {/* 已结束：退出代码 - 最大化时隐藏 */}
+          {!isRunning && exitCode !== undefined && !maximized && (
             <div className="border-t border-border px-4 py-2 flex items-center gap-2 text-xs text-muted-foreground">
               <span className={`inline-block w-2 h-2 rounded-full ${exitCode === 0 ? 'bg-green-500' : 'bg-red-500'}`} />
               <span>退出代码: {exitCode}</span>
+              <span className="flex-1" />
+              {timeStr && <span className="text-[11px] flex-shrink-0">{timeStr}</span>}
             </div>
           )}
         </div>
 
-      {/* 输出查看器 Modal */}
-      {showViewer && (
-        <OutputViewerModal
-          output={output}
-          isRunning={isRunning}
-          onClose={() => setShowViewer(false)}
-        />
-      )}
+      {/* 全屏 overlay - 通过 createPortal 渲染到 terminalRootRef */}
+      {fullscreenOverlay}
     </div>
   );
 });

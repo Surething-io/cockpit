@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Settings, Terminal, Zap, Plus, X, Play, Loader, Square } from 'lucide-react';
+import { AtSign, Variable, Zap, Plus, X, Play, Loader, Square, LayoutGrid, List } from 'lucide-react';
 import { CommandBubble } from './TerminalBubble';
+import { OutputViewerModal } from './OutputViewerModal';
 import { EnvManager } from './EnvManager';
 import { AliasManager } from './AliasManager';
 import { Tooltip } from '@/components/shared/Tooltip';
-import { executeCommand as execCmd, interruptCommand as interruptCmd, attachCommand, queryRunningCommands, sendStdin, dispose as disposeTerminalWs } from '@/lib/terminal/TerminalWsManager';
+import { executeCommand as execCmd, interruptCommand as interruptCmd, attachCommand, queryRunningCommands, sendStdin, resizePty, dispose as disposeTerminalWs } from '@/lib/terminal/TerminalWsManager';
 
 // 生成唯一ID的辅助函数
 function generateUniqueCommandId(): string {
@@ -21,17 +22,21 @@ interface Command {
   isRunning: boolean;
   pid?: number;
   timestamp: string;
+  cwd?: string;  // 命令执行时的工作目录（用于 rerun）
+  usePty?: boolean;
 }
 
 interface TerminalViewProps {
   cwd: string;
+  initialShellCwd?: string;
   tabId?: string;
+  onCwdChange?: (newCwd: string) => void;
 }
 
-export function TerminalView({ cwd, tabId }: TerminalViewProps) {
+export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: TerminalViewProps) {
   const [commands, setCommands] = useState<Command[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [currentCwd, setCurrentCwd] = useState(cwd);
+  const [currentCwd, setCurrentCwd] = useState(initialShellCwd || cwd);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
@@ -42,11 +47,15 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [showEnvManager, setShowEnvManager] = useState(false);
   const [showAliasManager, setShowAliasManager] = useState(false);
+  const [gridLayout, setGridLayout] = useState(true);
+  const [maximizedCommandId, setMaximizedCommandId] = useState<string | null>(null);
   const [showQuickCommands, setShowQuickCommands] = useState(false);
   const [showRunningCommands, setShowRunningCommands] = useState(false);
   const [quickCustomCommands, setQuickCustomCommands] = useState<string[]>([]);
   const [quickScripts, setQuickScripts] = useState<Record<string, string>>({});
   const [quickCommandInput, setQuickCommandInput] = useState('');
+  const [selectedCommandId, setSelectedCommandId] = useState<string | null>(null);
+  const [showViewer, setShowViewer] = useState(false);
   const [isAddingCommand, setIsAddingCommand] = useState(false);
   const [customEnv, setCustomEnv] = useState<Record<string, string>>({});
   const [aliases, setAliases] = useState<Record<string, string>>({});
@@ -56,14 +65,22 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const terminalRootRef = useRef<HTMLDivElement>(null);
   // 已无需 per-command AbortController（WS 统一管理）
   const rafIdRef = useRef<number | null>(null);
   const pendingOutputRef = useRef<Map<string, string>>(new Map());
   const commandOutputRef = useRef<Map<string, string>>(new Map());
   const commandLineCountRef = useRef<Map<string, number>>(new Map());
   const commandHistoryRef = useRef<string[]>([]);
+  const ptySizeRef = useRef<Map<string, { cols: number; rows: number }>>(new Map());
   const quickCommandsRef = useRef<HTMLDivElement>(null);
   const runningCommandsRef = useRef<HTMLDivElement>(null);
+
+  // 初始化时通知父组件当前目录
+  useEffect(() => {
+    onCwdChange?.(cwd);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // RAF 节流的状态更新
   const flushPendingOutput = useCallback(() => {
@@ -178,6 +195,8 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
           exitCode: entry.exitCode,
           isRunning: false,
           timestamp: entry.timestamp,
+          cwd: entry.cwd,
+          usePty: entry.usePty,
         }));
 
         if (page === 0) {
@@ -224,80 +243,93 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
     }
   }, [cwd, tabId, currentCwd]);
 
-  // 初始化
-  useEffect(() => {
-    loadHistory(0);
-    loadEnv();
-    loadAliases();
-  }, [loadHistory]);
+  // 恢复运行中的命令
+  const reattachRunning = useCallback(async (cancelled: { current: boolean }) => {
+    try {
+      const runningCmds = await queryRunningCommands(cwd);
+      if (cancelled.current) return;
 
-  // 恢复运行中的命令（待机/刷新后重连）
-  useEffect(() => {
-    let cancelled = false;
+      for (const cmd of runningCmds) {
+        if (tabId && cmd.tabId !== tabId) continue;
+        if (cancelled.current) break;
 
-    const reattachRunning = async () => {
-      try {
-        const runningCmds = await queryRunningCommands(cwd);
-        if (cancelled) return;
+        const commandId = cmd.commandId as string;
 
-        for (const cmd of runningCmds) {
-          if (tabId && cmd.tabId !== tabId) continue;
-          if (cancelled) break;
+        // 添加或更新为运行态（loadHistory 可能先加载了已完成的旧记录）
+        setCommands(prev => {
+          const existing = prev.find(c => c.id === commandId);
+          if (existing) {
+            // 服务器说还在运行 → 覆盖为运行态
+            return prev.map(c => c.id === commandId
+              ? { ...c, isRunning: true, exitCode: undefined, pid: cmd.pid as number, ...(cmd.usePty ? { usePty: true } : {}) }
+              : c
+            );
+          }
+          return [...prev, {
+            id: commandId,
+            command: cmd.command as string,
+            output: '',
+            isRunning: true,
+            pid: cmd.pid as number,
+            timestamp: cmd.timestamp as string,
+            cwd: cmd.cwd as string,
+            ...(cmd.usePty ? { usePty: true } : {}),
+          }];
+        });
+        commandOutputRef.current.set(commandId, '');
 
-          const commandId = cmd.commandId as string;
-
-          // 添加占位条目（buffered 输出由 attach WS 推送）
-          setCommands(prev => {
-            if (prev.some(c => c.id === commandId)) return prev;
-            return [...prev, {
-              id: commandId,
-              command: cmd.command as string,
-              output: '',
-              isRunning: true,
-              pid: cmd.pid as number,
-              timestamp: cmd.timestamp as string,
-            }];
-          });
-          commandOutputRef.current.set(commandId, '');
-
-          // 重新接入 WS 流
-          await attachCommand({
-            commandId,
-            projectCwd: cwd,
-            onData: (type, data) => {
-              if (type === 'pid') {
-                // 已有 pid，忽略
-              } else if (type === 'stdout' || type === 'stderr') {
-                appendOutput(commandId, data.data as string);
-              } else if (type === 'exit') {
-                const finalOutput = flushAndGetOutput(commandId);
-                cleanupOutputRefs(commandId);
-                setCommands(prev =>
-                  prev.map(c => c.id === commandId
-                    ? { ...c, output: finalOutput, exitCode: data.code as number, isRunning: false, pid: undefined }
-                    : c
-                  )
-                );
-              }
-            },
-            onError: () => {
+        // 重新接入 WS 流
+        await attachCommand({
+          commandId,
+          projectCwd: cwd,
+          onData: (type, data) => {
+            if (type === 'pid') {
+              // 已有 pid，忽略
+            } else if (type === 'stdout' || type === 'stderr') {
+              appendOutput(commandId, data.data as string);
+            } else if (type === 'exit') {
+              const finalOutput = flushAndGetOutput(commandId);
+              cleanupOutputRefs(commandId);
               setCommands(prev =>
-                prev.map(c => c.id === commandId && c.isRunning
-                  ? { ...c, isRunning: false }
+                prev.map(c => c.id === commandId
+                  ? { ...c, output: finalOutput, exitCode: data.code as number, isRunning: false, pid: undefined }
                   : c
                 )
               );
-            },
-          });
-        }
-      } catch {
-        // 网络错误，忽略
+            }
+          },
+          onError: () => {
+            setCommands(prev =>
+              prev.map(c => c.id === commandId && c.isRunning
+                ? { ...c, isRunning: false }
+                : c
+              )
+            );
+          },
+        });
+      }
+    } catch {
+      // 网络错误，忽略
+    }
+  }, [cwd, tabId, appendOutput, flushAndGetOutput, cleanupOutputRefs]);
+
+  // 初始化：先加载历史，再恢复运行中的命令（顺序执行避免竞态）
+  useEffect(() => {
+    const cancelled = { current: false };
+
+    const init = async () => {
+      await loadHistory(0);
+      if (!cancelled.current) {
+        await reattachRunning(cancelled);
       }
     };
 
-    reattachRunning();
-    return () => { cancelled = true; };
-  }, [cwd, tabId, appendOutput, flushAndGetOutput, cleanupOutputRefs]);
+    init();
+    loadEnv();
+    loadAliases();
+    loadSettings();
+    return () => { cancelled.current = true; };
+  }, [loadHistory, reattachRunning]);
 
   const loadEnv = async () => {
     try {
@@ -322,6 +354,32 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
       }
     } catch (error) {
       console.error('Failed to load aliases:', error);
+    }
+  };
+
+  const loadSettings = async () => {
+    try {
+      const response = await fetch(`/api/terminal/settings?cwd=${encodeURIComponent(cwd)}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.settings?.gridLayout !== undefined) {
+          setGridLayout(data.settings.gridLayout);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load terminal settings:', error);
+    }
+  };
+
+  const saveSettings = async (settings: Record<string, unknown>) => {
+    try {
+      await fetch('/api/terminal/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cwd, settings }),
+      });
+    } catch (error) {
+      console.error('Failed to save terminal settings:', error);
     }
   };
 
@@ -385,12 +443,14 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
       output: actualCommand !== command ? `→ ${actualCommand}\n` : '',
       isRunning: true,
       timestamp,
+      cwd: currentCwd,
     };
 
     setCommands((prev) => {
       if (prev.some((cmd) => cmd.id === commandId)) return prev;
       return [...prev, newCommand];
     });
+    setSelectedCommandId(commandId);
     commandOutputRef.current.set(commandId, newCommand.output);
     commandLineCountRef.current.set(commandId, 0);
     setTimeout(scrollToBottom, 100);
@@ -408,6 +468,7 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
       }
 
       setCurrentCwd(newCwd);
+      onCwdChange?.(newCwd);
       setCommands((prev) =>
         prev.map((cmd) => {
           if (cmd.id === commandId) {
@@ -480,6 +541,85 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
     }
   }, [currentCwd, scrollToBottom, saveCdToHistory, aliases, customEnv, tabId, cwd, appendOutput, flushAndGetOutput, cleanupOutputRefs]);
 
+  // 一键启动 PTY 交互式终端（zsh）
+  const launchPtyShell = useCallback(async () => {
+    const shell = process.env.SHELL || '/bin/zsh';
+    const shellName = shell.split('/').pop() || 'zsh';
+    const commandId = generateUniqueCommandId();
+    const timestamp = new Date().toISOString();
+
+    const newCommand: Command = {
+      id: commandId,
+      command: shellName,
+      output: '',
+      isRunning: true,
+      timestamp,
+      cwd: currentCwd,
+      usePty: true,
+    };
+
+    setCommands((prev) => [...prev, newCommand]);
+    setSelectedCommandId(commandId);
+    commandOutputRef.current.set(commandId, '');
+    commandLineCountRef.current.set(commandId, 0);
+    setTimeout(scrollToBottom, 100);
+
+    try {
+      await execCmd({
+        cwd: currentCwd,
+        command: shellName,
+        commandId,
+        tabId: tabId || '',
+        projectCwd: cwd,
+        env: customEnv,
+        usePty: true,
+        onData: (type, data) => {
+          if (type === 'pid') {
+            setCommands((prev) =>
+              prev.map((cmd) => (cmd.id === commandId ? { ...cmd, pid: data.pid as number } : cmd))
+            );
+          } else if (type === 'stdout' || type === 'stderr') {
+            appendOutput(commandId, data.data as string);
+          } else if (type === 'exit') {
+            const finalOutput = flushAndGetOutput(commandId);
+            cleanupOutputRefs(commandId);
+            setCommands((prev) =>
+              prev.map((cmd) => {
+                if (cmd.id === commandId) {
+                  return { ...cmd, output: finalOutput, exitCode: data.code as number, isRunning: false, pid: undefined };
+                }
+                return cmd;
+              })
+            );
+          }
+        },
+        onError: (error) => {
+          const finalOutput = flushAndGetOutput(commandId);
+          cleanupOutputRefs(commandId);
+          setCommands((prev) =>
+            prev.map((cmd) => {
+              if (cmd.id === commandId) {
+                return { ...cmd, output: finalOutput + `\nError: ${error}`, exitCode: 1, isRunning: false, pid: undefined };
+              }
+              return cmd;
+            })
+          );
+        },
+      });
+    } catch (error) {
+      const finalOutput = flushAndGetOutput(commandId);
+      cleanupOutputRefs(commandId);
+      setCommands((prev) =>
+        prev.map((cmd) => {
+          if (cmd.id === commandId) {
+            return { ...cmd, output: finalOutput + `\nError: ${(error as Error).message}`, exitCode: 1, isRunning: false, pid: undefined };
+          }
+          return cmd;
+        })
+      );
+    }
+  }, [currentCwd, scrollToBottom, customEnv, tabId, cwd, appendOutput, flushAndGetOutput, cleanupOutputRefs]);
+
   // 快捷命令执行
   const handleQuickCommand = useCallback((command: string) => {
     setShowQuickCommands(false);
@@ -527,15 +667,19 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
       )
     );
 
-    // 重新执行
+    // 重新执行（使用命令记录时的 pty 模式）
+    const cmdUsePty = cmd.usePty || false;
+    const ptySize = ptySizeRef.current.get(commandId);
     try {
       await execCmd({
-        cwd: currentCwd,
+        cwd: cmd.cwd || currentCwd,
         command: actualCommand,
         commandId,
         tabId: tabId || '',
         projectCwd: cwd,
         env: customEnv,
+        usePty: cmdUsePty,
+        ...(cmdUsePty && ptySize ? { cols: ptySize.cols, rows: ptySize.rows } : {}),
         onData: (type, data) => {
           if (type === 'pid') {
             setCommands((prev) =>
@@ -757,6 +901,25 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showRunningCommands]);
 
+  // Cmd+M: 放大/缩小选中气泡（PTY 和 PIPE 都用全屏 overlay）
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'm' && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        if (selectedCommandId) {
+          const cmd = commands.find(c => c.id === selectedCommandId);
+          if (cmd?.usePty) {
+            setMaximizedCommandId(prev => prev === selectedCommandId ? null : selectedCommandId);
+          } else {
+            setShowViewer(prev => !prev);
+          }
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedCommandId, commands]);
+
   // 清理 RAF
   useEffect(() => {
     return () => {
@@ -767,41 +930,7 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
   }, []);
 
   return (
-    <div className="h-full flex flex-col bg-background relative">
-      {/* 顶部工具栏 */}
-      <div className="border-b border-border px-4 py-2 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">Terminal</span>
-          <span className="text-xs text-muted-foreground font-mono">{currentCwd}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {Object.keys(customEnv).length > 0 && (
-            <span className="text-xs text-brand px-2 py-0.5 rounded-full bg-brand/10">
-              {Object.keys(customEnv).length} 个环境变量
-            </span>
-          )}
-          {Object.keys(aliases).length > 0 && (
-            <span className="text-xs text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full bg-green-600/10 dark:bg-green-400/10">
-              {Object.keys(aliases).length} 个别名
-            </span>
-          )}
-          <button
-            onClick={() => setShowAliasManager(true)}
-            className="p-1.5 rounded hover:bg-accent transition-colors"
-            title="命令别名"
-          >
-            <Terminal className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setShowEnvManager(true)}
-            className="p-1.5 rounded hover:bg-accent transition-colors"
-            title="环境变量"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
+    <div ref={terminalRootRef} className="h-full flex flex-col bg-background relative">
       {/* 命令历史区域 */}
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto py-4 px-4">
         {commands.length === 0 ? (
@@ -822,6 +951,7 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
                 </button>
               </div>
             )}
+            <div className={gridLayout ? 'grid grid-cols-2 gap-3' : 'flex flex-col'}>
             {commands.map((cmd) => (
               <div key={cmd.id} className="group/cmd">
                 <CommandBubble
@@ -829,6 +959,8 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
                   output={cmd.output}
                   exitCode={cmd.exitCode}
                   isRunning={cmd.isRunning}
+                  selected={selectedCommandId === cmd.id}
+                  onSelect={() => { setSelectedCommandId(cmd.id); setShowViewer(false); }}
                   onInterrupt={cmd.isRunning ? () => interruptCommand(cmd.id) : undefined}
                   onStdin={cmd.isRunning ? (data: string) => sendStdin(cmd.id, data) : undefined}
                   onDelete={() => {
@@ -837,9 +969,15 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
                   }}
                   onRerun={() => rerunCommand(cmd.id)}
                   timestamp={cmd.timestamp}
+                  usePty={cmd.usePty}
+                  onPtyResize={(cols, rows) => { ptySizeRef.current.set(cmd.id, { cols, rows }); resizePty(cmd.id, cols, rows); }}
+                  onToggleMaximize={() => setMaximizedCommandId(prev => prev === cmd.id ? null : cmd.id)}
+                  maximized={maximizedCommandId === cmd.id}
+                  portalContainer={terminalRootRef.current}
                 />
               </div>
             ))}
+            </div>
             <div ref={bottomRef} />
           </>
         )}
@@ -1066,6 +1204,39 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
             );
           })()}
 
+          <button
+            type="button"
+            onClick={() => setGridLayout(prev => { const next = !prev; saveSettings({ gridLayout: next }); return next; })}
+            className={`p-2 rounded-lg transition-all ${gridLayout ? 'text-brand bg-brand/10' : 'text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95'}`}
+            title={gridLayout ? '单列布局' : '双列布局'}
+          >
+            {gridLayout ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowAliasManager(true)}
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
+            title="命令别名"
+          >
+            <AtSign className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowEnvManager(true)}
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
+            title="环境变量"
+          >
+            <Variable className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={launchPtyShell}
+            className="px-1.5 py-1 rounded text-[11px] font-mono font-medium transition-colors flex-shrink-0 hover:bg-accent text-muted-foreground"
+            title="新建交互式终端 (zsh)"
+          >
+            PTY
+          </button>
+
           <input
             ref={inputRef}
             type="text"
@@ -1123,6 +1294,21 @@ export function TerminalView({ cwd, tabId }: TerminalViewProps) {
           onSave={(newAliases) => setAliases(newAliases)}
         />
       )}
+
+      {/* Cmd+M 放大查看选中气泡输出（PIPE 模式） */}
+      {showViewer && selectedCommandId && (() => {
+        const cmd = commands.find(c => c.id === selectedCommandId);
+        if (!cmd) return null;
+        return (
+          <OutputViewerModal
+            output={cmd.output}
+            isRunning={cmd.isRunning}
+            onClose={() => setShowViewer(false)}
+          />
+        );
+      })()}
+
+      {/* PTY 全屏由 CommandBubble 通过 portal 渲染到此容器 */}
     </div>
   );
 }

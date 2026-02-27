@@ -5,13 +5,14 @@ import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { FileBrowserModal } from './FileBrowserModal';
 import { BrowserView } from './BrowserView';
 import { GitWorktreeModal } from './GitWorktreeModal';
-import { TerminalTabManager } from './terminal/TerminalTabManager';
+import { TerminalView } from './terminal/TerminalView';
 import { ChatProvider } from './ChatContext';
 import { SwipeableViewContainer, SwipeableContent, type ViewType } from './SwipeableViewContainer';
 import { useTabState } from './useTabState';
 import { TabManagerTopBar } from './TabManagerTopBar';
 import { TabBar } from './TabBar';
 import { ChatPanel } from './ChatPanel';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface TabManagerProps {
   initialCwd?: string;
@@ -50,29 +51,40 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const [activeView, setActiveView] = useState<ViewType>('agent');
 
   // 加载 Git 仓库信息（分支）
-  useEffect(() => {
+  const loadGitInfo = useCallback(async () => {
     if (!initialCwd) return;
-
-    const loadGitInfo = async () => {
-      try {
-        const response = await fetch(`/api/git/worktree?cwd=${encodeURIComponent(initialCwd)}`);
-        if (response.ok) {
-          const data = await response.json();
-          setIsGitRepo(data.isGitRepo);
-          if (data.isGitRepo && data.worktrees.length > 0) {
-            const currentWorktree = data.worktrees.find((w: { path: string }) => w.path === initialCwd);
-            if (currentWorktree) {
-              setCurrentBranch(currentWorktree.branch);
-            }
+    try {
+      const response = await fetch(`/api/git/worktree?cwd=${encodeURIComponent(initialCwd)}`);
+      if (response.ok) {
+        const data = await response.json();
+        setIsGitRepo(data.isGitRepo);
+        if (data.isGitRepo && data.worktrees.length > 0) {
+          const currentWorktree = data.worktrees.find((w: { path: string }) => w.path === initialCwd);
+          if (currentWorktree) {
+            setCurrentBranch(currentWorktree.branch);
           }
         }
-      } catch (error) {
-        console.error('Failed to load git info:', error);
       }
-    };
-
-    loadGitInfo();
+    } catch (error) {
+      console.error('Failed to load git info:', error);
+    }
   }, [initialCwd]);
+
+  useEffect(() => { loadGitInfo(); }, [loadGitInfo]);
+
+  // 监听 git 变更事件，实时更新分支名
+  const handleWatchMessage = useCallback((msg: unknown) => {
+    const { data } = msg as { type: string; data: Array<{ type: string }> };
+    if (data?.some(e => e.type === 'git')) {
+      loadGitInfo();
+    }
+  }, [loadGitInfo]);
+
+  useWebSocket({
+    url: `/ws/watch?cwd=${encodeURIComponent(initialCwd || '')}`,
+    onMessage: handleWatchMessage,
+    enabled: !!initialCwd,
+  });
 
   // 键盘快捷键：Cmd+1/2/3/4 切换视图
   useEffect(() => {
@@ -191,9 +203,9 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               />
             </div>
 
-            {/* TERMINAL 视图：TerminalTabManager */}
+            {/* TERMINAL 视图 */}
             <div className="w-1/4 h-full overflow-hidden">
-              <TerminalTabManager initialCwd={initialCwd} />
+              <TerminalView cwd={initialCwd} tabId="default" />
             </div>
 
             {/* BROWSER 视图：BrowserView */}

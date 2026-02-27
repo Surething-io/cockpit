@@ -1,6 +1,11 @@
 /**
  * Terminal WebSocket Manager
  * 单个 WS 连接管理所有终端命令的执行、stdin、attach、interrupt
+ *
+ * 关键设计：
+ * 1. onclose 实例引用对比 —— React Strict Mode 下旧 WS 的 onclose 异步触发时不覆盖新连接
+ * 2. 共享 Promise 模式 —— 多个 TerminalView 同时 queryRunningCommands 时共享同一次查询
+ * 3. dispose 先 resolve 再清空 —— 防止 Promise 永久挂起
  */
 
 type MessageHandler = (type: string, data: Record<string, unknown>) => void;
@@ -19,8 +24,9 @@ let closed = false;
 // 每个 commandId 对应的回调
 const commandCallbacks = new Map<string, PendingCallbacks>();
 
-// 一次性回调（如 running 查询）
+// running 查询：使用共享 Promise + resolve 回调
 let runningCallback: ((commands: Array<Record<string, unknown>>) => void) | null = null;
+let pendingRunningPromise: Promise<Array<Record<string, unknown>>> | null = null;
 
 function getWsUrl(projectCwd: string): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -36,8 +42,10 @@ function handleMessage(event: MessageEvent) {
 
   // running 查询响应
   if (type === 'running') {
-    runningCallback?.(msg.commands as Array<Record<string, unknown>>);
-    runningCallback = null;
+    if (runningCallback) {
+      runningCallback(msg.commands as Array<Record<string, unknown>>);
+      runningCallback = null;
+    }
     return;
   }
 
@@ -65,25 +73,27 @@ function handleMessage(event: MessageEvent) {
 function connect() {
   if (closed || !wsUrl) return;
 
-  ws = new WebSocket(wsUrl);
+  const myWs = new WebSocket(wsUrl);
+  ws = myWs;
 
-  ws.onopen = () => {
+  myWs.onopen = () => {
     retryCount = 0;
   };
 
-  ws.onmessage = handleMessage;
+  myWs.onmessage = handleMessage;
 
-  ws.onclose = () => {
+  myWs.onclose = () => {
+    // 关键：如果 ws 已经指向更新的连接，说明此回调来自旧连接，忽略
+    if (ws !== myWs) return;
     ws = null;
     if (closed) return;
-    // 防止 dispose() 之后 onclose 回调延迟触发再注册新 timer
     if (retryTimer) clearTimeout(retryTimer);
     const delay = Math.min(1000 * Math.pow(1.5, retryCount), 10000);
     retryCount++;
     retryTimer = setTimeout(connect, delay);
   };
 
-  ws.onerror = () => {
+  myWs.onerror = () => {
     // onclose 会紧跟触发
   };
 }
@@ -141,10 +151,13 @@ export async function executeCommand(options: {
   tabId: string;
   projectCwd: string;
   env?: Record<string, string>;
+  usePty?: boolean;
+  cols?: number;
+  rows?: number;
   onData: MessageHandler;
   onError: (error: string) => void;
 }): Promise<void> {
-  const { cwd, command, commandId, tabId, projectCwd, env, onData, onError } = options;
+  const { cwd, command, commandId, tabId, projectCwd, env, usePty, cols, rows, onData, onError } = options;
 
   ensureConnection(projectCwd);
   try {
@@ -157,7 +170,7 @@ export async function executeCommand(options: {
   // 防止同一 commandId 重复注册（rerun 场景）
   commandCallbacks.delete(commandId);
   commandCallbacks.set(commandId, { onData, onError });
-  sendMessage({ type: 'exec', commandId, command, cwd, tabId, env });
+  sendMessage({ type: 'exec', commandId, command, cwd, tabId, env, ...(usePty ? { usePty: true } : {}), ...(cols ? { cols, rows } : {}) });
 }
 
 /**
@@ -191,6 +204,13 @@ export function sendStdin(commandId: string, data: string): void {
 }
 
 /**
+ * 调整 PTY 终端尺寸
+ */
+export function resizePty(commandId: string, cols: number, rows: number): void {
+  sendMessage({ type: 'resize', commandId, cols, rows });
+}
+
+/**
  * 中断命令（发送 SIGTERM）
  */
 export function interruptCommand(pid: number): void {
@@ -199,26 +219,45 @@ export function interruptCommand(pid: number): void {
 
 /**
  * 查询正在运行的命令列表
+ *
+ * 使用共享 Promise：多个 TerminalView 同时调用时，共享同一次查询结果。
+ * 关键：pendingRunningPromise 必须在第一个 await 之前同步设置，
+ * 否则多个调用方都会跳过 if 检查导致发送多次查询。
  */
-export async function queryRunningCommands(projectCwd: string): Promise<Array<Record<string, unknown>>> {
-  ensureConnection(projectCwd);
-  try {
-    await waitForOpen();
-  } catch {
-    return [];
-  }
+export function queryRunningCommands(projectCwd: string): Promise<Array<Record<string, unknown>>> {
+  // 如果已有进行中的查询，直接共享同一个 Promise
+  if (pendingRunningPromise) return pendingRunningPromise;
 
-  return new Promise((resolve) => {
-    runningCallback = resolve;
-    sendMessage({ type: 'running' });
-    // 超时保护
-    setTimeout(() => {
-      if (runningCallback === resolve) {
-        runningCallback = null;
-        resolve([]);
-      }
-    }, 3000);
-  });
+  // 同步设置 pendingRunningPromise（在任何 await 之前！）
+  pendingRunningPromise = _doRunningQuery(projectCwd);
+  return pendingRunningPromise;
+}
+
+async function _doRunningQuery(projectCwd: string): Promise<Array<Record<string, unknown>>> {
+  try {
+    ensureConnection(projectCwd);
+    try {
+      await waitForOpen();
+    } catch {
+      return [];
+    }
+
+    return await new Promise<Array<Record<string, unknown>>>((resolve) => {
+      runningCallback = (commands) => {
+        resolve(commands);
+      };
+      sendMessage({ type: 'running' });
+      // 超时保护
+      setTimeout(() => {
+        if (runningCallback) {
+          runningCallback = null;
+          resolve([]);
+        }
+      }, 3000);
+    });
+  } finally {
+    pendingRunningPromise = null;
+  }
 }
 
 /**
@@ -234,9 +273,18 @@ export function detachCommand(commandId: string): void {
 export function dispose(): void {
   closed = true;
   if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-  if (ws) { ws.close(); ws = null; }
+  if (ws) {
+    const dyingWs = ws;
+    ws = null;  // 先置 null，确保 dyingWs 的 onclose 中 ws !== myWs 成立
+    dyingWs.close();
+  }
   commandCallbacks.clear();
-  runningCallback = null;
+  // 先 resolve 挂起的 running 查询（返回空），再清空回调，防止 Promise 永久挂起
+  if (runningCallback) {
+    runningCallback([]);
+    runningCallback = null;
+  }
+  pendingRunningPromise = null;
   wsUrl = '';
   retryCount = 0;
 }

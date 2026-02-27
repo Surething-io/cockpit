@@ -28,6 +28,18 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
   const commitListRef = useRef<HTMLDivElement>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
+  // 分支对比模式
+  const [compareMode, setCompareMode] = useState(false);
+  const [savedBranch, setSavedBranch] = useState<string>(''); // 进入对比前的分支
+  const [upstreamBranch, setUpstreamBranch] = useState<string>(''); // 当前分支的 upstream
+  const [compareFiles, setCompareFiles] = useState<FileChange[]>([]);
+  const [compareFileTree, setCompareFileTree] = useState<GitFileNode<unknown>[]>([]);
+  const [compareExpandedPaths, setCompareExpandedPaths] = useState<Set<string>>(new Set());
+  const [compareSelectedFile, setCompareSelectedFile] = useState<FileChange | null>(null);
+  const [compareFileDiff, setCompareFileDiff] = useState<FileDiff | null>(null);
+  const [isLoadingCompareFiles, setIsLoadingCompareFiles] = useState(false);
+  const [isLoadingCompareDiff, setIsLoadingCompareDiff] = useState(false);
+
   const loadBranches = useCallback(() => {
     setIsLoadingBranches(true);
     setHistoryError(null);
@@ -40,6 +52,7 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
         } else if (data.local && data.current) {
           setBranches(data);
           setSelectedBranch(data.current);
+          if (data.upstream) setUpstreamBranch(data.upstream);
         } else {
           setHistoryError('无法获取分支信息');
           setBranches(null);
@@ -141,6 +154,71 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
     });
   }, []);
 
+  // 加载分支对比文件列表
+  const loadCompareFiles = useCallback((baseBranch: string) => {
+    setIsLoadingCompareFiles(true);
+    setCompareSelectedFile(null);
+    setCompareFileDiff(null);
+    fetch(`/api/git/branch-diff?cwd=${encodeURIComponent(cwd)}&base=${encodeURIComponent(baseBranch)}`)
+      .then(res => res.json())
+      .then(data => {
+        const fileList = data.files || [];
+        setCompareFiles(fileList);
+        const tree = buildGitFileTree(fileList);
+        setCompareFileTree(tree);
+        setCompareExpandedPaths(new Set(collectGitTreeDirPaths(tree)));
+      })
+      .catch(console.error)
+      .finally(() => setIsLoadingCompareFiles(false));
+  }, [cwd]);
+
+  // 选择对比文件查看 diff
+  const handleSelectCompareFile = useCallback((file: FileChange) => {
+    setCompareSelectedFile(file);
+    addToRecentFiles(file.path);
+    setIsLoadingCompareDiff(true);
+    fetch(`/api/git/branch-diff?cwd=${encodeURIComponent(cwd)}&base=${encodeURIComponent(selectedBranch)}&file=${encodeURIComponent(file.path)}`)
+      .then(res => res.json())
+      .then(data => setCompareFileDiff(data))
+      .catch(console.error)
+      .finally(() => setIsLoadingCompareDiff(false));
+  }, [cwd, selectedBranch, addToRecentFiles]);
+
+  // 切换对比模式目录展开
+  const handleCompareToggle = useCallback((path: string) => {
+    setCompareExpandedPaths(prev => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
+
+  // 切换对比模式
+  const toggleCompareMode = useCallback((enabled: boolean) => {
+    setCompareMode(enabled);
+    if (enabled) {
+      // 保存当前分支，切换到 upstream 分支进行对比
+      setSavedBranch(selectedBranch);
+      const compareBranch = upstreamBranch || 'origin/main';
+      setSelectedBranch(compareBranch);
+      loadCompareFiles(compareBranch);
+    } else {
+      // 退出对比模式，恢复当前分支并刷新 commit 列表
+      setCompareFiles([]);
+      setCompareFileTree([]);
+      setCompareSelectedFile(null);
+      setCompareFileDiff(null);
+      if (savedBranch) {
+        setSelectedBranch(savedBranch);
+        loadCommits(savedBranch);
+      }
+    }
+  }, [selectedBranch, savedBranch, upstreamBranch, loadCompareFiles, loadCommits]);
+
   const handleCommitInfoMouseMove = useCallback((e: React.MouseEvent) => {
     setTooltipPos({ x: e.clientX, y: e.clientY });
   }, []);
@@ -181,5 +259,18 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
     handleHistoryToggle,
     handleCommitInfoMouseMove,
     handleCommitInfoMouseLeave,
+    // 分支对比模式
+    compareMode,
+    toggleCompareMode,
+    compareFiles,
+    compareFileTree,
+    compareExpandedPaths,
+    compareSelectedFile,
+    compareFileDiff,
+    isLoadingCompareFiles,
+    isLoadingCompareDiff,
+    handleSelectCompareFile,
+    handleCompareToggle,
+    loadCompareFiles,
   };
 }

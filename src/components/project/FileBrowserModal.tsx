@@ -12,7 +12,7 @@ import { CodeViewer } from './CodeViewer';
 import { isMarkdownFile } from './MarkdownFileViewer';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { FileIcon } from '../shared/FileIcon';
-import { FileEditorModal } from './FileEditorModal';
+import { FileEditorInline, type FileEditorHandle } from './FileEditorModal';
 import { QuickFileOpen } from './QuickFileOpen';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { usePageVisible } from '@/hooks/usePageVisible';
@@ -33,6 +33,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const [menuContainer, setMenuContainer] = useState<HTMLElement | null>(null);
   const [showQuickOpen, setShowQuickOpen] = useState(false);
   const [hoverTooltip, setHoverTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+  // CodeViewer 当前可见行号（1-based），用于编辑器 ↔ 查看器行位置同步
+  const visibleLineRef = useRef<number>(1);
+  // 从编辑器返回时要跳转的行号
+  const [editorReturnLine, setEditorReturnLine] = useState<number | null>(null);
+  // 编辑器 ref 和状态（用于顶部工具栏渲染保存/关闭按钮）
+  const editorHandleRef = useRef<FileEditorHandle>(null);
+  const [editorState, setEditorState] = useState({ isDirty: false, isSaving: false });
 
   // ========== Hooks ==========
   const pageVisible = usePageVisible();
@@ -573,12 +580,33 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
             {activeTab === 'history' && (
               <div className="p-3 border-b border-border">
-                <BranchSelector
-                  branches={gitHistory.branches}
-                  selectedBranch={gitHistory.selectedBranch}
-                  onSelect={gitHistory.setSelectedBranch}
-                  isLoading={gitHistory.isLoadingBranches}
-                />
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <BranchSelector
+                      branches={gitHistory.branches}
+                      selectedBranch={gitHistory.selectedBranch}
+                      onSelect={(branch) => {
+                        gitHistory.setSelectedBranch(branch);
+                        // 对比模式下切换分支自动刷新
+                        if (gitHistory.compareMode) {
+                          gitHistory.loadCompareFiles(branch);
+                        }
+                      }}
+                      isLoading={gitHistory.isLoadingBranches}
+                    />
+                  </div>
+                  <button
+                    onClick={() => gitHistory.toggleCompareMode(!gitHistory.compareMode)}
+                    className={`flex-shrink-0 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                      gitHistory.compareMode
+                        ? 'bg-brand text-white'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent border border-border'
+                    }`}
+                    title={gitHistory.compareMode ? '关闭分支对比' : '与选定分支对比'}
+                  >
+                    对比
+                  </button>
+                </div>
               </div>
             )}
 
@@ -946,6 +974,36 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       <p className="text-muted-foreground">{gitHistory.historyError}</p>
                     </div>
                   </div>
+                ) : gitHistory.compareMode ? (
+                  /* 对比模式：左侧显示文件变更列表（替换 commit 列表） */
+                  <div className="flex-1 overflow-y-auto">
+                    {gitHistory.isLoadingCompareFiles ? (
+                      <div className="p-4 text-center text-muted-foreground text-sm">加载对比文件中...</div>
+                    ) : gitHistory.compareFiles.length === 0 ? (
+                      <div className="p-4 text-center text-muted-foreground text-sm">无差异文件</div>
+                    ) : (
+                      <>
+                        <div className="px-3 py-2 border-b border-border">
+                          <span className="text-xs text-muted-foreground">
+                            {gitHistory.compareFiles.length} 个文件变更（vs {gitHistory.selectedBranch}）
+                          </span>
+                        </div>
+                        <GitFileTree
+                          files={gitHistory.compareFileTree}
+                          expandedPaths={gitHistory.compareExpandedPaths}
+                          onToggle={gitHistory.handleCompareToggle}
+                          selectedPath={gitHistory.compareSelectedFile?.path || null}
+                          onSelect={(node) => {
+                            if (node.file) {
+                              gitHistory.handleSelectCompareFile(node.file as import('./fileBrowser/types').FileChange);
+                            }
+                          }}
+                          cwd={cwd}
+                          showChanges={true}
+                        />
+                      </>
+                    )}
+                  </div>
                 ) : (
                   <div
                     ref={gitHistory.commitListRef}
@@ -1044,57 +1102,87 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       </button>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      {/* 复制文件内容按钮 */}
-                      {fileTree.fileContent?.type === 'text' && fileTree.fileContent.content && (
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(fileTree.fileContent!.content!);
-                            toast('已复制文件内容');
-                          }}
-                          className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
-                          title="复制文件内容"
-                        >
-                          复制
-                        </button>
-                      )}
-                      {/* 编辑按钮 */}
-                      {fileTree.fileContent?.type === 'text' && (
-                        <button
-                          onClick={() => fileTree.setShowEditor(true)}
-                          className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
-                          title="编辑文件"
-                        >
-                          编辑
-                        </button>
-                      )}
-                      {/* Markdown 预览按钮 */}
-                      {fileTree.fileContent?.type === 'text' && isMarkdownFile(fileTree.selectedPath) && (
-                        <button
-                          onClick={() => fileTree.setShowMarkdownPreview(true)}
-                          className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
-                          title="预览 Markdown 渲染效果"
-                        >
-                          预览
-                        </button>
-                      )}
-                      {/* Blame 按钮 */}
-                      {fileTree.fileContent?.type === 'text' && (
-                        <button
-                          onClick={fileTree.handleToggleBlame}
-                          disabled={fileTree.isLoadingBlame}
-                          className={`px-2 py-1 text-sm rounded transition-colors ${
-                            fileTree.showBlame
-                              ? 'bg-brand text-white'
-                              : 'text-muted-foreground hover:bg-accent'
-                          } disabled:opacity-50`}
-                          title="查看每行代码的修改记录"
-                        >
-                          {fileTree.isLoadingBlame ? (
-                            <span className="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
-                          ) : (
-                            'Blame'
+                      {fileTree.showEditor ? (
+                        <>
+                          {/* 编辑模式：保存 + 关闭 */}
+                          {editorState.isDirty && (
+                            <span className="text-xs text-amber-11">未保存</span>
                           )}
-                        </button>
+                          <button
+                            onClick={() => editorHandleRef.current?.save()}
+                            disabled={!editorState.isDirty || editorState.isSaving}
+                            className={`px-2 py-1 text-sm rounded transition-colors ${
+                              editorState.isDirty && !editorState.isSaving
+                                ? 'bg-brand text-white hover:bg-brand/90'
+                                : 'bg-secondary text-muted-foreground cursor-not-allowed'
+                            }`}
+                          >
+                            {editorState.isSaving ? (
+                              <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              '保存'
+                            )}
+                          </button>
+                          <button
+                            onClick={() => editorHandleRef.current?.close()}
+                            className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
+                            title="关闭编辑 (ESC)"
+                          >
+                            关闭
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {/* 查看模式：复制/编辑/预览/Blame */}
+                          {fileTree.fileContent?.type === 'text' && fileTree.fileContent.content && (
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(fileTree.fileContent!.content!);
+                                toast('已复制文件内容');
+                              }}
+                              className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
+                              title="复制文件内容"
+                            >
+                              复制
+                            </button>
+                          )}
+                          {fileTree.fileContent?.type === 'text' && isMarkdownFile(fileTree.selectedPath) && (
+                            <button
+                              onClick={() => fileTree.setShowMarkdownPreview(true)}
+                              className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
+                              title="预览 Markdown 渲染效果"
+                            >
+                              预览
+                            </button>
+                          )}
+                          {fileTree.fileContent?.type === 'text' && (
+                            <button
+                              onClick={fileTree.handleToggleBlame}
+                              disabled={fileTree.isLoadingBlame}
+                              className={`px-2 py-1 text-sm rounded transition-colors ${
+                                fileTree.showBlame
+                                  ? 'bg-brand text-white'
+                                  : 'text-muted-foreground hover:bg-accent'
+                              } disabled:opacity-50`}
+                              title="查看每行代码的修改记录"
+                            >
+                              {fileTree.isLoadingBlame ? (
+                                <span className="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                'Blame'
+                              )}
+                            </button>
+                          )}
+                          {fileTree.fileContent?.type === 'text' && (
+                            <button
+                              onClick={() => fileTree.setShowEditor(true)}
+                              className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
+                              title="编辑文件"
+                            >
+                              编辑
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -1125,15 +1213,36 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                             </div>
                           )
+                        ) : fileTree.showEditor ? (
+                          <FileEditorInline
+                            ref={editorHandleRef}
+                            filePath={fileTree.selectedPath!}
+                            initialContent={fileTree.fileContent.content}
+                            initialMtime={fileTree.fileContent.mtime}
+                            cwd={cwd}
+                            initialLine={visibleLineRef.current}
+                            onClose={(currentLine) => {
+                              fileTree.setShowEditor(false);
+                              setEditorReturnLine(currentLine);
+                            }}
+                            onSaved={() => {
+                              fileTree.loadFileContent(fileTree.selectedPath!);
+                            }}
+                            onStateChange={setEditorState}
+                          />
                         ) : (
                           <CodeViewer
                             content={fileTree.fileContent.content}
                             filePath={fileTree.selectedPath}
                             cwd={cwd}
                             enableComments={true}
-                            scrollToLine={fileTree.targetLineNumber}
-                            onScrollToLineComplete={() => fileTree.setTargetLineNumber(null)}
+                            scrollToLine={editorReturnLine ?? fileTree.targetLineNumber}
+                            onScrollToLineComplete={() => {
+                              setEditorReturnLine(null);
+                              fileTree.setTargetLineNumber(null);
+                            }}
                             highlightKeyword={activeTab === 'search' ? contentSearch.contentSearchQuery : null}
+                            visibleLineRef={visibleLineRef}
                           />
                         )
                       ) : fileTree.fileContent.type === 'image' && fileTree.fileContent.content ? (
@@ -1284,7 +1393,28 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
             {/* History - Right Panel */}
             {activeTab === 'history' && !gitHistory.historyError && (
-              gitHistory.selectedCommit ? (
+              gitHistory.compareMode ? (
+                /* 对比模式：右侧仅显示 diff */
+                gitHistory.isLoadingCompareDiff ? (
+                  <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+                    加载差异中...
+                  </div>
+                ) : gitHistory.compareFileDiff ? (
+                  <DiffView
+                    oldContent={gitHistory.compareFileDiff.oldContent}
+                    newContent={gitHistory.compareFileDiff.newContent}
+                    filePath={gitHistory.compareFileDiff.filePath}
+                    isNew={gitHistory.compareFileDiff.isNew}
+                    isDeleted={gitHistory.compareFileDiff.isDeleted}
+                    cwd={cwd}
+                    enableComments={true}
+                  />
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-slate-9">
+                    <span>{gitHistory.compareFiles.length > 0 ? '选择文件查看差异' : '点击「对比」加载分支差异'}</span>
+                  </div>
+                )
+              ) : gitHistory.selectedCommit ? (
                 <CommitDetailPanel
                   isOpen={true}
                   onClose={() => gitHistory.setSelectedCommit(null)}
@@ -1327,21 +1457,6 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               </div>
             </div>
           </div>
-        )}
-
-        {/* 文件编辑 Modal */}
-        {fileTree.selectedPath && fileTree.fileContent?.type === 'text' && (
-          <FileEditorModal
-            isOpen={fileTree.showEditor}
-            onClose={() => fileTree.setShowEditor(false)}
-            filePath={fileTree.selectedPath}
-            initialContent={fileTree.fileContent.content || ''}
-            initialMtime={fileTree.fileContent.mtime}
-            cwd={cwd}
-            onSaved={() => {
-              fileTree.loadFileContent(fileTree.selectedPath!);
-            }}
-          />
         )}
 
         {/* Quick File Open (Cmd+P) */}

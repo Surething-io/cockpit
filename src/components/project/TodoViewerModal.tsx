@@ -48,7 +48,7 @@ export function TodoViewerModal({ toolCall, onClose }: TodoViewerModalProps) {
       onClick={onClose}
     >
       <div
-        className="bg-card rounded-lg shadow-xl w-full max-w-lg flex flex-col transition-all"
+        className="bg-card rounded-lg shadow-xl w-full max-w-6xl flex flex-col transition-all"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

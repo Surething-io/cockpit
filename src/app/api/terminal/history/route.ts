@@ -17,6 +17,7 @@ interface CommandHistoryEntry {
   exitCode?: number;
   timestamp: string;
   cwd: string;
+  usePty?: boolean;
 }
 
 // GET: 读取命令历史（分页）

@@ -1,120 +1,38 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import Editor, { OnMount, OnChange } from '@monaco-editor/react';
-import type { editor } from 'monaco-editor';
-import { useTheme } from '../shared/ThemeProvider';
+import React, { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { toast } from '../shared/Toast';
 
-interface FileEditorModalProps {
-  isOpen: boolean;
-  onClose: () => void;
+export interface FileEditorHandle {
+  save: () => void;
+  close: () => void;
+  isDirty: boolean;
+  isSaving: boolean;
+}
+
+interface FileEditorInlineProps {
   filePath: string;
   initialContent: string;
-  initialMtime?: number; // 文件打开时的 mtime
+  initialMtime?: number;
   cwd: string;
+  /** 进入编辑时 CodeViewer 的当前可见行号（1-based） */
+  initialLine?: number;
+  onClose: (currentLine: number) => void;
   onSaved?: () => void;
+  /** 通知父组件 dirty/saving 状态变化 */
+  onStateChange?: (state: { isDirty: boolean; isSaving: boolean }) => void;
 }
 
-// Map file extensions to Monaco language identifiers
-function getLanguageFromPath(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase() || '';
-  const languageMap: Record<string, string> = {
-    // JavaScript/TypeScript
-    'js': 'javascript',
-    'jsx': 'javascript',
-    'ts': 'typescript',
-    'tsx': 'typescript',
-    'mjs': 'javascript',
-    'cjs': 'javascript',
-    // Web
-    'html': 'html',
-    'htm': 'html',
-    'css': 'css',
-    'scss': 'scss',
-    'sass': 'scss',
-    'less': 'less',
-    // Data formats
-    'json': 'json',
-    'jsonc': 'json',
-    'xml': 'xml',
-    'yaml': 'yaml',
-    'yml': 'yaml',
-    'toml': 'ini',
-    // Markdown
-    'md': 'markdown',
-    'mdx': 'markdown',
-    // Shell
-    'sh': 'shell',
-    'bash': 'shell',
-    'zsh': 'shell',
-    'fish': 'shell',
-    // Python
-    'py': 'python',
-    'pyw': 'python',
-    // Ruby
-    'rb': 'ruby',
-    'erb': 'html',
-    // Go
-    'go': 'go',
-    // Rust
-    'rs': 'rust',
-    // C/C++
-    'c': 'c',
-    'h': 'c',
-    'cpp': 'cpp',
-    'cc': 'cpp',
-    'cxx': 'cpp',
-    'hpp': 'cpp',
-    'hxx': 'cpp',
-    // Java
-    'java': 'java',
-    // Kotlin
-    'kt': 'kotlin',
-    'kts': 'kotlin',
-    // Swift
-    'swift': 'swift',
-    // PHP
-    'php': 'php',
-    // SQL
-    'sql': 'sql',
-    // GraphQL
-    'graphql': 'graphql',
-    'gql': 'graphql',
-    // Docker
-    'dockerfile': 'dockerfile',
-    // Config files
-    'env': 'ini',
-    'ini': 'ini',
-    'conf': 'ini',
-    'cfg': 'ini',
-    // Misc
-    'txt': 'plaintext',
-    'log': 'plaintext',
-    'gitignore': 'ini',
-    'gitattributes': 'ini',
-  };
-
-  // Handle special filenames
-  const filename = filePath.split('/').pop()?.toLowerCase() || '';
-  if (filename === 'dockerfile') return 'dockerfile';
-  if (filename === 'makefile') return 'makefile';
-  if (filename === '.gitignore' || filename === '.gitattributes') return 'ini';
-  if (filename === '.env' || filename.startsWith('.env.')) return 'ini';
-
-  return languageMap[ext] || 'plaintext';
-}
-
-export function FileEditorModal({
-  isOpen,
-  onClose,
+export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlineProps>(function FileEditorInline({
   filePath,
   initialContent,
   initialMtime,
   cwd,
+  initialLine,
+  onClose,
   onSaved,
-}: FileEditorModalProps) {
-  const { resolvedTheme } = useTheme();
+  onStateChange,
+}, ref) {
   const [content, setContent] = useState(initialContent);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -122,33 +40,83 @@ export function FileEditorModal({
     show: boolean;
     diskContent?: string;
   }>({ show: false });
-  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
-  // 追踪当前文件的 mtime — 打开时记录，保存成功后更新
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mtimeRef = useRef<number | undefined>(initialMtime);
 
-  // Reset state when modal opens with new content
+  // Reset state when content changes (file switch)
   useEffect(() => {
-    if (isOpen) {
-      setContent(initialContent);
-      setIsDirty(false);
-      setConflictState({ show: false });
-      mtimeRef.current = initialMtime;
-    }
-  }, [isOpen, initialContent, initialMtime]);
+    setContent(initialContent);
+    setIsDirty(false);
+    setConflictState({ show: false });
+    mtimeRef.current = initialMtime;
+  }, [initialContent, initialMtime]);
 
-  const handleEditorMount: OnMount = useCallback((editor) => {
-    editorRef.current = editor;
-    // Focus editor when mounted
-    editor.focus();
+  // 通知父组件状态变化
+  useEffect(() => {
+    onStateChange?.({ isDirty, isSaving });
+  }, [isDirty, isSaving, onStateChange]);
+
+  // Mount 时 focus + 滚动到指定行
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.focus();
+    if (initialLine && initialLine > 1) {
+      const lh = getLineHeight();
+      ta.scrollTop = (initialLine - 1) * lh;
+      // 将光标放到目标行开头
+      const lines = initialContent.split('\n');
+      let charPos = 0;
+      for (let i = 0; i < Math.min(initialLine - 1, lines.length); i++) {
+        charPos += lines[i].length + 1; // +1 for \n
+      }
+      ta.setSelectionRange(charPos, charPos);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleEditorChange: OnChange = useCallback((value) => {
-    const newContent = value || '';
+  /** 获取实际行高（首次调用时测量并缓存） */
+  const measuredLineHeight = useRef<number>(0);
+  const getLineHeight = useCallback((): number => {
+    if (measuredLineHeight.current > 0) return measuredLineHeight.current;
+    const ta = textareaRef.current;
+    if (!ta) return 20;
+    const style = window.getComputedStyle(ta);
+    measuredLineHeight.current = parseFloat(style.lineHeight) || 20;
+    return measuredLineHeight.current;
+  }, []);
+
+  /** 获取当前可见首行号（1-based） */
+  const getCurrentLine = useCallback((): number => {
+    const ta = textareaRef.current;
+    if (!ta) return initialLine || 1;
+    return Math.floor(ta.scrollTop / getLineHeight()) + 1;
+  }, [initialLine, getLineHeight]);
+
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newContent = e.target.value;
     setContent(newContent);
     setIsDirty(newContent !== initialContent);
   }, [initialContent]);
 
-  // 实际执行保存（可选跳过冲突检测）
+  // Tab 键插入 2 空格
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const ta = e.currentTarget;
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      const value = ta.value;
+      const newValue = value.substring(0, start) + '  ' + value.substring(end);
+      setContent(newValue);
+      setIsDirty(newValue !== initialContent);
+      // 恢复光标位置
+      requestAnimationFrame(() => {
+        ta.selectionStart = ta.selectionEnd = start + 2;
+      });
+    }
+  }, [initialContent]);
+
   const doSave = useCallback(async (skipConflictCheck = false) => {
     setIsSaving(true);
     try {
@@ -159,16 +127,13 @@ export function FileEditorModal({
           cwd,
           path: filePath,
           content,
-          // 强制覆盖时不传 expectedMtime
           expectedMtime: skipConflictCheck ? undefined : mtimeRef.current,
         }),
       });
 
       const data = await response.json();
 
-      // 409 冲突：文件在编辑期间被外部修改
       if (response.status === 409 && data.conflict) {
-        // 获取磁盘上的最新内容用于对比提示
         try {
           const readRes = await fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`);
           const readData = await readRes.json();
@@ -186,7 +151,6 @@ export function FileEditorModal({
         throw new Error('Failed to save file');
       }
 
-      // 保存成功，更新 mtime
       if (data.mtime) {
         mtimeRef.current = data.mtime;
       }
@@ -207,147 +171,167 @@ export function FileEditorModal({
     await doSave(false);
   }, [isDirty, isSaving, doSave]);
 
-  // 强制覆盖（用户确认后）
   const handleForceOverwrite = useCallback(async () => {
     setConflictState({ show: false });
     await doSave(true);
   }, [doSave]);
 
-  // 放弃本地修改，使用磁盘版本
   const handleRevertToDisk = useCallback(() => {
     if (conflictState.diskContent !== undefined) {
       setContent(conflictState.diskContent);
-      // 重新加载后如果内容跟 initialContent 一样，则不 dirty
       setIsDirty(conflictState.diskContent !== initialContent);
-      if (editorRef.current) {
-        editorRef.current.setValue(conflictState.diskContent);
-      }
     }
     setConflictState({ show: false });
-    // 刷新以获取最新 mtime
     onSaved?.();
   }, [conflictState.diskContent, initialContent, onSaved]);
 
-  // Keyboard shortcut: Cmd/Ctrl + S to save
+  // Cmd/Ctrl + S
   useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         handleSave();
       }
     };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [handleSave]);
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, handleSave]);
+  const handleClose = useCallback(() => {
+    if (isDirty) {
+      if (!confirm('有未保存的修改，确定关闭？')) return;
+    }
+    onClose(getCurrentLine());
+  }, [isDirty, onClose, getCurrentLine]);
 
-  if (!isOpen) return null;
+  // ESC to close
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleClose();
+      }
+    };
+    document.addEventListener('keydown', handler, true);
+    return () => document.removeEventListener('keydown', handler, true);
+  }, [handleClose]);
 
-  const language = getLanguageFromPath(filePath);
-  const fileName = filePath.split('/').pop() || filePath;
+  // Expose imperative handle
+  useImperativeHandle(ref, () => ({
+    save: handleSave,
+    close: handleClose,
+    get isDirty() { return isDirty; },
+    get isSaving() { return isSaving; },
+  }), [handleSave, handleClose, isDirty, isSaving]);
+
+  // 行号（根据内容计算）
+  const lineCount = content.split('\n').length;
+  const lineNumChars = Math.max(4, String(lineCount).length);
+  const lineNumberWidth = `${lineNumChars + 2}ch`;
 
   return (
-    <div
-      className="absolute inset-0 z-[60] flex items-center justify-center bg-black/50"
-      onClick={onClose}
-    >
-      <div
-        className="bg-card rounded-lg shadow-xl w-[90%] h-[90%] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-foreground truncate">
-              {fileName}
-              {isDirty && <span className="text-amber-11 ml-1">*</span>}
-            </span>
-            <span className="text-xs text-muted-foreground truncate">
-              {filePath}
-            </span>
-          </div>
+    <div className="flex flex-col h-full">
+      {/* 冲突提示条 */}
+      {conflictState.show && (
+        <div className="px-4 py-2 bg-amber-500/15 border-b border-amber-500/30 flex items-center gap-3 flex-shrink-0">
+          <svg className="w-5 h-5 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+          <span className="text-sm text-foreground flex-1">
+            文件已被外部修改，保存将覆盖外部更改
+          </span>
           <div className="flex items-center gap-2">
             <button
-              onClick={handleSave}
-              disabled={!isDirty || isSaving}
-              className={`px-3 py-1.5 text-sm rounded transition-colors ${
-                isDirty && !isSaving
-                  ? 'bg-brand text-white hover:bg-brand/90'
-                  : 'bg-secondary text-muted-foreground cursor-not-allowed'
-              }`}
+              onClick={handleRevertToDisk}
+              className="px-3 py-1 text-sm rounded border border-border hover:bg-accent transition-colors"
             >
-              {isSaving ? (
-                <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-              ) : (
-                '保存'
-              )}
+              使用磁盘版本
             </button>
             <button
-              onClick={onClose}
-              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-              title="关闭 (ESC)"
+              onClick={handleForceOverwrite}
+              className="px-3 py-1 text-sm rounded bg-amber-500 text-white hover:bg-amber-600 transition-colors"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              强制覆盖
             </button>
           </div>
         </div>
+      )}
 
-        {/* 冲突提示条 */}
-        {conflictState.show && (
-          <div className="px-4 py-2 bg-amber-500/15 border-b border-amber-500/30 flex items-center gap-3 flex-shrink-0">
-            <svg className="w-5 h-5 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-            </svg>
-            <span className="text-sm text-foreground flex-1">
-              文件已被外部修改，保存将覆盖外部更改
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleRevertToDisk}
-                className="px-3 py-1 text-sm rounded border border-border hover:bg-accent transition-colors"
-                title="放弃你的修改，使用磁盘上的最新版本"
-              >
-                使用磁盘版本
-              </button>
-              <button
-                onClick={handleForceOverwrite}
-                className="px-3 py-1 text-sm rounded bg-amber-500 text-white hover:bg-amber-600 transition-colors"
-                title="忽略外部修改，强制保存你的版本"
-              >
-                强制覆盖
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Editor */}
-        <div className="flex-1 overflow-hidden">
-          <Editor
-            height="100%"
-            language={language}
-            value={content}
-            theme={resolvedTheme === 'dark' ? 'vs-dark' : 'light'}
-            onMount={handleEditorMount}
-            onChange={handleEditorChange}
-            options={{
-              minimap: { enabled: true },
-              fontSize: 13,
-              lineNumbers: 'on',
-              scrollBeyondLastLine: false,
-              automaticLayout: true,
-              tabSize: 2,
-              wordWrap: 'on',
-              renderWhitespace: 'selection',
-              bracketPairColorization: { enabled: true },
-              padding: { top: 8, bottom: 8 },
-            }}
-          />
-        </div>
+      {/* Editor area with line numbers */}
+      <div className="flex-1 overflow-hidden flex bg-secondary">
+        {/* 行号列 */}
+        <LineNumbers lineCount={lineCount} width={lineNumberWidth} textareaRef={textareaRef} />
+        {/* textarea */}
+        <textarea
+          ref={textareaRef}
+          value={content}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          spellCheck={false}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          className="flex-1 bg-secondary text-foreground font-mono text-sm leading-5 px-3 py-0 outline-none resize-none overflow-auto"
+          style={{
+            tabSize: 2,
+            whiteSpace: 'pre',
+            overflowWrap: 'normal',
+          }}
+        />
       </div>
     </div>
   );
+});
+
+/**
+ * 行号列组件 — 与 textarea 滚动同步
+ */
+function LineNumbers({
+  lineCount,
+  width,
+  textareaRef,
+}: {
+  lineCount: number;
+  width: string | number;
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
+}) {
+  const lineNumRef = useRef<HTMLDivElement>(null);
+
+  // 同步滚动
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+
+    const syncScroll = () => {
+      if (lineNumRef.current) {
+        lineNumRef.current.scrollTop = ta.scrollTop;
+      }
+    };
+
+    ta.addEventListener('scroll', syncScroll);
+    return () => ta.removeEventListener('scroll', syncScroll);
+  }, [textareaRef]);
+
+  const lines = [];
+  for (let i = 1; i <= lineCount; i++) {
+    lines.push(
+      <div key={i} className="text-right text-muted-foreground/50 select-none leading-5 pr-3">
+        {i}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={lineNumRef}
+      className="flex-shrink-0 font-mono text-sm overflow-hidden"
+      style={{ width }}
+    >
+      {lines}
+    </div>
+  );
 }
+
+// Keep backward-compatible export name
+export { FileEditorInline as FileEditorModal };

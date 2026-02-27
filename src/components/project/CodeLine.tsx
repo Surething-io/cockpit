@@ -16,7 +16,8 @@ export interface CodeLineProps {
   lineCommentsCount?: number;
   isInRange: boolean;
   showLineNumbers: boolean;
-  lineNumberWidth: number;
+  /** 行号最少字符数（如 4 表示最多9999行），用于统一宽度 */
+  lineNumChars: number;
   commentsEnabled: boolean;
   virtualItemSize: number;
   virtualItemStart: number;
@@ -32,7 +33,7 @@ export const CodeLine = memo(function CodeLine({
   lineCommentsCount,
   isInRange,
   showLineNumbers,
-  lineNumberWidth,
+  lineNumChars,
   commentsEnabled,
   virtualItemSize,
   virtualItemStart,
@@ -54,10 +55,9 @@ export const CodeLine = memo(function CodeLine({
     >
       {showLineNumbers && (
         <span
-          className={`flex-shrink-0 flex items-center justify-end gap-0.5 pr-1 select-none border-r border-border ${
+          className={`flex-shrink-0 flex items-center justify-end gap-0.5 pr-2 select-none border-r border-border font-variant-tabular ${
             isInRange ? 'bg-blue-9/30 text-blue-11' : 'bg-card/50 text-slate-9'
           }`}
-          style={{ width: lineNumberWidth }}
         >
           {commentsEnabled && hasComments && firstComment && (
             <button
@@ -71,7 +71,7 @@ export const CodeLine = memo(function CodeLine({
             </button>
           )}
           {commentsEnabled && !hasComments && <span className="w-4" />}
-          <span className="w-6 text-right">{lineNum}</span>
+          <span className="text-right" style={{ minWidth: `${lineNumChars}ch` }}>{lineNum}</span>
         </span>
       )}
       <span

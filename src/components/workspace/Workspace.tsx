@@ -27,7 +27,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   const [isNoteOpen, setIsNoteOpen] = useState(false);
   const [noteProjectCwd, setNoteProjectCwd] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [unreadProjects, setUnreadProjects] = useState<Set<string>>(new Set());
+  // unread 状态统一由 ProjectSidebar 内部的 unreadSessionIds 管理
   // 懒加载：只渲染曾被激活过的项目 iframe（只增不减）
   const [loadedCwds, setLoadedCwds] = useState<Set<string>>(new Set());
   const iframeRefs = useRef<Map<string, HTMLIFrameElement>>(new Map());
@@ -148,15 +148,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   // 监听 iframe 发来的消息
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      // 会话完成通知
-      if (event.data?.type === 'SESSION_COMPLETE' && event.data?.cwd) {
-        const completedCwd = event.data.cwd;
-        // 如果不是当前活跃项目，添加到未读列表
-        const currentProject = projects[activeIndex];
-        if (currentProject?.cwd !== completedCwd) {
-          setUnreadProjects(prev => new Set(prev).add(completedCwd));
-        }
-      }
+      // 会话完成通知 — 未读状态由 ProjectSidebar 的 unreadSessionIds 统一管理
       // sessionId 变化通知（iframe 内切换 tab）
       if (event.data?.type === 'SESSION_CHANGE' && event.data?.cwd && event.data?.sessionId) {
         const { cwd, sessionId } = event.data;
@@ -220,11 +212,6 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
     // 清除该项目的未读状态，并更新 URL
     const selectedProject = projects[index];
     if (selectedProject?.cwd) {
-      setUnreadProjects(prev => {
-        const next = new Set(prev);
-        next.delete(selectedProject.cwd);
-        return next;
-      });
       // 更新 URL（使用跟踪的 sessionId）
       const sessionId = projectSessionIdsRef.current.get(selectedProject.cwd);
       updateUrl(selectedProject.cwd, sessionId);
@@ -382,7 +369,6 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         activeIndex={activeIndex}
         collapsed={collapsed}
         currentCwd={projects[activeIndex]?.cwd}
-        unreadProjects={unreadProjects}
         onSelectProject={handleSelectProject}
         onRemoveProject={handleRemoveProject}
         onReorderProjects={handleReorderProjects}

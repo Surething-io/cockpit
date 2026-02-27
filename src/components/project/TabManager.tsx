@@ -117,6 +117,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         const { sessionId } = event.data;
         if (sessionId) {
           handleSelectSession(sessionId);
+          setActiveView('agent');
         }
       }
     };

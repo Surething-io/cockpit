@@ -9,6 +9,7 @@ import { useMenuContainer } from './FileContextMenu';
 import { useChatContextOptional } from './ChatContext';
 import { AddCommentInput, SendToAIInput } from './CodeInputCards';
 import { computeLineDiff } from './diffAlgorithm';
+import { toast } from '../shared/Toast';
 import { useLineHighlight, HighlightedContent } from './useLineHighlight';
 import { DiffMinimap } from './DiffMinimap';
 import { FloatingToolbar } from './FloatingToolbar';
@@ -351,8 +352,16 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
         <div className={`${leftWidth} min-w-0 px-2 py-1 bg-accent text-muted-foreground text-center text-xs font-medium border-r border-border`}>
           {isNew ? '(New File)' : isDeleted ? 'Deleted' : 'Old'}
         </div>
-        <div className={`${rightWidth} min-w-0 px-2 py-1 bg-accent text-muted-foreground text-center text-xs font-medium`}>
-          {isDeleted ? '(Deleted)' : 'New'}
+        <div className={`${rightWidth} min-w-0 px-2 py-1 bg-accent text-muted-foreground text-xs font-medium relative`}>
+          <span className="block text-center">{isDeleted ? '(Deleted)' : 'New'}</span>
+          {!isDeleted && newContent && (
+            <button
+              onClick={() => { navigator.clipboard.writeText(newContent); toast('已复制全文'); }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              复制
+            </button>
+          )}
         </div>
         <div className="w-4 flex-shrink-0 bg-accent" />
       </div>

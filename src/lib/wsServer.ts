@@ -102,6 +102,10 @@ function handleGlobalState(ws: WebSocket): void {
 
       const sessionsWithLastMessage = await Promise.all(
         recentSessions.map(async (session) => {
+          // isLoading 时 state.json 已有最新 lastUserMessage（chat route 写入），无需读 transcript
+          if (session.isLoading && session.lastUserMessage) {
+            return session;
+          }
           const lastUserMessage = await getLastUserMessage(session.cwd, session.sessionId);
           return { ...session, lastUserMessage };
         })

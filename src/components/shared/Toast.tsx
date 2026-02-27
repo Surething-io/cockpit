@@ -113,7 +113,7 @@ function getToastContainer() {
   if (!toastContainer) {
     toastContainer = document.createElement('div');
     toastContainer.id = 'toast-container';
-    toastContainer.className = 'fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2';
+    toastContainer.className = 'fixed bottom-4 right-4 z-[100] flex flex-col-reverse items-end gap-2';
     document.body.appendChild(toastContainer);
   }
   return toastContainer;

@@ -89,6 +89,12 @@ export async function POST(request: NextRequest) {
         // 用于跟踪实际的 sessionId（可能从流中获取）
         let actualSessionId = sessionId;
 
+        // 立即标记为 loading，同时传入用户消息（避免 transcript 尚未写入时读到旧消息）
+        const userMessage = typeof prompt === 'string' ? prompt : undefined;
+        if (cwd && sessionId) {
+          updateGlobalState(cwd, sessionId, true, undefined, userMessage).catch(() => {});
+        }
+
         try {
           // 根据是否有图片决定使用哪种方式调用 SDK
           const hasImages = images && images.length > 0;
@@ -166,7 +172,7 @@ export async function POST(request: NextRequest) {
               actualSessionId = msg.session_id;
               // 统一在这里标记开始加载（新会话和恢复会话都走这里）
               if (cwd) {
-                updateGlobalState(cwd, actualSessionId, true).catch(() => {});
+                updateGlobalState(cwd, actualSessionId, true, undefined, userMessage).catch(() => {});
               }
             }
 

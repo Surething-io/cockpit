@@ -951,7 +951,7 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
                 </button>
               </div>
             )}
-            <div className={gridLayout ? 'grid grid-cols-2 gap-3' : 'flex flex-col'}>
+            <div className={gridLayout ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-3'}>
             {commands.map((cmd) => (
               <div key={cmd.id} className="group/cmd">
                 <CommandBubble

@@ -1,8 +1,16 @@
 'use client';
 
-import { useRef, useEffect, useCallback, memo } from 'react';
+import { useRef, useEffect, useCallback, memo, useImperativeHandle, forwardRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
+
+/** 暴露给父组件的搜索接口 */
+export interface XtermSearchHandle {
+  findNext: (query: string) => boolean;
+  findPrevious: (query: string) => boolean;
+  clearSearch: () => void;
+}
 
 interface XtermRendererProps {
   /** 累积的原始 PTY 输出（含 ANSI 控制序列） */
@@ -15,6 +23,8 @@ interface XtermRendererProps {
   onResize?: (cols: number, rows: number) => void;
   /** 是否最大化 */
   maximized?: boolean;
+  /** 非最大化时的固定高度（px） */
+  height?: number;
 }
 
 /**
@@ -22,21 +32,50 @@ interface XtermRendererProps {
  * 支持完整的终端控制序列（光标移动、清屏、alternate buffer 等）
  * 运行中时启用 stdin 输入，逐键发送到 PTY
  */
-export const XtermRenderer = memo(function XtermRenderer({
+export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererProps>(function XtermRenderer({
   output,
   isRunning,
   onInput,
   onResize,
   maximized,
-}: XtermRendererProps) {
+  height,
+}, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
   const writtenLenRef = useRef(0);
   const onInputRef = useRef(onInput);
   const onResizeRef = useRef(onResize);
   onInputRef.current = onInput;
   onResizeRef.current = onResize;
+
+  // 暴露搜索接口
+  useImperativeHandle(ref, () => ({
+    findNext: (query: string) => {
+      return searchAddonRef.current?.findNext(query, { caseSensitive: false, decorations: {
+        matchBackground: '#facc1550',
+        matchBorder: '#facc15',
+        matchOverviewRuler: '#facc15',
+        activeMatchBackground: '#facc1590',
+        activeMatchBorder: '#facc15',
+        activeMatchColorOverviewRuler: '#facc15',
+      } }) ?? false;
+    },
+    findPrevious: (query: string) => {
+      return searchAddonRef.current?.findPrevious(query, { caseSensitive: false, decorations: {
+        matchBackground: '#facc1550',
+        matchBorder: '#facc15',
+        matchOverviewRuler: '#facc15',
+        activeMatchBackground: '#facc1590',
+        activeMatchBorder: '#facc15',
+        activeMatchColorOverviewRuler: '#facc15',
+      } }) ?? false;
+    },
+    clearSearch: () => {
+      searchAddonRef.current?.clearDecorations();
+    },
+  }), []);
 
   // 初始化 xterm
   useEffect(() => {
@@ -77,7 +116,9 @@ export const XtermRenderer = memo(function XtermRenderer({
     });
 
     const fitAddon = new FitAddon();
+    const searchAddon = new SearchAddon();
     term.loadAddon(fitAddon);
+    term.loadAddon(searchAddon);
     term.open(containerRef.current);
 
     // 逐键转发到 PTY
@@ -97,12 +138,14 @@ export const XtermRenderer = memo(function XtermRenderer({
 
     termRef.current = term;
     fitAddonRef.current = fitAddon;
+    searchAddonRef.current = searchAddon;
     writtenLenRef.current = 0;
 
     return () => {
       term.dispose();
       termRef.current = null;
       fitAddonRef.current = null;
+      searchAddonRef.current = null;
       writtenLenRef.current = 0;
     };
   }, []);
@@ -168,8 +211,8 @@ export const XtermRenderer = memo(function XtermRenderer({
   return (
     <div
       ref={containerRef}
-      className="xterm-renderer px-2 py-1"
-      style={{ height: maximized ? '100%' : 360, overflow: 'hidden' }}
+      className="xterm-renderer px-2"
+      style={{ height: maximized ? '100%' : height, overflow: 'hidden' }}
     />
   );
-});
+}));

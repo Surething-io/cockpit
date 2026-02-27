@@ -15,7 +15,6 @@ interface ProjectSidebarProps {
   activeIndex: number;
   collapsed: boolean;
   currentCwd?: string;
-  unreadProjects: Set<string>;
   onSelectProject: (index: number) => void;
   onRemoveProject: (index: number) => void;
   onReorderProjects: (projects: ProjectInfo[]) => void;
@@ -37,7 +36,6 @@ export function ProjectSidebar({
   activeIndex,
   collapsed,
   currentCwd,
-  unreadProjects,
   onSelectProject,
   onRemoveProject,
   onReorderProjects,
@@ -101,14 +99,15 @@ export function ProjectSidebar({
     onMessage: handleGlobalStateMessage,
   });
 
-  // 当切换到某个项目时，清除该项目当前 session 的未读状态
+  // 当切换到某个项目时，清除该项目所有 session 的未读状态
   useEffect(() => {
     if (!currentCwd) return;
-    const currentSession = sessions.find(s => s.cwd === currentCwd);
-    if (currentSession && unreadSessionIds.has(currentSession.sessionId)) {
+    const cwdSessionIds = sessions.filter(s => s.cwd === currentCwd).map(s => s.sessionId);
+    const hasUnread = cwdSessionIds.some(id => unreadSessionIds.has(id));
+    if (hasUnread) {
       setUnreadSessionIds(prev => {
         const next = new Set(prev);
-        next.delete(currentSession.sessionId);
+        cwdSessionIds.forEach(id => next.delete(id));
         return next;
       });
     }
@@ -127,6 +126,11 @@ export function ProjectSidebar({
   // 构建 cwd -> isLoading 的映射
   const loadingCwds = new Set(
     sessions.filter(s => s.isLoading).map(s => s.cwd)
+  );
+
+  // 从 unreadSessionIds 推导出哪些项目有未读（单一状态源）
+  const unreadCwds = new Set(
+    sessions.filter(s => unreadSessionIds.has(s.sessionId)).map(s => s.cwd)
   );
 
   // 拖拽开始
@@ -242,7 +246,7 @@ export function ProjectSidebar({
               cwd={project.cwd}
               isActive={index === activeIndex}
               collapsed={collapsed}
-              hasUnread={unreadProjects.has(project.cwd)}
+              hasUnread={unreadCwds.has(project.cwd)}
               isLoading={loadingCwds.has(project.cwd)}
               onClick={() => onSelectProject(index)}
               onRemove={() => onRemoveProject(index)}

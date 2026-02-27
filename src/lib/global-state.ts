@@ -24,7 +24,8 @@ export async function updateGlobalState(
   cwd: string,
   sessionId: string,
   isLoading: boolean,
-  title?: string
+  title?: string,
+  lastUserMessage?: string
 ): Promise<void> {
   // 防御：跳过不存在的路径（避免写入错误解码的 cwd）
   if (!existsSync(cwd)) {
@@ -38,15 +39,16 @@ export async function updateGlobalState(
     s => s.cwd === cwd && s.sessionId === sessionId
   );
 
-  // 保留现有 title（如果没有传入新的）
-  const existingTitle = existingIndex >= 0 ? state.sessions[existingIndex].title : undefined;
+  // 保留现有字段（如果没有传入新的）
+  const existing = existingIndex >= 0 ? state.sessions[existingIndex] : undefined;
 
   const newSession: GlobalSession = {
     cwd,
     sessionId,
     lastActive: Date.now(),
     isLoading,
-    title: title || existingTitle,
+    title: title || existing?.title,
+    lastUserMessage: lastUserMessage || existing?.lastUserMessage,
   };
 
   if (existingIndex >= 0) {

@@ -2,9 +2,10 @@
 
 import { useRef, useEffect, useLayoutEffect, memo, useState, lazy, Suspense, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, Clipboard, X, RotateCw } from 'lucide-react';
+import { Copy, Clipboard, X, RotateCw, ChevronUp, ChevronDown, Search } from 'lucide-react';
 import { toast } from '../../shared/Toast';
 import { AnsiUp } from 'ansi_up';
+import type { XtermSearchHandle } from './XtermRenderer';
 
 const XtermRenderer = lazy(() => import('./XtermRenderer').then(m => ({ default: m.XtermRenderer })));
 
@@ -55,6 +56,9 @@ const CTRL_KEY_MAP: Record<string, string> = {
 // 全屏顶栏高度（px）
 const FULLSCREEN_BAR_HEIGHT = 41;
 
+/** 气泡内容区固定高度（px），确保垂直方向刚好放下 2 个完整气泡 */
+export const BUBBLE_CONTENT_HEIGHT = 360;
+
 export const CommandBubble = memo(function CommandBubble({
   command,
   output,
@@ -86,6 +90,12 @@ export const CommandBubble = memo(function CommandBubble({
   const xtermWrapperRef = useRef<HTMLDivElement>(null);  // xterm 所在的 wrapper
   const bubbleSlotRef = useRef<HTMLDivElement>(null);     // 气泡中的插槽
   const fullscreenXtermAreaRef = useRef<HTMLDivElement>(null); // 全屏 overlay 中的 xterm 区域
+  const xtermSearchRef = useRef<XtermSearchHandle>(null); // xterm 搜索接口
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // 搜索状态
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // ANSI 解析器 & 增量追踪
   const ansiUpRef = useRef<AnsiUp | null>(null);
@@ -200,11 +210,55 @@ export const CommandBubble = memo(function CommandBubble({
         if (bubbleSlotRef.current && xtermWrapper.parentElement) {
           bubbleSlotRef.current.appendChild(xtermWrapper);
         }
+        // 退出全屏时关闭搜索
+        setSearchVisible(false);
+        setSearchQuery('');
       };
     }
   }, [maximized, usePty]);
 
   const lineCount = output ? output.split('\n').length : 0;
+
+  // 搜索：Cmd+F 唤出，ESC 关闭
+  const openSearch = useCallback(() => {
+    setSearchVisible(true);
+    requestAnimationFrame(() => searchInputRef.current?.focus());
+  }, []);
+
+  const closeSearch = useCallback(() => {
+    setSearchVisible(false);
+    setSearchQuery('');
+    xtermSearchRef.current?.clearSearch();
+  }, []);
+
+  const doSearchNext = useCallback((q: string) => {
+    if (q.trim()) xtermSearchRef.current?.findNext(q);
+  }, []);
+
+  const doSearchPrev = useCallback((q: string) => {
+    if (q.trim()) xtermSearchRef.current?.findPrevious(q);
+  }, []);
+
+  // Cmd+F / ESC 快捷键（仅在 PTY 全屏时）
+  useEffect(() => {
+    if (!usePty || !maximized) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        e.stopPropagation();
+        openSearch();
+        return;
+      }
+      if (e.key === 'Escape' && searchVisible) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeSearch();
+        return;
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, [usePty, maximized, searchVisible, openSearch, closeSearch]);
 
   // 全屏 overlay：通过 createPortal 渲染到 terminalRootRef，absolute 定位覆盖整个 terminal 区域
   const fullscreenOverlay = usePty && maximized && portalContainer ? createPortal(
@@ -244,6 +298,54 @@ export const CommandBubble = memo(function CommandBubble({
           <X className="w-4 h-4" />
         </button>
       </div>
+      {/* 搜索栏 - Cmd+F 唤出 */}
+      {searchVisible && (
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card" style={{ flexShrink: 0 }}>
+          <Search className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+          <input
+            ref={searchInputRef}
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              if (e.target.value.trim()) xtermSearchRef.current?.findNext(e.target.value);
+              else xtermSearchRef.current?.clearSearch();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (e.shiftKey) doSearchPrev(searchQuery);
+                else doSearchNext(searchQuery);
+              }
+            }}
+            placeholder="搜索..."
+            className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            autoComplete="off"
+            spellCheck="false"
+          />
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => doSearchPrev(searchQuery)}
+              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              title="上一个 (Shift+Enter)"
+            >
+              <ChevronUp className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => doSearchNext(searchQuery)}
+              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              title="下一个 (Enter)"
+            >
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <button
+            onClick={closeSearch}
+            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
       {/* xterm 区域 - 原生 DOM 会将 xtermWrapper 移入此处 */}
       <div ref={fullscreenXtermAreaRef} style={{ flex: 1, overflow: 'hidden' }} />
     </div>,
@@ -251,9 +353,9 @@ export const CommandBubble = memo(function CommandBubble({
   ) : null;
 
   return (
-    <div className="flex flex-col items-start mb-4">
+    <div className="flex flex-col items-start">
         <div
-          className={`w-full bg-accent text-foreground dark:text-slate-11 rounded-2xl rounded-bl-md relative overflow-hidden border transition-colors cursor-pointer ${
+          className={`w-full bg-accent text-foreground dark:text-slate-11 rounded-2xl rounded-bl-md rounded-br-md relative overflow-hidden border transition-colors cursor-pointer ${
             selected ? 'border-brand' : 'border-brand/30'
           }`}
           onClick={onSelect}
@@ -316,15 +418,16 @@ export const CommandBubble = memo(function CommandBubble({
              */
             <div ref={bubbleSlotRef}>
               <div ref={xtermWrapperRef} style={maximized ? { height: '100%' } : undefined}>
-                <Suspense fallback={<div className="px-4 py-2 text-xs text-muted-foreground">加载终端...</div>}>
-                  <XtermRenderer output={output} isRunning={isRunning} onInput={onStdin} onResize={onPtyResize} maximized={maximized} />
+                <Suspense fallback={<div className="px-4 py-2 text-xs text-muted-foreground" style={{ height: BUBBLE_CONTENT_HEIGHT }}>加载终端...</div>}>
+                  <XtermRenderer ref={xtermSearchRef} output={output} isRunning={isRunning} onInput={onStdin} onResize={onPtyResize} maximized={maximized} height={BUBBLE_CONTENT_HEIGHT} />
                 </Suspense>
               </div>
             </div>
           ) : (
             <div
               ref={scrollRef}
-              className="max-h-[600px] overflow-hidden px-4 py-2"
+              className="overflow-hidden px-4 py-2"
+              style={{ height: BUBBLE_CONTENT_HEIGHT }}
               onScroll={handleScroll}
             >
               <pre ref={preRef} className="text-sm font-mono whitespace-pre-wrap break-words select-text" />
@@ -384,7 +487,7 @@ export const CommandBubble = memo(function CommandBubble({
               {onInterrupt && (
                 <button
                   onClick={onInterrupt}
-                  className="flex-shrink-0 text-xs px-3 py-1 rounded-md font-medium bg-destructive text-destructive-foreground transition-all duration-150 hover:bg-destructive/80 hover:shadow-md active:scale-95 active:bg-destructive/70 cursor-pointer select-none"
+                  className="flex-shrink-0 text-xs text-destructive hover:brightness-125 transition-colors cursor-pointer select-none"
                 >
                   Ctrl+C
                 </button>

@@ -65,11 +65,18 @@ chrome.declarativeNetRequest.getSessionRules().then(rules => {
 });
 
 // =========================================================================
-// Cockpit iframe 追踪
+// Cockpit iframe 追踪 + Cookie 注入时序保证
 //
-// 通过 webNavigation 追踪哪些 frame 是由 Cockpit 发起的（URL 带 _cockpit=1）。
-// 服务端 302 重定向会丢失 URL 参数，所以需要在初始请求时记录 frameId，
-// 让重定向后的 content script 通过消息查询是否为 Cockpit frame。
+// 双层保证机制：
+//   Layer 1: externally_connectable（BrowserBubble → background 直连）
+//     → await prepareCookies() 返回后才设置 iframe src
+//     → Cookie 规则 100% 在首次请求前就绪
+//
+//   Layer 2: webNavigation.onBeforeNavigate（兜底 + frame 追踪）
+//     → 记录带 _cockpit=1 的 frame，供 content script check-frame 查询
+//     → 同时触发 injectCookiesForUrl 作为兜底（刷新场景等）
+//
+// DNR 静态规则 #3 在网络层剥离 _cockpit=1 参数，服务端永远看不到。
 // =========================================================================
 const cockpitFrames = new Set(); // "tabId-frameId"
 
@@ -81,17 +88,22 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
 
   if (details.url.includes('_cockpit=1')) {
     cockpitFrames.add(key);
-    console.log(`[Cockpit Bridge] 追踪 Cockpit frame: ${key}, url: ${details.url}`);
 
-    // 立即触发 Cookie 注入 —— 在请求发出前创建 declarativeNetRequest 规则
-    // 这比 postMessage 转发链更可靠，确保首次请求就带上 Cookie
-    injectCookiesForUrl(details.url, details.tabId);
+    // 兜底注入：仅在 externally_connectable 未预创建规则时才触发
+    // 避免重复调用 injectCookiesForUrl 导致「先删旧规则 → 异步创建新规则」的间隙
+    try {
+      const domain = new URL(details.url).hostname;
+      const ruleKey = `${domain}:${details.tabId || 'all'}`;
+      if (domainRuleMap.has(ruleKey)) {
+        console.log(`[Cockpit Bridge] 追踪 frame: ${key}, Cookie 规则已由 prepare-iframe 创建，跳过`);
+      } else {
+        console.log(`[Cockpit Bridge] 追踪 frame: ${key}, 兜底创建 Cookie 规则`);
+        injectCookiesForUrl(details.url, details.tabId);
+      }
+    } catch {
+      injectCookiesForUrl(details.url, details.tabId);
+    }
   }
-});
-
-// frame 关闭时清理
-chrome.webNavigation.onCompleted.addListener((details) => {
-  // 不清理，让 content script 有时间查询
 });
 
 // tab 关闭时清理该 tab 的所有记录
@@ -259,6 +271,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ isCockpit });
     return;
   }
+});
+
+// =========================================================================
+// externally_connectable: Cockpit 页面直连通信
+//
+// BrowserBubble 在设置 iframe src 前，直接调用
+//   chrome.runtime.sendMessage(extensionId, { type: 'prepare-iframe', url })
+// 等待 Cookie 规则就绪后再渲染 iframe，彻底消除时序竞争。
+// =========================================================================
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  // 安全校验：只接受 localhost 消息
+  if (!sender.url || !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(sender.url)) {
+    sendResponse({ ok: false, error: 'unauthorized' });
+    return;
+  }
+
+  if (message.type === 'prepare-iframe') {
+    const tabId = sender.tab ? sender.tab.id : null;
+    console.log(`[Cockpit Bridge] externally_connectable: prepare-iframe url=${message.url}, tabId=${tabId}`);
+    injectCookiesForUrl(message.url, tabId).then(() => {
+      sendResponse({ ok: true });
+    });
+    return true; // async sendResponse
+  }
+
+  sendResponse({ ok: false, error: 'unknown type' });
 });
 
 checkUpdate();

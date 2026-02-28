@@ -27,6 +27,7 @@ interface CommandBubbleProps {
   maximized?: boolean;
   /** TerminalView 根容器（用于全屏绝对定位） */
   portalContainer?: HTMLElement | null;
+  onTitleMouseDown?: () => void;
 }
 
 // 格式化时间：01-15 14:30
@@ -76,6 +77,7 @@ export const CommandBubble = memo(function CommandBubble({
   onToggleMaximize,
   maximized,
   portalContainer,
+  onTitleMouseDown,
 }: CommandBubbleProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
@@ -273,7 +275,7 @@ export const CommandBubble = memo(function CommandBubble({
       }}
     >
       {/* 顶栏 */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card" style={{ height: FULLSCREEN_BAR_HEIGHT, flexShrink: 0 }}>
+      <div onDoubleClick={() => onToggleMaximize?.()} className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card" style={{ height: FULLSCREEN_BAR_HEIGHT, flexShrink: 0 }}>
         <span className="text-[10px] font-mono leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground">&gt;_</span>
         <span className="flex-1 text-xs text-muted-foreground truncate font-mono">{command}</span>
         {isRunning && (
@@ -362,7 +364,11 @@ export const CommandBubble = memo(function CommandBubble({
         >
           {/* 命令行头部 - 最大化时隐藏 */}
           {!maximized && (
-          <div className={`flex items-center gap-2 px-4 py-1.5 border-b text-xs transition-colors ${
+          <div
+            data-drag-handle
+            onMouseDown={() => onTitleMouseDown?.()}
+            onDoubleClick={(e) => { e.stopPropagation(); onToggleMaximize?.(); }}
+            className={`flex items-center gap-2 px-4 py-1.5 border-b text-xs transition-colors cursor-grab active:cursor-grabbing ${
             selected ? 'border-brand' : 'border-brand/30'
           }`}>
             <span className="text-[10px] font-mono leading-none px-1 py-0.5 rounded flex-shrink-0 bg-muted text-muted-foreground">&gt;_</span>

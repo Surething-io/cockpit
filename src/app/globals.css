@@ -534,6 +534,10 @@ body {
 .hl-m { background: rgba(217, 119, 6, 0.3); }     /* other matches */
 .hl-kw { background: rgba(217, 119, 6, 0.4); border-radius: 2px; padding: 0 2px; } /* keyword */
 
+/* ---- Chat search highlight ---- */
+mark.chat-search-match { background: rgba(217, 119, 6, 0.3); color: inherit; border-radius: 2px; }
+mark.chat-search-current { background: rgba(217, 119, 6, 0.6); color: inherit; border-radius: 2px; }
+
 /* ============================================
    ANSI Terminal Color Classes (ansi_up)
    ============================================ */

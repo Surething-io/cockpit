@@ -8,12 +8,15 @@
  * 2. 重写 window.open → postMessage 通知父页面创建新气泡
  * 3. 监听页面 URL 变化（pushState/replaceState/popstate）→ 通知父页面更新当前气泡 URL
  *
- * 判断是否为 Cockpit iframe 的方式：
- * 1. URL 参数（快速路径）—— Cockpit 在 iframe src 上追加 _cockpit=1，
- *    content script 在 document_start 检查该参数，有则立即激活。
- * 2. background 追踪（重定向兜底）—— 服务端 302 重定向会丢失 URL 参数，
- *    background 通过 webNavigation.onBeforeNavigate 记录初始请求带 _cockpit=1 的 frame，
- *    content script 在参数缺失时异步查询 background 确认。
+ * 识别 Cockpit iframe 的方式：
+ * BrowserBubble 在 iframe src 上追加 _cockpit=1 参数，
+ * DNR 静态规则在网络层剥离该参数（服务端看不到），
+ * background 通过 webNavigation.onBeforeNavigate 记录带 _cockpit=1 的 frame，
+ * content script 通过 check-frame 消息查询 background 确认身份。
+ *
+ * Cookie 预注入的方式：
+ * BrowserBubble 通过 externally_connectable 直接调用 background 的 prepare-iframe，
+ * await 返回后 Cookie 规则已就绪，再设置 iframe src。无时序竞争。
  */
 
 (function () {
@@ -21,64 +24,48 @@
 
   const LOG_PREFIX = '[Cockpit Bridge]';
 
-  // 顶层页面：仅在 Cockpit 页面设置安装标记
+  // ====================================================================
+  // 顶层页面：仅在 Cockpit 页面暴露 extension ID（供 externally_connectable 使用）
+  // ====================================================================
   if (window === window.top) {
     if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(window.location.origin)) {
-      try {
-        window.__cockpitBridge = { version: chrome.runtime.getManifest().version };
-      } catch {
-        window.__cockpitBridge = { version: 'unknown' };
-      }
+      // 注入到 main world，让页面 JS 能读取 extension ID
+      const id = chrome.runtime.id;
+      const version = (() => { try { return chrome.runtime.getManifest().version; } catch { return 'unknown'; } })();
+      const script = document.createElement('script');
+      script.textContent = `window.__cockpitBridge = { id: "${id}", version: "${version}" };`;
+      (document.documentElement || document).prepend(script);
+      script.remove();
     }
     return;
   }
 
-  // iframe 内 —— 通过 URL 参数 _cockpit=1 判断是否为 Cockpit 直属 iframe
-  //
+  // ====================================================================
+  // iframe 内：查询 background 确认是否为 Cockpit iframe
+  // ====================================================================
+
   // 保存真实 parent 引用（在伪装脚本覆盖之前，isolated world 不受影响）
   const realParent = window.parent;
 
-  // 快速路径：检查 URL 参数（无重定向时直接命中）
-  let hasCockpitParam = false;
-  try {
-    hasCockpitParam = new URL(window.location.href).searchParams.get('_cockpit') === '1';
-  } catch { /* 忽略 */ }
-
-  if (hasCockpitParam) {
-    // URL 带 _cockpit=1，立即激活
-    activateCockpitBridge();
-  } else {
-    // 慢速路径：服务端重定向可能丢失 _cockpit=1 参数
-    // 向 background 查询当前 frame 是否在 webNavigation 追踪列表中
-    chrome.runtime.sendMessage({ type: 'cockpit:check-frame' }, (response) => {
-      if (response?.isCockpit) {
-        console.log(LOG_PREFIX, '通过 background 追踪确认为 Cockpit frame（重定向场景）');
-        activateCockpitBridge();
-      }
-    });
-  }
+  // DNR 已在网络层剥离 _cockpit=1 参数，content script 看不到该参数。
+  // 统一通过 background 的 cockpitFrames 追踪集合来确认身份。
+  chrome.runtime.sendMessage({ type: 'cockpit:check-frame' }, (response) => {
+    if (chrome.runtime.lastError) return; // 插件未就绪，忽略
+    if (response?.isCockpit) {
+      activateCockpitBridge();
+    }
+  });
 
   // ====================================================================
-  // 以下代码只在 _cockpit=1 参数存在时执行
+  // Bridge 激活逻辑
   // ====================================================================
   function activateCockpitBridge() {
-    // ----------------------------------------------------------------
-    // -1. 清理 URL 中的 _cockpit 参数，避免网站看到
-    // ----------------------------------------------------------------
-    try {
-      const cleanUrl = new URL(window.location.href);
-      if (cleanUrl.searchParams.has('_cockpit')) {
-        cleanUrl.searchParams.delete('_cockpit');
-        history.replaceState(history.state, '', cleanUrl.toString());
-      }
-    } catch (e) { /* 忽略 */ }
-
     console.log(LOG_PREFIX,
       `Cockpit iframe 激活: ${window.location.href}\n` +
       `  ├─ 伪装: window.top/parent/frameElement 已覆盖\n` +
       `  ├─ 拦截: target="_blank" 链接、window.open → 新气泡\n` +
       `  ├─ 监听: pushState/replaceState/popstate → URL 同步\n` +
-      `  └─ Cookie: 请求 background 注入 SameSite=Lax/Strict Cookie`
+      `  └─ Cookie: 由 externally_connectable 预注入，无时序竞争`
     );
 
     // ----------------------------------------------------------------
@@ -97,19 +84,14 @@
     disguiseScript.remove();
 
     // ----------------------------------------------------------------
-    // 0.5 Cookie 注入：通知 background 为当前域名创建 Cookie 请求头规则
-    //     不修改全局 Cookie，只在网络层注入请求头
+    // 1. Cookie 补充注入：SPA 导航后域名可能变化，通知 background 补充规则
+    //    首次加载的 Cookie 已由 externally_connectable 预注入
     // ----------------------------------------------------------------
-    try {
-      chrome.runtime.sendMessage({ type: 'cockpit:inject-cookies', url: window.location.href });
-    } catch (e) {
-      // 忽略
-    }
 
     const COCKPIT_MSG_PREFIX = 'cockpit:';
 
     // ----------------------------------------------------------------
-    // 1. 向父页面发送消息（使用真实 parent 引用）
+    // 2. 向父页面发送消息（使用真实 parent 引用）
     // ----------------------------------------------------------------
     function notifyParent(type, data) {
       try {
@@ -122,7 +104,7 @@
     }
 
     // ----------------------------------------------------------------
-    // 2. 拦截 <a target="_blank"> 点击
+    // 3. 拦截 <a target="_blank"> 点击
     // ----------------------------------------------------------------
     document.addEventListener(
       'click',
@@ -148,7 +130,7 @@
     );
 
     // ----------------------------------------------------------------
-    // 3. 重写 window.open → 拦截并通知
+    // 4. 重写 window.open → 拦截并通知
     // ----------------------------------------------------------------
     const originalOpen = window.open;
     window.open = function (url, target, features) {
@@ -167,7 +149,7 @@
     };
 
     // ----------------------------------------------------------------
-    // 4. 监听页面内导航（SPA pushState / replaceState / popstate）
+    // 5. 监听页面内导航（SPA pushState / replaceState / popstate）
     // ----------------------------------------------------------------
     let lastUrl = window.location.href;
 
@@ -201,7 +183,7 @@
     window.addEventListener('hashchange', checkUrlChange);
 
     // ----------------------------------------------------------------
-    // 5. 页面加载完成后通知当前 URL
+    // 6. 页面加载完成后通知当前 URL
     // ----------------------------------------------------------------
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', function () {

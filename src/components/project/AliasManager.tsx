@@ -4,26 +4,25 @@ import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Terminal } from 'lucide-react';
 
 interface AliasManagerProps {
-  cwd: string;
   onClose: () => void;
   onSave: (aliases: Record<string, string>) => void;
 }
 
-export function AliasManager({ cwd, onClose, onSave }: AliasManagerProps) {
+export function AliasManager({ onClose, onSave }: AliasManagerProps) {
   const [aliases, setAliases] = useState<Record<string, string>>({});
   const [newAlias, setNewAlias] = useState('');
   const [newCommand, setNewCommand] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  // 加载别名
+  // 加载全局别名
   useEffect(() => {
     loadAliases();
-  }, [cwd]);
+  }, []);
 
   const loadAliases = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/terminal/aliases?cwd=${encodeURIComponent(cwd)}`);
+      const response = await fetch('/api/terminal/aliases');
       if (response.ok) {
         const data = await response.json();
         setAliases(data.aliases || {});
@@ -66,7 +65,7 @@ export function AliasManager({ cwd, onClose, onSave }: AliasManagerProps) {
       const response = await fetch('/api/terminal/aliases', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, aliases }),
+        body: JSON.stringify({ aliases }),
       });
 
       if (response.ok) {
@@ -89,7 +88,7 @@ export function AliasManager({ cwd, onClose, onSave }: AliasManagerProps) {
               命令别名管理
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              为常用命令设置快捷别名
+              为常用命令设置快捷别名（全局生效）
             </p>
           </div>
           <button

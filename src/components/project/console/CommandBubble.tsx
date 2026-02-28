@@ -263,6 +263,7 @@ export const CommandBubble = memo(function CommandBubble({
   }, [usePty, maximized, searchVisible, openSearch, closeSearch]);
 
   // 全屏 overlay：通过 createPortal 渲染到 terminalRootRef，absolute 定位覆盖整个 terminal 区域
+  // PTY 模式全屏 overlay
   const fullscreenOverlay = usePty && maximized && portalContainer ? createPortal(
     <div
       style={{
@@ -432,7 +433,7 @@ export const CommandBubble = memo(function CommandBubble({
           ) : (
             <div
               ref={scrollRef}
-              className="overflow-hidden px-4 py-2"
+              className="overflow-auto px-4 py-2"
               style={{ height: BUBBLE_CONTENT_HEIGHT }}
               onScroll={handleScroll}
             >

@@ -17,8 +17,8 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
   const [searchTreeExpandedPaths, setSearchTreeExpandedPaths] = useState<Set<string> | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchExactMatch, setSearchDirExact] = useState(false);
-  // 新建文件/文件夹状态
-  const [creatingItem, setCreatingItem] = useState<{ type: 'file' | 'folder'; parentPath: string } | null>(null);
+  // 新建文件状态
+  const [creatingItem, setCreatingItem] = useState<{ type: 'file'; parentPath: string } | null>(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [isLoadingContent, setIsLoadingContent] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);

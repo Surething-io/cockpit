@@ -95,6 +95,9 @@ export async function GET(request: Request) {
     if (cwd) {
       const projectCommandsDir = path.join(cwd, '.claude', 'commands');
       commands.push(...readCommandsFromDir(projectCommandsDir, 'project'));
+
+
+
     }
 
     // 去重（按名称，优先级：project > global > builtin）

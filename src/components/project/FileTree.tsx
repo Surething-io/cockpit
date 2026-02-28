@@ -194,6 +194,10 @@ export interface FileTreeProps {
   onToggle: (path: string) => void;
   cwd: string;
   shouldScrollToSelected?: boolean;
+  // 右键菜单操作回调
+  onCreateFile?: (dirPath: string) => void;
+  onDelete?: (path: string, isDirectory: boolean, name: string) => void;
+  onRefresh?: () => void;
 }
 
 export function FileTree({
@@ -206,6 +210,9 @@ export function FileTree({
   onToggle,
   cwd,
   shouldScrollToSelected = false,
+  onCreateFile,
+  onDelete,
+  onRefresh,
 }: FileTreeProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const { contextMenu, showContextMenu, hideContextMenu } = useFileContextMenu();
@@ -291,6 +298,9 @@ export function FileTree({
           cwd={cwd}
           isDirectory={contextMenu.isDirectory}
           onClose={hideContextMenu}
+          onCreateFile={onCreateFile}
+          onDelete={onDelete}
+          onRefresh={onRefresh}
         />
       )}
     </div>

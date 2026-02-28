@@ -30,7 +30,9 @@ import { useGitHistory } from '../../hooks/useGitHistory';
 export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchTrigger }: FileBrowserModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const menuContainerRef = useRef<HTMLDivElement>(null);
+  const composingRef = useRef(false);
   const [menuContainer, setMenuContainer] = useState<HTMLElement | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ path: string; isDirectory: boolean; name: string } | null>(null);
   const [showQuickOpen, setShowQuickOpen] = useState(false);
   const [hoverTooltip, setHoverTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   // CodeViewer 当前可见行号（1-based），用于编辑器 ↔ 查看器行位置同步
@@ -452,32 +454,6 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                 </button>
                 {/* 功能按钮组 */}
                 <div className="flex items-center gap-0.5">
-                  {/* 新建文件 */}
-                  <button
-                    onClick={() => {
-                      const targetDir = getTargetDirPath(fileTree.selectedPath, fileTree.files);
-                      fileTree.setCreatingItem({ type: 'file', parentPath: targetDir });
-                    }}
-                    className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-                    title="新建文件"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </button>
-                  {/* 新建文件夹 */}
-                  <button
-                    onClick={() => {
-                      const targetDir = getTargetDirPath(fileTree.selectedPath, fileTree.files);
-                      fileTree.setCreatingItem({ type: 'folder', parentPath: targetDir });
-                    }}
-                    className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-                    title="新建文件夹"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                    </svg>
-                  </button>
                   {/* 刷新 */}
                   <button
                     onClick={() => fileTree.loadFiles()}
@@ -614,23 +590,27 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
             <div className="flex-1 overflow-hidden flex flex-col">
               {/* Tree Tab */}
               <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'tree' ? '' : 'hidden'}`}>
-                {/* 新建文件/文件夹输入框 */}
+                {/* 新建文件输入框 */}
                 {fileTree.creatingItem && (
                   <div className="px-2 py-1.5 border-b border-border bg-secondary flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">
-                      {fileTree.creatingItem.type === 'file' ? '新建文件' : '新建文件夹'}
+                      新建文件
                       {fileTree.creatingItem.parentPath && ` (在 ${fileTree.creatingItem.parentPath}/)`}
                     </span>
                     <input
                       type="text"
                       autoFocus
-                      placeholder={fileTree.creatingItem.type === 'file' ? '文件名...' : '文件夹名...'}
+                      placeholder="文件名..."
                       className="flex-1 px-2 py-1 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      onCompositionStart={() => { composingRef.current = true; }}
+                      onCompositionEnd={() => { composingRef.current = false; }}
                       onKeyDown={async (e) => {
                         if (e.key === 'Enter') {
+                          if (composingRef.current) return;
                           const name = (e.target as HTMLInputElement).value.trim();
                           if (!name) return;
-                          const fullPath = fileTree.creatingItem!.parentPath ? `${fileTree.creatingItem!.parentPath}/${name}` : name;
+                          const parentPath = fileTree.creatingItem!.parentPath;
+                          const fullPath = parentPath ? `${parentPath}/${name}` : name;
                           try {
                             const res = await fetch('/api/files/save', {
                               method: 'POST',
@@ -638,17 +618,17 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               body: JSON.stringify({
                                 cwd,
                                 path: fullPath,
-                                content: fileTree.creatingItem!.type === 'file' ? '' : null,
-                                createDir: fileTree.creatingItem!.type === 'folder',
+                                content: '',
                               }),
                             });
                             if (res.ok) {
-                              toast(`已创建 ${fileTree.creatingItem!.type === 'file' ? '文件' : '文件夹'}: ${name}`, 'success');
+                              toast(`已创建文件: ${name}`, 'success');
                               fileTree.setCreatingItem(null);
                               fileTree.loadFiles();
-                              if (fileTree.creatingItem!.parentPath) {
-                                fileTree.setExpandedPaths(prev => new Set([...prev, fileTree.creatingItem!.parentPath]));
+                              if (parentPath) {
+                                fileTree.setExpandedPaths(prev => new Set([...prev, parentPath]));
                               }
+                              fileTree.handleSelectFile(fullPath);
                             } else {
                               const data = await res.json();
                               toast(data.error || '创建失败', 'error');
@@ -682,6 +662,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     onToggle={fileTree.handleToggle}
                     cwd={cwd}
                     shouldScrollToSelected={fileTree.shouldScrollToSelected}
+                    onCreateFile={(dirPath) => fileTree.setCreatingItem({ type: 'file', parentPath: dirPath })}
+                    onDelete={(path, isDir, name) => setDeleteConfirm({ path, isDirectory: isDir, name })}
+                    onRefresh={() => fileTree.loadFiles()}
                   />
                 )}
               </div>
@@ -1192,7 +1175,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                       </div>
                     ) : fileTree.fileContent ? (
-                      fileTree.fileContent.type === 'text' && fileTree.fileContent.content ? (
+                      fileTree.fileContent.type === 'text' && typeof fileTree.fileContent.content === 'string' ? (
                         fileTree.showBlame ? (
                           fileTree.blameError ? (
                             <div className="h-full flex items-center justify-center text-muted-foreground">
@@ -1480,6 +1463,52 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
           style={{ left: hoverTooltip.x + 12, top: hoverTooltip.y + 16 }}
         >
           {hoverTooltip.text}
+        </div>,
+        document.body
+      )}
+      {/* 删除确认对话框 */}
+      {deleteConfirm && createPortal(
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50" onClick={() => setDeleteConfirm(null)}>
+          <div className="bg-card border border-border rounded-lg shadow-xl p-4 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-medium text-foreground mb-2">确认删除</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              确定要删除 <span className="font-mono text-foreground">{deleteConfirm.name}</span> 吗？此操作不可恢复。
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="px-3 py-1.5 text-sm rounded border border-border hover:bg-accent transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={async () => {
+                  const { path, name } = deleteConfirm;
+                  setDeleteConfirm(null);
+                  try {
+                    const res = await fetch('/api/files/delete', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ cwd, path }),
+                    });
+                    if (res.ok) {
+                      toast(`已删除 ${name}`, 'success');
+                      fileTree.loadFiles();
+                      if (fileTree.selectedPath === path) {
+                        fileTree.handleSelectFile('');
+                      }
+                    } else {
+                      const data = await res.json();
+                      toast(data.error || '删除失败', 'error');
+                    }
+                  } catch { toast('删除失败', 'error'); }
+                }}
+                className="px-3 py-1.5 text-sm rounded bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
+              >
+                删除
+              </button>
+            </div>
+          </div>
         </div>,
         document.body
       )}

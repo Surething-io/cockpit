@@ -27,9 +27,16 @@ interface FileContextMenuProps {
   cwd: string; // 工作目录
   isDirectory: boolean;
   onClose: () => void;
+  // 操作回调
+  onCreateFile?: (dirPath: string) => void;
+  onDelete?: (path: string, isDirectory: boolean, name: string) => void;
+  onRefresh?: () => void;
 }
 
-export function FileContextMenu({ x, y, path, cwd, isDirectory, onClose }: FileContextMenuProps) {
+export function FileContextMenu({
+  x, y, path, cwd, isDirectory, onClose,
+  onCreateFile, onDelete, onRefresh,
+}: FileContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const menuContainer = useContext(MenuContainerContext);
 
@@ -102,7 +109,10 @@ export function FileContextMenu({ x, y, path, cwd, isDirectory, onClose }: FileC
     onClose();
   }, [onClose]);
 
-  const menuItems = [
+  // 新建/操作的目标目录
+  const targetDir = isDirectory ? path : relativeDirPath;
+
+  const copyMenuItems = [
     { label: '复制相对路径', value: path },
     { label: '复制绝对路径', value: absolutePath },
     { label: '复制相对文件夹路径', value: actualRelativeDirPath || '.' },
@@ -116,7 +126,31 @@ export function FileContextMenu({ x, y, path, cwd, isDirectory, onClose }: FileC
       className="absolute z-[200] bg-card border border-border rounded-lg shadow-lg py-1 w-fit whitespace-nowrap"
       style={{ left: position.x, top: position.y }}
     >
-      {menuItems.map((item, index) => (
+      {/* 操作类菜单 */}
+      {onCreateFile && (
+        <button
+          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
+          onClick={() => { onClose(); onCreateFile(targetDir); }}
+        >
+          新建文件
+        </button>
+      )}
+      {onDelete && (
+        <button
+          className="block w-full px-3 py-1.5 text-left text-sm text-destructive hover:bg-accent transition-colors"
+          onClick={() => { onClose(); onDelete(path, isDirectory, fileName); }}
+        >
+          删除{isDirectory ? '文件夹' : '文件'}
+        </button>
+      )}
+
+      {/* 分隔线 */}
+      {(onCreateFile || onDelete) && (
+        <div className="my-1 border-t border-border" />
+      )}
+
+      {/* 复制路径类菜单 */}
+      {copyMenuItems.map((item, index) => (
         <button
           key={index}
           className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"

@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServicesConfigPath, readJsonFile, writeJsonFile } from '@/lib/paths';
 
+export interface CustomCommand {
+  name: string;
+  command: string;
+}
+
 interface ServicesConfig {
-  customCommands: string[];
+  customCommands: CustomCommand[];
 }
 
 export async function GET(request: NextRequest) {

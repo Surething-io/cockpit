@@ -9,6 +9,8 @@ import { EnvManager } from './EnvManager';
 import { AliasManager } from '../AliasManager';
 import { Tooltip } from '@/components/shared/Tooltip';
 import { executeCommand as execCmd, interruptCommand as interruptCmd, attachCommand, queryRunningCommands, sendStdin, resizePty, dispose as disposeTerminalWs } from '@/lib/terminal/TerminalWsManager';
+import type { CustomCommand } from '@/app/api/services/config/route';
+
 
 // 生成唯一ID的辅助函数
 function generateUniqueCommandId(): string {
@@ -77,19 +79,25 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
   const [maximizedCommandId, setMaximizedCommandId] = useState<string | null>(null);
   const [showQuickCommands, setShowQuickCommands] = useState(false);
   const [showRunningCommands, setShowRunningCommands] = useState(false);
-  const [quickCustomCommands, setQuickCustomCommands] = useState<string[]>([]);
+  const [quickCustomCommands, setQuickCustomCommands] = useState<CustomCommand[]>([]);
   const [quickScripts, setQuickScripts] = useState<Record<string, string>>({});
-  const [quickCommandInput, setQuickCommandInput] = useState('');
+  const [newCmdName, setNewCmdName] = useState('');
+  const [newCmdCommand, setNewCmdCommand] = useState('');
   const [selectedCommandId, setSelectedCommandId] = useState<string | null>(null);
   const [showViewer, setShowViewer] = useState(false);
   const [isAddingCommand, setIsAddingCommand] = useState(false);
   const [customEnv, setCustomEnv] = useState<Record<string, string>>({});
   const [aliases, setAliases] = useState<Record<string, string>>({});
+  const [filteredSlashCommands, setFilteredSlashCommands] = useState<CustomCommand[]>([]);
+  const [showSlashCommands, setShowSlashCommands] = useState(false);
+  const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
+  const slashListRef = useRef<HTMLDivElement>(null);
   const [browserItems, setBrowserItems] = useState<BrowserItem[]>([]);
   const [maximizedBrowserId, setMaximizedBrowserId] = useState<string | null>(null);
   const [showTopButton, setShowTopButton] = useState(false);
   const [showBottomButton, setShowBottomButton] = useState(false);
   const [bubbleOrder, setBubbleOrder] = useState<string[] | null>(null);
+  const executeCommandRef = useRef<((command: string) => void) | null>(null);
   const dragEnabledRef = useRef(false);
   const dragItemIdRef = useRef<string | null>(null);
   const dragOverItemIdRef = useRef<string | null>(null);
@@ -545,7 +553,44 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
     }
   }, [cwd]);
 
-  const saveCustomCommands = useCallback(async (commands: string[]) => {
+  // 组件挂载时加载自定义命令
+  useEffect(() => {
+    loadQuickCommands();
+  }, [loadQuickCommands]);
+
+  // 输入变化时过滤 / 自定义命令
+  useEffect(() => {
+    if (inputValue.startsWith('/')) {
+      const keyword = inputValue.slice(1).toLowerCase();
+      const filtered = quickCustomCommands.filter(c => c.name.toLowerCase().startsWith(keyword));
+      setFilteredSlashCommands(filtered);
+      setShowSlashCommands(filtered.length > 0);
+      setSlashSelectedIndex(0);
+    } else {
+      setShowSlashCommands(false);
+    }
+  }, [inputValue, quickCustomCommands]);
+
+  // 滚动选中项到可视区域
+  useEffect(() => {
+    if (showSlashCommands && slashListRef.current) {
+      const item = slashListRef.current.children[slashSelectedIndex] as HTMLElement;
+      item?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [slashSelectedIndex, showSlashCommands]);
+
+  const handleSlashSelect = useCallback((cmd: CustomCommand) => {
+    setShowSlashCommands(false);
+    const finalCmd = cmd.command;
+    if (isUrlInput(finalCmd)) {
+      addBrowserItemRef.current?.(finalCmd.trim());
+    } else {
+      executeCommandRef.current?.(finalCmd);
+    }
+    setInputValue('');
+  }, []);
+
+  const saveCustomCommands = useCallback(async (commands: CustomCommand[]) => {
     setQuickCustomCommands(commands);
     try {
       await fetch('/api/services/config', {
@@ -574,6 +619,12 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
 
     if (aliases[firstWord]) {
       actualCommand = aliases[firstWord] + (parts.length > 1 ? ' ' + parts.slice(1).join(' ') : '');
+    }
+
+    // 解析后的命令可能是 URL（如自定义命令指向 http://...）→ 打开浏览器
+    if (isUrlInput(actualCommand)) {
+      addBrowserItemRef.current?.(actualCommand.trim());
+      return;
     }
 
     const commandId = generateUniqueCommandId();
@@ -687,12 +738,6 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
     }
   }, [currentCwd, scrollToBottom, saveCdToHistory, aliases, customEnv, tabId, cwd, appendOutput, flushAndGetOutput, cleanupOutputRefs]);
 
-  // 快捷命令执行
-  const handleQuickCommand = useCallback((command: string) => {
-    setShowQuickCommands(false);
-    executeCommand(command);
-  }, [executeCommand]);
-
   // 中断命令
   const interruptCommand = useCallback((commandId: string) => {
     const command = commands.find((cmd) => cmd.id === commandId);
@@ -729,7 +774,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
     setCommands((prev) =>
       prev.map((c) =>
         c.id === commandId
-          ? { ...c, output: initialOutput, exitCode: undefined, isRunning: true, pid: undefined, timestamp: new Date().toISOString() }
+          ? { ...c, output: initialOutput, exitCode: undefined, isRunning: true, pid: undefined }
           : c
       )
     );
@@ -835,6 +880,11 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
     }
   }, [scrollToBottom, cwd, tabId]);
 
+  // ref 供回调内部调用（避免循环依赖）
+  const addBrowserItemRef = useRef(addBrowserItem);
+  addBrowserItemRef.current = addBrowserItem;
+  executeCommandRef.current = executeCommand;
+
   // 关闭浏览器气泡（同时从 history 中删除）
   const closeBrowserItem = useCallback((id: string) => {
     setBrowserItems(prev => prev.filter(item => item.id !== id));
@@ -849,6 +899,28 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
       ).catch(e => console.error('Failed to delete browser item:', e));
     }
   }, [maximizedBrowserId, selectedCommandId, cwd, tabId]);
+
+  // 快捷命令执行（自动识别 browser / pty / pipe）
+  const handleQuickCommand = useCallback((command: string) => {
+    setShowQuickCommands(false);
+    if (isUrlInput(command)) {
+      addBrowserItem(command.trim());
+    } else {
+      executeCommand(command);
+    }
+  }, [executeCommand, addBrowserItem]);
+
+  // 监听 ChatInput 的终端命令执行事件
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const command = (e as CustomEvent).detail?.command;
+      if (command) {
+        executeCommand(command);
+      }
+    };
+    window.addEventListener('execute-terminal-command', handler);
+    return () => window.removeEventListener('execute-terminal-command', handler);
+  }, [executeCommand]);
 
   // 合并命令和浏览器项，按自定义排序或时间排序
   const consoleItems = useMemo<ConsoleItem[]>(() => {
@@ -875,21 +947,37 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
   }, [commands, browserItems, bubbleOrder]);
   consoleItemsRef.current = consoleItems;
 
+  // 展开自定义命令：/name args → actualCommand args
+  const expandCustomCommand = useCallback((input: string): string | null => {
+    const trimmed = input.trim();
+    const parts = trimmed.split(/\s+/);
+    const firstWord = parts[0];
+    if (!firstWord.startsWith('/') || firstWord.length <= 1) return null;
+    const cmdName = firstWord.slice(1);
+    const matched = quickCustomCommands.find(c => c.name === cmdName);
+    if (!matched) return null;
+    return matched.command + (parts.length > 1 ? ' ' + parts.slice(1).join(' ') : '');
+  }, [quickCustomCommands]);
+
   // 处理输入提交
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
 
-    if (isUrlInput(inputValue)) {
-      addBrowserItem(inputValue.trim());
+    // 优先展开自定义命令
+    const expanded = expandCustomCommand(inputValue);
+    const finalInput = expanded ?? inputValue;
+
+    if (isUrlInput(finalInput)) {
+      addBrowserItem(finalInput.trim());
     } else {
-      executeCommand(inputValue);
+      executeCommand(finalInput);
     }
 
     setInputValue('');
     setHistoryIndex(-1);
     setTemporaryInput('');
-  }, [inputValue, executeCommand, addBrowserItem]);
+  }, [inputValue, executeCommand, addBrowserItem, expandCustomCommand]);
 
   // Tab 键自动补全
   const handleAutocomplete = useCallback(async () => {
@@ -953,6 +1041,30 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
   }, [inputValue]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    // / 命令候选列表键盘导航
+    if (showSlashCommands && filteredSlashCommands.length > 0) {
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSlashSelectedIndex(prev => (prev - 1 + filteredSlashCommands.length) % filteredSlashCommands.length);
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSlashSelectedIndex(prev => (prev + 1) % filteredSlashCommands.length);
+        return;
+      }
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        e.preventDefault();
+        handleSlashSelect(filteredSlashCommands[slashSelectedIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowSlashCommands(false);
+        return;
+      }
+    }
+
     if (e.key === 'Tab') {
       e.preventDefault();
       if (showAutocomplete && autocompleteSuggestions.length > 0) {
@@ -992,7 +1104,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
         setInputValue(history[newIndex]);
       }
     }
-  }, [historyIndex, inputValue, temporaryInput, showAutocomplete, autocompleteSuggestions, autocompleteIndex, handleAutocomplete, applyAutocompleteSuggestion]);
+  }, [historyIndex, inputValue, temporaryInput, showAutocomplete, autocompleteSuggestions, autocompleteIndex, handleAutocomplete, applyAutocompleteSuggestion, showSlashCommands, filteredSlashCommands, slashSelectedIndex, handleSlashSelect]);
 
   // 聚焦输入框
   useEffect(() => {
@@ -1126,8 +1238,14 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
                     timestamp={item.data.timestamp}
                     usePty={item.data.usePty}
                     onPtyResize={(cols, rows) => { ptySizeRef.current.set(item.data.id, { cols, rows }); resizePty(item.data.id, cols, rows); }}
-                    onToggleMaximize={() => setMaximizedCommandId(prev => prev === item.data.id ? null : item.data.id)}
-                    maximized={maximizedCommandId === item.data.id}
+                    onToggleMaximize={() => {
+                      if (item.data.usePty) {
+                        setMaximizedCommandId(prev => prev === item.data.id ? null : item.data.id);
+                      } else {
+                        setShowViewer(prev => !prev);
+                      }
+                    }}
+                    maximized={item.data.usePty ? maximizedCommandId === item.data.id : false}
                     portalContainer={terminalRootRef.current}
                     onTitleMouseDown={handleTitleMouseDown}
                   />
@@ -1201,7 +1319,6 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
                 if (!showQuickCommands) loadQuickCommands();
                 setShowQuickCommands(!showQuickCommands);
                 setIsAddingCommand(false);
-                setQuickCommandInput('');
               }}
               className={`p-2 rounded-lg transition-all ${
                 showQuickCommands
@@ -1216,55 +1333,66 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
             {/* 快捷命令弹窗 */}
             {showQuickCommands && (
               <div className="absolute bottom-full left-0 mb-2 w-72 bg-popover border border-border rounded-lg shadow-lg z-50 max-h-[70vh] overflow-y-auto">
-                {/* 自定义命令 */}
-                <div className="p-2 border-b border-border">
+                <div className="p-2">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-medium text-muted-foreground px-1">自定义命令</span>
                     <button
                       type="button"
-                      onClick={() => { setIsAddingCommand(true); setQuickCommandInput(''); }}
+                      onClick={() => { setIsAddingCommand(true); setNewCmdName(''); setNewCmdCommand(''); }}
                       className="p-0.5 text-muted-foreground hover:text-foreground rounded"
                     >
                       <Plus className="w-3.5 h-3.5" />
                     </button>
                   </div>
                   {isAddingCommand && (
-                    <input
-                      type="text"
-                      value={quickCommandInput}
-                      onChange={(e) => setQuickCommandInput(e.target.value)}
-                      placeholder="输入命令, Enter 确认..."
-                      className="w-full px-2 py-1 mb-1 text-xs font-mono rounded border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (quickCommandInput.trim()) {
-                            saveCustomCommands([...quickCustomCommands, quickCommandInput.trim()]);
-                            setQuickCommandInput('');
+                    <div className="flex gap-1 mb-1">
+                      <input
+                        type="text"
+                        value={newCmdName}
+                        onChange={(e) => setNewCmdName(e.target.value)}
+                        placeholder="名称"
+                        className="w-24 flex-shrink-0 px-2 py-1 text-xs rounded border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') { setIsAddingCommand(false); }
+                        }}
+                      />
+                      <input
+                        type="text"
+                        value={newCmdCommand}
+                        onChange={(e) => setNewCmdCommand(e.target.value)}
+                        placeholder="命令"
+                        className="flex-1 min-w-0 px-2 py-1 text-xs font-mono rounded border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (newCmdName.trim() && newCmdCommand.trim()) {
+                              saveCustomCommands([...quickCustomCommands, { name: newCmdName.trim(), command: newCmdCommand.trim() }]);
+                              setNewCmdName('');
+                              setNewCmdCommand('');
+                              setIsAddingCommand(false);
+                            }
+                          } else if (e.key === 'Escape') {
                             setIsAddingCommand(false);
                           }
-                        } else if (e.key === 'Escape') {
-                          setIsAddingCommand(false);
-                          setQuickCommandInput('');
-                        }
-                      }}
-                    />
+                        }}
+                      />
+                    </div>
                   )}
                   {quickCustomCommands.length === 0 && !isAddingCommand && (
                     <div className="text-xs text-muted-foreground px-1 py-1">暂无自定义命令</div>
                   )}
                   {quickCustomCommands.map((cmd, i) => (
-                    <Tooltip key={i} content={cmd}>
+                    <Tooltip key={i} content={cmd.command}>
                       <div className="flex items-center group min-w-0">
                         <button
                           type="button"
-                          onClick={() => handleQuickCommand(cmd)}
-                          className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 text-left text-sm font-mono rounded hover:bg-accent transition-colors"
+                          onClick={() => handleQuickCommand(cmd.command)}
+                          className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 text-left text-sm rounded hover:bg-accent transition-colors"
                         >
                           <Play className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
-                          <span className="truncate">{cmd}</span>
+                          <span className="truncate">{cmd.name}</span>
                         </button>
                         <button
                           type="button"
@@ -1277,25 +1405,6 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
                     </Tooltip>
                   ))}
                 </div>
-
-                {/* package.json scripts */}
-                {Object.keys(quickScripts).length > 0 && (
-                  <div className="p-2">
-                    <span className="text-xs font-medium text-muted-foreground px-1 mb-1 block">package.json scripts</span>
-                    {Object.entries(quickScripts).map(([name, script]) => (
-                      <Tooltip key={name} content={`npm run ${name} → ${script}`}>
-                        <button
-                          type="button"
-                          onClick={() => handleQuickCommand(`npm run ${name}`)}
-                          className="w-full flex items-center gap-2 px-2 py-1.5 text-left text-sm rounded hover:bg-accent transition-colors"
-                        >
-                          <Play className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
-                          <span className="font-mono">{name}</span>
-                        </button>
-                      </Tooltip>
-                    ))}
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -1398,6 +1507,27 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
             placeholder="输入命令或网址并按 Enter... (↑↓ 历史, Tab 补全)"
             className="flex-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring font-mono"
           />
+
+          {/* / 自定义命令候选列表 */}
+          {showSlashCommands && filteredSlashCommands.length > 0 && (
+            <div
+              ref={slashListRef}
+              className="absolute bottom-full left-0 right-0 mb-1 max-h-64 overflow-y-auto bg-popover border border-border rounded-lg shadow-lg z-50"
+            >
+              {filteredSlashCommands.map((cmd, index) => (
+                <div
+                  key={cmd.name}
+                  onClick={() => handleSlashSelect(cmd)}
+                  className={`flex items-center gap-3 px-3 py-1.5 cursor-pointer text-sm ${
+                    index === slashSelectedIndex ? 'bg-brand/10' : 'hover:bg-accent'
+                  }`}
+                >
+                  <span className="font-mono font-medium text-foreground">/{cmd.name}</span>
+                  <span className="flex-1 text-muted-foreground truncate">{cmd.command}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {showAutocomplete && autocompleteSuggestions.length > 1 && (
             <div className="absolute bottom-full left-0 mb-1 bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto z-50">

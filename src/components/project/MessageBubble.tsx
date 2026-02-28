@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
-import { FileDiff, ListTodo, MessageCircleQuestion, Circle, Loader, CheckCircle2 } from 'lucide-react';
+import { FileDiff, ListTodo, MessageCircleQuestion, Circle, Loader, CheckCircle2, ClipboardList } from 'lucide-react';
 import { ChatMessage, MessageImage } from '@/types/chat';
 import { ToolCallModal } from './ToolCallModal';
 import { DiffViewerModal } from './DiffViewerModal';
 import { TodoViewerModal } from './TodoViewerModal';
 import { AskQuestionViewerModal } from './AskQuestionViewerModal';
+import { PreviewModal } from './PreviewModal';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { toast } from '../shared/Toast';
 
@@ -98,6 +99,22 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     if (!message.toolCalls) return [];
     return message.toolCalls.filter(tc => tc.name === 'AskUserQuestion');
   }, [message.toolCalls]);
+
+  // 最后一个写入 plan 文件的 Write 调用
+  const lastPlanWrite = useMemo(() => {
+    if (!message.toolCalls) return null;
+    for (let i = message.toolCalls.length - 1; i >= 0; i--) {
+      const tc = message.toolCalls[i];
+      if (tc.name === 'Write') {
+        const input = tc.input as { file_path?: string; content?: string };
+        if (input.file_path?.includes('/.claude/plans/') && input.content) {
+          return tc;
+        }
+      }
+    }
+    return null;
+  }, [message.toolCalls]);
+  const [showPlanPreview, setShowPlanPreview] = useState(false);
 
   // 复制消息内容
   const handleCopy = () => {
@@ -273,6 +290,15 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                         {toolCallsExpanded ? '▲ 收起' : '▼ 展开'}
                       </span>
                     </button>
+                    {lastPlanWrite && (
+                      <button
+                        onClick={() => setShowPlanPreview(true)}
+                        className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border-l border-border"
+                        title="查看计划"
+                      >
+                        <ClipboardList className="w-4 h-4" />
+                      </button>
+                    )}
                     {askQuestionCalls.length > 0 && (
                       <button
                         onClick={() => setShowAskQuestionViewer(true)}
@@ -370,6 +396,16 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
       {/* AskQuestion 查看器 */}
       {showAskQuestionViewer && askQuestionCalls.length > 0 && (
         <AskQuestionViewerModal toolCalls={askQuestionCalls} onClose={() => setShowAskQuestionViewer(false)} />
+      )}
+
+      {/* Plan 预览 */}
+      {showPlanPreview && lastPlanWrite && (
+        <PreviewModal
+          title={`Plan - ${((lastPlanWrite.input as { file_path?: string }).file_path || '').split('/').pop() || 'plan.md'}`}
+          content={JSON.stringify(lastPlanWrite.input, null, 2)}
+          toolName="Write"
+          onClose={() => setShowPlanPreview(false)}
+        />
       )}
     </>
   );

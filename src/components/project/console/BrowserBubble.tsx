@@ -63,7 +63,7 @@ function stripCockpitParam(url: string): string {
  * 无 content script 中转，无 postMessage，100% 可靠。
  */
 async function prepareCookies(url: string): Promise<boolean> {
-  const bridge = (window as Record<string, unknown>).__cockpitBridge as { id?: string } | undefined;
+  const bridge = (window as unknown as Record<string, unknown>).__cockpitBridge as { id?: string } | undefined;
   const extId = bridge?.id;
   if (!extId) return false; // 插件未安装
 

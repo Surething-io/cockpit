@@ -1,0 +1,37 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        { "header": "X-Frame-Options", "operation": "remove" },
+        { "header": "Content-Security-Policy", "operation": "remove" },
+        { "header": "Content-Security-Policy-Report-Only", "operation": "remove" },
+        { "header": "Cross-Origin-Opener-Policy", "operation": "remove" },
+        { "header": "Cross-Origin-Embedder-Policy", "operation": "remove" },
+        { "header": "Cross-Origin-Resource-Policy", "operation": "remove" }
+      ]
+    },
+    "condition": {
+      "resourceTypes": ["sub_frame"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        { "header": "Sec-Fetch-Dest", "operation": "set", "value": "document" },
+        { "header": "Sec-Fetch-Mode", "operation": "set", "value": "navigate" },
+        { "header": "Sec-Fetch-Site", "operation": "set", "value": "none" },
+        { "header": "Sec-Fetch-User", "operation": "set", "value": "?1" }
+      ]
+    },
+    "condition": {
+      "resourceTypes": ["sub_frame"],
+      "initiatorDomains": ["localhost", "127.0.0.1"]
+    }
+  }
+]

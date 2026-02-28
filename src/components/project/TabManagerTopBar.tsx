@@ -16,6 +16,7 @@ interface TabManagerTopBarProps {
   currentBranch: string | null;
   onOpenWorktree: () => void;
   onOpenProjectSessions: () => void;
+  onOpenAliasManager: () => void;
 }
 
 export function TabManagerTopBar({
@@ -25,6 +26,7 @@ export function TabManagerTopBar({
   currentBranch,
   onOpenWorktree,
   onOpenProjectSessions,
+  onOpenAliasManager,
 }: TabManagerTopBarProps) {
   return (
     <div className="border-b border-border bg-card shrink-0">
@@ -133,6 +135,16 @@ export function TabManagerTopBar({
               </svg>
             </button>
           )}
+          {/* 全局命令别名 */}
+          <button
+            onClick={onOpenAliasManager}
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            title="命令别名（全局）"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12h-6m-4 0a8 8 0 1116 0 8 8 0 01-16 0zm4 0h.01" />
+            </svg>
+          </button>
         </div>
       </div>
     </div>

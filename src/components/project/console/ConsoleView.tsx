@@ -1,17 +1,31 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { AtSign, Variable, Zap, Plus, X, Play, Loader, Square, LayoutGrid, List } from 'lucide-react';
-import { CommandBubble } from './TerminalBubble';
+import { CommandBubble } from './CommandBubble';
+import { BrowserBubble } from './BrowserBubble';
 import { OutputViewerModal } from './OutputViewerModal';
 import { EnvManager } from './EnvManager';
-import { AliasManager } from './AliasManager';
+import { AliasManager } from '../AliasManager';
 import { Tooltip } from '@/components/shared/Tooltip';
 import { executeCommand as execCmd, interruptCommand as interruptCmd, attachCommand, queryRunningCommands, sendStdin, resizePty, dispose as disposeTerminalWs } from '@/lib/terminal/TerminalWsManager';
 
 // 生成唯一ID的辅助函数
 function generateUniqueCommandId(): string {
   return `cmd-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+/** 判断输入是否为 URL（http:// 或 https:// 开头） */
+function isUrlInput(input: string): boolean {
+  const trimmed = input.trim().toLowerCase();
+  return trimmed.startsWith('http://') || trimmed.startsWith('https://');
+}
+
+/** 判断命令是否应该用 PTY 模式（交互式 shell） */
+const PTY_COMMANDS = new Set(['zsh', 'bash', 'sh', 'fish', 'nu', 'python', 'python3', 'node', 'irb', 'lua', 'vim', 'nvim', 'vi', 'nano', 'emacs', 'top', 'htop', 'less', 'man']);
+function isPtyCommand(command: string): boolean {
+  const firstWord = command.trim().split(/\s+/)[0];
+  return PTY_COMMANDS.has(firstWord);
 }
 
 interface Command {
@@ -26,14 +40,26 @@ interface Command {
   usePty?: boolean;
 }
 
-interface TerminalViewProps {
+/** 浏览器气泡 */
+interface BrowserItem {
+  id: string;
+  url: string;
+  timestamp: string;
+}
+
+/** Console 统一列表项 */
+type ConsoleItem =
+  | { type: 'command'; data: Command }
+  | { type: 'browser'; data: BrowserItem };
+
+interface ConsoleViewProps {
   cwd: string;
   initialShellCwd?: string;
   tabId?: string;
   onCwdChange?: (newCwd: string) => void;
 }
 
-export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: TerminalViewProps) {
+export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: ConsoleViewProps) {
   const [commands, setCommands] = useState<Command[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [currentCwd, setCurrentCwd] = useState(initialShellCwd || cwd);
@@ -59,8 +85,14 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
   const [isAddingCommand, setIsAddingCommand] = useState(false);
   const [customEnv, setCustomEnv] = useState<Record<string, string>>({});
   const [aliases, setAliases] = useState<Record<string, string>>({});
+  const [browserItems, setBrowserItems] = useState<BrowserItem[]>([]);
+  const [maximizedBrowserId, setMaximizedBrowserId] = useState<string | null>(null);
   const [showTopButton, setShowTopButton] = useState(false);
   const [showBottomButton, setShowBottomButton] = useState(false);
+  const [bubbleOrder, setBubbleOrder] = useState<string[] | null>(null);
+  const dragEnabledRef = useRef(false);
+  const dragItemIdRef = useRef<string | null>(null);
+  const dragOverItemIdRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
@@ -186,26 +218,47 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
       );
       if (response.ok) {
         const data = await response.json();
-        const historyCommands: Command[] = data.entries.map((entry: any) => ({
-          id: entry.id.includes('-') && entry.id.split('-').length === 3
-            ? entry.id
-            : generateUniqueCommandId(),
-          command: entry.command,
-          output: entry.output,
-          exitCode: entry.exitCode,
-          isRunning: false,
-          timestamp: entry.timestamp,
-          cwd: entry.cwd,
-          usePty: entry.usePty,
-        }));
+
+        // 按 type 分流（缺少 type 的旧数据默认为 command）
+        const historyCommands: Command[] = [];
+        const historyBrowsers: BrowserItem[] = [];
+
+        for (const entry of data.entries) {
+          if (entry.type === 'browser') {
+            historyBrowsers.push({
+              id: entry.id,
+              url: entry.url,
+              timestamp: entry.timestamp,
+            });
+          } else {
+            historyCommands.push({
+              id: entry.id.includes('-') && entry.id.split('-').length === 3
+                ? entry.id
+                : generateUniqueCommandId(),
+              command: entry.command,
+              output: entry.output,
+              exitCode: entry.exitCode,
+              isRunning: false,
+              timestamp: entry.timestamp,
+              cwd: entry.cwd,
+              usePty: entry.usePty,
+            });
+          }
+        }
 
         if (page === 0) {
           setCommands(historyCommands);
+          setBrowserItems(historyBrowsers);
         } else {
           setCommands((prev) => {
             const existingIds = new Set(prev.map((cmd) => cmd.id));
             const newCommands = historyCommands.filter((cmd) => !existingIds.has(cmd.id));
             return [...prev, ...newCommands];
+          });
+          setBrowserItems((prev) => {
+            const existingIds = new Set(prev.map((b) => b.id));
+            const newItems = historyBrowsers.filter((b) => !existingIds.has(b.id));
+            return [...prev, ...newItems];
           });
         }
         setHasMoreHistory(data.hasMore);
@@ -328,6 +381,7 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
     loadEnv();
     loadAliases();
     loadSettings();
+    loadBubbleOrder();
     return () => { cancelled.current = true; };
   }, [loadHistory, reattachRunning]);
 
@@ -347,7 +401,7 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
 
   const loadAliases = async () => {
     try {
-      const response = await fetch(`/api/terminal/aliases?cwd=${encodeURIComponent(cwd)}`);
+      const response = await fetch('/api/terminal/aliases');
       if (response.ok) {
         const data = await response.json();
         setAliases(data.aliases || {});
@@ -382,6 +436,94 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
       console.error('Failed to save terminal settings:', error);
     }
   };
+
+  const loadBubbleOrder = async () => {
+    if (!tabId) return;
+    try {
+      const res = await fetch(`/api/terminal/bubble-order?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.order && data.order.length > 0) {
+          setBubbleOrder(data.order);
+        }
+      }
+    } catch { /* ignore */ }
+  };
+
+  const saveBubbleOrder = useCallback(async (newOrder: string[]) => {
+    setBubbleOrder(newOrder);
+    if (!tabId) return;
+    try {
+      await fetch('/api/terminal/bubble-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cwd, tabId, order: newOrder }),
+      });
+    } catch { /* ignore */ }
+  }, [cwd, tabId]);
+
+  // 拖拽排序处理
+  const handleTitleMouseDown = useCallback(() => {
+    dragEnabledRef.current = true;
+  }, []);
+
+  const handleDragStart = useCallback((e: React.DragEvent, itemId: string) => {
+    if (!dragEnabledRef.current) { e.preventDefault(); return; }
+    dragEnabledRef.current = false;
+    dragItemIdRef.current = itemId;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', itemId);
+    (e.currentTarget as HTMLElement).style.opacity = '0.4';
+    // 创建自定义拖拽预览（PTY 气泡含 canvas 无法自动生成 ghost）
+    const titleBar = (e.currentTarget as HTMLElement).querySelector('[data-drag-handle]') as HTMLElement | null;
+    if (titleBar) {
+      const ghost = titleBar.cloneNode(true) as HTMLElement;
+      ghost.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:' + titleBar.offsetWidth + 'px;background:var(--card);border-radius:8px;padding:4px 12px;opacity:0.9;';
+      document.body.appendChild(ghost);
+      e.dataTransfer.setDragImage(ghost, 20, 16);
+      requestAnimationFrame(() => document.body.removeChild(ghost));
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, itemId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    dragOverItemIdRef.current = itemId;
+  }, []);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).classList.add('ring-2', 'ring-brand');
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    (e.currentTarget as HTMLElement).classList.remove('ring-2', 'ring-brand');
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).classList.remove('ring-2', 'ring-brand');
+  }, []);
+
+  const consoleItemsRef = useRef<ConsoleItem[]>([]);
+
+  const handleDragEnd = useCallback((e: React.DragEvent) => {
+    (e.currentTarget as HTMLElement).style.opacity = '1';
+    const fromId = dragItemIdRef.current;
+    const toId = dragOverItemIdRef.current;
+    dragItemIdRef.current = null;
+    dragOverItemIdRef.current = null;
+    if (!fromId || !toId || fromId === toId) return;
+    const currentIds = consoleItemsRef.current.map(item => item.data.id);
+    const fromIndex = currentIds.indexOf(fromId);
+    const toIndex = currentIds.indexOf(toId);
+    if (fromIndex === -1 || toIndex === -1) return;
+    const newIds = [...currentIds];
+    // 互换位置
+    newIds[fromIndex] = toId;
+    newIds[toIndex] = fromId;
+    saveBubbleOrder(newIds);
+  }, [saveBubbleOrder]);
 
   // 加载快捷命令
   const loadQuickCommands = useCallback(async () => {
@@ -437,6 +579,8 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
     const commandId = generateUniqueCommandId();
     const timestamp = new Date().toISOString();
 
+    const usePty = isPtyCommand(actualCommand);
+
     const newCommand: Command = {
       id: commandId,
       command,
@@ -444,6 +588,7 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
       isRunning: true,
       timestamp,
       cwd: currentCwd,
+      ...(usePty ? { usePty: true } : {}),
     };
 
     setCommands((prev) => {
@@ -491,6 +636,7 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
         tabId: tabId || '',
         projectCwd: cwd,
         env: customEnv,
+        usePty,
         onData: (type, data) => {
           if (type === 'pid') {
             setCommands((prev) =>
@@ -540,85 +686,6 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
       );
     }
   }, [currentCwd, scrollToBottom, saveCdToHistory, aliases, customEnv, tabId, cwd, appendOutput, flushAndGetOutput, cleanupOutputRefs]);
-
-  // 一键启动 PTY 交互式终端（zsh）
-  const launchPtyShell = useCallback(async () => {
-    const shell = process.env.SHELL || '/bin/zsh';
-    const shellName = shell.split('/').pop() || 'zsh';
-    const commandId = generateUniqueCommandId();
-    const timestamp = new Date().toISOString();
-
-    const newCommand: Command = {
-      id: commandId,
-      command: shellName,
-      output: '',
-      isRunning: true,
-      timestamp,
-      cwd: currentCwd,
-      usePty: true,
-    };
-
-    setCommands((prev) => [...prev, newCommand]);
-    setSelectedCommandId(commandId);
-    commandOutputRef.current.set(commandId, '');
-    commandLineCountRef.current.set(commandId, 0);
-    setTimeout(scrollToBottom, 100);
-
-    try {
-      await execCmd({
-        cwd: currentCwd,
-        command: shellName,
-        commandId,
-        tabId: tabId || '',
-        projectCwd: cwd,
-        env: customEnv,
-        usePty: true,
-        onData: (type, data) => {
-          if (type === 'pid') {
-            setCommands((prev) =>
-              prev.map((cmd) => (cmd.id === commandId ? { ...cmd, pid: data.pid as number } : cmd))
-            );
-          } else if (type === 'stdout' || type === 'stderr') {
-            appendOutput(commandId, data.data as string);
-          } else if (type === 'exit') {
-            const finalOutput = flushAndGetOutput(commandId);
-            cleanupOutputRefs(commandId);
-            setCommands((prev) =>
-              prev.map((cmd) => {
-                if (cmd.id === commandId) {
-                  return { ...cmd, output: finalOutput, exitCode: data.code as number, isRunning: false, pid: undefined };
-                }
-                return cmd;
-              })
-            );
-          }
-        },
-        onError: (error) => {
-          const finalOutput = flushAndGetOutput(commandId);
-          cleanupOutputRefs(commandId);
-          setCommands((prev) =>
-            prev.map((cmd) => {
-              if (cmd.id === commandId) {
-                return { ...cmd, output: finalOutput + `\nError: ${error}`, exitCode: 1, isRunning: false, pid: undefined };
-              }
-              return cmd;
-            })
-          );
-        },
-      });
-    } catch (error) {
-      const finalOutput = flushAndGetOutput(commandId);
-      cleanupOutputRefs(commandId);
-      setCommands((prev) =>
-        prev.map((cmd) => {
-          if (cmd.id === commandId) {
-            return { ...cmd, output: finalOutput + `\nError: ${(error as Error).message}`, exitCode: 1, isRunning: false, pid: undefined };
-          }
-          return cmd;
-        })
-      );
-    }
-  }, [currentCwd, scrollToBottom, customEnv, tabId, cwd, appendOutput, flushAndGetOutput, cleanupOutputRefs]);
 
   // 快捷命令执行
   const handleQuickCommand = useCallback((command: string) => {
@@ -743,15 +810,86 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
     }
   }, [cwd, tabId, cleanupOutputRefs]);
 
+  // 添加浏览器气泡（同时持久化到 history）
+  const addBrowserItem = useCallback((url: string) => {
+    const item: BrowserItem = {
+      id: `browser-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      url,
+      timestamp: new Date().toISOString(),
+    };
+    setBrowserItems(prev => [...prev, item]);
+    setSelectedCommandId(item.id);
+    setTimeout(scrollToBottom, 100);
+
+    // 持久化
+    if (tabId) {
+      fetch('/api/terminal/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cwd,
+          tabId,
+          entry: { type: 'browser', id: item.id, url: item.url, timestamp: item.timestamp },
+        }),
+      }).catch(e => console.error('Failed to save browser item:', e));
+    }
+  }, [scrollToBottom, cwd, tabId]);
+
+  // 关闭浏览器气泡（同时从 history 中删除）
+  const closeBrowserItem = useCallback((id: string) => {
+    setBrowserItems(prev => prev.filter(item => item.id !== id));
+    if (maximizedBrowserId === id) setMaximizedBrowserId(null);
+    if (selectedCommandId === id) setSelectedCommandId(null);
+
+    // 从持久化中删除
+    if (tabId) {
+      fetch(
+        `/api/terminal/history?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}&commandId=${encodeURIComponent(id)}`,
+        { method: 'DELETE' },
+      ).catch(e => console.error('Failed to delete browser item:', e));
+    }
+  }, [maximizedBrowserId, selectedCommandId, cwd, tabId]);
+
+  // 合并命令和浏览器项，按自定义排序或时间排序
+  const consoleItems = useMemo<ConsoleItem[]>(() => {
+    const all: ConsoleItem[] = [
+      ...commands.map(cmd => ({ type: 'command' as const, data: cmd })),
+      ...browserItems.map(item => ({ type: 'browser' as const, data: item })),
+    ];
+    if (!bubbleOrder || bubbleOrder.length === 0) {
+      return all.sort((a, b) => new Date(a.data.timestamp).getTime() - new Date(b.data.timestamp).getTime());
+    }
+    const orderIndex = new Map(bubbleOrder.map((id, i) => [id, i]));
+    const ordered: ConsoleItem[] = [];
+    const unordered: ConsoleItem[] = [];
+    for (const item of all) {
+      if (orderIndex.has(item.data.id)) {
+        ordered.push(item);
+      } else {
+        unordered.push(item);
+      }
+    }
+    ordered.sort((a, b) => orderIndex.get(a.data.id)! - orderIndex.get(b.data.id)!);
+    unordered.sort((a, b) => new Date(a.data.timestamp).getTime() - new Date(b.data.timestamp).getTime());
+    return [...ordered, ...unordered];
+  }, [commands, browserItems, bubbleOrder]);
+  consoleItemsRef.current = consoleItems;
+
   // 处理输入提交
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
-    executeCommand(inputValue);
+
+    if (isUrlInput(inputValue)) {
+      addBrowserItem(inputValue.trim());
+    } else {
+      executeCommand(inputValue);
+    }
+
     setInputValue('');
     setHistoryIndex(-1);
     setTemporaryInput('');
-  }, [inputValue, executeCommand]);
+  }, [inputValue, executeCommand, addBrowserItem]);
 
   // Tab 键自动补全
   const handleAutocomplete = useCallback(async () => {
@@ -901,12 +1039,18 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showRunningCommands]);
 
-  // Cmd+M: 放大/缩小选中气泡（PTY 和 PIPE 都用全屏 overlay）
+  // Cmd+M: 放大/缩小选中气泡（PTY / PIPE / Browser）
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'm' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         if (selectedCommandId) {
+          // 检查是否是浏览器气泡
+          const browserItem = browserItems.find(b => b.id === selectedCommandId);
+          if (browserItem) {
+            setMaximizedBrowserId(prev => prev === selectedCommandId ? null : selectedCommandId);
+            return;
+          }
           const cmd = commands.find(c => c.id === selectedCommandId);
           if (cmd?.usePty) {
             setMaximizedCommandId(prev => prev === selectedCommandId ? null : selectedCommandId);
@@ -918,7 +1062,7 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedCommandId, commands]);
+  }, [selectedCommandId, commands, browserItems]);
 
   // 清理 RAF
   useEffect(() => {
@@ -933,9 +1077,9 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
     <div ref={terminalRootRef} className="h-full flex flex-col bg-background relative">
       {/* 命令历史区域 */}
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto py-4 px-4">
-        {commands.length === 0 ? (
+        {consoleItems.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-            输入命令开始使用终端
+            输入命令或网址开始使用
           </div>
         ) : (
           <>
@@ -952,30 +1096,69 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
               </div>
             )}
             <div className={gridLayout ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-3'}>
-            {commands.map((cmd) => (
-              <div key={cmd.id} className="group/cmd">
-                <CommandBubble
-                  command={cmd.command}
-                  output={cmd.output}
-                  exitCode={cmd.exitCode}
-                  isRunning={cmd.isRunning}
-                  selected={selectedCommandId === cmd.id}
-                  onSelect={() => { setSelectedCommandId(cmd.id); setShowViewer(false); }}
-                  onInterrupt={cmd.isRunning ? () => interruptCommand(cmd.id) : undefined}
-                  onStdin={cmd.isRunning ? (data: string) => sendStdin(cmd.id, data) : undefined}
-                  onDelete={() => {
-                    if (cmd.isRunning && cmd.pid) interruptCmd(cmd.pid);
-                    deleteCommand(cmd.id);
-                  }}
-                  onRerun={() => rerunCommand(cmd.id)}
-                  timestamp={cmd.timestamp}
-                  usePty={cmd.usePty}
-                  onPtyResize={(cols, rows) => { ptySizeRef.current.set(cmd.id, { cols, rows }); resizePty(cmd.id, cols, rows); }}
-                  onToggleMaximize={() => setMaximizedCommandId(prev => prev === cmd.id ? null : cmd.id)}
-                  maximized={maximizedCommandId === cmd.id}
-                  portalContainer={terminalRootRef.current}
-                />
-              </div>
+            {consoleItems.map((item) => (
+              item.type === 'command' ? (
+                <div
+                  key={item.data.id}
+                  className="group/cmd rounded-lg transition-shadow"
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, item.data.id)}
+                  onDragOver={(e) => handleDragOver(e, item.data.id)}
+                  onDragEnter={handleDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onDragEnd={handleDragEnd}
+                >
+                  <CommandBubble
+                    command={item.data.command}
+                    output={item.data.output}
+                    exitCode={item.data.exitCode}
+                    isRunning={item.data.isRunning}
+                    selected={selectedCommandId === item.data.id}
+                    onSelect={() => { setSelectedCommandId(item.data.id); setShowViewer(false); }}
+                    onInterrupt={item.data.isRunning ? () => interruptCommand(item.data.id) : undefined}
+                    onStdin={item.data.isRunning ? (data: string) => sendStdin(item.data.id, data) : undefined}
+                    onDelete={() => {
+                      if (item.data.isRunning && item.data.pid) interruptCmd(item.data.pid);
+                      deleteCommand(item.data.id);
+                    }}
+                    onRerun={() => rerunCommand(item.data.id)}
+                    timestamp={item.data.timestamp}
+                    usePty={item.data.usePty}
+                    onPtyResize={(cols, rows) => { ptySizeRef.current.set(item.data.id, { cols, rows }); resizePty(item.data.id, cols, rows); }}
+                    onToggleMaximize={() => setMaximizedCommandId(prev => prev === item.data.id ? null : item.data.id)}
+                    maximized={maximizedCommandId === item.data.id}
+                    portalContainer={terminalRootRef.current}
+                    onTitleMouseDown={handleTitleMouseDown}
+                  />
+                </div>
+              ) : (
+                <div
+                  key={item.data.id}
+                  className="rounded-lg transition-shadow"
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, item.data.id)}
+                  onDragOver={(e) => handleDragOver(e, item.data.id)}
+                  onDragEnter={handleDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onDragEnd={handleDragEnd}
+                >
+                  <BrowserBubble
+                    id={item.data.id}
+                    url={item.data.url}
+                    selected={selectedCommandId === item.data.id}
+                    maximized={maximizedBrowserId === item.data.id}
+                    onSelect={() => { setSelectedCommandId(item.data.id); setShowViewer(false); }}
+                    onClose={() => closeBrowserItem(item.data.id)}
+                    onToggleMaximize={() => setMaximizedBrowserId(prev => prev === item.data.id ? null : item.data.id)}
+                    onNewTab={addBrowserItem}
+                    portalContainer={terminalRootRef.current}
+                    timestamp={item.data.timestamp}
+                    onTitleMouseDown={handleTitleMouseDown}
+                  />
+                </div>
+              )
             ))}
             </div>
             <div ref={bottomRef} />
@@ -984,10 +1167,10 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
       </div>
 
       {/* 跳转按钮 */}
-      {showTopButton && commands.length > 0 && (
+      {showTopButton && consoleItems.length > 0 && (
         <button
           onClick={scrollToTop}
-          className="absolute top-14 left-1/2 -translate-x-1/2 p-2 bg-card text-muted-foreground hover:text-foreground shadow-md rounded-full transition-all hover:shadow-lg active:scale-95 z-10"
+          className="absolute top-2 left-1/2 -translate-x-1/2 p-2 bg-card text-muted-foreground hover:text-foreground shadow-md rounded-full transition-all hover:shadow-lg active:scale-95 z-10"
           title="跳转到开始"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -995,7 +1178,7 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
           </svg>
         </button>
       )}
-      {showBottomButton && commands.length > 0 && (
+      {showBottomButton && consoleItems.length > 0 && (
         <button
           onClick={scrollToBottom}
           className="absolute bottom-20 left-1/2 -translate-x-1/2 p-2 bg-card text-muted-foreground hover:text-foreground shadow-md rounded-full transition-all hover:shadow-lg active:scale-95 z-10"
@@ -1010,28 +1193,6 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
       {/* 底部输入区域 */}
       <div className="border-t border-border p-4">
         <form onSubmit={handleSubmit} className="relative flex gap-2 items-center">
-          <button
-            type="button"
-            onClick={async () => {
-              setCommands([]);
-              commandOutputRef.current.clear();
-              pendingOutputRef.current.clear();
-              if (tabId) {
-                try {
-                  await fetch(`/api/terminal/history?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}`, { method: 'DELETE' });
-                } catch (e) {
-                  console.error('Failed to delete history:', e);
-                }
-              }
-            }}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
-            title="清空历史"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
-
           {/* 快捷命令按钮 */}
           <div className="relative" ref={quickCommandsRef}>
             <button
@@ -1139,6 +1300,23 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
             )}
           </div>
 
+          <button
+            type="button"
+            onClick={() => setGridLayout(prev => { const next = !prev; saveSettings({ gridLayout: next }); return next; })}
+            className={`p-2 rounded-lg transition-all ${gridLayout ? 'text-brand bg-brand/10' : 'text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95'}`}
+            title={gridLayout ? '单列布局' : '双列布局'}
+          >
+            {gridLayout ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowEnvManager(true)}
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
+            title="环境变量"
+          >
+            <Variable className="w-4 h-4" />
+          </button>
+
           {/* 运行中命令按钮 */}
           {(() => {
             const runningCmds = commands.filter((cmd) => cmd.isRunning);
@@ -1204,39 +1382,6 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
             );
           })()}
 
-          <button
-            type="button"
-            onClick={() => setGridLayout(prev => { const next = !prev; saveSettings({ gridLayout: next }); return next; })}
-            className={`p-2 rounded-lg transition-all ${gridLayout ? 'text-brand bg-brand/10' : 'text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95'}`}
-            title={gridLayout ? '单列布局' : '双列布局'}
-          >
-            {gridLayout ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowAliasManager(true)}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
-            title="命令别名"
-          >
-            <AtSign className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowEnvManager(true)}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
-            title="环境变量"
-          >
-            <Variable className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={launchPtyShell}
-            className="px-1.5 py-1 rounded text-[11px] font-mono font-medium transition-colors flex-shrink-0 hover:bg-accent text-muted-foreground"
-            title="新建交互式终端 (zsh)"
-          >
-            PTY
-          </button>
-
           <input
             ref={inputRef}
             type="text"
@@ -1250,7 +1395,7 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
               setShowAutocomplete(false);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="输入命令并按 Enter 执行... (↑↓ 历史, Tab 补全)"
+            placeholder="输入命令或网址并按 Enter... (↑↓ 历史, Tab 补全)"
             className="flex-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring font-mono"
           />
 
@@ -1289,7 +1434,6 @@ export function TerminalView({ cwd, initialShellCwd, tabId, onCwdChange }: Termi
 
       {showAliasManager && (
         <AliasManager
-          cwd={cwd}
           onClose={() => setShowAliasManager(false)}
           onSave={(newAliases) => setAliases(newAliases)}
         />

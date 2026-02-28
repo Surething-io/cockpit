@@ -30,7 +30,7 @@ function getHostFromUrl(url: string): string {
   }
 }
 
-/** 给 URL 追加 _cockpit=1 参数，让插件 content script 识别为 Cockpit iframe */
+/** 给 URL 追加 _cockpit=1 参数，让 background 的 webNavigation 追踪 + DNR 网络层剥离 */
 function addCockpitParam(url: string): string {
   if (!url) return url;
   try {
@@ -38,7 +38,6 @@ function addCockpitParam(url: string): string {
     urlObj.searchParams.set('_cockpit', '1');
     return urlObj.toString();
   } catch {
-    // URL 解析失败，用简单拼接兜底
     const sep = url.includes('?') ? '&' : '?';
     return `${url}${sep}_cockpit=1`;
   }
@@ -54,6 +53,43 @@ function stripCockpitParam(url: string): string {
   } catch {
     return url.replace(/[?&]_cockpit=1/, '');
   }
+}
+
+/**
+ * 通过 externally_connectable 直接调用插件 background，
+ * 预创建 Cookie 注入规则。返回 true 表示成功。
+ *
+ * 流程：BrowserBubble → chrome.runtime.sendMessage(extId) → background
+ * 无 content script 中转，无 postMessage，100% 可靠。
+ */
+async function prepareCookies(url: string): Promise<boolean> {
+  const bridge = (window as Record<string, unknown>).__cockpitBridge as { id?: string } | undefined;
+  const extId = bridge?.id;
+  if (!extId) return false; // 插件未安装
+
+  return new Promise((resolve) => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const chromeRuntime = (globalThis as any).chrome?.runtime;
+      if (!chromeRuntime?.sendMessage) { resolve(false); return; }
+
+      const timer = setTimeout(() => resolve(false), 2000); // 2s 超时兜底
+      chromeRuntime.sendMessage(extId, { type: 'prepare-iframe', url }, (response: { ok?: boolean } | undefined) => {
+        clearTimeout(timer);
+        resolve(response?.ok ?? false);
+      });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+/** 判断 URL 是否为 localhost（不需要 Cookie 预注入） */
+function isLocalUrl(url: string): boolean {
+  try {
+    const h = new URL(url).hostname;
+    return h === 'localhost' || h === '127.0.0.1';
+  } catch { return false; }
 }
 
 // ============================================================================
@@ -90,16 +126,33 @@ export function BrowserBubble({
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentUrl, setCurrentUrl] = useState(url);
-  // iframe src = 原始 URL + _cockpit=1 参数
-  // Cookie 预注入由 background 的 webNavigation.onBeforeNavigate 自动处理，
-  // 无需 postMessage 转发链，iframe src 设置后 background 在请求发出前自动创建规则
-  const iframeSrc = url ? addCockpitParam(url) : null;
+  const [readyUrl, setReadyUrl] = useState<string | null>(null); // Cookie 就绪后的 iframe src
   const iframeWrapperRef = useRef<HTMLDivElement>(null);
   const bubbleSlotRef = useRef<HTMLDivElement>(null);
   const fullscreenSlotRef = useRef<HTMLDivElement>(null);
 
   // 同步外部 url prop 变化
   useEffect(() => { setCurrentUrl(url); }, [url]);
+
+  // Cookie 预注入：通过 externally_connectable 直连 background，await 返回后再设置 iframe src
+  useEffect(() => {
+    if (!url) { setReadyUrl(null); return; }
+
+    const cockpitUrl = addCockpitParam(url);
+
+    // localhost 不需要 Cookie 预注入
+    if (isLocalUrl(url)) {
+      setReadyUrl(cockpitUrl);
+      return;
+    }
+
+    let cancelled = false;
+    prepareCookies(url).then(() => {
+      if (!cancelled) setReadyUrl(cockpitUrl);
+    });
+
+    return () => { cancelled = true; };
+  }, [url]);
 
   const handleIframeLoad = useCallback(() => setIsLoading(false), []);
 
@@ -129,18 +182,17 @@ export function BrowserBubble({
     setLoadError('页面加载失败');
   }, []);
 
-  // 刷新：重置 iframe src
-  // Cookie 重新注入由 background 的 webNavigation.onBeforeNavigate 自动处理
+  // 刷新：重置 iframe src → 重新导航 → onBeforeNavigate 自动重新注入 Cookie
   const doRefresh = useCallback(() => {
     const iframe = iframeWrapperRef.current?.querySelector('iframe');
-    if (iframe && iframeSrc) {
+    if (iframe && readyUrl) {
       setIsLoading(true);
       setLoadError(null);
       const src = iframe.src;
       iframe.src = '';
       setTimeout(() => { iframe.src = src; }, 0);
     }
-  }, [iframeSrc]);
+  }, [readyUrl]);
 
   // URL 变化时重置加载状态
   useEffect(() => {
@@ -352,13 +404,13 @@ export function BrowserBubble({
                       <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                     </div>
                   )}
-                  {!iframeSrc ? (
+                  {!readyUrl ? (
                     <div className="absolute inset-0 flex items-center justify-center">
                       <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                     </div>
                   ) : maximized ? (
                     <iframe
-                      src={iframeSrc}
+                      src={readyUrl}
                       className="w-full h-full border-0"
                       onLoad={handleIframeLoad}
                       onError={handleIframeError}
@@ -366,7 +418,7 @@ export function BrowserBubble({
                     />
                   ) : (
                     <iframe
-                      src={iframeSrc}
+                      src={readyUrl}
                       className="border-0"
                       style={{
                         width: '200%',

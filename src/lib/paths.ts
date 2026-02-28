@@ -69,13 +69,6 @@ export function getCommentsFilePath(cwd: string): string {
 }
 
 /**
- * Get the browser-tabs.json path for a project
- */
-export function getBrowserTabsPath(cwd: string): string {
-  return join(getCockpitProjectDir(cwd), 'browser-tabs.json');
-}
-
-/**
  * Get the services config path for a project
  */
 export function getServicesConfigPath(cwd: string): string {
@@ -127,10 +120,10 @@ export function getTerminalEnvPath(cwd: string, tabId?: string): string {
 }
 
 /**
- * Get the terminal aliases file path
+ * Get the global terminal aliases file path (shared across all projects)
  */
-export function getTerminalAliasesPath(cwd: string): string {
-  return join(getCockpitProjectDir(cwd), 'terminal-aliases.json');
+export function getGlobalAliasesPath(): string {
+  return join(COCKPIT_DIR, 'terminal-aliases.json');
 }
 
 /**
@@ -138,6 +131,13 @@ export function getTerminalAliasesPath(cwd: string): string {
  */
 export function getTerminalSettingsPath(cwd: string): string {
   return join(getCockpitProjectDir(cwd), 'terminal-settings.json');
+}
+
+/**
+ * Get the bubble order file path for a project tab (drag-sort persistence)
+ */
+export function getBubbleOrderPath(cwd: string, tabId: string): string {
+  return join(getCockpitProjectDir(cwd), `terminal-bubble-order-${tabId}.json`);
 }
 
 // ============================================

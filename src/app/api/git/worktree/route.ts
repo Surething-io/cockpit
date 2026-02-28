@@ -213,6 +213,20 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true });
       }
 
+      case 'checkout': {
+        // 在指定 worktree 中切换分支
+        if (!path) {
+          return NextResponse.json({ error: 'path is required' }, { status: 400 });
+        }
+        if (!branch) {
+          return NextResponse.json({ error: 'branch is required' }, { status: 400 });
+        }
+        // 远程分支 strip origin/ 前缀
+        const localBranch = branch.replace(/^origin\//, '');
+        await execAsync(`git checkout "${localBranch}"`, { cwd: path });
+        return NextResponse.json({ success: true });
+      }
+
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
     }

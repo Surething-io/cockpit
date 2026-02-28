@@ -9,15 +9,21 @@ export const dynamic = 'force-dynamic';
 // 超过此阈值的 output 存到独立文件（4KB）
 const OUTPUT_FILE_THRESHOLD = 4096;
 
-interface CommandHistoryEntry {
+// 统一历史条目（命令 + 浏览器混存）
+// type 缺失时默认为 'command'（兼容旧数据）
+interface HistoryEntry {
+  type?: 'command' | 'browser';
   id: string;
-  command: string;
-  output: string;
+  timestamp: string;
+  // command 类型字段
+  command?: string;
+  output?: string;
   outputFile?: string; // 长输出存到独立文件时的引用
   exitCode?: number;
-  timestamp: string;
-  cwd: string;
+  cwd?: string;
   usePty?: boolean;
+  // browser 类型字段
+  url?: string;
 }
 
 // GET: 读取命令历史（分页）
@@ -43,7 +49,7 @@ export async function GET(request: NextRequest) {
       const lines = content.trim().split('\n').filter(Boolean);
 
       // 解析 JSONL
-      const allEntries: CommandHistoryEntry[] = lines
+      const allEntries: HistoryEntry[] = lines
         .map((line) => {
           try {
             return JSON.parse(line);
@@ -51,7 +57,7 @@ export async function GET(request: NextRequest) {
             return null;
           }
         })
-        .filter(Boolean) as CommandHistoryEntry[];
+        .filter(Boolean) as HistoryEntry[];
 
       // 分页
       const start = page * pageSize;

@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { FileBrowserModal } from './FileBrowserModal';
-import { BrowserView } from './BrowserView';
 import { GitWorktreeModal } from './GitWorktreeModal';
-import { TerminalView } from './terminal/TerminalView';
+import { ConsoleView } from './console/ConsoleView';
+import { AliasManager } from './AliasManager';
 import { ChatProvider } from './ChatContext';
 import { SwipeableViewContainer, SwipeableContent, type ViewType } from './SwipeableViewContainer';
 import { useTabState } from './useTabState';
@@ -43,7 +43,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   // UI 状态
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
   const [isWorktreeOpen, setIsWorktreeOpen] = useState(false);
-  const [browserOpenUrl, setBrowserOpenUrl] = useState<string | undefined>(undefined);
+  const [isAliasManagerOpen, setIsAliasManagerOpen] = useState(false);
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [isGitRepo, setIsGitRepo] = useState(false);
   const [fileBrowserInitialTab, setFileBrowserInitialTab] = useState<'tree' | 'recent' | 'status' | 'history'>('tree');
@@ -98,10 +98,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           setActiveView('explorer');
         } else if (e.key === '3') {
           e.preventDefault();
-          setActiveView('terminal');
-        } else if (e.key === '4') {
-          e.preventDefault();
-          setActiveView('browser');
+          setActiveView('console');
         }
       }
     };
@@ -152,13 +149,14 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           currentBranch={currentBranch}
           onOpenWorktree={() => setIsWorktreeOpen(true)}
           onOpenProjectSessions={() => setIsProjectSessionsOpen(true)}
+          onOpenAliasManager={() => setIsAliasManagerOpen(true)}
         />
 
         {/* 内容区域 - 根据 activeView 切换（滑动效果） */}
         {initialCwd ? (
           <SwipeableContent>
             {/* AGENT 视图：Tab bar + Chat */}
-            <div className="w-1/4 h-full flex flex-col overflow-hidden">
+            <div className="w-1/3 h-full flex flex-col overflow-hidden">
               <TabBar
                 tabs={tabs}
                 activeTabId={activeTabId}
@@ -195,7 +193,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
             </div>
 
             {/* EXPLORER 视图：FileBrowser */}
-            <div className="w-1/4 h-full overflow-hidden">
+            <div className="w-1/3 h-full overflow-hidden">
               <FileBrowserModal
                 onClose={() => setActiveView('agent')}
                 cwd={initialCwd}
@@ -204,14 +202,9 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               />
             </div>
 
-            {/* TERMINAL 视图 */}
-            <div className="w-1/4 h-full overflow-hidden">
-              <TerminalView cwd={initialCwd} tabId="default" />
-            </div>
-
-            {/* BROWSER 视图：BrowserView */}
-            <div className="w-1/4 h-full overflow-hidden">
-              <BrowserView cwd={initialCwd} openUrl={browserOpenUrl} />
+            {/* CONSOLE 视图：命令执行 + 浏览器 */}
+            <div className="w-1/3 h-full overflow-hidden">
+              <ConsoleView cwd={initialCwd} tabId="default" />
             </div>
           </SwipeableContent>
         ) : (
@@ -268,6 +261,14 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           isOpen={isWorktreeOpen}
           onClose={() => setIsWorktreeOpen(false)}
           cwd={initialCwd}
+        />
+      )}
+
+      {/* Alias Manager Modal */}
+      {isAliasManagerOpen && (
+        <AliasManager
+          onClose={() => setIsAliasManagerOpen(false)}
+          onSave={() => setIsAliasManagerOpen(false)}
         />
       )}
 

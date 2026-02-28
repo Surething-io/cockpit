@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react';
 import { ChatMessage } from '@/types/chat';
 import { MessageBubble } from './MessageBubble';
+import { useChatSearch } from '@/hooks/useChatSearch';
 
 interface MessageListProps {
   messages: ChatMessage[];
@@ -28,9 +29,12 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const bottomRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const outerRef = useRef<HTMLDivElement>(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const [showTopButton, setShowTopButton] = useState(false);
   const [showBottomButton, setShowBottomButton] = useState(false);
+
+  const chatSearch = useChatSearch(outerRef);
 
   // 去重消息（防止重复 key 警告）
   const uniqueMessages = useMemo(() => {
@@ -181,11 +185,43 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   }, [messages.length, isActive]);
 
   return (
-    <div className="relative flex-1 overflow-hidden">
+    <div ref={outerRef} className="relative flex-1 overflow-hidden flex flex-col" tabIndex={-1}>
+      {/* 搜索栏 */}
+      {chatSearch.isSearchVisible && (
+        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-secondary border-b border-border">
+          <input
+            ref={chatSearch.searchInputRef}
+            type="text"
+            value={chatSearch.searchQuery}
+            onChange={e => chatSearch.setSearchQuery(e.target.value)}
+            onKeyDown={chatSearch.handleSearchKeyDown}
+            placeholder="搜索聊天内容..."
+            className="flex-1 max-w-xs px-2 py-1 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <span className="text-xs text-muted-foreground">
+            {chatSearch.matches.length > 0 ? `${chatSearch.currentMatchIndex + 1}/${chatSearch.matches.length}` : '无匹配'}
+          </span>
+          <button onClick={chatSearch.goToPrevMatch} disabled={chatSearch.matches.length === 0} className="p-1 rounded hover:bg-accent disabled:opacity-50" title="上一个 (Shift+Enter)">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+          </button>
+          <button onClick={chatSearch.goToNextMatch} disabled={chatSearch.matches.length === 0} className="p-1 rounded hover:bg-accent disabled:opacity-50" title="下一个 (Enter)">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <button onClick={chatSearch.closeSearch} className="p-1 rounded hover:bg-accent" title="关闭 (Esc)">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="h-full overflow-y-auto p-4"
+        className="flex-1 overflow-y-auto p-4"
       >
         {messages.length === 0 && !isLoading ? (
           <div className="flex items-center justify-center h-full text-slate-9">

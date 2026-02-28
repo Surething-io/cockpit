@@ -33,5 +33,24 @@
       "resourceTypes": ["sub_frame"],
       "initiatorDomains": ["localhost", "127.0.0.1"]
     }
+  },
+  {
+    "id": 3,
+    "priority": 2,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "transform": {
+          "queryTransform": {
+            "removeParams": ["_cockpit"]
+          }
+        }
+      }
+    },
+    "condition": {
+      "resourceTypes": ["sub_frame"],
+      "urlFilter": "_cockpit=",
+      "initiatorDomains": ["localhost", "127.0.0.1"]
+    }
   }
 ]

@@ -94,6 +94,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
   const slashListRef = useRef<HTMLDivElement>(null);
   const [browserItems, setBrowserItems] = useState<BrowserItem[]>([]);
   const [maximizedBrowserId, setMaximizedBrowserId] = useState<string | null>(null);
+  const [sleepingBubbles, setSleepingBubbles] = useState<Set<string>>(new Set());
   const [showTopButton, setShowTopButton] = useState(false);
   const [showBottomButton, setShowBottomButton] = useState(false);
   const [bubbleOrder, setBubbleOrder] = useState<string[] | null>(null);
@@ -257,6 +258,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
         if (page === 0) {
           setCommands(historyCommands);
           setBrowserItems(historyBrowsers);
+
         } else {
           setCommands((prev) => {
             const existingIds = new Set(prev.map((cmd) => cmd.id));
@@ -890,6 +892,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
     setBrowserItems(prev => prev.filter(item => item.id !== id));
     if (maximizedBrowserId === id) setMaximizedBrowserId(null);
     if (selectedCommandId === id) setSelectedCommandId(null);
+    setSleepingBubbles(prev => { const next = new Set(prev); next.delete(id); return next; });
 
     // 从持久化中删除
     if (tabId) {
@@ -899,6 +902,16 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
       ).catch(e => console.error('Failed to delete browser item:', e));
     }
   }, [maximizedBrowserId, selectedCommandId, cwd, tabId]);
+
+  // 气泡休眠回调
+  const handleBubbleSleep = useCallback((id: string) => {
+    setSleepingBubbles(prev => new Set(prev).add(id));
+  }, []);
+
+  // 气泡唤醒回调
+  const handleBubbleWake = useCallback((id: string) => {
+    setSleepingBubbles(prev => { const next = new Set(prev); next.delete(id); return next; });
+  }, []);
 
   // 快捷命令执行（自动识别 browser / pty / pipe）
   const handleQuickCommand = useCallback((command: string) => {
@@ -959,9 +972,13 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
     return matched.command + (parts.length > 1 ? ' ' + parts.slice(1).join(' ') : '');
   }, [quickCustomCommands]);
 
+  // 追踪输入法组合状态
+  const isComposingRef = useRef(false);
+
   // 处理输入提交
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
+    if (isComposingRef.current) return;
     if (!inputValue.trim()) return;
 
     // 优先展开自定义命令
@@ -1041,6 +1058,9 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
   }, [inputValue]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    // 输入法组合输入中（如中文拼音），不处理键盘事件
+    if (e.nativeEvent.isComposing) return;
+
     // / 命令候选列表键盘导航
     if (showSlashCommands && filteredSlashCommands.length > 0) {
       if (e.key === 'ArrowUp') {
@@ -1186,9 +1206,9 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
   }, []);
 
   return (
-    <div ref={terminalRootRef} className="h-full flex flex-col bg-background relative">
+    <div ref={terminalRootRef} className="h-full flex flex-col bg-background relative isolate">
       {/* 命令历史区域 */}
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto py-4 px-4">
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto py-4 px-4 relative z-0">
         {consoleItems.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             输入命令或网址开始使用
@@ -1274,6 +1294,9 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
                     portalContainer={terminalRootRef.current}
                     timestamp={item.data.timestamp}
                     onTitleMouseDown={handleTitleMouseDown}
+                    initialSleeping={sleepingBubbles.has(item.data.id)}
+                    onSleep={handleBubbleSleep}
+                    onWake={handleBubbleWake}
                   />
                 </div>
               )
@@ -1504,6 +1527,8 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
               setShowAutocomplete(false);
             }}
             onKeyDown={handleKeyDown}
+            onCompositionStart={() => { isComposingRef.current = true; }}
+            onCompositionEnd={() => { isComposingRef.current = false; }}
             placeholder="输入命令或网址并按 Enter... (↑↓ 历史, Tab 补全)"
             className="flex-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring font-mono"
           />

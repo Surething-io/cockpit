@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ProjectItem } from './ProjectItem';
 import { GlobalSessionMonitor, GlobalSession } from './GlobalSessionMonitor';
+import { PinnedSessionsPanel } from './PinnedSessionsPanel';
+import { usePinnedSessions } from '@/hooks/usePinnedSessions';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
 export interface ProjectInfo {
@@ -45,6 +47,7 @@ export function ProjectSidebar({
   onOpenNote,
   onSwitchProject,
 }: ProjectSidebarProps) {
+  const { pinnedSessions, unpinSession, updateTitle, reorder } = usePinnedSessions();
   const [isHovered, setIsHovered] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -266,6 +269,15 @@ export function ProjectSidebar({
           sessions={sessions}
           unreadSessionIds={unreadSessionIds}
           onClearUnread={handleClearUnread}
+        />
+        {/* 常用会话 */}
+        <PinnedSessionsPanel
+          collapsed={collapsed}
+          pinnedSessions={pinnedSessions}
+          onSwitchProject={onSwitchProject}
+          onUnpin={unpinSession}
+          onUpdateTitle={updateTitle}
+          onReorder={reorder}
         />
         {/* 笔记 */}
         <button

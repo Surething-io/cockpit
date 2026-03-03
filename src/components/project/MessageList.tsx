@@ -185,7 +185,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   }, [messages.length, isActive]);
 
   return (
-    <div ref={outerRef} className="relative flex-1 overflow-hidden flex flex-col" tabIndex={-1}>
+    <div ref={outerRef} className="relative flex-1 overflow-hidden flex flex-col outline-none" tabIndex={-1}>
       {/* 搜索栏 */}
       {chatSearch.isSearchVisible && (
         <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-secondary border-b border-border">

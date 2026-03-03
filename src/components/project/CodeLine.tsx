@@ -1,6 +1,6 @@
 'use client';
 
-import React, { memo } from 'react';
+import React, { memo, useCallback } from 'react';
 import type { CodeComment } from '@/hooks/useComments';
 
 // ============================================
@@ -22,6 +22,45 @@ export interface CodeLineProps {
   virtualItemSize: number;
   virtualItemStart: number;
   onCommentBubbleClick: (comment: CodeComment, e: React.MouseEvent) => void;
+  /** Cmd+Click 跳转定义 */
+  onCmdClick?: (line: number, column: number) => void;
+  /** 悬浮 token 事件 */
+  onTokenHover?: (line: number, column: number, rect: { x: number; y: number }) => void;
+  onTokenHoverLeave?: () => void;
+  /** 闪烁高亮的行号 */
+  flashLine?: number | null;
+}
+
+/**
+ * 从点击位置计算 column
+ * 遍历代码行内的 span 元素，累加前面 span 的文本长度
+ */
+function getColumnFromClick(e: React.MouseEvent, codeSpan: HTMLElement): number {
+  const target = e.target as HTMLElement;
+  if (target === codeSpan) return 1; // 点在空白区
+
+  // 获取代码区内所有文本节点相关的 span
+  const walker = document.createTreeWalker(codeSpan, NodeFilter.SHOW_TEXT);
+  let column = 1;
+  let node: Text | null;
+
+  while ((node = walker.nextNode() as Text | null)) {
+    const parentSpan = node.parentElement;
+    if (parentSpan === target || parentSpan?.contains(target) || target.contains(parentSpan!)) {
+      // 找到目标 span，加上点击在当前节点内的偏移
+      const sel = window.getSelection();
+      if (sel && sel.focusNode === node) {
+        column += sel.focusOffset;
+      } else {
+        // 近似取 span 中间位置
+        column += Math.floor((node.textContent?.length || 0) / 2);
+      }
+      return column;
+    }
+    column += node.textContent?.length || 0;
+  }
+
+  return column;
 }
 
 export const CodeLine = memo(function CodeLine({
@@ -38,7 +77,37 @@ export const CodeLine = memo(function CodeLine({
   virtualItemSize,
   virtualItemStart,
   onCommentBubbleClick,
+  onCmdClick,
+  onTokenHover,
+  onTokenHoverLeave,
+  flashLine,
 }: CodeLineProps) {
+  const handleCodeClick = useCallback((e: React.MouseEvent<HTMLSpanElement>) => {
+    if (!e.metaKey || !onCmdClick) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const codeSpan = e.currentTarget;
+    const column = getColumnFromClick(e, codeSpan);
+    onCmdClick(lineNum, column);
+  }, [lineNum, onCmdClick]);
+
+  const handleCodeMouseOver = useCallback((e: React.MouseEvent<HTMLSpanElement>) => {
+    if (!onTokenHover) return;
+    // 鼠标按下拖选文本时，跳过 hover 逻辑，避免触发状态更新导致 selection 丢失
+    if (e.buttons !== 0) return;
+
+    const target = e.target as HTMLElement;
+    // 只处理 span 内的 token（有 style 属性的 span）
+    if (target.tagName !== 'SPAN' || !target.style.color) return;
+
+    const codeSpan = e.currentTarget;
+    const column = getColumnFromClick(e, codeSpan);
+    const rect = target.getBoundingClientRect();
+
+    onTokenHover(lineNum, column, { x: rect.left, y: rect.bottom + 4 });
+  }, [lineNum, onTokenHover]);
+
   return (
     <div
       key={virtualKey}
@@ -51,7 +120,7 @@ export const CodeLine = memo(function CodeLine({
         height: `${virtualItemSize}px`,
         transform: `translateY(${virtualItemStart}px)`,
       }}
-      className={`flex ${isInRange ? 'bg-blue-9/20' : hasComments ? 'bg-amber-9/10' : 'hover:bg-accent/50'}`}
+      className={`flex ${flashLine === lineNum ? 'flash-line' : ''} ${isInRange ? 'bg-blue-9/20' : hasComments ? 'bg-amber-9/10' : 'hover:bg-accent/50'}`}
     >
       {showLineNumbers && (
         <span
@@ -77,6 +146,9 @@ export const CodeLine = memo(function CodeLine({
       <span
         className="flex-1 px-3 whitespace-pre overflow-x-auto"
         dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+        onClick={handleCodeClick}
+        onMouseOver={handleCodeMouseOver}
+        onMouseLeave={onTokenHoverLeave}
       />
     </div>
   );

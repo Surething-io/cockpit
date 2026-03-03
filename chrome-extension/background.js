@@ -16,7 +16,7 @@ const STORAGE_KEY = 'cockpit_updatedAt';
 
 async function checkUpdate() {
   try {
-    const resp = await fetch(CHECK_URL);
+    const resp = await fetch(`${CHECK_URL}?extId=${encodeURIComponent(chrome.runtime.id)}`);
     if (!resp.ok) return;
     const data = await resp.json();
     if (!data.updatedAt) return;

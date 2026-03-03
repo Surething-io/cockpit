@@ -30,6 +30,9 @@ export function CodeViewer({
   onScrollToLineComplete,
   highlightKeyword = null,
   visibleLineRef,
+  onCmdClick,
+  onTokenHover,
+  onTokenHoverLeave,
 }: CodeViewerProps) {
   const {
     // Refs
@@ -41,6 +44,8 @@ export function CodeViewer({
     // State
     highlightedLines,
     isMounted,
+    cmdHeld,
+    flashLine,
     isSearchVisible,
     searchQuery,
     caseSensitive,
@@ -98,7 +103,7 @@ export function CodeViewer({
   const lineNumChars = Math.max(4, String(lines.length).length);
 
   return (
-    <div ref={containerRef} className={`h-full flex flex-col ${className}`} tabIndex={0}>
+    <div ref={containerRef} className={`h-full flex flex-col outline-none ${className}`} tabIndex={0}>
       {/* Search Bar */}
       {showSearch && isSearchVisible && (
         <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-secondary border-b border-border">
@@ -157,7 +162,7 @@ export function CodeViewer({
       {/* Code Content */}
       <div
         ref={parentRef}
-        className="flex-1 overflow-auto font-mono text-sm bg-secondary"
+        className={`flex-1 overflow-auto font-mono text-sm bg-secondary${cmdHeld ? ' cmd-held-container' : ''}`}
       >
         <div
           style={{
@@ -196,6 +201,10 @@ export function CodeViewer({
                 virtualItemSize={virtualItem.size}
                 virtualItemStart={virtualItem.start}
                 onCommentBubbleClick={handleCommentBubbleClick}
+                onCmdClick={onCmdClick}
+                onTokenHover={onTokenHover}
+                onTokenHoverLeave={onTokenHoverLeave}
+                flashLine={flashLine}
               />
             );
           })}

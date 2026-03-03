@@ -3,9 +3,10 @@ import type { SearchResult, SearchResponse } from '../components/project/fileBro
 
 interface UseContentSearchOptions {
   cwd: string;
+  onSearchComplete?: () => void;
 }
 
-export function useContentSearch({ cwd }: UseContentSearchOptions) {
+export function useContentSearch({ cwd, onSearchComplete }: UseContentSearchOptions) {
   const [contentSearchQuery, setContentSearchQuery] = useState('');
   const [contentSearchResults, setContentSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -63,13 +64,15 @@ export function useContentSearch({ cwd }: UseContentSearchOptions) {
       // 默认展开所有搜索结果
       const expandedPaths = new Set(data.results.map(r => r.path));
       setSearchExpandedPaths(expandedPaths);
+
+      if (data.results.length > 0) onSearchComplete?.();
     } catch (err) {
       setSearchError(err instanceof Error ? err.message : 'Search failed');
       setContentSearchResults([]);
     } finally {
       setIsSearching(false);
     }
-  }, [cwd, searchOptions]);
+  }, [cwd, searchOptions, onSearchComplete]);
 
   const handleSearchToggle = useCallback((path: string) => {
     setSearchExpandedPaths(prev => {

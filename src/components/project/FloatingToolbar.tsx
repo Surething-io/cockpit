@@ -20,10 +20,14 @@ export function FloatingToolbar({ x, y, container, onAddComment, onSendToAI, isC
   const relX = x - containerRect.left;
   const relY = y - containerRect.top;
 
+  // 定位在鼠标右上方：向上偏移 40px，向右偏移 8px
+  const toolbarTop = Math.max(0, relY - 40);
+  const toolbarLeft = relX + 8;
+
   return (
     <div
-      className="absolute z-[200] flex items-center gap-1.5 bg-card border border-border rounded-lg shadow-xl p-1.5"
-      style={{ left: relX, top: relY }}
+      className="floating-toolbar absolute z-[200] flex items-center gap-1.5 bg-card border border-border rounded-lg shadow-xl p-1.5"
+      style={{ left: toolbarLeft, top: toolbarTop }}
     >
       <button
         className="px-3 py-1.5 text-xs font-medium border border-brand text-brand rounded-md hover:bg-brand/10 transition-colors"

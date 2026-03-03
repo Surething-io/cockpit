@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from '../../shared/Toast';
 import { BUBBLE_CONTENT_HEIGHT } from './CommandBubble';
@@ -56,6 +56,36 @@ function stripCockpitParam(url: string): string {
 }
 
 /**
+ * 获取 Chrome 扩展 ID（缓存在内存，通过 API 获取）
+ * 扩展 background 每 3 秒轮询 /api/extension/version 时会带上 extId，
+ * 服务端存在内存中，页面通过同一接口读取。
+ */
+let _cachedExtensionId: string | null = null;
+
+async function getExtensionId(): Promise<string | null> {
+  // 优先用缓存
+  if (_cachedExtensionId) return _cachedExtensionId;
+
+  // 也检查 DOM dataset（content script 可能设置了）
+  const fromDom = document.documentElement?.dataset?.cockpitBridgeId;
+  if (fromDom) { _cachedExtensionId = fromDom; return fromDom; }
+
+  // 从 API 获取（扩展 background 每 3 秒注册一次）
+  try {
+    const res = await fetch('/api/extension/version');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.extensionId) {
+        _cachedExtensionId = data.extensionId;
+        return data.extensionId;
+      }
+    }
+  } catch { /* ignore */ }
+
+  return null;
+}
+
+/**
  * 通过 externally_connectable 直接调用插件 background，
  * 预创建 Cookie 注入规则。返回 true 表示成功。
  *
@@ -63,8 +93,7 @@ function stripCockpitParam(url: string): string {
  * 无 content script 中转，无 postMessage，100% 可靠。
  */
 async function prepareCookies(url: string): Promise<boolean> {
-  const bridge = (window as unknown as Record<string, unknown>).__cockpitBridge as { id?: string } | undefined;
-  const extId = bridge?.id;
+  const extId = await getExtensionId();
   if (!extId) return false; // 插件未安装
 
   return new Promise((resolve) => {
@@ -96,6 +125,8 @@ function isLocalUrl(url: string): boolean {
 // BrowserBubble — 单个网页气泡卡片（用于 ConsoleView）
 // ============================================================================
 
+const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 分钟
+
 interface BrowserBubbleProps {
   url: string;
   id: string;
@@ -108,6 +139,9 @@ interface BrowserBubbleProps {
   portalContainer: HTMLDivElement | null;
   timestamp?: string;
   onTitleMouseDown?: () => void;
+  initialSleeping?: boolean;
+  onSleep?: (id: string) => void;
+  onWake?: (id: string) => void;
 }
 
 export function BrowserBubble({
@@ -122,21 +156,70 @@ export function BrowserBubble({
   portalContainer,
   timestamp,
   onTitleMouseDown,
+  initialSleeping,
+  onSleep,
+  onWake,
 }: BrowserBubbleProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentUrl, setCurrentUrl] = useState(url);
   const [readyUrl, setReadyUrl] = useState<string | null>(null); // Cookie 就绪后的 iframe src
+  const [isSleeping, setIsSleeping] = useState(initialSleeping ?? false);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const iframeWrapperRef = useRef<HTMLDivElement>(null);
+  const iframeContentRef = useRef<HTMLDivElement>(null);
   const bubbleSlotRef = useRef<HTMLDivElement>(null);
-  const fullscreenSlotRef = useRef<HTMLDivElement>(null);
 
   // 同步外部 url prop 变化
   useEffect(() => { setCurrentUrl(url); }, [url]);
 
+  // ========== 空闲休眠 ==========
+  const goToSleep = useCallback(() => {
+    if (isSleeping) return;
+    setIsSleeping(true);
+    setReadyUrl(null); // 卸载 iframe
+    onSleep?.(id);
+  }, [isSleeping, id, onSleep]);
+
+  const resetIdleTimer = useCallback(() => {
+    if (isSleeping) return;
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = setTimeout(goToSleep, IDLE_TIMEOUT);
+  }, [isSleeping, goToSleep]);
+
+  // 启动 / 清除空闲计时器
+  useEffect(() => {
+    if (isSleeping || !url) {
+      return () => { if (idleTimerRef.current) clearTimeout(idleTimerRef.current); };
+    }
+    resetIdleTimer();
+    return () => { if (idleTimerRef.current) clearTimeout(idleTimerRef.current); };
+  }, [isSleeping, url, resetIdleTimer]);
+
+  // 如果 initialSleeping，不加载 iframe
+  useEffect(() => {
+    if (initialSleeping) {
+      setReadyUrl(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 唤醒
+  const doWake = useCallback(() => {
+    setIsSleeping(false);
+    onWake?.(id);
+    // 重新加载 iframe
+    const cockpitUrl = addCockpitParam(url);
+    if (isLocalUrl(url)) {
+      setReadyUrl(cockpitUrl);
+    } else {
+      prepareCookies(url).then(() => setReadyUrl(cockpitUrl));
+    }
+  }, [url, id, onWake]);
+
   // Cookie 预注入：通过 externally_connectable 直连 background，await 返回后再设置 iframe src
   useEffect(() => {
-    if (!url) { setReadyUrl(null); return; }
+    if (!url || isSleeping) { if (!url) setReadyUrl(null); return; }
 
     const cockpitUrl = addCockpitParam(url);
 
@@ -152,7 +235,7 @@ export function BrowserBubble({
     });
 
     return () => { cancelled = true; };
-  }, [url]);
+  }, [url, isSleeping]);
 
   const handleIframeLoad = useCallback(() => setIsLoading(false), []);
 
@@ -182,8 +265,12 @@ export function BrowserBubble({
     setLoadError('页面加载失败');
   }, []);
 
-  // 刷新：重置 iframe src → 重新导航 → onBeforeNavigate 自动重新注入 Cookie
+  // 刷新：休眠时唤醒，否则重置 iframe src
   const doRefresh = useCallback(() => {
+    if (isSleeping) {
+      doWake();
+      return;
+    }
     const iframe = iframeWrapperRef.current?.querySelector('iframe');
     if (iframe && readyUrl) {
       setIsLoading(true);
@@ -192,7 +279,7 @@ export function BrowserBubble({
       iframe.src = '';
       setTimeout(() => { iframe.src = src; }, 0);
     }
-  }, [readyUrl]);
+  }, [isSleeping, doWake, readyUrl]);
 
   // URL 变化时重置加载状态
   useEffect(() => {
@@ -207,20 +294,25 @@ export function BrowserBubble({
     if (currentUrl) window.open(currentUrl, '_blank');
   }, [currentUrl]);
 
-  // ========== 最大化：DOM 节点移动 ==========
-  useLayoutEffect(() => {
-    const wrapper = iframeWrapperRef.current;
-    if (!wrapper) return;
-
-    if (maximized && fullscreenSlotRef.current) {
-      fullscreenSlotRef.current.appendChild(wrapper);
-      return () => {
-        if (bubbleSlotRef.current && wrapper.parentElement) {
-          bubbleSlotRef.current.appendChild(wrapper);
-        }
-      };
-    }
-  }, [maximized]);
+  // 最大化不再移动 DOM（appendChild 会导致 iframe 重载），改用负偏移 + absolute 覆盖
+  // 计算 bubbleSlot 相对于 portalContainer 的偏移，用负 margin 让 absolute 子元素覆盖 portalContainer
+  const [slotOffset, setSlotOffset] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  useEffect(() => {
+    if (!maximized || !portalContainer || !bubbleSlotRef.current) { setSlotOffset(null); return; }
+    const update = () => {
+      const cRect = portalContainer.getBoundingClientRect();
+      const sRect = bubbleSlotRef.current!.getBoundingClientRect();
+      setSlotOffset({
+        top: sRect.top - cRect.top,
+        left: sRect.left - cRect.left,
+        width: cRect.width,
+        height: cRect.height,
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [maximized, portalContainer]);
 
   // ESC 退出最大化 / Cmd+M 切换最大化
   useEffect(() => {
@@ -242,65 +334,101 @@ export function BrowserBubble({
 
   const host = getHostFromUrl(currentUrl);
 
-  // ========== 最大化 overlay ==========
-  const fullscreenOverlay = maximized && portalContainer
+  // ========== 最大化 overlay（遮罩 + 顶栏，不含 iframe）==========
+  const fullscreenToolbar = maximized && portalContainer
     ? createPortal(
         <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 50,
-            display: 'flex',
-            flexDirection: 'column',
-            background: 'var(--card)',
-          }}
+          onDoubleClick={onToggleMaximize}
+          className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card"
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 51, height: 41 }}
         >
-          {/* 最大化顶栏 */}
-          <div
-            onDoubleClick={onToggleMaximize}
-            className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card"
-            style={{ height: 41, flexShrink: 0 }}
-          >
-            <span className="text-[10px] font-mono leading-none px-1 py-0.5 rounded flex-shrink-0 bg-muted text-muted-foreground">
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-              </svg>
-            </span>
-            <span className="flex-1 text-xs text-muted-foreground truncate font-mono">
-              {currentUrl || '空白页'}
-            </span>
-            {isLoading && (
-              <span className="inline-block w-3 h-3 border border-brand border-t-transparent rounded-full animate-spin flex-shrink-0" />
-            )}
+          <span className="text-[10px] font-mono leading-none px-1 py-0.5 rounded flex-shrink-0 bg-muted text-muted-foreground">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+            </svg>
+          </span>
+          <span className="text-xs text-muted-foreground truncate font-mono">
+            {currentUrl || '空白页'}
+          </span>
+          {/* 复制网址 */}
+          {currentUrl && (
             <button
-              onClick={doRefresh}
+              onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(currentUrl); toast('已复制网址'); }}
               className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-              title="刷新"
+              title="复制网址"
             >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </button>
+          )}
+          <span className="flex-1" />
+          {isLoading && (
+            <span className="inline-block w-3 h-3 border border-brand border-t-transparent rounded-full animate-spin flex-shrink-0" />
+          )}
+          <button
+            onClick={doRefresh}
+            className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+            title="刷新"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+          <button
+            onClick={handleOpenExternal}
+            className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+            title="在新窗口打开"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </button>
+          <button
+            onClick={onToggleMaximize}
+            className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+            title="退出最大化 (⌘M)"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3" />
+            </svg>
+          </button>
+        </div>,
+        portalContainer,
+      )
+    : null;
+
+  // 最大化时遮罩（挡住滚动列表里的其他气泡）
+  const fullscreenBackdrop = maximized && portalContainer
+    ? createPortal(
+        <div style={{ position: 'absolute', inset: 0, top: 41, zIndex: 49, background: 'var(--card)' }} />,
+        portalContainer,
+      )
+    : null;
+
+  // 最大化 + 休眠：将休眠占位符 portal 到 portalContainer（绕开 scroll container 的 overflow 裁剪）
+  const fullscreenSleeping = maximized && isSleeping && portalContainer
+    ? createPortal(
+        <div
+          className="cursor-pointer group"
+          style={{ position: 'absolute', inset: 0, top: 41, zIndex: 50, background: 'var(--card)' }}
+          onClick={(e) => { e.stopPropagation(); doRefresh(); }}
+        >
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <svg className="w-10 h-10 mb-2 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+            </svg>
+            <p className="text-xs text-muted-foreground/60">{host}</p>
+          </div>
+          {/* 悬停刷新提示 */}
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 text-white text-xs">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-            </button>
-            <button
-              onClick={handleOpenExternal}
-              className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-              title="在新窗口打开"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-            </button>
-            <button
-              onClick={onToggleMaximize}
-              className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-              title="退出最大化 (⌘M)"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3" />
-              </svg>
-            </button>
+              点击唤醒
+            </div>
           </div>
-          <div ref={fullscreenSlotRef} style={{ flex: 1, overflow: 'hidden' }} />
         </div>,
         portalContainer,
       )
@@ -309,10 +437,13 @@ export function BrowserBubble({
   return (
     <div className="flex flex-col items-start">
       <div
-        className={`w-full bg-accent text-foreground rounded-2xl rounded-bl-md rounded-br-md
-          relative overflow-hidden border transition-colors cursor-pointer
-          ${selected ? 'border-brand' : 'border-brand/30'}`}
-        onClick={onSelect}
+        className={`w-full bg-accent text-foreground
+          relative transition-colors cursor-pointer
+          ${maximized ? 'rounded-none overflow-visible border-0' : 'border overflow-hidden rounded-2xl rounded-bl-md rounded-br-md'}
+          ${maximized ? '' : selected ? 'border-brand' : 'border-brand/30'}`}
+        onClick={maximized ? undefined : onSelect}
+        onMouseMove={resetIdleTimer}
+        onMouseDown={resetIdleTimer}
       >
         {/* ---- 标题栏 ---- */}
         {!maximized && (
@@ -380,10 +511,49 @@ export function BrowserBubble({
           </div>
         )}
 
-        {/* ---- 内容区（iframe）---- */}
-        <div ref={bubbleSlotRef}>
-          <div ref={iframeWrapperRef} className="w-full" style={{ height: maximized ? '100%' : undefined }}>
-            {url ? (
+        {/* ---- 内容区（iframe 或休眠截图）---- */}
+        <div
+          ref={bubbleSlotRef}
+          style={maximized && slotOffset && !isSleeping ? {
+            position: 'relative',
+            zIndex: 50,
+            marginTop: -slotOffset.top + 41,
+            marginLeft: -slotOffset.left,
+            width: slotOffset.width,
+            height: slotOffset.height - 41,
+            background: 'var(--card)',
+          } : undefined}
+        >
+          <div ref={iframeWrapperRef} className="w-full" style={{ height: maximized && slotOffset ? slotOffset.height - 41 : undefined }}>
+            {isSleeping ? (
+              maximized ? (
+                /* 最大化休眠：内容通过 fullscreenSleeping portal 渲染，此处仅占位 */
+                null
+              ) : (
+                /* 非最大化休眠：显示网址占位符 */
+                <div
+                  className="relative overflow-hidden cursor-pointer group"
+                  style={{ height: BUBBLE_CONTENT_HEIGHT }}
+                  onClick={(e) => { e.stopPropagation(); doRefresh(); }}
+                >
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/30">
+                    <svg className="w-10 h-10 mb-2 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                    </svg>
+                    <p className="text-xs text-muted-foreground/60">{host}</p>
+                  </div>
+                  {/* 悬停刷新提示 */}
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 text-white text-xs">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      点击唤醒
+                    </div>
+                  </div>
+                </div>
+              )
+            ) : url ? (
               loadError ? (
                 <div className="flex flex-col items-center justify-center text-muted-foreground p-6" style={{ height: maximized ? '100%' : BUBBLE_CONTENT_HEIGHT }}>
                   <svg className="w-10 h-10 mb-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -398,7 +568,7 @@ export function BrowserBubble({
                   </button>
                 </div>
               ) : (
-                <div className="relative overflow-hidden" style={{ height: maximized ? '100%' : BUBBLE_CONTENT_HEIGHT }}>
+                <div ref={iframeContentRef} className="relative overflow-hidden" style={{ height: maximized ? '100%' : BUBBLE_CONTENT_HEIGHT }}>
                   {isLoading && (
                     <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 z-10">
                       <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
@@ -408,24 +578,14 @@ export function BrowserBubble({
                     <div className="absolute inset-0 flex items-center justify-center">
                       <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                     </div>
-                  ) : maximized ? (
-                    <iframe
-                      src={readyUrl}
-                      className="w-full h-full border-0"
-                      onLoad={handleIframeLoad}
-                      onError={handleIframeError}
-                      title={`Browser: ${host}`}
-                    />
                   ) : (
                     <iframe
                       src={readyUrl}
                       className="border-0"
-                      style={{
-                        width: '200%',
-                        height: '200%',
-                        transform: 'scale(0.5)',
-                        transformOrigin: 'top left',
-                      }}
+                      style={maximized
+                        ? { width: '100%', height: '100%' }
+                        : { width: '200%', height: '200%', transform: 'scale(0.5)', transformOrigin: 'top left' }
+                      }
                       onLoad={handleIframeLoad}
                       onError={handleIframeError}
                       title={`Browser: ${host}`}
@@ -447,16 +607,18 @@ export function BrowserBubble({
         {/* ---- 底部状态栏 ---- */}
         {!maximized && url && (
           <div className="border-t border-border px-4 py-2 flex items-center gap-2 text-xs text-muted-foreground">
-            <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${isLoading ? 'bg-brand animate-pulse' : loadError ? 'bg-red-500' : 'bg-green-500'}`} />
-            <span className="truncate">{isLoading ? '加载中...' : loadError ? '加载失败' : host}</span>
+            <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${isSleeping ? 'bg-yellow-500' : isLoading ? 'bg-brand animate-pulse' : loadError ? 'bg-red-500' : 'bg-green-500'}`} />
+            <span className="truncate">{isSleeping ? '已休眠' : isLoading ? '加载中...' : loadError ? '加载失败' : host}</span>
             <span className="flex-1" />
             {timestamp && <span className="text-[11px] flex-shrink-0">{formatTime(timestamp)}</span>}
           </div>
         )}
       </div>
 
-      {/* 最大化 overlay */}
-      {fullscreenOverlay}
+      {/* 最大化遮罩 + 顶栏 + 休眠占位 */}
+      {fullscreenBackdrop}
+      {fullscreenSleeping}
+      {fullscreenToolbar}
     </div>
   );
 }

@@ -25,6 +25,12 @@ export interface CodeViewerProps {
   highlightKeyword?: string | null;
   /** 外部传入的 ref，CodeViewer 会持续更新为当前可见首行号（1-based） */
   visibleLineRef?: React.MutableRefObject<number>;
+  /** LSP: Cmd+Click 跳转定义回调 */
+  onCmdClick?: (line: number, column: number) => void;
+  /** LSP: 悬浮 token 回调 */
+  onTokenHover?: (line: number, column: number, rect: { x: number; y: number }) => void;
+  /** LSP: 悬浮离开回调 */
+  onTokenHoverLeave?: () => void;
 }
 
 export interface FloatingToolbarData {
@@ -80,6 +86,13 @@ export function useCodeViewerLogic({
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  // Cmd key state (for LSP Cmd+Click)
+  const [cmdHeld, setCmdHeld] = useState(false);
+
+  // Flash line state (跳转目标行高亮 3 秒)
+  const [flashLine, setFlashLine] = useState<number | null>(null);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Search state
   const [isSearchVisible, setIsSearchVisible] = useState(false);
@@ -233,6 +246,26 @@ export function useCodeViewerLogic({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleLineRef, rowData]);
 
+  // Track Cmd key for LSP Cmd+Click visual feedback
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Meta') setCmdHeld(true);
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Meta') setCmdHeld(false);
+    };
+    const handleBlur = () => setCmdHeld(false);
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, []);
+
   // Keyboard shortcut for search
   useEffect(() => {
     if (!showSearch) return;
@@ -299,7 +332,13 @@ export function useCodeViewerLogic({
       const rowIndex = rowData.findIndex(r => r.type === 'code' && r.lineIndex === targetLineIndex);
       if (rowIndex >= 0) {
         setTimeout(() => {
-          virtualizer.scrollToIndex(rowIndex, { align: 'start' });
+          virtualizer.scrollToIndex(rowIndex, { align: 'center' });
+
+          // 设置闪烁高亮
+          if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+          setFlashLine(targetLine);
+          flashTimerRef.current = setTimeout(() => setFlashLine(null), 500);
+
           onScrollToLineComplete?.();
         }, 150);
       }
@@ -337,6 +376,10 @@ export function useCodeViewerLogic({
     if (!commentsEnabled) return;
 
     const handleMouseUp = (e: MouseEvent) => {
+      // 点击 FloatingToolbar 按钮时，不清除 toolbar，让 onClick 正常触发
+      const target = e.target as HTMLElement;
+      if (target.closest?.('.floating-toolbar')) return;
+
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) {
         if (floatingToolbarRef.current) {
@@ -564,6 +607,8 @@ export function useCodeViewerLogic({
     // State
     highlightedLines,
     isMounted,
+    cmdHeld,
+    flashLine,
     isSearchVisible,
     searchQuery,
     caseSensitive,

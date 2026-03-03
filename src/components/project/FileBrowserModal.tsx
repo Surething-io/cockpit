@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { CommitDetailPanel, type CommitInfo } from './CommitDetailPanel';
 import { DiffView } from './DiffView';
 import { toast } from '../shared/Toast';
 import { FileTree, type GitStatusMap, type GitStatusCode } from './FileTree';
-import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, collectFilesUnderNode } from './GitFileTree';
+import { GitFileTree, type GitFileNode, buildGitFileTree, collectGitTreeDirPaths, collectFilesUnderNode } from './GitFileTree';
 import { MenuContainerProvider } from './FileContextMenu';
 import { CodeViewer } from './CodeViewer';
 import { isMarkdownFile } from './MarkdownFileViewer';
@@ -17,7 +17,7 @@ import { QuickFileOpen } from './QuickFileOpen';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { usePageVisible } from '@/hooks/usePageVisible';
 
-import type { TabType, GitFileStatus, GitStatusResponse, FileBrowserModalProps } from './fileBrowser/types';
+import type { TabType, GitFileStatus, GitStatusResponse, FileBrowserModalProps, SearchResult } from './fileBrowser/types';
 import { getTargetDirPath, isImageFile, formatDateTime, NOOP, COMMITS_PER_PAGE } from './fileBrowser/utils';
 import { BlameView } from './fileBrowser/BlameView';
 import { BranchSelector } from './fileBrowser/BranchSelector';
@@ -26,6 +26,12 @@ import { useFileTree } from '../../hooks/useFileTree';
 import { useContentSearch } from '../../hooks/useContentSearch';
 import { useGitStatus } from '../../hooks/useGitStatus';
 import { useGitHistory } from '../../hooks/useGitHistory';
+import { useLSPDefinition, useLSPHover, useLSPReferences, useLSPWarmup } from '../../hooks/useLSP';
+import { getLanguageForFile } from '@/lib/lsp/types';
+import { HoverTooltip } from './HoverTooltip';
+import { ReferencesPanel } from './ReferencesPanel';
+import { SearchResultsPanel } from './SearchResultsPanel';
+import type { Location } from '@/lib/lsp/types';
 
 export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchTrigger }: FileBrowserModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
@@ -42,13 +48,100 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   // 编辑器 ref 和状态（用于顶部工具栏渲染保存/关闭按钮）
   const editorHandleRef = useRef<FileEditorHandle>(null);
   const [editorState, setEditorState] = useState({ isDirty: false, isSaving: false });
+  const [showSearchPanel, setShowSearchPanel] = useState(false);
 
   // ========== Hooks ==========
+  const lspDefinition = useLSPDefinition(cwd);
+  const lspHover = useLSPHover(cwd);
+  const lspReferences = useLSPReferences(cwd);
+
   const pageVisible = usePageVisible();
   const fileTree = useFileTree({ cwd });
-  const contentSearch = useContentSearch({ cwd });
+  useLSPWarmup(cwd, fileTree.selectedPath);
+  const contentSearch = useContentSearch({ cwd, onSearchComplete: () => setShowSearchPanel(true) });
   const gitStatus = useGitStatus({ cwd, addToRecentFiles: fileTree.addToRecentFiles });
   const gitHistory = useGitHistory({ cwd, addToRecentFiles: fileTree.addToRecentFiles });
+
+  // ========== Search results tree ==========
+  const searchTree = useMemo(() => {
+    const results = contentSearch.contentSearchResults;
+    if (results.length === 0) return { tree: [] as GitFileNode<SearchResult>[], dirPaths: new Set<string>(), matchMap: new Map<string, SearchResult>() };
+    // 构建 path → SearchResult 查找表
+    const matchMap = new Map<string, SearchResult>();
+    const input = results.map(r => {
+      matchMap.set(r.path, r);
+      return { path: r.path, status: 'modified' as const };
+    });
+    const tree = buildGitFileTree(input);
+    const dirPaths = new Set(collectGitTreeDirPaths(tree));
+    return { tree: tree as unknown as GitFileNode<SearchResult>[], dirPaths, matchMap };
+  }, [contentSearch.contentSearchResults]);
+
+  // 搜索树展开路径 — 搜索完成后默认全展开
+  const [searchTreeExpanded, setSearchTreeExpanded] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setSearchTreeExpanded(searchTree.dirPaths);
+  }, [searchTree.dirPaths]);
+
+  const handleSearchTreeToggle = useCallback((path: string) => {
+    setSearchTreeExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
+
+  const renderSearchActions = useCallback((node: GitFileNode<unknown>) => {
+    if (node.isDirectory) return null;
+    const result = searchTree.matchMap.get(node.path);
+    if (!result) return null;
+    return <span className="text-xs text-muted-foreground">{result.matches.length}</span> as ReactNode;
+  }, [searchTree.matchMap]);
+
+  const showSearchResults = showSearchPanel && contentSearch.contentSearchResults.length > 0;
+
+  // ========== LSP handlers (depend on fileTree) ==========
+  const isLSPSupported = fileTree.selectedPath ? getLanguageForFile(fileTree.selectedPath) !== null : false;
+
+  const handleLSPCmdClick = useCallback(async (line: number, column: number) => {
+    if (!fileTree.selectedPath || !isLSPSupported) return;
+
+    const definitions = await lspDefinition.goToDefinition(fileTree.selectedPath, line, column);
+    if (definitions.length === 0) return;
+
+    const def = definitions[0];
+    // tsserver 返回绝对路径，转为相对路径（相对于 cwd）
+    const cwdPrefix = cwd.endsWith('/') ? cwd : cwd + '/';
+    const relativePath = def.file.startsWith(cwdPrefix)
+      ? def.file.slice(cwdPrefix.length)
+      : def.file;
+
+    if (relativePath === fileTree.selectedPath) {
+      // 同文件：滚动到目标行
+      fileTree.setTargetLineNumber(def.line);
+    } else {
+      fileTree.handleSelectFile(relativePath, def.line);
+    }
+  }, [fileTree, cwd, isLSPSupported, lspDefinition]);
+
+  const handleLSPTokenHover = useCallback((line: number, column: number, rect: { x: number; y: number }) => {
+    if (!fileTree.selectedPath || !isLSPSupported) return;
+    lspHover.onTokenMouseEnter(fileTree.selectedPath, line, column, rect);
+  }, [fileTree.selectedPath, isLSPSupported, lspHover]);
+
+  const handleLSPReferenceSelect = useCallback((ref: Location) => {
+    const cwdPrefix = cwd.endsWith('/') ? cwd : cwd + '/';
+    const relativePath = ref.file.startsWith(cwdPrefix)
+      ? ref.file.slice(cwdPrefix.length)
+      : ref.file;
+
+    if (relativePath === fileTree.selectedPath) {
+      fileTree.setTargetLineNumber(ref.line);
+    } else {
+      fileTree.handleSelectFile(relativePath, ref.line);
+    }
+  }, [fileTree, cwd]);
 
   // ========== gitStatusMap (depends on both useFileTree and useGitStatus) ==========
   const gitStatusMap = useMemo<GitStatusMap | null>(() => {
@@ -160,7 +253,12 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         }
         lastEscTimeRef.current = now;
 
-        if (fileTree.blameSelectedCommit) {
+        // 优先关闭底部面板
+        if (lspReferences.visible) {
+          lspReferences.closeReferences();
+        } else if (showSearchPanel) {
+          setShowSearchPanel(false);
+        } else if (fileTree.blameSelectedCommit) {
           fileTree.setBlameSelectedCommit(null);
         } else if (fileTree.showBlame) {
           fileTree.setShowBlame(false);
@@ -171,7 +269,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, fileTree.showBlame, fileTree.blameSelectedCommit, fileTree, showQuickOpen]);
+  }, [onClose, fileTree.showBlame, fileTree.blameSelectedCommit, fileTree, showQuickOpen, lspReferences.visible, lspReferences.closeReferences, showSearchPanel]);
 
   // ========== Initial Data Load (once on mount) ==========
   useEffect(() => {
@@ -682,61 +780,29 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     {contentSearch.contentSearchQuery ? '无匹配结果' : '输入关键词搜索文件内容'}
                   </div>
                 ) : (
-                  <div className="flex-1 overflow-y-auto">
+                  <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
                     {/* 搜索统计 */}
                     {contentSearch.searchStats && (
-                      <div className="px-3 py-1.5 text-xs text-muted-foreground bg-secondary border-b border-border">
+                      <div className="px-3 py-1.5 text-xs text-muted-foreground bg-secondary border-b border-border flex-shrink-0">
                         {contentSearch.searchStats.totalFiles} 个文件，{contentSearch.searchStats.totalMatches} 处匹配
                         {contentSearch.searchStats.truncated && <span className="text-amber-11 ml-1">(结果已截断)</span>}
                       </div>
                     )}
-                    {/* 搜索结果列表 */}
-                    {contentSearch.contentSearchResults.map((result) => (
-                      <div key={result.path} className="border-b border-border">
-                        {/* 文件头 */}
-                        <div
-                          className="flex items-center gap-2 px-3 py-1.5 bg-secondary hover:bg-accent cursor-pointer"
-                          onClick={() => contentSearch.handleSearchToggle(result.path)}
-                          data-tooltip={result.path}
-                        >
-                          <svg
-                            className={`w-3 h-3 flex-shrink-0 text-muted-foreground transition-transform ${
-                              contentSearch.searchExpandedPaths.has(result.path) ? 'rotate-90' : ''
-                            }`}
-                            viewBox="0 0 16 16"
-                            fill="none"
-                          >
-                            <path d="M6 4 L10 8 L6 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                          <FileIcon name={result.path.split('/').pop() || ''} size={14} className="flex-shrink-0" />
-                          <span className="text-sm text-foreground truncate flex-1">{result.path}</span>
-                          <span className="text-xs text-muted-foreground">{result.matches.length}</span>
-                        </div>
-                        {/* 匹配行 */}
-                        {contentSearch.searchExpandedPaths.has(result.path) && (
-                          <div className="bg-card">
-                            {result.matches.map((match, idx) => (
-                              <div
-                                key={idx}
-                                className="flex items-start gap-2 px-3 py-1 hover:bg-accent cursor-pointer text-sm font-mono"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  fileTree.handleSelectFile(result.path, match.lineNumber);
-                                }}
-                                data-tooltip={match.content.trim()}
-                              >
-                                <span className="text-muted-foreground w-8 text-right flex-shrink-0">
-                                  {match.lineNumber}
-                                </span>
-                                <span className="text-foreground truncate">
-                                  {match.content}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                    {/* 搜索结果目录树 */}
+                    <GitFileTree
+                      files={searchTree.tree}
+                      selectedPath={fileTree.selectedPath}
+                      expandedPaths={searchTreeExpanded}
+                      onSelect={(node) => {
+                        const result = searchTree.matchMap.get(node.path);
+                        fileTree.handleSelectFile(node.path, result?.matches[0]?.lineNumber);
+                        if (!showSearchPanel) setShowSearchPanel(true);
+                      }}
+                      onToggle={handleSearchTreeToggle}
+                      cwd={cwd}
+                      renderActions={renderSearchActions}
+                      className="flex-1 overflow-y-auto py-1 min-w-max"
+                    />
                   </div>
                 )}
               </div>
@@ -1084,7 +1150,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         </svg>
                       </button>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
                       {fileTree.showEditor ? (
                         <>
                           {/* 编辑模式：保存 + 关闭 */}
@@ -1094,7 +1160,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           <button
                             onClick={() => editorHandleRef.current?.save()}
                             disabled={!editorState.isDirty || editorState.isSaving}
-                            className={`px-2 py-1 text-sm rounded transition-colors ${
+                            className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
                               editorState.isDirty && !editorState.isSaving
                                 ? 'bg-brand text-white hover:bg-brand/90'
                                 : 'bg-secondary text-muted-foreground cursor-not-allowed'
@@ -1108,7 +1174,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           </button>
                           <button
                             onClick={() => editorHandleRef.current?.close()}
-                            className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
+                            className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
                             title="关闭编辑 (ESC)"
                           >
                             关闭
@@ -1123,7 +1189,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                 navigator.clipboard.writeText(fileTree.fileContent!.content!);
                                 toast('已复制文件内容');
                               }}
-                              className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
+                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
                               title="复制文件内容"
                             >
                               复制
@@ -1132,7 +1198,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           {fileTree.fileContent?.type === 'text' && isMarkdownFile(fileTree.selectedPath) && (
                             <button
                               onClick={() => fileTree.setShowMarkdownPreview(true)}
-                              className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
+                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
                               title="预览 Markdown 渲染效果"
                             >
                               预览
@@ -1142,7 +1208,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             <button
                               onClick={fileTree.handleToggleBlame}
                               disabled={fileTree.isLoadingBlame}
-                              className={`px-2 py-1 text-sm rounded transition-colors ${
+                              className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
                                 fileTree.showBlame
                                   ? 'bg-brand text-white'
                                   : 'text-muted-foreground hover:bg-accent'
@@ -1159,7 +1225,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           {fileTree.fileContent?.type === 'text' && (
                             <button
                               onClick={() => fileTree.setShowEditor(true)}
-                              className="px-2 py-1 text-sm rounded transition-colors text-muted-foreground hover:bg-accent"
+                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
                               title="编辑文件"
                             >
                               编辑
@@ -1226,6 +1292,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             }}
                             highlightKeyword={activeTab === 'search' ? contentSearch.contentSearchQuery : null}
                             visibleLineRef={visibleLineRef}
+                            onCmdClick={isLSPSupported ? handleLSPCmdClick : undefined}
+                            onTokenHover={isLSPSupported ? handleLSPTokenHover : undefined}
+                            onTokenHoverLeave={isLSPSupported ? lspHover.onTokenMouseLeave : undefined}
                           />
                         )
                       ) : fileTree.fileContent.type === 'image' && fileTree.fileContent.content ? (
@@ -1455,6 +1524,34 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
             onClose={() => setShowQuickOpen(false)}
           />
         )}
+        {/* 底部面板 - 搜索结果 / 引用，同时存在时左右各半 */}
+        {(showSearchResults || lspReferences.visible) && (
+          <div className={`flex ${lspReferences.visible && showSearchResults ? '' : 'flex-col'}`}>
+            {showSearchResults && (
+              <div className={lspReferences.visible ? 'flex-1 min-w-0 border-r border-border' : ''}>
+                <SearchResultsPanel
+                  results={contentSearch.contentSearchResults}
+                  loading={contentSearch.isSearching}
+                  totalMatches={contentSearch.searchStats?.totalMatches ?? 0}
+                  onSelect={(path, lineNumber) => {
+                    fileTree.handleSelectFile(path, lineNumber);
+                  }}
+                  onClose={() => setShowSearchPanel(false)}
+                />
+              </div>
+            )}
+            {lspReferences.visible && (
+              <div className={showSearchResults ? 'flex-1 min-w-0' : ''}>
+                <ReferencesPanel
+                  references={lspReferences.references}
+                  loading={lspReferences.loading}
+                  onSelect={handleLSPReferenceSelect}
+                  onClose={lspReferences.closeReferences}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
       {/* 全局 tooltip - portal 到 body 顶层 */}
       {hoverTooltip && createPortal(
@@ -1511,6 +1608,30 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
           </div>
         </div>,
         document.body
+      )}
+      {/* LSP HoverTooltip - portal 到 menuContainer 内，使用 absolute 定位 */}
+      {lspHover.hoverInfo && menuContainer && createPortal(
+        <HoverTooltip
+          displayString={lspHover.hoverInfo.displayString}
+          documentation={lspHover.hoverInfo.documentation}
+          x={lspHover.hoverInfo.x}
+          y={lspHover.hoverInfo.y}
+          container={menuContainer}
+          onMouseEnter={lspHover.onCardMouseEnter}
+          onMouseLeave={lspHover.onCardMouseLeave}
+          onFindReferences={() => {
+            const { filePath, line, column } = lspHover.hoverInfo!;
+            lspHover.clearHover();
+            lspReferences.findReferences(filePath, line, column);
+          }}
+          onSearch={(keyword) => {
+            lspHover.clearHover();
+            setActiveTab('search');
+            contentSearch.setContentSearchQuery(keyword);
+            contentSearch.performContentSearch(keyword);
+          }}
+        />,
+        menuContainer,
       )}
     </MenuContainerProvider>
   );

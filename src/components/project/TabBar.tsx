@@ -43,6 +43,8 @@ interface TabBarProps {
   unreadTabs: Set<string>;
   dragTabIndex: number | null;
   dragOverTabIndex: number | null;
+  isPinned?: (tabId: string) => boolean;
+  onTogglePin?: (tabId: string) => void;
   onSwitchTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onNewTab: () => void;
@@ -58,6 +60,8 @@ export function TabBar({
   unreadTabs,
   dragTabIndex,
   dragOverTabIndex,
+  isPinned,
+  onTogglePin,
   onSwitchTab,
   onCloseTab,
   onNewTab,
@@ -91,11 +95,41 @@ export function TabBar({
                 <TabNumberIcon number={index + 1} isActive={tab.id === activeTabId} />
                 {/* Loading 黄点闪烁 - 右上角 */}
                 {tab.isLoading && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-9 animate-pulse" />
                 )}
                 {/* 未读红点角标 - 右上角（loading 时不显示，避免重叠） */}
                 {!tab.isLoading && unreadTabs.has(tab.id) && tab.id !== activeTabId && (
                   <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500" />
+                )}
+                {/* 图钉角标 - 右上角（不与 loading/unread 重叠时显示） */}
+                {onTogglePin && isPinned?.(tab.id) && !tab.isLoading && !(unreadTabs.has(tab.id) && tab.id !== activeTabId) && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onTogglePin(tab.id);
+                    }}
+                    className="absolute -top-1 -right-1 w-3.5 h-3.5 flex items-center justify-center rounded-full bg-card text-amber-500 hover:text-destructive transition-colors"
+                    title="取消固定"
+                  >
+                    <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M16 4h-2V2h-4v2H8c-.55 0-1 .45-1 1v4l-2 3v2h5.97v7l1 1 1-1v-7H19v-2l-2-3V5c0-.55-.45-1-1-1z" />
+                    </svg>
+                  </button>
+                )}
+                {/* 未 pin 时 hover 显示图钉 - 右上角 */}
+                {onTogglePin && !isPinned?.(tab.id) && !tab.isLoading && !(unreadTabs.has(tab.id) && tab.id !== activeTabId) && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onTogglePin(tab.id);
+                    }}
+                    className="absolute -top-1 -right-1 w-3.5 h-3.5 flex items-center justify-center rounded-full bg-card text-muted-foreground opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:!text-brand transition-all"
+                    title="固定到常用会话"
+                  >
+                    <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                      <path d="M16 4h-2V2h-4v2H8c-.55 0-1 .45-1 1v4l-2 3v2h5.97v7l1 1 1-1v-7H19v-2l-2-3V5c0-.55-.45-1-1-1z" />
+                    </svg>
+                  </button>
                 )}
               </div>
               <span className="max-w-32 truncate">{tab.title}</span>

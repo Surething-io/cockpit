@@ -13,6 +13,7 @@ import { TabManagerTopBar } from './TabManagerTopBar';
 import { TabBar } from './TabBar';
 import { ChatPanel } from './ChatPanel';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { usePinnedSessions } from '@/hooks/usePinnedSessions';
 
 interface TabManagerProps {
   initialCwd?: string;
@@ -39,6 +40,24 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     handleTabDrop,
     handleTabDragEnd,
   } = useTabState({ initialCwd, initialSessionId });
+
+  // Pin 状态管理
+  const { isPinned, pinSession, unpinSession } = usePinnedSessions();
+
+  const isTabPinned = useCallback((tabId: string) => {
+    const tab = tabs.find(t => t.id === tabId);
+    return tab?.sessionId ? isPinned(tab.sessionId) : false;
+  }, [tabs, isPinned]);
+
+  const handleTogglePin = useCallback((tabId: string) => {
+    const tab = tabs.find(t => t.id === tabId);
+    if (!tab?.sessionId) return;
+    if (isPinned(tab.sessionId)) {
+      unpinSession(tab.sessionId);
+    } else {
+      pinSession(tab.sessionId, tab.cwd || initialCwd || '', tab.title);
+    }
+  }, [tabs, isPinned, pinSession, unpinSession, initialCwd]);
 
   // UI 状态
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
@@ -163,6 +182,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                 unreadTabs={unreadTabs}
                 dragTabIndex={dragTabIndex}
                 dragOverTabIndex={dragOverTabIndex}
+                isPinned={isTabPinned}
+                onTogglePin={handleTogglePin}
                 onSwitchTab={switchTab}
                 onCloseTab={closeTab}
                 onNewTab={handleNewTab}
@@ -216,6 +237,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               unreadTabs={unreadTabs}
               dragTabIndex={dragTabIndex}
               dragOverTabIndex={dragOverTabIndex}
+              isPinned={isTabPinned}
+              onTogglePin={handleTogglePin}
               onSwitchTab={switchTab}
               onCloseTab={closeTab}
               onNewTab={handleNewTab}

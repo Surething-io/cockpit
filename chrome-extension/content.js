@@ -29,13 +29,26 @@
   // ====================================================================
   if (window === window.top) {
     if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(window.location.origin)) {
-      // 注入到 main world，让页面 JS 能读取 extension ID
+      // 通过 DOM 属性暴露 extension ID（CSP 安全，不需要内联脚本）
       const id = chrome.runtime.id;
       const version = (() => { try { return chrome.runtime.getManifest().version; } catch { return 'unknown'; } })();
-      const script = document.createElement('script');
-      script.textContent = `window.__cockpitBridge = { id: "${id}", version: "${version}" };`;
-      (document.documentElement || document).prepend(script);
-      script.remove();
+
+      function setBridgeData() {
+        const el = document.documentElement;
+        if (el) {
+          el.dataset.cockpitBridgeId = id;
+          el.dataset.cockpitBridgeVersion = version;
+          console.log(LOG_PREFIX, '顶层页面 bridge ID 已设置:', id);
+        } else {
+          console.warn(LOG_PREFIX, 'document.documentElement 不存在，等待 DOMContentLoaded');
+          document.addEventListener('DOMContentLoaded', () => {
+            document.documentElement.dataset.cockpitBridgeId = id;
+            document.documentElement.dataset.cockpitBridgeVersion = version;
+            console.log(LOG_PREFIX, '顶层页面 bridge ID 已设置 (DOMContentLoaded):', id);
+          }, { once: true });
+        }
+      }
+      setBridgeData();
     }
     return;
   }
@@ -69,19 +82,13 @@
     );
 
     // ----------------------------------------------------------------
-    // 0. 伪装为顶层窗口（注入到页面 main world）
-    //    让网站的 JS 无法检测到自己在 iframe 内
+    // 0. 伪装为顶层窗口（注入外部脚本到 main world，绕过 CSP）
+    //    CSP 允许 chrome-extension:// 源，因此用外部脚本替代内联脚本
     // ----------------------------------------------------------------
     const disguiseScript = document.createElement('script');
-    disguiseScript.textContent = `(function(){
-      try {
-        Object.defineProperty(window, 'top', { get: function() { return window; } });
-        Object.defineProperty(window, 'parent', { get: function() { return window; } });
-        Object.defineProperty(window, 'frameElement', { get: function() { return null; } });
-      } catch(e) {}
-    })();`;
+    disguiseScript.src = chrome.runtime.getURL('disguise.js');
     (document.documentElement || document).prepend(disguiseScript);
-    disguiseScript.remove();
+    disguiseScript.onload = () => disguiseScript.remove();
 
     // ----------------------------------------------------------------
     // 1. Cookie 补充注入：SPA 导航后域名可能变化，通知 background 补充规则

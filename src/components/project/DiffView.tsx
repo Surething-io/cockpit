@@ -122,6 +122,9 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
     if (!commentsEnabled) return;
 
     const handleMouseUp = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest?.('.floating-toolbar')) return;
+
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed || !selection.toString().trim()) {
         setFloatingToolbar(null);

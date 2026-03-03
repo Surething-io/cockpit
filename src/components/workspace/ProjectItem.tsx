@@ -77,7 +77,7 @@ export function ProjectItem({
         )}
         {/* 运行中黄点 - 数字右上角 */}
         {isLoading && (
-          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-9 animate-pulse" />
         )}
       </div>
 

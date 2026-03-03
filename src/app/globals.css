@@ -534,6 +534,24 @@ body {
 .hl-m { background: rgba(217, 119, 6, 0.3); }     /* other matches */
 .hl-kw { background: rgba(217, 119, 6, 0.4); border-radius: 2px; padding: 0 2px; } /* keyword */
 
+/* ---- LSP Cmd+Click visual feedback ---- */
+.cmd-held-container span[style]:hover {
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ---- LSP jump flash highlight (0.5s fade out) ---- */
+.flash-line {
+  animation: flash-fade 0.5s ease-out forwards !important;
+}
+
+@keyframes flash-fade {
+  0%   { background-color: hsl(var(--brand) / 0.4); }
+  30%  { background-color: hsl(var(--brand) / 0.25); }
+  65%  { background-color: hsl(var(--brand) / 0.1); }
+  100% { background-color: transparent; }
+}
+
 /* ---- Chat search highlight ---- */
 mark.chat-search-match { background: rgba(217, 119, 6, 0.3); color: inherit; border-radius: 2px; }
 mark.chat-search-current { background: rgba(217, 119, 6, 0.6); color: inherit; border-radius: 2px; }

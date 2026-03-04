@@ -2,6 +2,22 @@
 
 import React, { memo, useCallback } from 'react';
 import type { CodeComment } from '@/hooks/useComments';
+import type { BlameLine } from './fileBrowser/types';
+
+// ============================================
+// Author color palette for blame view
+// ============================================
+
+export const AUTHOR_COLORS = [
+  { bg: 'rgba(59, 130, 246, 0.15)', border: 'rgb(59, 130, 246)' },
+  { bg: 'rgba(16, 185, 129, 0.15)', border: 'rgb(16, 185, 129)' },
+  { bg: 'rgba(245, 158, 11, 0.15)', border: 'rgb(245, 158, 11)' },
+  { bg: 'rgba(239, 68, 68, 0.15)', border: 'rgb(239, 68, 68)' },
+  { bg: 'rgba(168, 85, 247, 0.15)', border: 'rgb(168, 85, 247)' },
+  { bg: 'rgba(236, 72, 153, 0.15)', border: 'rgb(236, 72, 153)' },
+  { bg: 'rgba(20, 184, 166, 0.15)', border: 'rgb(20, 184, 166)' },
+  { bg: 'rgba(249, 115, 22, 0.15)', border: 'rgb(249, 115, 22)' },
+];
 
 // ============================================
 // Memoized Code Line Component - 避免 floatingToolbar 状态变化触发重渲染
@@ -29,6 +45,15 @@ export interface CodeLineProps {
   onTokenHoverLeave?: () => void;
   /** 闪烁高亮的行号 */
   flashLine?: number | null;
+  // ---- Blame 相关 ----
+  blameLine?: BlameLine;
+  /** 是否显示 blame 信息（同 commit 分组中只有首行显示） */
+  showBlameInfo?: boolean;
+  blameAuthorColor?: { bg: string; border: string };
+  isBlameHovered?: boolean;
+  onBlameClick?: (line: BlameLine) => void;
+  onBlameMouseEnter?: (line: BlameLine, e: React.MouseEvent) => void;
+  onBlameMouseLeave?: () => void;
 }
 
 /**
@@ -81,6 +106,13 @@ export const CodeLine = memo(function CodeLine({
   onTokenHover,
   onTokenHoverLeave,
   flashLine,
+  blameLine,
+  showBlameInfo,
+  blameAuthorColor,
+  isBlameHovered,
+  onBlameClick,
+  onBlameMouseEnter,
+  onBlameMouseLeave,
 }: CodeLineProps) {
   const handleCodeClick = useCallback((e: React.MouseEvent<HTMLSpanElement>) => {
     if (!e.metaKey || !onCmdClick) return;
@@ -108,6 +140,14 @@ export const CodeLine = memo(function CodeLine({
     onTokenHover(lineNum, column, { x: rect.left, y: rect.bottom + 4 });
   }, [lineNum, onTokenHover]);
 
+  const handleBlameClick = useCallback(() => {
+    if (blameLine && onBlameClick) onBlameClick(blameLine);
+  }, [blameLine, onBlameClick]);
+
+  const handleBlameEnter = useCallback((e: React.MouseEvent) => {
+    if (blameLine && onBlameMouseEnter) onBlameMouseEnter(blameLine, e);
+  }, [blameLine, onBlameMouseEnter]);
+
   return (
     <div
       key={virtualKey}
@@ -119,9 +159,33 @@ export const CodeLine = memo(function CodeLine({
         width: '100%',
         height: `${virtualItemSize}px`,
         transform: `translateY(${virtualItemStart}px)`,
+        backgroundColor: isBlameHovered && blameAuthorColor ? blameAuthorColor.bg : undefined,
       }}
       className={`flex ${flashLine === lineNum ? 'flash-line' : ''} ${isInRange ? 'bg-blue-9/20' : hasComments ? 'bg-amber-9/10' : 'hover:bg-accent/50'}`}
     >
+      {/* ---- Blame 列 ---- */}
+      {blameLine && blameAuthorColor && (
+        <>
+          <div
+            className="w-1 flex-shrink-0"
+            style={{ backgroundColor: blameAuthorColor.border }}
+          />
+          <div
+            className="w-48 flex-shrink-0 px-2 flex items-center gap-2 border-r border-border text-muted-foreground cursor-pointer hover:bg-accent/50"
+            onMouseEnter={handleBlameEnter}
+            onMouseLeave={onBlameMouseLeave}
+            onClick={handleBlameClick}
+            title="点击查看 commit 详情"
+          >
+            {showBlameInfo ? (
+              <>
+                <span className="font-medium" style={{ color: blameAuthorColor.border }}>{blameLine.hash}</span>
+                <span className="truncate flex-1">{blameLine.author.split(' ')[0]}</span>
+              </>
+            ) : null}
+          </div>
+        </>
+      )}
       {showLineNumbers && (
         <span
           className={`flex-shrink-0 flex items-center justify-end gap-0.5 pr-2 select-none border-r border-border font-variant-tabular ${

@@ -6,20 +6,20 @@ import { CommitDetailPanel, type CommitInfo } from './CommitDetailPanel';
 import { DiffView } from './DiffView';
 import { toast } from '../shared/Toast';
 import { FileTree, type GitStatusMap, type GitStatusCode } from './FileTree';
-import { GitFileTree, type GitFileNode, buildGitFileTree, collectGitTreeDirPaths, collectFilesUnderNode } from './GitFileTree';
+import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, collectFilesUnderNode } from './GitFileTree';
 import { MenuContainerProvider } from './FileContextMenu';
 import { CodeViewer } from './CodeViewer';
 import { isMarkdownFile } from './MarkdownFileViewer';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { FileIcon } from '../shared/FileIcon';
-import { FileEditorInline, type FileEditorHandle } from './FileEditorModal';
+import { type FileEditorHandle } from './FileEditorModal';
 import { QuickFileOpen } from './QuickFileOpen';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { usePageVisible } from '@/hooks/usePageVisible';
 
 import type { TabType, GitFileStatus, GitStatusResponse, FileBrowserModalProps, SearchResult } from './fileBrowser/types';
 import { getTargetDirPath, isImageFile, formatDateTime, NOOP, COMMITS_PER_PAGE } from './fileBrowser/utils';
-import { BlameView } from './fileBrowser/BlameView';
+
 import { BranchSelector } from './fileBrowser/BranchSelector';
 
 import { useFileTree } from '../../hooks/useFileTree';
@@ -62,26 +62,35 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const gitStatus = useGitStatus({ cwd, addToRecentFiles: fileTree.addToRecentFiles });
   const gitHistory = useGitHistory({ cwd, addToRecentFiles: fileTree.addToRecentFiles });
 
-  // ========== Search results tree ==========
-  const searchTree = useMemo(() => {
+  // ========== Search results: matchedPaths + matchMap（复用 FileTree） ==========
+  const searchData = useMemo(() => {
     const results = contentSearch.contentSearchResults;
-    if (results.length === 0) return { tree: [] as GitFileNode<SearchResult>[], dirPaths: new Set<string>(), matchMap: new Map<string, SearchResult>() };
-    // 构建 path → SearchResult 查找表
+    if (results.length === 0) return { matchedPaths: new Set<string>(), expandDirs: new Set<string>(), matchMap: new Map<string, SearchResult>() };
+
+    const matchedPaths = new Set<string>();
+    const expandDirs = new Set<string>();
     const matchMap = new Map<string, SearchResult>();
-    const input = results.map(r => {
+
+    for (const r of results) {
       matchMap.set(r.path, r);
-      return { path: r.path, status: 'modified' as const };
-    });
-    const tree = buildGitFileTree(input);
-    const dirPaths = new Set(collectGitTreeDirPaths(tree));
-    return { tree: tree as unknown as GitFileNode<SearchResult>[], dirPaths, matchMap };
+      matchedPaths.add(r.path);
+      // 把所有祖先目录也加入 matchedPaths，否则 FileTree 过滤会跳过目录
+      const parts = r.path.split('/');
+      for (let i = 1; i < parts.length; i++) {
+        const dirPath = parts.slice(0, i).join('/');
+        matchedPaths.add(dirPath);
+        expandDirs.add(dirPath);
+      }
+    }
+
+    return { matchedPaths, expandDirs, matchMap };
   }, [contentSearch.contentSearchResults]);
 
   // 搜索树展开路径 — 搜索完成后默认全展开
   const [searchTreeExpanded, setSearchTreeExpanded] = useState<Set<string>>(new Set());
   useEffect(() => {
-    setSearchTreeExpanded(searchTree.dirPaths);
-  }, [searchTree.dirPaths]);
+    setSearchTreeExpanded(searchData.expandDirs);
+  }, [searchData.expandDirs]);
 
   const handleSearchTreeToggle = useCallback((path: string) => {
     setSearchTreeExpanded(prev => {
@@ -92,12 +101,12 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     });
   }, []);
 
-  const renderSearchActions = useCallback((node: GitFileNode<unknown>) => {
+  const renderSearchActions = useCallback((node: { path: string; isDirectory: boolean }) => {
     if (node.isDirectory) return null;
-    const result = searchTree.matchMap.get(node.path);
+    const result = searchData.matchMap.get(node.path);
     if (!result) return null;
     return <span className="text-xs text-muted-foreground">{result.matches.length}</span> as ReactNode;
-  }, [searchTree.matchMap]);
+  }, [searchData.matchMap]);
 
   const showSearchResults = showSearchPanel && contentSearch.contentSearchResults.length > 0;
 
@@ -798,14 +807,15 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         {contentSearch.searchStats.truncated && <span className="text-amber-11 ml-1">(结果已截断)</span>}
                       </div>
                     )}
-                    {/* 搜索结果目录树 */}
-                    <GitFileTree
-                      files={searchTree.tree}
+                    {/* 搜索结果目录树 — 复用 FileTree + matchedPaths */}
+                    <FileTree
+                      files={fileTree.files}
                       selectedPath={fileTree.selectedPath}
                       expandedPaths={searchTreeExpanded}
-                      onSelect={(node) => {
-                        const result = searchTree.matchMap.get(node.path);
-                        fileTree.handleSelectFile(node.path, result?.matches[0]?.lineNumber);
+                      matchedPaths={searchData.matchedPaths}
+                      onSelect={(path) => {
+                        const result = searchData.matchMap.get(path);
+                        fileTree.handleSelectFile(path, result?.matches[0]?.lineNumber);
                         if (!showSearchPanel) setShowSearchPanel(true);
                       }}
                       onToggle={handleSearchTreeToggle}
@@ -1252,45 +1262,25 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       </div>
                     ) : fileTree.fileContent ? (
                       fileTree.fileContent.type === 'text' && typeof fileTree.fileContent.content === 'string' ? (
-                        fileTree.showBlame ? (
-                          fileTree.blameError ? (
-                            <div className="h-full flex items-center justify-center text-muted-foreground">
-                              <div className="text-center">
-                                <p className="text-red-11">{fileTree.blameError}</p>
-                                <button
-                                  onClick={() => fileTree.setShowBlame(false)}
-                                  className="mt-2 text-brand hover:underline text-sm"
-                                >
-                                  返回预览
-                                </button>
-                              </div>
+                        fileTree.showBlame && fileTree.blameError ? (
+                          <div className="h-full flex items-center justify-center text-muted-foreground">
+                            <div className="text-center">
+                              <p className="text-red-11">{fileTree.blameError}</p>
+                              <button
+                                onClick={() => fileTree.setShowBlame(false)}
+                                className="mt-2 text-brand hover:underline text-sm"
+                              >
+                                返回预览
+                              </button>
                             </div>
-                          ) : fileTree.blameLines.length > 0 ? (
-                            <BlameView blameLines={fileTree.blameLines} cwd={cwd} onSelectCommit={fileTree.setBlameSelectedCommit} />
-                          ) : (
-                            <div className="h-full flex items-center justify-center">
-                              <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-                            </div>
-                          )
-                        ) : fileTree.showEditor ? (
-                          <FileEditorInline
-                            ref={editorHandleRef}
-                            filePath={fileTree.selectedPath!}
-                            initialContent={fileTree.fileContent.content}
-                            initialMtime={fileTree.fileContent.mtime}
-                            cwd={cwd}
-                            initialLine={visibleLineRef.current}
-                            onClose={(currentLine) => {
-                              fileTree.setShowEditor(false);
-                              setEditorReturnLine(currentLine);
-                            }}
-                            onSaved={() => {
-                              fileTree.loadFileContent(fileTree.selectedPath!);
-                            }}
-                            onStateChange={setEditorState}
-                          />
+                          </div>
+                        ) : fileTree.showBlame && fileTree.blameLines.length === 0 && fileTree.isLoadingBlame ? (
+                          <div className="h-full flex items-center justify-center">
+                            <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+                          </div>
                         ) : (
                           <CodeViewer
+                            ref={editorHandleRef}
                             content={fileTree.fileContent.content}
                             filePath={fileTree.selectedPath}
                             cwd={cwd}
@@ -1305,6 +1295,18 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             onCmdClick={isLSPSupported ? handleLSPCmdClick : undefined}
                             onTokenHover={isLSPSupported ? handleLSPTokenHover : undefined}
                             onTokenHoverLeave={isLSPSupported ? lspHover.onTokenMouseLeave : undefined}
+                            blameLines={fileTree.showBlame && fileTree.blameLines.length > 0 ? fileTree.blameLines : undefined}
+                            onSelectCommit={fileTree.setBlameSelectedCommit}
+                            editable={fileTree.showEditor}
+                            initialMtime={fileTree.fileContent.mtime}
+                            onEditorClose={(currentLine) => {
+                              fileTree.setShowEditor(false);
+                              setEditorReturnLine(currentLine);
+                            }}
+                            onSaved={() => {
+                              fileTree.loadFileContent(fileTree.selectedPath!);
+                            }}
+                            onEditorStateChange={setEditorState}
                           />
                         )
                       ) : fileTree.fileContent.type === 'image' && fileTree.fileContent.content ? (

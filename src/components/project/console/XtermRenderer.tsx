@@ -212,7 +212,7 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
     <div
       ref={containerRef}
       className="xterm-renderer px-2"
-      style={{ height: maximized ? '100%' : height, overflow: 'hidden' }}
+      style={{ height: height ?? '100%', overflow: 'hidden' }}
     />
   );
 }));

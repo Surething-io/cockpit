@@ -1,7 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useLayoutEffect, memo, useState, lazy, Suspense, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useRef, useEffect, useLayoutEffect, memo, useState, lazy, Suspense, useCallback } from 'react';
 import { Copy, Clipboard, X, RotateCw, ChevronUp, ChevronDown, Search } from 'lucide-react';
 import { toast } from '../../shared/Toast';
 import { AnsiUp } from 'ansi_up';
@@ -25,8 +24,8 @@ interface CommandBubbleProps {
   onPtyResize?: (cols: number, rows: number) => void;
   onToggleMaximize?: () => void;
   maximized?: boolean;
-  /** TerminalView 根容器（用于全屏绝对定位） */
-  portalContainer?: HTMLElement | null;
+  /** 放大时的总高度（由 ConsoleView 传入 scrollRef.clientHeight） */
+  expandedHeight?: number;
   onTitleMouseDown?: () => void;
 }
 
@@ -60,6 +59,92 @@ const FULLSCREEN_BAR_HEIGHT = 41;
 /** 气泡内容区固定高度（px），确保垂直方向刚好放下 2 个完整气泡 */
 export const BUBBLE_CONTENT_HEIGHT = 360;
 
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+const stripAnsi = (s: string) => s.replace(ANSI_RE, '');
+
+/** Pipe 搜索/过滤视图 */
+function PipeSearchView({
+  output,
+  query,
+  mode,
+  currentIdx,
+  matchRefs,
+}: {
+  output: string;
+  query: string;
+  mode: 'search' | 'filter';
+  currentIdx: number;
+  matchRefs: React.MutableRefObject<(HTMLElement | null)[]>;
+}) {
+  const ansiUp = useRef<AnsiUp | null>(null);
+  if (!ansiUp.current) {
+    ansiUp.current = new AnsiUp();
+    ansiUp.current.use_classes = true;
+  }
+
+  const lines = output.split('\n');
+  const q = query.toLowerCase();
+  let matchCount = 0;
+  matchRefs.current = [];
+
+  return (
+    <pre className="text-sm font-mono whitespace-pre-wrap break-words select-text">
+      {lines.map((line, i) => {
+        const plain = stripAnsi(line);
+        const matches = plain.toLowerCase().includes(q);
+
+        if (mode === 'filter' && !matches) return null;
+
+        if (!matches) {
+          // 无匹配：正常渲染 ANSI
+          const html = ansiUp.current!.ansi_to_html(line);
+          return <div key={i} dangerouslySetInnerHTML={{ __html: html }} />;
+        }
+
+        // 有匹配：高亮匹配文本
+        const parts: React.ReactNode[] = [];
+        let lastIdx = 0;
+        const lowerPlain = plain.toLowerCase();
+        let searchFrom = 0;
+
+        while (searchFrom < lowerPlain.length) {
+          const pos = lowerPlain.indexOf(q, searchFrom);
+          if (pos === -1) break;
+
+          // 匹配前的文本
+          if (pos > lastIdx) {
+            parts.push(<span key={`t${lastIdx}`}>{plain.slice(lastIdx, pos)}</span>);
+          }
+
+          // 匹配的高亮文本
+          const thisMatchIdx = matchCount++;
+          const isCurrent = thisMatchIdx === currentIdx;
+          parts.push(
+            <mark
+              key={`m${pos}`}
+              ref={(el) => { matchRefs.current[thisMatchIdx] = el; }}
+              className={isCurrent ? 'bg-brand/40 text-foreground' : 'bg-yellow-300/40 text-foreground'}
+            >
+              {plain.slice(pos, pos + q.length)}
+            </mark>
+          );
+
+          lastIdx = pos + q.length;
+          searchFrom = lastIdx;
+        }
+
+        // 匹配后的剩余文本
+        if (lastIdx < plain.length) {
+          parts.push(<span key={`t${lastIdx}`}>{plain.slice(lastIdx)}</span>);
+        }
+
+        return <div key={i}>{parts}</div>;
+      })}
+    </pre>
+  );
+}
+
 export const CommandBubble = memo(function CommandBubble({
   command,
   output,
@@ -76,7 +161,7 @@ export const CommandBubble = memo(function CommandBubble({
   onPtyResize,
   onToggleMaximize,
   maximized,
-  portalContainer,
+  expandedHeight,
   onTitleMouseDown,
 }: CommandBubbleProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -88,16 +173,17 @@ export const CommandBubble = memo(function CommandBubble({
   const [isOverflowing, setIsOverflowing] = useState(false);
   const [stdinValue, setStdinValue] = useState('');
 
-  // xterm DOM 移动相关 ref
-  const xtermWrapperRef = useRef<HTMLDivElement>(null);  // xterm 所在的 wrapper
-  const bubbleSlotRef = useRef<HTMLDivElement>(null);     // 气泡中的插槽
-  const fullscreenXtermAreaRef = useRef<HTMLDivElement>(null); // 全屏 overlay 中的 xterm 区域
   const xtermSearchRef = useRef<XtermSearchHandle>(null); // xterm 搜索接口
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // 搜索状态
+  // 搜索状态（PTY 和 Pipe 共用）
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  /** Pipe 搜索模式：'search' 高亮匹配 / 'filter' 只显示匹配行 */
+  const [pipeSearchMode, setPipeSearchMode] = useState<'search' | 'filter'>('search');
+  /** Pipe 搜索当前匹配索引（用于 Enter/Shift+Enter 跳转） */
+  const [pipeMatchIdx, setPipeMatchIdx] = useState(0);
+  const pipeMatchRefs = useRef<(HTMLElement | null)[]>([]);
 
   // ANSI 解析器 & 增量追踪
   const ansiUpRef = useRef<AnsiUp | null>(null);
@@ -183,42 +269,6 @@ export const CommandBubble = memo(function CommandBubble({
     return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, [maximized, onToggleMaximize]);
 
-  /**
-   * 原生 DOM 移动 xterm wrapper：
-   * maximized 时移入全屏 overlay 的 xterm 区域，还原时移回气泡插槽。
-   * xterm.js Terminal 实例不会被销毁（DOM 移动不触发 React unmount）。
-   *
-   * 全屏 overlay 通过 createPortal 渲染到 portalContainer（terminalRootRef），
-   * 使用 position: absolute; inset: 0 覆盖整个 terminal 区域，
-   * 不再挂载到 document.body，也不需要 position: fixed。
-   */
-  useLayoutEffect(() => {
-    if (!usePty) return;
-    const xtermWrapper = xtermWrapperRef.current;
-    if (!xtermWrapper) return;
-
-    if (maximized && fullscreenXtermAreaRef.current) {
-      // 移入全屏 overlay 的 xterm 区域
-      fullscreenXtermAreaRef.current.appendChild(xtermWrapper);
-
-      // DOM 移动后重新聚焦 xterm
-      requestAnimationFrame(() => {
-        const xtermEl = xtermWrapper.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null;
-        xtermEl?.focus();
-      });
-
-      return () => {
-        // 移回气泡插槽
-        if (bubbleSlotRef.current && xtermWrapper.parentElement) {
-          bubbleSlotRef.current.appendChild(xtermWrapper);
-        }
-        // 退出全屏时关闭搜索
-        setSearchVisible(false);
-        setSearchQuery('');
-      };
-    }
-  }, [maximized, usePty]);
-
   const lineCount = output ? output.split('\n').length : 0;
 
   // 搜索：Cmd+F 唤出，ESC 关闭
@@ -230,20 +280,48 @@ export const CommandBubble = memo(function CommandBubble({
   const closeSearch = useCallback(() => {
     setSearchVisible(false);
     setSearchQuery('');
+    setPipeMatchIdx(0);
     xtermSearchRef.current?.clearSearch();
   }, []);
 
   const doSearchNext = useCallback((q: string) => {
-    if (q.trim()) xtermSearchRef.current?.findNext(q);
-  }, []);
+    if (!q.trim()) return;
+    if (usePty) {
+      xtermSearchRef.current?.findNext(q);
+    } else {
+      // Pipe: 跳到下一个匹配
+      setPipeMatchIdx(prev => {
+        const next = prev + 1;
+        const el = pipeMatchRefs.current[next];
+        if (el) { el.scrollIntoView({ block: 'nearest' }); return next; }
+        // 循环到第一个
+        pipeMatchRefs.current[0]?.scrollIntoView({ block: 'nearest' });
+        return 0;
+      });
+    }
+  }, [usePty]);
 
   const doSearchPrev = useCallback((q: string) => {
-    if (q.trim()) xtermSearchRef.current?.findPrevious(q);
-  }, []);
+    if (!q.trim()) return;
+    if (usePty) {
+      xtermSearchRef.current?.findPrevious(q);
+    } else {
+      setPipeMatchIdx(prev => {
+        const next = prev - 1;
+        if (next >= 0) {
+          pipeMatchRefs.current[next]?.scrollIntoView({ block: 'nearest' });
+          return next;
+        }
+        const last = pipeMatchRefs.current.length - 1;
+        if (last >= 0) pipeMatchRefs.current[last]?.scrollIntoView({ block: 'nearest' });
+        return Math.max(last, 0);
+      });
+    }
+  }, [usePty]);
 
-  // Cmd+F / ESC 快捷键（仅在 PTY 全屏时）
+  // Cmd+F / ESC 快捷键（选中时响应，不限放大/缩小）
   useEffect(() => {
-    if (!usePty || !maximized) return;
+    if (!selected) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
         e.preventDefault();
@@ -260,184 +338,201 @@ export const CommandBubble = memo(function CommandBubble({
     };
     document.addEventListener('keydown', handleKeyDown, true);
     return () => document.removeEventListener('keydown', handleKeyDown, true);
-  }, [usePty, maximized, searchVisible, openSearch, closeSearch]);
+  }, [selected, searchVisible, openSearch, closeSearch]);
 
-  // 全屏 overlay：通过 createPortal 渲染到 terminalRootRef，absolute 定位覆盖整个 terminal 区域
-  // PTY 模式全屏 overlay
-  const fullscreenOverlay = usePty && maximized && portalContainer ? createPortal(
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        zIndex: 50,
-        display: 'flex',
-        flexDirection: 'column',
-        background: 'var(--card)',
-      }}
-    >
-      {/* 顶栏 */}
-      <div onDoubleClick={() => onToggleMaximize?.()} className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card" style={{ height: FULLSCREEN_BAR_HEIGHT, flexShrink: 0 }}>
-        <span className="text-[10px] font-mono leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground">&gt;_</span>
-        <span className="flex-1 text-xs text-muted-foreground truncate font-mono">{command}</span>
-        {isRunning && (
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            运行中
-          </span>
-        )}
-        {isRunning && onInterrupt && (
-          <button
-            onClick={onInterrupt}
-            className="text-xs px-3 py-1 rounded-md font-medium bg-destructive text-destructive-foreground transition-all duration-150 hover:bg-destructive/80 hover:shadow-md active:scale-95 active:bg-destructive/70 cursor-pointer select-none"
-          >
-            Ctrl+C
-          </button>
-        )}
-        <button
-          onClick={() => onToggleMaximize?.()}
-          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          title="还原 (⌘M / ESC)"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-      {/* 搜索栏 - Cmd+F 唤出 */}
-      {searchVisible && (
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card" style={{ flexShrink: 0 }}>
-          <Search className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-          <input
-            ref={searchInputRef}
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              if (e.target.value.trim()) xtermSearchRef.current?.findNext(e.target.value);
-              else xtermSearchRef.current?.clearSearch();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                if (e.shiftKey) doSearchPrev(searchQuery);
-                else doSearchNext(searchQuery);
-              }
-            }}
-            placeholder="搜索..."
-            className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-            autoComplete="off"
-            spellCheck="false"
-          />
-          <div className="flex items-center gap-0.5">
-            <button
-              onClick={() => doSearchPrev(searchQuery)}
-              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              title="上一个 (Shift+Enter)"
-            >
-              <ChevronUp className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => doSearchNext(searchQuery)}
-              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              title="下一个 (Enter)"
-            >
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <button
-            onClick={closeSearch}
-            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-      {/* xterm 区域 - 原生 DOM 会将 xtermWrapper 移入此处 */}
-      <div ref={fullscreenXtermAreaRef} style={{ flex: 1, overflow: 'hidden' }} />
-    </div>,
-    portalContainer,
-  ) : null;
+  // 放大时的内容区高度（减去顶栏高度）
+  const contentHeight = maximized && expandedHeight ? expandedHeight - FULLSCREEN_BAR_HEIGHT : BUBBLE_CONTENT_HEIGHT;
 
   return (
     <div className="flex flex-col items-start">
         <div
-          className={`w-full bg-accent text-foreground dark:text-slate-11 rounded-2xl rounded-bl-md rounded-br-md relative overflow-hidden border transition-colors cursor-pointer ${
-            selected ? 'border-brand' : 'border-brand/30'
+          className={`w-full bg-accent text-foreground dark:text-slate-11 relative overflow-hidden border transition-colors cursor-pointer ${
+            maximized ? 'rounded-none border-0' : 'rounded-2xl rounded-bl-md rounded-br-md'
+          } ${
+            maximized ? '' : selected ? 'border-brand' : 'border-brand/30'
           }`}
           onClick={onSelect}
         >
-          {/* 命令行头部 - 最大化时隐藏 */}
-          {!maximized && (
-          <div
-            data-drag-handle
-            onMouseDown={() => onTitleMouseDown?.()}
-            onDoubleClick={(e) => { e.stopPropagation(); onToggleMaximize?.(); }}
-            className={`flex items-center gap-2 px-4 py-1.5 border-b text-xs transition-colors cursor-grab active:cursor-grabbing ${
-            selected ? 'border-brand' : 'border-brand/30'
-          }`}>
-            <span className="text-[10px] font-mono leading-none px-1 py-0.5 rounded flex-shrink-0 bg-muted text-muted-foreground">&gt;_</span>
-            <span className="font-mono text-foreground truncate">{command}</span>
-            <button
-              onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(command); toast('已复制命令'); }}
-              className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-              title="复制命令"
+          {/* 命令行头部 */}
+          {maximized ? (
+            /* 放大时的顶栏 */
+            <div
+              onDoubleClick={() => onToggleMaximize?.()}
+              className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card"
+              style={{ height: FULLSCREEN_BAR_HEIGHT, flexShrink: 0 }}
             >
-              <Copy className="w-3.5 h-3.5" />
-            </button>
-            <span className="flex-1" />
-            {isOverflowing && !isRunning && (
-              <span className="text-muted-foreground flex-shrink-0">共 {lineCount} 行</span>
-            )}
-            {output && (
+              <span className="text-[10px] font-mono leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground">&gt;_</span>
+              <span className="flex-1 text-xs text-muted-foreground truncate font-mono">{command}</span>
+              {isRunning && (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                  运行中
+                </span>
+              )}
+              {isRunning && onInterrupt && (
+                <button
+                  onClick={onInterrupt}
+                  className="text-xs px-3 py-1 rounded-md font-medium bg-destructive text-destructive-foreground transition-all duration-150 hover:bg-destructive/80 hover:shadow-md active:scale-95 active:bg-destructive/70 cursor-pointer select-none"
+                >
+                  Ctrl+C
+                </button>
+              )}
               <button
-                onClick={(e) => { e.stopPropagation(); handleCopy(); }}
-                className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                title="复制输出"
+                onClick={() => onToggleMaximize?.()}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                title="还原 (⌘M / ESC)"
               >
-                <Clipboard className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
               </button>
-            )}
-            {onRerun && (
+            </div>
+          ) : (
+            /* 缩小时的标题栏 */
+            <div
+              data-drag-handle
+              onMouseDown={() => onTitleMouseDown?.()}
+              onDoubleClick={(e) => { e.stopPropagation(); onToggleMaximize?.(); }}
+              className={`flex items-center gap-2 px-4 py-1.5 border-b text-xs transition-colors cursor-grab active:cursor-grabbing ${
+                selected ? 'border-brand' : 'border-brand/30'
+              }`}
+            >
+              <span className="text-[10px] font-mono leading-none px-1 py-0.5 rounded flex-shrink-0 bg-muted text-muted-foreground">&gt;_</span>
+              <span className="font-mono text-foreground truncate">{command}</span>
               <button
-                onClick={(e) => { e.stopPropagation(); onRerun(); }}
+                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(command); toast('已复制命令'); }}
                 className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                title="重新运行"
+                title="复制命令"
               >
-                <RotateCw className="w-3.5 h-3.5" />
+                <Copy className="w-3.5 h-3.5" />
               </button>
-            )}
-            {onDelete && (
+              <span className="flex-1" />
+              {isOverflowing && !isRunning && (
+                <span className="text-muted-foreground flex-shrink-0">共 {lineCount} 行</span>
+              )}
+              {output && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleCopy(); }}
+                  className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                  title="复制输出"
+                >
+                  <Clipboard className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {onRerun && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onRerun(); }}
+                  className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                  title="重新运行"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                  className="p-0.5 rounded text-destructive hover:text-destructive/80 transition-colors flex-shrink-0"
+                  title="删除记录"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* 搜索栏 - Cmd+F 唤出（PTY 和 Pipe 通用） */}
+          {searchVisible && (
+            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card" style={{ flexShrink: 0 }}>
+              <Search className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+              <input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setSearchQuery(v);
+                  setPipeMatchIdx(0);
+                  if (usePty) {
+                    if (v.trim()) xtermSearchRef.current?.findNext(v);
+                    else xtermSearchRef.current?.clearSearch();
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (e.shiftKey) doSearchPrev(searchQuery);
+                    else doSearchNext(searchQuery);
+                  }
+                }}
+                placeholder="搜索..."
+                className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                autoComplete="off"
+                spellCheck="false"
+              />
+              {/* Pipe 模式切换：搜索 / 过滤 */}
+              {!usePty && (
+                <div className="flex items-center gap-0.5 text-xs flex-shrink-0">
+                  <button
+                    onClick={() => setPipeSearchMode('search')}
+                    className={`px-1.5 py-0.5 rounded transition-colors ${pipeSearchMode === 'search' ? 'bg-brand/20 text-brand' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    搜索
+                  </button>
+                  <button
+                    onClick={() => setPipeSearchMode('filter')}
+                    className={`px-1.5 py-0.5 rounded transition-colors ${pipeSearchMode === 'filter' ? 'bg-brand/20 text-brand' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    过滤
+                  </button>
+                </div>
+              )}
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={() => doSearchPrev(searchQuery)}
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  title="上一个 (Shift+Enter)"
+                >
+                  <ChevronUp className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => doSearchNext(searchQuery)}
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  title="下一个 (Enter)"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              </div>
               <button
-                onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                className="p-0.5 rounded text-destructive hover:text-destructive/80 transition-colors flex-shrink-0"
-                title="删除记录"
+                onClick={closeSearch}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
-            )}
-          </div>
+            </div>
           )}
 
           {/* 输出内容 */}
           {usePty ? (
-            /**
-             * PTY: bubbleSlotRef 是气泡内的插槽。
-             * xtermWrapperRef 包含 XtermRenderer，maximized 时通过原生 DOM appendChild
-             * 移入全屏 overlay 的 xterm 区域，还原时移回此插槽。
-             * React 树位置不变 → xterm Terminal 实例不会被销毁。
-             */
-            <div ref={bubbleSlotRef}>
-              <div ref={xtermWrapperRef} style={maximized ? { height: '100%' } : undefined}>
-                <Suspense fallback={<div className="px-4 py-2 text-xs text-muted-foreground" style={{ height: BUBBLE_CONTENT_HEIGHT }}>加载终端...</div>}>
-                  <XtermRenderer ref={xtermSearchRef} output={output} isRunning={isRunning} onInput={onStdin} onResize={onPtyResize} maximized={maximized} height={BUBBLE_CONTENT_HEIGHT} />
-                </Suspense>
-              </div>
+            <div style={{ height: contentHeight, overflow: 'hidden' }}>
+              <Suspense fallback={<div className="px-4 py-2 text-xs text-muted-foreground" style={{ height: contentHeight }}>加载终端...</div>}>
+                <XtermRenderer ref={xtermSearchRef} output={output} isRunning={isRunning} onInput={onStdin} onResize={onPtyResize} maximized={maximized} height={contentHeight} />
+              </Suspense>
             </div>
           ) : (
             <div
               ref={scrollRef}
               className="overflow-auto px-4 py-2"
-              style={{ height: BUBBLE_CONTENT_HEIGHT }}
+              style={{ height: contentHeight }}
               onScroll={handleScroll}
             >
-              <pre ref={preRef} className="text-sm font-mono whitespace-pre-wrap break-words select-text" />
+              {searchVisible && searchQuery.trim() ? (
+                <PipeSearchView
+                  output={output}
+                  query={searchQuery}
+                  mode={pipeSearchMode}
+                  currentIdx={pipeMatchIdx}
+                  matchRefs={pipeMatchRefs}
+                />
+              ) : (
+                <pre ref={preRef} className="text-sm font-mono whitespace-pre-wrap break-words select-text" />
+              )}
             </div>
           )}
 
@@ -513,9 +608,6 @@ export const CommandBubble = memo(function CommandBubble({
             </div>
           )}
         </div>
-
-      {/* 全屏 overlay - 通过 createPortal 渲染到 terminalRootRef */}
-      {fullscreenOverlay}
     </div>
   );
 });

@@ -7,6 +7,8 @@ import { useComments, type CodeComment } from '@/hooks/useComments';
 import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, type CodeReference } from '@/hooks/useAllComments';
 import { useChatContextOptional } from './ChatContext';
 import { getHighlighter, getLanguageFromPath, escapeHtml, findMatches, type SearchMatch } from './codeHighlighter';
+import type { BlameLine } from './fileBrowser/types';
+import type { CommitInfo } from './CommitDetailPanel';
 
 // ============================================
 // Types
@@ -31,6 +33,21 @@ export interface CodeViewerProps {
   onTokenHover?: (line: number, column: number, rect: { x: number; y: number }) => void;
   /** LSP: 悬浮离开回调 */
   onTokenHoverLeave?: () => void;
+  /** Blame 数据（传入时显示 blame 列） */
+  blameLines?: BlameLine[];
+  /** Blame: 点击 commit 回调 */
+  onSelectCommit?: (commit: CommitInfo) => void;
+  // ---- 编辑模式 ----
+  /** 是否处于编辑模式 */
+  editable?: boolean;
+  /** 文件 mtime（保存冲突检测） */
+  initialMtime?: number;
+  /** 编辑器关闭回调（传回当前行号） */
+  onEditorClose?: (currentLine: number) => void;
+  /** 保存成功回调 */
+  onSaved?: () => void;
+  /** 编辑器状态变化回调 */
+  onEditorStateChange?: (state: { isDirty: boolean; isSaving: boolean }) => void;
 }
 
 export interface FloatingToolbarData {

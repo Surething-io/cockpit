@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { toast } from '../../shared/Toast';
 import { BUBBLE_CONTENT_HEIGHT } from './CommandBubble';
 
@@ -126,17 +125,20 @@ function isLocalUrl(url: string): boolean {
 // ============================================================================
 
 const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 分钟
+/** 放大顶栏高度 */
+const TOOLBAR_HEIGHT = 41;
 
 interface BrowserBubbleProps {
   url: string;
   id: string;
   selected: boolean;
   maximized: boolean;
+  /** 放大时的内容区高度（由 ConsoleView 传入 scrollRef.clientHeight） */
+  expandedHeight?: number;
   onSelect: () => void;
   onClose: () => void;
   onToggleMaximize: () => void;
   onNewTab?: (url: string) => void;
-  portalContainer: HTMLDivElement | null;
   timestamp?: string;
   onTitleMouseDown?: () => void;
   initialSleeping?: boolean;
@@ -149,11 +151,11 @@ export function BrowserBubble({
   id,
   selected,
   maximized,
+  expandedHeight,
   onSelect,
   onClose,
   onToggleMaximize,
   onNewTab,
-  portalContainer,
   timestamp,
   onTitleMouseDown,
   initialSleeping,
@@ -167,8 +169,6 @@ export function BrowserBubble({
   const [isSleeping, setIsSleeping] = useState(initialSleeping ?? false);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const iframeWrapperRef = useRef<HTMLDivElement>(null);
-  const iframeContentRef = useRef<HTMLDivElement>(null);
-  const bubbleSlotRef = useRef<HTMLDivElement>(null);
 
   // 同步外部 url prop 变化
   useEffect(() => { setCurrentUrl(url); }, [url]);
@@ -294,26 +294,6 @@ export function BrowserBubble({
     if (currentUrl) window.open(currentUrl, '_blank');
   }, [currentUrl]);
 
-  // 最大化不再移动 DOM（appendChild 会导致 iframe 重载），改用负偏移 + absolute 覆盖
-  // 计算 bubbleSlot 相对于 portalContainer 的偏移，用负 margin 让 absolute 子元素覆盖 portalContainer
-  const [slotOffset, setSlotOffset] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
-  useEffect(() => {
-    if (!maximized || !portalContainer || !bubbleSlotRef.current) { setSlotOffset(null); return; }
-    const update = () => {
-      const cRect = portalContainer.getBoundingClientRect();
-      const sRect = bubbleSlotRef.current!.getBoundingClientRect();
-      setSlotOffset({
-        top: sRect.top - cRect.top,
-        left: sRect.left - cRect.left,
-        width: cRect.width,
-        height: cRect.height,
-      });
-    };
-    update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, [maximized, portalContainer]);
-
   // ESC 退出最大化 / Cmd+M 切换最大化
   useEffect(() => {
     if (!selected && !maximized) return;
@@ -334,140 +314,8 @@ export function BrowserBubble({
 
   const host = getHostFromUrl(currentUrl);
 
-  // 最大化时用 portalContainer 的实际位置计算 fixed 定位坐标
-  // portal 到 document.body + position: fixed，彻底脱离 SwipeableContent 的 transform 和 scroll container 的 overflow 限制
-  const [containerRect, setContainerRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
-  useEffect(() => {
-    if (!maximized || !portalContainer) { setContainerRect(null); return; }
-    const update = () => {
-      const r = portalContainer.getBoundingClientRect();
-      setContainerRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-    };
-    update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, [maximized, portalContainer]);
-
-  // ========== 最大化 overlay（遮罩 + 顶栏，不含 iframe）==========
-  const fullscreenToolbar = maximized && containerRect
-    ? createPortal(
-        <div
-          onDoubleClick={onToggleMaximize}
-          className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card"
-          style={{
-            position: 'fixed',
-            top: containerRect.top,
-            left: containerRect.left,
-            width: containerRect.width,
-            height: 41,
-            zIndex: 10001,
-          }}
-        >
-          <span className="text-[10px] font-mono leading-none px-1 py-0.5 rounded flex-shrink-0 bg-muted text-muted-foreground">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-            </svg>
-          </span>
-          <span className="text-xs text-muted-foreground truncate font-mono">
-            {currentUrl || '空白页'}
-          </span>
-          {/* 复制网址 */}
-          {currentUrl && (
-            <button
-              onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(currentUrl); toast('已复制网址'); }}
-              className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-              title="复制网址"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-            </button>
-          )}
-          <span className="flex-1" />
-          {isLoading && (
-            <span className="inline-block w-3 h-3 border border-brand border-t-transparent rounded-full animate-spin flex-shrink-0" />
-          )}
-          <button
-            onClick={doRefresh}
-            className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-            title="刷新"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
-          <button
-            onClick={handleOpenExternal}
-            className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-            title="在新窗口打开"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-          </button>
-          <button
-            onClick={onToggleMaximize}
-            className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-            title="退出最大化 (⌘M)"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3" />
-            </svg>
-          </button>
-        </div>,
-        document.body,
-      )
-    : null;
-
-  const fullscreenBackdrop = maximized && containerRect
-    ? createPortal(
-        <div style={{
-          position: 'fixed',
-          top: containerRect.top + 41,
-          left: containerRect.left,
-          width: containerRect.width,
-          height: containerRect.height - 41,
-          zIndex: 9999,
-          background: 'var(--card)',
-        }} />,
-        document.body,
-      )
-    : null;
-
-  const fullscreenSleeping = maximized && isSleeping && containerRect
-    ? createPortal(
-        <div
-          className="cursor-pointer group"
-          style={{
-            position: 'fixed',
-            top: containerRect.top + 41,
-            left: containerRect.left,
-            width: containerRect.width,
-            height: containerRect.height - 41,
-            zIndex: 10000,
-            background: 'var(--card)',
-          }}
-          onClick={(e) => { e.stopPropagation(); doRefresh(); }}
-        >
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <svg className="w-10 h-10 mb-2 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-            </svg>
-            <p className="text-xs text-muted-foreground/60">{host}</p>
-          </div>
-          {/* 悬停刷新提示 */}
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 text-white text-xs">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              点击唤醒
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )
-    : null;
+  // 放大时的内容高度（减去顶栏）
+  const contentHeight = maximized && expandedHeight ? expandedHeight - TOOLBAR_HEIGHT : BUBBLE_CONTENT_HEIGHT;
 
   return (
     <div className="flex flex-col items-start">
@@ -480,8 +328,66 @@ export function BrowserBubble({
         onMouseMove={resetIdleTimer}
         onMouseDown={resetIdleTimer}
       >
-        {/* ---- 标题栏 ---- */}
-        {!maximized && (
+        {/* ---- 标题栏（放大时显示精简版，缩小时显示完整版） ---- */}
+        {maximized ? (
+          <div
+            onDoubleClick={onToggleMaximize}
+            className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card"
+            style={{ height: TOOLBAR_HEIGHT }}
+          >
+            <span className="text-[10px] font-mono leading-none px-1 py-0.5 rounded flex-shrink-0 bg-muted text-muted-foreground">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+              </svg>
+            </span>
+            <span className="text-xs text-muted-foreground truncate font-mono">
+              {currentUrl || '空白页'}
+            </span>
+            {/* 复制网址 */}
+            {currentUrl && (
+              <button
+                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(currentUrl); toast('已复制网址'); }}
+                className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                title="复制网址"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
+            )}
+            <span className="flex-1" />
+            {isLoading && (
+              <span className="inline-block w-3 h-3 border border-brand border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            )}
+            <button
+              onClick={doRefresh}
+              className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+              title="刷新"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+            <button
+              onClick={handleOpenExternal}
+              className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+              title="在新窗口打开"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </button>
+            <button
+              onClick={onToggleMaximize}
+              className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+              title="退出最大化 (⌘M)"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3" />
+              </svg>
+            </button>
+          </div>
+        ) : (
           <div
             data-drag-handle
             onMouseDown={() => onTitleMouseDown?.()}
@@ -546,100 +452,81 @@ export function BrowserBubble({
           </div>
         )}
 
-        {/* ---- 内容区（iframe 或休眠截图）---- */}
-        <div
-          ref={bubbleSlotRef}
-          style={maximized && slotOffset && !isSleeping ? {
-            position: 'relative',
-            zIndex: 50,
-            marginTop: -slotOffset.top + 41,
-            marginLeft: -slotOffset.left,
-            width: slotOffset.width,
-            height: slotOffset.height - 41,
-            background: 'var(--card)',
-          } : undefined}
-        >
-          <div ref={iframeWrapperRef} className="w-full" style={{ height: maximized && slotOffset ? slotOffset.height - 41 : undefined }}>
-            {isSleeping ? (
-              maximized ? (
-                /* 最大化休眠：内容通过 fullscreenSleeping portal 渲染，此处仅占位 */
-                null
-              ) : (
-                /* 非最大化休眠：显示网址占位符 */
-                <div
-                  className="relative overflow-hidden cursor-pointer group"
-                  style={{ height: BUBBLE_CONTENT_HEIGHT }}
-                  onClick={(e) => { e.stopPropagation(); doRefresh(); }}
-                >
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/30">
-                    <svg className="w-10 h-10 mb-2 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-                    </svg>
-                    <p className="text-xs text-muted-foreground/60">{host}</p>
-                  </div>
-                  {/* 悬停刷新提示 */}
-                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 text-white text-xs">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      点击唤醒
-                    </div>
-                  </div>
-                </div>
-              )
-            ) : url ? (
-              loadError ? (
-                <div className="flex flex-col items-center justify-center text-muted-foreground p-6" style={{ height: maximized ? '100%' : BUBBLE_CONTENT_HEIGHT }}>
-                  <svg className="w-10 h-10 mb-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  <p className="text-xs">{loadError}</p>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); doRefresh(); }}
-                    className="mt-2 px-3 py-1 text-xs bg-secondary text-foreground rounded hover:bg-accent transition-colors"
-                  >
-                    重试
-                  </button>
-                </div>
-              ) : (
-                <div ref={iframeContentRef} className="relative overflow-hidden" style={{ height: maximized ? '100%' : BUBBLE_CONTENT_HEIGHT }}>
-                  {isLoading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 z-10">
-                      <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-                    </div>
-                  )}
-                  {!readyUrl ? (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-                    </div>
-                  ) : (
-                    <iframe
-                      src={readyUrl}
-                      className="border-0"
-                      style={maximized
-                        ? { width: '100%', height: '100%' }
-                        : { width: '200%', height: '200%', transform: 'scale(0.5)', transformOrigin: 'top left' }
-                      }
-                      onLoad={handleIframeLoad}
-                      onError={handleIframeError}
-                      title={`Browser: ${host}`}
-                    />
-                  )}
-                </div>
-              )
-            ) : (
-              <div className="flex flex-col items-center justify-center text-muted-foreground" style={{ height: 120 }}>
-                <svg className="w-10 h-10 mb-2 text-slate-300 dark:text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        {/* ---- 内容区（iframe 或休眠占位）---- */}
+        <div ref={iframeWrapperRef} className="w-full" style={{ height: contentHeight }}>
+          {isSleeping ? (
+            /* 休眠：显示网址占位符 */
+            <div
+              className="relative overflow-hidden cursor-pointer group h-full"
+              onClick={(e) => { e.stopPropagation(); doRefresh(); }}
+            >
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/30">
+                <svg className="w-10 h-10 mb-2 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
                 </svg>
-                <p className="text-xs">空白页</p>
+                <p className="text-xs text-muted-foreground/60">{host}</p>
               </div>
-            )}
-          </div>
+              {/* 悬停刷新提示 */}
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 text-white text-xs">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  点击唤醒
+                </div>
+              </div>
+            </div>
+          ) : url ? (
+            loadError ? (
+              <div className="flex flex-col items-center justify-center text-muted-foreground p-6 h-full">
+                <svg className="w-10 h-10 mb-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <p className="text-xs">{loadError}</p>
+                <button
+                  onClick={(e) => { e.stopPropagation(); doRefresh(); }}
+                  className="mt-2 px-3 py-1 text-xs bg-secondary text-foreground rounded hover:bg-accent transition-colors"
+                >
+                  重试
+                </button>
+              </div>
+            ) : (
+              <div className="relative overflow-hidden h-full">
+                {isLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 z-10">
+                    <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+                  </div>
+                )}
+                {!readyUrl ? (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : (
+                  <iframe
+                    src={readyUrl}
+                    className="border-0"
+                    style={maximized
+                      ? { width: '100%', height: '100%' }
+                      : { width: '200%', height: '200%', transform: 'scale(0.5)', transformOrigin: 'top left' }
+                    }
+                    onLoad={handleIframeLoad}
+                    onError={handleIframeError}
+                    title={`Browser: ${host}`}
+                  />
+                )}
+              </div>
+            )
+          ) : (
+            <div className="flex flex-col items-center justify-center text-muted-foreground h-full">
+              <svg className="w-10 h-10 mb-2 text-slate-300 dark:text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+              </svg>
+              <p className="text-xs">空白页</p>
+            </div>
+          )}
         </div>
 
-        {/* ---- 底部状态栏 ---- */}
+        {/* ---- 底部状态栏（仅缩小时显示） ---- */}
         {!maximized && url && (
           <div className="border-t border-border px-4 py-2 flex items-center gap-2 text-xs text-muted-foreground">
             <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${isSleeping ? 'bg-yellow-500' : isLoading ? 'bg-brand animate-pulse' : loadError ? 'bg-red-500' : 'bg-green-500'}`} />
@@ -649,11 +536,6 @@ export function BrowserBubble({
           </div>
         )}
       </div>
-
-      {/* 最大化遮罩 + 顶栏 + 休眠占位 */}
-      {fullscreenBackdrop}
-      {fullscreenSleeping}
-      {fullscreenToolbar}
     </div>
   );
 }

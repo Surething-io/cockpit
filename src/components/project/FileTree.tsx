@@ -103,6 +103,7 @@ interface VirtualTreeRowProps {
   onSelect: (path: string) => void;
   onToggle: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, path: string, isDirectory: boolean) => void;
+  renderActions?: (node: FileNode) => React.ReactNode;
 }
 
 const VirtualTreeRow = React.memo(function VirtualTreeRow({
@@ -112,6 +113,7 @@ const VirtualTreeRow = React.memo(function VirtualTreeRow({
   onSelect,
   onToggle,
   onContextMenu,
+  renderActions,
 }: VirtualTreeRowProps) {
   const { node, level, gitStatus, hasChangedChildren } = item;
   const statusColors = gitStatus ? GIT_STATUS_COLORS[gitStatus] : null;
@@ -176,6 +178,8 @@ const VirtualTreeRow = React.memo(function VirtualTreeRow({
       {node.isDirectory && hasChangedChildren && (
         <span className="w-1.5 h-1.5 rounded-full bg-amber-9 flex-shrink-0" />
       )}
+      {/* 自定义右侧内容 */}
+      {renderActions?.(node)}
     </div>
   );
 });
@@ -194,6 +198,8 @@ export interface FileTreeProps {
   onToggle: (path: string) => void;
   cwd: string;
   shouldScrollToSelected?: boolean;
+  className?: string;
+  renderActions?: (node: FileNode) => React.ReactNode;
   // 右键菜单操作回调
   onCreateFile?: (dirPath: string) => void;
   onDelete?: (path: string, isDirectory: boolean, name: string) => void;
@@ -210,6 +216,8 @@ export function FileTree({
   onToggle,
   cwd,
   shouldScrollToSelected = false,
+  className,
+  renderActions,
   onCreateFile,
   onDelete,
   onRefresh,
@@ -253,7 +261,7 @@ export function FileTree({
   return (
     <div
       ref={parentRef}
-      className="h-full overflow-y-auto"
+      className={className || "h-full overflow-y-auto"}
       style={{ willChange: 'transform' }}
     >
       <div
@@ -284,6 +292,7 @@ export function FileTree({
                 onSelect={onSelect}
                 onToggle={onToggle}
                 onContextMenu={showContextMenu}
+                renderActions={renderActions}
               />
             </div>
           );

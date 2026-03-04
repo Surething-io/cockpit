@@ -72,12 +72,6 @@ export function GitWorktreeModal({
   const [branchSearch, setBranchSearch] = useState('');
   const [branchesLoading, setBranchesLoading] = useState(false);
 
-  // 切换分支状态
-  const [checkoutTarget, setCheckoutTarget] = useState<WorktreeInfo | null>(null);
-  const [checkoutBranches, setCheckoutBranches] = useState<string[]>([]);
-  const [checkoutSearch, setCheckoutSearch] = useState('');
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   // 加载 worktree 列表
   const loadWorktrees = useCallback(async () => {
@@ -290,62 +284,6 @@ export function GitWorktreeModal({
     }
   };
 
-  // 打开切换分支弹窗
-  const handleOpenCheckout = async (worktree: WorktreeInfo) => {
-    setCheckoutTarget(worktree);
-    setCheckoutSearch('');
-    setCheckoutLoading(true);
-    try {
-      const response = await fetch(`/api/git/branches?cwd=${encodeURIComponent(worktree.path)}`);
-      if (response.ok) {
-        const data: BranchesResponse = await response.json();
-        // 排除当前分支和已被其他 worktree 占用的分支
-        const usedBranches = new Set(worktrees.map(w => w.branch).filter(Boolean));
-        const allBranches = [
-          ...data.local.filter(b => !usedBranches.has(b)),
-          ...data.remote.filter(b => !usedBranches.has(b) && !data.local.includes(b.replace(/^origin\//, ''))),
-        ];
-        setCheckoutBranches(allBranches);
-      }
-    } catch {
-      toast('加载分支列表失败', 'error');
-    } finally {
-      setCheckoutLoading(false);
-    }
-  };
-
-  // 执行切换分支
-  const handleCheckout = async (branch: string) => {
-    if (!checkoutTarget) return;
-    setIsCheckingOut(true);
-    try {
-      const response = await fetch('/api/git/worktree', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'checkout',
-          cwd,
-          path: checkoutTarget.path,
-          branch,
-        }),
-      });
-      if (response.ok) {
-        const localBranch = branch.replace(/^origin\//, '');
-        toast(`已切换到 ${localBranch}`, 'success');
-        setCheckoutTarget(null);
-        loadWorktrees();
-      } else {
-        const data = await response.json();
-        toast(data.error || '切换分支失败', 'error');
-      }
-    } catch (error) {
-      console.error('Failed to checkout branch:', error);
-      toast('切换分支失败', 'error');
-    } finally {
-      setIsCheckingOut(false);
-    }
-  };
-
   // 点击 worktree 切换 - 通知父级 Workspace 打开/切换项目
   const handleClickWorktree = (worktree: WorktreeInfo) => {
     if (worktree.path === cwd) return; // 当前已在该 worktree
@@ -423,19 +361,6 @@ export function GitWorktreeModal({
                       </div>
                       {/* 操作按钮 */}
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {/* 切换分支 */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenCheckout(worktree);
-                          }}
-                          className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded transition-colors"
-                          title="切换分支"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                          </svg>
-                        </button>
                         {/* 锁定/解锁（仅非当前） */}
                         {!isCurrent && (
                           <>
@@ -570,64 +495,6 @@ export function GitWorktreeModal({
             </button>
           </div>
         </div>
-
-        {/* 切换分支弹窗 */}
-        {checkoutTarget && (
-          <div
-            className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 rounded-lg"
-            onClick={() => setCheckoutTarget(null)}
-          >
-            <div
-              className="bg-card rounded-lg shadow-xl w-[360px] p-4"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="text-sm font-medium text-foreground mb-1">切换分支</div>
-              <div className="text-xs text-muted-foreground mb-3 truncate">
-                {checkoutTarget.branch || 'detached'} — {checkoutTarget.path}
-              </div>
-              <input
-                value={checkoutSearch}
-                onChange={(e) => setCheckoutSearch(e.target.value)}
-                placeholder="搜索分支..."
-                className="w-full bg-secondary text-sm text-foreground rounded px-2.5 py-1.5 mb-2 outline-none placeholder:text-muted-foreground"
-                autoFocus
-                autoComplete="off"
-                spellCheck="false"
-              />
-              <div className="max-h-[240px] overflow-y-auto space-y-0.5">
-                {checkoutLoading ? (
-                  <div className="text-xs text-muted-foreground text-center py-4">加载中...</div>
-                ) : (() => {
-                  const filtered = checkoutBranches.filter(b => b.toLowerCase().includes(checkoutSearch.toLowerCase()));
-                  return filtered.length === 0 ? (
-                    <div className="text-xs text-muted-foreground text-center py-4">无可用分支</div>
-                  ) : (
-                    filtered.map((branch) => (
-                      <button
-                        key={branch}
-                        onClick={() => handleCheckout(branch)}
-                        disabled={isCheckingOut}
-                        className="w-full text-left px-2.5 py-1.5 text-sm rounded hover:bg-accent transition-colors truncate disabled:opacity-50"
-                      >
-                        <span className={branch.startsWith('origin/') ? 'text-muted-foreground' : 'text-foreground'}>
-                          {branch}
-                        </span>
-                      </button>
-                    ))
-                  );
-                })()}
-              </div>
-              <div className="flex justify-end mt-2">
-                <button
-                  onClick={() => setCheckoutTarget(null)}
-                  className="px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  取消
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* 删除确认弹窗 */}
         {deleteTarget && (

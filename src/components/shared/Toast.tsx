@@ -105,7 +105,85 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
   );
 }
 
+// ============================================
+// confirm() - 自定义确认对话框（替代 window.confirm）
+// ============================================
+
+export function confirm(message: string, options?: {
+  title?: string;
+  confirmText?: string;
+  cancelText?: string;
+  danger?: boolean;
+}): Promise<boolean> {
+  const { title = '提示', confirmText = '确定', cancelText = '取消', danger = false } = options || {};
+
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 z-[200] flex items-center justify-center';
+    overlay.style.animation = 'confirmFadeIn 0.15s ease-out';
+
+    const cleanup = (result: boolean) => {
+      overlay.style.animation = 'confirmFadeOut 0.12s ease-in';
+      overlay.addEventListener('animationend', () => {
+        document.body.removeChild(overlay);
+        resolve(result);
+      }, { once: true });
+    };
+
+    // 点击背景关闭
+    overlay.addEventListener('mousedown', (e) => {
+      if (e.target === overlay) cleanup(false);
+    });
+
+    // ESC 关闭
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        document.removeEventListener('keydown', handleKey, true);
+        cleanup(false);
+      } else if (e.key === 'Enter') {
+        e.stopPropagation();
+        document.removeEventListener('keydown', handleKey, true);
+        cleanup(true);
+      }
+    };
+    document.addEventListener('keydown', handleKey, true);
+
+    const confirmBtnClass = danger
+      ? 'bg-red-9 hover:bg-red-10 text-white'
+      : 'bg-brand hover:bg-brand/90 text-white';
+
+    overlay.innerHTML = `
+      <div class="fixed inset-0 bg-black/50"></div>
+      <div class="relative bg-card border border-border rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4" style="animation: confirmScaleIn 0.15s ease-out">
+        <div class="text-base font-medium text-foreground mb-2">${title}</div>
+        <div class="text-sm text-muted-foreground mb-6">${message}</div>
+        <div class="flex justify-end gap-3">
+          <button data-action="cancel" class="px-4 py-2 text-sm rounded-lg border border-border text-foreground hover:bg-accent transition-colors">${cancelText}</button>
+          <button data-action="confirm" class="px-4 py-2 text-sm rounded-lg ${confirmBtnClass} transition-colors">${confirmText}</button>
+        </div>
+      </div>
+    `;
+
+    overlay.querySelector('[data-action="cancel"]')!.addEventListener('click', () => {
+      document.removeEventListener('keydown', handleKey, true);
+      cleanup(false);
+    });
+    overlay.querySelector('[data-action="confirm"]')!.addEventListener('click', () => {
+      document.removeEventListener('keydown', handleKey, true);
+      cleanup(true);
+    });
+
+    document.body.appendChild(overlay);
+
+    // 自动 focus 确认按钮
+    (overlay.querySelector('[data-action="confirm"]') as HTMLButtonElement)?.focus();
+  });
+}
+
+// ============================================
 // 简单的独立 Toast 函数（不需要 Provider）
+// ============================================
 let toastContainer: HTMLDivElement | null = null;
 let toastRoot: ReturnType<typeof import('react-dom/client').createRoot> | null = null;
 

@@ -24,6 +24,7 @@ interface HistoryEntry {
   usePty?: boolean;
   // browser 类型字段
   url?: string;
+  sleeping?: boolean;
 }
 
 // GET: 读取命令历史（分页）
@@ -278,6 +279,63 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Save terminal history error:', error);
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+}
+
+// PATCH: 更新单条历史条目的部分字段（如 sleeping 状态）
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { cwd, tabId, id, fields } = body;
+
+    if (!cwd || !tabId || !id || !fields) {
+      return new Response(JSON.stringify({ error: 'Missing parameters' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const historyPath = getTerminalHistoryPath(cwd, tabId);
+
+    try {
+      const content = await fs.readFile(historyPath, 'utf-8');
+      const lines = content.trim().split('\n').filter(Boolean);
+      let updated = false;
+
+      const newLines = lines.map(line => {
+        try {
+          const entry = JSON.parse(line);
+          if (entry.id === id) {
+            updated = true;
+            return JSON.stringify({ ...entry, ...fields });
+          }
+        } catch { /* keep original */ }
+        return line;
+      });
+
+      if (updated) {
+        await fs.writeFile(historyPath, newLines.join('\n') + '\n', 'utf-8');
+      }
+
+      return new Response(JSON.stringify({ success: true, updated }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch (e: any) {
+      if (e.code === 'ENOENT') {
+        return new Response(JSON.stringify({ success: true, updated: false }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw e;
+    }
+  } catch (error) {
+    console.error('Patch terminal history error:', error);
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },

@@ -232,6 +232,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
         const historyCommands: Command[] = [];
         const historyBrowsers: BrowserItem[] = [];
 
+        const restoredSleeping = new Set<string>();
         for (const entry of data.entries) {
           if (entry.type === 'browser') {
             historyBrowsers.push({
@@ -239,6 +240,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
               url: entry.url,
               timestamp: entry.timestamp,
             });
+            if (entry.sleeping) restoredSleeping.add(entry.id);
           } else {
             historyCommands.push({
               id: entry.id.includes('-') && entry.id.split('-').length === 3
@@ -258,7 +260,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
         if (page === 0) {
           setCommands(historyCommands);
           setBrowserItems(historyBrowsers);
-
+          if (restoredSleeping.size > 0) setSleepingBubbles(restoredSleeping);
         } else {
           setCommands((prev) => {
             const existingIds = new Set(prev.map((cmd) => cmd.id));
@@ -903,15 +905,27 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
     }
   }, [maximizedId, selectedCommandId, cwd, tabId]);
 
+  // 持久化休眠状态到 history
+  const persistSleeping = useCallback((id: string, sleeping: boolean) => {
+    if (!tabId) return;
+    fetch('/api/terminal/history', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cwd, tabId, id, fields: { sleeping } }),
+    }).catch(() => {});
+  }, [cwd, tabId]);
+
   // 气泡休眠回调
   const handleBubbleSleep = useCallback((id: string) => {
     setSleepingBubbles(prev => new Set(prev).add(id));
-  }, []);
+    persistSleeping(id, true);
+  }, [persistSleeping]);
 
   // 气泡唤醒回调
   const handleBubbleWake = useCallback((id: string) => {
     setSleepingBubbles(prev => { const next = new Set(prev); next.delete(id); return next; });
-  }, []);
+    persistSleeping(id, false);
+  }, [persistSleeping]);
 
   // 快捷命令执行（自动识别 browser / pty / pipe）
   const handleQuickCommand = useCallback((command: string) => {

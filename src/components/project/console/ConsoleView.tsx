@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { AtSign, Variable, Zap, Plus, X, Play, Loader, Square, LayoutGrid, List } from 'lucide-react';
 import { CommandBubble } from './CommandBubble';
 import { BrowserBubble } from './BrowserBubble';
-import { OutputViewerModal } from './OutputViewerModal';
 import { EnvManager } from './EnvManager';
 import { AliasManager } from '../AliasManager';
 import { Tooltip } from '@/components/shared/Tooltip';
@@ -76,7 +75,10 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
   const [showEnvManager, setShowEnvManager] = useState(false);
   const [showAliasManager, setShowAliasManager] = useState(false);
   const [gridLayout, setGridLayout] = useState(true);
-  const [maximizedCommandId, setMaximizedCommandId] = useState<string | null>(null);
+  /** 统一放大 ID：任意类型气泡（PTY/Pipe/Browser）共用 */
+  const [maximizedId, setMaximizedId] = useState<string | null>(null);
+  /** scrollRef 可视区高度，传给放大的气泡 */
+  const [consoleHeight, setConsoleHeight] = useState(0);
   const [showQuickCommands, setShowQuickCommands] = useState(false);
   const [showRunningCommands, setShowRunningCommands] = useState(false);
   const [quickCustomCommands, setQuickCustomCommands] = useState<CustomCommand[]>([]);
@@ -84,7 +86,6 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
   const [newCmdName, setNewCmdName] = useState('');
   const [newCmdCommand, setNewCmdCommand] = useState('');
   const [selectedCommandId, setSelectedCommandId] = useState<string | null>(null);
-  const [showViewer, setShowViewer] = useState(false);
   const [isAddingCommand, setIsAddingCommand] = useState(false);
   const [customEnv, setCustomEnv] = useState<Record<string, string>>({});
   const [aliases, setAliases] = useState<Record<string, string>>({});
@@ -93,7 +94,6 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
   const slashListRef = useRef<HTMLDivElement>(null);
   const [browserItems, setBrowserItems] = useState<BrowserItem[]>([]);
-  const [maximizedBrowserId, setMaximizedBrowserId] = useState<string | null>(null);
   const [sleepingBubbles, setSleepingBubbles] = useState<Set<string>>(new Set());
   const [showTopButton, setShowTopButton] = useState(false);
   const [showBottomButton, setShowBottomButton] = useState(false);
@@ -423,7 +423,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
 
   const loadSettings = async () => {
     try {
-      const response = await fetch(`/api/terminal/settings?cwd=${encodeURIComponent(cwd)}`);
+      const response = await fetch(`/api/project-settings?cwd=${encodeURIComponent(cwd)}`);
       if (response.ok) {
         const data = await response.json();
         if (data.settings?.gridLayout !== undefined) {
@@ -431,19 +431,19 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
         }
       }
     } catch (error) {
-      console.error('Failed to load terminal settings:', error);
+      console.error('Failed to load project settings:', error);
     }
   };
 
   const saveSettings = async (settings: Record<string, unknown>) => {
     try {
-      await fetch('/api/terminal/settings', {
+      await fetch('/api/project-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cwd, settings }),
       });
     } catch (error) {
-      console.error('Failed to save terminal settings:', error);
+      console.error('Failed to save project settings:', error);
     }
   };
 
@@ -890,7 +890,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
   // 关闭浏览器气泡（同时从 history 中删除）
   const closeBrowserItem = useCallback((id: string) => {
     setBrowserItems(prev => prev.filter(item => item.id !== id));
-    if (maximizedBrowserId === id) setMaximizedBrowserId(null);
+    if (maximizedId === id) setMaximizedId(null);
     if (selectedCommandId === id) setSelectedCommandId(null);
     setSleepingBubbles(prev => { const next = new Set(prev); next.delete(id); return next; });
 
@@ -901,7 +901,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
         { method: 'DELETE' },
       ).catch(e => console.error('Failed to delete browser item:', e));
     }
-  }, [maximizedBrowserId, selectedCommandId, cwd, tabId]);
+  }, [maximizedId, selectedCommandId, cwd, tabId]);
 
   // 气泡休眠回调
   const handleBubbleSleep = useCallback((id: string) => {
@@ -1171,30 +1171,51 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showRunningCommands]);
 
-  // Cmd+M: 放大/缩小选中气泡（PTY / PIPE / Browser）
+  // Cmd+M: 放大/缩小选中气泡（统一处理 PTY / PIPE / Browser）
+  const toggleMaximize = useCallback((id: string) => {
+    setMaximizedId(prev => prev === id ? null : id);
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'm' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         if (selectedCommandId) {
-          // 检查是否是浏览器气泡
-          const browserItem = browserItems.find(b => b.id === selectedCommandId);
-          if (browserItem) {
-            setMaximizedBrowserId(prev => prev === selectedCommandId ? null : selectedCommandId);
-            return;
-          }
-          const cmd = commands.find(c => c.id === selectedCommandId);
-          if (cmd?.usePty) {
-            setMaximizedCommandId(prev => prev === selectedCommandId ? null : selectedCommandId);
-          } else {
-            setShowViewer(prev => !prev);
-          }
+          toggleMaximize(selectedCommandId);
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedCommandId, commands, browserItems]);
+  }, [selectedCommandId, toggleMaximize]);
+
+  // 放大第1步：测量可视高度（或重置）
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (maximizedId) {
+      setConsoleHeight(el.clientHeight);
+    } else {
+      el.style.overflow = '';
+      setConsoleHeight(0);
+    }
+    return () => { if (el) el.style.overflow = ''; };
+  }, [maximizedId]);
+
+  // 放大第2步：consoleHeight 生效后（气泡已撑开），滚动到目标 + 锁定
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !maximizedId || !consoleHeight) return;
+    // 此时子组件已拿到 expandedHeight 并完成 re-render，等一帧确保 DOM 提交
+    const rafId = requestAnimationFrame(() => {
+      const bubbleEl = el.querySelector(`[data-bubble-id="${maximizedId}"]`) as HTMLElement | null;
+      if (bubbleEl) {
+        bubbleEl.scrollIntoView({ block: 'start' });
+      }
+      el.style.overflow = 'hidden';
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [maximizedId, consoleHeight]);
 
   // 清理 RAF
   useEffect(() => {
@@ -1206,9 +1227,9 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
   }, []);
 
   return (
-    <div ref={terminalRootRef} className="h-full flex flex-col bg-background relative isolate">
+    <div ref={terminalRootRef} className="h-full flex flex-col bg-background relative">
       {/* 命令历史区域 */}
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto py-4 px-4 relative z-0">
+      <div ref={scrollRef} onScroll={handleScroll} className={`flex-1 overflow-y-auto ${maximizedId ? '' : 'py-4 px-4'}`}>
         {consoleItems.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             输入命令或网址开始使用
@@ -1227,11 +1248,12 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
                 </button>
               </div>
             )}
-            <div className={gridLayout ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-3'}>
+            <div className={maximizedId ? 'flex flex-col gap-3' : gridLayout ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-3'}>
             {consoleItems.map((item) => (
               item.type === 'command' ? (
                 <div
                   key={item.data.id}
+                  data-bubble-id={item.data.id}
                   className="group/cmd rounded-lg transition-shadow"
                   draggable
                   onDragStart={(e) => handleDragStart(e, item.data.id)}
@@ -1247,7 +1269,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
                     exitCode={item.data.exitCode}
                     isRunning={item.data.isRunning}
                     selected={selectedCommandId === item.data.id}
-                    onSelect={() => { setSelectedCommandId(item.data.id); setShowViewer(false); }}
+                    onSelect={() => { setSelectedCommandId(item.data.id); }}
                     onInterrupt={item.data.isRunning ? () => interruptCommand(item.data.id) : undefined}
                     onStdin={item.data.isRunning ? (data: string) => sendStdin(item.data.id, data) : undefined}
                     onDelete={() => {
@@ -1258,21 +1280,16 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
                     timestamp={item.data.timestamp}
                     usePty={item.data.usePty}
                     onPtyResize={(cols, rows) => { ptySizeRef.current.set(item.data.id, { cols, rows }); resizePty(item.data.id, cols, rows); }}
-                    onToggleMaximize={() => {
-                      if (item.data.usePty) {
-                        setMaximizedCommandId(prev => prev === item.data.id ? null : item.data.id);
-                      } else {
-                        setShowViewer(prev => !prev);
-                      }
-                    }}
-                    maximized={item.data.usePty ? maximizedCommandId === item.data.id : false}
-                    portalContainer={terminalRootRef.current}
+                    onToggleMaximize={() => toggleMaximize(item.data.id)}
+                    maximized={maximizedId === item.data.id}
+                    expandedHeight={consoleHeight}
                     onTitleMouseDown={handleTitleMouseDown}
                   />
                 </div>
               ) : (
                 <div
                   key={item.data.id}
+                  data-bubble-id={item.data.id}
                   className="rounded-lg transition-shadow"
                   draggable
                   onDragStart={(e) => handleDragStart(e, item.data.id)}
@@ -1286,12 +1303,12 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
                     id={item.data.id}
                     url={item.data.url}
                     selected={selectedCommandId === item.data.id}
-                    maximized={maximizedBrowserId === item.data.id}
-                    onSelect={() => { setSelectedCommandId(item.data.id); setShowViewer(false); }}
+                    maximized={maximizedId === item.data.id}
+                    onSelect={() => { setSelectedCommandId(item.data.id); }}
                     onClose={() => closeBrowserItem(item.data.id)}
-                    onToggleMaximize={() => setMaximizedBrowserId(prev => prev === item.data.id ? null : item.data.id)}
+                    onToggleMaximize={() => toggleMaximize(item.data.id)}
                     onNewTab={addBrowserItem}
-                    portalContainer={terminalRootRef.current}
+                    expandedHeight={consoleHeight}
                     timestamp={item.data.timestamp}
                     onTitleMouseDown={handleTitleMouseDown}
                     initialSleeping={sleepingBubbles.has(item.data.id)}
@@ -1308,7 +1325,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
       </div>
 
       {/* 跳转按钮 */}
-      {showTopButton && consoleItems.length > 0 && (
+      {!maximizedId && showTopButton && consoleItems.length > 0 && (
         <button
           onClick={scrollToTop}
           className="absolute top-2 left-1/2 -translate-x-1/2 p-2 bg-card text-muted-foreground hover:text-foreground shadow-md rounded-full transition-all hover:shadow-lg active:scale-95 z-10"
@@ -1319,7 +1336,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
           </svg>
         </button>
       )}
-      {showBottomButton && consoleItems.length > 0 && (
+      {!maximizedId && showBottomButton && consoleItems.length > 0 && (
         <button
           onClick={scrollToBottom}
           className="absolute bottom-20 left-1/2 -translate-x-1/2 p-2 bg-card text-muted-foreground hover:text-foreground shadow-md rounded-full transition-all hover:shadow-lg active:scale-95 z-10"
@@ -1594,20 +1611,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
         />
       )}
 
-      {/* Cmd+M 放大查看选中气泡输出（PIPE 模式） */}
-      {showViewer && selectedCommandId && (() => {
-        const cmd = commands.find(c => c.id === selectedCommandId);
-        if (!cmd) return null;
-        return (
-          <OutputViewerModal
-            output={cmd.output}
-            isRunning={cmd.isRunning}
-            onClose={() => setShowViewer(false)}
-          />
-        );
-      })()}
-
-      {/* PTY 全屏由 CommandBubble 通过 portal 渲染到此容器 */}
+      {/* 放大由各气泡组件内部通过 expandedHeight 实现，无需 portal */}
     </div>
   );
 }

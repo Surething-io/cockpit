@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TabInfo } from './useTabState';
 import { ViewSwitcherBar } from './SwipeableViewContainer';
 import { toast } from '../shared/Toast';
@@ -18,6 +18,166 @@ interface TabManagerTopBarProps {
   onOpenProjectSessions: () => void;
   onOpenAliasManager: () => void;
 }
+
+// ============================================
+// BranchSwitchDropdown
+// ============================================
+
+function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
+  cwd: string;
+  currentBranch: string | null;
+  onSwitched: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const [search, setSearch] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const loadBranches = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/git/branches?cwd=${encodeURIComponent(cwd)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const all = [
+          ...(data.local || []),
+          ...(data.remote || []).filter((b: string) => !data.local.includes(b.replace(/^origin\//, ''))),
+        ];
+        setBranches(all);
+      }
+    } catch {
+      toast('加载分支列表失败', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [cwd]);
+
+  const handleOpen = useCallback(() => {
+    setOpen(true);
+    setSearch('');
+    loadBranches();
+  }, [loadBranches]);
+
+  const handleClose = useCallback(() => {
+    setOpen(false);
+  }, []);
+
+  // 点击外部关闭
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        handleClose();
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open, handleClose]);
+
+  // 打开后聚焦搜索框
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => searchRef.current?.focus(), 50);
+    }
+  }, [open]);
+
+  const handleCheckout = async (branch: string) => {
+    setSwitching(true);
+    try {
+      const response = await fetch('/api/git/worktree', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'checkout',
+          cwd,
+          path: cwd,
+          branch,
+        }),
+      });
+      if (response.ok) {
+        const localBranch = branch.replace(/^origin\//, '');
+        toast(`已切换到 ${localBranch}`, 'success');
+        handleClose();
+        onSwitched();
+      } else {
+        const data = await response.json();
+        toast(data.error || '切换分支失败', 'error');
+      }
+    } catch {
+      toast('切换分支失败', 'error');
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  const filtered = branches.filter(b =>
+    b !== currentBranch && b.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        onClick={open ? handleClose : handleOpen}
+        className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+        title="切换分支"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1 w-64 bg-popover border border-border rounded-lg shadow-lg z-50 overflow-hidden">
+          {/* 搜索框 */}
+          <div className="p-2 border-b border-border">
+            <input
+              ref={searchRef}
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="搜索分支..."
+              className="w-full px-2.5 py-1.5 text-sm bg-muted rounded border-none outline-none placeholder:text-muted-foreground"
+              onKeyDown={e => {
+                if (e.key === 'Escape') handleClose();
+              }}
+            />
+          </div>
+
+          {/* 分支列表 */}
+          <div className="max-h-60 overflow-y-auto p-1">
+            {loading ? (
+              <div className="text-xs text-muted-foreground text-center py-4">加载中...</div>
+            ) : filtered.length === 0 ? (
+              <div className="text-xs text-muted-foreground text-center py-4">
+                {search ? '无匹配分支' : '无可切换分支'}
+              </div>
+            ) : (
+              filtered.map(branch => (
+                <button
+                  key={branch}
+                  onClick={() => handleCheckout(branch)}
+                  disabled={switching}
+                  className="w-full text-left px-2.5 py-1.5 text-sm rounded hover:bg-accent transition-colors truncate disabled:opacity-50"
+                >
+                  <span className={branch.startsWith('origin/') ? 'text-muted-foreground' : 'text-foreground'}>
+                    {branch}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// TabManagerTopBar
+// ============================================
 
 export function TabManagerTopBar({
   initialCwd,
@@ -62,18 +222,25 @@ export function TabManagerTopBar({
               </h1>
             )}
           </div>
-          {/* Git Worktree 按钮 */}
-          {isGitRepo && (
-            <button
-              onClick={onOpenWorktree}
-              className="flex items-center gap-1.5 px-2 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-              title="Git Worktrees"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0l-4-4m4 4l-4 4M3 7v6a4 4 0 004 4h5" />
-              </svg>
-              <span className="text-sm">{currentBranch || 'main'}</span>
-            </button>
+          {/* Git 分支 + Worktree + 切换 */}
+          {isGitRepo && initialCwd && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={onOpenWorktree}
+                className="flex items-center gap-1.5 px-2 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+                title="Git Worktrees"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0l-4-4m4 4l-4 4M3 7v6a4 4 0 004 4h5" />
+                </svg>
+                <span className="text-sm">{currentBranch || 'main'}</span>
+              </button>
+              <BranchSwitchDropdown
+                cwd={initialCwd}
+                currentBranch={currentBranch}
+                onSwitched={() => {/* WebSocket 会自动触发 loadGitInfo */}}
+              />
+            </div>
           )}
         </div>
 

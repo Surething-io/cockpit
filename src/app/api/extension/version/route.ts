@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { readFileSync, statSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { setRegisteredExtensionId, getRegisteredExtensionId } from '@/lib/extensionId';
-
+ 
 /** 获取目录下所有文件的最新修改时间，格式 YYYY-MM-DD HH:mm:ss */
 function getLatestMtime(dir: string): string {
   let latest = 0;
@@ -18,11 +18,11 @@ function getLatestMtime(dir: string): string {
     }
   };
   scan(dir);
-  const d = new Date(latest);
+  const d = new Date(latest); 
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
-
+ 
 export async function GET(request: NextRequest) {
   try {
     // 扩展轮询时带上 extId，服务端存内存
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     if (extId) {
       setRegisteredExtensionId(extId);
     }
-
+ 
     const extensionDir = join(process.cwd(), 'chrome-extension');
     const manifestPath = join(extensionDir, 'manifest.json');
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
@@ -46,3 +46,4 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'manifest not found' }, { status: 404 });
   }
 }
+ 

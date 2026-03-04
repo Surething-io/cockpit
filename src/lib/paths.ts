@@ -128,10 +128,10 @@ export function getGlobalAliasesPath(): string {
 }
 
 /**
- * Get the terminal settings file path (UI preferences like layout mode)
+ * Get the project settings file path (UI preferences like layout mode, active view)
  */
-export function getTerminalSettingsPath(cwd: string): string {
-  return join(getCockpitProjectDir(cwd), 'terminal-settings.json');
+export function getProjectSettingsPath(cwd: string): string {
+  return join(getCockpitProjectDir(cwd), 'project-settings.json');
 }
 
 /**

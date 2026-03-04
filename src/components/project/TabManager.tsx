@@ -69,6 +69,28 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const [tabSwitchTrigger, setTabSwitchTrigger] = useState(0);
   const [activeView, setActiveView] = useState<ViewType>('agent');
 
+  // 从 project-settings 恢复 activeView
+  useEffect(() => {
+    if (!initialCwd) return;
+    fetch(`/api/project-settings?cwd=${encodeURIComponent(initialCwd)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.settings?.activeView) setActiveView(data.settings.activeView);
+      })
+      .catch(() => {});
+  }, [initialCwd]);
+
+  // 切屏时持久化 activeView
+  const handleViewChange = useCallback((view: ViewType) => {
+    setActiveView(view);
+    if (!initialCwd) return;
+    fetch('/api/project-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cwd: initialCwd, settings: { activeView: view } }),
+    }).catch(() => {});
+  }, [initialCwd]);
+
   // 加载 Git 仓库信息（分支）
   const loadGitInfo = useCallback(async () => {
     if (!initialCwd) return;
@@ -111,13 +133,13 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
         if (e.key === '1') {
           e.preventDefault();
-          setActiveView('agent');
+          handleViewChange('agent');
         } else if (e.key === '2') {
           e.preventDefault();
-          setActiveView('explorer');
+          handleViewChange('explorer');
         } else if (e.key === '3') {
           e.preventDefault();
-          setActiveView('console');
+          handleViewChange('console');
         }
       }
     };
@@ -133,7 +155,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         const { sessionId } = event.data;
         if (sessionId) {
           handleSelectSession(sessionId);
-          setActiveView('agent');
+          handleViewChange('agent');
         }
       }
     };
@@ -146,8 +168,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const handleShowGitStatus = useCallback(() => {
     setFileBrowserInitialTab('status');
     setTabSwitchTrigger(n => n + 1);
-    setActiveView('explorer');
-  }, []);
+    handleViewChange('explorer');
+  }, [handleViewChange]);
 
   // 打开笔记
   const handleOpenNote = initialCwd ? useCallback(() => {
@@ -156,7 +178,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
 
   return (
     <ChatProvider>
-    <SwipeableViewContainer activeView={activeView} onViewChange={setActiveView}>
+    <SwipeableViewContainer activeView={activeView} onViewChange={handleViewChange}>
     <div className="flex h-screen bg-card">
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -216,7 +238,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
             {/* EXPLORER 视图：FileBrowser */}
             <div className="w-1/3 h-full overflow-hidden">
               <FileBrowserModal
-                onClose={() => setActiveView('agent')}
+                onClose={() => handleViewChange('agent')}
                 cwd={initialCwd}
                 initialTab={fileBrowserInitialTab}
                 tabSwitchTrigger={tabSwitchTrigger}

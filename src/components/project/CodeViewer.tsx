@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { BundledLanguage } from 'shiki';
 import { useMenuContainer } from './FileContextMenu';
@@ -8,17 +8,85 @@ import { AddCommentInput, SendToAIInput } from './CodeInputCards';
 import { getHighlighter, getLanguageFromPath, escapeHtml } from './codeHighlighter';
 import { FloatingToolbar } from './FloatingToolbar';
 import { ViewCommentCard } from './ViewCommentCard';
-import { CodeLine } from './CodeLine';
+import { CodeLine, AUTHOR_COLORS } from './CodeLine';
 import { useCodeViewerLogic, type CodeViewerProps } from './useCodeViewerLogic';
+import type { BlameLine } from './fileBrowser/types';
+import type { CommitInfo } from './CommitDetailPanel';
+import { formatRelativeTime } from './fileBrowser/utils';
+import { toast, confirm } from '../shared/Toast';
+import type { FileEditorHandle } from './FileEditorModal';
 
 // Re-export utilities used by other modules
 export { getHighlighter, getLanguageFromPath } from './codeHighlighter';
+
+// contentEditable 行 div 的内联样式（用于 innerHTML 字符串拼接）
+const EDITOR_LINE_STYLE = 'white-space:pre;padding:0 12px;min-height:20px;line-height:20px';
+
+// ========== contentEditable 光标工具 ==========
+function saveCursorPosition(container: HTMLElement): { line: number; offset: number } | null {
+  const sel = window.getSelection();
+  if (!sel?.rangeCount) return null;
+  const range = sel.getRangeAt(0);
+
+  // 找到光标所在的行 div
+  let node: Node | null = range.startContainer;
+  while (node && node.parentElement !== container) {
+    node = node.parentElement;
+  }
+  if (!node) return null;
+
+  const lineIndex = Array.from(container.children).indexOf(node as Element);
+  if (lineIndex < 0) return null;
+
+  // 计算行内字符偏移
+  const preRange = document.createRange();
+  preRange.selectNodeContents(node);
+  preRange.setEnd(range.startContainer, range.startOffset);
+  const offset = preRange.toString().length;
+
+  return { line: lineIndex, offset };
+}
+
+function restoreCursorPosition(container: HTMLElement, pos: { line: number; offset: number }) {
+  const lineEl = container.children[pos.line];
+  if (!lineEl) return;
+
+  const walker = document.createTreeWalker(lineEl, NodeFilter.SHOW_TEXT);
+  let remaining = pos.offset;
+  let textNode: Node | null;
+
+  while ((textNode = walker.nextNode())) {
+    const len = textNode.textContent?.length || 0;
+    if (remaining <= len) {
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.setStart(textNode, remaining);
+      range.collapse(true);
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      return;
+    }
+    remaining -= len;
+  }
+
+  // fallback: 放到行末
+  const sel = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(lineEl);
+  range.collapse(false);
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+}
+
+function buildEditorHTML(lineHtmls: string[]): string {
+  return lineHtmls.map(h => `<div style="${EDITOR_LINE_STYLE}">${h}</div>`).join('');
+}
 
 // ============================================
 // CodeViewer Component
 // ============================================
 
-export function CodeViewer({
+export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function CodeViewer({
   content,
   filePath,
   showLineNumbers = true,
@@ -33,7 +101,30 @@ export function CodeViewer({
   onCmdClick,
   onTokenHover,
   onTokenHoverLeave,
-}: CodeViewerProps) {
+  blameLines,
+  onSelectCommit,
+  editable = false,
+  initialMtime,
+  onEditorClose,
+  onSaved,
+  onEditorStateChange,
+}, ref) {
+  // ========== 编辑模式状态 ==========
+  const [editContent, setEditContent] = useState(content);
+  const [isDirty, setIsDirty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [conflictState, setConflictState] = useState<{ show: boolean; diskContent?: string }>({ show: false });
+  const editableRef = useRef<HTMLDivElement>(null);
+  const editScrollRef = useRef<HTMLDivElement>(null);
+  const mtimeRef = useRef<number | undefined>(initialMtime);
+
+  // 编辑模式的 debounce 高亮
+  const editDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isHighlightingRef = useRef(false); // 防止 re-highlight 触发 onInput
+
+  // 用于编辑模式的实际 content（编辑时用 editContent，否则用 props content）
+  const effectiveContent = editable ? editContent : content;
+
   const {
     // Refs
     parentRef,
@@ -86,26 +177,375 @@ export function CodeViewer({
     handleSendToAISubmit,
     getHighlightedLineHtml,
   } = useCodeViewerLogic({
-    content,
+    content: effectiveContent,
     filePath,
     showSearch,
     cwd,
-    enableComments,
-    scrollToLine,
-    onScrollToLineComplete,
-    visibleLineRef,
+    enableComments: editable ? false : enableComments, // 编辑模式下禁用 comments
+    scrollToLine: editable ? null : scrollToLine,
+    onScrollToLineComplete: editable ? undefined : onScrollToLineComplete,
+    visibleLineRef: editable ? undefined : visibleLineRef,
   });
 
   // Menu container for portal mounting (keeps floating elements within second screen)
   const menuContainer = useMenuContainer();
 
-  // 行号列：最少4位数字宽度，和 Shiki/fallback 模式统一
-  const lineNumChars = Math.max(4, String(lines.length).length);
+  // 行号列：最少4位数字宽度
+  const editLines = editContent.split('\n');
+  const lineNumChars = Math.max(4, String(editable ? editLines.length : lines.length).length);
+
+  // ========== 编辑模式：进入/退出同步 ==========
+  useEffect(() => {
+    if (editable) {
+      setEditContent(content);
+      setIsDirty(false);
+      setConflictState({ show: false });
+      mtimeRef.current = initialMtime;
+    }
+  }, [editable, content, initialMtime]);
+
+  // 进入编辑模式时：设置 innerHTML、focus、滚动到当前位置
+  useEffect(() => {
+    if (!editable) return;
+    const container = editableRef.current;
+    if (!container) return;
+
+    // 用只读模式已有的高亮 HTML 初始化 contentEditable
+    const editLineArr = content.split('\n');
+    const lineHtmls = editLineArr.map((line, i) => {
+      return highlightedLines[i] || escapeHtml(line || ' ');
+    });
+    container.innerHTML = buildEditorHTML(lineHtmls);
+
+    requestAnimationFrame(() => {
+      container.focus();
+      // 从只读模式的滚动位置同步
+      const scrollTop = parentRef.current?.scrollTop ?? 0;
+      if (editScrollRef.current) editScrollRef.current.scrollTop = scrollTop;
+
+      // 光标放到当前可见行开头
+      const currentLine = visibleLineRef?.current ?? 1;
+      const targetLine = Math.max(0, Math.min(currentLine - 1, editLineArr.length - 1));
+      restoreCursorPosition(container, { line: targetLine, offset: 0 });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editable]);
+
+  // 通知父组件 dirty/saving 状态
+  useEffect(() => {
+    if (editable) {
+      onEditorStateChange?.({ isDirty, isSaving });
+    }
+  }, [editable, isDirty, isSaving, onEditorStateChange]);
+
+  // ========== 编辑模式：debounced Shiki 重新高亮（imperative DOM 更新） ==========
+  useEffect(() => {
+    if (!editable) return;
+    if (editDebounceRef.current) clearTimeout(editDebounceRef.current);
+    editDebounceRef.current = setTimeout(async () => {
+      const container = editableRef.current;
+      if (!container) return;
+
+      try {
+        const highlighter = await getHighlighter();
+        const language = getLanguageFromPath(filePath);
+        const isDarkMode = document.documentElement.classList.contains('dark');
+        const theme = isDarkMode ? 'github-dark' : 'github-light';
+        const editLineArr = editContent.split('\n');
+
+        const highlighted = editLineArr.map((line) => {
+          try {
+            const html = highlighter.codeToHtml(line || ' ', {
+              lang: language as BundledLanguage,
+              theme,
+            });
+            const match = html.match(/<code[^>]*>([\s\S]*?)<\/code>/);
+            return match ? match[1] : escapeHtml(line);
+          } catch {
+            return escapeHtml(line);
+          }
+        });
+
+        // 保存光标 → 替换 innerHTML → 恢复光标
+        const cursorPos = saveCursorPosition(container);
+        isHighlightingRef.current = true;
+        container.innerHTML = buildEditorHTML(highlighted);
+        isHighlightingRef.current = false;
+        if (cursorPos) restoreCursorPosition(container, cursorPos);
+      } catch {
+        // 高亮失败，不更新 DOM
+      }
+    }, 80);
+    return () => { if (editDebounceRef.current) clearTimeout(editDebounceRef.current); };
+  }, [editable, editContent, filePath]);
+
+  // ========== 编辑模式：contentEditable handlers ==========
+  const extractTextFromEditable = useCallback((): string => {
+    const container = editableRef.current;
+    if (!container) return editContent;
+    const lines: string[] = [];
+    for (const child of container.childNodes) {
+      lines.push((child as HTMLElement).textContent || '');
+    }
+    return lines.join('\n');
+  }, [editContent]);
+
+  const handleContentInput = useCallback(() => {
+    if (isHighlightingRef.current) return;
+    const newContent = extractTextFromEditable();
+    setEditContent(newContent);
+    setIsDirty(newContent !== content);
+  }, [content, extractTextFromEditable]);
+
+  const handleEditKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    // IME 输入中（如中文候选词确认）不拦截
+    if (e.nativeEvent.isComposing) return;
+
+    // Tab → 插入 2 空格
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      document.execCommand('insertText', false, '  ');
+    }
+    // Enter → 确保插入纯文本换行，而不是浏览器默认的 <div>
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // 插入换行：在当前位置分割 div
+      const container = editableRef.current;
+      if (!container) return;
+      const sel = window.getSelection();
+      if (!sel?.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+
+      // 找到当前行 div
+      let lineEl: Node | null = range.startContainer;
+      while (lineEl && lineEl.parentElement !== container) {
+        lineEl = lineEl.parentElement;
+      }
+      if (!lineEl || !(lineEl instanceof HTMLElement)) return;
+
+      // 分割当前行：光标后的内容移到新行
+      const cursorPos = saveCursorPosition(container);
+      const lineIdx = Array.from(container.children).indexOf(lineEl);
+      const fullText = lineEl.textContent || '';
+      const splitAt = cursorPos?.offset ?? fullText.length;
+      const beforeText = fullText.substring(0, splitAt);
+      const afterText = fullText.substring(splitAt);
+
+      // 更新当前行
+      lineEl.innerHTML = escapeHtml(beforeText || ' ');
+
+      // 创建新行 div
+      const newLineEl = document.createElement('div');
+      newLineEl.setAttribute('style', EDITOR_LINE_STYLE);
+      newLineEl.innerHTML = escapeHtml(afterText || ' ');
+      lineEl.after(newLineEl);
+
+      // 光标移到新行开头
+      restoreCursorPosition(container, { line: lineIdx + 1, offset: 0 });
+
+      // 同步状态
+      const newContent = extractTextFromEditable();
+      setEditContent(newContent);
+      setIsDirty(newContent !== content);
+    }
+  }, [content, extractTextFromEditable]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    document.execCommand('insertText', false, text);
+  }, []);
+
+  // ========== 编辑模式：保存逻辑 ==========
+  const doSave = useCallback(async (skipConflictCheck = false) => {
+    if (!cwd) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch('/api/files/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cwd,
+          path: filePath,
+          content: editContent,
+          expectedMtime: skipConflictCheck ? undefined : mtimeRef.current,
+        }),
+      });
+      const data = await response.json();
+
+      if (response.status === 409 && data.conflict) {
+        try {
+          const readRes = await fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`);
+          const readData = await readRes.json();
+          setConflictState({ show: true, diskContent: readData.type === 'text' ? readData.content : undefined });
+        } catch {
+          setConflictState({ show: true });
+        }
+        return;
+      }
+      if (!response.ok) throw new Error('Failed to save file');
+
+      if (data.mtime) mtimeRef.current = data.mtime;
+      setIsDirty(false);
+      setConflictState({ show: false });
+      toast('已保存', 'success');
+      onSaved?.();
+    } catch (error) {
+      console.error('Error saving file:', error);
+      toast('保存失败', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [cwd, filePath, editContent, onSaved]);
+
+  const handleSave = useCallback(async () => {
+    if (!isDirty || isSaving) return;
+    await doSave(false);
+  }, [isDirty, isSaving, doSave]);
+
+  const handleForceOverwrite = useCallback(async () => {
+    setConflictState({ show: false });
+    await doSave(true);
+  }, [doSave]);
+
+  const handleRevertToDisk = useCallback(() => {
+    if (conflictState.diskContent !== undefined) {
+      setEditContent(conflictState.diskContent);
+      setIsDirty(conflictState.diskContent !== content);
+    }
+    setConflictState({ show: false });
+    onSaved?.();
+  }, [conflictState.diskContent, content, onSaved]);
+
+  const getCurrentLine = useCallback((): number => {
+    // 优先从 contentEditable 光标位置获取行号
+    const container = editableRef.current;
+    if (container) {
+      const pos = saveCursorPosition(container);
+      if (pos) return pos.line + 1;
+    }
+    const scrollEl = editScrollRef.current;
+    if (!scrollEl) return visibleLineRef?.current ?? 1;
+    return Math.floor(scrollEl.scrollTop / 20) + 1;
+  }, [visibleLineRef]);
+
+  const handleEditorClose = useCallback(async () => {
+    if (isDirty) {
+      const ok = await confirm('有未保存的修改，确定关闭？', { danger: true, confirmText: '放弃修改', cancelText: '继续编辑' });
+      if (!ok) return;
+    }
+    onEditorClose?.(getCurrentLine());
+  }, [isDirty, onEditorClose, getCurrentLine]);
+
+  // Cmd+S 保存（编辑模式）
+  useEffect(() => {
+    if (!editable) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [editable, handleSave]);
+
+  // ESC 关闭编辑器
+  useEffect(() => {
+    if (!editable) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleEditorClose();
+      }
+    };
+    document.addEventListener('keydown', handler, true);
+    return () => document.removeEventListener('keydown', handler, true);
+  }, [editable, handleEditorClose]);
+
+  // Expose imperative handle
+  useImperativeHandle(ref, () => ({
+    save: handleSave,
+    close: handleEditorClose,
+    get isDirty() { return isDirty; },
+    get isSaving() { return isSaving; },
+  }), [handleSave, handleEditorClose, isDirty, isSaving]);
+
+  // ========== Blame 状态 ==========
+  const hasBlame = !!(blameLines && blameLines.length > 0);
+
+  const authorColorMap = useMemo(() => {
+    if (!blameLines) return new Map<string, typeof AUTHOR_COLORS[0]>();
+    const authors = [...new Set(blameLines.map(l => l.author))];
+    const map = new Map<string, typeof AUTHOR_COLORS[0]>();
+    authors.forEach((author, index) => {
+      map.set(author, AUTHOR_COLORS[index % AUTHOR_COLORS.length]);
+    });
+    return map;
+  }, [blameLines]);
+
+  const [hoveredAuthor, setHoveredAuthor] = useState<string | null>(null);
+  const [blameTooltip, setBlameTooltip] = useState<{ line: BlameLine; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    setHoveredAuthor(null);
+    setBlameTooltip(null);
+  }, [blameLines]);
+
+  const handleBlameMouseEnter = useCallback((line: BlameLine, e: React.MouseEvent) => {
+    setHoveredAuthor(line.author);
+    const rect = e.currentTarget.getBoundingClientRect();
+    setBlameTooltip({ line, x: rect.right + 8, y: rect.top });
+  }, []);
+
+  const handleBlameMouseLeave = useCallback(() => {
+    setHoveredAuthor(null);
+    setBlameTooltip(null);
+  }, []);
+
+  const handleBlameClick = useCallback((line: BlameLine) => {
+    if (!onSelectCommit) return;
+    const commitInfo: CommitInfo = {
+      hash: line.hashFull,
+      shortHash: line.hash,
+      author: line.author,
+      authorEmail: line.authorEmail,
+      date: new Date(line.time * 1000).toISOString(),
+      subject: line.message.split('\n')[0] || '',
+      body: line.message.split('\n').slice(1).join('\n').trim(),
+      time: line.time,
+    };
+    onSelectCommit(commitInfo);
+    setBlameTooltip(null);
+  }, [onSelectCommit]);
+
+  // ========== 行号列宽度 ==========
+  const lineNumberWidth = `${lineNumChars + 2}ch`;
 
   return (
     <div ref={containerRef} className={`h-full flex flex-col outline-none ${className}`} tabIndex={0}>
-      {/* Search Bar */}
-      {showSearch && isSearchVisible && (
+      {/* 冲突提示条（编辑模式） */}
+      {editable && conflictState.show && (
+        <div className="px-4 py-2 bg-amber-500/15 border-b border-amber-500/30 flex items-center gap-3 flex-shrink-0">
+          <svg className="w-5 h-5 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+          <span className="text-sm text-foreground flex-1">文件已被外部修改，保存将覆盖外部更改</span>
+          <div className="flex items-center gap-2">
+            <button onClick={handleRevertToDisk} className="px-3 py-1 text-sm rounded border border-border hover:bg-accent transition-colors">
+              使用磁盘版本
+            </button>
+            <button onClick={handleForceOverwrite} className="px-3 py-1 text-sm rounded bg-amber-500 text-white hover:bg-amber-600 transition-colors">
+              强制覆盖
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Search Bar（非编辑模式） */}
+      {!editable && showSearch && isSearchVisible && (
         <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-secondary border-b border-border">
           <input
             ref={searchInputRef}
@@ -159,63 +599,113 @@ export function CodeViewer({
         </div>
       )}
 
-      {/* Code Content */}
-      <div
-        ref={parentRef}
-        className={`flex-1 overflow-auto font-mono text-sm bg-secondary${cmdHeld ? ' cmd-held-container' : ''}`}
-      >
-        <div
-          style={{
-            height: `${virtualizer.getTotalSize()}px`,
-            width: '100%',
-            position: 'relative',
-          }}
-        >
-          {virtualizer.getVirtualItems().map((virtualItem) => {
-            const row = rowData[virtualItem.index];
-            if (row.type !== 'code') return null;
+      {/* ========== 编辑模式：contentEditable ========== */}
+      {editable ? (
+        <div ref={editScrollRef} className="flex-1 overflow-auto bg-secondary">
+          <div className="flex" style={{ minHeight: '100%' }}>
+            {/* 行号列 */}
+            <div
+              className="flex-shrink-0 font-mono text-sm select-none"
+              style={{ width: lineNumberWidth }}
+            >
+              {editLines.map((_, i) => (
+                <div key={i} className="text-right text-muted-foreground/50 pr-3" style={{ height: 20, lineHeight: '20px' }}>
+                  {i + 1}
+                </div>
+              ))}
+            </div>
 
-            const lineIndex = row.lineIndex;
-            const lineNum = lineIndex + 1;
-            const html = highlightedLines[lineIndex] || escapeHtml(lines[lineIndex] || '');
-            const highlightedHtml = getHighlightedLineHtml(lineIndex, html, highlightKeyword);
-
-            const hasComments = linesWithComments.has(lineNum);
-            const lineComments = commentsByEndLine.get(lineNum);
-            const firstComment = lineComments?.[0];
-            const isInRange = !!(addCommentInput && lineNum >= addCommentInput.range.start && lineNum <= addCommentInput.range.end);
-
-            return (
-              <CodeLine
-                key={virtualItem.key}
-                virtualKey={virtualItem.key}
-                lineNum={lineNum}
-                highlightedHtml={highlightedHtml}
-                hasComments={hasComments}
-                firstComment={firstComment}
-                lineCommentsCount={lineComments?.length}
-                isInRange={isInRange}
-                showLineNumbers={showLineNumbers}
-                lineNumChars={lineNumChars}
-                commentsEnabled={commentsEnabled}
-                virtualItemSize={virtualItem.size}
-                virtualItemStart={virtualItem.start}
-                onCommentBubbleClick={handleCommentBubbleClick}
-                onCmdClick={onCmdClick}
-                onTokenHover={onTokenHover}
-                onTokenHoverLeave={onTokenHoverLeave}
-                flashLine={flashLine}
-              />
-            );
-          })}
+            {/* contentEditable 代码区 - 单层，光标/选区/文字天然对齐 */}
+            <div
+              ref={editableRef}
+              contentEditable
+              suppressContentEditableWarning
+              onInput={handleContentInput}
+              onKeyDown={handleEditKeyDown}
+              onPaste={handlePaste}
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
+              className="flex-1 font-mono text-sm outline-none"
+              style={{
+                caretColor: 'var(--foreground)',
+                tabSize: 2,
+              }}
+            />
+          </div>
         </div>
-      </div>
+      ) : (
+        /* ========== 只读模式：虚拟滚动 ========== */
+        <div
+          ref={parentRef}
+          className={`flex-1 overflow-auto font-mono text-sm bg-secondary${cmdHeld ? ' cmd-held-container' : ''}`}
+        >
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualItem) => {
+              const row = rowData[virtualItem.index];
+              if (row.type !== 'code') return null;
+
+              const lineIndex = row.lineIndex;
+              const lineNum = lineIndex + 1;
+              const html = highlightedLines[lineIndex] || escapeHtml(lines[lineIndex] || '');
+              const highlightedHtml = getHighlightedLineHtml(lineIndex, html, highlightKeyword);
+
+              const hasComments = linesWithComments.has(lineNum);
+              const lineComments = commentsByEndLine.get(lineNum);
+              const firstComment = lineComments?.[0];
+              const isInRange = !!(addCommentInput && lineNum >= addCommentInput.range.start && lineNum <= addCommentInput.range.end);
+
+              // Blame data for this line
+              const blameLine = hasBlame ? blameLines![lineIndex] : undefined;
+              const prevBlameLine = hasBlame && lineIndex > 0 ? blameLines![lineIndex - 1] : undefined;
+              const showBlameInfo = blameLine ? (!prevBlameLine || prevBlameLine.hash !== blameLine.hash) : false;
+              const blameAuthorColor = blameLine ? authorColorMap.get(blameLine.author) : undefined;
+
+              return (
+                <CodeLine
+                  key={virtualItem.key}
+                  virtualKey={virtualItem.key}
+                  lineNum={lineNum}
+                  highlightedHtml={highlightedHtml}
+                  hasComments={hasComments}
+                  firstComment={firstComment}
+                  lineCommentsCount={lineComments?.length}
+                  isInRange={isInRange}
+                  showLineNumbers={showLineNumbers}
+                  lineNumChars={lineNumChars}
+                  commentsEnabled={commentsEnabled}
+                  virtualItemSize={virtualItem.size}
+                  virtualItemStart={virtualItem.start}
+                  onCommentBubbleClick={handleCommentBubbleClick}
+                  onCmdClick={onCmdClick}
+                  onTokenHover={onTokenHover}
+                  onTokenHoverLeave={onTokenHoverLeave}
+                  flashLine={flashLine}
+                  blameLine={blameLine}
+                  showBlameInfo={showBlameInfo}
+                  blameAuthorColor={blameAuthorColor}
+                  isBlameHovered={!!(blameLine && hoveredAuthor === blameLine.author)}
+                  onBlameClick={handleBlameClick}
+                  onBlameMouseEnter={handleBlameMouseEnter}
+                  onBlameMouseLeave={handleBlameMouseLeave}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Floating elements via Portal to menu container (keeps within second screen) */}
       {isMounted && menuContainer && createPortal(
         <>
           {/* Floating Toolbar */}
-          {floatingToolbarRef.current && (
+          {!editable && floatingToolbarRef.current && (
             <FloatingToolbar
               key={toolbarVersion}
               x={floatingToolbarRef.current.x}
@@ -228,7 +718,7 @@ export function CodeViewer({
           )}
 
           {/* Add Comment Input */}
-          {addCommentInput && (
+          {!editable && addCommentInput && (
             <AddCommentInput
               x={addCommentInput.x}
               y={addCommentInput.y}
@@ -241,7 +731,7 @@ export function CodeViewer({
           )}
 
           {/* Send to AI Input */}
-          {sendToAIInput && (
+          {!editable && sendToAIInput && (
             <SendToAIInput
               x={sendToAIInput.x}
               y={sendToAIInput.y}
@@ -256,7 +746,7 @@ export function CodeViewer({
           )}
 
           {/* View Comment Card */}
-          {viewingComment && (
+          {!editable && viewingComment && (
             <ViewCommentCard
               x={viewingComment.x}
               y={viewingComment.y}
@@ -267,12 +757,49 @@ export function CodeViewer({
               onDeleteComment={deleteComment}
             />
           )}
+
+          {/* Blame Tooltip */}
+          {blameTooltip && (
+            <div
+              className="fixed z-50 bg-card border border-border rounded-lg shadow-lg p-3 max-w-lg"
+              style={{
+                left: Math.min(blameTooltip.x, window.innerWidth - 450),
+                top: Math.max(8, Math.min(blameTooltip.y, window.innerHeight - 200)),
+              }}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className="px-2 py-0.5 rounded text-xs font-mono font-medium text-white flex-shrink-0"
+                  style={{ backgroundColor: authorColorMap.get(blameTooltip.line.author)?.border || '#666' }}
+                >
+                  {blameTooltip.line.hash}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-foreground">
+                    {blameTooltip.line.author}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {blameTooltip.line.authorEmail}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-2 text-sm text-foreground whitespace-pre-wrap max-h-48 overflow-y-auto">
+                {blameTooltip.line.message}
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground border-t border-border pt-2">
+                {formatRelativeTime(blameTooltip.line.time)}
+                {' · '}
+                {new Date(blameTooltip.line.time * 1000).toLocaleString()}
+                <span className="ml-2 text-brand">点击查看详情</span>
+              </div>
+            </div>
+          )}
         </>,
         menuContainer
       )}
     </div>
   );
-}
+});
 
 // ============================================
 // Simple Code Block (non-virtual, for small content)

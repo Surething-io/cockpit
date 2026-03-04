@@ -297,6 +297,20 @@ body {
   }
 }
 
+/* ---- Confirm Dialog 动画 ---- */
+@keyframes confirmFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes confirmFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes confirmScaleIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
 /* ---- Shiki 代码高亮样式 ---- */
 .shiki-wrapper pre {
   margin: 0;

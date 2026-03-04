@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
-import { toast } from '../shared/Toast';
+import { toast, confirm } from '../shared/Toast';
 
 export interface FileEditorHandle {
   save: () => void;
@@ -197,9 +197,10 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
     return () => document.removeEventListener('keydown', handler);
   }, [handleSave]);
 
-  const handleClose = useCallback(() => {
+  const handleClose = useCallback(async () => {
     if (isDirty) {
-      if (!confirm('有未保存的修改，确定关闭？')) return;
+      const ok = await confirm('有未保存的修改，确定关闭？', { danger: true, confirmText: '放弃修改', cancelText: '继续编辑' });
+      if (!ok) return;
     }
     onClose(getCurrentLine());
   }, [isDirty, onClose, getCurrentLine]);

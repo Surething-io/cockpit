@@ -406,23 +406,21 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         gitStatus.refreshDiff();
 
         if (hasGitChange) {
-          // 分支切换时同步 BranchSelector：重新获取分支列表和当前分支
-          // loadBranches 内部会 setSelectedBranch(data.current)，
-          // useEffect[selectedBranch] 会自动重新加载 commits
+          // 分支切换时同步 BranchSelector
           gitHistory.loadBranches();
-        } else {
-          const branch = selectedBranchRef.current;
-          if (branch) {
-            promises.push(
-              fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(branch)}&limit=${COMMITS_PER_PAGE}`)
-                .then(res => res.json())
-                .then(data => {
-                  const newCommits = data.commits || [];
-                  gitHistory.setCommits(newCommits);
-                  gitHistory.setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
-                })
-            );
-          }
+        }
+        // 刷新 commits 列表（git 事件如 commit/rebase/merge，file 事件如文件变更都需要）
+        const branch = selectedBranchRef.current;
+        if (branch) {
+          promises.push(
+            fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(branch)}&limit=${COMMITS_PER_PAGE}`)
+              .then(res => res.json())
+              .then(data => {
+                const newCommits = data.commits || [];
+                gitHistory.setCommits(newCommits);
+                gitHistory.setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
+              })
+          );
         }
       }
 

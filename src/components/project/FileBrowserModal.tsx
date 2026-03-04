@@ -295,6 +295,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       fileTree.loadFiles();
       fileTree.loadRecentFiles();
       gitStatus.fetchStatus();
+      gitHistory.loadBranches();
     }
     prevVisibleRef.current = pageVisible;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -392,18 +393,27 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               });
             })
         );
+        // 刷新当前正在查看的 diff
+        gitStatus.refreshDiff();
 
-        const branch = selectedBranchRef.current;
-        if (branch) {
-          promises.push(
-            fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(branch)}&limit=${COMMITS_PER_PAGE}`)
-              .then(res => res.json())
-              .then(data => {
-                const newCommits = data.commits || [];
-                gitHistory.setCommits(newCommits);
-                gitHistory.setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
-              })
-          );
+        if (hasGitChange) {
+          // 分支切换时同步 BranchSelector：重新获取分支列表和当前分支
+          // loadBranches 内部会 setSelectedBranch(data.current)，
+          // useEffect[selectedBranch] 会自动重新加载 commits
+          gitHistory.loadBranches();
+        } else {
+          const branch = selectedBranchRef.current;
+          if (branch) {
+            promises.push(
+              fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(branch)}&limit=${COMMITS_PER_PAGE}`)
+                .then(res => res.json())
+                .then(data => {
+                  const newCommits = data.commits || [];
+                  gitHistory.setCommits(newCommits);
+                  gitHistory.setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
+                })
+            );
+          }
         }
       }
 

@@ -19,6 +19,7 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
   const [stagedTree, setStagedTree] = useState<GitFileNode<unknown>[]>([]);
   const [unstagedTree, setUnstagedTree] = useState<GitFileNode<unknown>[]>([]);
   const [showStatusDiffPreview, setShowStatusDiffPreview] = useState(false);
+  const [diffRefreshKey, setDiffRefreshKey] = useState(0);
 
   const fetchStatus = useCallback(async () => {
     setStatusLoading(true);
@@ -306,7 +307,7 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
     };
 
     fetchDiff();
-  }, [statusSelectedFile, cwd]);
+  }, [statusSelectedFile, cwd, diffRefreshKey]);
 
   return {
     status,
@@ -336,5 +337,6 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
     handleUnstageAll,
     handleDiscardFile,
     handleDiscardAll,
+    refreshDiff: useCallback(() => setDiffRefreshKey(k => k + 1), []),
   };
 }

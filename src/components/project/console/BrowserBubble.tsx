@@ -334,13 +334,34 @@ export function BrowserBubble({
 
   const host = getHostFromUrl(currentUrl);
 
+  // 最大化时用 portalContainer 的实际位置计算 fixed 定位坐标
+  // portal 到 document.body + position: fixed，彻底脱离 SwipeableContent 的 transform 和 scroll container 的 overflow 限制
+  const [containerRect, setContainerRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  useEffect(() => {
+    if (!maximized || !portalContainer) { setContainerRect(null); return; }
+    const update = () => {
+      const r = portalContainer.getBoundingClientRect();
+      setContainerRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [maximized, portalContainer]);
+
   // ========== 最大化 overlay（遮罩 + 顶栏，不含 iframe）==========
-  const fullscreenToolbar = maximized && portalContainer
+  const fullscreenToolbar = maximized && containerRect
     ? createPortal(
         <div
           onDoubleClick={onToggleMaximize}
           className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card"
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 51, height: 41 }}
+          style={{
+            position: 'fixed',
+            top: containerRect.top,
+            left: containerRect.left,
+            width: containerRect.width,
+            height: 41,
+            zIndex: 10001,
+          }}
         >
           <span className="text-[10px] font-mono leading-none px-1 py-0.5 rounded flex-shrink-0 bg-muted text-muted-foreground">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -394,24 +415,38 @@ export function BrowserBubble({
             </svg>
           </button>
         </div>,
-        portalContainer,
+        document.body,
       )
     : null;
 
-  // 最大化时遮罩（挡住滚动列表里的其他气泡）
-  const fullscreenBackdrop = maximized && portalContainer
+  const fullscreenBackdrop = maximized && containerRect
     ? createPortal(
-        <div style={{ position: 'absolute', inset: 0, top: 41, zIndex: 49, background: 'var(--card)' }} />,
-        portalContainer,
+        <div style={{
+          position: 'fixed',
+          top: containerRect.top + 41,
+          left: containerRect.left,
+          width: containerRect.width,
+          height: containerRect.height - 41,
+          zIndex: 9999,
+          background: 'var(--card)',
+        }} />,
+        document.body,
       )
     : null;
 
-  // 最大化 + 休眠：将休眠占位符 portal 到 portalContainer（绕开 scroll container 的 overflow 裁剪）
-  const fullscreenSleeping = maximized && isSleeping && portalContainer
+  const fullscreenSleeping = maximized && isSleeping && containerRect
     ? createPortal(
         <div
           className="cursor-pointer group"
-          style={{ position: 'absolute', inset: 0, top: 41, zIndex: 50, background: 'var(--card)' }}
+          style={{
+            position: 'fixed',
+            top: containerRect.top + 41,
+            left: containerRect.left,
+            width: containerRect.width,
+            height: containerRect.height - 41,
+            zIndex: 10000,
+            background: 'var(--card)',
+          }}
           onClick={(e) => { e.stopPropagation(); doRefresh(); }}
         >
           <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -430,7 +465,7 @@ export function BrowserBubble({
             </div>
           </div>
         </div>,
-        portalContainer,
+        document.body,
       )
     : null;
 

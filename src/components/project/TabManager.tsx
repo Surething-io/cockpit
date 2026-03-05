@@ -191,6 +191,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           onOpenWorktree={() => setIsWorktreeOpen(true)}
           onOpenProjectSessions={() => setIsProjectSessionsOpen(true)}
           onOpenAliasManager={() => setIsAliasManagerOpen(true)}
+          onBranchSwitched={loadGitInfo}
         />
 
         {/* 内容区域 - 根据 activeView 切换（滑动效果） */}

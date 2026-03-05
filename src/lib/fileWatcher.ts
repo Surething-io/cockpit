@@ -135,11 +135,16 @@ class FileWatcherManager {
     const startCwdWatcher = () => {
       try {
         const cwdWatcher = watch(cwd, { recursive: true }, (_eventType, filename) => {
-          if (filename && (
-            filename.startsWith('.next/') ||
-            filename.startsWith('node_modules/') ||
-            filename.startsWith('.git/')
-          )) return;
+          if (!filename) return;
+          if (filename.startsWith('.next/') || filename.startsWith('node_modules/')) return;
+          // .git 目录：只响应关键文件变化（HEAD、refs），忽略 index 等高频变化
+          // 利用 FSEvents 的可靠性弥补单文件 kqueue watcher 在原子替换后失效的问题
+          if (filename.startsWith('.git/')) {
+            if (filename === '.git/HEAD' || filename.startsWith('.git/refs/')) {
+              pushEvent({ type: 'git' });
+            }
+            return;
+          }
           pushEvent({ type: 'file' });
         });
         cwdWatcher.on('error', (err) => {

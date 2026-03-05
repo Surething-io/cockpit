@@ -17,6 +17,7 @@ interface TabManagerTopBarProps {
   onOpenWorktree: () => void;
   onOpenProjectSessions: () => void;
   onOpenAliasManager: () => void;
+  onBranchSwitched?: () => void;
 }
 
 // ============================================
@@ -187,6 +188,7 @@ export function TabManagerTopBar({
   onOpenWorktree,
   onOpenProjectSessions,
   onOpenAliasManager,
+  onBranchSwitched,
 }: TabManagerTopBarProps) {
   return (
     <div className="border-b border-border bg-card shrink-0">
@@ -238,7 +240,7 @@ export function TabManagerTopBar({
               <BranchSwitchDropdown
                 cwd={initialCwd}
                 currentBranch={currentBranch}
-                onSwitched={() => {/* WebSocket 会自动触发 loadGitInfo */}}
+                onSwitched={() => onBranchSwitched?.()}
               />
             </div>
           )}

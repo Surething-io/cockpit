@@ -283,11 +283,11 @@ export function BrowserBubble({
 
   // URL 变化时重置加载状态
   useEffect(() => {
-    if (url) {
+    if (url && !isSleeping) {
       setIsLoading(true);
       setLoadError(null);
     }
-  }, [url]);
+  }, [url, isSleeping]);
 
   // 在新窗口打开
   const handleOpenExternal = useCallback(() => {

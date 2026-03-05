@@ -155,16 +155,24 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
     const term = termRef.current;
     if (!term) return;
 
+    let didReset = false;
+
     // 检测 output 截断（重跑时 output 变短）
     if (output.length < writtenLenRef.current) {
       term.reset();
       writtenLenRef.current = 0;
+      didReset = true;
     }
 
     if (output.length > writtenLenRef.current) {
       const newData = output.slice(writtenLenRef.current);
       term.write(newData);
       writtenLenRef.current = output.length;
+    }
+
+    // reset 后 xterm 内部 textarea 可能失焦，需要延迟重新聚焦
+    if (didReset && onInputRef.current) {
+      requestAnimationFrame(() => term.focus());
     }
   }, [output]);
 

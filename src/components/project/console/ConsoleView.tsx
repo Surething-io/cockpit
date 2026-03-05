@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { AtSign, Variable, Zap, Plus, X, Play, Loader, Square, LayoutGrid, List } from 'lucide-react';
+import { AtSign, Variable, Zap, Plus, X, Play, LayoutGrid, List } from 'lucide-react';
 import { CommandBubble } from './CommandBubble';
 import { BrowserBubble } from './BrowserBubble';
 import { EnvManager } from './EnvManager';
@@ -80,7 +80,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
   /** scrollRef 可视区高度，传给放大的气泡 */
   const [consoleHeight, setConsoleHeight] = useState(0);
   const [showQuickCommands, setShowQuickCommands] = useState(false);
-  const [showRunningCommands, setShowRunningCommands] = useState(false);
+
   const [quickCustomCommands, setQuickCustomCommands] = useState<CustomCommand[]>([]);
   const [quickScripts, setQuickScripts] = useState<Record<string, string>>({});
   const [newCmdName, setNewCmdName] = useState('');
@@ -115,7 +115,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
   const commandHistoryRef = useRef<string[]>([]);
   const ptySizeRef = useRef<Map<string, { cols: number; rows: number }>>(new Map());
   const quickCommandsRef = useRef<HTMLDivElement>(null);
-  const runningCommandsRef = useRef<HTMLDivElement>(null);
+
 
   // 初始化时通知父组件当前目录
   useEffect(() => {
@@ -1165,25 +1165,6 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showQuickCommands]);
 
-  // 没有运行中命令时自动关闭弹窗
-  const runningCount = commands.filter((cmd) => cmd.isRunning).length;
-  useEffect(() => {
-    if (runningCount === 0 && showRunningCommands) {
-      setShowRunningCommands(false);
-    }
-  }, [runningCount, showRunningCommands]);
-
-  // 点击外部关闭运行中命令弹窗
-  useEffect(() => {
-    if (!showRunningCommands) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (runningCommandsRef.current && !runningCommandsRef.current.contains(e.target as Node)) {
-        setShowRunningCommands(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showRunningCommands]);
 
   // Cmd+M: 放大/缩小选中气泡（统一处理 PTY / PIPE / Browser）
   const toggleMaximize = useCallback((id: string) => {
@@ -1479,71 +1460,6 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
           >
             <Variable className="w-4 h-4" />
           </button>
-
-          {/* 运行中命令按钮 */}
-          {(() => {
-            const runningCmds = commands.filter((cmd) => cmd.isRunning);
-            if (runningCmds.length === 0) return null;
-            return (
-              <div className="relative" ref={runningCommandsRef}>
-                <button
-                  type="button"
-                  onClick={() => setShowRunningCommands(!showRunningCommands)}
-                  className={`relative p-2 rounded-lg transition-all ${
-                    showRunningCommands
-                      ? 'text-brand bg-brand/10'
-                      : 'text-orange-500 hover:text-orange-600 hover:bg-orange-500/10 active:scale-95'
-                  }`}
-                  title={`${runningCmds.length} 个命令运行中`}
-                >
-                  <Loader className="w-4 h-4 animate-spin" />
-                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 flex items-center justify-center text-[10px] font-bold bg-orange-500 text-white rounded-full px-1">
-                    {runningCmds.length}
-                  </span>
-                </button>
-
-                {/* 运行中命令弹窗 */}
-                {showRunningCommands && (
-                  <div className="absolute bottom-full left-0 mb-2 w-80 bg-popover border border-border rounded-lg shadow-lg z-50 max-h-[70vh] overflow-y-auto">
-                    <div className="p-2">
-                      <div className="flex items-center justify-between mb-2 px-1">
-                        <span className="text-xs font-medium text-muted-foreground">运行中的命令</span>
-                        {runningCmds.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              runningCmds.forEach((cmd) => interruptCommand(cmd.id));
-                            }}
-                            className="text-[11px] text-destructive hover:text-destructive/80 font-medium px-2 py-0.5 rounded hover:bg-destructive/10 transition-colors"
-                          >
-                            全部停止
-                          </button>
-                        )}
-                      </div>
-                      {runningCmds.map((cmd) => (
-                        <div
-                          key={cmd.id}
-                          className="flex items-center gap-2 px-2 py-2 rounded hover:bg-accent transition-colors group"
-                        >
-                          <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse flex-shrink-0" />
-                          <span className="flex-1 text-sm font-mono truncate">{cmd.command}</span>
-                          <button
-                            type="button"
-                            onClick={() => interruptCommand(cmd.id)}
-                            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 rounded transition-colors flex-shrink-0"
-                            title="Ctrl+C 停止"
-                          >
-                            <Square className="w-3 h-3" />
-                            <span>停止</span>
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
 
           <input
             ref={inputRef}

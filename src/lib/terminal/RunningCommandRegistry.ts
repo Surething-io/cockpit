@@ -79,8 +79,9 @@ export function registerCommand(cmd: Omit<RunningCommand, 'outputLines' | 'outpu
       appendCommandOutput(cmd.commandId, data);
     });
 
+    const ptyPid = cmd.pid;
     pty.onExit(async ({ exitCode }) => {
-      try { await finalizeCommand(cmd.commandId, exitCode); } catch (e) { console.error('[registry] finalize error:', e); }
+      try { await finalizeCommand(cmd.commandId, exitCode, ptyPid); } catch (e) { console.error('[registry] finalize error:', e); }
     });
   } else {
     // Pipe 模式：分离的 stdout/stderr
@@ -93,11 +94,12 @@ export function registerCommand(cmd: Omit<RunningCommand, 'outputLines' | 'outpu
       appendCommandOutput(cmd.commandId, data.toString());
     });
 
+    const childPid = cmd.pid;
     child.on('close', async (code: number | null) => {
-      try { await finalizeCommand(cmd.commandId, code ?? 0); } catch (e) { console.error('[registry] finalize error:', e); }
+      try { await finalizeCommand(cmd.commandId, code ?? 0, childPid); } catch (e) { console.error('[registry] finalize error:', e); }
     });
     child.on('error', async () => {
-      try { await finalizeCommand(cmd.commandId, 1); } catch (e) { console.error('[registry] finalize error:', e); }
+      try { await finalizeCommand(cmd.commandId, 1, childPid); } catch (e) { console.error('[registry] finalize error:', e); }
     });
   }
 }
@@ -192,10 +194,12 @@ export function getAllProjectCwds(): string[] {
 /**
  * 命令结束时：写入 JSONL 历史，清理注册表
  */
-export async function finalizeCommand(commandId: string, exitCode: number): Promise<void> {
+export async function finalizeCommand(commandId: string, exitCode: number, pid?: number): Promise<void> {
   const registry = getRegistry();
   const cmd = registry.get(commandId);
   if (!cmd) return; // 幂等：已 finalize 过则跳过
+  // rerun 场景：旧进程的 onExit 不应删掉新进程的注册表条目
+  if (pid !== undefined && cmd.pid !== pid) return;
 
   console.log(`[registry] finalize: id=${commandId}, exitCode=${exitCode}, cmd="${cmd.command}", server=${getServerId()}`);
   registry.delete(commandId);

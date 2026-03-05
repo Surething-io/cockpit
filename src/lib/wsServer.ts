@@ -240,15 +240,16 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
     const onStderr = (data: Buffer) => {
       send({ type: 'stderr', commandId, data: data.toString() });
     };
+    const pid = child.pid;
     const onClose = async (code: number | null) => {
       const exitCode = code ?? 0;
       send({ type: 'exit', commandId, code: exitCode });
-      try { await finalizeCommand(commandId, exitCode); } catch (e) { console.error('[ws/terminal] finalize error:', e); }
+      try { await finalizeCommand(commandId, exitCode, pid); } catch (e) { console.error('[ws/terminal] finalize error:', e); }
       cleanupMap.delete(commandId);
     };
     const onError = async (error: Error) => {
       send({ type: 'error', commandId, error: error.message });
-      try { await finalizeCommand(commandId, 1); } catch (e) { console.error('[ws/terminal] finalize error:', e); }
+      try { await finalizeCommand(commandId, 1, pid); } catch (e) { console.error('[ws/terminal] finalize error:', e); }
       cleanupMap.delete(commandId);
     };
 
@@ -279,9 +280,10 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
       send({ type: 'stdout', commandId, data });
     });
 
+    const ptyPid = pty.pid;
     const exitDisposable = pty.onExit(async ({ exitCode }) => {
       send({ type: 'exit', commandId, code: exitCode });
-      try { await finalizeCommand(commandId, exitCode); } catch (e) { console.error('[ws/terminal] finalize error:', e); }
+      try { await finalizeCommand(commandId, exitCode, ptyPid); } catch (e) { console.error('[ws/terminal] finalize error:', e); }
       cleanupMap.delete(commandId);
     });
 

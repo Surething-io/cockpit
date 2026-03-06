@@ -102,6 +102,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   onTokenHover,
   onTokenHoverLeave,
   blameLines,
+  inlineBlameLines,
   onSelectCommit,
   editable = false,
   initialMtime,
@@ -131,6 +132,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     containerRef,
     searchInputRef,
     floatingToolbarRef,
+    suppressHoverRef,
 
     // State
     highlightedLines,
@@ -176,6 +178,10 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     handleCommentSubmit,
     handleSendToAISubmit,
     getHighlightedLineHtml,
+
+    // Inline blame
+    inlineBlameLineRef,
+    inlineBlameVersion,
   } = useCodeViewerLogic({
     content: effectiveContent,
     filePath,
@@ -189,6 +195,38 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
 
   // Menu container for portal mounting (keeps floating elements within second screen)
   const menuContainer = useMenuContainer();
+
+  // ========== mousedown 时立即清除 hover 卡片 ==========
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const handleMouseDown = () => {
+      onTokenHoverLeave?.();
+    };
+    el.addEventListener('mousedown', handleMouseDown);
+    return () => el.removeEventListener('mousedown', handleMouseDown);
+  }, [onTokenHoverLeave]);
+
+  // ========== 交互状态矩阵：浮层活跃时抑制 hover / cmd+click ==========
+  useEffect(() => {
+    const shouldSuppress = !!(floatingToolbarRef.current || addCommentInput || sendToAIInput);
+    suppressHoverRef.current = shouldSuppress;
+    // 浮层出现时清除残留的 hover 卡片
+    if (shouldSuppress) {
+      onTokenHoverLeave?.();
+    }
+  }, [toolbarVersion, addCommentInput, sendToAIInput, onTokenHoverLeave]);
+
+  // 包装 hover / cmd+click 回调，读 ref 判断是否抑制（ref 不影响 memo 稳定性）
+  const guardedTokenHover = useCallback((line: number, column: number, rect: { x: number; y: number }) => {
+    if (suppressHoverRef.current) return;
+    onTokenHover?.(line, column, rect);
+  }, [onTokenHover]);
+
+  const guardedCmdClick = useCallback((line: number, column: number) => {
+    if (suppressHoverRef.current) return;
+    onCmdClick?.(line, column);
+  }, [onCmdClick]);
 
   // 行号列：最少4位数字宽度
   const editLines = editContent.split('\n');
@@ -661,6 +699,14 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
               const firstComment = lineComments?.[0];
               const isInRange = !!(addCommentInput && lineNum >= addCommentInput.range.start && lineNum <= addCommentInput.range.end);
 
+              // Inline blame annotation: 只有 mouseup 所在行显示
+              // Inline blame annotation: 只有 mouseup 所在行显示
+              // inlineBlameVersion 在此读取以订阅 ref 变化触发的 re-render
+              const inlineBlameLine = inlineBlameVersion >= 0 ? inlineBlameLineRef.current : null;
+              const inlineBlameData = (!editable && inlineBlameLines && inlineBlameLine === lineNum)
+                ? (inlineBlameLines[lineIndex] ?? null)
+                : null;
+
               // Blame data for this line
               const blameLine = hasBlame ? blameLines![lineIndex] : undefined;
               const prevBlameLine = hasBlame && lineIndex > 0 ? blameLines![lineIndex - 1] : undefined;
@@ -683,8 +729,8 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
                   virtualItemSize={virtualItem.size}
                   virtualItemStart={virtualItem.start}
                   onCommentBubbleClick={handleCommentBubbleClick}
-                  onCmdClick={onCmdClick}
-                  onTokenHover={onTokenHover}
+                  onCmdClick={guardedCmdClick}
+                  onTokenHover={guardedTokenHover}
                   onTokenHoverLeave={onTokenHoverLeave}
                   flashLine={flashLine}
                   blameLine={blameLine}
@@ -694,6 +740,8 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
                   onBlameClick={handleBlameClick}
                   onBlameMouseEnter={handleBlameMouseEnter}
                   onBlameMouseLeave={handleBlameMouseLeave}
+                  inlineBlameData={inlineBlameData}
+                  onInlineBlameClick={handleBlameClick}
                 />
               );
             })}
@@ -704,12 +752,13 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
       {/* Floating elements via Portal to menu container (keeps within second screen) */}
       {isMounted && menuContainer && createPortal(
         <>
-          {/* Floating Toolbar */}
-          {!editable && floatingToolbarRef.current && (
+          {/* Floating Toolbar — 常驻 DOM，用 CSS visibility 控显隐，
+              避免在祖先节点上做 DOM 增删导致浏览器选区丢失 */}
+          {!editable && (
             <FloatingToolbar
-              key={toolbarVersion}
-              x={floatingToolbarRef.current.x}
-              y={floatingToolbarRef.current.y}
+              x={floatingToolbarRef.current?.x ?? 0}
+              y={floatingToolbarRef.current?.y ?? 0}
+              visible={!!floatingToolbarRef.current}
               container={menuContainer}
               onAddComment={handleToolbarAddComment}
               onSendToAI={handleToolbarSendToAI}

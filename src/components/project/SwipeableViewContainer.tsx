@@ -4,7 +4,7 @@ import { useRef, useEffect, useState, ReactNode, createContext, useContext, useM
 
 export type ViewType = 'agent' | 'explorer' | 'console';
 
-const VIEWS: ViewType[] = ['agent', 'explorer', 'console'];
+const VIEWS: ViewType[] = ['explorer', 'agent', 'console'];
 const VIEW_LABELS: Record<ViewType, string> = {
   agent: 'AGENT',
   explorer: 'EXPLORER',

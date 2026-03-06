@@ -297,6 +297,18 @@ body {
   }
 }
 
+/* Session 完成通知动画（左下角） */
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
 /* ---- Confirm Dialog 动画 ---- */
 @keyframes confirmFadeIn {
   from { opacity: 0; }

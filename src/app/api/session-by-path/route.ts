@@ -65,6 +65,12 @@ interface ChatMessage {
 }
 
 
+// 文件指纹：mtime + size，轻量判断文件是否有变更
+function getFileFingerprint(filePath: string): string {
+  const stat = fs.statSync(filePath);
+  return `${stat.mtimeMs}-${stat.size}`;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -74,6 +80,8 @@ export async function POST(request: NextRequest) {
     // beforeTurnIndex = 加载此 turn 之前的消息（用于向上滚动加载更多）
     const limit = body.limit as number | undefined;
     const beforeTurnIndex = body.beforeTurnIndex as number | undefined;
+    // 轻量检查：客户端传上次的指纹，未变更则返回 304 等效响应
+    const ifFingerprint = body.ifFingerprint as string | undefined;
 
     if (!cwd || !sessionId) {
       return new Response(JSON.stringify({ error: 'Missing cwd or sessionId' }), {
@@ -93,10 +101,21 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // 获取文件指纹
+    const fingerprint = getFileFingerprint(sessionPath);
+
+    // 如果客户端指纹与服务端一致，数据未变更，跳过解析
+    if (ifFingerprint && ifFingerprint === fingerprint) {
+      return new Response(JSON.stringify({ notModified: true, fingerprint }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     // 读取并解析 JSONL 文件（支持分页）
     const { messages, title, usage, totalTurns, hasMore } = await parseTranscriptFile(sessionPath, limit, beforeTurnIndex);
 
-    return new Response(JSON.stringify({ messages, sessionId, title, usage, totalTurns, hasMore }), {
+    return new Response(JSON.stringify({ messages, sessionId, title, usage, totalTurns, hasMore, fingerprint }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });

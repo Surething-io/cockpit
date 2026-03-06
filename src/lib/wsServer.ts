@@ -26,6 +26,21 @@ interface GlobalState {
 
 const HEARTBEAT_INTERVAL = 30000;
 
+// 追踪所有 global-state WS 客户端，用于广播定时任务通知
+const globalStateClients = new Set<WebSocket>();
+
+/**
+ * 向所有 global-state 客户端广播消息
+ */
+export function broadcastToGlobalState(msg: Record<string, unknown>): void {
+  const data = JSON.stringify(msg);
+  for (const ws of globalStateClients) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(data);
+    }
+  }
+}
+
 const wss = new WebSocketServer({ noServer: true });
 
 wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
@@ -90,6 +105,7 @@ function handleFileWatch(ws: WebSocket, cwd: string): void {
  * /ws/global-state — 全局状态监听
  */
 function handleGlobalState(ws: WebSocket): void {
+  globalStateClients.add(ws);
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let closed = false;
 
@@ -157,6 +173,7 @@ function handleGlobalState(ws: WebSocket): void {
 
   ws.on('close', () => {
     closed = true;
+    globalStateClients.delete(ws);
     if (watcher) watcher.close();
     if (debounceTimer) clearTimeout(debounceTimer);
     clearInterval(heartbeat);

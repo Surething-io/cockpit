@@ -14,6 +14,7 @@ import { TabBar } from './TabBar';
 import { ChatPanel } from './ChatPanel';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { usePinnedSessions } from '@/hooks/usePinnedSessions';
+import { useScheduledTasks } from '@/hooks/useScheduledTasks';
 
 interface TabManagerProps {
   initialCwd?: string;
@@ -43,6 +44,9 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
 
   // Pin 状态管理
   const { isPinned, pinSession, unpinSession } = usePinnedSessions();
+
+  // 定时任务
+  const { createTask: createScheduledTask } = useScheduledTasks();
 
   const isTabPinned = useCallback((tabId: string) => {
     const tab = tabs.find(t => t.id === tabId);
@@ -80,7 +84,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
       .catch(() => {});
   }, [initialCwd]);
 
-  // 切屏时持久化 activeView
+  // 切屏时持久化 activeView 并通知父级 Workspace
   const handleViewChange = useCallback((view: ViewType) => {
     setActiveView(view);
     if (!initialCwd) return;
@@ -89,6 +93,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cwd: initialCwd, settings: { activeView: view } }),
     }).catch(() => {});
+    window.parent.postMessage({ type: 'VIEW_CHANGE', cwd: initialCwd, view }, '*');
   }, [initialCwd]);
 
   // 加载 Git 仓库信息（分支）
@@ -133,10 +138,10 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
         if (e.key === '1') {
           e.preventDefault();
-          handleViewChange('agent');
+          handleViewChange('explorer');
         } else if (e.key === '2') {
           e.preventDefault();
-          handleViewChange('explorer');
+          handleViewChange('agent');
         } else if (e.key === '3') {
           e.preventDefault();
           handleViewChange('console');
@@ -197,6 +202,16 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         {/* 内容区域 - 根据 activeView 切换（滑动效果） */}
         {initialCwd ? (
           <SwipeableContent>
+            {/* EXPLORER 视图：FileBrowser */}
+            <div className="w-1/3 h-full overflow-hidden">
+              <FileBrowserModal
+                onClose={() => handleViewChange('agent')}
+                cwd={initialCwd}
+                initialTab={fileBrowserInitialTab}
+                tabSwitchTrigger={tabSwitchTrigger}
+              />
+            </div>
+
             {/* AGENT 视图：Tab bar + Chat */}
             <div className="w-1/3 h-full flex flex-col overflow-hidden">
               <TabBar
@@ -229,21 +244,12 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                       onStateChange={updateTabState}
                       onShowGitStatus={handleShowGitStatus}
                       onOpenNote={handleOpenNote}
+                      onCreateScheduledTask={createScheduledTask}
                       onOpenSession={handleOpenSession}
                     />
                   </div>
                 ))}
               </div>
-            </div>
-
-            {/* EXPLORER 视图：FileBrowser */}
-            <div className="w-1/3 h-full overflow-hidden">
-              <FileBrowserModal
-                onClose={() => handleViewChange('agent')}
-                cwd={initialCwd}
-                initialTab={fileBrowserInitialTab}
-                tabSwitchTrigger={tabSwitchTrigger}
-              />
             </div>
 
             {/* CONSOLE 视图：命令执行 + 浏览器 */}
@@ -282,6 +288,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                     sessionId={tab.sessionId}
                     isActive={tab.id === activeTabId}
                     onStateChange={updateTabState}
+                    onCreateScheduledTask={createScheduledTask}
                     onOpenSession={handleOpenSession}
                   />
                 </div>

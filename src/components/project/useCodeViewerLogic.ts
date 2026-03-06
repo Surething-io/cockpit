@@ -35,6 +35,8 @@ export interface CodeViewerProps {
   onTokenHoverLeave?: () => void;
   /** Blame 数据（传入时显示 blame 列） */
   blameLines?: BlameLine[];
+  /** Inline blame 数据（行内注释用，文件打开时自动加载） */
+  inlineBlameLines?: BlameLine[];
   /** Blame: 点击 commit 回调 */
   onSelectCommit?: (commit: CommitInfo) => void;
   // ---- 编辑模式 ----
@@ -125,8 +127,15 @@ export function useCodeViewerLogic({
   const floatingToolbarRef = useRef<FloatingToolbarData | null>(null);
   const [toolbarVersion, setToolbarVersion] = useState(0);
 
+  // 当浮层（toolbar / addComment / sendToAI）活跃时，抑制 hover 和 cmd+click
+  const suppressHoverRef = useRef(false);
+
   const [addCommentInput, setAddCommentInput] = useState<InputCardData | null>(null);
   const [sendToAIInput, setSendToAIInput] = useState<InputCardData | null>(null);
+
+  // Inline blame annotation — 当前 mouseup 所在行号
+  const inlineBlameLineRef = useRef<number | null>(null);
+  const [inlineBlameVersion, setInlineBlameVersion] = useState(0);
 
   // Comments hook
   const commentsEnabled = enableComments && !!cwd;
@@ -392,7 +401,22 @@ export function useCodeViewerLogic({
   useEffect(() => {
     if (!commentsEnabled) return;
 
+    const codeArea = parentRef.current;
+    let isDragging = false;
+
+    // mousedown：标记拖选开始，清除旧 toolbar
+    const handleMouseDown = () => {
+      isDragging = true;
+      if (floatingToolbarRef.current) {
+        floatingToolbarRef.current = null;
+        setToolbarVersion(v => v + 1);
+      }
+    };
+
+    // mouseup：标记拖选结束，计算选区并显示 toolbar
     const handleMouseUp = (e: MouseEvent) => {
+      isDragging = false;
+
       // 点击 FloatingToolbar 按钮时，不清除 toolbar，让 onClick 正常触发
       const target = e.target as HTMLElement;
       if (target.closest?.('.floating-toolbar')) return;
@@ -428,7 +452,7 @@ export function useCodeViewerLogic({
 
       const getLineFromNode = (node: Node): number | null => {
         if (!document.contains(node)) return null;
-        let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node as Element;
+        const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node as Element;
         if (!el) return null;
         const lineRow = el.closest('[data-line]');
         if (lineRow) {
@@ -444,21 +468,71 @@ export function useCodeViewerLogic({
         const minLine = Math.min(startLine, endLine);
         const maxLine = Math.max(startLine, endLine);
 
-        requestAnimationFrame(() => {
-          floatingToolbarRef.current = {
-            x: e.clientX,
-            y: e.clientY,
-            range: { start: minLine, end: maxLine },
-            selectedText,
-          };
-          setToolbarVersion(v => v + 1);
-        });
+        floatingToolbarRef.current = {
+          x: e.clientX,
+          y: e.clientY,
+          range: { start: minLine, end: maxLine },
+          selectedText,
+        };
+        setToolbarVersion(v => v + 1);
+      }
+    };
+
+    // selectionchange：选区消失时隐藏 toolbar
+    // 拖选期间跳过，避免高频触发不必要的 re-render
+    const handleSelectionChange = () => {
+      if (isDragging) return;
+      if (!floatingToolbarRef.current) return;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+        floatingToolbarRef.current = null;
+        setToolbarVersion(v => v + 1);
+      }
+    };
+
+    codeArea?.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      codeArea?.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  }, [commentsEnabled]);
+
+  // Inline blame annotation — mouseup 时记录所在行号
+  useEffect(() => {
+    const codeArea = parentRef.current;
+    if (!codeArea) return;
+
+    const getLineFromEvent = (e: MouseEvent): number | null => {
+      const target = e.target as HTMLElement;
+      const lineRow = target.closest?.('[data-line]');
+      if (lineRow) {
+        return parseInt(lineRow.getAttribute('data-line') || '0', 10);
+      }
+      return null;
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      // 只处理代码区内的 mouseup
+      if (!codeArea.contains(e.target as Node)) {
+        if (inlineBlameLineRef.current !== null) {
+          inlineBlameLineRef.current = null;
+          setInlineBlameVersion(v => v + 1);
+        }
+        return;
+      }
+      const line = getLineFromEvent(e);
+      if (line !== inlineBlameLineRef.current) {
+        inlineBlameLineRef.current = line;
+        setInlineBlameVersion(v => v + 1);
       }
     };
 
     document.addEventListener('mouseup', handleMouseUp);
     return () => document.removeEventListener('mouseup', handleMouseUp);
-  }, [commentsEnabled]);
+  }, []);
 
   // Click "add comment" in toolbar
   const handleToolbarAddComment = useCallback(() => {
@@ -620,6 +694,7 @@ export function useCodeViewerLogic({
     containerRef,
     searchInputRef,
     floatingToolbarRef,
+    suppressHoverRef,
 
     // State
     highlightedLines,
@@ -666,5 +741,9 @@ export function useCodeViewerLogic({
     handleCommentSubmit,
     handleSendToAISubmit,
     getHighlightedLineHtml,
+
+    // Inline blame
+    inlineBlameLineRef,
+    inlineBlameVersion,
   };
 }

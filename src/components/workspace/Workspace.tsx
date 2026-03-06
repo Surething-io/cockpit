@@ -6,6 +6,7 @@ import { EmptyState } from './EmptyState';
 import { SessionBrowser } from '../shared/SessionBrowser';
 import { SettingsModal } from '../shared/SettingsModal';
 import { NoteModal } from '../shared/NoteModal';
+import { SessionCompleteToastContainer } from './SessionCompleteToast';
 
 interface ProjectsData {
   projects: ProjectInfo[];
@@ -31,6 +32,8 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   // 懒加载：只渲染曾被激活过的项目 iframe（只增不减）
   const [loadedCwds, setLoadedCwds] = useState<Set<string>>(new Set());
   const iframeRefs = useRef<Map<string, HTMLIFrameElement>>(new Map());
+  // 追踪各项目的 activeView（agent/explorer/console）
+  const [activeViewMap, setActiveViewMap] = useState<Record<string, string>>({});
   // 待发送给 iframe 的 sessionId（iframe 加载完成后发送 SWITCH_SESSION）
   const pendingSessionIdsRef = useRef<Map<string, string>>(new Map());
   // 跟踪每个项目当前的 sessionId（用于更新 URL，不用于 iframe src）
@@ -165,6 +168,10 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         const cwd = event.data.cwd;
         setNoteProjectCwd(cwd);
         setIsNoteOpen(true);
+      }
+      // iframe 内切屏通知（agent/explorer/console）
+      if (event.data?.type === 'VIEW_CHANGE' && event.data?.cwd && event.data?.view) {
+        setActiveViewMap(prev => ({ ...prev, [event.data.cwd]: event.data.view }));
       }
       // iframe 内请求打开/切换项目（worktree 切换、session 打开等）
       if (event.data?.type === 'OPEN_PROJECT' && event.data?.cwd) {
@@ -377,6 +384,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenNote={(cwd) => { setNoteProjectCwd(cwd ?? null); setIsNoteOpen(true); }}
         onSwitchProject={handleSwitchProject}
+        currentActiveView={activeViewMap[projects[activeIndex]?.cwd || '']}
       />
 
       {/* 右侧内容区域 */}
@@ -431,6 +439,9 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         projectCwd={noteProjectCwd}
         projectName={noteProjectCwd ? noteProjectCwd.split('/').pop() : null}
       />
+
+      {/* 左下角会话完成通知 */}
+      <SessionCompleteToastContainer onNavigate={handleSwitchProject} />
     </div>
   );
 }

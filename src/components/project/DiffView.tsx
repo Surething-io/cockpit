@@ -481,16 +481,15 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
       {/* Floating elements via Portal to menu container (keeps within second screen) */}
       {isMounted && menuContainer && createPortal(
         <>
-          {floatingToolbar && (
-            <FloatingToolbar
-              x={floatingToolbar.x}
-              y={floatingToolbar.y}
-              container={menuContainer}
-              onAddComment={handleToolbarAddComment}
-              onSendToAI={handleToolbarSendToAI}
-              isChatLoading={chatContext?.isLoading ?? false}
-            />
-          )}
+          <FloatingToolbar
+            x={floatingToolbar?.x ?? 0}
+            y={floatingToolbar?.y ?? 0}
+            visible={!!floatingToolbar}
+            container={menuContainer}
+            onAddComment={handleToolbarAddComment}
+            onSendToAI={handleToolbarSendToAI}
+            isChatLoading={chatContext?.isLoading ?? false}
+          />
           {addCommentInput && (
             <AddCommentInput
               x={addCommentInput.x}

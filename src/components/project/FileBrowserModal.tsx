@@ -1294,6 +1294,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             onTokenHover={isLSPSupported ? handleLSPTokenHover : undefined}
                             onTokenHoverLeave={isLSPSupported ? lspHover.onTokenMouseLeave : undefined}
                             blameLines={fileTree.showBlame && fileTree.blameLines.length > 0 ? fileTree.blameLines : undefined}
+                            inlineBlameLines={fileTree.blameLines.length > 0 ? fileTree.blameLines : undefined}
                             onSelectCommit={fileTree.setBlameSelectedCommit}
                             editable={fileTree.showEditor}
                             initialMtime={fileTree.fileContent.mtime}

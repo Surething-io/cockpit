@@ -4,8 +4,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { ProjectItem } from './ProjectItem';
 import { GlobalSessionMonitor, GlobalSession } from './GlobalSessionMonitor';
 import { PinnedSessionsPanel } from './PinnedSessionsPanel';
+import { ScheduledTasksPanel } from './ScheduledTasksPanel';
 import { usePinnedSessions } from '@/hooks/usePinnedSessions';
+import { useScheduledTasks } from '@/hooks/useScheduledTasks';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { showSessionCompleteToast } from './SessionCompleteToast';
 
 export interface ProjectInfo {
   cwd: string;
@@ -25,6 +28,7 @@ interface ProjectSidebarProps {
   onOpenSettings: () => void;
   onOpenNote: (cwd?: string) => void;
   onSwitchProject: (cwd: string, sessionId: string) => void;
+  currentActiveView?: string;  // 当前项目的 activeView (agent/explorer/console)
 }
 
 // 从 cwd 提取项目名称
@@ -46,8 +50,10 @@ export function ProjectSidebar({
   onOpenSettings,
   onOpenNote,
   onSwitchProject,
+  currentActiveView,
 }: ProjectSidebarProps) {
   const { pinnedSessions, unpinSession, updateTitle, reorder } = usePinnedSessions();
+  const { tasks: scheduledTasks, unreadCount: scheduledUnread, reload: reloadScheduled, pauseTask, resumeTask, deleteTask: deleteScheduledTask, markRead: markScheduledRead } = useScheduledTasks();
   const [isHovered, setIsHovered] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -60,9 +66,23 @@ export function ProjectSidebar({
   const currentCwdRef = useRef(currentCwd);
   currentCwdRef.current = currentCwd;
 
+  const currentActiveViewRef = useRef(currentActiveView);
+  currentActiveViewRef.current = currentActiveView;
+
+  const reloadScheduledRef = useRef(reloadScheduled);
+  reloadScheduledRef.current = reloadScheduled;
+
   const handleGlobalStateMessage = useCallback((msg: unknown) => {
     try {
-      const { data } = msg as { type: string; data: { sessions: GlobalSession[] } };
+      const parsed = msg as { type: string; data?: { sessions: GlobalSession[] } };
+
+      // 定时任务触发通知
+      if (parsed.type === 'task-fired') {
+        reloadScheduledRef.current();
+        return;
+      }
+
+      const { data } = parsed;
       if (!data) return;
       const newSessions: GlobalSession[] = data.sessions || [];
       setSessions(newSessions);
@@ -73,22 +93,37 @@ export function ProjectSidebar({
       const prevLoading = prevLoadingSessionIdsRef.current;
 
       if (prevLoading.size > 0) {
-        const newlyCompleted: string[] = [];
+        const allCompleted: string[] = [];   // 所有刚完成的 session
+        const nonCurrentCompleted: string[] = []; // 非当前项目的
         prevLoading.forEach(sessionId => {
           if (!currentLoadingIds.has(sessionId)) {
+            allCompleted.push(sessionId);
             const session = newSessions.find(s => s.sessionId === sessionId);
             if (session && session.cwd !== currentCwdRef.current) {
-              newlyCompleted.push(sessionId);
+              nonCurrentCompleted.push(sessionId);
             }
           }
         });
-        if (newlyCompleted.length > 0) {
+        // 非当前项目 → 标记未读
+        if (nonCurrentCompleted.length > 0) {
           setUnreadSessionIds(prev => {
             const next = new Set(prev);
-            newlyCompleted.forEach(id => next.add(id));
+            nonCurrentCompleted.forEach(id => next.add(id));
             return next;
           });
         }
+        // 弹出左下角完成通知：所有完成的 session 都弹
+        allCompleted.forEach(sessionId => {
+          const session = newSessions.find(s => s.sessionId === sessionId);
+          if (session) {
+            showSessionCompleteToast({
+              projectName: session.cwd.split('/').pop() || session.cwd,
+              message: session.lastUserMessage || session.title,
+              cwd: session.cwd,
+              sessionId: session.sessionId,
+            });
+          }
+        });
       }
 
       prevLoadingSessionIdsRef.current = currentLoadingIds;
@@ -278,6 +313,17 @@ export function ProjectSidebar({
           onUnpin={unpinSession}
           onUpdateTitle={updateTitle}
           onReorder={reorder}
+        />
+        {/* 定时任务 */}
+        <ScheduledTasksPanel
+          collapsed={collapsed}
+          tasks={scheduledTasks}
+          unreadCount={scheduledUnread}
+          onSwitchProject={onSwitchProject}
+          onPause={pauseTask}
+          onResume={resumeTask}
+          onDelete={deleteScheduledTask}
+          onMarkRead={markScheduledRead}
         />
         {/* 笔记 */}
         <button

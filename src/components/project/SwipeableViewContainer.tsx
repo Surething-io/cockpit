@@ -4,7 +4,7 @@ import { useRef, useEffect, useState, ReactNode, createContext, useContext, useM
 
 export type ViewType = 'agent' | 'explorer' | 'console';
 
-const VIEWS: ViewType[] = ['explorer', 'agent', 'console'];
+const VIEWS: ViewType[] = ['agent', 'explorer', 'console'];
 const VIEW_LABELS: Record<ViewType, string> = {
   agent: 'AGENT',
   explorer: 'EXPLORER',
@@ -87,8 +87,10 @@ export function SwipeableViewContainer({ activeView, onViewChange, children }: S
     const handleWheel = (e: WheelEvent) => {
       // 只处理横向滚动
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 2) {
-        // 智能判断：检查事件目标是否在可横向滚动的元素内
+        // iframe 内的滚动不拦截
         const target = e.target as Element;
+        if (target.tagName === 'IFRAME') return;
+        // 智能判断：检查事件目标是否在可横向滚动的元素内
         if (canScrollHorizontally(target)) {
           // 让元素自己处理横向滚动
           return;

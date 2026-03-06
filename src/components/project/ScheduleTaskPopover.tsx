@@ -86,9 +86,22 @@ function describeCron(expr: string): string | null {
   }
 }
 
+interface TaskParams {
+  message: string;
+  type: 'once' | 'interval' | 'cron';
+  delayMinutes?: number;
+  intervalMinutes?: number;
+  activeFrom?: string;
+  activeTo?: string;
+  cron?: string;
+}
+
 interface ScheduleTaskPopoverProps {
   onClose: () => void;
-  onCreate: (params: {
+  onCreate: (params: TaskParams) => void;
+  /** 编辑模式：传入现有任务数据 */
+  editTask?: {
+    id: string;
     message: string;
     type: 'once' | 'interval' | 'cron';
     delayMinutes?: number;
@@ -96,7 +109,8 @@ interface ScheduleTaskPopoverProps {
     activeFrom?: string;
     activeTo?: string;
     cron?: string;
-  }) => void;
+  };
+  onUpdate?: (id: string, params: TaskParams) => void;
 }
 
 // 快捷预设
@@ -123,14 +137,17 @@ const PRESETS = {
 
 type TaskType = 'once' | 'interval' | 'cron';
 
-export function ScheduleTaskPopover({ onClose, onCreate }: ScheduleTaskPopoverProps) {
-  const [type, setType] = useState<TaskType>('once');
-  const [message, setMessage] = useState('');
-  const [customMinutes, setCustomMinutes] = useState('');
-  const [customCron, setCustomCron] = useState('');
-  const [activeFrom, setActiveFrom] = useState('09:00');
-  const [activeTo, setActiveTo] = useState('18:00');
-  const [useTimeRange, setUseTimeRange] = useState(false);
+export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: ScheduleTaskPopoverProps) {
+  const isEdit = !!editTask;
+  const [type, setType] = useState<TaskType>(editTask?.type || 'once');
+  const [message, setMessage] = useState(editTask?.message || '');
+  const [customMinutes, setCustomMinutes] = useState(
+    editTask ? String(editTask.delayMinutes || editTask.intervalMinutes || '') : ''
+  );
+  const [customCron, setCustomCron] = useState(editTask?.cron || '');
+  const [activeFrom, setActiveFrom] = useState(editTask?.activeFrom || '09:00');
+  const [activeTo, setActiveTo] = useState(editTask?.activeTo || '18:00');
+  const [useTimeRange, setUseTimeRange] = useState(!!(editTask?.activeFrom && editTask?.activeTo));
   const [selectedPreset, setSelectedPreset] = useState<number | string | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
@@ -151,36 +168,46 @@ export function ScheduleTaskPopover({ onClose, onCreate }: ScheduleTaskPopoverPr
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
-  const handleCreate = useCallback(() => {
+  const handleSubmit = useCallback(() => {
     if (!message.trim()) return;
+
+    let params: TaskParams | null = null;
 
     if (type === 'once') {
       const minutes = selectedPreset as number || parseInt(customMinutes, 10);
       if (!minutes || minutes <= 0) return;
-      onCreate({ message: message.trim(), type: 'once', delayMinutes: minutes });
+      params = { message: message.trim(), type: 'once', delayMinutes: minutes };
     } else if (type === 'interval') {
       const minutes = selectedPreset as number || parseInt(customMinutes, 10);
       if (!minutes || minutes <= 0) return;
-      onCreate({
+      params = {
         message: message.trim(),
         type: 'interval',
         intervalMinutes: minutes,
         ...(useTimeRange ? { activeFrom, activeTo } : {}),
-      });
+      };
     } else if (type === 'cron') {
       const cron = (selectedPreset as string) || customCron.trim();
       if (!cron) return;
-      onCreate({ message: message.trim(), type: 'cron', cron });
+      params = { message: message.trim(), type: 'cron', cron };
+    }
+
+    if (!params) return;
+
+    if (isEdit && editTask && onUpdate) {
+      onUpdate(editTask.id, params);
+    } else {
+      onCreate(params);
     }
 
     onClose();
-  }, [message, type, selectedPreset, customMinutes, customCron, useTimeRange, activeFrom, activeTo, onCreate, onClose]);
+  }, [message, type, selectedPreset, customMinutes, customCron, useTimeRange, activeFrom, activeTo, onCreate, onClose, isEdit, editTask, onUpdate]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       onClose();
     } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      handleCreate();
+      handleSubmit();
     }
   };
 
@@ -198,11 +225,11 @@ export function ScheduleTaskPopover({ onClose, onCreate }: ScheduleTaskPopoverPr
   return (
     <div
       ref={popoverRef}
-      className="absolute bottom-full left-0 mb-2 w-80 bg-popover border border-border rounded-lg shadow-lg z-50"
+      className={`w-80 bg-popover border border-border rounded-lg shadow-lg z-50 ${isEdit ? '' : 'absolute bottom-full left-0 mb-2'}`}
       onKeyDown={handleKeyDown}
     >
       <div className="px-3 py-2 border-b border-border bg-muted/50 rounded-t-lg">
-        <span className="text-sm font-medium">创建定时任务</span>
+        <span className="text-sm font-medium">{isEdit ? '编辑定时任务' : '创建定时任务'}</span>
       </div>
 
       <div className="p-3 space-y-3">
@@ -332,11 +359,11 @@ export function ScheduleTaskPopover({ onClose, onCreate }: ScheduleTaskPopoverPr
 
         {/* 创建按钮 */}
         <button
-          onClick={handleCreate}
+          onClick={handleSubmit}
           disabled={!isValid()}
           className="w-full py-1.5 text-sm font-medium rounded bg-brand text-white hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          创建 (⌘↩)
+          {isEdit ? '保存 (⌘↩)' : '创建 (⌘↩)'}
         </button>
       </div>
     </div>

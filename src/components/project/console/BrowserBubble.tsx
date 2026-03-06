@@ -239,6 +239,26 @@ export function BrowserBubble({
 
   const handleIframeLoad = useCallback(() => setIsLoading(false), []);
 
+  // 防止 iframe 获取焦点时浏览器自动滚动父级 scroll container
+  useEffect(() => {
+    const wrapper = iframeWrapperRef.current;
+    if (!wrapper) return;
+    const handler = () => {
+      // 找到最近的可滚动父级并恢复其 scrollTop
+      let parent = wrapper.parentElement;
+      while (parent) {
+        if (parent.scrollHeight > parent.clientHeight) {
+          const saved = parent.scrollTop;
+          requestAnimationFrame(() => { parent!.scrollTop = saved; });
+          break;
+        }
+        parent = parent.parentElement;
+      }
+    };
+    wrapper.addEventListener('focusin', handler);
+    return () => wrapper.removeEventListener('focusin', handler);
+  }, []);
+
   // 监听 Chrome 插件 postMessage（链接拦截 & 导航通知）
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
@@ -453,7 +473,7 @@ export function BrowserBubble({
         )}
 
         {/* ---- 内容区（iframe 或休眠占位）---- */}
-        <div ref={iframeWrapperRef} className="w-full" style={{ height: contentHeight }}>
+        <div ref={iframeWrapperRef} className="w-full" style={{ height: contentHeight, overscrollBehavior: 'contain' }}>
           {isSleeping ? (
             /* 休眠：显示网址占位符 */
             <div

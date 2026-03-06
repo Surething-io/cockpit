@@ -94,6 +94,20 @@ export async function PATCH(request: NextRequest) {
     } else if (action === 'markAllRead') {
       await scheduledTaskManager.markAllRead();
       return NextResponse.json({ success: true });
+    } else if (action === 'update' && fields) {
+      // 编辑任务：重新计算 nextFireTime
+      const now = Date.now();
+      const updatedFields = { ...fields };
+      if (fields.type === 'once' && fields.delayMinutes) {
+        updatedFields.nextFireTime = now + fields.delayMinutes * 60000;
+        updatedFields.completed = false;
+      } else if (fields.type === 'interval' && fields.intervalMinutes) {
+        updatedFields.nextFireTime = now + fields.intervalMinutes * 60000;
+      } else if (fields.type === 'cron' && fields.cron) {
+        updatedFields.nextFireTime = getNextCronTime(fields.cron);
+      }
+      updatedFields.paused = false; // 编辑后自动恢复
+      task = await scheduledTaskManager.updateTask(id, updatedFields);
     } else if (fields) {
       task = await scheduledTaskManager.updateTask(id, fields);
     }

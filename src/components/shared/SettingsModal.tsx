@@ -18,13 +18,28 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   // 检测插件是否已安装 + 获取路径
   useEffect(() => {
     if (!isOpen) return;
-    // 插件的 content script 会设置 window.__cockpitBridge
+    // 检查 content script 设置的 DOM dataset + API 注册的 extensionId
     const timeout = setTimeout(() => {
-      if ((window as unknown as Record<string, unknown>).__cockpitBridge) {
+      const bridgeId = document.documentElement?.dataset?.cockpitBridgeId;
+      const bridgeVersion = document.documentElement?.dataset?.cockpitBridgeVersion;
+      if (bridgeId) {
         setExtensionStatus('installed');
-        setExtensionVersion(((window as unknown as Record<string, unknown>).__cockpitBridge as { version?: string })?.version || null);
+        setExtensionVersion(bridgeVersion || null);
       } else {
-        setExtensionStatus('not-installed');
+        // fallback: 从 API 检测（background script 每 3 秒注册）
+        fetch('/api/extension/version')
+          .then(r => r.json())
+          .then(d => {
+            if (d.extensionId) {
+              setExtensionStatus('installed');
+              setExtensionVersion(d.version || null);
+            } else {
+              setExtensionStatus('not-installed');
+            }
+            if (d.path) setExtensionPath(d.path);
+          })
+          .catch(() => setExtensionStatus('not-installed'));
+        return;
       }
     }, 300);
     // 获取插件目录路径

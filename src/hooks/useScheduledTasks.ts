@@ -128,6 +128,16 @@ export function useScheduledTasks() {
     notifyChanged();
   }, [reload]);
 
+  const updateTask = useCallback(async (id: string, fields: Partial<Pick<ScheduledTask, 'message' | 'type' | 'delayMinutes' | 'intervalMinutes' | 'activeFrom' | 'activeTo' | 'cron'>>) => {
+    await fetch('/api/scheduled-tasks', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, action: 'update', fields }),
+    }).catch(() => {});
+    reload();
+    notifyChanged();
+  }, [reload]);
+
   const markRead = useCallback(async (id: string) => {
     await fetch('/api/scheduled-tasks', {
       method: 'PATCH',
@@ -156,6 +166,7 @@ export function useScheduledTasks() {
     pauseTask,
     resumeTask,
     deleteTask,
+    updateTask,
     markRead,
     markAllRead,
   };

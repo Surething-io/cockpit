@@ -138,10 +138,10 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
         if (e.key === '1') {
           e.preventDefault();
-          handleViewChange('explorer');
+          handleViewChange('agent');
         } else if (e.key === '2') {
           e.preventDefault();
-          handleViewChange('agent');
+          handleViewChange('explorer');
         } else if (e.key === '3') {
           e.preventDefault();
           handleViewChange('console');
@@ -202,16 +202,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         {/* 内容区域 - 根据 activeView 切换（滑动效果） */}
         {initialCwd ? (
           <SwipeableContent>
-            {/* EXPLORER 视图：FileBrowser */}
-            <div className="w-1/3 h-full overflow-hidden">
-              <FileBrowserModal
-                onClose={() => handleViewChange('agent')}
-                cwd={initialCwd}
-                initialTab={fileBrowserInitialTab}
-                tabSwitchTrigger={tabSwitchTrigger}
-              />
-            </div>
-
             {/* AGENT 视图：Tab bar + Chat */}
             <div className="w-1/3 h-full flex flex-col overflow-hidden">
               <TabBar
@@ -250,6 +240,16 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* EXPLORER 视图：FileBrowser */}
+            <div className="w-1/3 h-full overflow-hidden">
+              <FileBrowserModal
+                onClose={() => handleViewChange('agent')}
+                cwd={initialCwd}
+                initialTab={fileBrowserInitialTab}
+                tabSwitchTrigger={tabSwitchTrigger}
+              />
             </div>
 
             {/* CONSOLE 视图：命令执行 + 浏览器 */}

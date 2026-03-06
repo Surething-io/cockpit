@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { ScheduledTask } from '@/hooks/useScheduledTasks';
+import { ScheduleTaskPopover } from '@/components/project/ScheduleTaskPopover';
 
 interface ScheduledTasksPanelProps {
   collapsed?: boolean;
@@ -12,6 +13,7 @@ interface ScheduledTasksPanelProps {
   onResume: (id: string) => void;
   onDelete: (id: string) => void;
   onMarkRead: (id: string) => void;
+  onUpdateTask: (id: string, fields: Partial<Pick<ScheduledTask, 'message' | 'type' | 'delayMinutes' | 'intervalMinutes' | 'activeFrom' | 'activeTo' | 'cron'>>) => void;
 }
 
 function getProjectName(cwd: string): string {
@@ -65,8 +67,10 @@ export function ScheduledTasksPanel({
   onResume,
   onDelete,
   onMarkRead,
+  onUpdateTask,
 }: ScheduledTasksPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // 自动刷新显示（倒计时）
@@ -184,6 +188,16 @@ export function ScheduledTasksPanel({
                       </div>
                       {/* 操作按钮 */}
                       <div className="flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {/* 编辑 */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
+                          className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                          title="编辑"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
                         {/* 暂停/恢复 */}
                         {task.paused ? (
                           <button
@@ -262,6 +276,33 @@ export function ScheduledTasksPanel({
                 )}
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 编辑弹窗 */}
+      {editingTask && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setEditingTask(null)} />
+          <div className="relative">
+            <ScheduleTaskPopover
+              onClose={() => setEditingTask(null)}
+              onCreate={() => {}}
+              editTask={{
+                id: editingTask.id,
+                message: editingTask.message,
+                type: editingTask.type,
+                delayMinutes: editingTask.delayMinutes,
+                intervalMinutes: editingTask.intervalMinutes,
+                activeFrom: editingTask.activeFrom,
+                activeTo: editingTask.activeTo,
+                cron: editingTask.cron,
+              }}
+              onUpdate={(id, params) => {
+                onUpdateTask(id, params);
+                setEditingTask(null);
+              }}
+            />
           </div>
         </div>
       )}

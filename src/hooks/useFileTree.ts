@@ -157,32 +157,13 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     }
   }, [cwd]);
 
-  const loadFileContent = useCallback(async (filePath: string) => {
-    setIsLoadingContent(true);
-    setFileContent(null);
-    setShowBlame(false);
-    setBlameLines([]);
-    setBlameError(null);
-    setBlameSelectedCommit(null);
-    try {
-      const res = await fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`);
-      const data = await res.json();
-      setFileContent(data);
-      addToRecentFiles(filePath);
-    } catch (err) {
-      console.error('Error loading file content:', err);
-      setFileContent({ type: 'error', message: 'Failed to load file' });
-    } finally {
-      setIsLoadingContent(false);
-    }
-  }, [cwd, addToRecentFiles]);
-
-  const loadBlame = useCallback(async () => {
-    if (!selectedPath) return;
+  const loadBlame = useCallback(async (pathOverride?: string) => {
+    const path = pathOverride || selectedPath;
+    if (!path) return;
     setIsLoadingBlame(true);
     setBlameError(null);
     try {
-      const res = await fetch(`/api/files/blame?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(selectedPath)}`);
+      const res = await fetch(`/api/files/blame?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(path)}`);
       const data = await res.json();
       if (data.error) {
         setBlameError(data.error);
@@ -196,6 +177,28 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
       setIsLoadingBlame(false);
     }
   }, [cwd, selectedPath]);
+
+  const loadFileContent = useCallback(async (filePath: string) => {
+    setIsLoadingContent(true);
+    setFileContent(null);
+    setShowBlame(false);
+    setBlameLines([]);
+    setBlameError(null);
+    setBlameSelectedCommit(null);
+    try {
+      const res = await fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`);
+      const data = await res.json();
+      setFileContent(data);
+      addToRecentFiles(filePath);
+      // 自动加载 blame（用于 inline blame 注释，不阻塞文件内容展示）
+      loadBlame(filePath);
+    } catch (err) {
+      console.error('Error loading file content:', err);
+      setFileContent({ type: 'error', message: 'Failed to load file' });
+    } finally {
+      setIsLoadingContent(false);
+    }
+  }, [cwd, addToRecentFiles, loadBlame]);
 
   const handleToggleBlame = useCallback(() => {
     if (showBlame) {

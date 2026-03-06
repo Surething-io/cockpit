@@ -1,8 +1,151 @@
 'use client';
 
-import React, { memo, useCallback } from 'react';
+import React, { memo, useCallback, useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { CodeComment } from '@/hooks/useComments';
 import type { BlameLine } from './fileBrowser/types';
+
+/** 相对时间格式化（中文） */
+function formatRelativeTime(unixTimestamp: number): string {
+  const now = Date.now();
+  const diff = now - unixTimestamp * 1000;
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return '刚刚';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}天前`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}个月前`;
+  const years = Math.floor(months / 12);
+  return `${years}年前`;
+}
+
+// ============================================
+// Inline blame annotation with custom tooltip
+// ============================================
+
+function InlineBlameAnnotation({ blame, onClick }: { blame: BlameLine; onClick?: (blame: BlameLine) => void }) {
+  const [showTip, setShowTip] = useState(false);
+  const spanRef = useRef<HTMLSpanElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
+
+  const closeTip = useCallback(() => {
+    setShowTip(false);
+  }, []);
+
+  // 点击外部关闭（唯一的关闭方式）
+  // 区分点击和框选：mousedown 记录位置，mouseup 判断是否移动过（框选不关闭）
+  useEffect(() => {
+    if (!showTip) return;
+    let downX = 0, downY = 0;
+    const handleDown = (e: MouseEvent) => { downX = e.clientX; downY = e.clientY; };
+    const handleUp = (e: MouseEvent) => {
+      // 移动超过 5px 视为框选，不关闭
+      if (Math.abs(e.clientX - downX) > 5 || Math.abs(e.clientY - downY) > 5) return;
+      const target = e.target as Node;
+      if (tipRef.current?.contains(target)) return;
+      if (spanRef.current?.contains(target)) return;
+      closeTip();
+    };
+    document.addEventListener('mousedown', handleDown);
+    document.addEventListener('mouseup', handleUp);
+    return () => {
+      document.removeEventListener('mousedown', handleDown);
+      document.removeEventListener('mouseup', handleUp);
+    };
+  }, [showTip, closeTip]);
+
+  const clampTip = useCallback(() => {
+    const tip = tipRef.current;
+    const anchor = spanRef.current;
+    if (!tip || !anchor) return;
+
+    const anchorRect = anchor.getBoundingClientRect();
+    const tipRect = tip.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    let x = anchorRect.left;
+    if (x + tipRect.width > vw - 8) x = vw - tipRect.width - 8;
+    if (x < 8) x = 8;
+
+    let y: number;
+    if (anchorRect.top - tipRect.height - 4 < 0) {
+      y = anchorRect.bottom + 4;
+    } else {
+      y = anchorRect.top - tipRect.height - 4;
+    }
+    if (y + tipRect.height > vh - 8) y = vh - tipRect.height - 8;
+
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }, []);
+
+  // hover 延迟显示，移走取消；显示后只能点击外部关闭
+  const enterTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const handleEnter = useCallback(() => {
+    if (showTip) return;
+    clearTimeout(enterTimer.current);
+    enterTimer.current = setTimeout(() => {
+      setShowTip(true);
+      requestAnimationFrame(() => requestAnimationFrame(clampTip));
+    }, 500);
+  }, [showTip, clampTip]);
+
+  const handleLeave = useCallback(() => {
+    // 只取消未触发的延迟，已显示的 tip 不关闭
+    clearTimeout(enterTimer.current);
+  }, []);
+
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onClick?.(blame);
+  }, [blame, onClick]);
+
+  // 计算初始位置：基于 anchor rect，避免首帧出现在 (0,0)
+  const getInitialPos = useCallback(() => {
+    const anchor = spanRef.current;
+    if (!anchor) return { left: -9999, top: -9999 };
+    const r = anchor.getBoundingClientRect();
+    return { left: r.left, top: Math.max(0, r.top - 120) }; // 粗估 tooltip 高度 ~120px
+  }, []);
+
+  const dateStr = new Date(blame.time * 1000).toLocaleString();
+  const firstLine = blame.message.split('\n')[0] || '';
+  const body = blame.message.split('\n').slice(1).join('\n').trim();
+
+  return (
+    <span
+      ref={spanRef}
+      className="select-none text-xs text-muted-foreground/50 ml-6 cursor-pointer hover:text-muted-foreground/80"
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
+      onClick={handleClick}
+    >
+      {blame.author.split(' ')[0]}, {formatRelativeTime(blame.time)} · {firstLine}
+      {showTip && createPortal(
+        <div
+          ref={tipRef}
+          className="fixed z-[9999] bg-card border border-border rounded-lg shadow-xl p-3 text-xs text-foreground whitespace-pre-wrap max-w-md select-text"
+          style={{ ...getInitialPos(), minWidth: 280, cursor: 'text' }}
+        >
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="font-mono text-brand">{blame.hash}</span>
+            <span className="text-muted-foreground">{blame.author}</span>
+            <span className="text-muted-foreground/60">{dateStr}</span>
+          </div>
+          <div className="font-medium">{firstLine}</div>
+          {body && <div className="mt-1 text-muted-foreground">{body}</div>}
+        </div>,
+        document.body,
+      )}
+    </span>
+  );
+}
 
 // ============================================
 // Author color palette for blame view
@@ -54,6 +197,9 @@ export interface CodeLineProps {
   onBlameClick?: (line: BlameLine) => void;
   onBlameMouseEnter?: (line: BlameLine, e: React.MouseEvent) => void;
   onBlameMouseLeave?: () => void;
+  // ---- Inline blame annotation ----
+  inlineBlameData?: BlameLine | null;
+  onInlineBlameClick?: (blame: BlameLine) => void;
 }
 
 /**
@@ -113,6 +259,8 @@ export const CodeLine = memo(function CodeLine({
   onBlameClick,
   onBlameMouseEnter,
   onBlameMouseLeave,
+  inlineBlameData,
+  onInlineBlameClick,
 }: CodeLineProps) {
   const handleCodeClick = useCallback((e: React.MouseEvent<HTMLSpanElement>) => {
     if (!e.metaKey || !onCmdClick) return;
@@ -208,12 +356,16 @@ export const CodeLine = memo(function CodeLine({
         </span>
       )}
       <span
-        className="flex-1 px-3 whitespace-pre overflow-x-auto"
-        dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+        className="flex-1 px-3 whitespace-pre overflow-x-auto select-text"
         onClick={handleCodeClick}
         onMouseOver={handleCodeMouseOver}
         onMouseLeave={onTokenHoverLeave}
-      />
+      >
+        <span dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+        {inlineBlameData && (
+          <InlineBlameAnnotation blame={inlineBlameData} onClick={onInlineBlameClick} />
+        )}
+      </span>
     </div>
   );
 });

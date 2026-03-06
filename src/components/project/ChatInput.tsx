@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback
 import { ImageInfo } from '@/types/chat';
 import { ImagePreview } from '../shared/ImagePreview';
 import { toast } from '../shared/Toast';
+import { ScheduleTaskPopover } from './ScheduleTaskPopover';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -21,13 +22,23 @@ interface ChatInputProps {
   onShowComments?: () => void;
   onShowUserMessages?: () => void;
   onOpenNote?: () => void;
+  onCreateScheduledTask?: (params: {
+    message: string;
+    type: 'once' | 'interval' | 'cron';
+    delayMinutes?: number;
+    intervalMinutes?: number;
+    activeFrom?: string;
+    activeTo?: string;
+    cron?: string;
+  }) => void;
 }
 
-export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowComments, onShowUserMessages, onOpenNote }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowComments, onShowUserMessages, onOpenNote, onCreateScheduledTask }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [images, setImages] = useState<ImageInfo[]>([]);
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [showCommands, setShowCommands] = useState(false);
+  const [showScheduler, setShowScheduler] = useState(false);
   const [filteredCommands, setFilteredCommands] = useState<CommandInfo[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -345,6 +356,32 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
           </button>
+        )}
+
+        {/* 定时任务按钮 */}
+        {onCreateScheduledTask && (
+          <div className="relative">
+            <button
+              onClick={() => setShowScheduler(!showScheduler)}
+              className={`p-2 rounded-lg transition-all ${
+                showScheduler
+                  ? 'text-brand bg-brand/10'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95'
+              }`}
+              title="定时任务"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" strokeWidth={2} />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2" />
+              </svg>
+            </button>
+            {showScheduler && (
+              <ScheduleTaskPopover
+                onClose={() => setShowScheduler(false)}
+                onCreate={onCreateScheduledTask}
+              />
+            )}
+          </div>
         )}
 
         <textarea

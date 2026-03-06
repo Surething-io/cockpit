@@ -1461,6 +1461,18 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
             <Variable className="w-4 h-4" />
           </button>
 
+          <button
+            type="button"
+            onClick={() => { executeCommand('zsh'); }}
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
+            title="启动 zsh 交互终端"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="4 17 10 11 4 5" />
+              <line x1="12" y1="19" x2="20" y2="19" />
+            </svg>
+          </button>
+
           <input
             ref={inputRef}
             type="text"

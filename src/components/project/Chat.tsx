@@ -26,10 +26,22 @@ interface ChatProps {
   onTitleChange?: (title: string) => void;
   onShowGitStatus?: () => void;
   onOpenNote?: () => void;
+  onCreateScheduledTask?: (params: {
+    cwd: string;
+    tabId: string;
+    sessionId: string;
+    message: string;
+    type: 'once' | 'interval' | 'cron';
+    delayMinutes?: number;
+    intervalMinutes?: number;
+    activeFrom?: string;
+    activeTo?: string;
+    cron?: string;
+  }) => void;
   onOpenSession?: (sessionId: string, title?: string) => void; // 打开新的 session（用于 Fork）
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onOpenSession }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession }: ChatProps) {
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -82,6 +94,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     isLoadingMore,
     hasMoreHistory,
     loadMoreHistory,
+    loadHistoryByCwdAndSessionId,
   } = useChatHistory(messages, setMessages, sessionId, {
     cwd: initialCwd,
     initialSessionId,
@@ -89,6 +102,16 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     onTitleChange,
     onTokenUsage: setHistoryTokenUsage,
   });
+
+  // 切到前台时增量拉取消息（覆盖定时任务等外部写入场景）
+  // 带 limit 只拉最近 N 轮 + fingerprint 检查 + 时间节流（useChatHistory 内部）
+  const prevActiveRef = useRef(isActive);
+  useEffect(() => {
+    if (isActive && !prevActiveRef.current && sessionId && initialCwd && !isLoading) {
+      loadHistoryByCwdAndSessionId(initialCwd, sessionId, true, 10);
+    }
+    prevActiveRef.current = isActive;
+  }, [isActive, sessionId, initialCwd, isLoading, loadHistoryByCwdAndSessionId]);
 
   // 合并 token usage：stream 优先，否则用 history 的
   const tokenUsage = streamTokenUsage || historyTokenUsage;
@@ -249,6 +272,14 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
           onShowComments={initialCwd ? () => setIsCommentsListOpen(true) : undefined}
           onShowUserMessages={() => setIsUserMessagesOpen(true)}
           onOpenNote={onOpenNote}
+          onCreateScheduledTask={onCreateScheduledTask && initialCwd && tabId && sessionId ? (params) => {
+            onCreateScheduledTask({
+              ...params,
+              cwd: initialCwd,
+              tabId,
+              sessionId,
+            });
+          } : undefined}
         />
       </div>
 

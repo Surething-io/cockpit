@@ -9,13 +9,14 @@ import React from 'react';
 interface FloatingToolbarProps {
   x: number;
   y: number;
+  visible: boolean;
   container: HTMLElement;
   onAddComment: () => void;
   onSendToAI: () => void;
   isChatLoading?: boolean;
 }
 
-export function FloatingToolbar({ x, y, container, onAddComment, onSendToAI, isChatLoading }: FloatingToolbarProps) {
+export function FloatingToolbar({ x, y, visible, container, onAddComment, onSendToAI, isChatLoading }: FloatingToolbarProps) {
   const containerRect = container.getBoundingClientRect();
   const relX = x - containerRect.left;
   const relY = y - containerRect.top;
@@ -27,7 +28,12 @@ export function FloatingToolbar({ x, y, container, onAddComment, onSendToAI, isC
   return (
     <div
       className="floating-toolbar absolute z-[200] flex items-center gap-1.5 bg-card border border-border rounded-lg shadow-xl p-1.5"
-      style={{ left: toolbarLeft, top: toolbarTop }}
+      style={{
+        left: toolbarLeft,
+        top: toolbarTop,
+        visibility: visible ? 'visible' : 'hidden',
+        pointerEvents: visible ? 'auto' : 'none',
+      }}
     >
       <button
         className="px-3 py-1.5 text-xs font-medium border border-brand text-brand rounded-md hover:bg-brand/10 transition-colors"

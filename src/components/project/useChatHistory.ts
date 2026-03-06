@@ -8,6 +8,8 @@ import { ChatMessage, TokenUsage } from '@/types/chat';
 // ============================================
 
 const TURNS_PER_PAGE = 10;
+// incremental 拉取节流间隔（毫秒）
+const INCREMENTAL_THROTTLE_MS = 5_000;
 
 // ============================================
 // Types
@@ -58,6 +60,11 @@ export function useChatHistory(
   const onTokenUsageRef = useRef(onTokenUsage);
   onTokenUsageRef.current = onTokenUsage;
 
+  // 文件指纹：用于 incremental 检查文件是否有变更
+  const fingerprintRef = useRef<string | undefined>(undefined);
+  // 上次 incremental 拉取时间：用于节流
+  const lastIncrementalFetchRef = useRef(0);
+
   // 根据 cwd + sessionId 加载历史消息
   const loadHistoryByCwdAndSessionId = useCallback(async (
     cwdPath: string,
@@ -66,17 +73,42 @@ export function useChatHistory(
     limit?: number,
     beforeTurnIndex?: number
   ) => {
+    // 方向 2: incremental 时间节流 — 距上次拉取不超过 N 秒则跳过
+    if (incremental) {
+      const now = Date.now();
+      if (now - lastIncrementalFetchRef.current < INCREMENTAL_THROTTLE_MS) {
+        return;
+      }
+      lastIncrementalFetchRef.current = now;
+    }
+
     if (!incremental) {
       setIsLoadingHistory(true);
     }
     try {
+      // 方向 3: incremental 时携带指纹，服务端判断文件未变更则直接返回
+      const requestBody: Record<string, unknown> = { cwd: cwdPath, sessionId: sid, limit, beforeTurnIndex };
+      if (incremental && fingerprintRef.current) {
+        requestBody.ifFingerprint = fingerprintRef.current;
+      }
+
       const response = await fetch('/api/session-by-path', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd: cwdPath, sessionId: sid, limit, beforeTurnIndex }),
+        body: JSON.stringify(requestBody),
       });
       if (response.ok) {
         const data = await response.json();
+
+        // 方向 3: 文件未变更，跳过所有处理
+        if (data.notModified) {
+          return;
+        }
+
+        // 保存文件指纹
+        if (data.fingerprint) {
+          fingerprintRef.current = data.fingerprint;
+        }
 
         // 更新分页状态
         if (data.totalTurns !== undefined) {
@@ -181,6 +213,10 @@ export function useChatHistory(
         }
         if (data.hasMore !== undefined) {
           setHasMoreHistory(data.hasMore);
+        }
+        // 保存指纹
+        if (data.fingerprint) {
+          fingerprintRef.current = data.fingerprint;
         }
       }
     } catch (error) {

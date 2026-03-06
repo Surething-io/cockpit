@@ -15,10 +15,22 @@ interface ChatPanelProps {
   onStateChange: (tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string }) => void;
   onShowGitStatus?: () => void;
   onOpenNote?: () => void;
+  onCreateScheduledTask?: (params: {
+    cwd: string;
+    tabId: string;
+    sessionId: string;
+    message: string;
+    type: 'once' | 'interval' | 'cron';
+    delayMinutes?: number;
+    intervalMinutes?: number;
+    activeFrom?: string;
+    activeTo?: string;
+    cron?: string;
+  }) => void;
   onOpenSession?: (sessionId: string, title?: string) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, isActive, onStateChange, onShowGitStatus, onOpenNote, onOpenSession }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, isActive, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -44,6 +56,7 @@ export function ChatPanel({ tabId, cwd, sessionId, isActive, onStateChange, onSh
       onTitleChange={handleTitleChange}
       onShowGitStatus={onShowGitStatus}
       onOpenNote={onOpenNote}
+      onCreateScheduledTask={onCreateScheduledTask}
       onOpenSession={onOpenSession}
     />
   );

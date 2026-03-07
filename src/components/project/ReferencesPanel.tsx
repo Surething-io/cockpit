@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { X } from 'lucide-react';
 import type { Location } from '@/lib/lsp/types';
-import { getHighlighter, getLanguageFromPath } from './codeHighlighter';
+import { type BundledLanguage, getHighlighter, getLanguageFromPath, tokensToHtml } from '@/lib/codeHighlighter';
 
 interface ReferencesPanelProps {
   references: Location[];
@@ -37,6 +37,7 @@ function useHighlightedLines(references: Location[]) {
 
     (async () => {
       const highlighter = await getHighlighter();
+      if (version !== versionRef.current) return;
       const result = new Map<number, string>();
 
       for (let i = 0; i < references.length; i++) {
@@ -45,12 +46,10 @@ function useHighlightedLines(references: Location[]) {
         const lang = getLanguageFromPath(ref.file);
         if (lang === 'text') continue;
         try {
-          const html = highlighter.codeToHtml(ref.lineText, { lang, theme });
-          // Extract inner tokens: <pre...><code><span class="line">...tokens...</span></code></pre>
-          // greedy match to capture all nested token spans inside <span class="line">...</span>
-          const match = html.match(/<span class="line">([\s\S]*)<\/span>/);
-          if (match) {
-            result.set(i, match[1]);
+          const tokens = highlighter.codeToTokens(ref.lineText, { lang: lang as BundledLanguage, theme });
+          const html = tokensToHtml(tokens.tokens[0] || []);
+          if (html) {
+            result.set(i, html);
           }
         } catch {
           // skip highlighting errors

@@ -35,7 +35,7 @@ if (args[0] === 'list') {
 } else {
   id = args[0];
   action = args[1];
-  if (!action) {
+  if (!action || action === '--help' || action === '-h') {
     action = '_status';
   }
 }
@@ -110,10 +110,7 @@ async function run() {
       const data = await res.json();
       if (!data.ok) { console.error(data.error); process.exit(1); }
       if (data.data.output) {
-        // 去掉所有 ANSI/VT100 转义序列，输出纯文本
-        // eslint-disable-next-line no-control-regex
-        const plain = data.data.output.replace(/\x1b\[[0-9;?]*[a-zA-Z]|\x1b\].*?(?:\x07|\x1b\\)|\x1b[()][AB012]|\x1b[>=]|\x1b[78]|\x07|\x08|\r/g, '');
-        process.stdout.write(plain);
+        process.stdout.write(data.data.output);
       }
     } catch (err) {
       console.error(`Error: ${err.message}`);

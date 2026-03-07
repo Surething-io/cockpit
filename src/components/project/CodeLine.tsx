@@ -204,28 +204,27 @@ export interface CodeLineProps {
 
 /**
  * 从点击位置计算 column
- * 遍历代码行内的 span 元素，累加前面 span 的文本长度
+ * 使用 caretRangeFromPoint 精确定位点击的文本偏移，
+ * 再遍历文本节点累加 column
  */
 function getColumnFromClick(e: React.MouseEvent, codeSpan: HTMLElement): number {
-  const target = e.target as HTMLElement;
-  if (target === codeSpan) return 1; // 点在空白区
+  // 用浏览器 API 精确获取点击位置对应的文本节点和偏移
+  const range = document.caretRangeFromPoint(e.clientX, e.clientY);
+  if (!range || !codeSpan.contains(range.startContainer)) {
+    return 1;
+  }
 
-  // 获取代码区内所有文本节点相关的 span
+  const targetNode = range.startContainer;
+  const targetOffset = range.startOffset;
+
+  // 遍历代码行内所有文本节点，累加到目标节点的 column
   const walker = document.createTreeWalker(codeSpan, NodeFilter.SHOW_TEXT);
   let column = 1;
   let node: Text | null;
 
   while ((node = walker.nextNode() as Text | null)) {
-    const parentSpan = node.parentElement;
-    if (parentSpan === target || parentSpan?.contains(target) || target.contains(parentSpan!)) {
-      // 找到目标 span，加上点击在当前节点内的偏移
-      const sel = window.getSelection();
-      if (sel && sel.focusNode === node) {
-        column += sel.focusOffset;
-      } else {
-        // 近似取 span 中间位置
-        column += Math.floor((node.textContent?.length || 0) / 2);
-      }
+    if (node === targetNode) {
+      column += targetOffset;
       return column;
     }
     column += node.textContent?.length || 0;
@@ -269,6 +268,10 @@ export const CodeLine = memo(function CodeLine({
 
     const codeSpan = e.currentTarget;
     const column = getColumnFromClick(e, codeSpan);
+
+    // 清除 Cmd+Click 可能产生的文本选区，避免干扰后续交互
+    window.getSelection()?.removeAllRanges();
+
     onCmdClick(lineNum, column);
   }, [lineNum, onCmdClick]);
 

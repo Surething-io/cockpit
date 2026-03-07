@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { X } from 'lucide-react';
 import type { SearchResult } from './fileBrowser/types';
-import { getHighlighter, getLanguageFromPath } from './codeHighlighter';
+import { type BundledLanguage, getHighlighter, getLanguageFromPath, tokensToHtml } from '@/lib/codeHighlighter';
 
 interface SearchResultsPanelProps {
   results: SearchResult[];
@@ -43,9 +43,9 @@ function useHighlightedSearchLines(results: SearchResult[]) {
           if (!match.content) continue;
           const key = `${result.path}:${match.lineNumber}`;
           try {
-            const html = highlighter.codeToHtml(match.content, { lang, theme });
-            const m = html.match(/<span class="line">([\s\S]*)<\/span>/);
-            if (m) map.set(key, m[1]);
+            const tokens = highlighter.codeToTokens(match.content, { lang: lang as BundledLanguage, theme });
+            const html = tokensToHtml(tokens.tokens[0] || []);
+            if (html) map.set(key, html);
           } catch { /* skip */ }
         }
       }

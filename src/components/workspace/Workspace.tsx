@@ -36,8 +36,8 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   const iframeRefs = useRef<Map<string, HTMLIFrameElement>>(new Map());
   // 追踪各项目的 activeView（agent/explorer/console）
   const [activeViewMap, setActiveViewMap] = useState<Record<string, string>>({});
-  // 待发送给 iframe 的 sessionId（iframe 加载完成后发送 SWITCH_SESSION）
-  const pendingSessionIdsRef = useRef<Map<string, string>>(new Map());
+  // 待发送给 iframe 的 sessionId + switchToAgent 标记
+  const pendingSessionIdsRef = useRef<Map<string, { sessionId: string; switchToAgent?: boolean }>>(new Map());
   // 跟踪每个项目当前的 sessionId（用于更新 URL，不用于 iframe src）
   const projectSessionIdsRef = useRef<Map<string, string>>(new Map());
   // 截图前保存的项目索引，截图完成后恢复
@@ -125,7 +125,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
 
     // 如果有 initialSessionId，记录到待发送列表和跟踪列表
     if (initialSessionId) {
-      pendingSessionIdsRef.current.set(initialCwd, initialSessionId);
+      pendingSessionIdsRef.current.set(initialCwd, { sessionId: initialSessionId });
       projectSessionIdsRef.current.set(initialCwd, initialSessionId);
     }
 
@@ -228,7 +228,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
           setActiveIndex(newActiveIndex);
           saveProjects(newProjects, newActiveIndex, collapsed);
           if (targetSessionId) {
-            pendingSessionIdsRef.current.set(cwd, targetSessionId);
+            pendingSessionIdsRef.current.set(cwd, { sessionId: targetSessionId });
           }
         }
         updateUrl(cwd, targetSessionId);
@@ -302,6 +302,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         iframe.contentWindow.postMessage({
           type: 'SWITCH_SESSION',
           sessionId,
+          switchToAgent: true,
         }, '*');
       }
       setActiveIndex(existingIndex);
@@ -315,7 +316,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
       setActiveIndex(newActiveIndex);
       saveProjects(newProjects, newActiveIndex, collapsed);
       // 记录待发送的 sessionId（iframe 加载后发送）
-      pendingSessionIdsRef.current.set(cwd, sessionId);
+      pendingSessionIdsRef.current.set(cwd, { sessionId, switchToAgent: true });
     }
 
     // 更新 URL
@@ -338,6 +339,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         iframe.contentWindow.postMessage({
           type: 'SWITCH_SESSION',
           sessionId,
+          switchToAgent: true,
         }, '*');
       }
       if (existingIndex !== activeIndex) {
@@ -353,7 +355,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
       setActiveIndex(newActiveIndex);
       saveProjects(newProjects, newActiveIndex, collapsed);
       // 记录待发送的 sessionId（iframe 加载后发送）
-      pendingSessionIdsRef.current.set(cwd, sessionId);
+      pendingSessionIdsRef.current.set(cwd, { sessionId, switchToAgent: true });
     }
 
     // 更新 URL
@@ -367,13 +369,14 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
 
   // iframe 加载完成后，发送待发送的 sessionId
   const handleIframeLoad = useCallback((cwd: string) => {
-    const pendingSessionId = pendingSessionIdsRef.current.get(cwd);
-    if (pendingSessionId) {
+    const pending = pendingSessionIdsRef.current.get(cwd);
+    if (pending) {
       const iframe = iframeRefs.current.get(cwd);
       if (iframe?.contentWindow) {
         iframe.contentWindow.postMessage({
           type: 'SWITCH_SESSION',
-          sessionId: pendingSessionId,
+          sessionId: pending.sessionId,
+          switchToAgent: pending.switchToAgent,
         }, '*');
       }
       pendingSessionIdsRef.current.delete(cwd);

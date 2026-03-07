@@ -575,18 +575,7 @@ export const CommandBubble = memo(function CommandBubble({
             <div className="border-t border-border px-4 py-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
               <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse flex-shrink-0" />
               {usePty ? (
-                <>
-                  <span className="text-xs text-muted-foreground flex-1">点击终端区域输入</span>
-                  {onToggleMaximize && (
-                    <button
-                      onClick={onToggleMaximize}
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                      title="最大化 (⌘M)"
-                    >
-                      最大化
-                    </button>
-                  )}
-                </>
+                <span className="text-xs text-muted-foreground flex-1">点击终端区域输入</span>
               ) : onStdin ? (
                 <input
                   ref={stdinRef}

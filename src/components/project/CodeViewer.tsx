@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
-import type { BundledLanguage } from 'shiki';
 import { useMenuContainer } from './FileContextMenu';
 import { AddCommentInput, SendToAIInput } from './CodeInputCards';
-import { getHighlighter, getLanguageFromPath, escapeHtml } from './codeHighlighter';
+import { useLineHighlight } from '@/hooks/useLineHighlight';
+import { type BundledLanguage, getHighlighter, getLanguageFromPath, escapeHtml, tokensToHtml } from '@/lib/codeHighlighter';
 import { FloatingToolbar } from './FloatingToolbar';
 import { ViewCommentCard } from './ViewCommentCard';
 import { CodeLine, AUTHOR_COLORS } from './CodeLine';
@@ -17,7 +17,7 @@ import { toast, confirm } from '../shared/Toast';
 import type { FileEditorHandle } from './FileEditorModal';
 
 // Re-export utilities used by other modules
-export { getHighlighter, getLanguageFromPath } from './codeHighlighter';
+export { getHighlighter, getLanguageFromPath } from '@/lib/codeHighlighter';
 
 // contentEditable 行 div 的内联样式（用于 innerHTML 字符串拼接）
 const EDITOR_LINE_STYLE = 'white-space:pre;padding:0 12px;min-height:20px;line-height:20px';
@@ -290,19 +290,11 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
         const isDarkMode = document.documentElement.classList.contains('dark');
         const theme = isDarkMode ? 'github-dark' : 'github-light';
         const editLineArr = editContent.split('\n');
-
-        const highlighted = editLineArr.map((line) => {
-          try {
-            const html = highlighter.codeToHtml(line || ' ', {
-              lang: language as BundledLanguage,
-              theme,
-            });
-            const match = html.match(/<code[^>]*>([\s\S]*?)<\/code>/);
-            return match ? match[1] : escapeHtml(line);
-          } catch {
-            return escapeHtml(line);
-          }
+        const result = highlighter.codeToTokens(editLineArr.join('\n'), {
+          lang: language as BundledLanguage,
+          theme,
         });
+        const highlighted = result.tokens.map(lineTokens => tokensToHtml(lineTokens));
 
         // 保存光标 → 替换 innerHTML → 恢复光标
         const cursorPos = saveCursorPosition(container);
@@ -861,67 +853,8 @@ interface SimpleCodeBlockProps {
 }
 
 export function SimpleCodeBlock({ content, filePath, className = '' }: SimpleCodeBlockProps) {
-  const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null);
-  const [isDark, setIsDark] = useState(false);
-
-  useEffect(() => {
-    const checkDarkMode = () => {
-      setIsDark(document.documentElement.classList.contains('dark'));
-    };
-    checkDarkMode();
-    const observer = new MutationObserver(checkDarkMode);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const highlight = async () => {
-      try {
-        const highlighter = await getHighlighter();
-        const language = getLanguageFromPath(filePath);
-        const theme = isDark ? 'github-dark' : 'github-light';
-
-        const lines = content.split('\n');
-        const lnChars = Math.max(4, String(lines.length).length);
-
-        const html = highlighter.codeToHtml(content, {
-          lang: language as BundledLanguage,
-          theme,
-          transformers: [
-            {
-              line(node, line) {
-                const lineNum = String(line).padStart(lnChars, ' ');
-                node.children.unshift({
-                  type: 'element',
-                  tagName: 'span',
-                  properties: { class: 'line-number' },
-                  children: [{ type: 'text', value: lineNum }],
-                });
-              },
-            },
-          ],
-        });
-
-        setHighlightedHtml(html);
-      } catch (err) {
-        console.error('Highlight error:', err);
-        setHighlightedHtml(null);
-      }
-    };
-
-    highlight();
-  }, [content, filePath, isDark]);
-
-  if (highlightedHtml) {
-    return (
-      <div
-        className={`overflow-auto text-sm font-mono ${className}`}
-        dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-      />
-    );
-  }
-
-  const lines = content.split('\n');
+  const lines = useMemo(() => content.split('\n'), [content]);
+  const highlightedLines = useLineHighlight(lines, filePath);
   const lnChars = Math.max(4, String(lines.length).length);
 
   return (
@@ -931,7 +864,10 @@ export function SimpleCodeBlock({ content, filePath, className = '' }: SimpleCod
           <span className="text-slate-9 select-none pr-4 text-right" style={{ minWidth: `${lnChars + 2}ch` }}>
             {i + 1}
           </span>
-          <span className="flex-1">{line}</span>
+          <span
+            className="flex-1"
+            dangerouslySetInnerHTML={{ __html: highlightedLines[i] || escapeHtml(line || ' ') }}
+          />
         </div>
       ))}
     </pre>

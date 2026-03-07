@@ -10,7 +10,8 @@ import { useChatContextOptional } from './ChatContext';
 import { AddCommentInput, SendToAIInput } from './CodeInputCards';
 import { computeLineDiff } from './diffAlgorithm';
 import { toast } from '../shared/Toast';
-import { useLineHighlight, HighlightedContent } from './useLineHighlight';
+import { useLineHighlight } from '@/hooks/useLineHighlight';
+import { escapeHtml } from '@/lib/codeHighlighter';
 import { DiffMinimap } from './DiffMinimap';
 import { FloatingToolbar } from './FloatingToolbar';
 import { ViewCommentCard } from './ViewCommentCard';
@@ -397,10 +398,9 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
                       <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
                         {line.lineNum || ''}
                       </span>
-                      <HighlightedContent
-                        content={line.content}
-                        highlightedLine={line.originalIdx >= 0 ? highlightedLines.get(line.originalIdx) : undefined}
+                      <span
                         className="whitespace-pre pl-2"
+                        dangerouslySetInnerHTML={{ __html: (line.originalIdx >= 0 && highlightedLines[line.originalIdx]) || escapeHtml(line.content || ' ') }}
                       />
                     </div>
                   );
@@ -459,10 +459,9 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
                         {commentsEnabled && lineNum > 0 && !hasComments && <span className="w-4" />}
                         <span className="flex-1 text-right pr-1">{lineNum || ''}</span>
                       </span>
-                      <HighlightedContent
-                        content={line?.content || ''}
-                        highlightedLine={line?.originalIdx >= 0 ? highlightedLines.get(line.originalIdx) : undefined}
+                      <span
                         className="whitespace-pre pl-2"
+                        dangerouslySetInnerHTML={{ __html: (line?.originalIdx >= 0 && highlightedLines[line.originalIdx]) || escapeHtml(line?.content || ' ') }}
                       />
                     </div>
                   );
@@ -591,10 +590,9 @@ export function DiffUnifiedView({ oldContent, newContent, filePath }: Omit<DiffV
                 {line.type === 'removed' ? '-' : line.type === 'added' ? '+' : ' '}
               </span>
               {/* Content with syntax highlighting */}
-              <HighlightedContent
-                content={line.content}
-                highlightedLine={highlightedLines.get(virtualItem.index)}
+              <span
                 className="flex-1 whitespace-pre pl-1"
+                dangerouslySetInnerHTML={{ __html: highlightedLines[virtualItem.index] || escapeHtml(line.content || ' ') }}
               />
             </div>
           );

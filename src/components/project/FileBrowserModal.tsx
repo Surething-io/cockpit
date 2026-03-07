@@ -27,6 +27,7 @@ import { useContentSearch } from '../../hooks/useContentSearch';
 import { useGitStatus } from '../../hooks/useGitStatus';
 import { useGitHistory } from '../../hooks/useGitHistory';
 import { useLSPDefinition, useLSPHover, useLSPReferences, useLSPWarmup } from '../../hooks/useLSP';
+import { useNavigationHistory } from '../../hooks/useNavigationHistory';
 import { getLanguageForFile } from '@/lib/lsp/types';
 import { HoverTooltip } from './HoverTooltip';
 import { ReferencesPanel } from './ReferencesPanel';
@@ -54,6 +55,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const lspDefinition = useLSPDefinition(cwd);
   const lspHover = useLSPHover(cwd);
   const lspReferences = useLSPReferences(cwd);
+  const navHistory = useNavigationHistory();
 
   const pageVisible = usePageVisible();
   const fileTree = useFileTree({ cwd });
@@ -126,13 +128,19 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       ? def.file.slice(cwdPrefix.length)
       : def.file;
 
+    // 跳转前把当前位置压入导航历史
+    navHistory.push({
+      filePath: fileTree.selectedPath,
+      lineNumber: visibleLineRef.current,
+    });
+
     if (relativePath === fileTree.selectedPath) {
       // 同文件：滚动到目标行
       fileTree.setTargetLineNumber(def.line);
     } else {
       fileTree.handleSelectFile(relativePath, def.line);
     }
-  }, [fileTree, cwd, isLSPSupported, lspDefinition]);
+  }, [fileTree, cwd, isLSPSupported, lspDefinition, navHistory]);
 
   const handleLSPTokenHover = useCallback((line: number, column: number, rect: { x: number; y: number }) => {
     if (!fileTree.selectedPath || !isLSPSupported) return;
@@ -242,10 +250,46 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     }
   }, [fileTree, gitHistory.selectedBranch, gitHistory.loadCommits]);
 
+  // ========== Navigation History: Go Back / Go Forward ==========
+  const handleNavBack = useCallback(() => {
+    if (!fileTree.selectedPath) return;
+    const current = { filePath: fileTree.selectedPath, lineNumber: visibleLineRef.current };
+    const target = navHistory.goBack(current);
+    if (!target) return;
+    if (target.filePath === fileTree.selectedPath) {
+      fileTree.setTargetLineNumber(target.lineNumber);
+    } else {
+      fileTree.handleSelectFile(target.filePath, target.lineNumber);
+    }
+  }, [fileTree, navHistory]);
+
+  const handleNavForward = useCallback(() => {
+    if (!fileTree.selectedPath) return;
+    const current = { filePath: fileTree.selectedPath, lineNumber: visibleLineRef.current };
+    const target = navHistory.goForward(current);
+    if (!target) return;
+    if (target.filePath === fileTree.selectedPath) {
+      fileTree.setTargetLineNumber(target.lineNumber);
+    } else {
+      fileTree.handleSelectFile(target.filePath, target.lineNumber);
+    }
+  }, [fileTree, navHistory]);
+
   // ========== Keyboard Shortcuts ==========
   const lastEscTimeRef = useRef<number>(0);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+- → Go Back / Ctrl+Shift+- → Go Forward
+      if (e.ctrlKey && e.key === '-') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleNavForward();
+        } else {
+          handleNavBack();
+        }
+        return;
+      }
+
       // Cmd+P / Ctrl+P → Quick file open
       if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
         e.preventDefault();
@@ -282,7 +326,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, fileTree.showBlame, fileTree.blameSelectedCommit, fileTree, showQuickOpen, lspReferences.visible, lspReferences.closeReferences, showSearchPanel]);
+  }, [onClose, fileTree.showBlame, fileTree.blameSelectedCommit, fileTree, showQuickOpen, lspReferences.visible, lspReferences.closeReferences, showSearchPanel, handleNavBack, handleNavForward]);
 
   // ========== Initial Data Load (once on mount) ==========
   useEffect(() => {

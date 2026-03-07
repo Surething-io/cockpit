@@ -566,9 +566,11 @@ body {
 .hl-kw { background: rgba(217, 119, 6, 0.4); border-radius: 2px; padding: 0 2px; } /* keyword */
 
 /* ---- LSP Cmd+Click visual feedback ---- */
+.cmd-held-container {
+  cursor: pointer;
+}
 .cmd-held-container span[style]:hover {
   text-decoration: underline;
-  cursor: pointer;
 }
 
 /* ---- LSP jump flash highlight (0.5s fade out) ---- */

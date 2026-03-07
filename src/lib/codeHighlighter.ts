@@ -1,4 +1,6 @@
-import { createHighlighter, type Highlighter, type BundledLanguage } from 'shiki';
+import { createHighlighter, type Highlighter, type BundledLanguage, type ThemedToken } from 'shiki';
+
+export type { BundledLanguage };
 
 // ============================================
 // Types
@@ -77,6 +79,15 @@ export function escapeHtml(str: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+/** 将单行 token 数组拼为 HTML 字符串 */
+export function tokensToHtml(tokens: ThemedToken[]): string {
+  return tokens
+    .map(t => t.color
+      ? `<span style="color:${t.color}">${escapeHtml(t.content)}</span>`
+      : escapeHtml(t.content))
+    .join('');
 }
 
 export function findMatches(

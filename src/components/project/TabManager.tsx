@@ -182,16 +182,20 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'SWITCH_SESSION') {
-        const { sessionId } = event.data;
+        const { sessionId, switchToAgent } = event.data;
         if (sessionId) {
           handleSelectSession(sessionId);
+          // 从侧边栏（最近会话/常用会话/定时任务）跳转时，自动切到 Agent 视图
+          if (switchToAgent) {
+            handleViewChange('agent');
+          }
         }
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [handleSelectSession]);
+  }, [handleSelectSession, handleViewChange]);
 
   // 打开 Git Status 视图
   const handleShowGitStatus = useCallback(() => {

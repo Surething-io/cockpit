@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { BundledLanguage } from 'shiki';
 import { useComments, type CodeComment } from '@/hooks/useComments';
 import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, type CodeReference } from '@/hooks/useAllComments';
 import { useChatContextOptional } from './ChatContext';
-import { getHighlighter, getLanguageFromPath, escapeHtml, findMatches, type SearchMatch } from './codeHighlighter';
+import { useLineHighlight } from '@/hooks/useLineHighlight';
+import { escapeHtml, findMatches, type SearchMatch } from '@/lib/codeHighlighter';
 import type { BlameLine } from './fileBrowser/types';
 import type { CommitInfo } from './CommitDetailPanel';
 
@@ -91,8 +91,6 @@ export function useCodeViewerLogic({
   onScrollToLineComplete,
   visibleLineRef,
 }: Pick<CodeViewerProps, 'content' | 'filePath' | 'showSearch' | 'cwd' | 'enableComments' | 'scrollToLine' | 'onScrollToLineComplete' | 'visibleLineRef'>) {
-  const [highlightedLines, setHighlightedLines] = useState<string[]>([]);
-  const [isDark, setIsDark] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const parentRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -145,6 +143,7 @@ export function useCodeViewerLogic({
   });
 
   const lines = useMemo(() => content.split('\n'), [content]);
+  const highlightedLines = useLineHighlight(lines, filePath);
 
   // Group comments by their end line
   const commentsByEndLine = useMemo(() => {
@@ -182,47 +181,6 @@ export function useCodeViewerLogic({
     }
   }, [matches.length, searchQuery, caseSensitive, wholeWord]);
 
-  // Dark mode detection
-  useEffect(() => {
-    const checkDarkMode = () => {
-      setIsDark(document.documentElement.classList.contains('dark'));
-    };
-    checkDarkMode();
-    const observer = new MutationObserver(checkDarkMode);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
-
-  // Syntax highlighting
-  useEffect(() => {
-    const highlight = async () => {
-      try {
-        const highlighter = await getHighlighter();
-        const language = getLanguageFromPath(filePath);
-        const theme = isDark ? 'github-dark' : 'github-light';
-
-        const highlighted = lines.map(line => {
-          try {
-            const html = highlighter.codeToHtml(line || ' ', {
-              lang: language as BundledLanguage,
-              theme,
-            });
-            const match = html.match(/<code[^>]*>([\s\S]*?)<\/code>/);
-            return match ? match[1] : escapeHtml(line);
-          } catch {
-            return escapeHtml(line);
-          }
-        });
-
-        setHighlightedLines(highlighted);
-      } catch (err) {
-        console.error('Highlight error:', err);
-        setHighlightedLines(lines.map(line => escapeHtml(line)));
-      }
-    };
-
-    highlight();
-  }, [content, filePath, isDark, lines]);
 
   // Row data for virtualizer
   const rowData = useMemo(() => {

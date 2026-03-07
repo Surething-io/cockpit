@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { getHighlighter, getLanguageFromPath } from './codeHighlighter';
+import { useState, useMemo, useRef, useCallback } from 'react';
+import { useLineHighlight } from '@/hooks/useLineHighlight';
+import { escapeHtml } from '@/lib/codeHighlighter';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 
 type MdViewMode = 'source' | 'preview' | 'split';
@@ -14,44 +15,13 @@ interface MarkdownFileViewerProps {
 
 export function MarkdownFileViewer({ content, filePath, className = '' }: MarkdownFileViewerProps) {
   const [mdViewMode, setMdViewMode] = useState<MdViewMode>('source');
-  const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null);
-  const [isDark, setIsDark] = useState(false);
+  const lines = useMemo(() => content.split('\n'), [content]);
+  const highlightedLines = useLineHighlight(lines, filePath);
 
   // 双栏滚动同步
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
   const isSyncingRef = useRef(false);
-
-  // 检测暗色模式
-  useEffect(() => {
-    const checkDarkMode = () => {
-      setIsDark(document.documentElement.classList.contains('dark'));
-    };
-    checkDarkMode();
-    const observer = new MutationObserver(checkDarkMode);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
-
-  // 高亮 Markdown 源码（用于原文和双栏模式）
-  useEffect(() => {
-    if (!content || mdViewMode === 'preview') return;
-
-    const highlight = async () => {
-      try {
-        const highlighter = await getHighlighter();
-        const lang = getLanguageFromPath(filePath);
-        const html = highlighter.codeToHtml(content, {
-          lang,
-          theme: isDark ? 'github-dark' : 'github-light',
-        });
-        setHighlightedHtml(html);
-      } catch {
-        setHighlightedHtml(null);
-      }
-    };
-    highlight();
-  }, [content, filePath, isDark, mdViewMode]);
 
   // 滚动同步处理
   const handleScroll = useCallback((source: 'left' | 'right') => {
@@ -112,14 +82,14 @@ export function MarkdownFileViewer({ content, filePath, className = '' }: Markdo
 
   // 渲染源码（带高亮）
   const renderSource = () => (
-    highlightedHtml ? (
-      <div
-        className="font-mono text-sm [&_pre]:!bg-transparent [&_pre]:!p-0 [&_pre]:!m-0"
-        dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-      />
-    ) : (
-      <pre className="font-mono text-sm text-foreground whitespace-pre-wrap">{content}</pre>
-    )
+    <pre className="font-mono text-sm text-foreground whitespace-pre-wrap">
+      {lines.map((line, i) => (
+        <span
+          key={i}
+          dangerouslySetInnerHTML={{ __html: (highlightedLines[i] || escapeHtml(line || ' ')) + '\n' }}
+        />
+      ))}
+    </pre>
   );
 
   return (

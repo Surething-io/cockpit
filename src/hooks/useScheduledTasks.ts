@@ -20,6 +20,7 @@ export interface ScheduledTask {
   lastFiredAt?: number;
   lastResult?: 'success' | 'error';
   createdAt: number;
+  sortIndex?: number;
 }
 
 interface CreateTaskParams {
@@ -158,6 +159,16 @@ export function useScheduledTasks() {
     notifyChanged();
   }, [reload]);
 
+  const reorderTasks = useCallback(async (orderedIds: string[]) => {
+    await fetch('/api/scheduled-tasks', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: '_', action: 'reorder', fields: { orderedIds } }),
+    }).catch(() => {});
+    reload();
+    notifyChanged();
+  }, [reload]);
+
   return {
     tasks,
     unreadCount,
@@ -169,5 +180,6 @@ export function useScheduledTasks() {
     updateTask,
     markRead,
     markAllRead,
+    reorderTasks,
   };
 }

@@ -18,36 +18,20 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   // 检测插件是否已安装 + 获取路径
   useEffect(() => {
     if (!isOpen) return;
-    // 检查 content script 设置的 DOM dataset + API 注册的 extensionId
-    const timeout = setTimeout(() => {
-      const bridgeId = document.documentElement?.dataset?.cockpitBridgeId;
-      const bridgeVersion = document.documentElement?.dataset?.cockpitBridgeVersion;
-      if (bridgeId) {
-        setExtensionStatus('installed');
-        setExtensionVersion(bridgeVersion || null);
-      } else {
-        // fallback: 从 API 检测（background script 每 3 秒注册）
-        fetch('/api/extension/version')
-          .then(r => r.json())
-          .then(d => {
-            if (d.extensionId) {
-              setExtensionStatus('installed');
-              setExtensionVersion(d.version || null);
-            } else {
-              setExtensionStatus('not-installed');
-            }
-            if (d.path) setExtensionPath(d.path);
-          })
-          .catch(() => setExtensionStatus('not-installed'));
-        return;
-      }
-    }, 300);
+    // 检查 content script 注入的 DOM dataset
+    const bridgeId = document.documentElement?.dataset?.cockpitBridgeId;
+    const bridgeVersion = document.documentElement?.dataset?.cockpitBridgeVersion;
+    if (bridgeId) {
+      setExtensionStatus('installed');
+      setExtensionVersion(bridgeVersion || null);
+    } else {
+      setExtensionStatus('not-installed');
+    }
     // 获取插件目录路径
     fetch('/api/extension/version')
       .then(r => r.json())
       .then(d => { if (d.path) setExtensionPath(d.path); })
       .catch(() => {});
-    return () => clearTimeout(timeout);
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -150,6 +134,30 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 >
                   复制插件目录路径
                 </button>
+                {extensionStatus === 'installed' && (
+                  <button
+                    onClick={() => {
+                      const extId = document.documentElement?.dataset?.cockpitBridgeId;
+                      if (extId && (window as any).chrome?.runtime?.sendMessage) {
+                        (window as any).chrome.runtime.sendMessage(extId, { type: 'reload' });
+                        toast('插件重载中...');
+                        // 重载后 content script 会重新注入，短暂显示未安装
+                        setExtensionStatus('checking');
+                        setTimeout(() => {
+                          const newId = document.documentElement?.dataset?.cockpitBridgeId;
+                          setExtensionStatus(newId ? 'installed' : 'not-installed');
+                          if (newId) {
+                            const v = document.documentElement?.dataset?.cockpitBridgeVersion;
+                            setExtensionVersion(v || null);
+                          }
+                        }, 1500);
+                      }
+                    }}
+                    className="px-3 py-1.5 text-xs border border-border text-foreground rounded-md hover:bg-muted transition-colors"
+                  >
+                    重载插件
+                  </button>
+                )}
               </div>
               {extensionPath && (
                 <p className="text-[11px] text-muted-foreground font-mono truncate">{extensionPath}</p>

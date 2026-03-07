@@ -49,6 +49,7 @@
         }
       }
       setBridgeData();
+
     }
     return;
   }
@@ -82,8 +83,17 @@
     );
 
     // ----------------------------------------------------------------
-    // 0. 伪装为顶层窗口（注入外部脚本到 main world，绕过 CSP）
-    //    CSP 允许 chrome-extension:// 源，因此用外部脚本替代内联脚本
+    // 0a. 阻止 iframe 内所有 scroll container 的滚动链传播到父文档
+    //     SPA 页面的滚动容器通常不是 <html>，而是内部 div，
+    //     必须用全局 CSS 覆盖所有元素
+    // ----------------------------------------------------------------
+    const overscrollStyle = document.createElement('style');
+    overscrollStyle.textContent = '*, html, body { overscroll-behavior: contain !important; }';
+    (document.head || document.documentElement).appendChild(overscrollStyle);
+
+    // ----------------------------------------------------------------
+    // 0b. 伪装为顶层窗口（注入外部脚本到 main world，绕过 CSP）
+    //     CSP 允许 chrome-extension:// 源，因此用外部脚本替代内联脚本
     // ----------------------------------------------------------------
     const disguiseScript = document.createElement('script');
     disguiseScript.src = chrome.runtime.getURL('disguise.js');
@@ -199,5 +209,19 @@
     } else {
       notifyParent('loaded', { url: window.location.href });
     }
+
+    // ----------------------------------------------------------------
+    // 7. 加载自动化层（automation.js）用于 CLI 控制
+    //    通过 import() 在 isolated world 中加载（保留 chrome.runtime 访问）
+    //    automation.js 监听 cockpit:cmd postMessage，执行 DOM 操作并返回结果
+    // ----------------------------------------------------------------
+    import(chrome.runtime.getURL('automation.js'))
+      .then(mod => {
+        if (mod.initAutomation) {
+          mod.initAutomation(realParent, chrome);
+          console.log(LOG_PREFIX, 'Automation layer activated (isolated world)');
+        }
+      })
+      .catch(e => console.warn(LOG_PREFIX, 'Failed to load automation layer:', e));
   }
 })();

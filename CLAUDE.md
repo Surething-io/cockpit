@@ -21,6 +21,17 @@
   - `TabManager.tsx` - Main tab manager component
   - `Chat.tsx` - Chat interface component
   - `ChatInput.tsx` - Chat input component
+  - `console/BrowserBubble.tsx` - 浏览器气泡组件（iframe + automation bridge）
+- `/src/lib/browser` - Browser automation 服务端逻辑
+  - `BrowserBridge.ts` - shortId 注册表 + pending request 管理
+- `/src/hooks/useBrowserBridge.ts` - BrowserBubble 的 WS bridge hook
+- `/chrome-extension` - Chrome 插件（Manifest V3）
+  - `content.js` - 内容脚本（iframe 内激活）
+  - `automation.js` - 自动化层（a11y tree、DOM 操作、console/network 拦截）
+  - `background.js` - Service Worker（Cookie 注入、截图）
+- `/bin` - CLI 入口
+  - `cock.mjs` - 主入口（构建+启动，子命令分流）
+  - `cock-browser.mjs` - `cock browser` 子命令
 
 ## Key Features
 

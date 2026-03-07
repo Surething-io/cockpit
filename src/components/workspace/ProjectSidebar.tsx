@@ -53,7 +53,7 @@ export function ProjectSidebar({
   currentActiveView,
 }: ProjectSidebarProps) {
   const { pinnedSessions, unpinSession, updateTitle, reorder } = usePinnedSessions();
-  const { tasks: scheduledTasks, unreadCount: scheduledUnread, reload: reloadScheduled, pauseTask, resumeTask, deleteTask: deleteScheduledTask, updateTask: updateScheduledTask, markRead: markScheduledRead } = useScheduledTasks();
+  const { tasks: scheduledTasks, unreadCount: scheduledUnread, reload: reloadScheduled, pauseTask, resumeTask, deleteTask: deleteScheduledTask, updateTask: updateScheduledTask, markRead: markScheduledRead, reorderTasks } = useScheduledTasks();
   const [isHovered, setIsHovered] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -325,6 +325,7 @@ export function ProjectSidebar({
           onDelete={deleteScheduledTask}
           onMarkRead={markScheduledRead}
           onUpdateTask={updateScheduledTask}
+          onReorder={reorderTasks}
         />
         {/* 笔记 */}
         <button

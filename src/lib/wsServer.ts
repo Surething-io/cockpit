@@ -7,9 +7,13 @@ import { dirname } from 'path';
 import { spawn, execSync } from 'child_process';
 import * as nodePty from 'node-pty';
 import { fileWatcher, type FileEvent } from './fileWatcher';
-import { GLOBAL_STATE_FILE, readJsonFile } from './paths';
+import { GLOBAL_STATE_FILE, readJsonFile, getTerminalHistoryPath, getTerminalOutputPath } from './paths';
+import { readFile } from 'fs/promises';
 import { getLastUserMessage } from './global-state';
 import { registerCommand, finalizeCommand, getRunningCommands, getRunningCommand, getRegistrySize, getAllProjectCwds } from './terminal/RunningCommandRegistry';
+import { registerBrowser, unregisterBrowser, resolvePendingRequest, getBrowserByShortId, createPendingRequest, sendCommandToBrowser, listBrowsers } from './browser/BrowserBridge';
+import { getTerminalByShortId, listTerminals, addOutputListener, addExitListener, registerTerminal, unregisterTerminal, getTerminalShortId } from './terminal/TerminalBridge';
+import { randomUUID } from 'crypto';
 
 interface GlobalSession {
   cwd: string;
@@ -52,6 +56,10 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     handleGlobalState(ws);
   } else if (pathname === '/ws/terminal') {
     handleTerminal(ws, query.projectCwd as string);
+  } else if (pathname === '/ws/browser') {
+    handleBrowser(ws, query.fullId as string);
+  } else if (pathname === '/ws/terminal-follow') {
+    handleTerminalFollow(ws, query.id as string);
   }
 });
 
@@ -62,7 +70,7 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
 export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean {
   const { pathname } = parse(req.url || '', true);
 
-  if (pathname === '/ws/watch' || pathname === '/ws/global-state' || pathname === '/ws/terminal') {
+  if (pathname === '/ws/watch' || pathname === '/ws/global-state' || pathname === '/ws/terminal' || pathname === '/ws/browser' || pathname === '/ws/terminal-follow') {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws, req);
     });
@@ -509,5 +517,291 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
       cleanup();
     }
     cleanupMap.clear();
+  });
+}
+
+// ========== Terminal CLI HTTP API ==========
+
+/**
+ * 从磁盘读取已结束命令的输出（JSONL 历史 + 独立 outputFile）
+ */
+async function readFinishedOutput(projectCwd: string, tabId: string, commandId: string): Promise<{ output: string; exitCode: number } | undefined> {
+  try {
+    const historyPath = getTerminalHistoryPath(projectCwd, tabId);
+    const content = await readFile(historyPath, 'utf-8');
+    for (const line of content.trim().split('\n').reverse()) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.id === commandId) {
+          let output = entry.output || '';
+          if (entry.outputFile) {
+            try { output = await readFile(entry.outputFile, 'utf-8'); } catch { /* file missing */ }
+          }
+          return { output, exitCode: entry.exitCode ?? 0 };
+        }
+      } catch { /* invalid line */ }
+    }
+  } catch { /* history file not found */ }
+  return undefined;
+}
+
+/**
+ * 处理 /api/terminal/<action> 请求
+ * 与 handleBrowserApi 同一模式，在 server.mjs 中拦截。
+ */
+export async function handleTerminalApi(req: IncomingMessage, res: import('http').ServerResponse): Promise<boolean> {
+  const { pathname } = parse(req.url || '', true);
+  const match = pathname?.match(/^\/api\/terminal\/([a-z]+)$/);
+  if (!match || req.method !== 'POST') return false;
+
+  const action = match[1];
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  let body: { id?: string; data?: string };
+  try { body = JSON.parse(Buffer.concat(chunks).toString()); } catch { body = {}; }
+
+  const sendJson = (status: number, data: unknown) => {
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(data));
+  };
+
+  if (action === 'list') {
+    sendJson(200, { ok: true, data: listTerminals(getRunningCommand) });
+    return true;
+  }
+
+  // register：用户点击 shortId 标识时按需注册
+  if (action === 'register') {
+    const { tabId, commandId, command, projectCwd } = body as { tabId?: string; commandId?: string; command?: string; projectCwd?: string };
+    if (!tabId || !commandId || !command) { sendJson(400, { ok: false, error: 'Missing tabId/commandId/command' }); return true; }
+    const shortId = registerTerminal(tabId, commandId, command, projectCwd);
+    sendJson(200, { ok: true, data: { shortId } });
+    return true;
+  }
+
+  // unregister：取消注册
+  if (action === 'unregister') {
+    const { commandId } = body as { commandId?: string };
+    if (!commandId) { sendJson(400, { ok: false, error: 'Missing commandId' }); return true; }
+    unregisterTerminal(commandId);
+    sendJson(200, { ok: true });
+    return true;
+  }
+
+  const { id } = body;
+  if (!id) { sendJson(400, { ok: false, error: 'Missing terminal id' }); return true; }
+
+  const entry = getTerminalByShortId(id);
+  if (!entry) { sendJson(404, { ok: false, error: `Terminal "${id}" not found` }); return true; }
+
+  const cmd = getRunningCommand(entry.commandId);
+
+  if (action === 'output') {
+    if (cmd) {
+      // 运行中：从内存缓冲区读取
+      const output = cmd.outputLines.join('\n') + (cmd.outputPartial ? '\n' + cmd.outputPartial : '');
+      sendJson(200, { ok: true, data: { output, command: entry.command, pid: cmd.pid, running: true } });
+    } else {
+      // 已结束：从磁盘读取（JSONL 历史 + outputFile）
+      if (!entry.projectCwd) { sendJson(404, { ok: false, error: 'Command projectCwd unknown' }); return true; }
+      const historyOutput = await readFinishedOutput(entry.projectCwd, entry.tabId, entry.commandId);
+      if (historyOutput !== undefined) {
+        sendJson(200, { ok: true, data: { output: historyOutput.output, command: entry.command, exitCode: historyOutput.exitCode, running: false } });
+      } else {
+        sendJson(404, { ok: false, error: 'Command output not available' });
+      }
+    }
+    return true;
+  }
+
+  if (action === 'stdin') {
+    if (!cmd) { sendJson(404, { ok: false, error: 'Command no longer running' }); return true; }
+    const { data } = body;
+    if (data === undefined) { sendJson(400, { ok: false, error: 'Missing data' }); return true; }
+
+    if (cmd.usePty && cmd.ptyProcess) {
+      try { cmd.ptyProcess.write(data); } catch { /* exited */ }
+    } else if (cmd.process.stdin?.writable) {
+      cmd.process.stdin.write(data);
+    } else {
+      sendJson(500, { ok: false, error: 'stdin not writable' }); return true;
+    }
+    sendJson(200, { ok: true });
+    return true;
+  }
+
+  sendJson(400, { ok: false, error: `Unknown action: ${action}` });
+  return true;
+}
+
+// ========== Terminal Follow WS ==========
+
+/**
+ * /ws/terminal-follow?id=<shortId> — 实时输出流
+ *
+ * 1. 先发 buffered output
+ * 2. 实时推新输出 { type: 'output', data }
+ * 3. 进程退出时发 { type: 'exit', code } 后关闭
+ */
+function handleTerminalFollow(ws: WebSocket, shortId: string): void {
+  if (!shortId) { ws.close(4400, 'Missing id parameter'); return; }
+
+  const entry = getTerminalByShortId(shortId);
+  if (!entry) { ws.close(4404, 'Terminal not found'); return; }
+
+  const cmd = getRunningCommand(entry.commandId);
+
+  // 发送已缓冲的输出
+  if (cmd) {
+    const buffered = cmd.outputLines.join('\n') + (cmd.outputPartial ? '\n' + cmd.outputPartial : '');
+    if (buffered) {
+      ws.send(JSON.stringify({ type: 'output', data: buffered }));
+    }
+  }
+
+  // 挂载实时监听
+  const unsubOutput = addOutputListener(entry.commandId, (data: string) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'output', data }));
+    }
+  });
+
+  const unsubExit = addExitListener(entry.commandId, (code: number) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'exit', code }));
+      ws.close();
+    }
+  });
+
+  const heartbeat = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'ping' }));
+    }
+  }, HEARTBEAT_INTERVAL);
+
+  ws.on('close', () => {
+    unsubOutput();
+    unsubExit();
+    clearInterval(heartbeat);
+  });
+}
+
+// ========== Browser Automation HTTP API ==========
+
+/**
+ * 处理 /api/browser/<action> 请求
+ *
+ * 必须在 server.mjs 中拦截，不走 Next.js API route，
+ * 因为 Next.js dev 模式会把 route 打包成独立模块实例，
+ * 与 wsServer 的 BrowserBridge registry 不共享内存。
+ */
+export async function handleBrowserApi(req: IncomingMessage, res: import('http').ServerResponse): Promise<boolean> {
+  const { pathname } = parse(req.url || '', true);
+  const match = pathname?.match(/^\/api\/browser\/([a-z]+)$/);
+  if (!match || req.method !== 'POST') return false;
+
+  const action = match[1];
+
+  // 读取请求体
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  let body: { id?: string; params?: Record<string, unknown>; timeout?: number };
+  try { body = JSON.parse(Buffer.concat(chunks).toString()); } catch { body = {}; }
+
+  const { id, params: cmdParams = {}, timeout = 10000 } = body;
+
+  const sendJson = (status: number, data: unknown) => {
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(data));
+  };
+
+  // list
+  if (action === 'list') {
+    sendJson(200, { ok: true, data: listBrowsers() });
+    return true;
+  }
+
+  // unregister：断开 WS 并删除注册条目
+  if (action === 'unregister') {
+    if (!id) { sendJson(400, { ok: false, error: 'Missing browser id' }); return true; }
+    const browser = getBrowserByShortId(id);
+    if (browser) {
+      if (browser.ws && browser.ws.readyState === WebSocket.OPEN) {
+        browser.ws.close();
+      }
+      unregisterBrowser(browser.fullId);
+    }
+    sendJson(200, { ok: true });
+    return true;
+  }
+
+  if (!id) { sendJson(400, { ok: false, error: 'Missing browser id' }); return true; }
+
+  const browser = getBrowserByShortId(id);
+  if (!browser) { sendJson(404, { ok: false, error: `Browser "${id}" not found` }); return true; }
+  if (!browser.ws || browser.ws.readyState !== WebSocket.OPEN) {
+    sendJson(503, { ok: false, error: `Browser "${id}" is disconnected` }); return true;
+  }
+
+  const reqId = `r-${randomUUID().slice(0, 8)}`;
+  const sent = sendCommandToBrowser(id, reqId, action, cmdParams);
+  if (!sent) { sendJson(503, { ok: false, error: 'Failed to send command' }); return true; }
+
+  try {
+    const data = await createPendingRequest(reqId, timeout);
+    sendJson(200, { ok: true, data });
+  } catch (err) {
+    sendJson(504, { ok: false, error: (err as Error).message });
+  }
+  return true;
+}
+
+// ========== Browser Automation Bridge ==========
+
+/**
+ * /ws/browser?fullId=... — 浏览器气泡自动化桥
+ *
+ * BrowserBubble 组件连接此 WS，注册 shortId，
+ * 接收来自 API 的自动化命令，转发给 iframe content script，
+ * 并将结果返回。
+ *
+ * 服务端 → 客户端：
+ *   { type: 'registered', shortId: 'abcd' }
+ *   { type: 'browser:cmd', reqId, action, params }
+ *
+ * 客户端 → 服务端：
+ *   { type: 'browser:cmd-result', reqId, ok, data?, error? }
+ */
+function handleBrowser(ws: WebSocket, fullId: string): void {
+  if (!fullId) {
+    ws.close(4400, 'Missing fullId parameter');
+    return;
+  }
+
+  const shortId = registerBrowser(fullId, ws);
+  ws.send(JSON.stringify({ type: 'registered', shortId }));
+
+  const heartbeat = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'ping' }));
+    }
+  }, HEARTBEAT_INTERVAL);
+
+  ws.on('message', (raw) => {
+    let msg: Record<string, unknown>;
+    try { msg = JSON.parse(raw.toString()); } catch { return; }
+
+    if (msg.type === 'browser:cmd-result') {
+      const { reqId, ok, data, error } = msg as {
+        reqId: string; ok: boolean; data?: unknown; error?: string;
+      };
+      resolvePendingRequest(reqId, ok, data, error);
+    }
+  });
+
+  ws.on('close', () => {
+    clearInterval(heartbeat);
+    unregisterBrowser(fullId);
   });
 }

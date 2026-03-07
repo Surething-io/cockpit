@@ -115,6 +115,17 @@ export function isEditInput(content: string): EditInput | null {
 }
 
 // ============================================
+// 图片文件检测
+// ============================================
+
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico', '.avif']);
+
+export function isImageFile(filePath: string): boolean {
+  const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
+  return IMAGE_EXTENSIONS.has(ext);
+}
+
+// ============================================
 // 文件路径提取
 // ============================================
 
@@ -125,7 +136,11 @@ export function getFilePath(content: string): string | null {
       return parsed.file_path;
     }
   } catch {
-    // ignore
+    // 非 JSON：检查是否是单行绝对路径（如工具结果直接返回文件路径）
+    const trimmed = content.trim();
+    if (trimmed.startsWith('/') && !trimmed.includes('\n') && trimmed.length < 500) {
+      return trimmed;
+    }
   }
   return null;
 }

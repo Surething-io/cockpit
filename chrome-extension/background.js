@@ -1,47 +1,9 @@
 /**
  * Cockpit Bridge - Background Service Worker
  *
- * 1. 定时轮询 Cockpit API，检测插件文件变化并自动重载
- * 2. iframe Cookie 注入：用 declarativeNetRequest 动态规则在网络层注入 Cookie 头
- *    不修改全局 Cookie 存储，只在请求层面补上 Cookie
+ * iframe Cookie 注入：用 declarativeNetRequest 动态规则在网络层注入 Cookie 头
+ * 不修改全局 Cookie 存储，只在请求层面补上 Cookie
  */
-
-const ALARM_NAME = 'cockpit-check-update';
-const CHECK_URL = 'http://localhost:3456/api/extension/version';
-const STORAGE_KEY = 'cockpit_updatedAt';
-
-// =========================================================================
-// 自动更新检测
-// =========================================================================
-
-async function checkUpdate() {
-  try {
-    const resp = await fetch(`${CHECK_URL}?extId=${encodeURIComponent(chrome.runtime.id)}`);
-    if (!resp.ok) return;
-    const data = await resp.json();
-    if (!data.updatedAt) return;
-
-    const stored = await chrome.storage.local.get(STORAGE_KEY);
-    const prev = stored[STORAGE_KEY];
-
-    if (!prev) {
-      await chrome.storage.local.set({ [STORAGE_KEY]: data.updatedAt });
-      console.log('[Cockpit Bridge] 初始文件时间:', data.updatedAt);
-    } else if (data.updatedAt !== prev) {
-      console.log('[Cockpit Bridge] 检测到更新:', prev, '→', data.updatedAt);
-      await chrome.storage.local.set({ [STORAGE_KEY]: data.updatedAt });
-      chrome.runtime.reload();
-    }
-  } catch {
-    // Cockpit 未运行，忽略
-  }
-}
-
-setInterval(checkUpdate, 3000);
-chrome.alarms.create(ALARM_NAME, { periodInMinutes: 0.5 });
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM_NAME) checkUpdate();
-});
 
 // =========================================================================
 // iframe Cookie 注入
@@ -271,6 +233,62 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ isCockpit });
     return;
   }
+
+  // evaluate：在 main world 执行 JS（绕过页面 CSP 限制）
+  // allFrames: true → 在所有 frame 中执行（解决跨域 iframe 访问问题）
+  if (message.type === 'cockpit:evaluate') {
+    const tabId = sender.tab?.id;
+    const frameId = sender.frameId ?? 0;
+    if (!tabId) {
+      sendResponse({ ok: false, error: 'No tab ID available' });
+      return;
+    }
+    const target = message.allFrames
+      ? { tabId, allFrames: true }
+      : { tabId, frameIds: [frameId] };
+    chrome.scripting.executeScript({
+      target,
+      world: 'MAIN',
+      func: (code) => {
+        try {
+          const fn = new Function(code);
+          return { ok: true, data: fn() };
+        } catch (e) {
+          return { ok: false, error: e.message };
+        }
+      },
+      args: [message.js],
+    })
+      .then(results => {
+        if (message.allFrames) {
+          // 多 frame：收集所有非 undefined 结果
+          const all = (results || [])
+            .map((r, i) => ({ frameId: r.frameId, ...r.result }))
+            .filter(r => r.ok && r.data !== undefined);
+          sendResponse({ ok: true, data: all.length === 1 ? all[0].data : all });
+        } else {
+          const r = results?.[0]?.result;
+          if (r?.ok) sendResponse({ ok: true, data: r.data });
+          else sendResponse({ ok: false, error: r?.error || 'Execution failed' });
+        }
+      })
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true; // async sendResponse
+  }
+
+  // 截图：automation.js 请求截取当前标签页可见区域
+  if (message.type === 'cockpit:capture-tab') {
+    const tabId = sender.tab?.id;
+    if (!tabId) {
+      sendResponse({ ok: false, error: 'No tab ID available' });
+      return;
+    }
+    chrome.tabs.captureVisibleTab(sender.tab.windowId, { format: 'png' })
+      .then(dataUrl => sendResponse({ ok: true, dataUrl }))
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true; // async sendResponse
+  }
+
 });
 
 // =========================================================================
@@ -287,6 +305,13 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
     return;
   }
 
+  if (message.type === 'reload') {
+    console.log('[Cockpit Bridge] externally_connectable: reload requested');
+    sendResponse({ ok: true });
+    chrome.runtime.reload();
+    return;
+  }
+
   if (message.type === 'prepare-iframe') {
     const tabId = sender.tab ? sender.tab.id : null;
     console.log(`[Cockpit Bridge] externally_connectable: prepare-iframe url=${message.url}, tabId=${tabId}`);
@@ -298,8 +323,6 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
 
   sendResponse({ ok: false, error: 'unknown type' });
 });
-
-checkUpdate();
 
 // =========================================================================
 // [调试] onSendHeaders = 所有修改完成后、实际发送到服务器的最终头

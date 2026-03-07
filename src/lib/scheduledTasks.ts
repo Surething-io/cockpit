@@ -26,6 +26,7 @@ export interface ScheduledTask {
   lastFiredAt?: number;
   lastResult?: 'success' | 'error';
   createdAt: number;
+  sortIndex?: number;
 }
 
 // ============================================
@@ -221,7 +222,10 @@ class ScheduledTaskManager {
    */
   async getTasks(): Promise<ScheduledTask[]> {
     await this.ensureInit();
-    return this.readTasksFromDisk();
+    const tasks = await this.readTasksFromDisk();
+    // 按 sortIndex 排序（无 sortIndex 的按 createdAt 排到末尾）
+    tasks.sort((a, b) => (a.sortIndex ?? a.createdAt) - (b.sortIndex ?? b.createdAt));
+    return tasks;
   }
 
   /**
@@ -354,6 +358,19 @@ class ScheduledTaskManager {
       }
     }
     if (changed) await writeJsonFile(SCHEDULED_TASKS_FILE, allTasks);
+  }
+
+  /**
+   * 重排任务顺序（按传入的 id 数组顺序写入 sortIndex）
+   */
+  async reorderTasks(orderedIds: string[]): Promise<void> {
+    await this.ensureInit();
+    const allTasks = await readJsonFile<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
+    for (let i = 0; i < orderedIds.length; i++) {
+      const task = allTasks.find(t => t.id === orderedIds[i]);
+      if (task) task.sortIndex = i;
+    }
+    await writeJsonFile(SCHEDULED_TASKS_FILE, allTasks);
   }
 
   // ---- Internal ----

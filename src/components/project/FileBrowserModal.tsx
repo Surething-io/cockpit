@@ -236,7 +236,11 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const handleTabChange = useCallback((tab: TabType) => {
     setActiveTab(tab);
     fileTree.setBlameSelectedCommit(null);
-  }, [fileTree]);
+    // 切到历史 tab 时兜底刷新 commits（防止 watch 事件丢失导致数据过期）
+    if (tab === 'history' && gitHistory.selectedBranch) {
+      gitHistory.loadCommits(gitHistory.selectedBranch);
+    }
+  }, [fileTree, gitHistory.selectedBranch, gitHistory.loadCommits]);
 
   // ========== Keyboard Shortcuts ==========
   const lastEscTimeRef = useRef<number>(0);

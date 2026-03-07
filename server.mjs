@@ -12,7 +12,7 @@ const handle = app.getRequestHandler();
 
 app.prepare().then(async () => {
   const upgradeHandler = app.getUpgradeHandler();
-  const { handleUpgrade, broadcastToGlobalState } = await import('./src/lib/wsServer.ts');
+  const { handleUpgrade, broadcastToGlobalState, handleBrowserApi, handleTerminalApi } = await import('./src/lib/wsServer.ts');
   const { scheduledTaskManager } = await import('./src/lib/scheduledTasks.ts');
 
   // 初始化定时任务管理器
@@ -21,7 +21,16 @@ app.prepare().then(async () => {
   });
   await scheduledTaskManager.init(port);
 
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
+    // /api/browser/* 必须在自定义 server 中处理（与 WS 共享 BrowserBridge 内存）
+    if (req.url?.startsWith('/api/browser/') && req.method === 'POST') {
+      const handled = await handleBrowserApi(req, res);
+      if (handled) return;
+    }
+    if (req.url?.startsWith('/api/terminal/') && req.method === 'POST') {
+      const handled = await handleTerminalApi(req, res);
+      if (handled) return;
+    }
     handle(req, res);
   });
 

@@ -8,6 +8,7 @@ import { ChildProcess } from 'child_process';
 import type { IPty } from 'node-pty';
 import fs from 'fs/promises';
 import { getTerminalHistoryPath, getTerminalOutputPath, ensureParentDir } from '@/lib/paths';
+import { registerTerminal, finalizeTerminal, notifyOutputListeners, notifyExitListeners } from './TerminalBridge';
 
 const MAX_OUTPUT_LINES = 5000;
 const OUTPUT_FILE_THRESHOLD = 4096;
@@ -71,6 +72,12 @@ export function registerCommand(cmd: Omit<RunningCommand, 'outputLines' | 'outpu
     outputPartial: '',
   });
 
+  // 注册到 TerminalBridge（CLI 访问用）
+  registerTerminal(cmd.tabId, cmd.commandId, cmd.command, cmd.projectCwd);
+
+  // 写占位条目到磁盘（无 output，标记 running）
+  writeHistoryPlaceholder(cmd.commandId, cmd.command, cmd.timestamp, cmd.cwd, cmd.projectCwd, cmd.tabId, !!cmd.usePty).catch(() => {});
+
   if (cmd.ptyProcess) {
     // PTY 模式：单一 data 事件（stdout + stderr 混合，与真实终端一致）
     const pty = cmd.ptyProcess;
@@ -127,6 +134,9 @@ export function appendCommandOutput(commandId: string, data: string): void {
       cmd.outputLines.splice(0, cmd.outputLines.length - MAX_OUTPUT_LINES);
     }
   }
+
+  // 通知 follow 监听器
+  notifyOutputListeners(commandId, data);
 }
 
 function getBufferedOutput(cmd: RunningCommand): string {
@@ -192,7 +202,45 @@ export function getAllProjectCwds(): string[] {
 }
 
 /**
- * 命令结束时：写入 JSONL 历史，清理注册表
+ * 命令创建时写占位条目到 JSONL（无 output，标记 running: true）
+ */
+async function writeHistoryPlaceholder(
+  commandId: string, command: string, timestamp: string,
+  cwd: string, projectCwd: string, tabId: string, usePty: boolean,
+): Promise<void> {
+  const historyPath = getTerminalHistoryPath(projectCwd, tabId);
+  await ensureParentDir(historyPath);
+
+  const entry: Record<string, unknown> = {
+    id: commandId, command, output: '', timestamp, cwd,
+    ...(usePty ? { usePty: true } : {}),
+    running: true,
+  };
+
+  let existingLines: string[] = [];
+  try {
+    const content = await fs.readFile(historyPath, 'utf-8');
+    existingLines = content.trim().split('\n').filter(Boolean);
+  } catch { /* 文件不存在 */ }
+
+  // 限制最多 100 条
+  if (existingLines.length >= 100) {
+    const removedLines = existingLines.slice(0, existingLines.length - 99);
+    for (const line of removedLines) {
+      try {
+        const old = JSON.parse(line);
+        if (old.outputFile) await fs.unlink(old.outputFile).catch(() => {});
+      } catch { /* ignore */ }
+    }
+    existingLines = existingLines.slice(-99);
+  }
+
+  existingLines.push(JSON.stringify(entry));
+  await fs.writeFile(historyPath, existingLines.join('\n') + '\n', 'utf-8');
+}
+
+/**
+ * 命令结束时：替换占位条目（写入 output），清理注册表
  */
 export async function finalizeCommand(commandId: string, exitCode: number, pid?: number): Promise<void> {
   const registry = getRegistry();
@@ -202,9 +250,13 @@ export async function finalizeCommand(commandId: string, exitCode: number, pid?:
   if (pid !== undefined && cmd.pid !== pid) return;
 
   console.log(`[registry] finalize: id=${commandId}, exitCode=${exitCode}, cmd="${cmd.command}", server=${getServerId()}`);
-  registry.delete(commandId);
+
+  // 通知 follow 监听器进程退出
+  notifyExitListeners(commandId, exitCode);
+  finalizeTerminal(commandId, exitCode);
 
   const output = getBufferedOutput(cmd);
+  registry.delete(commandId);
 
   const entry: Record<string, unknown> = {
     id: cmd.commandId,
@@ -228,7 +280,7 @@ export async function finalizeCommand(commandId: string, exitCode: number, pid?:
     entry.output = output;
   }
 
-  // 读取现有历史
+  // 读取现有历史，替换占位条目
   let existingLines: string[] = [];
   try {
     const content = await fs.readFile(historyPath, 'utf-8');
@@ -237,24 +289,20 @@ export async function finalizeCommand(commandId: string, exitCode: number, pid?:
     // 文件不存在
   }
 
-  // 幂等保护：检查是否已存在
-  const alreadyExists = existingLines.some((line) => {
-    try { return JSON.parse(line).id === commandId; } catch { return false; }
-  });
-  if (alreadyExists) return;
-
-  // 限制最多 100 条
-  if (existingLines.length >= 100) {
-    const removedLines = existingLines.slice(0, existingLines.length - 99);
-    for (const line of removedLines) {
-      try {
-        const old = JSON.parse(line);
-        if (old.outputFile) await fs.unlink(old.outputFile).catch(() => {});
-      } catch { /* ignore */ }
-    }
-    existingLines = existingLines.slice(-99);
+  // 找到占位条目并替换；若无则追加
+  let replaced = false;
+  for (let i = 0; i < existingLines.length; i++) {
+    try {
+      if (JSON.parse(existingLines[i]).id === commandId) {
+        existingLines[i] = JSON.stringify(entry);
+        replaced = true;
+        break;
+      }
+    } catch { /* ignore */ }
+  }
+  if (!replaced) {
+    existingLines.push(JSON.stringify(entry));
   }
 
-  existingLines.push(JSON.stringify(entry));
   await fs.writeFile(historyPath, existingLines.join('\n') + '\n', 'utf-8');
 }

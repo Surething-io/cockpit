@@ -58,9 +58,10 @@ interface ConsoleViewProps {
   initialShellCwd?: string;
   tabId?: string;
   onCwdChange?: (newCwd: string) => void;
+  onOpenNote?: () => void;
 }
 
-export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: ConsoleViewProps) {
+export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote }: ConsoleViewProps) {
   const [commands, setCommands] = useState<Command[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [currentCwd, setCurrentCwd] = useState(initialShellCwd || cwd);
@@ -79,6 +80,8 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
   const [maximizedId, setMaximizedId] = useState<string | null>(null);
   /** scrollRef 可视区高度，传给放大的气泡 */
   const [consoleHeight, setConsoleHeight] = useState(0);
+  /** 可视区域高度（始终跟踪，用于计算气泡 50% 布局） */
+  const [scrollAreaHeight, setScrollAreaHeight] = useState(0);
   const [showQuickCommands, setShowQuickCommands] = useState(false);
 
   const [quickCustomCommands, setQuickCustomCommands] = useState<CustomCommand[]>([]);
@@ -242,6 +245,8 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
             });
             if (entry.sleeping) restoredSleeping.add(entry.id);
           } else {
+            // 跳过占位条目（running: true 的命令还在内存中，由 WS attach 恢复）
+            if (entry.running) continue;
             historyCommands.push({
               id: entry.id.includes('-') && entry.id.split('-').length === 3
                 ? entry.id
@@ -1184,6 +1189,18 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedCommandId, toggleMaximize]);
 
+  // 跟踪可视区域高度（用于气泡 50% 布局）
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setScrollAreaHeight(entry.contentRect.height);
+    });
+    ro.observe(el);
+    setScrollAreaHeight(el.clientHeight);
+    return () => ro.disconnect();
+  }, []);
+
   // 放大第1步：测量可视高度（或重置）
   useEffect(() => {
     const el = scrollRef.current;
@@ -1220,6 +1237,12 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
       }
     };
   }, []);
+
+  // 气泡 50% 布局：每个气泡占可视区域一半高度
+  // padding(32) + gap(12) + 2*(titleBar(41) + contentHeight) = scrollAreaHeight
+  const bubbleContentHeight = scrollAreaHeight > 0
+    ? Math.floor((scrollAreaHeight - 32 - 12) / 2 - 41)
+    : undefined; // undefined 时气泡使用默认 BUBBLE_CONTENT_HEIGHT
 
   return (
     <div ref={terminalRootRef} className="h-full flex flex-col bg-background relative">
@@ -1259,6 +1282,9 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
                   onDragEnd={handleDragEnd}
                 >
                   <CommandBubble
+                    commandId={item.data.id}
+                    tabId={tabId}
+                    projectCwd={cwd}
                     command={item.data.command}
                     output={item.data.output}
                     exitCode={item.data.exitCode}
@@ -1278,6 +1304,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
                     onToggleMaximize={() => toggleMaximize(item.data.id)}
                     maximized={maximizedId === item.data.id}
                     expandedHeight={consoleHeight}
+                    bubbleContentHeight={bubbleContentHeight}
                     onTitleMouseDown={handleTitleMouseDown}
                   />
                 </div>
@@ -1304,6 +1331,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
                     onToggleMaximize={() => toggleMaximize(item.data.id)}
                     onNewTab={addBrowserItem}
                     expandedHeight={consoleHeight}
+                    bubbleContentHeight={bubbleContentHeight}
                     timestamp={item.data.timestamp}
                     onTitleMouseDown={handleTitleMouseDown}
                     initialSleeping={sleepingBubbles.has(item.data.id)}
@@ -1443,6 +1471,20 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange }: Consol
               </div>
             )}
           </div>
+
+          {/* 项目笔记按钮 */}
+          {onOpenNote && (
+            <button
+              type="button"
+              onClick={onOpenNote}
+              className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
+              title="项目笔记"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
+          )}
 
           <button
             type="button"

@@ -1,6 +1,11 @@
 @import "tailwindcss";
 @import "@xterm/xterm/css/xterm.css";
 
+/* 阻止跨 frame 的 compositor 级滚动链传播到父 frame */
+html, body {
+  overscroll-behavior: none;
+}
+
 /* ============================================
    Design System - 参考 ai-assistant 项目风格
    ============================================ */

@@ -49,7 +49,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className="overflow-hidden">
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -75,7 +75,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${inter.variable} ${lora.variable} ${jetbrainsMono.variable} antialiased`}
+        className={`${inter.variable} ${lora.variable} ${jetbrainsMono.variable} antialiased overflow-hidden`}
       >
         <Providers>
           {children}

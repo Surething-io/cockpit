@@ -196,7 +196,17 @@ export function TabManagerTopBar({
         {/* 左侧：Logo + 项目路径 + Git 分支 */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <img src="/icons/icon-72x72.png" alt="Cockpit" className="w-6 h-6" />
+            <img
+              src="/icons/icon-72x72.png"
+              alt="Cockpit"
+              className="w-6 h-6 cursor-pointer"
+              title="复制页面地址"
+              onClick={() => {
+                navigator.clipboard.writeText(window.location.href).then(() => {
+                  toast('已复制页面地址', 'success');
+                });
+              }}
+            />
             {initialCwd ? (
               <>
                 <span
@@ -322,6 +332,16 @@ export function TabManagerTopBar({
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12h-6m-4 0a8 8 0 1116 0 8 8 0 01-16 0zm4 0h.01" />
+            </svg>
+          </button>
+          {/* Token 统计 */}
+          <button
+            onClick={() => window.parent.postMessage({ type: 'OPEN_TOKEN_STATS' }, '*')}
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            title="Token 统计"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
           </button>
         </div>

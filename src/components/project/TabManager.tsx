@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { FileBrowserModal } from './FileBrowserModal';
 import { GitWorktreeModal } from './GitWorktreeModal';
@@ -84,6 +84,31 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
       .catch(() => {});
   }, [initialCwd]);
 
+  // 截图状态：自动切换 console view + 顶部提示条 + 截图完成后恢复
+  const [screenshotActive, setScreenshotActive] = useState(false);
+  const preScreenshotViewRef = useRef<ViewType | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { active } = (e as CustomEvent).detail;
+      if (active) {
+        // 截图开始：保存当前视图，切到 console
+        preScreenshotViewRef.current = activeView;
+        setActiveView('console');
+        setScreenshotActive(true);
+      } else {
+        // 截图完成：恢复之前的视图
+        setScreenshotActive(false);
+        if (preScreenshotViewRef.current && preScreenshotViewRef.current !== 'console') {
+          setActiveView(preScreenshotViewRef.current);
+        }
+        preScreenshotViewRef.current = null;
+      }
+    };
+    window.addEventListener('cockpit-screenshot-state', handler);
+    return () => window.removeEventListener('cockpit-screenshot-state', handler);
+  }, [activeView]);
+
   // 切屏时持久化 activeView 并通知父级 Workspace
   const handleViewChange = useCallback((view: ViewType) => {
     setActiveView(view);
@@ -160,7 +185,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         const { sessionId } = event.data;
         if (sessionId) {
           handleSelectSession(sessionId);
-          handleViewChange('agent');
         }
       }
     };
@@ -198,6 +222,14 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           onOpenAliasManager={() => setIsAliasManagerOpen(true)}
           onBranchSwitched={loadGitInfo}
         />
+
+        {/* 截图进行中提示条 */}
+        {screenshotActive && (
+          <div className="flex items-center justify-center gap-2 py-1 bg-brand/15 text-brand text-xs font-medium border-b border-brand/20">
+            <span className="animate-pulse">●</span>
+            截图中...
+          </div>
+        )}
 
         {/* 内容区域 - 根据 activeView 切换（滑动效果） */}
         {initialCwd ? (
@@ -254,7 +286,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
 
             {/* CONSOLE 视图：命令执行 + 浏览器 */}
             <div className="w-1/3 h-full overflow-hidden">
-              <ConsoleView cwd={initialCwd} tabId="default" />
+              <ConsoleView cwd={initialCwd} tabId="default" onOpenNote={handleOpenNote} />
             </div>
           </SwipeableContent>
         ) : (

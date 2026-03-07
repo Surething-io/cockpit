@@ -38,6 +38,11 @@
     ".next/dev/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    ".next",
+    "out",
+    "dist",
+    "chrome-extension",
+    "bin"
   ]
 }

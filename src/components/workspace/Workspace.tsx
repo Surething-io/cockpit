@@ -5,6 +5,7 @@ import { ProjectSidebar, ProjectInfo } from './ProjectSidebar';
 import { EmptyState } from './EmptyState';
 import { SessionBrowser } from '../shared/SessionBrowser';
 import { SettingsModal } from '../shared/SettingsModal';
+import { TokenStatsModal } from '../shared/TokenStatsModal';
 import { NoteModal } from '../shared/NoteModal';
 import { SessionCompleteToastContainer } from './SessionCompleteToast';
 
@@ -25,6 +26,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [isSessionBrowserOpen, setIsSessionBrowserOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isTokenStatsOpen, setIsTokenStatsOpen] = useState(false);
   const [isNoteOpen, setIsNoteOpen] = useState(false);
   const [noteProjectCwd, setNoteProjectCwd] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -38,6 +40,8 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   const pendingSessionIdsRef = useRef<Map<string, string>>(new Map());
   // 跟踪每个项目当前的 sessionId（用于更新 URL，不用于 iframe src）
   const projectSessionIdsRef = useRef<Map<string, string>>(new Map());
+  // 截图前保存的项目索引，截图完成后恢复
+  const preScreenshotIndexRef = useRef<number | null>(null);
 
   // 加载项目列表
   const loadProjects = useCallback(async () => {
@@ -163,6 +167,10 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
           updateUrl(cwd, sessionId);
         }
       }
+      // 打开 Token 统计
+      if (event.data?.type === 'OPEN_TOKEN_STATS') {
+        setIsTokenStatsOpen(true);
+      }
       // 打开项目笔记
       if (event.data?.type === 'OPEN_NOTE' && event.data?.cwd) {
         const cwd = event.data.cwd;
@@ -172,6 +180,25 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
       // iframe 内切屏通知（agent/explorer/console）
       if (event.data?.type === 'VIEW_CHANGE' && event.data?.cwd && event.data?.view) {
         setActiveViewMap(prev => ({ ...prev, [event.data.cwd]: event.data.view }));
+      }
+      // 截图准备：保存当前项目索引，切到目标项目
+      if (event.data?.type === 'SCREENSHOT_PREPARE' && event.data?.cwd) {
+        preScreenshotIndexRef.current = activeIndex;
+        // 复用 OPEN_PROJECT 的逻辑来切换项目
+        const cwd = event.data.cwd;
+        const existingIndex = projects.findIndex(p => p.cwd === cwd);
+        if (existingIndex >= 0 && existingIndex !== activeIndex) {
+          setActiveIndex(existingIndex);
+        }
+        return;
+      }
+      // 截图完成：恢复之前的项目
+      if (event.data?.type === 'SCREENSHOT_DONE') {
+        if (preScreenshotIndexRef.current !== null && preScreenshotIndexRef.current !== activeIndex) {
+          setActiveIndex(preScreenshotIndexRef.current);
+        }
+        preScreenshotIndexRef.current = null;
+        return;
       }
       // iframe 内请求打开/切换项目（worktree 切换、session 打开等）
       if (event.data?.type === 'OPEN_PROJECT' && event.data?.cwd) {
@@ -369,7 +396,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   }
 
   return (
-    <div className="h-screen flex bg-background">
+    <div className="h-screen flex bg-background overflow-hidden">
       {/* 左侧项目列表 */}
       <ProjectSidebar
         projects={projects}
@@ -388,13 +415,13 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
       />
 
       {/* 右侧内容区域 */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {projects.length === 0 ? (
           // 空状态：显示所有会话列表
           <EmptyState onSelectSession={handleAddProject} />
         ) : (
           // 项目 iframe 容器（懒加载：只渲染曾被激活过的项目）
-          <div className="flex-1 relative">
+          <div className="flex-1 relative overflow-hidden">
             {projects.map((project, index) => (
               loadedCwds.has(project.cwd) && (
                 <iframe
@@ -430,6 +457,12 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      {/* Token Stats Modal */}
+      <TokenStatsModal
+        isOpen={isTokenStatsOpen}
+        onClose={() => setIsTokenStatsOpen(false)}
       />
 
       {/* Note Modal */}

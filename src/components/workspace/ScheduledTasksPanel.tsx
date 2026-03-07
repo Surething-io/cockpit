@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { ScheduledTask } from '@/hooks/useScheduledTasks';
 import { ScheduleTaskPopover } from '@/components/project/ScheduleTaskPopover';
 
@@ -14,6 +14,7 @@ interface ScheduledTasksPanelProps {
   onDelete: (id: string) => void;
   onMarkRead: (id: string) => void;
   onUpdateTask: (id: string, fields: Partial<Pick<ScheduledTask, 'message' | 'type' | 'delayMinutes' | 'intervalMinutes' | 'activeFrom' | 'activeTo' | 'cron'>>) => void;
+  onReorder: (orderedIds: string[]) => void;
 }
 
 function getProjectName(cwd: string): string {
@@ -68,10 +69,48 @@ export function ScheduledTasksPanel({
   onDelete,
   onMarkRead,
   onUpdateTask,
+  onReorder,
 }: ScheduledTasksPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const activeTasks = tasks.filter(t => !t.completed);
+  const runningCount = activeTasks.filter(t => !t.paused).length;
+  const completedTasks = tasks.filter(t => t.completed);
+
+  // 拖动排序状态
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const handleDragStart = useCallback((index: number) => {
+    setDragIndex(index);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    setDragOverIndex(index);
+  }, []);
+
+  const handleDrop = useCallback((index: number) => {
+    if (dragIndex === null || dragIndex === index) {
+      setDragIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+    const newList = [...activeTasks];
+    const [moved] = newList.splice(dragIndex, 1);
+    newList.splice(index, 0, moved);
+    // 活跃任务新顺序 + 已完成任务保持原序
+    onReorder([...newList, ...completedTasks].map(t => t.id));
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }, [dragIndex, activeTasks, completedTasks, onReorder]);
+
+  const handleDragEnd = useCallback(() => {
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }, []);
 
   // 自动刷新显示（倒计时）
   const [, setTick] = useState(0);
@@ -97,10 +136,6 @@ export function ScheduledTasksPanel({
       window.removeEventListener('blur', handleBlur);
     };
   }, [isOpen]);
-
-  const activeTasks = tasks.filter(t => !t.completed);
-  const runningCount = activeTasks.filter(t => !t.paused).length;
-  const completedTasks = tasks.filter(t => t.completed);
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -150,11 +185,18 @@ export function ScheduledTasksPanel({
             ) : (
               <>
                 {/* 活跃任务 */}
-                {activeTasks.map((task) => (
+                {activeTasks.map((task, index) => (
                   <div
                     key={task.id}
+                    draggable
+                    onDragStart={() => handleDragStart(index)}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDrop={() => handleDrop(index)}
+                    onDragEnd={handleDragEnd}
                     className={`group px-3 py-2 hover:bg-accent transition-colors border-b border-border/50 cursor-pointer ${
                       task.unread ? 'bg-brand/5' : ''
+                    } ${dragIndex === index ? 'opacity-50' : ''} ${
+                      dragOverIndex === index ? 'border-t-2 border-brand' : ''
                     }`}
                     onClick={() => {
                       onSwitchProject(task.cwd, task.sessionId);

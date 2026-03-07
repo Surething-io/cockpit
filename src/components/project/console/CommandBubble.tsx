@@ -5,10 +5,15 @@ import { Copy, Clipboard, X, RotateCw, ChevronUp, ChevronDown, Search } from 'lu
 import { toast } from '../../shared/Toast';
 import { AnsiUp } from 'ansi_up';
 import type { XtermSearchHandle } from './XtermRenderer';
+import { toShortId } from '@/lib/shortId';
+import { ShortIdBadge } from './ShortIdBadge';
 
 const XtermRenderer = lazy(() => import('./XtermRenderer').then(m => ({ default: m.XtermRenderer })));
 
 interface CommandBubbleProps {
+  commandId?: string;
+  tabId?: string;
+  projectCwd?: string;
   command: string;
   output: string;
   exitCode?: number;
@@ -26,6 +31,8 @@ interface CommandBubbleProps {
   maximized?: boolean;
   /** 放大时的总高度（由 ConsoleView 传入 scrollRef.clientHeight） */
   expandedHeight?: number;
+  /** 非放大时的内容高度（50% 布局，由 ConsoleView 计算） */
+  bubbleContentHeight?: number;
   onTitleMouseDown?: () => void;
 }
 
@@ -146,6 +153,9 @@ function PipeSearchView({
 }
 
 export const CommandBubble = memo(function CommandBubble({
+  commandId,
+  tabId,
+  projectCwd,
   command,
   output,
   exitCode,
@@ -162,6 +172,7 @@ export const CommandBubble = memo(function CommandBubble({
   onToggleMaximize,
   maximized,
   expandedHeight,
+  bubbleContentHeight,
   onTitleMouseDown,
 }: CommandBubbleProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -170,6 +181,7 @@ export const CommandBubble = memo(function CommandBubble({
   const rafIdRef = useRef<number | null>(null);
   const stdinRef = useRef<HTMLInputElement>(null);
   const timeStr = formatTime(timestamp);
+  const shortId = commandId && tabId ? toShortId(tabId + commandId) : undefined;
   const [isOverflowing, setIsOverflowing] = useState(false);
   const [stdinValue, setStdinValue] = useState('');
 
@@ -340,8 +352,10 @@ export const CommandBubble = memo(function CommandBubble({
     return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, [selected, searchVisible, openSearch, closeSearch]);
 
-  // 放大时的内容区高度（减去顶栏高度）
-  const contentHeight = maximized && expandedHeight ? expandedHeight - FULLSCREEN_BAR_HEIGHT : BUBBLE_CONTENT_HEIGHT;
+  // 内容区高度：放大 > 50%布局 > 默认固定高度
+  const contentHeight = maximized && expandedHeight
+    ? expandedHeight - FULLSCREEN_BAR_HEIGHT
+    : (bubbleContentHeight ?? BUBBLE_CONTENT_HEIGHT);
 
   return (
     <div className="flex flex-col items-start">
@@ -396,6 +410,26 @@ export const CommandBubble = memo(function CommandBubble({
               }`}
             >
               <span className="text-[10px] font-mono leading-none px-1 py-0.5 rounded flex-shrink-0 bg-muted text-muted-foreground">&gt;_</span>
+              {shortId && commandId && tabId && (
+                <ShortIdBadge
+                  shortId={shortId}
+                  type="terminal"
+                  onRegister={() => {
+                    fetch('/api/terminal/register', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ tabId, commandId, command, projectCwd }),
+                    }).catch(() => {});
+                  }}
+                  onUnregister={() => {
+                    fetch('/api/terminal/unregister', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ commandId }),
+                    }).catch(() => {});
+                  }}
+                />
+              )}
               <span className="font-mono text-foreground truncate">{command}</span>
               <button
                 onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(command); toast('已复制命令'); }}

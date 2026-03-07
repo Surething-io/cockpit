@@ -3,6 +3,8 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { toast } from '../../shared/Toast';
 import { BUBBLE_CONTENT_HEIGHT } from './CommandBubble';
+import { useBrowserBridge } from '@/hooks/useBrowserBridge';
+import { ShortIdBadge } from './ShortIdBadge';
 
 // ============================================================================
 // Utility Functions
@@ -55,32 +57,14 @@ function stripCockpitParam(url: string): string {
 }
 
 /**
- * 获取 Chrome 扩展 ID（缓存在内存，通过 API 获取）
- * 扩展 background 每 3 秒轮询 /api/extension/version 时会带上 extId，
- * 服务端存在内存中，页面通过同一接口读取。
+ * 获取 Chrome 扩展 ID（从 content script 注入的 DOM dataset 读取）
  */
 let _cachedExtensionId: string | null = null;
 
-async function getExtensionId(): Promise<string | null> {
-  // 优先用缓存
+function getExtensionId(): string | null {
   if (_cachedExtensionId) return _cachedExtensionId;
-
-  // 也检查 DOM dataset（content script 可能设置了）
   const fromDom = document.documentElement?.dataset?.cockpitBridgeId;
   if (fromDom) { _cachedExtensionId = fromDom; return fromDom; }
-
-  // 从 API 获取（扩展 background 每 3 秒注册一次）
-  try {
-    const res = await fetch('/api/extension/version');
-    if (res.ok) {
-      const data = await res.json();
-      if (data.extensionId) {
-        _cachedExtensionId = data.extensionId;
-        return data.extensionId;
-      }
-    }
-  } catch { /* ignore */ }
-
   return null;
 }
 
@@ -92,7 +76,7 @@ async function getExtensionId(): Promise<string | null> {
  * 无 content script 中转，无 postMessage，100% 可靠。
  */
 async function prepareCookies(url: string): Promise<boolean> {
-  const extId = await getExtensionId();
+  const extId = getExtensionId();
   if (!extId) return false; // 插件未安装
 
   return new Promise((resolve) => {
@@ -135,6 +119,8 @@ interface BrowserBubbleProps {
   maximized: boolean;
   /** 放大时的内容区高度（由 ConsoleView 传入 scrollRef.clientHeight） */
   expandedHeight?: number;
+  /** 非放大时的内容高度（50% 布局，由 ConsoleView 计算） */
+  bubbleContentHeight?: number;
   onSelect: () => void;
   onClose: () => void;
   onToggleMaximize: () => void;
@@ -152,6 +138,7 @@ export function BrowserBubble({
   selected,
   maximized,
   expandedHeight,
+  bubbleContentHeight,
   onSelect,
   onClose,
   onToggleMaximize,
@@ -169,6 +156,7 @@ export function BrowserBubble({
   const [isSleeping, setIsSleeping] = useState(initialSleeping ?? false);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const iframeWrapperRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // 同步外部 url prop 变化
   useEffect(() => { setCurrentUrl(url); }, [url]);
@@ -186,6 +174,17 @@ export function BrowserBubble({
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     idleTimerRef.current = setTimeout(goToSleep, IDLE_TIMEOUT);
   }, [isSleeping, goToSleep]);
+
+  // Browser automation bridge (CLI → WS → postMessage → content script)
+  // WS 按需连接：点击 shortId 徽标时 connect，休眠时 disconnect
+  // 收到 WS 命令时 onActivity → resetIdleTimer 延后休眠
+  const iframeReady = !!readyUrl && !isSleeping && !isLoading;
+  const { shortId, connected: bridgeConnected, connect: bridgeConnect, disconnect: bridgeDisconnect } = useBrowserBridge(id, iframeRef, iframeReady, resetIdleTimer);
+
+  // 休眠时同时断开 bridge WS
+  useEffect(() => {
+    if (isSleeping) bridgeDisconnect();
+  }, [isSleeping, bridgeDisconnect]);
 
   // 启动 / 清除空闲计时器
   useEffect(() => {
@@ -239,24 +238,57 @@ export function BrowserBubble({
 
   const handleIframeLoad = useCallback(() => setIsLoading(false), []);
 
-  // 防止 iframe 获取焦点时浏览器自动滚动父级 scroll container
+  // 防止 iframe 交互导致父级滚动容器滚动
+  // 两种来源：(1) 跨域 iframe wheel scroll chaining (compositor 层传播)
+  //          (2) 点击 iframe → 浏览器 focus auto-scroll-into-view (程序化修改 scrollTop)
+  // overflow:hidden 只能挡 (1)，(2) 需要 scroll 事件监听 + scrollTop 恢复
   useEffect(() => {
     const wrapper = iframeWrapperRef.current;
     if (!wrapper) return;
-    const handler = () => {
-      // 找到最近的可滚动父级并恢复其 scrollTop
-      let parent = wrapper.parentElement;
-      while (parent) {
-        if (parent.scrollHeight > parent.clientHeight) {
-          const saved = parent.scrollTop;
-          requestAnimationFrame(() => { parent!.scrollTop = saved; });
-          break;
-        }
-        parent = parent.parentElement;
+
+    let scrollParent: HTMLElement | null = null;
+    let el = wrapper.parentElement;
+    while (el) {
+      const { overflowY } = getComputedStyle(el);
+      if (overflowY === 'auto' || overflowY === 'scroll') {
+        scrollParent = el;
+        break;
+      }
+      el = el.parentElement;
+    }
+    if (!scrollParent) return;
+
+    let savedOverflow = '';
+    let lockedScrollTop = 0;
+    let locked = false;
+
+    const onScroll = () => {
+      if (locked && scrollParent) {
+        scrollParent.scrollTop = lockedScrollTop;
       }
     };
-    wrapper.addEventListener('focusin', handler);
-    return () => wrapper.removeEventListener('focusin', handler);
+
+    const onEnter = () => {
+      savedOverflow = scrollParent!.style.overflow;
+      lockedScrollTop = scrollParent!.scrollTop;
+      locked = true;
+      scrollParent!.style.overflow = 'hidden';
+      scrollParent!.addEventListener('scroll', onScroll);
+    };
+    const onLeave = () => {
+      locked = false;
+      scrollParent!.removeEventListener('scroll', onScroll);
+      scrollParent!.style.overflow = savedOverflow;
+    };
+
+    wrapper.addEventListener('mouseenter', onEnter);
+    wrapper.addEventListener('mouseleave', onLeave);
+    return () => {
+      wrapper.removeEventListener('mouseenter', onEnter);
+      wrapper.removeEventListener('mouseleave', onLeave);
+      scrollParent!.removeEventListener('scroll', onScroll);
+      if (locked) scrollParent!.style.overflow = savedOverflow;
+    };
   }, []);
 
   // 监听 Chrome 插件 postMessage（链接拦截 & 导航通知）
@@ -335,7 +367,9 @@ export function BrowserBubble({
   const host = getHostFromUrl(currentUrl);
 
   // 放大时的内容高度（减去顶栏）
-  const contentHeight = maximized && expandedHeight ? expandedHeight - TOOLBAR_HEIGHT : BUBBLE_CONTENT_HEIGHT;
+  const contentHeight = maximized && expandedHeight
+    ? expandedHeight - TOOLBAR_HEIGHT
+    : (bubbleContentHeight ?? BUBBLE_CONTENT_HEIGHT);
 
   return (
     <div className="flex flex-col items-start">
@@ -360,6 +394,21 @@ export function BrowserBubble({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
               </svg>
             </span>
+            {shortId && (
+              <ShortIdBadge
+                shortId={shortId}
+                type="browser"
+                onRegister={() => bridgeConnect()}
+                onUnregister={async () => {
+                  bridgeDisconnect();
+                  await fetch('/api/browser/unregister', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: shortId }),
+                  }).catch(() => {});
+                }}
+              />
+            )}
             <span className="text-xs text-muted-foreground truncate font-mono">
               {currentUrl || '空白页'}
             </span>
@@ -420,6 +469,21 @@ export function BrowserBubble({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
               </svg>
             </span>
+            {shortId && (
+              <ShortIdBadge
+                shortId={shortId}
+                type="browser"
+                onRegister={() => bridgeConnect()}
+                onUnregister={async () => {
+                  bridgeDisconnect();
+                  await fetch('/api/browser/unregister', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: shortId }),
+                  }).catch(() => {});
+                }}
+              />
+            )}
             <span className="font-mono text-foreground truncate">
               {currentUrl || '空白页'}
             </span>
@@ -473,7 +537,7 @@ export function BrowserBubble({
         )}
 
         {/* ---- 内容区（iframe 或休眠占位）---- */}
-        <div ref={iframeWrapperRef} className="w-full" style={{ height: contentHeight, overscrollBehavior: 'contain' }}>
+        <div ref={iframeWrapperRef} className="w-full" style={{ height: contentHeight }}>
           {isSleeping ? (
             /* 休眠：显示网址占位符 */
             <div
@@ -511,7 +575,7 @@ export function BrowserBubble({
                 </button>
               </div>
             ) : (
-              <div className="relative overflow-hidden h-full">
+              <div className="relative overflow-hidden h-full" style={{ contain: 'strict' }}>
                 {isLoading && (
                   <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 z-10">
                     <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
@@ -523,15 +587,17 @@ export function BrowserBubble({
                   </div>
                 ) : (
                   <iframe
+                    ref={iframeRef}
                     src={readyUrl}
                     className="border-0"
                     style={maximized
                       ? { width: '100%', height: '100%' }
-                      : { width: '200%', height: '200%', transform: 'scale(0.5)', transformOrigin: 'top left' }
+                      : { position: 'absolute', top: 0, left: 0, width: '200%', height: '200%', transform: 'scale(0.5)', transformOrigin: 'top left' }
                     }
                     onLoad={handleIframeLoad}
                     onError={handleIframeError}
                     title={`Browser: ${host}`}
+                    data-browser-id={id}
                   />
                 )}
               </div>

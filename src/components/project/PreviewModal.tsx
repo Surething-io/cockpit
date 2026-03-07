@@ -12,6 +12,7 @@ import {
   formatAsHumanReadable,
   isEditInput,
   getFilePath,
+  isImageFile,
 } from './toolCallUtils';
 
 // ============================================
@@ -29,8 +30,14 @@ function FilePreview({ filePath }: FilePreviewProps) {
   const fetchingRef = useRef(false);
 
   const isMd = isMarkdownFile(filePath);
+  const isImage = isImageFile(filePath);
 
   useEffect(() => {
+    // 图片文件不需要加载文本内容
+    if (isImage) {
+      setIsLoading(false);
+      return;
+    }
     if (fetchingRef.current) return;
     fetchingRef.current = true;
 
@@ -52,7 +59,7 @@ function FilePreview({ filePath }: FilePreviewProps) {
       }
     };
     loadFile();
-  }, [filePath]);
+  }, [filePath, isImage]);
 
   if (error) {
     return (
@@ -66,6 +73,21 @@ function FilePreview({ filePath }: FilePreviewProps) {
     return (
       <div className="flex items-center justify-center h-full">
         <span className="text-sm text-muted-foreground">Loading...</span>
+      </div>
+    );
+  }
+
+  // 图片文件：直接用 <img> 展示
+  if (isImageFile(filePath)) {
+    const rawUrl = `/api/file?path=${encodeURIComponent(filePath)}&raw=true`;
+    return (
+      <div className="flex items-center justify-center h-full overflow-auto">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={rawUrl}
+          alt={filePath.split('/').pop() || 'image'}
+          className="max-w-full max-h-full object-contain"
+        />
       </div>
     );
   }

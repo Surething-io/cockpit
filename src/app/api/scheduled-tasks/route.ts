@@ -94,6 +94,9 @@ export async function PATCH(request: NextRequest) {
     } else if (action === 'markAllRead') {
       await scheduledTaskManager.markAllRead();
       return NextResponse.json({ success: true });
+    } else if (action === 'reorder' && fields?.orderedIds) {
+      await scheduledTaskManager.reorderTasks(fields.orderedIds);
+      return NextResponse.json({ success: true });
     } else if (action === 'update' && fields) {
       // 编辑任务：重新计算 nextFireTime
       const now = Date.now();

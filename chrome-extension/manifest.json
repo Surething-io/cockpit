@@ -3,7 +3,7 @@
   "name": "Cockpit Bridge",
   "version": "1.0.1",
   "description": "Cockpit 浏览器气泡的链接拦截与导航通信桥",
-  "permissions": ["alarms", "storage", "declarativeNetRequest", "cookies", "webRequest", "webNavigation", "tabs"],
+  "permissions": ["storage", "declarativeNetRequest", "cookies", "webRequest", "webNavigation", "tabs", "scripting"],
   "host_permissions": ["<all_urls>"],
   "content_scripts": [
     {
@@ -30,7 +30,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["disguise.js"],
+      "resources": ["disguise.js", "automation.js"],
       "matches": ["<all_urls>"]
     }
   ],

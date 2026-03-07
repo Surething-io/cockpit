@@ -2,7 +2,8 @@
   "name": "cockpit",
   "version": "0.1.0",
   "bin": {
-    "cock": "./bin/cock.mjs"
+    "cock": "./bin/cock.mjs",
+    "cock-dev": "./bin/cock-dev.mjs"
   },
   "scripts": {
     "dev": "COCKPIT_ENV=dev node --import tsx server.mjs",

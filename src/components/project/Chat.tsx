@@ -88,11 +88,13 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     onFetchTitle: fetchSessionTitle,
   });
 
-  // ! 前缀：第一行是命令，后续行是用户补充说明，支持图片
+  // ! 前缀或 cock 开头：第一行是命令，后续行是用户补充说明，支持图片
   const wrappedHandleSend = useCallback(async (content: string, images?: ImageInfo[]) => {
     const firstLine = content.split('\n')[0];
-    if (firstLine.startsWith('!') && firstLine.length > 1) {
-      const command = firstLine.slice(1).trim();
+    const isBangCmd = firstLine.startsWith('!') && firstLine.length > 1;
+    const isCockCmd = firstLine.startsWith('cock ');
+    if (isBangCmd || isCockCmd) {
+      const command = isBangCmd ? firstLine.slice(1).trim() : firstLine;
       if (!command) { handleSend(content, images); return; }
 
       const userNote = content.split('\n').slice(1).join('\n').trim();

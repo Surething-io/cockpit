@@ -251,8 +251,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       world: 'MAIN',
       func: (code) => {
         try {
-          const fn = new Function(code);
-          return { ok: true, data: fn() };
+          return { ok: true, data: (0, eval)(code) };
         } catch (e) {
           return { ok: false, error: e.message };
         }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { ChatMessage, TokenUsage } from '@/types/chat';
+import { ChatMessage, TokenUsage, ImageInfo } from '@/types/chat';
 import { MessageList, MessageListHandle } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { SessionBrowser } from '../shared/SessionBrowser';
@@ -88,6 +88,35 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     onFetchTitle: fetchSessionTitle,
   });
 
+  // ! 前缀：第一行是命令，后续行是用户补充说明，支持图片
+  const wrappedHandleSend = useCallback(async (content: string, images?: ImageInfo[]) => {
+    const firstLine = content.split('\n')[0];
+    if (firstLine.startsWith('!') && firstLine.length > 1) {
+      const command = firstLine.slice(1).trim();
+      if (!command) { handleSend(content, images); return; }
+
+      const userNote = content.split('\n').slice(1).join('\n').trim();
+
+      try {
+        const res = await fetch('/api/bash', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command, cwd: initialCwd }),
+        });
+        const data = await res.json();
+        const output = [data.stdout, data.stderr].filter(Boolean).join('\n') || '(no output)';
+        const exitInfo = data.exitCode ? ` (exit code: ${data.exitCode})` : '';
+        let message = `执行了 \`${command}\`${exitInfo}，输出：\n\`\`\`\n${output}\n\`\`\``;
+        if (userNote) message += `\n\n${userNote}`;
+        handleSend(message, images);
+      } catch (err) {
+        handleSend(`执行 \`${command}\` 失败：${err}`, images);
+      }
+      return;
+    }
+    handleSend(content, images);
+  }, [handleSend, initialCwd]);
+
   // History hook
   const {
     isLoadingHistory,
@@ -161,8 +190,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
 
   // 更新 handleSendRef，供 ChatContext 调用
   useEffect(() => {
-    handleSendRef.current = handleSend;
-  }, [handleSend]);
+    handleSendRef.current = wrappedHandleSend;
+  }, [wrappedHandleSend]);
 
   // ESC 键监听：鼠标悬停在聊天区域时按 ESC 停止生成
   useEffect(() => {
@@ -265,7 +294,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
 
         {/* Input */}
         <ChatInput
-          onSend={handleSend}
+          onSend={wrappedHandleSend}
           disabled={isLoading}
           cwd={initialCwd}
           onShowGitStatus={onShowGitStatus}

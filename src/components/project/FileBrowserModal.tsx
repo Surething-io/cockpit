@@ -153,12 +153,17 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       ? ref.file.slice(cwdPrefix.length)
       : ref.file;
 
+    // 跳转前把当前位置压入导航历史
+    if (fileTree.selectedPath) {
+      navHistory.push({ filePath: fileTree.selectedPath, lineNumber: visibleLineRef.current });
+    }
+
     if (relativePath === fileTree.selectedPath) {
       fileTree.setTargetLineNumber(ref.line);
     } else {
       fileTree.handleSelectFile(relativePath, ref.line);
     }
-  }, [fileTree, cwd]);
+  }, [fileTree, cwd, navHistory]);
 
   // ========== gitStatusMap (depends on both useFileTree and useGitStatus) ==========
   const gitStatusMap = useMemo<GitStatusMap | null>(() => {
@@ -280,7 +285,8 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl+- → Go Back / Ctrl+Shift+- → Go Forward
-      if (e.ctrlKey && e.key === '-') {
+      // 用 e.code 判断物理按键，避免 Shift 把 '-' 变成 '_'
+      if (e.ctrlKey && !e.metaKey && e.code === 'Minus') {
         e.preventDefault();
         if (e.shiftKey) {
           handleNavForward();
@@ -1332,6 +1338,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             cwd={cwd}
                             enableComments={true}
                             scrollToLine={editorReturnLine ?? fileTree.targetLineNumber}
+                            scrollToLineAlign={editorReturnLine != null ? 'start' : 'center'}
                             onScrollToLineComplete={() => {
                               setEditorReturnLine(null);
                               fileTree.setTargetLineNumber(null);
@@ -1593,6 +1600,10 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   loading={contentSearch.isSearching}
                   totalMatches={contentSearch.searchStats?.totalMatches ?? 0}
                   onSelect={(path, lineNumber) => {
+                    // 跳转前把当前位置压入导航历史
+                    if (fileTree.selectedPath) {
+                      navHistory.push({ filePath: fileTree.selectedPath, lineNumber: visibleLineRef.current });
+                    }
                     fileTree.handleSelectFile(path, lineNumber);
                   }}
                   onClose={() => setShowSearchPanel(false)}

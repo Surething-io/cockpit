@@ -116,6 +116,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
   const ptySizeRef = useRef<Map<string, { cols: number; rows: number }>>(new Map());
   const executeCommandRef = useRef<((command: string) => void) | null>(null);
   const addBrowserItemRef = useRef<((url: string) => void) | null>(null);
+  const consoleItemsRef = useRef<ConsoleItem[]>([]);
 
   // Scroll refs (passed in from ConsoleView)
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -592,7 +593,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
 
   // ========== 浏览器气泡 ==========
 
-  const addBrowserItem = useCallback((url: string) => {
+  const addBrowserItem = useCallback((url: string, afterId?: string) => {
     const item: BrowserItem = {
       id: `browser-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       url,
@@ -601,6 +602,27 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     setBrowserItems(prev => [...prev, item]);
     setSelectedCommandId(item.id);
     setTimeout(scrollToBottom, 100);
+
+    // 插入到 afterId 后面（通过 bubbleOrder 控制位置）
+    if (afterId) {
+      const currentOrder = bubbleOrder && bubbleOrder.length > 0
+        ? [...bubbleOrder]
+        : consoleItemsRef.current.map(i => i.data.id);
+      const idx = currentOrder.indexOf(afterId);
+      if (idx !== -1) {
+        currentOrder.splice(idx + 1, 0, item.id);
+      } else {
+        currentOrder.push(item.id);
+      }
+      setBubbleOrder(currentOrder);
+      if (tabId) {
+        fetch('/api/terminal/bubble-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cwd, tabId, order: currentOrder }),
+        }).catch(() => {});
+      }
+    }
 
     if (tabId) {
       fetch('/api/terminal/history', {
@@ -613,7 +635,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
         }),
       }).catch(e => console.error('Failed to save browser item:', e));
     }
-  }, [scrollToBottom, cwd, tabId]);
+  }, [scrollToBottom, cwd, tabId, bubbleOrder]);
 
   addBrowserItemRef.current = addBrowserItem;
   executeCommandRef.current = executeCommand;
@@ -688,6 +710,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     unordered.sort((a, b) => new Date(a.data.timestamp).getTime() - new Date(b.data.timestamp).getTime());
     return [...ordered, ...unordered];
   }, [commands, browserItems, bubbleOrder]);
+  consoleItemsRef.current = consoleItems;
 
   // ========== 命令历史数组（用于上下箭头导航） ==========
 

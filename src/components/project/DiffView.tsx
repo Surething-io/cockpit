@@ -389,7 +389,8 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
                         position: 'absolute',
                         top: 0,
                         left: 0,
-                        width: '100%',
+                        minWidth: '100%',
+                        width: 'max-content',
                         height: `${virtualItem.size}px`,
                         transform: `translateY(${virtualItem.start}px)`,
                       }}
@@ -431,7 +432,8 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
                         position: 'absolute',
                         top: 0,
                         left: 0,
-                        width: '100%',
+                        minWidth: '100%',
+                        width: 'max-content',
                         height: `${virtualItem.size}px`,
                         transform: `translateY(${virtualItem.start}px)`,
                       }}
@@ -558,7 +560,8 @@ export function DiffUnifiedView({ oldContent, newContent, filePath }: Omit<DiffV
                 position: 'absolute',
                 top: 0,
                 left: 0,
-                width: '100%',
+                minWidth: '100%',
+                width: 'max-content',
                 height: `${virtualItem.size}px`,
                 transform: `translateY(${virtualItem.start}px)`,
               }}

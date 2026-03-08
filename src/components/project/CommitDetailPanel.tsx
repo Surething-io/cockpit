@@ -204,7 +204,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
       {/* File tree + Diff container */}
       <div className="flex-1 flex overflow-hidden">
         {/* File tree */}
-        <div className="w-72 flex-shrink-0 border-r border-border overflow-auto">
+        <div className="w-72 flex-shrink-0 border-r border-border overflow-y-auto overflow-x-hidden">
           {isLoadingFiles ? (
             <div className="p-4 text-center text-muted-foreground text-sm">加载文件中...</div>
           ) : (
@@ -217,7 +217,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
               cwd={cwd}
               showChanges={true}
               emptyMessage="无文件变更"
-              className="py-1 min-w-max"
+              className="py-1"
             />
           )}
         </div>

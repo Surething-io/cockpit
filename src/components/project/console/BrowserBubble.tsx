@@ -124,7 +124,7 @@ interface BrowserBubbleProps {
   onSelect: () => void;
   onClose: () => void;
   onToggleMaximize: () => void;
-  onNewTab?: (url: string) => void;
+  onNewTab?: (url: string, afterId: string) => void;
   timestamp?: string;
   onTitleMouseDown?: () => void;
   initialSleeping?: boolean;
@@ -304,14 +304,14 @@ export function BrowserBubble({
       const type = e.data.type as string;
 
       if (type === 'cockpit:new-tab' && e.data.url) {
-        onNewTab?.(stripCockpitParam(e.data.url));
+        onNewTab?.(stripCockpitParam(e.data.url), id);
       } else if ((type === 'cockpit:navigate' || type === 'cockpit:loaded') && e.data.url) {
         setCurrentUrl(stripCockpitParam(e.data.url));
       }
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [onNewTab]);
+  }, [id, onNewTab]);
   const handleIframeError = useCallback(() => {
     setIsLoading(false);
     setLoadError('页面加载失败');

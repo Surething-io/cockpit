@@ -23,6 +23,8 @@ export interface CodeViewerProps {
   cwd?: string;
   enableComments?: boolean;
   scrollToLine?: number | null;
+  /** 跳转对齐方式：'center'（默认，导航跳转）或 'start'（编辑模式返回） */
+  scrollToLineAlign?: 'center' | 'start';
   onScrollToLineComplete?: () => void;
   highlightKeyword?: string | null;
   /** 外部传入的 ref，CodeViewer 会持续更新为当前可见首行号（1-based） */
@@ -88,9 +90,10 @@ export function useCodeViewerLogic({
   cwd,
   enableComments = false,
   scrollToLine = null,
+  scrollToLineAlign = 'center',
   onScrollToLineComplete,
   visibleLineRef,
-}: Pick<CodeViewerProps, 'content' | 'filePath' | 'showSearch' | 'cwd' | 'enableComments' | 'scrollToLine' | 'onScrollToLineComplete' | 'visibleLineRef'>) {
+}: Pick<CodeViewerProps, 'content' | 'filePath' | 'showSearch' | 'cwd' | 'enableComments' | 'scrollToLine' | 'scrollToLineAlign' | 'onScrollToLineComplete' | 'visibleLineRef'>) {
   const [isMounted, setIsMounted] = useState(false);
   const parentRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -315,19 +318,29 @@ export function useCodeViewerLogic({
       const targetLineIndex = targetLine - 1;
       const rowIndex = rowData.findIndex(r => r.type === 'code' && r.lineIndex === targetLineIndex);
       if (rowIndex >= 0) {
-        setTimeout(() => {
-          virtualizer.scrollToIndex(rowIndex, { align: 'center' });
+        const doScroll = () => {
+          virtualizer.scrollToIndex(rowIndex, { align: scrollToLineAlign });
 
-          // 设置闪烁高亮
-          if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-          setFlashLine(targetLine);
-          flashTimerRef.current = setTimeout(() => setFlashLine(null), 500);
+          // 仅导航跳转（center）时闪烁高亮，编辑返回（start）不闪
+          if (scrollToLineAlign === 'center') {
+            if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+            setFlashLine(targetLine);
+            flashTimerRef.current = setTimeout(() => setFlashLine(null), 500);
+          }
 
           onScrollToLineComplete?.();
-        }, 150);
+        };
+
+        if (scrollToLineAlign === 'start') {
+          // 编辑模式返回：无延迟，立即滚动
+          requestAnimationFrame(doScroll);
+        } else {
+          // 导航跳转：等虚拟滚动布局就绪
+          setTimeout(doScroll, 150);
+        }
       }
     }
-  }, [scrollToLine, rowData.length, virtualizer, onScrollToLineComplete]);
+  }, [scrollToLine, scrollToLineAlign, rowData.length, virtualizer, onScrollToLineComplete]);
 
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {

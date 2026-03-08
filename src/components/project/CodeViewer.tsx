@@ -95,6 +95,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   cwd,
   enableComments = false,
   scrollToLine = null,
+  scrollToLineAlign = 'center',
   onScrollToLineComplete,
   highlightKeyword = null,
   visibleLineRef,
@@ -189,6 +190,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     cwd,
     enableComments: editable ? false : enableComments, // 编辑模式下禁用 comments
     scrollToLine: editable ? null : scrollToLine,
+    scrollToLineAlign: editable ? 'center' : scrollToLineAlign,
     onScrollToLineComplete: editable ? undefined : onScrollToLineComplete,
     visibleLineRef: editable ? undefined : visibleLineRef,
   });
@@ -256,15 +258,16 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     container.innerHTML = buildEditorHTML(lineHtmls);
 
     requestAnimationFrame(() => {
-      container.focus();
-      // 从只读模式的滚动位置同步
-      const scrollTop = parentRef.current?.scrollTop ?? 0;
-      if (editScrollRef.current) editScrollRef.current.scrollTop = scrollTop;
-
-      // 光标放到当前可见行开头
       const currentLine = visibleLineRef?.current ?? 1;
       const targetLine = Math.max(0, Math.min(currentLine - 1, editLineArr.length - 1));
+
+      // 1. focus + 光标定位（可能触发浏览器自动滚动到光标/顶部）
+      container.focus();
       restoreCursorPosition(container, { line: targetLine, offset: 0 });
+
+      // 2. 最后设置 scrollTop，覆盖 focus 引起的滚动
+      const scrollTop = (currentLine - 1) * 20; // LINE_HEIGHT = 20
+      if (editScrollRef.current) editScrollRef.current.scrollTop = scrollTop;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editable]);
@@ -449,15 +452,10 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   }, [conflictState.diskContent, content, onSaved]);
 
   const getCurrentLine = useCallback((): number => {
-    // 优先从 contentEditable 光标位置获取行号
-    const container = editableRef.current;
-    if (container) {
-      const pos = saveCursorPosition(container);
-      if (pos) return pos.line + 1;
-    }
+    // 返回可视区域首行（而非光标行），确保退出编辑模式后视图位置一致
     const scrollEl = editScrollRef.current;
-    if (!scrollEl) return visibleLineRef?.current ?? 1;
-    return Math.floor(scrollEl.scrollTop / 20) + 1;
+    if (scrollEl) return Math.floor(scrollEl.scrollTop / 20) + 1;
+    return visibleLineRef?.current ?? 1;
   }, [visibleLineRef]);
 
   const handleEditorClose = useCallback(async () => {

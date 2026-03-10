@@ -15,6 +15,7 @@ import type { LanguageServerAdapter, Location, HoverInfo } from './types';
 
 const REQUEST_TIMEOUT = 10_000; // 10s (definition, references)
 const HOVER_TIMEOUT = 3_000;   // 3s (hover 不需要太久，超时就不显示)
+const COLD_START_TIMEOUT = 30_000; // 30s (新启动时等项目加载)
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
@@ -28,8 +29,9 @@ export class TSServerAdapter implements LanguageServerAdapter {
   private process: ChildProcess | null = null;
   private seq = 0;
   private pendingRequests = new Map<number, PendingRequest>();
-  private buffer = '';
+  private buffer = Buffer.alloc(0);
   private openedFiles = new Set<string>();
+  private coldStart = true; // 新启动，项目尚未加载完成
 
   /** 启动 tsserver 进程 */
   spawn(): ChildProcess {
@@ -46,8 +48,7 @@ export class TSServerAdapter implements LanguageServerAdapter {
       },
     });
 
-    child.stdout!.setEncoding('utf-8');
-    child.stdout!.on('data', (data: string) => this.onData(data));
+    child.stdout!.on('data', (data: Buffer) => this.onData(data));
 
     child.stderr!.setEncoding('utf-8');
     child.stderr!.on('data', (data: string) => {
@@ -129,7 +130,7 @@ export class TSServerAdapter implements LanguageServerAdapter {
         file: absPath,
         line,
         offset: column,
-      }, HOVER_TIMEOUT);
+      }, this.coldStart ? COLD_START_TIMEOUT : HOVER_TIMEOUT);
     } catch {
       return null;
     }
@@ -300,40 +301,43 @@ export class TSServerAdapter implements LanguageServerAdapter {
     });
   }
 
-  /** 处理 tsserver stdout 数据 */
-  private onData(data: string): void {
-    this.buffer += data;
+  /** 处理 tsserver stdout 数据（原始字节） */
+  private onData(data: Buffer): void {
+    this.buffer = Buffer.concat([this.buffer, data]);
     this.processBuffer();
   }
 
-  /** 解析 Content-Length 协议 */
+  /** 解析 Content-Length 协议（字节级操作，正确处理非 ASCII） */
   private processBuffer(): void {
+    const SEPARATOR = Buffer.from('\r\n\r\n');
+    const CL_PREFIX = Buffer.from('Content-Length:');
+
     while (true) {
-      // 查找 Content-Length header
-      const headerEnd = this.buffer.indexOf('\r\n\r\n');
+      // 查找 header 结束位置
+      const headerEnd = this.buffer.indexOf(SEPARATOR);
       if (headerEnd === -1) break;
 
-      const header = this.buffer.slice(0, headerEnd);
+      const header = this.buffer.subarray(0, headerEnd).toString('utf-8');
       const match = header.match(/Content-Length:\s*(\d+)/i);
       if (!match) {
-        // 不是 Content-Length 格式，可能是 tsserver 的事件输出
-        const nextCL = this.buffer.indexOf('Content-Length:', headerEnd + 4);
+        // 不是 Content-Length 格式，跳到下一个
+        const nextCL = this.buffer.indexOf(CL_PREFIX, headerEnd + 4);
         if (nextCL === -1) {
-          this.buffer = '';
+          this.buffer = Buffer.alloc(0);
           break;
         }
-        this.buffer = this.buffer.slice(nextCL);
+        this.buffer = this.buffer.subarray(nextCL);
         continue;
       }
 
-      const contentLength = parseInt(match[1], 10);
+      const contentLength = parseInt(match[1], 10); // 字节数
       const bodyStart = headerEnd + 4;
       const bodyEnd = bodyStart + contentLength;
 
-      if (this.buffer.length < bodyEnd) break; // 数据不完整，等待更多数据
+      if (this.buffer.length < bodyEnd) break; // 字节不够，等待更多数据
 
-      const body = this.buffer.slice(bodyStart, bodyEnd);
-      this.buffer = this.buffer.slice(bodyEnd);
+      const body = this.buffer.subarray(bodyStart, bodyEnd).toString('utf-8');
+      this.buffer = this.buffer.subarray(bodyEnd);
 
       try {
         const message = JSON.parse(body);
@@ -355,6 +359,10 @@ export class TSServerAdapter implements LanguageServerAdapter {
         if (message.success === false) {
           pending.reject(new Error(`tsserver error: ${message.command}`));
         } else {
+          if (this.coldStart) {
+            this.coldStart = false;
+            console.log('[tsserver] project loaded, switching to fast timeout');
+          }
           pending.resolve(message);
         }
       }

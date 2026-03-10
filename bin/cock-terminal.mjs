@@ -4,26 +4,38 @@
  * cock terminal <id> <action> [args...]
  *
  * CLI 入口：访问运行中的终端气泡，获取输出、实时跟踪、发送输入。
- *
- * 用法示例：
- *   cock terminal list
- *   cock terminal abcd output
- *   cock terminal abcd follow
- *   cock terminal abcd stdin "hello"
  */
 
 const args = process.argv.slice(2);
 
-function printActions(prefix = '<id>') {
-  console.log(`  list                        List all running terminals
-  ${prefix} output               Get buffered output
-  ${prefix} follow               Stream real-time output (Ctrl+C to stop)
-  ${prefix} stdin <data>         Send input to process`);
+// status: { running, command } — 传入时显示当前终端状态
+function printHelp(prefix = '<id>', status = null) {
+  console.log(`Interact with a running terminal process — read output, stream logs, and send input.
+
+Usage: cock terminal ${prefix} <action>`);
+
+  if (status) {
+    if (status.running) {
+      let line = `\nStatus: running`;
+      if (status.command) line += `\n  command: ${status.command}`;
+      console.log(line);
+    } else {
+      console.log(`\nStatus: not running`);
+    }
+  }
+
+  console.log(`
+Workflow: use \`output\` to read buffered terminal output, or \`follow\`
+to stream output in real-time. Use \`stdin\` to send input.
+
+Actions:
+  output                    Get buffered output
+  follow                    Stream real-time output (Ctrl+C to stop)
+  stdin <data>              Send input to process`);
 }
 
 if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
-  console.log('Usage: cock terminal <id> <action> [args...]\n\nCommands:');
-  printActions();
+  printHelp();
   process.exit(0);
 }
 
@@ -48,6 +60,7 @@ const baseUrl = `http://localhost:${port}`;
 async function run() {
   // 只传 id 不传 action → 查状态 + 显示可用命令
   if (action === '_status') {
+    let status = null;
     try {
       const res = await fetch(`${baseUrl}/api/terminal/list`, {
         method: 'POST',
@@ -58,16 +71,12 @@ async function run() {
       const data = await res.json();
       const terminal = data.ok && data.data?.find(t => t.shortId === id);
       if (terminal) {
-        const status = terminal.running ? '●' : '○';
-        console.log(`${status} ${terminal.shortId}  pid=${terminal.pid}  ${terminal.command}`);
-      } else {
-        console.log(`○ ${id}  not found`);
+        status = { running: terminal.running, command: terminal.command };
       }
     } catch {
-      console.log(`○ ${id}  server unreachable (${baseUrl})`);
+      // server unreachable — show help without status
     }
-    console.log(`\nUsage: cock terminal ${id} <action>\n\nActions:`);
-    printActions(id);
+    printHelp(id, status);
     return;
   }
 
@@ -85,7 +94,7 @@ async function run() {
       if (data.data.length === 0) { console.log('No running terminals'); return; }
       for (const t of data.data) {
         const status = t.running ? '●' : '○';
-        console.log(`${status} ${t.shortId}  pid=${t.pid}  ${t.command}`);
+        console.log(`${status} ${t.shortId}  ${t.running ? 'running' : 'stopped'}  ${t.command}`);
       }
     } catch (err) {
       if (err.cause?.code === 'ECONNREFUSED') {
@@ -181,7 +190,7 @@ async function run() {
   }
 
   console.error(`Unknown action: ${action}`);
-  printActions(id);
+  printHelp(id);
   process.exit(1);
 }
 

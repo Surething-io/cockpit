@@ -1,6 +1,6 @@
 import { homedir } from 'os';
 import { join } from 'path';
-import { mkdir, readFile, writeFile } from 'fs/promises';
+import { mkdir, readFile, writeFile, rename } from 'fs/promises';
 import { existsSync } from 'fs';
 
 // ============================================
@@ -14,6 +14,7 @@ export const GLOBAL_STATE_FILE = join(COCKPIT_DIR, 'state.json');
 export const PINNED_SESSIONS_FILE = join(COCKPIT_DIR, 'pinned-sessions.json');
 export const NOTE_FILE = join(COCKPIT_DIR, 'note.md');
 export const SCHEDULED_TASKS_FILE = join(COCKPIT_DIR, 'scheduled-tasks.json');
+export const REVIEW_DIR = join(COCKPIT_DIR, 'review');
 export const CLAUDE_DIR = join(HOME_DIR, '.claude');
 export const CLAUDE_PROJECTS_DIR = join(CLAUDE_DIR, 'projects');
 
@@ -142,6 +143,13 @@ export function getBubbleOrderPath(cwd: string, tabId: string): string {
   return join(getCockpitProjectDir(cwd), `terminal-bubble-order-${tabId}.json`);
 }
 
+/**
+ * Get the review JSON file path
+ */
+export function getReviewFilePath(reviewId: string): string {
+  return join(REVIEW_DIR, `${reviewId}.json`);
+}
+
 // ============================================
 // Claude Project Paths (~/.claude/projects/<encoded-cwd>/...)
 // ============================================
@@ -194,9 +202,37 @@ export async function readJsonFile<T>(filePath: string, defaultValue: T): Promis
 }
 
 /**
- * Write a JSON file, creating parent directories if needed
+ * Write a JSON file atomically: write to tmp file first, then rename.
+ * Eliminates the truncate window where concurrent reads see empty data.
  */
 export async function writeJsonFile<T>(filePath: string, data: T): Promise<void> {
   await ensureParentDir(filePath);
-  await writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  const tmpPath = filePath + '.tmp';
+  await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+  await rename(tmpPath, filePath);
+}
+
+// ============================================
+// File Lock (serialize concurrent read-modify-write)
+// ============================================
+
+const fileLocks = new Map<string, Promise<void>>();
+
+/**
+ * Serialize async operations on the same file path.
+ * Ensures read-modify-write cycles don't interleave.
+ */
+export function withFileLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
+  const prev = fileLocks.get(filePath) ?? Promise.resolve();
+  const run = prev.then(fn);
+  // Chain: next operation waits for this one; errors don't propagate to next waiter
+  const chain = run.then(() => {}, () => {});
+  fileLocks.set(filePath, chain);
+  // Clean up when idle (no more pending operations)
+  chain.then(() => {
+    if (fileLocks.get(filePath) === chain) {
+      fileLocks.delete(filePath);
+    }
+  });
+  return run;
 }

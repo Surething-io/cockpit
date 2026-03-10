@@ -52,12 +52,14 @@ export interface LanguageServerAdapter {
 /** LSP Server 实例（Registry 内部使用） */
 export interface LSPServerInstance {
   language: string;
+  cwd: string;               // 项目根目录（绝对路径）
   adapter: LanguageServerAdapter;
   process: ChildProcess;
   openedFiles: Set<string>;  // 已 open 的文件路径
   lastOpenedFile?: string;   // 当前活跃文件，切换时 reload
   ready: boolean;            // 初始化完成标志
   readyPromise: Promise<void>; // 等待初始化完成
+  lastUsedAt: number;        // 最后使用时间戳（LRU + idle 超时用）
 }
 
 /** 支持 LSP 的语言 */

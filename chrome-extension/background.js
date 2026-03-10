@@ -249,8 +249,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.scripting.executeScript({
       target,
       world: 'MAIN',
-      func: (code) => {
+      func: async (code) => {
         try {
+          const isAsync = code.includes('await ');
+          if (isAsync) {
+            const data = await (0, eval)(`(async()=>{return(${code})})()`);
+            return { ok: true, data };
+          }
           return { ok: true, data: (0, eval)(code) };
         } catch (e) {
           return { ok: false, error: e.message };

@@ -30,7 +30,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["disguise.js", "automation.js"],
+      "resources": ["disguise.js", "automation.js", "network-capture.js"],
       "matches": ["<all_urls>"]
     }
   ],

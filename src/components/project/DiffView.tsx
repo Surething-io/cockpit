@@ -70,12 +70,14 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
     y: number;
   } | null>(null);
 
-  const [floatingToolbar, setFloatingToolbar] = useState<{
+  // Floating toolbar - 使用 ref 存储数据，避免触发 DiffView 重渲染导致选区丢失
+  const floatingToolbarRef = useRef<{
     x: number;
     y: number;
     range: { start: number; end: number };
     codeContent: string;
   } | null>(null);
+  const [toolbarVersion, setToolbarVersion] = useState(0);
 
   const [addCommentInput, setAddCommentInput] = useState<{
     x: number;
@@ -119,16 +121,36 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
   }, [comments]);
 
   // Handle text selection in right panel
+  // 三段式事件流（对齐 useCodeViewerLogic）：mousedown / mouseup / selectionchange
   useEffect(() => {
     if (!commentsEnabled) return;
 
+    const codeArea = rightPanelRef.current;
+    let isDragging = false;
+
+    // mousedown：标记拖选开始，清除旧 toolbar
+    const handleMouseDown = () => {
+      isDragging = true;
+      if (floatingToolbarRef.current) {
+        floatingToolbarRef.current = null;
+        setToolbarVersion(v => v + 1);
+      }
+    };
+
+    // mouseup：标记拖选结束，计算选区并显示 toolbar
     const handleMouseUp = (e: MouseEvent) => {
+      isDragging = false;
+
+      // 点击 FloatingToolbar 按钮时，不清除 toolbar，让 onClick 正常触发
       const target = e.target as HTMLElement;
       if (target.closest?.('.floating-toolbar')) return;
 
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed || !selection.toString().trim()) {
-        setFloatingToolbar(null);
+        if (floatingToolbarRef.current) {
+          floatingToolbarRef.current = null;
+          setToolbarVersion(v => v + 1);
+        }
         return;
       }
 
@@ -170,48 +192,72 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
         }
         const codeContent = codeLines.join('\n');
 
-        setFloatingToolbar({
+        floatingToolbarRef.current = {
           x: e.clientX,
           y: e.clientY,
           range: { start: minLine, end: maxLine },
           codeContent,
-        });
+        };
+        setToolbarVersion(v => v + 1);
       }
     };
 
+    // selectionchange：选区消失时隐藏 toolbar
+    // 拖选期间跳过，避免高频触发不必要的 re-render
+    const handleSelectionChange = () => {
+      if (isDragging) return;
+      if (!floatingToolbarRef.current) return;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+        floatingToolbarRef.current = null;
+        setToolbarVersion(v => v + 1);
+      }
+    };
+
+    codeArea?.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mouseup', handleMouseUp);
-    return () => document.removeEventListener('mouseup', handleMouseUp);
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      codeArea?.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
   }, [commentsEnabled, diffLines]);
 
   const handleCommentBubbleClick = useCallback((comment: CodeComment, e: React.MouseEvent) => {
     e.stopPropagation();
     setViewingComment({ comment, x: e.clientX, y: e.clientY });
-    setFloatingToolbar(null);
+    floatingToolbarRef.current = null;
+    setToolbarVersion(v => v + 1);
     setAddCommentInput(null);
     setSendToAIInput(null);
   }, []);
 
   const handleToolbarAddComment = useCallback(() => {
-    if (!floatingToolbar) return;
+    const toolbar = floatingToolbarRef.current;
+    if (!toolbar) return;
     setAddCommentInput({
-      x: floatingToolbar.x,
-      y: floatingToolbar.y,
-      range: floatingToolbar.range,
-      codeContent: floatingToolbar.codeContent,
+      x: toolbar.x,
+      y: toolbar.y,
+      range: toolbar.range,
+      codeContent: toolbar.codeContent,
     });
-    setFloatingToolbar(null);
-  }, [floatingToolbar]);
+    floatingToolbarRef.current = null;
+    setToolbarVersion(v => v + 1);
+  }, []);
 
   const handleToolbarSendToAI = useCallback(() => {
-    if (!floatingToolbar) return;
+    const toolbar = floatingToolbarRef.current;
+    if (!toolbar) return;
     setSendToAIInput({
-      x: floatingToolbar.x,
-      y: floatingToolbar.y,
-      range: floatingToolbar.range,
-      codeContent: floatingToolbar.codeContent,
+      x: toolbar.x,
+      y: toolbar.y,
+      range: toolbar.range,
+      codeContent: toolbar.codeContent,
     });
-    setFloatingToolbar(null);
-  }, [floatingToolbar]);
+    floatingToolbarRef.current = null;
+    setToolbarVersion(v => v + 1);
+  }, []);
 
   const handleSendToAISubmit = useCallback(async (question: string) => {
     if (!sendToAIInput || !chatContext || !cwd) return;
@@ -483,9 +529,9 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
       {isMounted && menuContainer && createPortal(
         <>
           <FloatingToolbar
-            x={floatingToolbar?.x ?? 0}
-            y={floatingToolbar?.y ?? 0}
-            visible={!!floatingToolbar}
+            x={floatingToolbarRef.current?.x ?? 0}
+            y={floatingToolbarRef.current?.y ?? 0}
+            visible={!!floatingToolbarRef.current}
             container={menuContainer}
             onAddComment={handleToolbarAddComment}
             onSendToAI={handleToolbarSendToAI}

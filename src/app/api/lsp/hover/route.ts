@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ hover: null });
     }
 
-    const server = await getOrCreateServer(language);
+    const server = await getOrCreateServer(language, cwd || process.cwd());
     if (!server) {
       return NextResponse.json({ hover: null });
     }

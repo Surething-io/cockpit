@@ -217,48 +217,22 @@ function initConsoleCapture() {
 }
 
 // ============================================================================
-// Network 拦截
+// Network 捕获（接收 Main World 的 network-capture.js 通过 CustomEvent 发来的条目）
+//
+// fetch / XHR 拦截在 Main World 执行（network-capture.js），
+// 本层只负责：存储 buffer、管理录制状态、处理 CLI 命令。
 // ============================================================================
 
 const networkBuffer = [];
 const MAX_NETWORK_BUFFER = 500;
-const MAX_BODY_SIZE = 128 * 1024; // 单个 body 最大 128KB
-let networkReqId = 0;
 
-// 录制状态：只有录制期间 + 匹配过滤条件的请求才存 body
+// 录制状态：由本层管理，通过 CustomEvent 同步给 Main World
 const networkRecording = {
   active: false,
   filters: {},   // { url, method, status }
   timer: null,   // 自动过期定时器
   startedAt: 0,
 };
-
-// 检查请求是否匹配录制过滤条件
-function shouldCaptureBody(method, url, status) {
-  if (!networkRecording.active) return false;
-  const f = networkRecording.filters;
-  if (f.method && method.toUpperCase() !== f.method.toUpperCase()) return false;
-  if (f.url) {
-    // 支持 * 通配符匹配
-    const pattern = f.url.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
-    if (!new RegExp(pattern, 'i').test(url)) return false;
-  }
-  if (f.status && status != null) {
-    const ranges = f.status.split(',').map(s => s.trim());
-    const match = ranges.some(range => {
-      if (range.endsWith('xx')) { const base = parseInt(range[0]) * 100; return status >= base && status < base + 100; }
-      return status === parseInt(range);
-    });
-    if (!match) return false;
-  }
-  return true;
-}
-
-function captureBody(text) {
-  if (text == null) return null;
-  if (text.length > MAX_BODY_SIZE) return { truncated: true, size: text.length };
-  return text;
-}
 
 // 清除所有 entry 的 body 数据（过期时调用）
 function clearAllBodies() {
@@ -270,120 +244,28 @@ function clearAllBodies() {
   }
 }
 
-function initNetworkCapture() {
-  const originalFetch = window.fetch;
-  window.fetch = async function (...args) {
-    const id = ++networkReqId;
-    const req = args[0] instanceof Request ? args[0] : new Request(args[0], args[1]);
-    const wantBody = shouldCaptureBody(req.method, req.url, null);
+// 同步录制状态到 Main World 的 network-capture.js
+function syncRecordingToMainWorld() {
+  window.dispatchEvent(new CustomEvent('cockpit:network-recording', {
+    detail: { active: networkRecording.active, filters: networkRecording.filters },
+  }));
+}
 
-    // request headers & body 只在录制时捕获
-    let reqHeaders = null;
-    let reqBody = null;
-    if (wantBody) {
-      reqHeaders = {};
-      req.headers.forEach((v, k) => { reqHeaders[k] = v; });
-      try { reqBody = captureBody(await req.clone().text()); } catch {}
-    }
-    const entry = {
-      id, method: req.method, url: req.url, type: 'fetch',
-      startTime: Date.now(), status: null, duration: null,
-      requestHeaders: reqHeaders, requestBody: reqBody,
-      responseHeaders: null, responseBody: null, responseSize: null,
-      recorded: wantBody,
-    };
-    networkBuffer.push(entry);
+// 监听 Main World 发来的网络条目
+function initNetworkListener() {
+  // 请求发起时收到占位条目（保持发起顺序）
+  window.addEventListener('cockpit:network-entry', (e) => {
+    networkBuffer.push(e.detail);
     if (networkBuffer.length > MAX_NETWORK_BUFFER) networkBuffer.splice(0, 1);
-
-    try {
-      const res = await originalFetch.apply(this, args);
-      entry.status = res.status;
-      entry.duration = Date.now() - entry.startTime;
-      // 根据最终 status 再判断一次（初始判断时 status 未知）
-      const capture = wantBody || shouldCaptureBody(req.method, req.url, res.status);
-      if (capture) {
-        entry.recorded = true;
-        const resHeaders = {};
-        res.headers.forEach((v, k) => { resHeaders[k] = v; });
-        entry.responseHeaders = resHeaders;
-        if (!reqHeaders) {
-          entry.requestHeaders = {};
-          req.headers.forEach((v, k) => { entry.requestHeaders[k] = v; });
-        }
-        const ct = res.headers.get('content-type') || '';
-        if (ct.includes('json') || ct.includes('text') || ct.includes('xml') || ct.includes('html') || ct.includes('javascript')) {
-          try {
-            const text = await res.clone().text();
-            entry.responseSize = text.length;
-            entry.responseBody = captureBody(text);
-          } catch {}
-        }
-      }
-      return res;
-    } catch (err) {
-      entry.status = 0;
-      entry.duration = Date.now() - entry.startTime;
-      entry.error = err.message;
-      throw err;
-    }
-  };
-
-  const XHROpen = XMLHttpRequest.prototype.open;
-  const XHRSend = XMLHttpRequest.prototype.send;
-
-  XMLHttpRequest.prototype.open = function (method, url) {
-    this._cockpit = { method, url: String(url), id: ++networkReqId };
-    return XHROpen.apply(this, arguments);
-  };
-
-  const XHRSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
-  XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
-    if (this._cockpit) {
-      if (!this._cockpit.requestHeaders) this._cockpit.requestHeaders = {};
-      this._cockpit.requestHeaders[name.toLowerCase()] = value;
-    }
-    return XHRSetRequestHeader.apply(this, arguments);
-  };
-
-  XMLHttpRequest.prototype.send = function (body) {
-    if (this._cockpit) {
-      const wantBody = shouldCaptureBody(this._cockpit.method, this._cockpit.url, null);
-      const entry = {
-        id: this._cockpit.id, method: this._cockpit.method,
-        url: this._cockpit.url, type: 'xhr',
-        startTime: Date.now(), status: null, duration: null,
-        requestHeaders: wantBody ? (this._cockpit.requestHeaders || null) : null,
-        requestBody: wantBody && typeof body === 'string' ? captureBody(body) : null,
-        responseHeaders: null, responseBody: null, responseSize: null,
-        recorded: wantBody,
-      };
-      networkBuffer.push(entry);
-      if (networkBuffer.length > MAX_NETWORK_BUFFER) networkBuffer.splice(0, 1);
-      this.addEventListener('loadend', () => {
-        entry.status = this.status;
-        entry.duration = Date.now() - entry.startTime;
-        const capture = wantBody || shouldCaptureBody(this._cockpit.method, this._cockpit.url, this.status);
-        if (capture) {
-          entry.recorded = true;
-          try {
-            const raw = this.getAllResponseHeaders();
-            const headers = {};
-            raw.trim().split(/[\r\n]+/).forEach(line => {
-              const [k, ...v] = line.split(': ');
-              if (k) headers[k.toLowerCase()] = v.join(': ');
-            });
-            entry.responseHeaders = headers;
-          } catch {}
-          try {
-            const text = this.responseText;
-            entry.responseSize = text.length;
-            entry.responseBody = captureBody(text);
-          } catch {}
-        }
-      });
-    }
-    return XHRSend.apply(this, arguments);
-  };
+  });
+  // 响应完成时收到更新（补全 status / duration / body 等字段）
+  window.addEventListener('cockpit:network-update', (e) => {
+    const update = e.detail;
+    const entry = networkBuffer.find(r => r.id === update.id);
+    if (entry) Object.assign(entry, update);
+  });
+  // 通知 Main World：Isolated World 已就绪，可以 flush 缓存的条目
+  window.dispatchEvent(new CustomEvent('cockpit:network-bridge-ready'));
 }
 
 // ============================================================================
@@ -632,11 +514,13 @@ const handlers = {
       if (method) networkRecording.filters.method = method;
       if (status) networkRecording.filters.status = status;
       networkRecording.startedAt = Date.now();
+      syncRecordingToMainWorld();
       // ttl 秒后自动过期（默认 10 分钟）
       networkRecording.timer = setTimeout(() => {
         networkRecording.active = false;
         clearAllBodies();
         networkRecording.timer = null;
+        syncRecordingToMainWorld();
       }, ttl * 1000);
       return {
         recording: true,
@@ -647,6 +531,7 @@ const handlers = {
     if (action === 'stop') {
       networkRecording.active = false;
       if (networkRecording.timer) { clearTimeout(networkRecording.timer); networkRecording.timer = null; }
+      syncRecordingToMainWorld();
       // 停止后不立即清 body，允许查询已录制的数据
       return { recording: false, recordedCount: networkBuffer.filter(r => r.recorded).length };
     }
@@ -793,7 +678,7 @@ export function initAutomation(realParent, chromeApi) {
 
   window.addEventListener('message', handleCommand);
   initConsoleCapture();
-  initNetworkCapture();
+  initNetworkListener();
 
   console.log(LOG_PREFIX, 'Automation layer activated');
 }

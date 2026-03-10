@@ -590,6 +590,7 @@ export function BrowserBubble({
                     ref={iframeRef}
                     src={readyUrl}
                     className="border-0"
+                    allow="clipboard-write; clipboard-read"
                     style={maximized
                       ? { width: '100%', height: '100%' }
                       : { position: 'absolute', top: 0, left: 0, width: '200%', height: '200%', transform: 'scale(0.5)', transformOrigin: 'top left' }

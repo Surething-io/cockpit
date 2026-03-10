@@ -21,56 +21,76 @@
 
 const args = process.argv.slice(2);
 
-// 帮助文本（共用）
-function printActions(prefix = '<id>') {
-  console.log(`  list                              List all connected browsers
+// 帮助文本
+// status: { connected, title, url } — 传入时显示当前浏览器状态
+function printHelp(prefix = '<id>', status = null) {
+  console.log(`Control a Chrome tab — inspect elements, navigate, interact, and debug.
 
-  Navigation:
-  ${prefix} navigate <url>             Navigate to URL
-  ${prefix} reload [--noCache]         Reload page
-  ${prefix} back / forward             Navigate history
-  ${prefix} url                        Get current URL
-  ${prefix} title                      Get page title
+Usage: cock browser ${prefix} <action>`);
 
-  Inspection:
-  ${prefix} snapshot                   Get accessibility tree
-  ${prefix} screenshot                 Take a screenshot
+  if (status) {
+    if (status.connected) {
+      let line = `\nStatus: connected`;
+      if (status.title) line += `\n  title: ${status.title}`;
+      if (status.url) line += `\n  URL: ${status.url}`;
+      console.log(line);
+    } else {
+      console.log(`\nStatus: disconnected`);
+    }
+  }
 
-  Interaction:
-  ${prefix} click <ref>                Click element
-  ${prefix} type <ref> <text>          Type text into element
-  ${prefix} fill <ref> <value>         Fill input value
-  ${prefix} hover <ref>                Hover element
-  ${prefix} focus <ref>                Focus element
-  ${prefix} scroll --direction D       Scroll page/element
-  ${prefix} key <key>                  Press key (e.g. Enter, Ctrl+A)
-  ${prefix} wait --text T              Wait for condition
+  console.log(`
+Workflow: run \`snapshot\` to get the page element tree. Each element
+has a ref like [e5]. Use that ref with click, type, fill, hover, etc.
 
-  DOM:
-  ${prefix} computed <ref>             Get computed styles
-  ${prefix} bounds <ref>               Get element bounds
-  ${prefix} attrs <ref>                Get element attributes
-  ${prefix} events <ref>               Get event listeners
-  ${prefix} evaluate <js>              Execute JavaScript (--all-frames)
+Navigation:
+  navigate <url>              Navigate to URL
+  reload [--noCache]          Reload page
+  back / forward              Navigate history
+  url                         Get current URL
+  title                       Get page title
 
-  Network:
-  ${prefix} network [--status S]       List requests (--method --type --clear)
-  ${prefix} network_record start       Start recording body (--url --method --status --ttl)
-  ${prefix} network_record stop        Stop recording
-  ${prefix} network_record             Show recording status
-  ${prefix} network_detail <id>        Get request/response detail
+Inspection:
+  snapshot                    Get element tree (returns refs like [e5])
+  screenshot                  Take a screenshot
 
-  Debug:
-  ${prefix} console [--level L]        Get console messages (--clear)
-  ${prefix} perf --metric M            Performance (timing|memory|resources)
-  ${prefix} theme --mode M             Switch theme (dark|light)
-  ${prefix} cookies                    Get cookies
-  ${prefix} storage [--type T]         Get storage`);
+Interaction (use ref from snapshot):
+  click <ref>                 Click element
+  type <ref> <text>           Type text into element
+  fill <ref> <value>          Fill input value
+  hover <ref>                 Hover element
+  focus <ref>                 Focus element
+  scroll --direction D        Scroll page (up/down/left/right)
+  key <key>                   Press key (e.g. Enter, Ctrl+A)
+  wait --text T               Wait for text to appear
+
+DOM:
+  computed <ref>              Get computed styles
+  bounds <ref>                Get element bounding rect
+  attrs <ref>                 Get element attributes
+  events <ref>                Get event listeners
+  evaluate <js>               Run JavaScript and return result
+                              e.g. evaluate "document.title"
+                              e.g. evaluate "await fetch('/api/data').then(r=>r.json())"
+                              Tip: fetch() inherits the browser's auth session
+                              Use --all-frames to run in all iframes
+
+Network:
+  network [--status S]        List requests (--method --type --clear)
+  network_record start        Record request bodies (--url --method --status)
+  network_record stop         Stop recording
+  network_detail <reqId>      Get request/response detail
+
+Console & Debug:
+  console [--level L]         Get console messages (--clear)
+  perf --metric M             Performance (timing|memory|resources)
+  theme --mode M              Switch theme (dark|light)
+  cookies                     Get cookies
+  storage [--type T]          Get storage (local|session)`);
 }
 
 if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
-  console.log('Usage: cock browser <id> <action> [--flag value ...]\n\nCommands:');
-  printActions();
+  printHelp();
   process.exit(0);
 }
 
@@ -158,10 +178,37 @@ const baseUrl = `http://localhost:${port}`;
 const timeout = params.timeout || 15000;
 delete params.timeout;
 
+// 快速获取 browser 的 url 和 title（2s 超时，失败静默返回空）
+async function fetchBrowserInfo(shortId) {
+  try {
+    const [urlRes, titleRes] = await Promise.all([
+      fetch(`${baseUrl}/api/browser/url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: shortId, params: {}, timeout: 2000 }),
+        signal: AbortSignal.timeout(3000),
+      }).then(r => r.json()),
+      fetch(`${baseUrl}/api/browser/title`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: shortId, params: {}, timeout: 2000 }),
+        signal: AbortSignal.timeout(3000),
+      }).then(r => r.json()),
+    ]);
+    return {
+      url: urlRes.ok ? urlRes.data : '',
+      title: titleRes.ok ? titleRes.data : '',
+    };
+  } catch {
+    return { url: '', title: '' };
+  }
+}
+
 // 发送请求
 async function run() {
-  // 只传 id 不传 action → 查状态 + 显示可用命令
+  // 只传 id 不传 action → 显示帮助 + 状态
   if (action === '_status') {
+    let status = null;
     try {
       const res = await fetch(`${baseUrl}/api/browser/list`, {
         method: 'POST',
@@ -172,15 +219,17 @@ async function run() {
       const data = await res.json();
       const browser = data.ok && data.data?.find(b => b.shortId === id);
       if (browser) {
-        console.log(`● ${browser.shortId}  ${browser.connected ? 'connected' : 'disconnected'}  ${browser.fullId}`);
-      } else {
-        console.log(`○ ${id}  not found`);
+        if (browser.connected) {
+          const info = await fetchBrowserInfo(browser.shortId);
+          status = { connected: true, title: info.title, url: info.url };
+        } else {
+          status = { connected: false };
+        }
       }
     } catch {
-      console.log(`○ ${id}  server unreachable (${baseUrl})`);
+      // server unreachable — show help without status
     }
-    console.log(`\nUsage: cock browser ${id} <action>\n\nActions:`);
-    printActions(id);
+    printHelp(id, status);
     return;
   }
 
@@ -257,9 +306,17 @@ async function formatOutput(action, data) {
         return;
       }
       if (Array.isArray(data)) {
-        for (const b of data) {
+        const infos = await Promise.all(data.map(b =>
+          b.connected ? fetchBrowserInfo(b.shortId) : { url: '', title: '' }
+        ));
+        for (let i = 0; i < data.length; i++) {
+          const b = data[i];
+          const info = infos[i];
           const status = b.connected ? '●' : '○';
-          console.log(`${status} ${b.shortId}  ${b.fullId}`);
+          let line = `${status} ${b.shortId}  ${b.connected ? 'connected' : 'disconnected'}`;
+          if (info.title) line += `  title: ${info.title}`;
+          if (info.url) line += `\n    URL: ${info.url}`;
+          console.log(line);
         }
         return;
       }

@@ -698,7 +698,7 @@ function handleTerminalFollow(ws: WebSocket, shortId: string): void {
  */
 export async function handleBrowserApi(req: IncomingMessage, res: import('http').ServerResponse): Promise<boolean> {
   const { pathname } = parse(req.url || '', true);
-  const match = pathname?.match(/^\/api\/browser\/([a-z]+)$/);
+  const match = pathname?.match(/^\/api\/browser\/([a-z][a-z_]*)$/);
   if (!match || req.method !== 'POST') return false;
 
   const action = match[1];

@@ -112,9 +112,12 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   onEditorStateChange,
 }, ref) {
   // ========== 编辑模式状态 ==========
-  const [editContent, setEditContent] = useState(content);
+  const editContentRef = useRef(content); // ref：不触发 re-render，仅在 save/highlight 时读取
+  const isDirtyRef = useRef(false);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [editLineCount, setEditLineCount] = useState(() => content.split('\n').length);
+  const editLineCountRef = useRef(content.split('\n').length);
   const [conflictState, setConflictState] = useState<{ show: boolean; diskContent?: string }>({ show: false });
   const editableRef = useRef<HTMLDivElement>(null);
   const editScrollRef = useRef<HTMLDivElement>(null);
@@ -123,9 +126,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   // 编辑模式的 debounce 高亮
   const editDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isHighlightingRef = useRef(false); // 防止 re-highlight 触发 onInput
-
-  // 用于编辑模式的实际 content（编辑时用 editContent，否则用 props content）
-  const effectiveContent = editable ? editContent : content;
+  const isComposingRef = useRef(false); // IME 输入中标记，防止拼音写入文件
 
   const {
     // Refs
@@ -184,7 +185,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     inlineBlameLineRef,
     inlineBlameVersion,
   } = useCodeViewerLogic({
-    content: effectiveContent,
+    content,  // 编辑模式下也传原始 content，避免每次按键触发 useLineHighlight 全文 re-tokenize
     filePath,
     showSearch,
     cwd,
@@ -231,13 +232,16 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   }, [onCmdClick]);
 
   // 行号列：最少4位数字宽度
-  const editLines = editContent.split('\n');
-  const lineNumChars = Math.max(4, String(editable ? editLines.length : lines.length).length);
+  const lineNumChars = Math.max(4, String(editable ? editLineCount : lines.length).length);
 
   // ========== 编辑模式：进入/退出同步 ==========
   useEffect(() => {
     if (editable) {
-      setEditContent(content);
+      editContentRef.current = content;
+      const lc = content.split('\n').length;
+      editLineCountRef.current = lc;
+      setEditLineCount(lc);
+      isDirtyRef.current = false;
       setIsDirty(false);
       setConflictState({ show: false });
       mtimeRef.current = initialMtime;
@@ -279,20 +283,34 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     }
   }, [editable, isDirty, isSaving, onEditorStateChange]);
 
-  // ========== 编辑模式：debounced Shiki 重新高亮（imperative DOM 更新） ==========
-  useEffect(() => {
-    if (!editable) return;
+  // ========== 编辑模式：contentEditable handlers ==========
+  const extractTextFromEditable = useCallback((): string => {
+    const container = editableRef.current;
+    if (!container) return editContentRef.current;
+    const lines: string[] = [];
+    for (const child of container.childNodes) {
+      lines.push((child as HTMLElement).textContent || '');
+    }
+    return lines.join('\n');
+  }, []);
+
+  // 命令式 debounce 高亮（不依赖 React state，不触发 re-render）
+  const triggerHighlightDebounce = useCallback(() => {
     if (editDebounceRef.current) clearTimeout(editDebounceRef.current);
     editDebounceRef.current = setTimeout(async () => {
       const container = editableRef.current;
       if (!container) return;
+      if (isComposingRef.current) return; // IME 输入中不重建 DOM，否则会打断候选窗口
+
+      // 从 DOM 提取最新内容写入 ref
+      editContentRef.current = extractTextFromEditable();
 
       try {
         const highlighter = await getHighlighter();
         const language = getLanguageFromPath(filePath);
         const isDarkMode = document.documentElement.classList.contains('dark');
         const theme = isDarkMode ? 'github-dark' : 'github-light';
-        const editLineArr = editContent.split('\n');
+        const editLineArr = editContentRef.current.split('\n');
         const result = highlighter.codeToTokens(editLineArr.join('\n'), {
           lang: language as BundledLanguage,
           theme,
@@ -308,27 +326,40 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
       } catch {
         // 高亮失败，不更新 DOM
       }
-    }, 80);
-    return () => { if (editDebounceRef.current) clearTimeout(editDebounceRef.current); };
-  }, [editable, editContent, filePath]);
+    }, 300);
+  }, [filePath, extractTextFromEditable]);
 
-  // ========== 编辑模式：contentEditable handlers ==========
-  const extractTextFromEditable = useCallback((): string => {
+  // 清理 debounce timer
+  useEffect(() => {
+    if (!editable) return;
+    return () => { if (editDebounceRef.current) clearTimeout(editDebounceRef.current); };
+  }, [editable]);
+
+  // 同步行数 & dirty 标记（仅在真正变化时 setState，普通按键零 re-render）
+  const syncEditMeta = useCallback(() => {
     const container = editableRef.current;
-    if (!container) return editContent;
-    const lines: string[] = [];
-    for (const child of container.childNodes) {
-      lines.push((child as HTMLElement).textContent || '');
+    if (!container) return;
+
+    // dirty：首次变脏后不再重复 setState
+    if (!isDirtyRef.current) {
+      isDirtyRef.current = true;
+      setIsDirty(true);
     }
-    return lines.join('\n');
-  }, [editContent]);
+
+    // 行数：从 DOM children 数量直接取，O(1)
+    const newLineCount = container.children.length;
+    if (newLineCount !== editLineCountRef.current) {
+      editLineCountRef.current = newLineCount;
+      setEditLineCount(newLineCount);
+    }
+  }, []);
 
   const handleContentInput = useCallback(() => {
     if (isHighlightingRef.current) return;
-    const newContent = extractTextFromEditable();
-    setEditContent(newContent);
-    setIsDirty(newContent !== content);
-  }, [content, extractTextFromEditable]);
+    if (isComposingRef.current) return; // IME 输入中不同步，等 compositionend
+    syncEditMeta();
+    triggerHighlightDebounce();
+  }, [syncEditMeta, triggerHighlightDebounce]);
 
   const handleEditKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     // IME 输入中（如中文候选词确认）不拦截
@@ -377,12 +408,11 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
       // 光标移到新行开头
       restoreCursorPosition(container, { line: lineIdx + 1, offset: 0 });
 
-      // 同步状态
-      const newContent = extractTextFromEditable();
-      setEditContent(newContent);
-      setIsDirty(newContent !== content);
+      // 同步 meta + 触发高亮
+      syncEditMeta();
+      triggerHighlightDebounce();
     }
-  }, [content, extractTextFromEditable]);
+  }, [syncEditMeta, triggerHighlightDebounce]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     e.preventDefault();
@@ -393,6 +423,8 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   // ========== 编辑模式：保存逻辑 ==========
   const doSave = useCallback(async (skipConflictCheck = false) => {
     if (!cwd) return;
+    // 保存前从 DOM 提取最新内容（确保 ref 是最新的）
+    editContentRef.current = extractTextFromEditable();
     setIsSaving(true);
     try {
       const response = await fetch('/api/files/save', {
@@ -401,7 +433,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
         body: JSON.stringify({
           cwd,
           path: filePath,
-          content: editContent,
+          content: editContentRef.current,
           expectedMtime: skipConflictCheck ? undefined : mtimeRef.current,
         }),
       });
@@ -420,6 +452,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
       if (!response.ok) throw new Error('Failed to save file');
 
       if (data.mtime) mtimeRef.current = data.mtime;
+      isDirtyRef.current = false;
       setIsDirty(false);
       setConflictState({ show: false });
       toast('已保存', 'success');
@@ -430,7 +463,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     } finally {
       setIsSaving(false);
     }
-  }, [cwd, filePath, editContent, onSaved]);
+  }, [cwd, filePath, extractTextFromEditable, onSaved]);
 
   const handleSave = useCallback(async () => {
     if (!isDirty || isSaving) return;
@@ -444,12 +477,25 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
 
   const handleRevertToDisk = useCallback(() => {
     if (conflictState.diskContent !== undefined) {
-      setEditContent(conflictState.diskContent);
-      setIsDirty(conflictState.diskContent !== content);
+      // 将磁盘内容写入 ref 并重建 contentEditable DOM
+      editContentRef.current = conflictState.diskContent;
+      const lc = conflictState.diskContent.split('\n').length;
+      editLineCountRef.current = lc;
+      setEditLineCount(lc);
+      const newDirty = conflictState.diskContent !== content;
+      isDirtyRef.current = newDirty;
+      setIsDirty(newDirty);
+      // 重建编辑器内容
+      const container = editableRef.current;
+      if (container) {
+        const editLineArr = conflictState.diskContent.split('\n');
+        container.innerHTML = buildEditorHTML(editLineArr.map(l => escapeHtml(l || ' ')));
+        triggerHighlightDebounce();
+      }
     }
     setConflictState({ show: false });
     onSaved?.();
-  }, [conflictState.diskContent, content, onSaved]);
+  }, [conflictState.diskContent, content, onSaved, triggerHighlightDebounce]);
 
   const getCurrentLine = useCallback((): number => {
     // 返回可视区域首行（而非光标行），确保退出编辑模式后视图位置一致
@@ -636,7 +682,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
               className="flex-shrink-0 font-mono text-sm select-none"
               style={{ width: lineNumberWidth }}
             >
-              {editLines.map((_, i) => (
+              {Array.from({ length: editLineCount }, (_, i) => (
                 <div key={i} className="text-right text-muted-foreground/50 pr-3" style={{ height: 20, lineHeight: '20px' }}>
                   {i + 1}
                 </div>
@@ -651,6 +697,8 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
               onInput={handleContentInput}
               onKeyDown={handleEditKeyDown}
               onPaste={handlePaste}
+              onCompositionStart={() => { isComposingRef.current = true; }}
+              onCompositionEnd={() => { isComposingRef.current = false; handleContentInput(); }}
               spellCheck={false}
               autoCorrect="off"
               autoCapitalize="off"

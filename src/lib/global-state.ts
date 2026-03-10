@@ -1,4 +1,4 @@
-import { GLOBAL_STATE_FILE, readJsonFile, writeJsonFile, getClaudeSessionPath } from './paths';
+import { GLOBAL_STATE_FILE, readJsonFile, writeJsonFile, withFileLock, getClaudeSessionPath } from './paths';
 import { createReadStream, existsSync } from 'fs';
 import { createInterface } from 'readline';
 
@@ -19,6 +19,8 @@ const MAX_SESSIONS = 15;
 
 /**
  * 更新全局 session 状态
+ * 使用 withFileLock 串行化并发的 read-modify-write，防止多个定时任务
+ * 同时触发时因竞态条件导致 sessions 数据丢失。
  */
 export async function updateGlobalState(
   cwd: string,
@@ -32,38 +34,40 @@ export async function updateGlobalState(
     return;
   }
 
-  const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
+  return withFileLock(GLOBAL_STATE_FILE, async () => {
+    const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
 
-  // 查找是否已存在
-  const existingIndex = state.sessions.findIndex(
-    s => s.cwd === cwd && s.sessionId === sessionId
-  );
+    // 查找是否已存在
+    const existingIndex = state.sessions.findIndex(
+      s => s.cwd === cwd && s.sessionId === sessionId
+    );
 
-  // 保留现有字段（如果没有传入新的）
-  const existing = existingIndex >= 0 ? state.sessions[existingIndex] : undefined;
+    // 保留现有字段（如果没有传入新的）
+    const existing = existingIndex >= 0 ? state.sessions[existingIndex] : undefined;
 
-  const newSession: GlobalSession = {
-    cwd,
-    sessionId,
-    lastActive: Date.now(),
-    isLoading,
-    title: title || existing?.title,
-    lastUserMessage: lastUserMessage || existing?.lastUserMessage,
-  };
+    const newSession: GlobalSession = {
+      cwd,
+      sessionId,
+      lastActive: Date.now(),
+      isLoading,
+      title: title || existing?.title,
+      lastUserMessage: lastUserMessage || existing?.lastUserMessage,
+    };
 
-  if (existingIndex >= 0) {
-    state.sessions[existingIndex] = newSession;
-  } else {
-    state.sessions.push(newSession);
-  }
+    if (existingIndex >= 0) {
+      state.sessions[existingIndex] = newSession;
+    } else {
+      state.sessions.push(newSession);
+    }
 
-  // 按 lastActive 降序排序
-  state.sessions.sort((a, b) => b.lastActive - a.lastActive);
+    // 按 lastActive 降序排序
+    state.sessions.sort((a, b) => b.lastActive - a.lastActive);
 
-  // 只保留最近 MAX_SESSIONS 个
-  state.sessions = state.sessions.slice(0, MAX_SESSIONS);
+    // 只保留最近 MAX_SESSIONS 个
+    state.sessions = state.sessions.slice(0, MAX_SESSIONS);
 
-  await writeJsonFile(GLOBAL_STATE_FILE, state);
+    await writeJsonFile(GLOBAL_STATE_FILE, state);
+  });
 }
 
 /**

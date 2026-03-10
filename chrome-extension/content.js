@@ -83,22 +83,19 @@
     );
 
     // ----------------------------------------------------------------
-    // 0a. 阻止 iframe 内所有 scroll container 的滚动链传播到父文档
-    //     SPA 页面的滚动容器通常不是 <html>，而是内部 div，
-    //     必须用全局 CSS 覆盖所有元素
-    // ----------------------------------------------------------------
-    const overscrollStyle = document.createElement('style');
-    overscrollStyle.textContent = '*, html, body { overscroll-behavior: contain !important; }';
-    (document.head || document.documentElement).appendChild(overscrollStyle);
-
-    // ----------------------------------------------------------------
-    // 0b. 伪装为顶层窗口（注入外部脚本到 main world，绕过 CSP）
+    // 0a. 伪装为顶层窗口（注入外部脚本到 main world，绕过 CSP）
     //     CSP 允许 chrome-extension:// 源，因此用外部脚本替代内联脚本
     // ----------------------------------------------------------------
     const disguiseScript = document.createElement('script');
     disguiseScript.src = chrome.runtime.getURL('disguise.js');
     (document.documentElement || document).prepend(disguiseScript);
     disguiseScript.onload = () => disguiseScript.remove();
+
+    // 注入网络拦截到 Main World（必须在页面脚本之前执行）
+    const networkScript = document.createElement('script');
+    networkScript.src = chrome.runtime.getURL('network-capture.js');
+    (document.documentElement || document).prepend(networkScript);
+    networkScript.onload = () => networkScript.remove();
 
     // ----------------------------------------------------------------
     // 1. Cookie 补充注入：SPA 导航后域名可能变化，通知 background 补充规则

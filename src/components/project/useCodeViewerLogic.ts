@@ -380,6 +380,7 @@ export function useCodeViewerLogic({
       isDragging = true;
       if (floatingToolbarRef.current) {
         floatingToolbarRef.current = null;
+        suppressHoverRef.current = false; // 同步清除，避免 click 读到旧值
         setToolbarVersion(v => v + 1);
       }
     };
@@ -497,7 +498,10 @@ export function useCodeViewerLogic({
       const line = getLineFromEvent(e);
       if (line !== inlineBlameLineRef.current) {
         inlineBlameLineRef.current = line;
-        setInlineBlameVersion(v => v + 1);
+        // 延迟到下一帧再触发 re-render，避免在 mouseup→click 之间
+        // 的 microtask checkpoint 中 React flush 导致 fiber 树重建，
+        // 使紧随的 click 事件丢失 onClick 路由
+        requestAnimationFrame(() => setInlineBlameVersion(v => v + 1));
       }
     };
 

@@ -1268,13 +1268,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             </button>
                           )}
                           {fileTree.fileContent?.type === 'text' && isMarkdownFile(fileTree.selectedPath) && (
-                            <button
-                              onClick={() => fileTree.setShowMarkdownPreview(true)}
-                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
-                              title="预览 Markdown 渲染效果"
-                            >
-                              预览
-                            </button>
+                              <button
+                                onClick={() => fileTree.setShowMarkdownPreview(true)}
+                                className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
+                                title="预览 Markdown 渲染效果"
+                              >
+                                预览
+                              </button>
                           )}
                           {fileTree.fileContent?.type === 'text' && (
                             <button
@@ -1559,15 +1559,45 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               {/* Modal Header */}
               <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
                 <span className="text-sm font-medium text-foreground truncate">{fileTree.selectedPath}</span>
-                <button
-                  onClick={() => fileTree.setShowMarkdownPreview(false)}
-                  className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-                  title="关闭"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      const title = (fileTree.selectedPath || '').split('/').pop() || fileTree.selectedPath || '';
+                      try {
+                        const res = await fetch('/api/review', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ title, content: fileTree.fileContent?.content || '', sourceFile: fileTree.selectedPath }),
+                        });
+                        if (!res.ok) throw new Error('Failed');
+                        const data = await res.json();
+                        window.open(`${window.location.origin}/review/${data.review.id}`, '_blank');
+                        try {
+                          const infoRes = await fetch('/api/review/share-info');
+                          const info = await infoRes.json();
+                          const shareUrl = info.shareBase
+                            ? `${info.shareBase}/review/${data.review.id}`
+                            : `${window.location.origin}/review/${data.review.id}`;
+                          await navigator.clipboard.writeText(shareUrl);
+                        } catch { /* ignore */ }
+                        toast(data.review.existing ? '已打开评审，链接已复制' : '评审已创建，链接已复制', 'success');
+                      } catch { toast('创建评审失败', 'error'); }
+                    }}
+                    className="px-2 py-1 text-xs rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-accent"
+                    title="创建分享评审链接"
+                  >
+                    分享评审
+                  </button>
+                  <button
+                    onClick={() => fileTree.setShowMarkdownPreview(false)}
+                    className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                    title="关闭"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
               </div>
               {/* Modal Content */}
               <div className="flex-1 overflow-auto p-6">

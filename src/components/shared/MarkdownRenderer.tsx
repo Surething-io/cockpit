@@ -6,6 +6,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useState, useMemo, ComponentPropsWithoutRef } from 'react';
 import { useTheme } from './ThemeProvider';
+import { MermaidBlock } from './MermaidBlock';
 
 interface MarkdownRendererProps {
   content: string;
@@ -74,7 +75,7 @@ function preprocessAsciiArt(content: string): string {
 }
 
 // 提取 Markdown 组件配置，避免重复定义
-function createMarkdownComponents(isDark: boolean) {
+function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
   return {
     // 代码块
     code({ className, children, ...props }: ComponentPropsWithoutRef<'code'> & { className?: string }) {
@@ -92,6 +93,12 @@ function createMarkdownComponents(isDark: boolean) {
 
       const code = String(children).replace(/\n$/, '');
       const language = match?.[1] || 'text';
+
+      // Mermaid 代码块：非流式时渲染图表，流式中显示代码
+      if (language === 'mermaid' && !isStreaming) {
+        return <MermaidBlock code={code} isDark={isDark} />;
+      }
+
       return (
         <SyntaxHighlighter
           style={isDark ? oneDark : oneLight}
@@ -173,7 +180,7 @@ export function MarkdownRenderer({ content, isUser = false, isStreaming = false 
         {/* 已完成的行用 Markdown 渲染 */}
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
-          components={createMarkdownComponents(isDark)}
+          components={createMarkdownComponents(isDark, true)}
         >
           {completedLines}
         </ReactMarkdown>

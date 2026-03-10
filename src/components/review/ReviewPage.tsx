@@ -1,0 +1,369 @@
+'use client';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { ReviewMarkdownPanel } from './ReviewMarkdownPanel';
+import { ReviewCommentPanel } from './ReviewCommentPanel';
+import { ReviewIdentitySettings } from './ReviewIdentitySettings';
+import { ReviewListPanel } from './ReviewListPanel';
+import { useReviewIdentity } from '@/hooks/useReviewIdentity';
+import { useTheme } from '@/components/shared/ThemeProvider';
+import { ReviewData } from '@/lib/review-utils';
+import { toast } from '@/components/shared/Toast';
+
+interface ReviewPageProps {
+  reviewId: string;
+}
+
+export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
+  const [currentId, setCurrentId] = useState(initialReviewId);
+  const [review, setReview] = useState<ReviewData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const identity = useReviewIdentity();
+  const { resolvedTheme, setTheme } = useTheme();
+
+  // 判断管理员模式
+  useEffect(() => {
+    setIsAdmin(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  }, []);
+
+  // Default to dark for review page
+  useEffect(() => {
+    const stored = localStorage.getItem('theme');
+    if (!stored || stored === 'system') {
+      setTheme('dark');
+    }
+  }, [setTheme]);
+
+  // refs for cross-panel scroll
+  const scrollToCommentRef = useRef<(commentId: string) => void>(undefined);
+  const scrollToHighlightRef = useRef<(commentId: string) => void>(undefined);
+
+  // SPA 切换评审
+  const handleSelectReview = useCallback((id: string) => {
+    if (id === currentId) return;
+    setCurrentId(id);
+    setLoading(true);
+    setError(null);
+    setReview(null);
+    setActiveCommentId(null);
+    window.history.replaceState(null, '', `/review/${id}`);
+  }, [currentId]);
+
+  // Fetch review data
+  const fetchReview = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/review/${currentId}`);
+      if (!res.ok) {
+        if (res.status === 404) {
+          setError('评审不存在或已被删除');
+        } else {
+          setError('加载失败');
+        }
+        return;
+      }
+      const data = await res.json();
+      setReview(data.review);
+      setError(null);
+    } catch {
+      setError('网络错误');
+    } finally {
+      setLoading(false);
+    }
+  }, [currentId]);
+
+  // Initial load + switch
+  useEffect(() => {
+    fetchReview();
+  }, [fetchReview]);
+
+  // Polling for multi-user refresh (every 3s)
+  useEffect(() => {
+    const interval = setInterval(fetchReview, 3000);
+    return () => clearInterval(interval);
+  }, [fetchReview]);
+
+  // Add comment
+  const handleAddComment = useCallback(async (
+    content: string,
+    anchor: { startOffset: number; endOffset: number; selectedText: string }
+  ) => {
+    if (!identity.authorId) return;
+    try {
+      const res = await fetch(`/api/review/${currentId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          author: identity.name,
+          authorId: identity.authorId,
+          content,
+          anchor,
+        }),
+      });
+      if (res.ok) {
+        await fetchReview();
+      }
+    } catch {
+      toast('添加评论失败', 'error');
+    }
+  }, [currentId, identity, fetchReview]);
+
+  // Delete comment
+  const handleDeleteComment = useCallback(async (commentId: string) => {
+    try {
+      const res = await fetch(`/api/review/${currentId}/comments?commentId=${commentId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        await fetchReview();
+      }
+    } catch {
+      toast('删除评论失败', 'error');
+    }
+  }, [currentId, fetchReview]);
+
+  // Edit comment
+  const handleEditComment = useCallback(async (commentId: string, content: string) => {
+    try {
+      const res = await fetch(`/api/review/${currentId}/comments`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commentId, content }),
+      });
+      if (res.ok) {
+        await fetchReview();
+      }
+    } catch {
+      toast('编辑评论失败', 'error');
+    }
+  }, [currentId, fetchReview]);
+
+  // Add reply
+  const handleAddReply = useCallback(async (commentId: string, content: string) => {
+    if (!identity.authorId) return;
+    try {
+      const res = await fetch(`/api/review/${currentId}/replies`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          commentId,
+          author: identity.name,
+          authorId: identity.authorId,
+          content,
+        }),
+      });
+      if (res.ok) {
+        await fetchReview();
+      }
+    } catch {
+      toast('添加回复失败', 'error');
+    }
+  }, [currentId, identity, fetchReview]);
+
+  // Delete reply
+  const handleDeleteReply = useCallback(async (commentId: string, replyId: string) => {
+    try {
+      const res = await fetch(
+        `/api/review/${currentId}/replies?commentId=${commentId}&replyId=${replyId}`,
+        { method: 'DELETE' }
+      );
+      if (res.ok) {
+        await fetchReview();
+      }
+    } catch {
+      toast('删除回复失败', 'error');
+    }
+  }, [currentId, fetchReview]);
+
+  // Edit reply
+  const handleEditReply = useCallback(async (commentId: string, replyId: string, content: string) => {
+    try {
+      const res = await fetch(`/api/review/${currentId}/replies`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commentId, replyId, content }),
+      });
+      if (res.ok) {
+        await fetchReview();
+      }
+    } catch {
+      toast('编辑回复失败', 'error');
+    }
+  }, [currentId, fetchReview]);
+
+  // Copy share URL (use LAN IP + share port)
+  const handleCopyLink = useCallback(async () => {
+    try {
+      const res = await fetch('/api/review/share-info');
+      const info = await res.json();
+      const shareUrl = info.shareBase
+        ? `${info.shareBase}/review/${currentId}`
+        : window.location.href;
+      await navigator.clipboard.writeText(shareUrl);
+      toast('链接已复制', 'success');
+    } catch {
+      toast('复制失败', 'error');
+    }
+  }, [currentId]);
+
+  // Toggle active
+  const handleToggleActive = useCallback(async () => {
+    if (!review) return;
+    try {
+      const res = await fetch(`/api/review/${currentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: !review.active }),
+      });
+      if (res.ok) {
+        await fetchReview();
+      }
+    } catch {
+      toast('操作失败', 'error');
+    }
+  }, [review, currentId, fetchReview]);
+
+  // Click comment in right panel -> scroll to highlight in left panel
+  const handleCommentClick = useCallback((commentId: string) => {
+    setActiveCommentId(commentId);
+    scrollToHighlightRef.current?.(commentId);
+    // Clear active after animation
+    setTimeout(() => setActiveCommentId(null), 2000);
+  }, []);
+
+  // Click highlight in left panel -> scroll to comment in right panel
+  const handleHighlightClick = useCallback((commentId: string) => {
+    setActiveCommentId(commentId);
+    scrollToCommentRef.current?.(commentId);
+    setTimeout(() => setActiveCommentId(null), 2000);
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="h-screen flex bg-background text-foreground">
+        {isAdmin && (
+          <div className="w-[200px] flex-shrink-0 border-r border-border">
+            <ReviewListPanel currentReviewId={currentId} onSelect={handleSelectReview} />
+          </div>
+        )}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-muted-foreground">加载中...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !review) {
+    return (
+      <div className="h-screen flex bg-background text-foreground">
+        {isAdmin && (
+          <div className="w-[200px] flex-shrink-0 border-r border-border">
+            <ReviewListPanel currentReviewId={currentId} onSelect={handleSelectReview} />
+          </div>
+        )}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-xl mb-2">{error || '评审不存在'}</div>
+            <div className="text-sm text-muted-foreground">请检查链接是否正确</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
+      {/* Top Bar */}
+      <div className="py-2 bg-secondary border-b border-border flex-shrink-0">
+      <div className={`w-full mx-auto px-4 flex items-center gap-3 ${isAdmin ? '' : 'max-w-[1400px]'}`}>
+        <h1 className="text-sm font-semibold truncate flex-1">{review.title}</h1>
+
+        {/* Status badge: 访客只读显示状态 */}
+        {!isAdmin && (
+          <span className={`px-2 py-0.5 text-xs rounded-full ${
+            review.active
+              ? 'bg-green-500/15 text-green-600 dark:text-green-400'
+              : 'bg-muted text-muted-foreground'
+          }`}>
+            {review.active ? '开放中' : '已关闭'}
+          </span>
+        )}
+
+        {/* Copy link */}
+        <button
+          onClick={handleCopyLink}
+          className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
+        >
+          复制链接
+        </button>
+
+        {/* Comment count */}
+        <span className="text-xs text-muted-foreground">
+          {review.comments.length} 条评论
+        </span>
+
+        {/* Theme toggle */}
+        <button
+          onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+          className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+          title={resolvedTheme === 'dark' ? '切换亮色' : '切换暗色'}
+        >
+          {resolvedTheme === 'dark' ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          )}
+        </button>
+
+        {/* Identity settings */}
+        <ReviewIdentitySettings identity={identity} />
+      </div>
+      </div>
+
+      {/* Main content */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Admin: Left sidebar - review list */}
+        {isAdmin && (
+          <div className="w-[200px] flex-shrink-0 border-r border-border">
+            <ReviewListPanel currentReviewId={currentId} onSelect={handleSelectReview} />
+          </div>
+        )}
+
+        {/* Two-panel content */}
+        <div className={`flex-1 flex overflow-hidden ${isAdmin ? '' : 'max-w-[1400px] mx-auto'}`}>
+          {/* Left: Markdown preview */}
+          <div className="flex-1 h-full border-r border-border overflow-hidden">
+            <ReviewMarkdownPanel
+              content={review.content}
+              comments={review.comments}
+              activeCommentId={activeCommentId}
+              isActive={review.active}
+              onAddComment={handleAddComment}
+              onHighlightClick={handleHighlightClick}
+              scrollToHighlightRef={scrollToHighlightRef}
+            />
+          </div>
+
+          {/* Right: Comments */}
+          <div className="w-[360px] h-full overflow-hidden flex-shrink-0">
+            <ReviewCommentPanel
+              comments={review.comments}
+              activeCommentId={activeCommentId}
+              currentAuthorId={identity.authorId}
+              isActive={review.active}
+              onCommentClick={handleCommentClick}
+              onDeleteComment={handleDeleteComment}
+              onEditComment={handleEditComment}
+              onAddReply={handleAddReply}
+              onDeleteReply={handleDeleteReply}
+              onEditReply={handleEditReply}
+              scrollToCommentRef={scrollToCommentRef}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

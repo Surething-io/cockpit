@@ -30,7 +30,7 @@
   - `automation.js` - 自动化层（a11y tree、DOM 操作、console/network 拦截）
   - `background.js` - Service Worker（Cookie 注入、截图）
 - `/bin` - CLI 入口
-  - `cock.mjs` - 主入口（启动 server，子命令分流，--help/--version/update）
+  - `cock.mjs` - 主入口（启动 server，子命令分流，--help/--version）
   - `cock-browser.mjs` - `cock browser` 子命令
   - `cock-terminal.mjs` - `cock terminal` 子命令
   - `postinstall.mjs` - 安装后自动部署 Chrome 插件到 ~/.cockpit/
@@ -52,7 +52,6 @@ npm run release  # Build + install globally (npm pack → install tgz)
 npm run lint     # Run ESLint
 cock             # Start production server (port 3457)
 cock -v          # Show version
-cock update      # Update from GitHub
 ```
 
 ## 项目特性

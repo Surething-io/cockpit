@@ -19,7 +19,6 @@ Commands:
   (default)                    Start Cockpit server (port 3457)
   browser <id> <action>        Control browser bubbles
   terminal <id> <action>       Control terminal bubbles
-  update                       Update to latest version
 
 Options:
   -v, --version                Show version
@@ -47,70 +46,6 @@ if (process.argv[2] === 'browser') {
   const mod = await import('./cock-browser.mjs');
   await mod.done;
   process.exit(0);
-}
-
-if (process.argv[2] === 'update') {
-  const { readFileSync, createWriteStream, unlinkSync } = await import('fs');
-  const https = await import('https');
-  const { tmpdir } = await import('os');
-  const pkg = JSON.parse(readFileSync(resolve(PROJECT_ROOT, 'package.json'), 'utf8'));
-  console.log(`Current: v${pkg.version}`);
-  console.log('Checking latest release...\n');
-
-  // 获取最新 release 信息
-  const getLatestRelease = () => new Promise((resolve, reject) => {
-    https.get('https://api.github.com/repos/Surething-io/cockpit/releases/latest', {
-      headers: { 'User-Agent': 'cockpit-cli', Accept: 'application/vnd.github+json' },
-    }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => data += chunk);
-      res.on('end', () => {
-        try {
-          const release = JSON.parse(data);
-          const asset = release.assets?.find(a => a.name.endsWith('.tgz'));
-          if (asset) resolve({ url: asset.browser_download_url, name: asset.name, tag: release.tag_name });
-          else reject(new Error('No tgz found in latest release'));
-        } catch (e) { reject(e); }
-      });
-    }).on('error', reject);
-  });
-
-  // 下载文件（跟随重定向）
-  const download = (url, dest) => new Promise((resolve, reject) => {
-    const file = createWriteStream(dest);
-    const get = (u) => {
-      https.get(u, { headers: { 'User-Agent': 'cockpit-cli' } }, (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          get(res.headers.location);
-          return;
-        }
-        if (res.statusCode !== 200) { reject(new Error(`Download failed: ${res.statusCode}`)); return; }
-        res.pipe(file);
-        file.on('finish', () => { file.close(); resolve(); });
-      }).on('error', reject);
-    };
-    get(url);
-  });
-
-  try {
-    const { url, name, tag } = await getLatestRelease();
-    console.log(`Latest: ${tag}`);
-    console.log('Downloading...');
-    const tgzPath = resolve(tmpdir(), name);
-    await download(url, tgzPath);
-    console.log('Installing...\n');
-    const result = spawnSync('npm', ['install', '-g', tgzPath], { stdio: 'inherit' });
-    try { unlinkSync(tgzPath); } catch {}
-    if (result.status === 0) {
-      console.log(`\nUpdated to ${tag}`);
-    } else {
-      console.error('\nInstall failed. Try: sudo cock update');
-    }
-    process.exit(result.status || 0);
-  } catch (err) {
-    console.error(`Update failed: ${err.message}`);
-    process.exit(1);
-  }
 }
 
 if (process.argv[2] === 'terminal') {

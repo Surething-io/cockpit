@@ -64,6 +64,45 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const gitStatus = useGitStatus({ cwd, addToRecentFiles: fileTree.addToRecentFiles });
   const gitHistory = useGitHistory({ cwd, addToRecentFiles: fileTree.addToRecentFiles });
 
+  // ========== Vi Mode 回调 ==========
+  const handleViContentMutate = useCallback((newContent: string) => {
+    fileTree.setFileContent(prev =>
+      prev?.type === 'text' ? { ...prev, content: newContent } : prev
+    );
+  }, [fileTree]);
+
+  const handleViEnterInsert = useCallback((_cursorLine: number) => {
+    // Don't overwrite visibleLineRef — keep the current viewport scroll position.
+    // visibleLineRef already tracks the first visible line in the virtual scroller,
+    // which the editor init effect uses for both scroll and cursor placement.
+    fileTree.setShowEditor(true);
+  }, [fileTree]);
+
+  const handleViSave = useCallback(async () => {
+    if (!fileTree.fileContent || fileTree.fileContent.type !== 'text' || !fileTree.fileContent.content) return;
+    try {
+      const response = await fetch('/api/files/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cwd,
+          path: fileTree.selectedPath,
+          content: fileTree.fileContent.content,
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to save file');
+      const data = await response.json();
+      if (data.mtime) {
+        fileTree.setFileContent(prev =>
+          prev?.type === 'text' ? { ...prev, mtime: data.mtime } : prev
+        );
+      }
+      toast('已保存', 'success');
+    } catch {
+      toast('保存失败', 'error');
+    }
+  }, [cwd, fileTree]);
+
   // ========== Search results: matchedPaths + matchMap（复用 FileTree） ==========
   const searchData = useMemo(() => {
     const results = contentSearch.contentSearchResults;
@@ -1348,6 +1387,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             onCmdClick={isLSPSupported ? handleLSPCmdClick : undefined}
                             onTokenHover={isLSPSupported ? handleLSPTokenHover : undefined}
                             onTokenHoverLeave={isLSPSupported ? lspHover.onTokenMouseLeave : undefined}
+                            onTokenHoverCancel={isLSPSupported ? lspHover.clearHover : undefined}
                             blameLines={fileTree.showBlame && fileTree.blameLines.length > 0 ? fileTree.blameLines : undefined}
                             inlineBlameLines={fileTree.blameLines.length > 0 ? fileTree.blameLines : undefined}
                             onSelectCommit={fileTree.setBlameSelectedCommit}
@@ -1361,6 +1401,10 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               fileTree.loadFileContent(fileTree.selectedPath!);
                             }}
                             onEditorStateChange={setEditorState}
+                            viMode={true}
+                            onContentMutate={handleViContentMutate}
+                            onEnterInsertMode={handleViEnterInsert}
+                            onViSave={handleViSave}
                           />
                         )
                       ) : fileTree.fileContent.type === 'image' && fileTree.fileContent.content ? (

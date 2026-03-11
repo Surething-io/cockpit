@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useComments, type CodeComment } from '@/hooks/useComments';
@@ -40,6 +40,46 @@ interface DiffViewProps {
 const ROW_HEIGHT = 20;
 
 // ============================================
+// ToolbarRenderer - 独立状态，避免 DiffView 重渲染
+// 只有 toolbar 自身的显示/隐藏触发此组件 re-render，
+// DiffView 的虚拟列表完全不受影响 → 选区得以保留。
+// ============================================
+interface ToolbarRendererProps {
+  floatingToolbarRef: React.RefObject<{ x: number; y: number; range: { start: number; end: number }; codeContent: string } | null>;
+  bumpRef: React.MutableRefObject<() => void>;
+  container: HTMLElement;
+  onAddComment: () => void;
+  onSendToAI: () => void;
+  isChatLoading: boolean;
+}
+
+function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddComment, onSendToAI, isChatLoading }: ToolbarRendererProps) {
+  const [version, forceRender] = useState(0);
+
+  // 让父组件（DiffView）通过 bumpRef 触发本组件 re-render
+  // 放在 useEffect 中以遵循 React Compiler 规范（render 期间不写 ref）
+  useEffect(() => {
+    bumpRef.current = () => forceRender(v => v + 1);
+  }, [bumpRef]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- version 仅用于触发 re-read ref
+  const toolbar = useMemo(() => floatingToolbarRef.current, [version]);
+
+  return (
+    <FloatingToolbar
+      x={toolbar?.x ?? 0}
+      y={toolbar?.y ?? 0}
+      visible={!!toolbar}
+      container={container}
+      onAddComment={onAddComment}
+      onSendToAI={onSendToAI}
+      isChatLoading={isChatLoading}
+    />
+  );
+}
+const ToolbarRenderer = memo(ToolbarRendererInner);
+
+// ============================================
 // Main DiffView Component (Split View)
 // ============================================
 
@@ -70,14 +110,15 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
     y: number;
   } | null>(null);
 
-  // Floating toolbar - 使用 ref 存储数据，避免触发 DiffView 重渲染导致选区丢失
+  // Floating toolbar - ref 存储数据 + bumpToolbarRef 触发 ToolbarRenderer 重渲染
+  // 关键：不在 DiffView 上持有 state，避免虚拟列表 reconciliation 导致选区丢失
   const floatingToolbarRef = useRef<{
     x: number;
     y: number;
     range: { start: number; end: number };
     codeContent: string;
   } | null>(null);
-  const [toolbarVersion, setToolbarVersion] = useState(0);
+  const bumpToolbarRef = useRef<() => void>(() => {});
 
   const [addCommentInput, setAddCommentInput] = useState<{
     x: number;
@@ -127,13 +168,16 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
 
     const codeArea = rightPanelRef.current;
     let isDragging = false;
+    let downX = 0, downY = 0;
 
     // mousedown：标记拖选开始，清除旧 toolbar
-    const handleMouseDown = () => {
+    const handleMouseDown = (e: MouseEvent) => {
       isDragging = true;
+      downX = e.clientX;
+      downY = e.clientY;
       if (floatingToolbarRef.current) {
         floatingToolbarRef.current = null;
-        setToolbarVersion(v => v + 1);
+        bumpToolbarRef.current();
       }
     };
 
@@ -145,11 +189,14 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
       const target = e.target as HTMLElement;
       if (target.closest?.('.floating-toolbar')) return;
 
+      // 移动 ≤ 5px 视为点击（含双击/三击），不弹出 toolbar
+      const moved = Math.abs(e.clientX - downX) > 5 || Math.abs(e.clientY - downY) > 5;
+
       const selection = window.getSelection();
-      if (!selection || selection.isCollapsed || !selection.toString().trim()) {
+      if (!selection || selection.isCollapsed || !selection.toString().trim() || !moved) {
         if (floatingToolbarRef.current) {
           floatingToolbarRef.current = null;
-          setToolbarVersion(v => v + 1);
+          bumpToolbarRef.current();
         }
         return;
       }
@@ -198,7 +245,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
           range: { start: minLine, end: maxLine },
           codeContent,
         };
-        setToolbarVersion(v => v + 1);
+        bumpToolbarRef.current();
       }
     };
 
@@ -210,7 +257,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.toString().trim()) {
         floatingToolbarRef.current = null;
-        setToolbarVersion(v => v + 1);
+        bumpToolbarRef.current();
       }
     };
 
@@ -228,7 +275,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
     e.stopPropagation();
     setViewingComment({ comment, x: e.clientX, y: e.clientY });
     floatingToolbarRef.current = null;
-    setToolbarVersion(v => v + 1);
+    bumpToolbarRef.current();
     setAddCommentInput(null);
     setSendToAIInput(null);
   }, []);
@@ -243,7 +290,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
       codeContent: toolbar.codeContent,
     });
     floatingToolbarRef.current = null;
-    setToolbarVersion(v => v + 1);
+    bumpToolbarRef.current();
   }, []);
 
   const handleToolbarSendToAI = useCallback(() => {
@@ -256,7 +303,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
       codeContent: toolbar.codeContent,
     });
     floatingToolbarRef.current = null;
-    setToolbarVersion(v => v + 1);
+    bumpToolbarRef.current();
   }, []);
 
   const handleSendToAISubmit = useCallback(async (question: string) => {
@@ -528,10 +575,9 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
       {/* Floating elements via Portal to menu container (keeps within second screen) */}
       {isMounted && menuContainer && createPortal(
         <>
-          <FloatingToolbar
-            x={floatingToolbarRef.current?.x ?? 0}
-            y={floatingToolbarRef.current?.y ?? 0}
-            visible={!!floatingToolbarRef.current}
+          <ToolbarRenderer
+            floatingToolbarRef={floatingToolbarRef}
+            bumpRef={bumpToolbarRef}
             container={menuContainer}
             onAddComment={handleToolbarAddComment}
             onSendToAI={handleToolbarSendToAI}

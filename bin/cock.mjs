@@ -60,8 +60,7 @@ if (process.argv[2] === 'terminal') {
 const { existsSync } = await import('fs');
 if (!existsSync(resolve(PROJECT_ROOT, '.next', 'BUILD_ID'))) {
   console.error('No production build found.\n');
-  console.error('Install with:  npm run release');
-  console.error('Or build with: npm run build');
+  console.error('Run: npm run build');
   process.exit(1);
 }
 

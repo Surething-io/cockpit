@@ -200,8 +200,10 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       const oldTab = prev.find(t => t.id === tabId);
       if (oldTab?.isLoading && updates.isLoading === false) {
         // 非活跃 tab → 标记未读
-        // 活跃 tab 但不在 agent 屏（在 explorer/console）→ 也标记未读
-        if (tabId !== activeTabId || activeViewRef.current !== 'agent') {
+        // 活跃 tab 但明确不在 agent 屏（在 explorer/console）→ 也标记未读
+        // 注意：undefined 视为 agent（默认视图）
+        const isOnAgent = !activeViewRef.current || activeViewRef.current === 'agent';
+        if (tabId !== activeTabId || !isOnAgent) {
           setUnreadTabs(u => new Set(u).add(tabId));
         }
       }
@@ -212,8 +214,9 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   }, [activeTabId]);
 
   // 切回 agent 屏时，清除当前活跃 tab 的未读
+  // undefined 视为 agent（默认视图）
   useEffect(() => {
-    if (activeView === 'agent') {
+    if (!activeView || activeView === 'agent') {
       setUnreadTabs(u => {
         if (!u.has(activeTabId)) return u;
         const next = new Set(u);

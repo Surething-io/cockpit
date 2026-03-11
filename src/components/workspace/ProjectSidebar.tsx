@@ -103,8 +103,10 @@ export function ProjectSidebar({
             const session = newSessions.find(s => s.sessionId === sessionId);
             if (session) {
               // 非当前项目 → 标记未读
-              // 当前项目但不在 agent 屏（在 explorer/console）→ 也标记未读
-              if (session.cwd !== currentCwdRef.current || currentActiveViewRef.current !== 'agent') {
+              // 当前项目但明确不在 agent 屏（在 explorer/console）→ 也标记未读
+              // 注意：undefined 视为 agent（默认视图，iframe 未发送 VIEW_CHANGE 前）
+              const isOnAgent = !currentActiveViewRef.current || currentActiveViewRef.current === 'agent';
+              if (session.cwd !== currentCwdRef.current || !isOnAgent) {
                 shouldMarkUnread.push(sessionId);
               }
             }
@@ -144,8 +146,10 @@ export function ProjectSidebar({
 
   // 当切换到某个项目（且在 agent 屏）时，清除该项目所有 session 的未读状态
   // 仅依赖 currentCwd 和 currentActiveView，避免 sessions/unreadSessionIds 变化误触发
+  // 注意：undefined 视为 agent（默认视图，iframe 未发送 VIEW_CHANGE 前）
   useEffect(() => {
-    if (!currentCwd || currentActiveView !== 'agent') return;
+    const isOnAgent = !currentActiveView || currentActiveView === 'agent';
+    if (!currentCwd || !isOnAgent) return;
     const cwdSessionIds = sessionsRef.current
       .filter(s => s.cwd === currentCwd)
       .map(s => s.sessionId);

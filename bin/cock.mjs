@@ -2,13 +2,40 @@
 
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { execSync, spawnSync } from 'child_process';
-import { rmSync } from 'fs';
+import { spawnSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..');
 
-// cock 默认 prod 端口，cock-dev 会预设 COCKPIT_PORT=3456
+// --help / -h
+if (process.argv[2] === '--help' || process.argv[2] === '-h' || process.argv[2] === 'help') {
+  const { readFileSync } = await import('fs');
+  const pkg = JSON.parse(readFileSync(resolve(PROJECT_ROOT, 'package.json'), 'utf8'));
+  console.log(`Cockpit v${pkg.version} - One seat. One AI. Everything under control.
+
+Usage: cock [command]
+
+Commands:
+  (default)                    Start Cockpit server (port 3457)
+  browser <id> <action>        Control browser bubbles
+  terminal <id> <action>       Control terminal bubbles
+  update                       Update to latest version
+
+Options:
+  -v, --version                Show version
+  -h, --help                   Show this help`);
+  process.exit(0);
+}
+
+// --version / -v
+if (process.argv[2] === '--version' || process.argv[2] === '-v') {
+  const { readFileSync } = await import('fs');
+  const pkg = JSON.parse(readFileSync(resolve(PROJECT_ROOT, 'package.json'), 'utf8'));
+  console.log(pkg.version);
+  process.exit(0);
+}
+
+// 默认 prod 端口
 if (!process.env.COCKPIT_PORT) {
   process.env.COCKPIT_PORT = '3457';
 }
@@ -22,6 +49,56 @@ if (process.argv[2] === 'browser') {
   process.exit(0);
 }
 
+if (process.argv[2] === 'update') {
+  const { readFileSync } = await import('fs');
+  const https = await import('https');
+  const pkg = JSON.parse(readFileSync(resolve(PROJECT_ROOT, 'package.json'), 'utf8'));
+  console.log(`Current: v${pkg.version}`);
+  console.log('Checking latest release...\n');
+
+  // 获取最新 release 的 tgz 下载地址
+  const getLatestTgzUrl = () => new Promise((resolve, reject) => {
+    const req = https.get('https://api.github.com/repos/Surething-io/cockpit/releases/latest', {
+      headers: { 'User-Agent': 'cockpit-cli', Accept: 'application/vnd.github+json' },
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        try {
+          const release = JSON.parse(data);
+          const asset = release.assets?.find(a => a.name.endsWith('.tgz'));
+          if (asset) resolve({ url: asset.browser_download_url, tag: release.tag_name });
+          else reject(new Error('No tgz found in latest release'));
+        } catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+  });
+
+  try {
+    const { url, tag } = await getLatestTgzUrl();
+    console.log(`Latest: ${tag}`);
+    console.log('Installing...\n');
+    const result = spawnSync('npm', ['install', '-g', url], { stdio: 'inherit' });
+    if (result.status === 0) {
+      console.log(`\nUpdated to ${tag}`);
+    } else {
+      console.error('\nInstall failed. Try: sudo cock update');
+    }
+    process.exit(result.status || 0);
+  } catch (err) {
+    // fallback：从源码安装
+    console.log('No release found, installing from source...\n');
+    const result = spawnSync('npm', ['install', '-g', 'github:Surething-io/cockpit'], { stdio: 'inherit' });
+    if (result.status === 0) {
+      console.log('\nUpdate complete.');
+    } else {
+      console.error('\nUpdate failed. Try: sudo cock update');
+    }
+    process.exit(result.status || 0);
+  }
+}
+
 if (process.argv[2] === 'terminal') {
   process.argv.splice(2, 1);
   const mod = await import('./cock-terminal.mjs');
@@ -29,13 +106,15 @@ if (process.argv[2] === 'terminal') {
   process.exit(0);
 }
 
-// 清除旧 build 产物，避免新旧 manifest 不一致
-rmSync(resolve(PROJECT_ROOT, '.next'), { recursive: true, force: true });
-
-// Build
-console.log('Building...');
-execSync('npm run build', { cwd: PROJECT_ROOT, stdio: 'inherit' });
-
 // Start (foreground, Ctrl+C to stop)
+// .next/ 由 prepare (npm run build) 预编译，安装后直接启动
+const { existsSync } = await import('fs');
+if (!existsSync(resolve(PROJECT_ROOT, '.next', 'BUILD_ID'))) {
+  console.error('No production build found.\n');
+  console.error('Install with:  npm run release');
+  console.error('Or build with: npm run build');
+  process.exit(1);
+}
+
 console.log('Starting Cockpit...');
 spawnSync('node', ['--import', 'tsx', 'server.mjs'], { cwd: PROJECT_ROOT, stdio: 'inherit' });

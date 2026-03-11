@@ -183,8 +183,9 @@ if (params._positional?.length) {
   delete params._positional;
 }
 
-// 端口：cock-dev 会设 COCKPIT_PORT=3456，cock 默认 3457
-const port = process.env.COCKPIT_PORT || 3457;
+// 端口：--port 优先 > 环境变量 COCKPIT_PORT > 默认 3457
+const port = params.port || process.env.COCKPIT_PORT || 3457;
+delete params.port;
 const baseUrl = `http://localhost:${port}`;
 const timeout = params.timeout || 15000;
 delete params.timeout;
@@ -421,5 +422,5 @@ async function formatOutput(action, data) {
   }
 }
 
-// 导出 promise 以便 cock-dev.mjs await
+// 导出 promise 以便外部 await
 export const done = run();

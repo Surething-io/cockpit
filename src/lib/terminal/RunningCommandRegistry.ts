@@ -7,7 +7,7 @@
 import { ChildProcess } from 'child_process';
 import type { IPty } from 'node-pty';
 import fs from 'fs/promises';
-import { getTerminalHistoryPath, getTerminalOutputPath, ensureParentDir } from '@/lib/paths';
+import { getTerminalHistoryPath, getTerminalOutputPath, ensureParentDir } from '../paths';
 import { registerTerminal, finalizeTerminal, notifyOutputListeners, notifyExitListeners } from './TerminalBridge';
 
 const MAX_OUTPUT_LINES = 5000;

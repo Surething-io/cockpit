@@ -92,7 +92,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
   const wrappedHandleSend = useCallback(async (content: string, images?: ImageInfo[]) => {
     const firstLine = content.split('\n')[0];
     const isBangCmd = firstLine.startsWith('!') && firstLine.length > 1;
-    const isCockCmd = firstLine.startsWith('cock ') || firstLine.startsWith('cock-dev ');
+    const isCockCmd = firstLine.startsWith('cock ');
     if (isBangCmd || isCockCmd) {
       const command = isBangCmd ? firstLine.slice(1).trim() : firstLine;
       if (!command) { handleSend(content, images); return; }

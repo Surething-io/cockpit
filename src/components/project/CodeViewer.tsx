@@ -6,7 +6,7 @@ import { useMenuContainer } from './FileContextMenu';
 import { AddCommentInput, SendToAIInput } from './CodeInputCards';
 import { useLineHighlight } from '@/hooks/useLineHighlight';
 import { type BundledLanguage, getHighlighter, getLanguageFromPath, escapeHtml, tokensToHtml } from '@/lib/codeHighlighter';
-import { FloatingToolbar } from './FloatingToolbar';
+import { FloatingToolbar, ToolbarRenderer } from './FloatingToolbar';
 import { ViewCommentCard } from './ViewCommentCard';
 import { CodeLine, AUTHOR_COLORS } from './CodeLine';
 import { useCodeViewerLogic, resolveCharOffset, type CodeViewerProps } from './useCodeViewerLogic';
@@ -84,43 +84,7 @@ function buildEditorHTML(lineHtmls: string[]): string {
 }
 
 // ============================================
-// ToolbarRenderer - 独立状态，避免 CodeViewer 重渲染
-// 只有 toolbar 自身的显示/隐藏触发此组件 re-render，
-// CodeViewer 的虚拟列表完全不受影响 → 选区得以保留。
-// ============================================
-interface ToolbarRendererProps {
-  floatingToolbarRef: React.RefObject<{ x: number; y: number; range: { start: number; end: number }; selectedText: string } | null>;
-  bumpRef: React.MutableRefObject<() => void>;
-  container: HTMLElement;
-  onAddComment: () => void;
-  onSendToAI: () => void;
-  isChatLoading?: boolean;
-}
-
-function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddComment, onSendToAI, isChatLoading }: ToolbarRendererProps) {
-  const [version, forceRender] = useState(0);
-
-  // 让父组件通过 bumpRef 触发本组件 re-render
-  useEffect(() => {
-    bumpRef.current = () => forceRender(v => v + 1);
-  }, [bumpRef]);
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- version 仅用于触发 re-read ref
-  const toolbar = useMemo(() => floatingToolbarRef.current, [version]);
-
-  return (
-    <FloatingToolbar
-      x={toolbar?.x ?? 0}
-      y={toolbar?.y ?? 0}
-      visible={!!toolbar}
-      container={container}
-      onAddComment={onAddComment}
-      onSendToAI={onSendToAI}
-      isChatLoading={isChatLoading}
-    />
-  );
-}
-const ToolbarRenderer = memo(ToolbarRendererInner);
+// ToolbarRenderer — 已提取到 FloatingToolbar.tsx，通过 import 使用
 
 // ============================================
 // CodeViewer Component
@@ -301,10 +265,10 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     if (!container) return;
 
     const handler = (e: KeyboardEvent) => {
-      // When command/search input is focused, don't intercept at container level
-      // — let the input's own onKeyDown handle Enter/Escape
+      // Don't intercept keyboard events targeting editable elements
+      // (textarea in comment/AI cards, input in vi-status-bar, contentEditable, etc.)
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' && target.closest('.vi-status-bar')) return;
+      if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.isContentEditable) return;
 
       const consumed = vi.handleKeyDown(e);
       if (consumed) {
@@ -326,7 +290,12 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     if (container && vi.state.mode === 'normal') {
       // Focus container so keyboard events reach vi handler
       // Use rAF to ensure this runs after any focus changes from mode transitions
-      requestAnimationFrame(() => container.focus());
+      requestAnimationFrame(() => {
+        // Don't steal focus from editable elements (textarea in comment/AI cards, etc.)
+        const active = document.activeElement;
+        if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || (active as HTMLElement).isContentEditable)) return;
+        container.focus();
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viModeEnabled, editable, vi.state.mode, content]);
@@ -365,7 +334,9 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
         }
       }
     }
-    // Re-focus container for keyboard events
+    // Re-focus container for keyboard events (but not if clicking on an editable element)
+    const clickTarget = e.target as HTMLElement;
+    if (clickTarget.tagName === 'TEXTAREA' || clickTarget.tagName === 'INPUT' || clickTarget.isContentEditable) return;
     const container = containerRef.current;
     if (container) container.focus();
   }, [viModeEnabled, editable, vi.setCursorLine, vi.setCursorCol, lines]);

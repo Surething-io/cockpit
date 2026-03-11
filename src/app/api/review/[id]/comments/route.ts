@@ -52,8 +52,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// PATCH - 编辑评论
-// body: { commentId, content }
+// PATCH - 编辑评论内容 或 切换关闭状态
+// body: { commentId, content } 或 { commentId, closed }
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
 
@@ -64,10 +64,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { commentId, content } = body;
+    const { commentId, content, closed } = body;
 
-    if (!commentId || !content) {
-      return NextResponse.json({ error: 'commentId and content are required' }, { status: 400 });
+    if (!commentId || (content === undefined && closed === undefined)) {
+      return NextResponse.json({ error: 'commentId and (content or closed) are required' }, { status: 400 });
     }
 
     const updated = await withFileLock(filePath, async () => {
@@ -77,8 +77,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       const comment = review.comments.find(c => c.id === commentId);
       if (!comment) throw new Error('Comment not found');
 
-      comment.content = content.trim();
-      comment.edited = true;
+      if (content !== undefined) {
+        comment.content = content.trim();
+        comment.edited = true;
+      }
+      if (closed !== undefined) {
+        comment.closed = !!closed;
+      }
       await writeJsonFile(filePath, review);
       return comment;
     });

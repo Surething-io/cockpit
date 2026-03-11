@@ -41,13 +41,11 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
   const scrollToCommentRef = useRef<(commentId: string) => void>(undefined);
   const scrollToHighlightRef = useRef<(commentId: string) => void>(undefined);
 
-  // SPA 切换评审
+  // SPA 切换评审（保留旧内容，等新数据到了再替换，避免闪烁）
   const handleSelectReview = useCallback((id: string) => {
     if (id === currentId) return;
     setCurrentId(id);
-    setLoading(true);
     setError(null);
-    setReview(null);
     setActiveCommentId(null);
     window.history.replaceState(null, '', `/review/${id}`);
   }, [currentId]);
@@ -137,6 +135,22 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
       }
     } catch {
       toast('编辑评论失败', 'error');
+    }
+  }, [currentId, fetchReview]);
+
+  // Toggle comment closed
+  const handleToggleCommentClosed = useCallback(async (commentId: string, closed: boolean) => {
+    try {
+      const res = await fetch(`/api/review/${currentId}/comments`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commentId, closed }),
+      });
+      if (res.ok) {
+        await fetchReview();
+      }
+    } catch {
+      toast('操作失败', 'error');
     }
   }, [currentId, fetchReview]);
 
@@ -240,129 +254,123 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
     setTimeout(() => setActiveCommentId(null), 2000);
   }, []);
 
-  if (loading) {
-    return (
-      <div className="h-screen flex bg-background text-foreground">
-        {isAdmin && (
-          <div className="w-[200px] flex-shrink-0 border-r border-border">
-            <ReviewListPanel currentReviewId={currentId} onSelect={handleSelectReview} />
-          </div>
-        )}
+  // 内容区域渲染
+  const renderContent = () => {
+    if (loading) {
+      return (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-muted-foreground">加载中...</div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  if (error || !review) {
-    return (
-      <div className="h-screen flex bg-background text-foreground">
-        {isAdmin && (
-          <div className="w-[200px] flex-shrink-0 border-r border-border">
-            <ReviewListPanel currentReviewId={currentId} onSelect={handleSelectReview} />
-          </div>
-        )}
+    if (error || !review) {
+      return (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <div className="text-xl mb-2">{error || '评审不存在'}</div>
             <div className="text-sm text-muted-foreground">请检查链接是否正确</div>
           </div>
         </div>
+      );
+    }
+
+    return (
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left: Markdown preview */}
+        <div className="flex-1 h-full border-r border-border overflow-hidden">
+          <ReviewMarkdownPanel
+            content={review.content}
+            comments={review.comments}
+            activeCommentId={activeCommentId}
+            isActive={review.active}
+            onAddComment={handleAddComment}
+            onHighlightClick={handleHighlightClick}
+            scrollToHighlightRef={scrollToHighlightRef}
+          />
+        </div>
+
+        {/* Right: Comments */}
+        <div className="w-[360px] h-full overflow-hidden flex-shrink-0">
+          <ReviewCommentPanel
+            comments={review.comments}
+            activeCommentId={activeCommentId}
+            currentAuthorId={identity.authorId}
+            isActive={review.active}
+            isAdmin={isAdmin}
+            onCommentClick={handleCommentClick}
+            onDeleteComment={handleDeleteComment}
+            onEditComment={handleEditComment}
+            onToggleCommentClosed={handleToggleCommentClosed}
+            onAddReply={handleAddReply}
+            onDeleteReply={handleDeleteReply}
+            onEditReply={handleEditReply}
+            scrollToCommentRef={scrollToCommentRef}
+          />
+        </div>
       </div>
     );
-  }
+  };
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
       {/* Top Bar */}
-      <div className="py-2 bg-secondary border-b border-border flex-shrink-0">
-      <div className={`w-full mx-auto px-4 flex items-center gap-3 ${isAdmin ? '' : 'max-w-[1400px]'}`}>
-        <h1 className="text-sm font-semibold truncate flex-1">{review.title}</h1>
+      {review && (
+        <div className="py-2 bg-secondary border-b border-border flex-shrink-0">
+        <div className="w-full mx-auto px-4 flex items-center gap-3">
+          <h1 className="text-sm font-semibold truncate flex-1">{review.title}</h1>
 
-        {/* Status badge: 访客只读显示状态 */}
-        {!isAdmin && (
-          <span className={`px-2 py-0.5 text-xs rounded-full ${
-            review.active
-              ? 'bg-green-500/15 text-green-600 dark:text-green-400'
-              : 'bg-muted text-muted-foreground'
-          }`}>
-            {review.active ? '开放中' : '已关闭'}
-          </span>
-        )}
-
-        {/* Copy link */}
-        <button
-          onClick={handleCopyLink}
-          className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
-        >
-          复制链接
-        </button>
-
-        {/* Comment count */}
-        <span className="text-xs text-muted-foreground">
-          {review.comments.length} 条评论
-        </span>
-
-        {/* Theme toggle */}
-        <button
-          onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-          className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-          title={resolvedTheme === 'dark' ? '切换亮色' : '切换暗色'}
-        >
-          {resolvedTheme === 'dark' ? (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-          ) : (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          {/* Status badge */}
+          {!isAdmin && (
+            <span className={`px-2 py-0.5 text-xs rounded-full ${
+              review.active
+                ? 'bg-green-500/15 text-green-600 dark:text-green-400'
+                : 'bg-muted text-muted-foreground'
+            }`}>
+              {review.active ? '开放中' : '已关闭'}
+            </span>
           )}
-        </button>
 
-        {/* Identity settings */}
-        <ReviewIdentitySettings identity={identity} />
-      </div>
-      </div>
+          {/* Copy link */}
+          <button
+            onClick={handleCopyLink}
+            className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
+          >
+            复制链接
+          </button>
+
+          {/* Comment count */}
+          <span className="text-xs text-muted-foreground">
+            {review.comments.length} 条评论
+          </span>
+
+          {/* Theme toggle */}
+          <button
+            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+            className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+            title={resolvedTheme === 'dark' ? '切换亮色' : '切换暗色'}
+          >
+            {resolvedTheme === 'dark' ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            )}
+          </button>
+
+          {/* Identity settings */}
+          <ReviewIdentitySettings identity={identity} />
+        </div>
+        </div>
+      )}
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Admin: Left sidebar - review list */}
-        {isAdmin && (
-          <div className="w-[200px] flex-shrink-0 border-r border-border">
-            <ReviewListPanel currentReviewId={currentId} onSelect={handleSelectReview} />
-          </div>
-        )}
-
-        {/* Two-panel content */}
-        <div className={`flex-1 flex overflow-hidden ${isAdmin ? '' : 'max-w-[1400px] mx-auto'}`}>
-          {/* Left: Markdown preview */}
-          <div className="flex-1 h-full border-r border-border overflow-hidden">
-            <ReviewMarkdownPanel
-              content={review.content}
-              comments={review.comments}
-              activeCommentId={activeCommentId}
-              isActive={review.active}
-              onAddComment={handleAddComment}
-              onHighlightClick={handleHighlightClick}
-              scrollToHighlightRef={scrollToHighlightRef}
-            />
-          </div>
-
-          {/* Right: Comments */}
-          <div className="w-[360px] h-full overflow-hidden flex-shrink-0">
-            <ReviewCommentPanel
-              comments={review.comments}
-              activeCommentId={activeCommentId}
-              currentAuthorId={identity.authorId}
-              isActive={review.active}
-              onCommentClick={handleCommentClick}
-              onDeleteComment={handleDeleteComment}
-              onEditComment={handleEditComment}
-              onAddReply={handleAddReply}
-              onDeleteReply={handleDeleteReply}
-              onEditReply={handleEditReply}
-              scrollToCommentRef={scrollToCommentRef}
-            />
-          </div>
+        {/* Left sidebar - review list (始终挂载，不随状态卸载) */}
+        <div className="w-[200px] flex-shrink-0 border-r border-border">
+          <ReviewListPanel currentReviewId={currentId} onSelect={handleSelectReview} readOnly={!isAdmin} />
         </div>
+
+        {renderContent()}
       </div>
     </div>
   );

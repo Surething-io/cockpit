@@ -12,6 +12,7 @@ interface MarkdownRendererProps {
   content: string;
   isUser?: boolean;
   isStreaming?: boolean;
+  rehypePlugins?: any[];
 }
 
 /**
@@ -77,8 +78,8 @@ function preprocessAsciiArt(content: string): string {
 // 提取 Markdown 组件配置，避免重复定义
 function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
   return {
-    // 代码块
-    code({ className, children, ...props }: ComponentPropsWithoutRef<'code'> & { className?: string }) {
+    // 代码块 — node 来自 react-markdown passNode，需要析构掉避免传给 DOM
+    code({ className, children, node, ...props }: ComponentPropsWithoutRef<'code'> & { className?: string; node?: any }) {
       const match = /language-(\w+)/.exec(className || '');
       const codeString = String(children);
       const isInline = !match && !className && !codeString.includes('\n');
@@ -110,40 +111,42 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
         </SyntaxHighlighter>
       );
     },
-    p: ({ children }: { children?: React.ReactNode }) => <p className="mb-3 last:mb-0">{children}</p>,
-    h1: ({ children }: { children?: React.ReactNode }) => <h1 className="text-xl font-bold mb-3 mt-4 first:mt-0">{children}</h1>,
-    h2: ({ children }: { children?: React.ReactNode }) => <h2 className="text-lg font-bold mb-2 mt-3 first:mt-0">{children}</h2>,
-    h3: ({ children }: { children?: React.ReactNode }) => <h3 className="text-base font-bold mb-2 mt-3 first:mt-0">{children}</h3>,
-    ul: ({ children }: { children?: React.ReactNode }) => <ul className="list-disc list-inside mb-3 space-y-1">{children}</ul>,
-    ol: ({ children }: { children?: React.ReactNode }) => <ol className="list-decimal list-inside mb-3 space-y-1">{children}</ol>,
-    li: ({ children }: { children?: React.ReactNode }) => <li className="leading-relaxed">{children}</li>,
-    blockquote: ({ children }: { children?: React.ReactNode }) => (
-      <blockquote className="border-l-4 border-border pl-4 my-3 italic text-muted-foreground">{children}</blockquote>
+    // 以下所有自定义组件析构 node（react-markdown passNode）并展开 ...rest
+    // 使得 rehypeSourceLines 注入的 data-source-start/end 属性能传递到 DOM
+    p: ({ children, node, ...rest }: any) => <p className="mb-3 last:mb-0" {...rest}>{children}</p>,
+    h1: ({ children, node, ...rest }: any) => <h1 className="text-xl font-bold mb-3 mt-4 first:mt-0" {...rest}>{children}</h1>,
+    h2: ({ children, node, ...rest }: any) => <h2 className="text-lg font-bold mb-2 mt-3 first:mt-0" {...rest}>{children}</h2>,
+    h3: ({ children, node, ...rest }: any) => <h3 className="text-base font-bold mb-2 mt-3 first:mt-0" {...rest}>{children}</h3>,
+    ul: ({ children, node, ...rest }: any) => <ul className="list-disc list-inside mb-3 space-y-1" {...rest}>{children}</ul>,
+    ol: ({ children, node, ...rest }: any) => <ol className="list-decimal list-inside mb-3 space-y-1" {...rest}>{children}</ol>,
+    li: ({ children, node, ...rest }: any) => <li className="leading-relaxed" {...rest}>{children}</li>,
+    blockquote: ({ children, node, ...rest }: any) => (
+      <blockquote className="border-l-4 border-border pl-4 my-3 italic text-muted-foreground" {...rest}>{children}</blockquote>
     ),
-    a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
-      <a href={href} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">{children}</a>
+    a: ({ href, children, node, ...rest }: any) => (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline" {...rest}>{children}</a>
     ),
-    table: ({ children }: { children?: React.ReactNode }) => (
-      <div className="overflow-x-auto my-3"><table className="min-w-full border border-border">{children}</table></div>
+    table: ({ children, node, ...rest }: any) => (
+      <div className="overflow-x-auto my-3" {...rest}><table className="min-w-full border border-border">{children}</table></div>
     ),
-    thead: ({ children }: { children?: React.ReactNode }) => <thead className="bg-accent">{children}</thead>,
-    th: ({ children }: { children?: React.ReactNode }) => (
-      <th className="px-4 py-2 text-left font-semibold border-b border-border">{children}</th>
+    thead: ({ children, node, ...rest }: any) => <thead className="bg-accent" {...rest}>{children}</thead>,
+    th: ({ children, node, ...rest }: any) => (
+      <th className="px-4 py-2 text-left font-semibold border-b border-border" {...rest}>{children}</th>
     ),
-    td: ({ children }: { children?: React.ReactNode }) => (
-      <td className="px-4 py-2 border-b border-border">{children}</td>
+    td: ({ children, node, ...rest }: any) => (
+      <td className="px-4 py-2 border-b border-border" {...rest}>{children}</td>
     ),
-    hr: () => <hr className="my-4 border-border" />,
-    img: ({ src, alt, ...props }: ComponentPropsWithoutRef<'img'>) => (
+    hr: ({ node, ...rest }: any) => <hr className="my-4 border-border" {...rest} />,
+    img: ({ src, alt, node, ...props }: any) => (
       <img src={src} alt={alt || ''} className="max-w-full h-auto rounded-lg my-3" {...props} />
     ),
-    strong: ({ children }: { children?: React.ReactNode }) => <strong className="font-bold">{children}</strong>,
-    em: ({ children }: { children?: React.ReactNode }) => <em className="italic">{children}</em>,
-    del: ({ children }: { children?: React.ReactNode }) => <del className="line-through">{children}</del>,
+    strong: ({ children, node, ...rest }: any) => <strong className="font-bold" {...rest}>{children}</strong>,
+    em: ({ children, node, ...rest }: any) => <em className="italic" {...rest}>{children}</em>,
+    del: ({ children, node, ...rest }: any) => <del className="line-through" {...rest}>{children}</del>,
   };
 }
 
-export function MarkdownRenderer({ content, isUser = false, isStreaming = false }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, isUser = false, isStreaming = false, rehypePlugins }: MarkdownRendererProps) {
   // 使用全局 Theme Context，避免每个组件都创建 MutationObserver
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
@@ -196,6 +199,7 @@ export function MarkdownRenderer({ content, isUser = false, isStreaming = false 
     <div className="markdown-body">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={rehypePlugins}
         components={createMarkdownComponents(isDark)}
       >
         {processedContent}

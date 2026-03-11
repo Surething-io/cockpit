@@ -7,11 +7,13 @@ interface Props {
   comment: ReviewComment;
   isActive: boolean;
   isOwnComment: boolean;
+  isAdmin?: boolean;
   currentAuthorId: string;
   canInteract: boolean;
   onClick: () => void;
   onDelete: () => void;
   onEdit: (content: string) => void;
+  onToggleClosed: (closed: boolean) => void;
   onAddReply: (content: string) => void;
   onDeleteReply: (replyId: string) => void;
   onEditReply: (replyId: string, content: string) => void;
@@ -32,7 +34,7 @@ function formatTime(ts: number): string {
 }
 
 export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function ReviewCommentCard(
-  { comment, isActive, isOwnComment, currentAuthorId, canInteract, onClick, onDelete, onEdit, onAddReply, onDeleteReply, onEditReply },
+  { comment, isActive, isOwnComment, isAdmin, currentAuthorId, canInteract, onClick, onDelete, onEdit, onToggleClosed, onAddReply, onDeleteReply, onEditReply },
   ref
 ) {
   const [replyContent, setReplyContent] = useState('');
@@ -88,13 +90,18 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
     ? comment.anchor.selectedText.slice(0, 77) + '...'
     : comment.anchor.selectedText;
 
+  // 关闭评论：开放时所有人可关，关闭后仅管理员可重开
+  const canToggleClosed = comment.closed ? isAdmin : canInteract;
+
   return (
     <div
       ref={ref}
       className={`rounded-lg border transition-all cursor-pointer ${
-        isActive
-          ? 'border-brand bg-brand/5 shadow-sm'
-          : 'border-border bg-card hover:border-muted-foreground/30'
+        comment.closed
+          ? 'border-border/50 bg-card/50 opacity-60'
+          : isActive
+            ? 'border-brand bg-brand/5 shadow-sm'
+            : 'border-border bg-card hover:border-muted-foreground/30'
       }`}
       onClick={onClick}
     >
@@ -112,23 +119,37 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
         </span>
         <span className="text-xs font-medium">{comment.author}</span>
         <span className="text-[10px] text-muted-foreground">{formatTime(comment.createdAt)}</span>
+        {comment.closed && <span className="text-[10px] text-muted-foreground/60">已关闭</span>}
         <div className="flex-1" />
-        {isOwnComment && canInteract && !editingComment && (
+        {!editingComment && (
           <div className="flex items-center gap-2">
-            <button
-              onClick={e => { e.stopPropagation(); handleStartEditComment(); }}
-              className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-              title="编辑评论"
-            >
-              编辑
-            </button>
-            <button
-              onClick={e => { e.stopPropagation(); onDelete(); }}
-              className="text-[10px] text-muted-foreground hover:text-red-500 transition-colors"
-              title="删除评论"
-            >
-              删除
-            </button>
+            {canToggleClosed && (
+              <button
+                onClick={e => { e.stopPropagation(); onToggleClosed(!comment.closed); }}
+                className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                title={comment.closed ? '重新开放' : '关闭评论'}
+              >
+                {comment.closed ? '重开' : '关闭'}
+              </button>
+            )}
+            {isOwnComment && canInteract && !comment.closed && (
+              <button
+                onClick={e => { e.stopPropagation(); handleStartEditComment(); }}
+                className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                title="编辑评论"
+              >
+                编辑
+              </button>
+            )}
+            {(isOwnComment && canInteract || isAdmin) && (
+              <button
+                onClick={e => { e.stopPropagation(); onDelete(); }}
+                className="text-[10px] text-muted-foreground hover:text-red-500 transition-colors"
+                title="删除评论"
+              >
+                删除
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -187,15 +208,17 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
                 <span className="text-xs font-medium">{reply.author}</span>
                 <span className="text-[10px] text-muted-foreground">{formatTime(reply.createdAt)}</span>
                 <div className="flex-1" />
-                {reply.authorId === currentAuthorId && canInteract && editingReplyId !== reply.id && (
+                {editingReplyId !== reply.id && (reply.authorId === currentAuthorId && canInteract || isAdmin) && (
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={e => { e.stopPropagation(); handleStartEditReply(reply.id, reply.content); }}
-                      className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                      title="编辑回复"
-                    >
-                      编辑
-                    </button>
+                    {reply.authorId === currentAuthorId && canInteract && (
+                      <button
+                        onClick={e => { e.stopPropagation(); handleStartEditReply(reply.id, reply.content); }}
+                        className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                        title="编辑回复"
+                      >
+                        编辑
+                      </button>
+                    )}
                     <button
                       onClick={e => { e.stopPropagation(); onDeleteReply(reply.id); }}
                       className="text-[10px] text-muted-foreground hover:text-red-500 transition-colors"

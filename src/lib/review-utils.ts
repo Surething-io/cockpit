@@ -74,6 +74,7 @@ export interface ReviewComment {
   createdAt: number;
   replies: ReviewReply[];
   edited?: boolean;
+  closed?: boolean;
 }
 
 export interface ReviewData {

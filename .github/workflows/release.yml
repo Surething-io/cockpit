@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 需要完整 git history 计算 commit 数
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm install
+
+      - run: npm pack
+
+      - name: Get version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: cockpit-*.tgz
+          body: |
+            ## Install
+
+            ```bash
+            npm install -g https://github.com/Surething-io/cockpit/releases/download/${{ github.ref_name }}/cockpit-${{ steps.version.outputs.version }}.tgz
+            ```
+
+            ## Update
+
+            ```bash
+            cock update
+            ```

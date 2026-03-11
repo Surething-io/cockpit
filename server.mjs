@@ -51,7 +51,7 @@ app.prepare().then(async () => {
   // ============================================
   const sharePort = port + 1000; // dev 3456→4456, prod 3457→4457
 
-  const SHARE_ALLOWED_PREFIXES = ['/review/', '/api/review/', '/_next/', '/fonts/', '/icons/'];
+  const SHARE_ALLOWED_PREFIXES = ['/review/', '/api/review', '/_next/', '/fonts/', '/icons/'];
   const SHARE_ALLOWED_EXACT = ['/favicon.ico'];
 
   function isShareAllowed(url) {

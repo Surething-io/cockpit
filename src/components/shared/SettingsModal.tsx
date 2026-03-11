@@ -14,6 +14,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [extensionStatus, setExtensionStatus] = useState<'checking' | 'installed' | 'not-installed'>('checking');
   const [extensionVersion, setExtensionVersion] = useState<string | null>(null);
   const [extensionPath, setExtensionPath] = useState<string>('');
+  const [appVersion, setAppVersion] = useState<string>('');
+
+  // 获取版本号
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch('/api/version')
+      .then(r => r.json())
+      .then(d => { if (d.version) setAppVersion(d.version); })
+      .catch(() => {});
+  }, [isOpen]);
 
   // 检测插件是否已安装 + 获取路径
   useEffect(() => {
@@ -120,7 +130,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   <p>1. 打开 Chrome 地址栏输入 <code className="px-1 py-0.5 bg-muted rounded text-foreground">chrome://extensions</code></p>
                   <p>2. 开启右上角「开发者模式」</p>
                   <p>3. 点击「加载已解压的扩展程序」</p>
-                  <p>4. 选择下方路径目录</p>
+                  <p>4. 按 <kbd className="px-1 py-0.5 bg-muted rounded text-foreground">Cmd+Shift+G</kbd> → 粘贴下方路径 → 回车</p>
                 </div>
               )}
               <div className="flex gap-2">
@@ -173,8 +183,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             <label className="block text-sm font-medium text-foreground mb-2">
               关于
             </label>
-            <div className="text-xs text-muted-foreground">
-              <p>Cockpit - One seat. One AI. Everything under control.</p>
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p>Cockpit{appVersion ? ` v${appVersion}` : ''}</p>
+              <p className="text-muted-foreground/60">One seat. One AI. Everything under control.</p>
             </div>
           </div>
         </div>

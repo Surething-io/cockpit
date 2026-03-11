@@ -1,6 +1,6 @@
 import { homedir } from 'os';
 import { join } from 'path';
-import { mkdir, readFile, writeFile, rename } from 'fs/promises';
+import { mkdir, readFile, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 
 // ============================================
@@ -202,14 +202,13 @@ export async function readJsonFile<T>(filePath: string, defaultValue: T): Promis
 }
 
 /**
- * Write a JSON file atomically: write to tmp file first, then rename.
- * Eliminates the truncate window where concurrent reads see empty data.
+ * Write a JSON file directly.
+ * Single-process Node app + withFileLock serializes writers,
+ * so no need for atomic rename (which breaks fs.watch on macOS).
  */
 export async function writeJsonFile<T>(filePath: string, data: T): Promise<void> {
   await ensureParentDir(filePath);
-  const tmpPath = filePath + '.tmp';
-  await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
-  await rename(tmpPath, filePath);
+  await writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
 }
 
 // ============================================

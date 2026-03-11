@@ -54,6 +54,11 @@ html, body {
   --amber-10: 36 100% 50%;
   --amber-11: 24 100% 37%;
 
+  /* ---- Radix Orange 色阶 (运行状态) ---- */
+  --orange-9: 24 94% 50%;
+  --orange-10: 21 90% 45%;
+  --orange-11: 16 80% 35%;
+
   /* ---- 语义颜色 (shadcn 风格) ---- */
   --background: 0 0% 98%;
   --foreground: var(--slate-12);
@@ -125,6 +130,11 @@ html, body {
   --amber-9: 39 100% 57%;
   --amber-10: 43 100% 64%;
   --amber-11: 46 100% 74%;
+
+  /* Radix Orange Dark */
+  --orange-9: 24 94% 50%;
+  --orange-10: 27 96% 58%;
+  --orange-11: 30 100% 68%;
 
   /* 语义颜色 Dark */
   --background: var(--slate-1);
@@ -223,6 +233,9 @@ html, body {
   --color-amber-9: hsl(var(--amber-9));
   --color-amber-10: hsl(var(--amber-10));
   --color-amber-11: hsl(var(--amber-11));
+  --color-orange-9: hsl(var(--orange-9));
+  --color-orange-10: hsl(var(--orange-10));
+  --color-orange-11: hsl(var(--orange-11));
 
   /* 圆角 */
   --radius-sm: calc(var(--radius) - 4px);
@@ -583,6 +596,23 @@ body {
   30%  { background-color: hsl(var(--brand) / 0.25); }
   65%  { background-color: hsl(var(--brand) / 0.1); }
   100% { background-color: transparent; }
+}
+
+/* ---- Vi mode cursor line ---- */
+.vi-cursor-line {
+  background-color: hsl(var(--brand) / 0.22) !important;
+  box-shadow: inset 2px 0 0 0 hsl(var(--brand));
+}
+
+/* ---- Vi mode character cursor (inline block cursor with blink) ---- */
+.vi-char-cursor {
+  animation: vi-cursor-blink 1s step-end infinite;
+  background-color: hsl(var(--brand) / 0.65);
+}
+
+@keyframes vi-cursor-blink {
+  0%, 100% { background-color: hsl(var(--brand) / 0.65); }
+  50% { background-color: transparent; }
 }
 
 /* ---- Chat search highlight ---- */

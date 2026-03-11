@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useImperativeHandle, forwardRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { useMenuContainer } from './FileContextMenu';
 import { AddCommentInput, SendToAIInput } from './CodeInputCards';
@@ -9,12 +9,13 @@ import { type BundledLanguage, getHighlighter, getLanguageFromPath, escapeHtml, 
 import { FloatingToolbar } from './FloatingToolbar';
 import { ViewCommentCard } from './ViewCommentCard';
 import { CodeLine, AUTHOR_COLORS } from './CodeLine';
-import { useCodeViewerLogic, type CodeViewerProps } from './useCodeViewerLogic';
+import { useCodeViewerLogic, resolveCharOffset, type CodeViewerProps } from './useCodeViewerLogic';
 import type { BlameLine } from './fileBrowser/types';
 import type { CommitInfo } from './CommitDetailPanel';
 import { formatRelativeTime } from './fileBrowser/utils';
 import { toast, confirm } from '../shared/Toast';
 import type { FileEditorHandle } from './FileEditorModal';
+import { useViMode } from '@/hooks/useViMode';
 
 // Re-export utilities used by other modules
 export { getHighlighter, getLanguageFromPath } from '@/lib/codeHighlighter';
@@ -83,6 +84,45 @@ function buildEditorHTML(lineHtmls: string[]): string {
 }
 
 // ============================================
+// ToolbarRenderer - 独立状态，避免 CodeViewer 重渲染
+// 只有 toolbar 自身的显示/隐藏触发此组件 re-render，
+// CodeViewer 的虚拟列表完全不受影响 → 选区得以保留。
+// ============================================
+interface ToolbarRendererProps {
+  floatingToolbarRef: React.RefObject<{ x: number; y: number; range: { start: number; end: number }; selectedText: string } | null>;
+  bumpRef: React.MutableRefObject<() => void>;
+  container: HTMLElement;
+  onAddComment: () => void;
+  onSendToAI: () => void;
+  isChatLoading?: boolean;
+}
+
+function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddComment, onSendToAI, isChatLoading }: ToolbarRendererProps) {
+  const [version, forceRender] = useState(0);
+
+  // 让父组件通过 bumpRef 触发本组件 re-render
+  useEffect(() => {
+    bumpRef.current = () => forceRender(v => v + 1);
+  }, [bumpRef]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- version 仅用于触发 re-read ref
+  const toolbar = useMemo(() => floatingToolbarRef.current, [version]);
+
+  return (
+    <FloatingToolbar
+      x={toolbar?.x ?? 0}
+      y={toolbar?.y ?? 0}
+      visible={!!toolbar}
+      container={container}
+      onAddComment={onAddComment}
+      onSendToAI={onSendToAI}
+      isChatLoading={isChatLoading}
+    />
+  );
+}
+const ToolbarRenderer = memo(ToolbarRendererInner);
+
+// ============================================
 // CodeViewer Component
 // ============================================
 
@@ -102,6 +142,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   onCmdClick,
   onTokenHover,
   onTokenHoverLeave,
+  onTokenHoverCancel,
   blameLines,
   inlineBlameLines,
   onSelectCommit,
@@ -110,6 +151,10 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   onEditorClose,
   onSaved,
   onEditorStateChange,
+  viMode: viModeEnabled = false,
+  onContentMutate,
+  onEnterInsertMode,
+  onViSave,
 }, ref) {
   // ========== 编辑模式状态 ==========
   const editContentRef = useRef(content); // ref：不触发 re-render，仅在 save/highlight 时读取
@@ -135,6 +180,8 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     searchInputRef,
     floatingToolbarRef,
     suppressHoverRef,
+    bumpToolbarRef,
+    savedSelectionRef,
 
     // State
     highlightedLines,
@@ -147,7 +194,6 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     wholeWord,
     currentMatchIndex,
     viewingComment,
-    toolbarVersion,
     addCommentInput,
     sendToAIInput,
     chatContext,
@@ -181,6 +227,9 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     handleSendToAISubmit,
     getHighlightedLineHtml,
 
+    // Search scroll suppression
+    suppressMatchScrollRef,
+
     // Inline blame
     inlineBlameLineRef,
     inlineBlameVersion,
@@ -199,26 +248,201 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   // Menu container for portal mounting (keeps floating elements within second screen)
   const menuContainer = useMenuContainer();
 
+  // ========== Vi Mode ==========
+  const LINE_HEIGHT = 20;
+  const viCommandInputRef = useRef<HTMLInputElement>(null);
+  const viSearchInputRef = useRef<HTMLInputElement>(null);
+  // 记录进入 Insert 模式时的光标目标位置（行 + 列），供编辑模式初始化 effect 使用
+  const viInsertPosRef = useRef({ line: 0, col: 0 });
+
+  const vi = useViMode({
+    lines,
+    enabled: viModeEnabled && !editable,
+    onContentChange: (newContent) => {
+      onContentMutate?.(newContent);
+    },
+    onEnterInsert: (line, col, variant) => {
+      // 根据 variant 计算编辑器中的实际光标列
+      let targetCol = col;
+      if (variant === 'a') targetCol = col + 1;
+      else if (variant === 'A') targetCol = (lines[line] ?? '').length;
+      else if (variant === 'I') {
+        const first = (lines[line] ?? '').search(/\S/);
+        targetCol = first >= 0 ? first : 0;
+      } else if (variant === 'o' || variant === 'O') targetCol = 0;
+      viInsertPosRef.current = { line, col: targetCol };
+      onEnterInsertMode?.(line);
+    },
+    onSave: onViSave,
+    getVisibleLineCount: () => {
+      const el = parentRef.current;
+      if (!el) return 20;
+      return Math.floor(el.clientHeight / LINE_HEIGHT);
+    },
+    scrollToLine: (lineIndex, align) => {
+      const rowIndex = rowData.findIndex(r => r.type === 'code' && r.lineIndex === lineIndex);
+      if (rowIndex >= 0) {
+        virtualizer.scrollToIndex(rowIndex, { align: align || 'auto' });
+      }
+    },
+    onSearchExecute: (query) => {
+      setSearchQuery(query);
+      setIsSearchVisible(false); // vi handles its own search display
+    },
+    onSearchNext: goToNextMatch,
+    onSearchPrev: goToPrevMatch,
+    onSearchClear: () => { setSearchQuery(''); },
+  });
+
+  // Vi Normal mode keyboard listener (on container element)
+  useEffect(() => {
+    if (!viModeEnabled || editable) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handler = (e: KeyboardEvent) => {
+      // When command/search input is focused, don't intercept at container level
+      // — let the input's own onKeyDown handle Enter/Escape
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' && target.closest('.vi-status-bar')) return;
+
+      const consumed = vi.handleKeyDown(e);
+      if (consumed) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    // Use capture phase to intercept before other handlers
+    container.addEventListener('keydown', handler, true);
+    return () => container.removeEventListener('keydown', handler, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viModeEnabled, editable, vi.handleKeyDown]);
+
+  // Auto-focus container for vi-mode key capture (when not in insert/command/search mode)
+  useEffect(() => {
+    if (!viModeEnabled || editable) return;
+    const container = containerRef.current;
+    if (container && vi.state.mode === 'normal') {
+      // Focus container so keyboard events reach vi handler
+      // Use rAF to ensure this runs after any focus changes from mode transitions
+      requestAnimationFrame(() => container.focus());
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viModeEnabled, editable, vi.state.mode, content]);
+
+  // Click on code area → set cursorLine + cursorCol + re-focus container for vi key capture
+  const viClickHandler = useCallback((e: React.MouseEvent) => {
+    if (!viModeEnabled || editable) return;
+    // Find clicked line via data-line attribute
+    const target = e.target as HTMLElement;
+    const lineEl = target.closest('[data-line]') as HTMLElement | null;
+    if (lineEl) {
+      const lineNum = parseInt(lineEl.getAttribute('data-line')!, 10);
+      if (!isNaN(lineNum)) {
+        vi.setCursorLine(lineNum - 1); // data-line is 1-based → 0-based
+
+        // Detect clicked column via caretRangeFromPoint
+        const codeSpan = lineEl.querySelector('[data-code-content]') as HTMLElement | null;
+        if (codeSpan) {
+          const range = document.caretRangeFromPoint(e.clientX, e.clientY);
+          if (range && codeSpan.contains(range.startContainer)) {
+            // Walk text nodes to compute total offset
+            const walker = document.createTreeWalker(codeSpan, NodeFilter.SHOW_TEXT);
+            let col = 0;
+            let node: Text | null;
+            while ((node = walker.nextNode() as Text | null)) {
+              if (node === range.startContainer) {
+                col += range.startOffset;
+                break;
+              }
+              col += node.textContent?.length || 0;
+            }
+            // Clamp to line length (vi normal mode: max = len-1)
+            const lineText = lines[lineNum - 1] ?? '';
+            vi.setCursorCol(Math.max(0, Math.min(col, Math.max(0, lineText.length - 1))));
+          }
+        }
+      }
+    }
+    // Re-focus container for keyboard events
+    const container = containerRef.current;
+    if (container) container.focus();
+  }, [viModeEnabled, editable, vi.setCursorLine, vi.setCursorCol, lines]);
+
+  // Double-click on code area → select word + highlight matches (no scroll)
+  const viDblClickHandler = useCallback((e: React.MouseEvent) => {
+    if (!viModeEnabled || editable) return;
+    // 浏览器双击自动选中单词，直接取 selection 文本
+    requestAnimationFrame(() => {
+      const sel = window.getSelection();
+      const word = sel?.toString().trim();
+      if (word && /^\S+$/.test(word)) {
+        suppressMatchScrollRef.current = true;
+        setSearchQuery(word);
+      }
+    });
+  }, [viModeEnabled, editable, setSearchQuery, suppressMatchScrollRef]);
+
+  // Focus command/search input when entering those modes
+  useEffect(() => {
+    if (vi.state.mode === 'command') {
+      setTimeout(() => viCommandInputRef.current?.focus(), 0);
+    } else if (vi.state.mode === 'search') {
+      setTimeout(() => viSearchInputRef.current?.focus(), 0);
+    }
+  }, [vi.state.mode]);
+
   // ========== mousedown 时立即清除 hover 卡片 ==========
   useEffect(() => {
     const el = parentRef.current;
     if (!el) return;
     const handleMouseDown = () => {
-      onTokenHoverLeave?.();
+      // 立即版：mousedown 意味着用户要操作代码，不需要 150ms 延迟
+      (onTokenHoverCancel ?? onTokenHoverLeave)?.();
     };
     el.addEventListener('mousedown', handleMouseDown);
     return () => el.removeEventListener('mousedown', handleMouseDown);
-  }, [onTokenHoverLeave]);
+  }, [onTokenHoverCancel, onTokenHoverLeave]);
 
   // ========== 交互状态矩阵：浮层活跃时抑制 hover / cmd+click ==========
+  // toolbar 的 suppressHoverRef 已在 useCodeViewerLogic 的事件处理中直接管理；
+  // 此处仅处理 addCommentInput / sendToAIInput 等 state 变化的情况。
   useEffect(() => {
-    const shouldSuppress = !!(floatingToolbarRef.current || addCommentInput || sendToAIInput);
-    suppressHoverRef.current = shouldSuppress;
-    // 浮层出现时清除残留的 hover 卡片
-    if (shouldSuppress) {
+    if (addCommentInput || sendToAIInput) {
+      suppressHoverRef.current = true;
       onTokenHoverLeave?.();
+    } else if (!floatingToolbarRef.current) {
+      // 只在 toolbar 也不存在时才解除抑制
+      suppressHoverRef.current = false;
     }
-  }, [toolbarVersion, addCommentInput, sendToAIInput, onTokenHoverLeave]);
+  }, [addCommentInput, sendToAIInput, onTokenHoverLeave]);
+
+  // ========== 选区恢复：re-render 后 DOM 被替换时从逻辑坐标恢复浏览器选区 ==========
+  useLayoutEffect(() => {
+    const saved = savedSelectionRef.current;
+    if (!saved) return; // 没有保存的选区，跳过
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return; // 选区仍然存在，无需恢复
+    // 选区丢失 → 从逻辑坐标恢复
+    const container = parentRef.current;
+    if (!container) return;
+    const startLineEl = container.querySelector(`[data-line="${saved.startLine}"]`);
+    const endLineEl = container.querySelector(`[data-line="${saved.endLine}"]`);
+    if (!startLineEl || !endLineEl) return; // 行不在视口内（虚拟滚动回收了）
+    const start = resolveCharOffset(startLineEl, saved.startOffset);
+    const end = resolveCharOffset(endLineEl, saved.endOffset);
+    if (!start || !end) return;
+    try {
+      const range = document.createRange();
+      range.setStart(start.node, start.offset);
+      range.setEnd(end.node, end.offset);
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    } catch {
+      // offset 越界等异常静默忽略
+    }
+  });
 
   // 包装 hover / cmd+click 回调，读 ref 判断是否抑制（ref 不影响 memo 稳定性）
   const guardedTokenHover = useCallback((line: number, column: number, rect: { x: number; y: number }) => {
@@ -262,15 +486,24 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     container.innerHTML = buildEditorHTML(lineHtmls);
 
     requestAnimationFrame(() => {
-      const currentLine = visibleLineRef?.current ?? 1;
-      const targetLine = Math.max(0, Math.min(currentLine - 1, editLineArr.length - 1));
+      // Vi 模式：光标定位到 vi 光标位置；非 vi：定位到视口首行
+      let cursorLineIdx: number;
+      let cursorOffset: number;
+      if (viModeEnabled) {
+        cursorLineIdx = Math.max(0, Math.min(viInsertPosRef.current.line, editLineArr.length - 1));
+        cursorOffset = viInsertPosRef.current.col;
+      } else {
+        cursorLineIdx = Math.max(0, Math.min((visibleLineRef?.current ?? 1) - 1, editLineArr.length - 1));
+        cursorOffset = 0;
+      }
 
       // 1. focus + 光标定位（可能触发浏览器自动滚动到光标/顶部）
       container.focus();
-      restoreCursorPosition(container, { line: targetLine, offset: 0 });
+      restoreCursorPosition(container, { line: cursorLineIdx, offset: cursorOffset });
 
-      // 2. 最后设置 scrollTop，覆盖 focus 引起的滚动
-      const scrollTop = (currentLine - 1) * 20; // LINE_HEIGHT = 20
+      // 2. 滚动：保持与只读模式相同的视口位置
+      const scrollLine = visibleLineRef?.current ?? 1;
+      const scrollTop = (scrollLine - 1) * 20; // LINE_HEIGHT = 20
       if (editScrollRef.current) editScrollRef.current.scrollTop = scrollTop;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -525,19 +758,52 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     return () => document.removeEventListener('keydown', handler);
   }, [editable, handleSave]);
 
-  // ESC 关闭编辑器
+  // Vi Insert → Normal 的退出逻辑（提取光标位置 + 通知父组件）
+  const viExitInsert = useCallback(() => {
+    const currentContent = extractTextFromEditable();
+    onContentMutate?.(currentContent);
+
+    // 从 contentEditable 获取真实光标位置（行 + 列）
+    const container = editableRef.current;
+    const cursorPos = container ? saveCursorPosition(container) : null;
+    const scrollLine = getCurrentLine(); // 仅用于滚动恢复
+
+    vi.enterNormal();
+    if (cursorPos) {
+      vi.setCursorLine(cursorPos.line);
+      const lineText = currentContent.split('\n')[cursorPos.line] ?? '';
+      vi.setCursorCol(Math.max(0, Math.min(cursorPos.offset, Math.max(0, lineText.length - 1))));
+    } else {
+      vi.setCursorLine(Math.max(0, scrollLine - 1));
+    }
+    onEditorClose?.(scrollLine);
+  }, [extractTextFromEditable, onContentMutate, getCurrentLine, onEditorClose, vi]);
+
+  // ESC / Ctrl+C: vi 模式下回到 Normal，非 vi 模式下关闭编辑器
   useEffect(() => {
     if (!editable) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      const isEsc = e.key === 'Escape';
+      const isCtrlC = e.ctrlKey && e.key === 'c' && !e.metaKey && !e.shiftKey;
+      if (isEsc || (viModeEnabled && isCtrlC)) {
         e.preventDefault();
         e.stopPropagation();
-        handleEditorClose();
+        if (viModeEnabled) {
+          if (isDirtyRef.current) {
+            // 有未保存修改，弹确认对话框
+            confirm('有未保存的修改，确定退出编辑模式？', { danger: true, confirmText: '放弃修改', cancelText: '继续编辑' })
+              .then(ok => { if (ok) viExitInsert(); });
+          } else {
+            viExitInsert();
+          }
+        } else {
+          handleEditorClose();
+        }
       }
     };
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [editable, handleEditorClose]);
+  }, [editable, viModeEnabled, handleEditorClose, viExitInsert]);
 
   // Expose imperative handle
   useImperativeHandle(ref, () => ({
@@ -599,7 +865,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   const lineNumberWidth = `${lineNumChars + 2}ch`;
 
   return (
-    <div ref={containerRef} className={`h-full flex flex-col outline-none ${className}`} tabIndex={0}>
+    <div ref={containerRef} className={`h-full flex flex-col outline-none ${className}`} tabIndex={0} onClick={viClickHandler} onDoubleClick={viDblClickHandler}>
       {/* 冲突提示条（编辑模式） */}
       {editable && conflictState.show && (
         <div className="px-4 py-2 bg-amber-500/15 border-b border-amber-500/30 flex items-center gap-3 flex-shrink-0">
@@ -780,6 +1046,8 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
                   onBlameMouseLeave={handleBlameMouseLeave}
                   inlineBlameData={inlineBlameData}
                   onInlineBlameClick={handleBlameClick}
+                  isCursorLine={viModeEnabled && !editable && vi.state.cursorLine === lineIndex}
+                  cursorCol={viModeEnabled && !editable && vi.state.cursorLine === lineIndex ? vi.state.cursorCol : undefined}
                 />
               );
             })}
@@ -787,16 +1055,81 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
         </div>
       )}
 
+      {/* ========== Vi Mode 状态栏 ========== */}
+      {viModeEnabled && (
+        <div className="vi-status-bar flex-shrink-0 h-6 bg-card border-t border-border flex items-center px-3 text-xs font-mono select-none">
+          {vi.state.mode === 'normal' && (
+            <span className="text-green-11 font-medium">NORMAL</span>
+          )}
+          {vi.state.mode === 'insert' && (
+            <span className="text-blue-11 font-medium">INSERT</span>
+          )}
+          {vi.state.mode === 'command' && (
+            <div className="flex items-center flex-1">
+              <span className="text-foreground">:</span>
+              <input
+                ref={viCommandInputRef}
+                value={vi.state.commandInput}
+                onChange={e => vi.setCommandInput(e.target.value)}
+                onKeyDown={e => {
+                  // IME 输入中不拦截（中文候选词确认的 Enter）
+                  if (e.nativeEvent.isComposing) return;
+                  const isCtrlC = e.ctrlKey && e.key === 'c' && !e.metaKey && !e.shiftKey;
+                  if (e.key === 'Enter' || e.key === 'Escape' || isCtrlC) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    vi.handleKeyDown(e.nativeEvent);
+                  }
+                }}
+                className="flex-1 bg-transparent outline-none text-foreground ml-0.5"
+                spellCheck={false}
+                autoComplete="off"
+              />
+            </div>
+          )}
+          {vi.state.mode === 'search' && (
+            <div className="flex items-center flex-1">
+              <span className="text-foreground">/</span>
+              <input
+                ref={viSearchInputRef}
+                value={vi.state.searchInput}
+                onChange={e => vi.setSearchInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.nativeEvent.isComposing) return;
+                  const isCtrlC = e.ctrlKey && e.key === 'c' && !e.metaKey && !e.shiftKey;
+                  if (e.key === 'Enter' || e.key === 'Escape' || isCtrlC) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    vi.handleKeyDown(e.nativeEvent);
+                  }
+                }}
+                className="flex-1 bg-transparent outline-none text-foreground ml-0.5"
+                spellCheck={false}
+                autoComplete="off"
+              />
+            </div>
+          )}
+          {vi.state.keyBuffer && (vi.state.mode === 'normal') && (
+            <span className="ml-2 text-muted-foreground">{vi.state.keyBuffer}</span>
+          )}
+          {vi.state.isDirty && (vi.state.mode === 'normal' || vi.state.mode === 'command') && (
+            <span className="ml-2 text-amber-11">[+]</span>
+          )}
+          <span className="ml-auto text-muted-foreground">
+            {vi.state.cursorLine + 1}:{vi.state.cursorCol + 1}
+          </span>
+        </div>
+      )}
+
       {/* Floating elements via Portal to menu container (keeps within second screen) */}
       {isMounted && menuContainer && createPortal(
         <>
-          {/* Floating Toolbar — 常驻 DOM，用 CSS visibility 控显隐，
-              避免在祖先节点上做 DOM 增删导致浏览器选区丢失 */}
+          {/* Floating Toolbar — 独立 ToolbarRenderer 组件管理自身状态，
+              CodeViewer 不会因 toolbar 显隐而重渲染 → 选区得以保留 */}
           {!editable && (
-            <FloatingToolbar
-              x={floatingToolbarRef.current?.x ?? 0}
-              y={floatingToolbarRef.current?.y ?? 0}
-              visible={!!floatingToolbarRef.current}
+            <ToolbarRenderer
+              floatingToolbarRef={floatingToolbarRef}
+              bumpRef={bumpToolbarRef}
               container={menuContainer}
               onAddComment={handleToolbarAddComment}
               onSendToAI={handleToolbarSendToAI}

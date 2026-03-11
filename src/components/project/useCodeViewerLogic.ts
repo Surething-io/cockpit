@@ -33,8 +33,10 @@ export interface CodeViewerProps {
   onCmdClick?: (line: number, column: number) => void;
   /** LSP: 悬浮 token 回调 */
   onTokenHover?: (line: number, column: number, rect: { x: number; y: number }) => void;
-  /** LSP: 悬浮离开回调 */
+  /** LSP: 悬浮离开回调（150ms 延迟，给用户移向卡片留时间） */
   onTokenHoverLeave?: () => void;
+  /** LSP: 立即取消 hover（mousedown 等场景，不需要延迟） */
+  onTokenHoverCancel?: () => void;
   /** Blame 数据（传入时显示 blame 列） */
   blameLines?: BlameLine[];
   /** Inline blame 数据（行内注释用，文件打开时自动加载） */
@@ -52,6 +54,15 @@ export interface CodeViewerProps {
   onSaved?: () => void;
   /** 编辑器状态变化回调 */
   onEditorStateChange?: (state: { isDirty: boolean; isSaving: boolean }) => void;
+  // ---- Vi 模式 ----
+  /** 启用 vi 键盘模式（默认 false） */
+  viMode?: boolean;
+  /** Vi Normal 模式下内容修改回调（dd/p/x/o/O 只改内存，不写磁盘） */
+  onContentMutate?: (newContent: string) => void;
+  /** Vi: 进入 Insert 模式回调（触发父组件设置 editable=true） */
+  onEnterInsertMode?: (line: number) => void;
+  /** Vi: :w 保存回调 */
+  onViSave?: () => void;
 }
 
 export interface FloatingToolbarData {
@@ -78,6 +89,39 @@ export type RowData =
   | { type: 'code'; lineIndex: number }
   | { type: 'comment'; lineNum: number; comments: CodeComment[] }
   | { type: 'add-comment'; startLine: number; endLine: number };
+
+// ============================================
+// 选区逻辑坐标工具
+// ============================================
+
+/** 计算 node+offset 在 [data-line] 行内的字符偏移 */
+function charOffsetInLine(lineEl: Element, node: Node, offset: number): number {
+  const walker = document.createTreeWalker(lineEl, NodeFilter.SHOW_TEXT);
+  let chars = 0;
+  let cur: Node | null;
+  while ((cur = walker.nextNode())) {
+    if (cur === node) return chars + offset;
+    chars += cur.textContent!.length;
+  }
+  return chars + offset; // fallback
+}
+
+/** 根据字符偏移找到 [data-line] 行内的 text node + offset */
+export function resolveCharOffset(lineEl: Element, charOffset: number): { node: Node; offset: number } | null {
+  const walker = document.createTreeWalker(lineEl, NodeFilter.SHOW_TEXT);
+  let remaining = charOffset;
+  let last: Node | null = null;
+  let cur: Node | null;
+  while ((cur = walker.nextNode())) {
+    last = cur;
+    const len = cur.textContent!.length;
+    if (remaining <= len) return { node: cur, offset: remaining };
+    remaining -= len;
+  }
+  // 超出末尾，定位到最后一个 text node 的末端
+  if (last) return { node: last, offset: last.textContent!.length };
+  return null;
+}
 
 // ============================================
 // Hook
@@ -120,16 +164,22 @@ export function useCodeViewerLogic({
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [wholeWord, setWholeWord] = useState(false);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const [matchScrollTrigger, setMatchScrollTrigger] = useState(0);
+  const suppressMatchScrollRef = useRef(false);
 
   // Comment UI state
   const [viewingComment, setViewingComment] = useState<ViewingCommentData | null>(null);
 
   // Floating toolbar - 使用 ref 存储数据，避免触发 CodeViewer 重渲染
   const floatingToolbarRef = useRef<FloatingToolbarData | null>(null);
-  const [toolbarVersion, setToolbarVersion] = useState(0);
+  // bumpToolbarRef: 由 CodeViewer 中的 ToolbarRenderer 注入，调用后只触发 ToolbarRenderer re-render
+  const bumpToolbarRef = useRef<() => void>(() => {});
 
   // 当浮层（toolbar / addComment / sendToAI）活跃时，抑制 hover 和 cmd+click
   const suppressHoverRef = useRef(false);
+
+  // 选区逻辑坐标：re-render 后 DOM 节点被替换时用于恢复选区
+  const savedSelectionRef = useRef<{ startLine: number; startOffset: number; endLine: number; endOffset: number } | null>(null);
 
   const [addCommentInput, setAddCommentInput] = useState<InputCardData | null>(null);
   const [sendToAIInput, setSendToAIInput] = useState<InputCardData | null>(null);
@@ -273,7 +323,7 @@ export function useCodeViewerLogic({
           setAddCommentInput(null);
         } else if (floatingToolbarRef.current) {
           floatingToolbarRef.current = null;
-          setToolbarVersion(v => v + 1);
+          bumpToolbarRef.current();
         } else if (viewingComment) {
           setViewingComment(null);
         }
@@ -289,6 +339,10 @@ export function useCodeViewerLogic({
 
   // Navigate to current match
   useEffect(() => {
+    if (suppressMatchScrollRef.current) {
+      suppressMatchScrollRef.current = false;
+      return;
+    }
     if (matches.length > 0 && currentMatchIndex >= 0 && currentMatchIndex < matches.length) {
       const match = matches[currentMatchIndex];
       const rowIndex = rowData.findIndex(r => r.type === 'code' && r.lineIndex === match.lineIndex);
@@ -296,16 +350,20 @@ export function useCodeViewerLogic({
         virtualizer.scrollToIndex(rowIndex, { align: 'center' });
       }
     }
-  }, [currentMatchIndex, matches, virtualizer, rowData]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentMatchIndex, matches, virtualizer, rowData, matchScrollTrigger]);
 
   const goToNextMatch = useCallback(() => {
     if (matches.length === 0) return;
     setCurrentMatchIndex(prev => (prev + 1) % matches.length);
+    // Always bump trigger so single-match n/N still re-centers
+    setMatchScrollTrigger(prev => prev + 1);
   }, [matches.length]);
 
   const goToPrevMatch = useCallback(() => {
     if (matches.length === 0) return;
     setCurrentMatchIndex(prev => (prev - 1 + matches.length) % matches.length);
+    setMatchScrollTrigger(prev => prev + 1);
   }, [matches.length]);
 
   // 跳转到指定行号
@@ -363,7 +421,7 @@ export function useCodeViewerLogic({
     e.stopPropagation();
     setViewingComment({ comment, x: e.clientX, y: e.clientY });
     floatingToolbarRef.current = null;
-    setToolbarVersion(v => v + 1);
+    bumpToolbarRef.current();
     setAddCommentInput(null);
     setSendToAIInput(null);
   }, [commentsEnabled]);
@@ -374,14 +432,18 @@ export function useCodeViewerLogic({
 
     const codeArea = parentRef.current;
     let isDragging = false;
+    let downX = 0, downY = 0;
 
-    // mousedown：标记拖选开始，清除旧 toolbar
-    const handleMouseDown = () => {
+    // mousedown：标记拖选开始，抑制 hover，清除旧 toolbar + 保存的选区
+    const handleMouseDown = (e: MouseEvent) => {
       isDragging = true;
+      downX = e.clientX;
+      downY = e.clientY;
+      savedSelectionRef.current = null;
+      suppressHoverRef.current = true; // 拖动期间抑制 hover，防止 LSP hover 触发父组件 re-render
       if (floatingToolbarRef.current) {
         floatingToolbarRef.current = null;
-        suppressHoverRef.current = false; // 同步清除，避免 click 读到旧值
-        setToolbarVersion(v => v + 1);
+        bumpToolbarRef.current();
       }
     };
 
@@ -393,20 +455,25 @@ export function useCodeViewerLogic({
       const target = e.target as HTMLElement;
       if (target.closest?.('.floating-toolbar')) return;
 
+      // 移动 ≤ 5px 视为点击（含双击/三击），不弹出 toolbar
+      const moved = Math.abs(e.clientX - downX) > 5 || Math.abs(e.clientY - downY) > 5;
+
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) {
+        suppressHoverRef.current = false;
         if (floatingToolbarRef.current) {
           floatingToolbarRef.current = null;
-          setToolbarVersion(v => v + 1);
+          bumpToolbarRef.current();
         }
         return;
       }
 
       const selectedText = selection.toString();
-      if (!selectedText.trim()) {
+      if (!selectedText.trim() || !moved) {
+        suppressHoverRef.current = false;
         if (floatingToolbarRef.current) {
           floatingToolbarRef.current = null;
-          setToolbarVersion(v => v + 1);
+          bumpToolbarRef.current();
         }
         return;
       }
@@ -446,7 +513,24 @@ export function useCodeViewerLogic({
           range: { start: minLine, end: maxLine },
           selectedText,
         };
-        setToolbarVersion(v => v + 1);
+        suppressHoverRef.current = true;
+        bumpToolbarRef.current();
+
+        // 保存选区逻辑坐标：re-render 后 DOM 被替换时用于恢复
+        const startLineEl = startNode.nodeType === Node.TEXT_NODE
+          ? startNode.parentElement?.closest('[data-line]')
+          : (startNode as Element).closest('[data-line]');
+        const endLineEl = endNode.nodeType === Node.TEXT_NODE
+          ? endNode.parentElement?.closest('[data-line]')
+          : (endNode as Element).closest('[data-line]');
+        if (startLineEl && endLineEl) {
+          savedSelectionRef.current = {
+            startLine,
+            startOffset: charOffsetInLine(startLineEl, range.startContainer, range.startOffset),
+            endLine,
+            endOffset: charOffsetInLine(endLineEl, range.endContainer, range.endOffset),
+          };
+        }
       }
     };
 
@@ -458,7 +542,9 @@ export function useCodeViewerLogic({
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.toString().trim()) {
         floatingToolbarRef.current = null;
-        setToolbarVersion(v => v + 1);
+        savedSelectionRef.current = null;
+        suppressHoverRef.current = false;
+        bumpToolbarRef.current();
       }
     };
 
@@ -489,12 +575,23 @@ export function useCodeViewerLogic({
     const handleMouseUp = (e: MouseEvent) => {
       // 只处理代码区内的 mouseup
       if (!codeArea.contains(e.target as Node)) {
+        // 如果 mouseup 在 inline blame tooltip 内，不清除行号（tooltip portal 在 document.body 上）
+        if ((e.target as HTMLElement).closest?.('[data-inline-blame-tip]')) return;
         if (inlineBlameLineRef.current !== null) {
           inlineBlameLineRef.current = null;
           setInlineBlameVersion(v => v + 1);
         }
         return;
       }
+
+      // 有文本选区时跳过 inline blame 更新：
+      // mouseup 所在行的 CodeLine 会因 inlineBlameData prop 变化而 re-render，
+      // 导致该行 DOM 重建、选区锚点丢失。
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed && sel.toString().trim()) {
+        return;
+      }
+
       const line = getLineFromEvent(e);
       if (line !== inlineBlameLineRef.current) {
         inlineBlameLineRef.current = line;
@@ -520,7 +617,7 @@ export function useCodeViewerLogic({
       codeContent: toolbar.selectedText,
     });
     floatingToolbarRef.current = null;
-    setToolbarVersion(v => v + 1);
+    bumpToolbarRef.current();
   }, []);
 
   // Click "send to AI" in toolbar
@@ -536,7 +633,7 @@ export function useCodeViewerLogic({
       codeContent,
     });
     floatingToolbarRef.current = null;
-    setToolbarVersion(v => v + 1);
+    bumpToolbarRef.current();
   }, []);
 
   // Submit new comment
@@ -670,6 +767,7 @@ export function useCodeViewerLogic({
     searchInputRef,
     floatingToolbarRef,
     suppressHoverRef,
+    savedSelectionRef,
 
     // State
     highlightedLines,
@@ -682,7 +780,7 @@ export function useCodeViewerLogic({
     wholeWord,
     currentMatchIndex,
     viewingComment,
-    toolbarVersion,
+    bumpToolbarRef,
     addCommentInput,
     sendToAIInput,
     chatContext,
@@ -702,6 +800,7 @@ export function useCodeViewerLogic({
     // Handlers
     setIsSearchVisible,
     setSearchQuery,
+    suppressMatchScrollRef,
     setCaseSensitive,
     setWholeWord,
     setViewingComment,

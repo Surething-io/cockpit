@@ -105,10 +105,8 @@ export function HoverTooltip({ displayString, documentation, x, y, container, on
   return (
     <div
       ref={ref}
-      className="absolute z-[200] max-w-lg bg-card border border-border rounded-lg shadow-xl px-3 py-2"
+      className="absolute z-[200] max-w-lg bg-card border border-border rounded-lg shadow-xl px-3 py-2 pointer-events-none"
       style={{ left: relX, top: relY }}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
     >
       <pre className="font-mono text-xs whitespace-pre-wrap break-all leading-relaxed">
         {highlighted}
@@ -122,7 +120,11 @@ export function HoverTooltip({ displayString, documentation, x, y, container, on
       {(onFindReferences || onSearch) && (
         <>
           <div className="border-t border-border my-1.5" />
-          <div className="flex items-center gap-3">
+          <div
+            className="flex items-center gap-3 pointer-events-auto"
+            onMouseEnter={onMouseEnter}
+            onMouseLeave={onMouseLeave}
+          >
             {onFindReferences && (
               <button
                 onClick={onFindReferences}

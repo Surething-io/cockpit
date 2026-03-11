@@ -97,10 +97,11 @@ export function useLSPHover(cwd: string) {
 
   const onTokenMouseLeave = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    // 延迟清除，给用户时间把鼠标移到卡片上
+    // 立即废弃在途请求，防止 fetch 回来后触发 setHoverInfo
+    activeRequestRef.current++;
+    // 延迟清除卡片，给用户时间把鼠标移到卡片上
     leaveTimerRef.current = setTimeout(() => {
       if (!onCardRef.current) {
-        activeRequestRef.current++;
         setHoverInfo(null);
       }
     }, 150);

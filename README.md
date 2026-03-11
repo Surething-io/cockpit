@@ -5,7 +5,8 @@ One seat. One AI. Everything under control.
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Surething-io/cockpit/main/install.sh | bash
+cd /path/to/cockpit
+npm run release     # Build + install globally
 ```
 
 安装完成后，Chrome 插件会自动部署到 `~/.cockpit/chrome-extension/`。
@@ -16,7 +17,6 @@ curl -fsSL https://raw.githubusercontent.com/Surething-io/cockpit/main/install.s
 cock            # Start server on http://localhost:3457
 cock -h         # Show help
 cock -v         # Show version
-cock update     # Update to latest version
 ```
 
 ## Chrome Extension

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServicesConfigPath, readJsonFile, writeJsonFile } from '@/lib/paths';
+import { getServicesConfigPath, getGlobalServicesConfigPath, readJsonFile, writeJsonFile } from '@/lib/paths';
 
 export interface CustomCommand {
   name: string;
@@ -14,15 +14,21 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const cwd = searchParams.get('cwd');
+    const scope = searchParams.get('scope'); // 'global' for global commands
 
-    if (!cwd) {
+    const configPath = scope === 'global'
+      ? getGlobalServicesConfigPath()
+      : cwd
+        ? getServicesConfigPath(cwd)
+        : null;
+
+    if (!configPath) {
       return NextResponse.json(
-        { error: 'Missing cwd' },
+        { error: 'Missing cwd or scope' },
         { status: 400 }
       );
     }
 
-    const configPath = getServicesConfigPath(cwd);
     const config = await readJsonFile<ServicesConfig>(configPath, { customCommands: [] });
 
     return NextResponse.json(config);
@@ -37,16 +43,21 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { cwd, customCommands } = await request.json();
+    const { cwd, scope, customCommands } = await request.json();
 
-    if (!cwd) {
+    const configPath = scope === 'global'
+      ? getGlobalServicesConfigPath()
+      : cwd
+        ? getServicesConfigPath(cwd)
+        : null;
+
+    if (!configPath) {
       return NextResponse.json(
-        { error: 'Missing cwd' },
+        { error: 'Missing cwd or scope' },
         { status: 400 }
       );
     }
 
-    const configPath = getServicesConfigPath(cwd);
     const config: ServicesConfig = { customCommands: customCommands || [] };
     await writeJsonFile(configPath, config);
 

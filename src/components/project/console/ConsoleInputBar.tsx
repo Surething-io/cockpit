@@ -6,6 +6,10 @@ import { QuickCommandsPopover, useQuickCommands } from './QuickCommandsPopover';
 import { isUrlInput } from '@/hooks/useConsoleState';
 import type { CustomCommand } from '@/app/api/services/config/route';
 
+interface TaggedCommand extends CustomCommand {
+  scope: 'project' | 'global';
+}
+
 interface ConsoleInputBarProps {
   cwd: string;
   currentCwd: string;
@@ -38,7 +42,7 @@ export function ConsoleInputBar({
   const [autocompleteIndex, setAutocompleteIndex] = useState(0);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [showQuickCommands, setShowQuickCommands] = useState(false);
-  const [filteredSlashCommands, setFilteredSlashCommands] = useState<CustomCommand[]>([]);
+  const [filteredSlashCommands, setFilteredSlashCommands] = useState<TaggedCommand[]>([]);
   const [showSlashCommands, setShowSlashCommands] = useState(false);
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
 
@@ -46,25 +50,31 @@ export function ConsoleInputBar({
   const slashListRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
 
-  const { quickCustomCommands, expandCustomCommand, loadQuickCommands } = useQuickCommands(cwd);
+  const { projectCommands, globalCommands, expandCustomCommand, loadQuickCommands } = useQuickCommands(cwd);
 
   // 聚焦输入框
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // 输入变化时过滤 / 自定义命令
+  // 输入变化时过滤 / 自定义命令（项目级在前，全局在后）
   useEffect(() => {
     if (inputValue.startsWith('/')) {
       const keyword = inputValue.slice(1).toLowerCase();
-      const filtered = quickCustomCommands.filter(c => c.name.toLowerCase().startsWith(keyword));
+      const taggedProject: TaggedCommand[] = projectCommands
+        .filter(c => c.name.toLowerCase().startsWith(keyword))
+        .map(c => ({ ...c, scope: 'project' as const }));
+      const taggedGlobal: TaggedCommand[] = globalCommands
+        .filter(c => c.name.toLowerCase().startsWith(keyword))
+        .map(c => ({ ...c, scope: 'global' as const }));
+      const filtered = [...taggedProject, ...taggedGlobal];
       setFilteredSlashCommands(filtered);
       setShowSlashCommands(filtered.length > 0);
       setSlashSelectedIndex(0);
     } else {
       setShowSlashCommands(false);
     }
-  }, [inputValue, quickCustomCommands]);
+  }, [inputValue, projectCommands, globalCommands]);
 
   // 滚动选中项到可视区域
   useEffect(() => {
@@ -332,7 +342,7 @@ export function ConsoleInputBar({
           >
             {filteredSlashCommands.map((cmd, index) => (
               <div
-                key={cmd.name}
+                key={`${cmd.scope}-${cmd.name}`}
                 onClick={() => handleSlashSelect(cmd)}
                 className={`flex items-center gap-3 px-3 py-1.5 cursor-pointer text-sm ${
                   index === slashSelectedIndex ? 'bg-brand/10' : 'hover:bg-accent'
@@ -340,6 +350,7 @@ export function ConsoleInputBar({
               >
                 <span className="font-mono font-medium text-foreground">/{cmd.name}</span>
                 <span className="flex-1 text-muted-foreground truncate">{cmd.command}</span>
+                <span className="text-[10px] text-muted-foreground/60 flex-shrink-0">{cmd.scope === 'project' ? '项目' : '全局'}</span>
               </div>
             ))}
           </div>

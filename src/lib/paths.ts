@@ -130,6 +130,13 @@ export function getGlobalAliasesPath(): string {
 }
 
 /**
+ * Get the global services config path (shared across all projects)
+ */
+export function getGlobalServicesConfigPath(): string {
+  return join(COCKPIT_DIR, 'services.json');
+}
+
+/**
  * Get the project settings file path (UI preferences like layout mode, active view)
  */
 export function getProjectSettingsPath(cwd: string): string {

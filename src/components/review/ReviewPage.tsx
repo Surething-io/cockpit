@@ -81,7 +81,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
 
   // Polling for multi-user refresh (every 3s)
   useEffect(() => {
-    const interval = setInterval(fetchReview, 3000);
+    const interval = setInterval(fetchReview, 10000);
     return () => clearInterval(interval);
   }, [fetchReview]);
 

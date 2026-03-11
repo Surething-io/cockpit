@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "COCKPIT_ENV=dev node --import tsx server.mjs",
     "build": "next build --webpack",
-    "prepare": "node -e \"try{const p=require('./package.json'),c=require('child_process').execSync('git rev-list --count HEAD').toString().trim();p.version='1.0.'+c;require('fs').writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n')}catch{}\" && npm run build >&2",
+    "prepare": "npm run build >&2",
     "release": "npm pack && npm install -g cockpit-*.tgz && rm cockpit-*.tgz && echo 'Installed: cockpit v'$(cock -v)",
     "lint": "eslint",
     "storybook": "storybook dev -p 6006",

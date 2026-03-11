@@ -50,15 +50,16 @@ if (process.argv[2] === 'browser') {
 }
 
 if (process.argv[2] === 'update') {
-  const { readFileSync } = await import('fs');
+  const { readFileSync, createWriteStream, unlinkSync } = await import('fs');
   const https = await import('https');
+  const { tmpdir } = await import('os');
   const pkg = JSON.parse(readFileSync(resolve(PROJECT_ROOT, 'package.json'), 'utf8'));
   console.log(`Current: v${pkg.version}`);
   console.log('Checking latest release...\n');
 
-  // 获取最新 release 的 tgz 下载地址
-  const getLatestTgzUrl = () => new Promise((resolve, reject) => {
-    const req = https.get('https://api.github.com/repos/Surething-io/cockpit/releases/latest', {
+  // 获取最新 release 信息
+  const getLatestRelease = () => new Promise((resolve, reject) => {
+    https.get('https://api.github.com/repos/Surething-io/cockpit/releases/latest', {
       headers: { 'User-Agent': 'cockpit-cli', Accept: 'application/vnd.github+json' },
     }, (res) => {
       let data = '';
@@ -67,19 +68,39 @@ if (process.argv[2] === 'update') {
         try {
           const release = JSON.parse(data);
           const asset = release.assets?.find(a => a.name.endsWith('.tgz'));
-          if (asset) resolve({ url: asset.browser_download_url, tag: release.tag_name });
+          if (asset) resolve({ url: asset.browser_download_url, name: asset.name, tag: release.tag_name });
           else reject(new Error('No tgz found in latest release'));
         } catch (e) { reject(e); }
       });
-    });
-    req.on('error', reject);
+    }).on('error', reject);
+  });
+
+  // 下载文件（跟随重定向）
+  const download = (url, dest) => new Promise((resolve, reject) => {
+    const file = createWriteStream(dest);
+    const get = (u) => {
+      https.get(u, { headers: { 'User-Agent': 'cockpit-cli' } }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          get(res.headers.location);
+          return;
+        }
+        if (res.statusCode !== 200) { reject(new Error(`Download failed: ${res.statusCode}`)); return; }
+        res.pipe(file);
+        file.on('finish', () => { file.close(); resolve(); });
+      }).on('error', reject);
+    };
+    get(url);
   });
 
   try {
-    const { url, tag } = await getLatestTgzUrl();
+    const { url, name, tag } = await getLatestRelease();
     console.log(`Latest: ${tag}`);
+    console.log('Downloading...');
+    const tgzPath = resolve(tmpdir(), name);
+    await download(url, tgzPath);
     console.log('Installing...\n');
-    const result = spawnSync('npm', ['install', '-g', url], { stdio: 'inherit' });
+    const result = spawnSync('npm', ['install', '-g', tgzPath], { stdio: 'inherit' });
+    try { unlinkSync(tgzPath); } catch {}
     if (result.status === 0) {
       console.log(`\nUpdated to ${tag}`);
     } else {
@@ -87,7 +108,7 @@ if (process.argv[2] === 'update') {
     }
     process.exit(result.status || 0);
   } catch (err) {
-    console.error('No release found. Create a release first: git tag v1.0.xxx && git push --tags');
+    console.error(`Update failed: ${err.message}`);
     process.exit(1);
   }
 }

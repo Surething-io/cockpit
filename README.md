@@ -6,7 +6,7 @@ One seat. One AI. Everything under control.
 
 ```bash
 cd /path/to/cockpit
-npm run release     # Build + install globally
+npm install && npm link
 ```
 
 安装完成后，Chrome 插件会自动部署到 `~/.cockpit/chrome-extension/`。
@@ -82,7 +82,7 @@ cock terminal abcd --help                  # 查看完整命令列表
 ```bash
 npm run dev         # Start dev server (port 3456, HMR)
 npm run build       # Build for production
-npm run release     # Build + install globally
+npm run release     # Build + npm link
 npm run lint        # Run ESLint
 ```
 

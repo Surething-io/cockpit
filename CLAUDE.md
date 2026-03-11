@@ -48,7 +48,7 @@
 ```bash
 npm run dev      # Start dev server on port 3456
 npm run build    # Build for production
-npm run release  # Build + install globally (npm pack → install tgz)
+npm run release  # Build + npm link
 npm run lint     # Run ESLint
 cock             # Start production server (port 3457)
 cock -v          # Show version

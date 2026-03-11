@@ -5,11 +5,7 @@ One seat. One AI. Everything under control.
 ## Install
 
 ```bash
-# From GitHub
-npm install -g github:Surething-io/cockpit
-
-# Or from release (pre-built, no build required)
-# npm install -g https://github.com/Surething-io/cockpit/releases/download/v1.0.xxx/cockpit-1.0.xxx.tgz
+npm install -g https://github.com/Surething-io/cockpit/releases/download/v1.0.xxx/cockpit-1.0.xxx.tgz
 ```
 
 安装完成后，Chrome 插件会自动部署到 `~/.cockpit/chrome-extension/`。

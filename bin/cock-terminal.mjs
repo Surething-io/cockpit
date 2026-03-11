@@ -25,13 +25,20 @@ Usage: cock terminal ${prefix} <action>`);
   }
 
   console.log(`
-Workflow: use \`output\` to read buffered terminal output, or \`follow\`
-to stream output in real-time. Use \`stdin\` to send input.
-
 Actions:
   output                    Get buffered output
   follow                    Stream real-time output (Ctrl+C to stop)
-  stdin <data>              Send input to process`);
+  stdin <data>              Send input to process
+
+── Next step ──────────────────────────────────────────
+Run \`cock terminal ${prefix} output\` to read the terminal output.
+Use \`stdin\` to send commands or input to the process.
+
+Example session:
+  cock terminal ${prefix} output               # 1. read current output
+  cock terminal ${prefix} stdin "ls -la"        # 2. send a command
+  cock terminal ${prefix} output               # 3. read new output
+  cock terminal ${prefix} follow               # stream output in real-time`);
 }
 
 if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {

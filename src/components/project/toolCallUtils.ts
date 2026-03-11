@@ -125,6 +125,10 @@ export function isImageFile(filePath: string): boolean {
   return IMAGE_EXTENSIONS.has(ext);
 }
 
+export function isMarkdownFile(filePath: string): boolean {
+  return filePath.toLowerCase().endsWith('.md');
+}
+
 // ============================================
 // 文件路径提取
 // ============================================

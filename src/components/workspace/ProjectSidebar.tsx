@@ -61,6 +61,8 @@ export function ProjectSidebar({
   // 按 sessionId 追踪未读状态（跟随 chat tab 的红点逻辑）
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(new Set());
   const prevLoadingSessionIdsRef = useRef<Set<string>>(new Set());
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
 
   // 通过 SSE 监听全局状态变化（替代 1s 轮询）
   const currentCwdRef = useRef(currentCwd);
@@ -94,21 +96,24 @@ export function ProjectSidebar({
 
       if (prevLoading.size > 0) {
         const allCompleted: string[] = [];   // 所有刚完成的 session
-        const nonCurrentCompleted: string[] = []; // 非当前项目的
+        const shouldMarkUnread: string[] = []; // 需要标记未读的
         prevLoading.forEach(sessionId => {
           if (!currentLoadingIds.has(sessionId)) {
             allCompleted.push(sessionId);
             const session = newSessions.find(s => s.sessionId === sessionId);
-            if (session && session.cwd !== currentCwdRef.current) {
-              nonCurrentCompleted.push(sessionId);
+            if (session) {
+              // 非当前项目 → 标记未读
+              // 当前项目但不在 agent 屏（在 explorer/console）→ 也标记未读
+              if (session.cwd !== currentCwdRef.current || currentActiveViewRef.current !== 'agent') {
+                shouldMarkUnread.push(sessionId);
+              }
             }
           }
         });
-        // 非当前项目 → 标记未读
-        if (nonCurrentCompleted.length > 0) {
+        if (shouldMarkUnread.length > 0) {
           setUnreadSessionIds(prev => {
             const next = new Set(prev);
-            nonCurrentCompleted.forEach(id => next.add(id));
+            shouldMarkUnread.forEach(id => next.add(id));
             return next;
           });
         }
@@ -137,19 +142,21 @@ export function ProjectSidebar({
     onMessage: handleGlobalStateMessage,
   });
 
-  // 当切换到某个项目时，清除该项目所有 session 的未读状态
+  // 当切换到某个项目（且在 agent 屏）时，清除该项目所有 session 的未读状态
+  // 仅依赖 currentCwd 和 currentActiveView，避免 sessions/unreadSessionIds 变化误触发
   useEffect(() => {
-    if (!currentCwd) return;
-    const cwdSessionIds = sessions.filter(s => s.cwd === currentCwd).map(s => s.sessionId);
-    const hasUnread = cwdSessionIds.some(id => unreadSessionIds.has(id));
-    if (hasUnread) {
-      setUnreadSessionIds(prev => {
-        const next = new Set(prev);
-        cwdSessionIds.forEach(id => next.delete(id));
-        return next;
-      });
-    }
-  }, [currentCwd, sessions, unreadSessionIds]);
+    if (!currentCwd || currentActiveView !== 'agent') return;
+    const cwdSessionIds = sessionsRef.current
+      .filter(s => s.cwd === currentCwd)
+      .map(s => s.sessionId);
+    setUnreadSessionIds(prev => {
+      const hasUnread = cwdSessionIds.some(id => prev.has(id));
+      if (!hasUnread) return prev;
+      const next = new Set(prev);
+      cwdSessionIds.forEach(id => next.delete(id));
+      return next;
+    });
+  }, [currentCwd, currentActiveView]);
 
   // 清除指定 session 的未读状态（点击切换时调用）
   const handleClearUnread = useCallback((sessionId: string) => {

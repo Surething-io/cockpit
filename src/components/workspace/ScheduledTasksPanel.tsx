@@ -47,6 +47,7 @@ function formatType(task: ScheduledTask): string {
 }
 
 function getStatusColor(task: ScheduledTask): string {
+  if (task.unread) return 'bg-red-500';
   if (task.completed) return 'bg-muted-foreground';
   if (task.paused) return 'bg-yellow-500';
   if (task.lastResult === 'error') return 'bg-red-500';

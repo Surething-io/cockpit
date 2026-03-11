@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { DiffView, DiffUnifiedView } from './DiffView';
 import { CodeViewer } from './CodeViewer';
-import { MarkdownFileViewer, isMarkdownFile } from './MarkdownFileViewer';
+import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { toast } from '../shared/Toast';
 import {
   isValidJson,
@@ -13,6 +13,7 @@ import {
   isEditInput,
   getFilePath,
   isImageFile,
+  isMarkdownFile,
 } from './toolCallUtils';
 
 // ============================================
@@ -101,7 +102,11 @@ function FilePreview({ filePath }: FilePreviewProps) {
   }
 
   if (isMd) {
-    return <MarkdownFileViewer content={fileContent} filePath={filePath} className="h-full" />;
+    return (
+      <div className="h-full overflow-auto p-4">
+        <MarkdownRenderer content={fileContent} />
+      </div>
+    );
   }
 
   return (

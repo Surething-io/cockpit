@@ -3,6 +3,7 @@
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync, spawnSync } from 'child_process';
+import { rmSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..');
@@ -27,6 +28,9 @@ if (process.argv[2] === 'terminal') {
   await mod.done;
   process.exit(0);
 }
+
+// 清除旧 build 产物，避免新旧 manifest 不一致
+rmSync(resolve(PROJECT_ROOT, '.next'), { recursive: true, force: true });
 
 // Build
 console.log('Building...');

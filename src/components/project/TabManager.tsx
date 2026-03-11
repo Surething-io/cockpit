@@ -22,6 +22,9 @@ interface TabManagerProps {
 }
 
 export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
+  // activeView 需要在 useTabState 之前声明，因为 useTabState 需要它来判断未读
+  const [activeView, setActiveView] = useState<ViewType>('agent');
+
   // Tab 状态管理
   const {
     tabs,
@@ -40,7 +43,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     handleTabDragOver,
     handleTabDrop,
     handleTabDragEnd,
-  } = useTabState({ initialCwd, initialSessionId });
+  } = useTabState({ initialCwd, initialSessionId, activeView });
 
   // Pin 状态管理
   const { isPinned, pinSession, unpinSession } = usePinnedSessions();
@@ -71,7 +74,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const [isGitRepo, setIsGitRepo] = useState(false);
   const [fileBrowserInitialTab, setFileBrowserInitialTab] = useState<'tree' | 'recent' | 'status' | 'history'>('tree');
   const [tabSwitchTrigger, setTabSwitchTrigger] = useState(0);
-  const [activeView, setActiveView] = useState<ViewType>('agent');
 
   // 从 project-settings 恢复 activeView
   useEffect(() => {

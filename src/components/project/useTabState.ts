@@ -21,13 +21,17 @@ export interface TabInfo {
 interface UseTabStateOptions {
   initialCwd?: string;
   initialSessionId?: string;
+  /** 当前视图（agent/explorer/console），用于判断未读：不在 agent 屏时活跃 tab 也标记未读 */
+  activeView?: string;
 }
 
-export function useTabState({ initialCwd, initialSessionId }: UseTabStateOptions) {
+export function useTabState({ initialCwd, initialSessionId, activeView }: UseTabStateOptions) {
   // 标记是否已从服务端加载过 sessions
   const hasLoadedRef = useRef(false);
   // 标记是否正在初始化（避免初始化过程中触发保存）
   const isInitializingRef = useRef(true);
+  const activeViewRef = useRef(activeView);
+  activeViewRef.current = activeView;
 
   // 初始化标签页（先创建一个临时标签，后续会被服务端数据覆盖）
   const [tabs, setTabs] = useState<TabInfo[]>(() => [{
@@ -194,14 +198,30 @@ export function useTabState({ initialCwd, initialSessionId }: UseTabStateOptions
   const updateTabState = useCallback((tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string }) => {
     setTabs((prev) => {
       const oldTab = prev.find(t => t.id === tabId);
-      if (oldTab?.isLoading && updates.isLoading === false && tabId !== activeTabId) {
-        setUnreadTabs(u => new Set(u).add(tabId));
+      if (oldTab?.isLoading && updates.isLoading === false) {
+        // 非活跃 tab → 标记未读
+        // 活跃 tab 但不在 agent 屏（在 explorer/console）→ 也标记未读
+        if (tabId !== activeTabId || activeViewRef.current !== 'agent') {
+          setUnreadTabs(u => new Set(u).add(tabId));
+        }
       }
       return prev.map((tab) =>
         tab.id === tabId ? { ...tab, ...updates } : tab
       );
     });
   }, [activeTabId]);
+
+  // 切回 agent 屏时，清除当前活跃 tab 的未读
+  useEffect(() => {
+    if (activeView === 'agent') {
+      setUnreadTabs(u => {
+        if (!u.has(activeTabId)) return u;
+        const next = new Set(u);
+        next.delete(activeTabId);
+        return next;
+      });
+    }
+  }, [activeView, activeTabId]);
 
   // 切换 Tab 并清除未读
   const switchTab = useCallback((tabId: string) => {

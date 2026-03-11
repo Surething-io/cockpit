@@ -40,9 +40,6 @@ Usage: cock browser ${prefix} <action>`);
   }
 
   console.log(`
-Workflow: run \`snapshot\` to get the page element tree. Each element
-has a ref like [e5]. Use that ref with click, type, fill, hover, etc.
-
 Navigation:
   navigate <url>              Navigate to URL
   reload [--noCache]          Reload page
@@ -86,7 +83,21 @@ Console & Debug:
   perf --metric M             Performance (timing|memory|resources)
   theme --mode M              Switch theme (dark|light)
   cookies                     Get cookies
-  storage [--type T]          Get storage (local|session)`);
+  storage [--type T]          Get storage (local|session)
+
+── Next step ──────────────────────────────────────────
+Run \`cock browser ${prefix} snapshot\` to inspect the page.
+It returns an element tree with refs like [e5]. Use those
+refs to interact: click, type, fill, hover, etc.
+
+Example session:
+  cock browser ${prefix} snapshot              # 1. see the page
+  cock browser ${prefix} click e5              # 2. click a button
+  cock browser ${prefix} type e3 "hello"       # 3. type into input
+  cock browser ${prefix} evaluate "document.title"  # run JS
+  cock browser ${prefix} evaluate "await fetch('/api/data').then(r=>r.json())"
+        # fetch() inherits the browser's auth session — use it to
+        # call APIs, inspect responses, or pull data for analysis.`);
 }
 
 if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {

@@ -87,15 +87,8 @@ if (process.argv[2] === 'update') {
     }
     process.exit(result.status || 0);
   } catch (err) {
-    // fallback：从源码安装
-    console.log('No release found, installing from source...\n');
-    const result = spawnSync('npm', ['install', '-g', 'github:Surething-io/cockpit'], { stdio: 'inherit' });
-    if (result.status === 0) {
-      console.log('\nUpdate complete.');
-    } else {
-      console.error('\nUpdate failed. Try: sudo cock update');
-    }
-    process.exit(result.status || 0);
+    console.error('No release found. Create a release first: git tag v1.0.xxx && git push --tags');
+    process.exit(1);
   }
 }
 

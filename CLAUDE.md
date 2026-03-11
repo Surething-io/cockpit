@@ -51,7 +51,7 @@ npm run build    # Build for production
 npm run release  # Build + install globally (npm pack → install tgz)
 npm run lint     # Run ESLint
 cock             # Start production server (port 3457)
-cock -v          # Show version (1.0.<commit count>)
+cock -v          # Show version
 cock update      # Update from GitHub
 ```
 

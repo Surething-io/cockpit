@@ -2,63 +2,46 @@
 
 One seat. One AI. Everything under control.
 
-## Getting Started
-
-### Development
+## Install
 
 ```bash
-npm run dev
+# From GitHub
+npm install -g github:Surething-io/cockpit
+
+# Or from release (pre-built, no build required)
+# npm install -g https://github.com/Surething-io/cockpit/releases/download/v1.0.xxx/cockpit-1.0.xxx.tgz
 ```
 
-Opens at [http://localhost:3456](http://localhost:3456) with dev icon (orange star badge).
+安装完成后，Chrome 插件会自动部署到 `~/.cockpit/chrome-extension/`。
 
-### Production
+## Quick Start
 
 ```bash
-npm run build && npm run start
+cock            # Start server on http://localhost:3457
+cock -h         # Show help
+cock -v         # Show version
+cock update     # Update to latest version
 ```
 
-Opens at [http://localhost:3457](http://localhost:3457) with production icon.
+## Chrome Extension
 
-## Commands
+首次安装后需手动加载一次：
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start dev server (port 3456) |
-| `npm run build` | Build for production |
-| `npm run start` | Start production server (port 3457) |
-| `npm run lint` | Run ESLint |
-| `npm run generate-icons` | Regenerate PWA icons |
-
-## CLI 安装
-
-```bash
-# 在项目根目录执行，全局注册 cock 命令
-npm link
-```
-
-安装后可用：
-- `cock` — 构建并启动生产服务器（port 3457）
-- `cock-dev` — 构建并启动开发服务器（port 3456）
-- `cock browser <id> <action>` — 控制浏览器气泡（连接 prod 3457）
-- `cock-dev browser <id> <action>` — 控制浏览器气泡（连接 dev 3456）
-
-## Chrome 插件
-
-路径：`/chrome-extension/`
-
-**安装步骤：**
 1. Chrome 打开 `chrome://extensions/`
-2. 开启「开发者模式」
-3. 点击「加载已解压的扩展程序」，选择项目下的 `chrome-extension/` 目录
-4. 插件会自动检测代码更新并重载
+2. 开启右上角「开发者模式」
+3. 点击「加载已解压的扩展程序」
+4. 按 `Cmd+Shift+G` → 粘贴 `~/.cockpit/chrome-extension` → 回车
+
+之后更新 Cockpit 时插件会自动覆盖，无需重复操作。
+
+也可在 Cockpit 设置页查看插件状态和路径。
 
 ## Browser Automation
 
 AI Agent 通过 CLI 控制 console 中已打开的浏览器气泡。
 
 **使用流程：**
-1. 启动 dev server（`npm run dev`）
+1. 启动 Cockpit（`cock`）
 2. 在 console 中输入 URL 打开一个网页
 3. 气泡标题栏出现 4 位短 ID 徽标（如 `abcd`），点击复制命令
 4. 在终端执行命令
@@ -87,3 +70,28 @@ cock browser abcd --help                   # 查看完整命令列表
 ```
 
 **数据流：** `CLI → HTTP API → WebSocket → BrowserBubble → postMessage → iframe content script → 结果原路返回`
+
+## Terminal Automation
+
+```bash
+cock terminal list                         # 列出所有运行中的终端
+cock terminal abcd output                  # 读取终端输出
+cock terminal abcd stdin "ls -la"          # 发送命令
+cock terminal abcd follow                  # 实时流式输出（Ctrl+C 退出）
+cock terminal abcd --help                  # 查看完整命令列表
+```
+
+## Development
+
+```bash
+npm run dev         # Start dev server (port 3456, HMR)
+npm run build       # Build for production
+npm run release     # Build + install globally
+npm run lint        # Run ESLint
+```
+
+开发时子命令连接 dev server：
+```bash
+cock browser abcd snapshot --port 3456
+cock terminal abcd output --port 3456
+```

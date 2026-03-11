@@ -8,6 +8,18 @@
 
 const args = process.argv.slice(2);
 
+// 从 args 提取 --port（放在最前面，在解析 id/action 之前）
+function extractPort(argv) {
+  const idx = argv.indexOf('--port');
+  if (idx !== -1 && argv[idx + 1]) {
+    const p = parseInt(argv[idx + 1]);
+    argv.splice(idx, 2);
+    return p;
+  }
+  return null;
+}
+const cliPort = extractPort(args);
+
 // status: { running, command } — 传入时显示当前终端状态
 function printHelp(prefix = '<id>', status = null) {
   console.log(`Interact with a running terminal process — read output, stream logs, and send input.
@@ -61,7 +73,8 @@ if (args[0] === 'list') {
 
 const extraArgs = args.slice(2);
 
-const port = process.env.COCKPIT_PORT || 3457;
+// 端口：--port 优先 > 环境变量 COCKPIT_PORT > 默认 3457
+const port = cliPort || process.env.COCKPIT_PORT || 3457;
 const baseUrl = `http://localhost:${port}`;
 
 async function run() {

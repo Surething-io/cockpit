@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useMemo, memo } from 'react';
 
 // ============================================
 // Floating Toolbar (portal version with container-relative positioning)
@@ -52,3 +52,49 @@ export function FloatingToolbar({ x, y, visible, container, onAddComment, onSend
     </div>
   );
 }
+
+// ============================================
+// ToolbarRenderer - 独立状态，避免父组件重渲染
+// 只有 toolbar 自身的显示/隐藏触发此组件 re-render。
+// ============================================
+
+export interface ToolbarData {
+  x: number;
+  y: number;
+  range: { start: number; end: number };
+  selectedText: string;
+}
+
+interface ToolbarRendererProps {
+  floatingToolbarRef: React.RefObject<ToolbarData | null>;
+  bumpRef: React.MutableRefObject<() => void>;
+  container: HTMLElement;
+  onAddComment: () => void;
+  onSendToAI: () => void;
+  isChatLoading?: boolean;
+}
+
+function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddComment, onSendToAI, isChatLoading }: ToolbarRendererProps) {
+  const [version, forceRender] = useState(0);
+
+  // 让父组件通过 bumpRef 触发本组件 re-render
+  useEffect(() => {
+    bumpRef.current = () => forceRender(v => v + 1);
+  }, [bumpRef]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- version 仅用于触发 re-read ref
+  const toolbar = useMemo(() => floatingToolbarRef.current, [version]);
+
+  return (
+    <FloatingToolbar
+      x={toolbar?.x ?? 0}
+      y={toolbar?.y ?? 0}
+      visible={!!toolbar}
+      container={container}
+      onAddComment={onAddComment}
+      onSendToAI={onSendToAI}
+      isChatLoading={isChatLoading}
+    />
+  );
+}
+export const ToolbarRenderer = memo(ToolbarRendererInner);

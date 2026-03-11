@@ -160,10 +160,8 @@ export function ScheduledTasksPanel({
           }`}>
             {unreadCount}
           </span>
-        ) : tasks.length > 0 ? (
-          <span className={`min-w-[18px] h-[18px] px-1 text-muted-foreground text-xs font-medium rounded-full flex items-center justify-center bg-accent ${
-            collapsed ? 'absolute -top-1 -right-1' : ''
-          }`}>
+        ) : collapsed && tasks.length > 0 ? (
+          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 text-muted-foreground text-xs font-medium rounded-full flex items-center justify-center bg-accent">
             {tasks.length}
           </span>
         ) : null}

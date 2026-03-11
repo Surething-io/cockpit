@@ -9,9 +9,11 @@ interface Props {
   activeCommentId: string | null;
   currentAuthorId: string;
   isActive: boolean;
+  isAdmin?: boolean;
   onCommentClick: (commentId: string) => void;
   onDeleteComment: (commentId: string) => void;
   onEditComment: (commentId: string, content: string) => void;
+  onToggleCommentClosed: (commentId: string, closed: boolean) => void;
   onAddReply: (commentId: string, content: string) => void;
   onDeleteReply: (commentId: string, replyId: string) => void;
   onEditReply: (commentId: string, replyId: string, content: string) => void;
@@ -23,9 +25,11 @@ export function ReviewCommentPanel({
   activeCommentId,
   currentAuthorId,
   isActive,
+  isAdmin,
   onCommentClick,
   onDeleteComment,
   onEditComment,
+  onToggleCommentClosed,
   onAddReply,
   onDeleteReply,
   onEditReply,
@@ -77,11 +81,13 @@ export function ReviewCommentPanel({
                 comment={comment}
                 isActive={comment.id === activeCommentId}
                 isOwnComment={comment.authorId === currentAuthorId}
+                isAdmin={isAdmin}
                 currentAuthorId={currentAuthorId}
                 canInteract={isActive}
                 onClick={() => onCommentClick(comment.id)}
                 onDelete={() => onDeleteComment(comment.id)}
                 onEdit={(content) => onEditComment(comment.id, content)}
+                onToggleClosed={(closed) => onToggleCommentClosed(comment.id, closed)}
                 onAddReply={(content) => onAddReply(comment.id, content)}
                 onDeleteReply={(replyId) => onDeleteReply(comment.id, replyId)}
                 onEditReply={(replyId, content) => onEditReply(comment.id, replyId, content)}

@@ -1,19 +1,19 @@
 {
   "name": "cockpit",
-  "version": "0.1.0",
+  "version": "1.0.135",
   "bin": {
-    "cock": "./bin/cock.mjs",
-    "cock-dev": "./bin/cock-dev.mjs"
+    "cock": "./bin/cock.mjs"
   },
   "scripts": {
     "dev": "COCKPIT_ENV=dev node --import tsx server.mjs",
     "build": "next build --webpack",
-    "start": "node --import tsx server.mjs",
+    "prepare": "node -e \"try{const p=require('./package.json'),c=require('child_process').execSync('git rev-list --count HEAD').toString().trim();p.version='1.0.'+c;require('fs').writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n')}catch{}\" && npm run build >&2",
+    "release": "npm pack && npm install -g cockpit-*.tgz && rm cockpit-*.tgz && echo 'Installed: cockpit v'$(cock -v)",
     "lint": "eslint",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "generate-icons": "node scripts/generate-icons.js",
-    "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper 2>/dev/null || true"
+    "postinstall": "node bin/postinstall.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.34",
@@ -45,7 +45,15 @@
     "remark-gfm": "^4.0.1",
     "shiki": "^3.21.0",
     "tiptap-markdown": "^0.9.0",
+    "@tailwindcss/postcss": "^4.2.1",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
+    "sharp": "^0.34.5",
+    "tailwindcss": "^4",
     "tsx": "^4.21.0",
+    "typescript": "5.9.3",
     "ws": "^8.19.0"
   },
   "devDependencies": {
@@ -55,21 +63,13 @@
     "@storybook/addon-onboarding": "^10.2.1",
     "@storybook/addon-vitest": "^10.2.1",
     "@storybook/nextjs-vite": "^10.2.1",
-    "@tailwindcss/postcss": "^4.2.1",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "@types/ws": "^8.18.1",
     "@vitest/browser-playwright": "^4.0.18",
     "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "eslint-plugin-storybook": "^10.2.1",
     "playwright": "^1.58.0",
-    "sharp": "^0.34.5",
     "storybook": "^10.2.1",
-    "tailwindcss": "^4",
-    "typescript": "5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.18"
   }

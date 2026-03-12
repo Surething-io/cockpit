@@ -2,11 +2,10 @@
 
 import { useState, useEffect, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
-import { FileDiff, ListTodo, MessageCircleQuestion, Circle, Loader, CheckCircle2, ClipboardList } from 'lucide-react';
+import { FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2 } from 'lucide-react';
 import { ChatMessage, MessageImage } from '@/types/chat';
 import { ToolCallModal } from './ToolCallModal';
 import { DiffViewerModal } from './DiffViewerModal';
-import { TodoViewerModal } from './TodoViewerModal';
 import { AskQuestionViewerModal } from './AskQuestionViewerModal';
 import { PreviewModal } from './PreviewModal';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
@@ -72,7 +71,6 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   const [previewImage, setPreviewImage] = useState<MessageImage | null>(null);
   const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
   const [showDiffViewer, setShowDiffViewer] = useState(false);
-  const [showTodoViewer, setShowTodoViewer] = useState(false);
   const [showAskQuestionViewer, setShowAskQuestionViewer] = useState(false);
   const isUser = message.role === 'user';
   const hasImages = message.images && message.images.length > 0;
@@ -100,21 +98,23 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     return message.toolCalls.filter(tc => tc.name === 'AskUserQuestion');
   }, [message.toolCalls]);
 
-  // 最后一个写入 plan 文件的 Write 调用
-  const lastPlanWrite = useMemo(() => {
-    if (!message.toolCalls) return null;
-    for (let i = message.toolCalls.length - 1; i >= 0; i--) {
-      const tc = message.toolCalls[i];
-      if (tc.name === 'Write') {
-        const input = tc.input as { file_path?: string; content?: string };
-        if (input.file_path?.includes('/.claude/plans/') && input.content) {
-          return tc;
+  // 从 Read/Edit/Write 工具调用中提取去重的 .md 文件路径
+  const mdFiles = useMemo(() => {
+    if (!message.toolCalls) return [];
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const tc of message.toolCalls) {
+      if (tc.name === 'Read' || tc.name === 'Edit' || tc.name === 'Write') {
+        const fp = (tc.input as { file_path?: string }).file_path;
+        if (fp && fp.toLowerCase().endsWith('.md') && !seen.has(fp)) {
+          seen.add(fp);
+          result.push(fp);
         }
       }
     }
-    return null;
+    return result;
   }, [message.toolCalls]);
-  const [showPlanPreview, setShowPlanPreview] = useState(false);
+  const [mdPreviewFile, setMdPreviewFile] = useState<string | null>(null);
 
   // 复制消息内容
   const handleCopy = () => {
@@ -230,8 +230,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             const total = todos.length;
             return (
               <div
-                className={`${message.content || hasImages ? 'mt-2' : ''} cursor-pointer`}
-                onClick={() => setShowTodoViewer(true)}
+                className={`${message.content || hasImages ? 'mt-2' : ''}`}
               >
                 <div className="border border-border rounded-lg overflow-hidden bg-secondary/50 px-3 py-2 space-y-1">
                   {/* Progress header */}
@@ -271,6 +270,28 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             );
           })()}
 
+          {/* MD 文件列表 */}
+          {mdFiles.length > 0 && (
+            <div className={`${message.content || hasImages || lastTodoWrite ? 'mt-2' : ''}`}>
+              <div className="border border-border rounded-lg overflow-hidden bg-secondary/50 px-3 py-2 space-y-0.5">
+                {mdFiles.map((fp) => (
+                  <button
+                    key={fp}
+                    onClick={() => setMdPreviewFile(fp)}
+                    className="flex items-center gap-1.5 w-full text-left hover:bg-accent rounded px-1 py-0.5 transition-colors group/md"
+                  >
+                    <svg className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="text-xs text-muted-foreground group-hover/md:text-foreground truncate">
+                      {fp.split('/').pop()}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 工具调用 */}
           {message.toolCalls && message.toolCalls.length > 0 && (
             <div className={`${message.content || hasImages ? 'mt-2' : ''}`}>
@@ -290,15 +311,6 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                         {toolCallsExpanded ? '▲ 收起' : '▼ 展开'}
                       </span>
                     </button>
-                    {lastPlanWrite && (
-                      <button
-                        onClick={() => setShowPlanPreview(true)}
-                        className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border-l border-border"
-                        title="查看计划"
-                      >
-                        <ClipboardList className="w-4 h-4" />
-                      </button>
-                    )}
                     {askQuestionCalls.length > 0 && (
                       <button
                         onClick={() => setShowAskQuestionViewer(true)}
@@ -306,15 +318,6 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                         title="查看提问"
                       >
                         <MessageCircleQuestion className="w-4 h-4" />
-                      </button>
-                    )}
-                    {lastTodoWrite && (
-                      <button
-                        onClick={() => setShowTodoViewer(true)}
-                        className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border-l border-border"
-                        title="查看任务列表"
-                      >
-                        <ListTodo className="w-4 h-4" />
                       </button>
                     )}
                     {hasFileChanges && (
@@ -388,23 +391,47 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
         <DiffViewerModal toolCalls={message.toolCalls} cwd={cwd} onClose={() => setShowDiffViewer(false)} />
       )}
 
-      {/* Todo 查看器 */}
-      {showTodoViewer && lastTodoWrite && (
-        <TodoViewerModal toolCall={lastTodoWrite} onClose={() => setShowTodoViewer(false)} />
-      )}
-
       {/* AskQuestion 查看器 */}
       {showAskQuestionViewer && askQuestionCalls.length > 0 && (
         <AskQuestionViewerModal toolCalls={askQuestionCalls} onClose={() => setShowAskQuestionViewer(false)} />
       )}
 
-      {/* Plan 预览 */}
-      {showPlanPreview && lastPlanWrite && (
+      {/* MD 文件预览 */}
+      {mdPreviewFile && (
         <PreviewModal
-          title={`Plan - ${((lastPlanWrite.input as { file_path?: string }).file_path || '').split('/').pop() || 'plan.md'}`}
-          content={JSON.stringify(lastPlanWrite.input, null, 2)}
-          toolName="Write"
-          onClose={() => setShowPlanPreview(false)}
+          title={mdPreviewFile.split('/').pop() || 'preview.md'}
+          content={JSON.stringify({ file_path: mdPreviewFile }, null, 2)}
+          toolName="Read"
+          onClose={() => setMdPreviewFile(null)}
+          onShareReview={async () => {
+            const title = mdPreviewFile.split('/').pop() || mdPreviewFile;
+            // 转成相对路径，与目录树预览保持一致，确保同一文件生成相同 review ID
+            const sourceFile = cwd && mdPreviewFile.startsWith(cwd)
+              ? mdPreviewFile.slice(cwd.endsWith('/') ? cwd.length : cwd.length + 1)
+              : mdPreviewFile;
+            try {
+              const fileRes = await fetch(`/api/file?path=${encodeURIComponent(mdPreviewFile)}`);
+              if (!fileRes.ok) throw new Error('Failed to read file');
+              const fileData = await fileRes.json();
+              const res = await fetch('/api/review', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, content: fileData.content, sourceFile }),
+              });
+              if (!res.ok) throw new Error('Failed');
+              const data = await res.json();
+              window.open(`${window.location.origin}/review/${data.review.id}`, '_blank');
+              try {
+                const infoRes = await fetch('/api/review/share-info');
+                const info = await infoRes.json();
+                const shareUrl = info.shareBase
+                  ? `${info.shareBase}/review/${data.review.id}`
+                  : `${window.location.origin}/review/${data.review.id}`;
+                await navigator.clipboard.writeText(shareUrl);
+              } catch { /* ignore */ }
+              toast(data.review.existing ? '已打开评审，链接已复制' : '评审已创建，链接已复制', 'success');
+            } catch { toast('创建评审失败', 'error'); }
+          }}
         />
       )}
     </>

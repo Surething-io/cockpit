@@ -1524,7 +1524,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   {gitStatus.showStatusDiffPreview && gitStatus.statusDiff && (
                     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => gitStatus.setShowStatusDiffPreview(false)}>
                       <div
-                        className="bg-card rounded-lg shadow-xl w-full max-w-[70%] h-full flex flex-col"
+                        className="bg-card rounded-lg shadow-xl w-full max-w-[90%] h-full flex flex-col"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <InteractiveMarkdownPreview
@@ -1610,7 +1610,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         {fileTree.showMarkdownPreview && fileTree.fileContent?.type === 'text' && fileTree.selectedPath && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => fileTree.setShowMarkdownPreview(false)}>
             <div
-              className="bg-card rounded-lg shadow-xl w-full max-w-[70%] h-full flex flex-col"
+              className="bg-card rounded-lg shadow-xl w-full max-w-[90%] h-full flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
               <InteractiveMarkdownPreview

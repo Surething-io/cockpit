@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect, useMemo, memo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2 } from 'lucide-react';
 import { ChatMessage, MessageImage } from '@/types/chat';
 import { ToolCallModal } from './ToolCallModal';
 import { DiffViewerModal } from './DiffViewerModal';
 import { AskQuestionViewerModal } from './AskQuestionViewerModal';
-import { PreviewModal } from './PreviewModal';
+import { InteractiveMarkdownPreview } from './InteractiveMarkdownPreview';
+import { MenuContainerProvider } from './FileContextMenu';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { toast } from '../shared/Toast';
 
@@ -54,6 +55,33 @@ function ImageModal({ image, onClose }: ImageModalProps) {
   }
 
   return null;
+}
+
+// MD 预览 Modal — 提供 MenuContainerProvider 使 FloatingToolbar 正常工作
+function MdPreviewModal({ filePath, content, cwd, onClose, onShareReview }: {
+  filePath: string; content: string; cwd: string;
+  onClose: () => void; onShareReview: () => Promise<void>;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+  useEffect(() => { setContainer(containerRef.current); }, []);
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div ref={containerRef} className="bg-card rounded-lg shadow-xl w-full max-w-[90%] h-[90vh] flex flex-col relative" onClick={e => e.stopPropagation()}>
+        <MenuContainerProvider container={container}>
+          <InteractiveMarkdownPreview
+            content={content}
+            filePath={filePath}
+            cwd={cwd}
+            onClose={onClose}
+            onShareReview={onShareReview}
+          />
+        </MenuContainerProvider>
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 interface MessageBubbleProps {
@@ -115,6 +143,45 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     return result;
   }, [message.toolCalls]);
   const [mdPreviewFile, setMdPreviewFile] = useState<string | null>(null);
+  const [mdFileContent, setMdFileContent] = useState<string | null>(null);
+
+  // 选中 md 文件时 fetch 内容
+  useEffect(() => {
+    if (!mdPreviewFile) { setMdFileContent(null); return; }
+    let cancelled = false;
+    fetch(`/api/file?path=${encodeURIComponent(mdPreviewFile)}`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => { if (!cancelled) setMdFileContent(d.content); })
+      .catch(() => { if (!cancelled) { toast('读取文件失败', 'error'); setMdPreviewFile(null); } });
+    return () => { cancelled = true; };
+  }, [mdPreviewFile]);
+
+  const handleMdShareReview = useCallback(async () => {
+    if (!mdPreviewFile || mdFileContent === null) return;
+    const title = mdPreviewFile.split('/').pop() || mdPreviewFile;
+    const sourceFile = cwd && mdPreviewFile.startsWith(cwd)
+      ? mdPreviewFile.slice(cwd.endsWith('/') ? cwd.length : cwd.length + 1)
+      : mdPreviewFile;
+    try {
+      const res = await fetch('/api/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content: mdFileContent, sourceFile }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      const data = await res.json();
+      window.open(`${window.location.origin}/review/${data.review.id}`, '_blank');
+      try {
+        const infoRes = await fetch('/api/review/share-info');
+        const info = await infoRes.json();
+        const shareUrl = info.shareBase
+          ? `${info.shareBase}/review/${data.review.id}`
+          : `${window.location.origin}/review/${data.review.id}`;
+        await navigator.clipboard.writeText(shareUrl);
+      } catch { /* ignore */ }
+      toast(data.review.existing ? '已打开评审，链接已复制' : '评审已创建，链接已复制', 'success');
+    } catch { toast('创建评审失败', 'error'); }
+  }, [mdPreviewFile, mdFileContent, cwd]);
 
   // 复制消息内容
   const handleCopy = () => {
@@ -396,42 +463,14 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
         <AskQuestionViewerModal toolCalls={askQuestionCalls} onClose={() => setShowAskQuestionViewer(false)} />
       )}
 
-      {/* MD 文件预览 */}
-      {mdPreviewFile && (
-        <PreviewModal
-          title={mdPreviewFile.split('/').pop() || 'preview.md'}
-          content={JSON.stringify({ file_path: mdPreviewFile }, null, 2)}
-          toolName="Read"
+      {/* MD 文件交互预览 */}
+      {mdPreviewFile && mdFileContent !== null && (
+        <MdPreviewModal
+          filePath={mdPreviewFile}
+          content={mdFileContent}
+          cwd={cwd || ''}
           onClose={() => setMdPreviewFile(null)}
-          onShareReview={async () => {
-            const title = mdPreviewFile.split('/').pop() || mdPreviewFile;
-            // 转成相对路径，与目录树预览保持一致，确保同一文件生成相同 review ID
-            const sourceFile = cwd && mdPreviewFile.startsWith(cwd)
-              ? mdPreviewFile.slice(cwd.endsWith('/') ? cwd.length : cwd.length + 1)
-              : mdPreviewFile;
-            try {
-              const fileRes = await fetch(`/api/file?path=${encodeURIComponent(mdPreviewFile)}`);
-              if (!fileRes.ok) throw new Error('Failed to read file');
-              const fileData = await fileRes.json();
-              const res = await fetch('/api/review', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, content: fileData.content, sourceFile }),
-              });
-              if (!res.ok) throw new Error('Failed');
-              const data = await res.json();
-              window.open(`${window.location.origin}/review/${data.review.id}`, '_blank');
-              try {
-                const infoRes = await fetch('/api/review/share-info');
-                const info = await infoRes.json();
-                const shareUrl = info.shareBase
-                  ? `${info.shareBase}/review/${data.review.id}`
-                  : `${window.location.origin}/review/${data.review.id}`;
-                await navigator.clipboard.writeText(shareUrl);
-              } catch { /* ignore */ }
-              toast(data.review.existing ? '已打开评审，链接已复制' : '评审已创建，链接已复制', 'success');
-            } catch { toast('创建评审失败', 'error'); }
-          }}
+          onShareReview={handleMdShareReview}
         />
       )}
     </>

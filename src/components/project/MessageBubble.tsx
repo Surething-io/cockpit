@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
+import { useState, useEffect, useMemo, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2 } from 'lucide-react';
 import { ChatMessage, MessageImage } from '@/types/chat';
@@ -58,9 +58,9 @@ function ImageModal({ image, onClose }: ImageModalProps) {
 }
 
 // MD 预览 Modal — 提供 MenuContainerProvider 使 FloatingToolbar 正常工作
-function MdPreviewModal({ filePath, content, cwd, onClose, onShareReview }: {
+function MdPreviewModal({ filePath, content, cwd, onClose }: {
   filePath: string; content: string; cwd: string;
-  onClose: () => void; onShareReview: () => Promise<void>;
+  onClose: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [container, setContainer] = useState<HTMLElement | null>(null);
@@ -75,7 +75,6 @@ function MdPreviewModal({ filePath, content, cwd, onClose, onShareReview }: {
             filePath={filePath}
             cwd={cwd}
             onClose={onClose}
-            onShareReview={onShareReview}
           />
         </MenuContainerProvider>
       </div>
@@ -156,32 +155,6 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     return () => { cancelled = true; };
   }, [mdPreviewFile]);
 
-  const handleMdShareReview = useCallback(async () => {
-    if (!mdPreviewFile || mdFileContent === null) return;
-    const title = mdPreviewFile.split('/').pop() || mdPreviewFile;
-    const sourceFile = cwd && mdPreviewFile.startsWith(cwd)
-      ? mdPreviewFile.slice(cwd.endsWith('/') ? cwd.length : cwd.length + 1)
-      : mdPreviewFile;
-    try {
-      const res = await fetch('/api/review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content: mdFileContent, sourceFile }),
-      });
-      if (!res.ok) throw new Error('Failed');
-      const data = await res.json();
-      window.open(`${window.location.origin}/review/${data.review.id}`, '_blank');
-      try {
-        const infoRes = await fetch('/api/review/share-info');
-        const info = await infoRes.json();
-        const shareUrl = info.shareBase
-          ? `${info.shareBase}/review/${data.review.id}`
-          : `${window.location.origin}/review/${data.review.id}`;
-        await navigator.clipboard.writeText(shareUrl);
-      } catch { /* ignore */ }
-      toast(data.review.existing ? '已打开评审，链接已复制' : '评审已创建，链接已复制', 'success');
-    } catch { toast('创建评审失败', 'error'); }
-  }, [mdPreviewFile, mdFileContent, cwd]);
 
   // 复制消息内容
   const handleCopy = () => {
@@ -470,7 +443,6 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
           content={mdFileContent}
           cwd={cwd || ''}
           onClose={() => setMdPreviewFile(null)}
-          onShareReview={handleMdShareReview}
         />
       )}
     </>

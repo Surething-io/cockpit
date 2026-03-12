@@ -318,7 +318,11 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
       {review && (
         <div className="py-2 bg-secondary border-b border-border flex-shrink-0 flex justify-center">
         <div className="w-full max-w-[1800px] px-4 flex items-center gap-3">
-          <h1 className="text-sm font-semibold truncate flex-1">{review.title}</h1>
+          <h1 className="text-sm font-semibold truncate">{review.title}</h1>
+          <span className="text-[11px] text-muted-foreground flex-shrink-0">
+            更新于 {new Date(review.updatedAt || review.createdAt).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+          </span>
+          <span className="flex-1" />
 
           {/* Status badge */}
           {!isAdmin && (
@@ -366,10 +370,8 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
       {/* Main content */}
       <div className="flex-1 flex justify-center overflow-hidden">
         <div className="w-full max-w-[1800px] flex overflow-hidden">
-          {/* Left sidebar - review list (始终挂载，不随状态卸载) */}
-          <div className="w-[200px] flex-shrink-0 border-r border-border">
-            <ReviewListPanel currentReviewId={currentId} onSelect={handleSelectReview} readOnly={!isAdmin} />
-          </div>
+          {/* Left sidebar - review list (始终挂载，不随状态卸载，宽度由组件自身控制) */}
+          <ReviewListPanel currentReviewId={currentId} onSelect={handleSelectReview} readOnly={!isAdmin} refreshTrigger={review?.comments.length} />
 
           {renderContent()}
         </div>

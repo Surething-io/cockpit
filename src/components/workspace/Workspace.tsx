@@ -7,7 +7,7 @@ import { SessionBrowser } from '../shared/SessionBrowser';
 import { SettingsModal } from '../shared/SettingsModal';
 import { TokenStatsModal } from '../shared/TokenStatsModal';
 import { NoteModal } from '../shared/NoteModal';
-import { SessionCompleteToastContainer } from './SessionCompleteToast';
+import { SessionCompleteToastContainer, showSessionCompleteToast } from './SessionCompleteToast';
 
 interface ProjectsData {
   projects: ProjectInfo[];
@@ -30,12 +30,9 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   const [isNoteOpen, setIsNoteOpen] = useState(false);
   const [noteProjectCwd, setNoteProjectCwd] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
-  // unread 状态统一由 ProjectSidebar 内部的 unreadSessionIds 管理
   // 懒加载：只渲染曾被激活过的项目 iframe（只增不减）
   const [loadedCwds, setLoadedCwds] = useState<Set<string>>(new Set());
   const iframeRefs = useRef<Map<string, HTMLIFrameElement>>(new Map());
-  // 追踪各项目的 activeView（agent/explorer/console）
-  const [activeViewMap, setActiveViewMap] = useState<Record<string, string>>({});
   // 待发送给 iframe 的 sessionId + switchToAgent 标记
   const pendingSessionIdsRef = useRef<Map<string, { sessionId: string; switchToAgent?: boolean }>>(new Map());
   // 跟踪每个项目当前的 sessionId（用于更新 URL，不用于 iframe src）
@@ -155,7 +152,6 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   // 监听 iframe 发来的消息
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      // 会话完成通知 — 未读状态由 ProjectSidebar 的 unreadSessionIds 统一管理
       // sessionId 变化通知（iframe 内切换 tab）
       if (event.data?.type === 'SESSION_CHANGE' && event.data?.cwd && event.data?.sessionId) {
         const { cwd, sessionId } = event.data;
@@ -167,6 +163,16 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
           updateUrl(cwd, sessionId);
         }
       }
+      // 会话完成通知（iframe 内 Chat 完成时直接 postMessage，不走 state.json watch）
+      if (event.data?.type === 'SESSION_COMPLETE' && event.data?.cwd && event.data?.sessionId) {
+        const { cwd, sessionId, lastUserMessage } = event.data;
+        // 非当前可见项目才弹 toast（当前项目用户已经能看到完成状态）
+        const currentProject = projects[activeIndex];
+        if (currentProject?.cwd !== cwd) {
+          const projectName = cwd.split('/').pop() || cwd;
+          showSessionCompleteToast({ projectName, message: lastUserMessage, cwd, sessionId });
+        }
+      }
       // 打开 Token 统计
       if (event.data?.type === 'OPEN_TOKEN_STATS') {
         setIsTokenStatsOpen(true);
@@ -176,10 +182,6 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         const cwd = event.data.cwd;
         setNoteProjectCwd(cwd);
         setIsNoteOpen(true);
-      }
-      // iframe 内切屏通知（agent/explorer/console）
-      if (event.data?.type === 'VIEW_CHANGE' && event.data?.cwd && event.data?.view) {
-        setActiveViewMap(prev => ({ ...prev, [event.data.cwd]: event.data.view }));
       }
       // 截图准备：保存当前项目索引，切到目标项目
       if (event.data?.type === 'SCREENSHOT_PREPARE' && event.data?.cwd) {
@@ -243,7 +245,6 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   const handleSelectProject = useCallback((index: number) => {
     setActiveIndex(index);
     saveProjects(projects, index, collapsed);
-    // 清除该项目的未读状态，并更新 URL
     const selectedProject = projects[index];
     if (selectedProject?.cwd) {
       // 更新 URL（使用跟踪的 sessionId）
@@ -414,7 +415,6 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenNote={(cwd) => { setNoteProjectCwd(cwd ?? null); setIsNoteOpen(true); }}
         onSwitchProject={handleSwitchProject}
-        currentActiveView={activeViewMap[projects[activeIndex]?.cwd || '']}
       />
 
       {/* 右侧内容区域 */}

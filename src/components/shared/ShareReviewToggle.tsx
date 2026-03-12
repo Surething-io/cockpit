@@ -1,0 +1,165 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { toast } from './Toast';
+
+interface ReviewInfo {
+  id: string;
+  active: boolean;
+  updatedAt?: number;
+}
+
+interface ShareReviewToggleProps {
+  /** 文件内容（用于创建/更新 review） */
+  content: string;
+  /** 相对路径 sourceFile（用于匹配 review） */
+  sourceFile: string;
+}
+
+/**
+ * 分享评审 Switch 组件
+ * - 查询当前文件是否已有 review
+ * - Switch ON → 创建/更新 review，复制链接
+ * - Switch OFF → 关闭 review (active: false)
+ * - 显示更新时间 + 跳转查看链接
+ */
+export function ShareReviewToggle({ content, sourceFile }: ShareReviewToggleProps) {
+  const [reviewInfo, setReviewInfo] = useState<ReviewInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [toggling, setToggling] = useState(false);
+
+  // 查询当前文件对应的 review 状态
+  useEffect(() => {
+    if (!sourceFile) { setLoading(false); return; }
+    let cancelled = false;
+    fetch('/api/review')
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => {
+        if (cancelled) return;
+        const match = (data.reviews as Array<{ id: string; active: boolean; updatedAt?: number; sourceFile?: string }>)
+          .find(r => r.sourceFile === sourceFile);
+        setReviewInfo(match ? { id: match.id, active: match.active, updatedAt: match.updatedAt } : null);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [sourceFile]);
+
+  const isSharing = reviewInfo?.active === true;
+
+  // 开启分享：创建/更新 review
+  const enableShare = useCallback(async () => {
+    setToggling(true);
+    try {
+      const title = sourceFile.split('/').pop() || sourceFile;
+      const res = await fetch('/api/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content, sourceFile }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      const data = await res.json();
+      const review = data.review;
+      setReviewInfo({ id: review.id, active: true, updatedAt: review.updatedAt || review.createdAt });
+
+      // 复制分享链接
+      try {
+        const infoRes = await fetch('/api/review/share-info');
+        const info = await infoRes.json();
+        const shareUrl = info.shareBase
+          ? `${info.shareBase}/review/${review.id}`
+          : `${window.location.origin}/review/${review.id}`;
+        await navigator.clipboard.writeText(shareUrl);
+      } catch { /* ignore */ }
+
+      toast(review.existing ? '评审已更新，链接已复制' : '评审已创建，链接已复制', 'success');
+    } catch {
+      toast('创建评审失败', 'error');
+    } finally {
+      setToggling(false);
+    }
+  }, [content, sourceFile]);
+
+  // 关闭分享
+  const disableShare = useCallback(async () => {
+    if (!reviewInfo) return;
+    setToggling(true);
+    try {
+      const res = await fetch(`/api/review/${reviewInfo.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: false }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      setReviewInfo(prev => prev ? { ...prev, active: false } : null);
+      toast('已关闭分享', 'success');
+    } catch {
+      toast('关闭分享失败', 'error');
+    } finally {
+      setToggling(false);
+    }
+  }, [reviewInfo]);
+
+  const handleToggle = useCallback(() => {
+    if (toggling) return;
+    if (isSharing) {
+      disableShare();
+    } else {
+      enableShare();
+    }
+  }, [toggling, isSharing, enableShare, disableShare]);
+
+  const handleOpenReview = useCallback(() => {
+    if (!reviewInfo) return;
+    window.open(`${window.location.origin}/review/${reviewInfo.id}`, '_blank');
+  }, [reviewInfo]);
+
+  const formatTime = (ts: number) => {
+    const d = new Date(ts);
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${month}-${day} ${hours}:${minutes}`;
+  };
+
+  if (loading) return null;
+
+  return (
+    <div className="flex items-center gap-2">
+      {/* Switch */}
+      <button
+        onClick={handleToggle}
+        disabled={toggling}
+        className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
+          toggling ? 'opacity-50 cursor-wait' : 'cursor-pointer'
+        } ${isSharing ? 'bg-green-500' : 'bg-muted-foreground/30'}`}
+        title={isSharing ? '关闭分享' : '开启分享评审'}
+      >
+        <span
+          className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${
+            isSharing ? 'translate-x-3.5' : 'translate-x-0.5'
+          }`}
+        />
+      </button>
+      <span className={`text-[11px] ${isSharing ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+        {isSharing ? '分享中' : '未分享'}
+      </span>
+
+      {/* 更新时间 + 跳转 */}
+      {reviewInfo && reviewInfo.updatedAt && (
+        <>
+          <span className="text-[10px] text-muted-foreground">
+            {formatTime(reviewInfo.updatedAt)}
+          </span>
+          <button
+            onClick={handleOpenReview}
+            className="text-[11px] text-brand hover:underline"
+          >
+            查看
+          </button>
+        </>
+      )}
+    </div>
+  );
+}

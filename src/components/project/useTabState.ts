@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { usePageVisible } from '@/hooks/usePageVisible';
 
 // ============================================
 // Types
@@ -32,6 +33,9 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   const isInitializingRef = useRef(true);
   const activeViewRef = useRef(activeView);
   activeViewRef.current = activeView;
+  const pageVisible = usePageVisible();
+  const pageVisibleRef = useRef(pageVisible);
+  pageVisibleRef.current = pageVisible;
 
   // 初始化标签页（先创建一个临时标签，后续会被服务端数据覆盖）
   const [tabs, setTabs] = useState<TabInfo[]>(() => [{
@@ -43,6 +47,20 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
 
   // 未读 Tab（会话完成但未切换查看）
   const [unreadTabs, setUnreadTabs] = useState<Set<string>>(new Set());
+
+  // Ref for tabs (avoid stale closures in callbacks)
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+
+  // 更新 state.json 中 session 状态（通知 Workspace 层）
+  const updateSessionStatus = useCallback((sessionId: string, status: string) => {
+    if (!initialCwd || !sessionId) return;
+    fetch('/api/global-state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cwd: initialCwd, sessionId, status }),
+    }).catch(() => {});
+  }, [initialCwd]);
 
   // Tab 拖拽状态
   const [dragTabIndex, setDragTabIndex] = useState<number | null>(null);
@@ -199,42 +217,57 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     setTabs((prev) => {
       const oldTab = prev.find(t => t.id === tabId);
       if (oldTab?.isLoading && updates.isLoading === false) {
-        // 非活跃 tab → 标记未读
-        // 活跃 tab 但明确不在 agent 屏（在 explorer/console）→ 也标记未读
-        // 注意：undefined 视为 agent（默认视图）
+        // 用户"正在看"需同时满足 3 个条件：
+        // 1. 是当前活跃 tab
+        // 2. 在 agent 屏（不在 explorer/console）
+        // 3. iframe 对用户可见（是当前活跃项目）
         const isOnAgent = !activeViewRef.current || activeViewRef.current === 'agent';
-        if (tabId !== activeTabId || !isOnAgent) {
+        const isUserWatching = tabId === activeTabId && isOnAgent && pageVisibleRef.current;
+        if (!isUserWatching) {
           setUnreadTabs(u => new Set(u).add(tabId));
+          // state.json 已被 /api/chat 设为 'unread'，无需写
+        } else {
+          // 用户正在看 → 修正 state.json 为 'normal'（/api/chat 默认设的 'unread'）
+          const sid = oldTab.sessionId || updates.sessionId;
+          if (sid) updateSessionStatus(sid, 'normal');
         }
       }
       return prev.map((tab) =>
         tab.id === tabId ? { ...tab, ...updates } : tab
       );
     });
-  }, [activeTabId]);
+  }, [activeTabId, updateSessionStatus]);
 
-  // 切回 agent 屏时，清除当前活跃 tab 的未读
-  // undefined 视为 agent（默认视图）
+  // 切回 agent 屏 / 切换 tab / iframe 变为可见时，清除当前活跃 tab 的未读
+  // 必须同时满足：在 agent 屏 + iframe 可见
   useEffect(() => {
-    if (!activeView || activeView === 'agent') {
+    const isOnAgent = !activeView || activeView === 'agent';
+    if (isOnAgent && pageVisible) {
       setUnreadTabs(u => {
         if (!u.has(activeTabId)) return u;
         const next = new Set(u);
         next.delete(activeTabId);
+        // 同步写 state.json
+        const tab = tabsRef.current.find(t => t.id === activeTabId);
+        if (tab?.sessionId) updateSessionStatus(tab.sessionId, 'normal');
         return next;
       });
     }
-  }, [activeView, activeTabId]);
+  }, [activeView, activeTabId, pageVisible, updateSessionStatus]);
 
   // 切换 Tab 并清除未读
   const switchTab = useCallback((tabId: string) => {
     setActiveTabId(tabId);
     setUnreadTabs(u => {
+      if (!u.has(tabId)) return u;
       const next = new Set(u);
       next.delete(tabId);
+      // 同步写 state.json
+      const tab = tabsRef.current.find(t => t.id === tabId);
+      if (tab?.sessionId) updateSessionStatus(tab.sessionId, 'normal');
       return next;
     });
-  }, []);
+  }, [updateSessionStatus]);
 
   // Tab 拖拽排序
   const handleTabDragStart = useCallback((index: number) => {

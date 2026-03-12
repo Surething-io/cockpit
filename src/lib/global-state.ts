@@ -2,11 +2,13 @@ import { GLOBAL_STATE_FILE, readJsonFile, writeJsonFile, withFileLock, getClaude
 import { createReadStream, existsSync } from 'fs';
 import { createInterface } from 'readline';
 
+export type SessionStatus = 'normal' | 'loading' | 'unread';
+
 interface GlobalSession {
   cwd: string;
   sessionId: string;
   lastActive: number;
-  isLoading: boolean;
+  status: SessionStatus;
   title?: string;
   lastUserMessage?: string;
 }
@@ -25,7 +27,7 @@ const MAX_SESSIONS = 15;
 export async function updateGlobalState(
   cwd: string,
   sessionId: string,
-  isLoading: boolean,
+  status: SessionStatus,
   title?: string,
   lastUserMessage?: string
 ): Promise<void> {
@@ -36,6 +38,15 @@ export async function updateGlobalState(
 
   return withFileLock(GLOBAL_STATE_FILE, async () => {
     const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
+
+    // 兼容旧格式：isLoading → status
+    for (const s of state.sessions) {
+      if (!s.status) {
+        const legacy = s as GlobalSession & { isLoading?: boolean };
+        s.status = legacy.isLoading ? 'loading' : 'normal';
+        delete legacy.isLoading;
+      }
+    }
 
     // 查找是否已存在
     const existingIndex = state.sessions.findIndex(
@@ -49,7 +60,7 @@ export async function updateGlobalState(
       cwd,
       sessionId,
       lastActive: Date.now(),
-      isLoading,
+      status,
       title: title || existing?.title,
       lastUserMessage: lastUserMessage || existing?.lastUserMessage,
     };

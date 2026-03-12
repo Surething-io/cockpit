@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import { GLOBAL_STATE_FILE, readJsonFile } from '@/lib/paths';
-import { updateGlobalState, getLastUserMessage } from '@/lib/global-state';
+import { updateGlobalState, getLastUserMessage, type SessionStatus } from '@/lib/global-state';
 
 interface GlobalSession {
   cwd: string;
   sessionId: string;
   lastActive: number;
-  isLoading: boolean;
+  status: SessionStatus;
   title?: string;
   lastUserMessage?: string;
 }
@@ -18,6 +18,13 @@ interface GlobalState {
 // GET: 获取全局 sessions 列表
 export async function GET() {
   const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
+  // 兼容旧格式：isLoading → status
+  for (const s of state.sessions) {
+    if (!s.status) {
+      const legacy = s as GlobalSession & { isLoading?: boolean };
+      s.status = legacy.isLoading ? 'loading' : 'normal';
+    }
+  }
   // 按 lastActive 降序排序
   state.sessions.sort((a, b) => b.lastActive - a.lastActive);
 
@@ -36,16 +43,16 @@ export async function GET() {
 }
 
 // POST: 更新 session 状态
-// body: { cwd: string, sessionId: string, isLoading: boolean, title?: string }
+// body: { cwd: string, sessionId: string, status: SessionStatus, title?: string }
 export async function POST(request: Request) {
   const body = await request.json();
-  const { cwd, sessionId, isLoading, title } = body;
+  const { cwd, sessionId, status, title } = body;
 
   if (!cwd || !sessionId) {
     return NextResponse.json({ error: 'Missing cwd or sessionId' }, { status: 400 });
   }
 
-  await updateGlobalState(cwd, sessionId, Boolean(isLoading), title);
+  await updateGlobalState(cwd, sessionId, status || 'normal', title);
 
   const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
   state.sessions.sort((a, b) => b.lastActive - a.lastActive);

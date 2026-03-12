@@ -113,7 +113,7 @@ async function sendChatMessage(task: ScheduledTask): Promise<boolean> {
     };
 
     // 标记 loading
-    await updateGlobalState(task.cwd, task.sessionId, true, undefined, task.message).catch(() => {});
+    await updateGlobalState(task.cwd, task.sessionId, 'loading', undefined, task.message).catch(() => {});
 
     const response = query({
       prompt: task.message,
@@ -127,13 +127,13 @@ async function sendChatMessage(task: ScheduledTask): Promise<boolean> {
 
     // 标记结束
     const title = await getSessionTitle(task.cwd, task.sessionId);
-    await updateGlobalState(task.cwd, task.sessionId, false, title);
+    await updateGlobalState(task.cwd, task.sessionId, 'unread', title);
 
     return true;
   } catch (error) {
     console.error(`[ScheduledTask] Failed to send message for task ${task.id}:`, error);
     // 标记结束
-    await updateGlobalState(task.cwd, task.sessionId, false).catch(() => {});
+    await updateGlobalState(task.cwd, task.sessionId, 'unread').catch(() => {});
     return false;
   }
 }

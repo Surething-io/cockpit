@@ -429,6 +429,23 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   // 行号列：最少4位数字宽度
   const lineNumChars = Math.max(4, String(editable ? editLineCount : lines.length).length);
 
+  // 最长行的可视宽度（ch 单位），用于统一横向滚动
+  const maxLineVisualWidth = useMemo(() => {
+    let max = 0;
+    for (const line of lines) {
+      let w = 0;
+      for (let i = 0; i < line.length; i++) {
+        if (line[i] === '\t') {
+          w += 2 - (w % 2); // tab-size: 2，对齐到 2 的倍数
+        } else {
+          w += 1;
+        }
+      }
+      if (w > max) max = w;
+    }
+    return max;
+  }, [lines]);
+
   // ========== 编辑模式：进入/退出同步 ==========
   useEffect(() => {
     if (editable) {
@@ -493,7 +510,9 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     if (!container) return editContentRef.current;
     const lines: string[] = [];
     for (const child of container.childNodes) {
-      lines.push((child as HTMLElement).textContent || '');
+      const text = (child as HTMLElement).textContent || '';
+      // 空行在 DOM 中用 ' ' 占位防止 div 塌陷，提取时还原为空字符串
+      lines.push(text === ' ' ? '' : text);
     }
     return lines.join('\n');
   }, []);
@@ -914,9 +933,9 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
       {editable ? (
         <div ref={editScrollRef} className="flex-1 overflow-auto bg-secondary">
           <div className="flex" style={{ minHeight: '100%' }}>
-            {/* 行号列 */}
+            {/* 行号列（sticky：横向滚动时固定在左侧） */}
             <div
-              className="flex-shrink-0 font-mono text-sm select-none"
+              className="flex-shrink-0 font-mono text-sm select-none sticky left-0 z-[2] bg-secondary"
               style={{ width: lineNumberWidth }}
             >
               {Array.from({ length: editLineCount }, (_, i) => (
@@ -956,7 +975,11 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
           <div
             style={{
               height: `${virtualizer.getTotalSize()}px`,
-              width: '100%',
+              minWidth: '100%',
+              // 统一横向滚动：内层宽度 = 行号列 + 代码内容 + 余量（blame 列由 CSS calc 追加）
+              width: hasBlame
+                ? `calc(${lineNumChars + maxLineVisualWidth + 10}ch + 13rem)` // 13rem ≈ w-1 + w-48 blame 列
+                : `${lineNumChars + maxLineVisualWidth + 10}ch`,
               position: 'relative',
             }}
           >

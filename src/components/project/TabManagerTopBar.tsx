@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TabInfo } from './useTabState';
 import { ViewSwitcherBar } from './SwipeableViewContainer';
+import { ReviewDropdown } from './ReviewDropdown';
 import { toast } from '../shared/Toast';
 
 // ============================================
@@ -263,6 +264,8 @@ export function TabManagerTopBar({
 
         {/* 右侧：会话相关 */}
         <div className="flex items-center gap-2">
+          {/* 评审管理 */}
+          <ReviewDropdown cwd={initialCwd} />
           {/* 刷新当前项目 */}
           <button
             onClick={() => window.location.reload()}

@@ -6,7 +6,7 @@ import { watch, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { spawn, execSync } from 'child_process';
 import * as nodePty from 'node-pty';
-import { fileWatcher, type FileEvent } from './fileWatcher';
+import { fileWatcher, reviewWatcher, type FileEvent } from './fileWatcher';
 import { GLOBAL_STATE_FILE, readJsonFile, getTerminalHistoryPath, getTerminalOutputPath } from './paths';
 import { readFile } from 'fs/promises';
 import { getLastUserMessage } from './global-state';
@@ -19,7 +19,7 @@ interface GlobalSession {
   cwd: string;
   sessionId: string;
   lastActive: number;
-  isLoading: boolean;
+  status: string;  // 'normal' | 'loading' | 'unread'
   title?: string;
   lastUserMessage?: string;
 }
@@ -97,6 +97,13 @@ function handleFileWatch(ws: WebSocket, cwd: string): void {
 
   const unsubscribe = fileWatcher.subscribe(cwd, send);
 
+  // 附带 review 目录变更事件
+  const unsubReview = reviewWatcher.subscribe(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'watch', data: [{ type: 'review' }] }));
+    }
+  });
+
   const heartbeat = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'ping' }));
@@ -105,6 +112,7 @@ function handleFileWatch(ws: WebSocket, cwd: string): void {
 
   ws.on('close', () => {
     unsubscribe();
+    unsubReview();
     clearInterval(heartbeat);
   });
 }
@@ -114,20 +122,26 @@ function handleFileWatch(ws: WebSocket, cwd: string): void {
  */
 function handleGlobalState(ws: WebSocket): void {
   globalStateClients.add(ws);
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let closed = false;
 
   const sendState = async () => {
     if (closed || ws.readyState !== WebSocket.OPEN) return;
     try {
       const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
+      // 兼容旧格式：isLoading → status
+      for (const s of state.sessions) {
+        if (!s.status) {
+          const legacy = s as GlobalSession & { isLoading?: boolean };
+          s.status = legacy.isLoading ? 'loading' : 'normal';
+        }
+      }
       state.sessions.sort((a, b) => b.lastActive - a.lastActive);
       const recentSessions = state.sessions.slice(0, 15);
 
       const sessionsWithLastMessage = await Promise.all(
         recentSessions.map(async (session) => {
-          // isLoading 时 state.json 已有最新 lastUserMessage（chat route 写入），无需读 transcript
-          if (session.isLoading && session.lastUserMessage) {
+          // loading 时 state.json 已有最新 lastUserMessage（chat route 写入），无需读 transcript
+          if (session.status === 'loading' && session.lastUserMessage) {
             return session;
           }
           const lastUserMessage = await getLastUserMessage(session.cwd, session.sessionId);
@@ -142,8 +156,26 @@ function handleGlobalState(ws: WebSocket): void {
     }
   };
 
+  // 串行化 sendState：上一次执行中的新变更合并为一次，保证不乱序
+  let sending = false;
+  let pendingSend = false;
+  const scheduleSend = () => {
+    if (sending) {
+      pendingSend = true;  // 标记有待处理的变更，当前完成后再发一次
+      return;
+    }
+    sending = true;
+    sendState().finally(() => {
+      sending = false;
+      if (pendingSend) {
+        pendingSend = false;
+        scheduleSend();   // 用最新的 state.json 再推一次
+      }
+    });
+  };
+
   // 立即推送一次
-  sendState();
+  scheduleSend();
 
   // 监听 state.json
   const dir = dirname(GLOBAL_STATE_FILE);
@@ -154,8 +186,7 @@ function handleGlobalState(ws: WebSocket): void {
   let watcher: ReturnType<typeof watch> | null = null;
   try {
     watcher = watch(GLOBAL_STATE_FILE, () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(sendState, 200);
+      scheduleSend();
     });
     watcher.on('error', (error) => {
       console.error('Global state file watcher error:', error);
@@ -164,8 +195,7 @@ function handleGlobalState(ws: WebSocket): void {
     try {
       watcher = watch(dir, (_, filename) => {
         if (filename === 'state.json') {
-          if (debounceTimer) clearTimeout(debounceTimer);
-          debounceTimer = setTimeout(sendState, 200);
+          scheduleSend();
         }
       });
     } catch (err) {
@@ -183,7 +213,6 @@ function handleGlobalState(ws: WebSocket): void {
     closed = true;
     globalStateClients.delete(ws);
     if (watcher) watcher.close();
-    if (debounceTimer) clearTimeout(debounceTimer);
     clearInterval(heartbeat);
   });
 }

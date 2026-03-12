@@ -5,6 +5,8 @@ import { createPortal } from 'react-dom';
 import { DiffView, DiffUnifiedView } from './DiffView';
 import { CodeViewer } from './CodeViewer';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
+import { TocSidebar } from '../shared/TocSidebar';
+import { rehypeSourceLines } from '@/lib/rehypeSourceLines';
 import { toast } from '../shared/Toast';
 import {
   isValidJson,
@@ -102,11 +104,7 @@ function FilePreview({ filePath }: FilePreviewProps) {
   }
 
   if (isMd) {
-    return (
-      <div className="h-full overflow-auto p-4">
-        <MarkdownRenderer content={fileContent} />
-      </div>
-    );
+    return <FilePreviewMarkdown content={fileContent} />;
   }
 
   return (
@@ -121,6 +119,24 @@ function FilePreview({ filePath }: FilePreviewProps) {
 }
 
 // ============================================
+// FilePreviewMarkdown - MD 预览（带 TOC 侧边栏）
+// ============================================
+
+const REHYPE_PLUGINS = [rehypeSourceLines];
+
+function FilePreviewMarkdown({ content }: { content: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  return (
+    <div className="h-full flex">
+      <TocSidebar content={content} containerRef={containerRef} />
+      <div ref={containerRef} className="flex-1 overflow-auto p-4">
+        <MarkdownRenderer content={content} rehypePlugins={REHYPE_PLUGINS} />
+      </div>
+    </div>
+  );
+}
+
+// ============================================
 // PreviewModal - 预览模态窗口组件
 // ============================================
 
@@ -131,9 +147,10 @@ interface PreviewModalProps {
   content: string;
   toolName?: string;
   onClose: () => void;
+  onShareReview?: () => Promise<void>;
 }
 
-export function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) {
+export function PreviewModal({ title, content, toolName, onClose, onShareReview }: PreviewModalProps) {
   const isJson = isValidJson(content);
   const editInput = isEditInput(content);
   const filePath = getFilePath(content);
@@ -218,6 +235,15 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
             )}
           </div>
           <div className="flex items-center gap-3">
+            {onShareReview && (
+              <button
+                onClick={onShareReview}
+                className="px-2 py-1 text-xs rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-accent"
+                title="创建分享评审链接"
+              >
+                分享评审
+              </button>
+            )}
             {/* 视图模式切换 */}
             {isJson && (
               <div className="flex items-center gap-1 bg-accent rounded p-0.5">

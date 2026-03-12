@@ -316,8 +316,8 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
       {/* Top Bar */}
       {review && (
-        <div className="py-2 bg-secondary border-b border-border flex-shrink-0">
-        <div className="w-full mx-auto px-4 flex items-center gap-3">
+        <div className="py-2 bg-secondary border-b border-border flex-shrink-0 flex justify-center">
+        <div className="w-full max-w-[1800px] px-4 flex items-center gap-3">
           <h1 className="text-sm font-semibold truncate flex-1">{review.title}</h1>
 
           {/* Status badge */}
@@ -364,13 +364,15 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
       )}
 
       {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left sidebar - review list (始终挂载，不随状态卸载) */}
-        <div className="w-[200px] flex-shrink-0 border-r border-border">
-          <ReviewListPanel currentReviewId={currentId} onSelect={handleSelectReview} readOnly={!isAdmin} />
-        </div>
+      <div className="flex-1 flex justify-center overflow-hidden">
+        <div className="w-full max-w-[1800px] flex overflow-hidden">
+          {/* Left sidebar - review list (始终挂载，不随状态卸载) */}
+          <div className="w-[200px] flex-shrink-0 border-r border-border">
+            <ReviewListPanel currentReviewId={currentId} onSelect={handleSelectReview} readOnly={!isAdmin} />
+          </div>
 
-        {renderContent()}
+          {renderContent()}
+        </div>
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, type CodeRe
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { rehypeSourceLines } from '@/lib/rehypeSourceLines';
 import type { CodeComment } from '@/hooks/useComments';
+import { TocSidebar } from '../shared/TocSidebar';
 
 // ============================================
 // InteractiveMarkdownPreview
@@ -363,35 +364,40 @@ export function InteractiveMarkdownPreview({
         </div>
       </div>
 
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-auto relative" ref={containerRef}>
-        <div className="p-6">
-          <MarkdownRenderer
-            content={content}
-            rehypePlugins={REHYPE_PLUGINS}
-          />
-        </div>
+      {/* Body: TOC sidebar + content */}
+      <div className="flex-1 flex overflow-hidden">
+        <TocSidebar content={content} containerRef={containerRef} />
 
-        {/* 评论指示器 */}
-        {commentPositions.map(({ key, top, comments: lineComments }) => (
-          <div
-            key={key}
-            className="absolute right-3 cursor-pointer z-10"
-            style={{ top }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setViewingComment({
-                comment: lineComments[0],
-                x: e.clientX,
-                y: e.clientY,
-              });
-            }}
-          >
-            <div className="w-5 h-5 rounded-full bg-amber-500/80 text-white text-xs flex items-center justify-center shadow-sm hover:bg-amber-500 transition-colors">
-              {lineComments.length}
-            </div>
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-auto relative" ref={containerRef}>
+          <div className="p-6">
+            <MarkdownRenderer
+              content={content}
+              rehypePlugins={REHYPE_PLUGINS}
+            />
           </div>
-        ))}
+
+          {/* 评论指示器 */}
+          {commentPositions.map(({ key, top, comments: lineComments }) => (
+            <div
+              key={key}
+              className="absolute right-3 cursor-pointer z-10"
+              style={{ top }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setViewingComment({
+                  comment: lineComments[0],
+                  x: e.clientX,
+                  y: e.clientY,
+                });
+              }}
+            >
+              <div className="w-5 h-5 rounded-full bg-amber-500/80 text-white text-xs flex items-center justify-center shadow-sm hover:bg-amber-500 transition-colors">
+                {lineComments.length}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Floating UI via Portal */}

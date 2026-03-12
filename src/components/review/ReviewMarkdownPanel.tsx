@@ -2,9 +2,13 @@
 
 import { useRef, useCallback, useState, useMemo, MutableRefObject } from 'react';
 import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer';
+import { TocSidebar } from '@/components/shared/TocSidebar';
+import { rehypeSourceLines } from '@/lib/rehypeSourceLines';
 import { AddCommentPopup } from './AddCommentPopup';
 import { useReviewHighlights } from '@/hooks/useReviewHighlights';
 import { ReviewComment } from '@/lib/review-utils';
+
+const REHYPE_PLUGINS = [rehypeSourceLines];
 
 interface Props {
   content: string;
@@ -61,6 +65,7 @@ export function ReviewMarkdownPanel({
   scrollToHighlightRef,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [popupState, setPopupState] = useState<{
     anchor: { startOffset: number; endOffset: number; selectedText: string };
     position: { top: number; left: number };
@@ -104,7 +109,7 @@ export function ReviewMarkdownPanel({
     if (!offsets) return;
 
     // Position popup at mouse up location
-    const scrollContainer = containerRef.current.parentElement!;
+    const scrollContainer = scrollRef.current ?? containerRef.current.parentElement!;
     const scrollRect = scrollContainer.getBoundingClientRect();
 
     setPopupState({
@@ -132,19 +137,22 @@ export function ReviewMarkdownPanel({
   }, []);
 
   return (
-    <div className="h-full overflow-auto relative bg-card" onMouseUp={handleMouseUp}>
-      <div ref={containerRef} className="p-6 review-markdown-container">
-        <MarkdownRenderer content={content} />
-      </div>
+    <div className="h-full flex bg-card">
+      <TocSidebar content={content} containerRef={scrollRef} />
+      <div ref={scrollRef} className="flex-1 overflow-auto relative" onMouseUp={handleMouseUp}>
+        <div ref={containerRef} className="p-6 review-markdown-container">
+          <MarkdownRenderer content={content} rehypePlugins={REHYPE_PLUGINS} />
+        </div>
 
-      {popupState && (
-        <AddCommentPopup
-          selectedText={popupState.anchor.selectedText}
-          position={popupState.position}
-          onSubmit={handleAddComment}
-          onCancel={handleCancelPopup}
-        />
-      )}
+        {popupState && (
+          <AddCommentPopup
+            selectedText={popupState.anchor.selectedText}
+            position={popupState.position}
+            onSubmit={handleAddComment}
+            onCancel={handleCancelPopup}
+          />
+        )}
+      </div>
     </div>
   );
 }

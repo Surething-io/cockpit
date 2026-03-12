@@ -9,62 +9,99 @@ interface UseWebSocketOptions {
   enabled?: boolean;
 }
 
-/**
- * WebSocket hook，封装连接、自动重连（指数退避）、心跳处理
- */
-export function useWebSocket({ url, onMessage, enabled = true }: UseWebSocketOptions): void {
-  const onMessageRef = useRef(onMessage);
-  onMessageRef.current = onMessage;
-  const urlRef = useRef(url);
-  urlRef.current = url;
+/* ---------- per-URL 连接复用 ---------- */
 
-  useEffect(() => {
-    if (!enabled) return;
+type Listener = (data: unknown) => void;
 
-    let unmounted = false;
-    let ws: WebSocket | null = null;
-    let retryCount = 0;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+interface SharedConnection {
+  ws: WebSocket | null;
+  listeners: Set<Listener>;
+  retryCount: number;
+  retryTimer: ReturnType<typeof setTimeout> | null;
+  connect: () => void;
+  destroy: () => void;
+}
 
-    function connect() {
-      if (unmounted) return;
+const connections = new Map<string, SharedConnection>();
 
+function getOrCreateConnection(url: string): SharedConnection {
+  const existing = connections.get(url);
+  if (existing) return existing;
+
+  const conn: SharedConnection = {
+    ws: null,
+    listeners: new Set(),
+    retryCount: 0,
+    retryTimer: null,
+
+    connect() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}${urlRef.current}`;
-      ws = new WebSocket(wsUrl);
+      const wsUrl = `${protocol}//${window.location.host}${url}`;
+      const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
-        retryCount = 0;
+        conn.retryCount = 0;
       };
 
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
           if (msg.type === 'ping') return;
-          onMessageRef.current(msg);
+          conn.listeners.forEach(listener => listener(msg));
         } catch {
           // 忽略解析错误
         }
       };
 
       ws.onclose = () => {
-        if (unmounted) return;
-        const delay = Math.min(1000 * Math.pow(1.5, retryCount), 10000);
-        retryCount++;
-        retryTimer = setTimeout(connect, delay);
+        if (conn.listeners.size === 0) return; // 已无订阅者，不重连
+        const delay = Math.min(1000 * Math.pow(1.5, conn.retryCount), 10000);
+        conn.retryCount++;
+        conn.retryTimer = setTimeout(() => conn.connect(), delay);
       };
 
       ws.onerror = () => {
         // onclose 会紧跟触发
       };
-    }
 
-    connect();
+      conn.ws = ws;
+    },
+
+    destroy() {
+      if (conn.retryTimer) clearTimeout(conn.retryTimer);
+      if (conn.ws) conn.ws.close();
+      conn.ws = null;
+      connections.delete(url);
+    },
+  };
+
+  connections.set(url, conn);
+  conn.connect();
+  return conn;
+}
+
+/* ---------- hook ---------- */
+
+/**
+ * WebSocket hook，封装连接、自动重连（指数退避）、心跳处理
+ * 相同 URL 的多个调用共享同一条 WebSocket 连接
+ */
+export function useWebSocket({ url, onMessage, enabled = true }: UseWebSocketOptions): void {
+  const onMessageRef = useRef(onMessage);
+  onMessageRef.current = onMessage;
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const listener: Listener = (data) => onMessageRef.current(data);
+    const conn = getOrCreateConnection(url);
+    conn.listeners.add(listener);
 
     return () => {
-      unmounted = true;
-      if (retryTimer) clearTimeout(retryTimer);
-      if (ws) ws.close();
+      conn.listeners.delete(listener);
+      if (conn.listeners.size === 0) {
+        conn.destroy();
+      }
     };
   }, [url, enabled]);
 }

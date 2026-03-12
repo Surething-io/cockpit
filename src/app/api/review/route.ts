@@ -18,7 +18,9 @@ export async function GET() {
       title: string;
       active: boolean;
       createdAt: number;
+      updatedAt?: number;
       commentCount: number;
+      lastCommentAt?: number;
       sourceFile?: string;
     }> = [];
 
@@ -26,12 +28,22 @@ export async function GET() {
       const id = file.replace('.json', '');
       const data = await readJsonFile<ReviewData>(getReviewFilePath(id), null as unknown as ReviewData);
       if (data) {
+        // 计算最新评论/回复时间
+        let lastCommentAt: number | undefined;
+        for (const c of data.comments) {
+          if (!lastCommentAt || c.createdAt > lastCommentAt) lastCommentAt = c.createdAt;
+          for (const r of c.replies) {
+            if (!lastCommentAt || r.createdAt > lastCommentAt) lastCommentAt = r.createdAt;
+          }
+        }
         reviews.push({
           id: data.id,
           title: data.title,
           active: data.active,
           createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
           commentCount: data.comments.length,
+          lastCommentAt,
           sourceFile: data.sourceFile,
         });
       }
@@ -73,26 +85,30 @@ export async function POST(request: NextRequest) {
     const existing = await readJsonFile<ReviewData>(filePath, null as unknown as ReviewData);
 
     if (existing) {
-      // 已有 review：更新快照内容和标题，保留评论
+      // 已有 review：更新快照内容和标题，保留评论，重新激活
       existing.content = content;
       existing.title = title;
+      existing.active = true;
+      existing.updatedAt = Date.now();
       await writeJsonFile(filePath, existing);
-      return NextResponse.json({ review: { id: existing.id, title: existing.title, active: existing.active, createdAt: existing.createdAt, existing: true } });
+      return NextResponse.json({ review: { id: existing.id, title: existing.title, active: existing.active, createdAt: existing.createdAt, updatedAt: existing.updatedAt, existing: true } });
     }
 
+    const now = Date.now();
     const review: ReviewData = {
       id,
       title,
       content,
       sourceFile,
       active: true,
-      createdAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
       comments: [],
     };
 
     await writeJsonFile(filePath, review);
 
-    return NextResponse.json({ review: { id, title, active: true, createdAt: review.createdAt } });
+    return NextResponse.json({ review: { id, title, active: true, createdAt: review.createdAt, updatedAt: review.updatedAt } });
   } catch (error) {
     console.error('Error creating review:', error);
     return NextResponse.json({ error: 'Failed to create review' }, { status: 500 });

@@ -84,5 +84,6 @@ export interface ReviewData {
   sourceFile?: string;
   active: boolean;
   createdAt: number;
+  updatedAt?: number;
   comments: ReviewComment[];
 }

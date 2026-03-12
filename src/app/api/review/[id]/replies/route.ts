@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { existsSync } from 'fs';
-import { getReviewFilePath, readJsonFile, writeJsonFile, withFileLock } from '@/lib/paths';
+import { getReviewFilePath, readJsonFile, writeJsonFile, withFileLock, notifyReviewChange } from '@/lib/paths';
 import { ReviewData, generateReplyId } from '@/lib/review-utils';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -46,6 +46,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return newReply;
     });
 
+    notifyReviewChange();
     return NextResponse.json({ reply });
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Failed to add reply';
@@ -88,6 +89,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return reply;
     });
 
+    notifyReviewChange();
     return NextResponse.json({ reply: updated });
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Failed to edit reply';
@@ -127,6 +129,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       await writeJsonFile(filePath, review);
     });
 
+    notifyReviewChange();
     return NextResponse.json({ success: true });
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Failed to delete reply';

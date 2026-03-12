@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
         // 立即标记为 loading，同时传入用户消息（避免 transcript 尚未写入时读到旧消息）
         const userMessage = typeof prompt === 'string' ? prompt : undefined;
         if (cwd && sessionId) {
-          updateGlobalState(cwd, sessionId, true, undefined, userMessage).catch(() => {});
+          updateGlobalState(cwd, sessionId, 'loading', undefined, userMessage).catch(() => {});
         }
 
         try {
@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
               actualSessionId = msg.session_id;
               // 统一在这里标记开始加载（新会话和恢复会话都走这里）
               if (cwd) {
-                updateGlobalState(cwd, actualSessionId, true, undefined, userMessage).catch(() => {});
+                updateGlobalState(cwd, actualSessionId, 'loading', undefined, userMessage).catch(() => {});
               }
             }
 
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
           // 更新全局状态：结束加载（获取标题）
           if (cwd && actualSessionId) {
             const title = await getSessionTitle(cwd, actualSessionId);
-            await updateGlobalState(cwd, actualSessionId, false, title);
+            await updateGlobalState(cwd, actualSessionId, 'unread', title);
           }
 
           // 发送结束标记
@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
           // 更新全局状态：结束加载（出错或取消）
           if (cwd && actualSessionId) {
             const title = await getSessionTitle(cwd, actualSessionId);
-            await updateGlobalState(cwd, actualSessionId, false, title);
+            await updateGlobalState(cwd, actualSessionId, 'unread', title);
           }
 
           // 如果是取消导致的错误，静默处理
@@ -216,7 +216,7 @@ export async function POST(request: NextRequest) {
         const actualSessionId = sessionId; // cancel 时使用传入的 sessionId
         if (cwd && actualSessionId) {
           const title = await getSessionTitle(cwd, actualSessionId);
-          await updateGlobalState(cwd, actualSessionId, false, title);
+          await updateGlobalState(cwd, actualSessionId, 'unread', title);
         }
       },
     });

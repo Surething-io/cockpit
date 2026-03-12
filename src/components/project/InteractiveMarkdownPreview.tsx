@@ -13,6 +13,7 @@ import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { rehypeSourceLines } from '@/lib/rehypeSourceLines';
 import type { CodeComment } from '@/hooks/useComments';
 import { TocSidebar } from '../shared/TocSidebar';
+import { ShareReviewToggle } from '../shared/ShareReviewToggle';
 
 // ============================================
 // InteractiveMarkdownPreview
@@ -25,7 +26,8 @@ interface InteractiveMarkdownPreviewProps {
   filePath: string;      // 文件路径（评论数据绑定 + 发送 AI 引用）
   cwd: string;           // useComments + fetchAllCommentsWithCode
   onClose: () => void;
-  onShareReview?: () => Promise<void>;
+  /** 相对路径，用于 review sourceFile 匹配。不传则从 filePath + cwd 推导 */
+  sourceFile?: string;
 }
 
 interface InputCardData {
@@ -61,8 +63,11 @@ export function InteractiveMarkdownPreview({
   filePath,
   cwd,
   onClose,
-  onShareReview,
+  sourceFile: sourceFileProp,
 }: InteractiveMarkdownPreviewProps) {
+  // 推导 sourceFile（相对路径）
+  const sourceFile = sourceFileProp
+    || (cwd && filePath.startsWith(cwd) ? filePath.slice(cwd.endsWith('/') ? cwd.length : cwd.length + 1) : filePath);
   // === Refs ===
   const containerRef = useRef<HTMLDivElement>(null);
   const floatingToolbarRef = useRef<ToolbarData | null>(null);
@@ -342,16 +347,8 @@ export function InteractiveMarkdownPreview({
       {/* Header */}
       <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
         <span className="text-sm font-medium text-foreground truncate">{filePath}</span>
-        <div className="flex items-center gap-2">
-          {onShareReview && (
-            <button
-              onClick={onShareReview}
-              className="px-2 py-1 text-xs rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-accent"
-              title="创建分享评审链接"
-            >
-              分享评审
-            </button>
-          )}
+        <div className="flex items-center gap-3">
+          <ShareReviewToggle content={content} sourceFile={sourceFile} />
           <button
             onClick={onClose}
             className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"

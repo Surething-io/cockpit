@@ -154,21 +154,38 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     }
   }, [sessionId, onSessionIdChange]);
 
-  // 当 isLoading 变化时通知父组件和 ChatContext
+  // 当 isLoading 变化时通知父组件
   const prevIsLoadingRef = useRef(false);
   useEffect(() => {
     onLoadingChange?.(isLoading);
-    chatContext?.setIsLoading(isLoading);
 
-    // 当会话完成时（从 loading 变为 非 loading），通知父级 Workspace
-    if (prevIsLoadingRef.current && !isLoading && initialCwd) {
+    // 当会话完成时（从 loading 变为 非 loading），通知父级 Workspace 弹 toast
+    if (prevIsLoadingRef.current && !isLoading && initialCwd && sessionId) {
+      // 提取最后一条用户消息作为 toast 预览
+      let lastUserMessage: string | undefined;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user' && messages[i].content) {
+          lastUserMessage = messages[i].content.slice(0, 100);
+          break;
+        }
+      }
       window.parent.postMessage({
         type: 'SESSION_COMPLETE',
         cwd: initialCwd,
+        sessionId,
+        lastUserMessage,
       }, '*');
     }
     prevIsLoadingRef.current = isLoading;
-  }, [isLoading, onLoadingChange, chatContext, initialCwd]);
+  }, [isLoading, onLoadingChange, initialCwd]);
+
+  // 同步 loading 状态到 ChatContext：只有 active tab 才同步
+  // 切换 tab 时 isActive 变化也会触发，确保新 active tab 的状态覆盖旧值
+  useEffect(() => {
+    if (isActive) {
+      chatContext?.setIsLoading(isLoading);
+    }
+  }, [isLoading, isActive, chatContext]);
 
   // 注册到 ChatContext（用于从 CodeViewer 发送消息）
   useEffect(() => {

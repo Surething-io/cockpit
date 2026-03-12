@@ -191,13 +191,15 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           if (switchToAgent) {
             handleViewChange('agent');
           }
+          // 红点清除由 useTabState 内部统一处理（switchTab / activeView useEffect）
+          // 不在这里直接写 state.json，避免 loading 中的红点被误清
         }
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [handleSelectSession, handleViewChange]);
+  }, [handleSelectSession, handleViewChange, initialCwd]);
 
   // 打开 Git Status 视图
   const handleShowGitStatus = useCallback(() => {

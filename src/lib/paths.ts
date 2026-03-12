@@ -1,7 +1,7 @@
 import { homedir } from 'os';
 import { join } from 'path';
 import { mkdir, readFile, writeFile } from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, writeFileSync, mkdirSync } from 'fs';
 
 // ============================================
 // Directory Constants
@@ -15,6 +15,18 @@ export const PINNED_SESSIONS_FILE = join(COCKPIT_DIR, 'pinned-sessions.json');
 export const NOTE_FILE = join(COCKPIT_DIR, 'note.md');
 export const SCHEDULED_TASKS_FILE = join(COCKPIT_DIR, 'scheduled-tasks.json');
 export const REVIEW_DIR = join(COCKPIT_DIR, 'review');
+export const REVIEW_SIGNAL_FILE = join(REVIEW_DIR, '_signal');
+
+/**
+ * 写入信号文件，通知 ReviewWatcher 有评论变更
+ * 同步写入，确保 fs.watch 能捕获到变更
+ */
+export function notifyReviewChange(): void {
+  try {
+    if (!existsSync(REVIEW_DIR)) mkdirSync(REVIEW_DIR, { recursive: true });
+    writeFileSync(REVIEW_SIGNAL_FILE, Date.now().toString());
+  } catch { /* ignore */ }
+}
 export const CLAUDE_DIR = join(HOME_DIR, '.claude');
 export const CLAUDE_PROJECTS_DIR = join(CLAUDE_DIR, 'projects');
 

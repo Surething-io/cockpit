@@ -15,12 +15,15 @@ interface ReviewListPanelProps {
   currentReviewId: string;
   onSelect: (reviewId: string) => void;
   readOnly?: boolean;
+  /** 变化时触发列表刷新（如评论数变化） */
+  refreshTrigger?: number;
 }
 
-export function ReviewListPanel({ currentReviewId, onSelect, readOnly }: ReviewListPanelProps) {
+export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTrigger }: ReviewListPanelProps) {
   const [reviews, setReviews] = useState<ReviewSummary[]>([]);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
 
   // Tooltip state
   const [tooltip, setTooltip] = useState<{ id: string; text: string; top: number; left: number } | null>(null);
@@ -43,10 +46,10 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly }: ReviewL
     fetchList();
   }, [fetchList]);
 
-  // 切换评审时刷新列表
+  // 切换评审 或 评论数变化时刷新列表
   useEffect(() => {
     fetchList();
-  }, [currentReviewId, fetchList]);
+  }, [currentReviewId, refreshTrigger, fetchList]);
 
   const handleToggleActive = useCallback(async (e: React.MouseEvent, id: string, currentActive: boolean) => {
     e.stopPropagation();
@@ -140,11 +143,42 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly }: ReviewL
   const displayReviews = readOnly ? reviews.filter(r => r.active) : reviews;
   const canDrag = !readOnly;
 
+  // 折叠态
+  if (collapsed) {
+    return (
+      <div className="h-full flex flex-col items-center bg-secondary/50 w-9 flex-shrink-0 border-r border-border">
+        <button
+          onClick={() => setCollapsed(false)}
+          className="p-1.5 mt-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+          title="展开列表"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+        <span className="text-[10px] text-muted-foreground/50 mt-2" style={{ writingMode: 'vertical-rl' }}>
+          {displayReviews.length} {readOnly ? '文档' : '评审'}
+        </span>
+      </div>
+    );
+  }
+
   return (
-    <div className="h-full flex flex-col bg-secondary/50">
-      <div className="px-3 py-2 border-b border-border flex-shrink-0">
-        <span className="text-xs font-medium text-muted-foreground">{readOnly ? '文档列表' : '所有评审'}</span>
-        <span className="text-xs text-muted-foreground/60 ml-1.5">{displayReviews.length}</span>
+    <div className="h-full flex flex-col bg-secondary/50 w-[200px] flex-shrink-0 border-r border-border">
+      <div className="px-3 py-2 border-b border-border flex-shrink-0 flex items-center justify-between">
+        <div>
+          <span className="text-xs font-medium text-muted-foreground">{readOnly ? '文档列表' : '所有评审'}</span>
+          <span className="text-xs text-muted-foreground/60 ml-1.5">{displayReviews.length}</span>
+        </div>
+        <button
+          onClick={() => setCollapsed(true)}
+          className="p-0.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+          title="折叠列表"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
       </div>
       <div className="flex-1 overflow-y-auto">
         {displayReviews.map((r) => (

@@ -1,9 +1,10 @@
-import { watch, readFileSync, statSync, type FSWatcher } from 'fs';
+import { watch, readFileSync, statSync, existsSync, mkdirSync, writeFileSync, type FSWatcher } from 'fs';
 import { join, resolve, dirname } from 'path';
+import { REVIEW_SIGNAL_FILE, REVIEW_DIR } from './paths';
 
 export interface FileEvent {
-  /** 'file' = 普通文件变更, 'git' = .git 目录变更（意味着 git 操作） */
-  type: 'file' | 'git';
+  /** 'file' = 普通文件变更, 'git' = .git 目录变更, 'review' = review 文件变更 */
+  type: 'file' | 'git' | 'review';
 }
 
 export type FileChangeCallback = (events: FileEvent[]) => void;
@@ -171,19 +172,39 @@ class FileWatcherManager {
     // ========== 监听 git 关键文件 ==========
     // 支持 worktree：.git 可能是文件而非目录
     const gitDir = resolveGitDir(cwd);
-    for (const gitFile of GIT_WATCH_FILES) {
-      const filename = gitFile.replace('.git/', '');
+
+    // kqueue 绑定 inode，git 原子替换（write tmp + rename）后 watcher 失效
+    // 非 worktree 有 FSEvents 递归 watcher 兜底，worktree 的 HEAD 在 cwd 外无人兜底
+    // 因此每次事件后关闭旧 watcher 并重建，绑定新 inode
+    const watchGitFile = (filePath: string) => {
       try {
-        const w = watch(join(gitDir, filename), () => {
+        const w = watch(filePath, () => {
           pushEvent({ type: 'git' });
+          // 重建：关闭当前 watcher，绑定新 inode
+          try { w.close(); } catch { /* ignore */ }
+          const idx = entry.watchers.indexOf(w);
+          if (idx !== -1) entry.watchers.splice(idx, 1);
+          if (entry.listeners.size > 0) {
+            setTimeout(() => watchGitFile(filePath), 50);
+          }
         });
         w.on('error', () => {
-          // 文件可能不存在（如 MERGE_HEAD），忽略
+          const idx = entry.watchers.indexOf(w);
+          if (idx !== -1) entry.watchers.splice(idx, 1);
+          // 文件可能暂时不存在（如 MERGE_HEAD），延迟重试
+          if (entry.listeners.size > 0 && existsSync(filePath)) {
+            setTimeout(() => watchGitFile(filePath), 500);
+          }
         });
         entry.watchers.push(w);
       } catch {
         // 文件不存在，忽略
       }
+    };
+
+    for (const gitFile of GIT_WATCH_FILES) {
+      const filename = gitFile.replace('.git/', '');
+      watchGitFile(join(gitDir, filename));
     }
 
     // ========== 监听 git 关键目录 ==========
@@ -226,5 +247,58 @@ class FileWatcherManager {
   }
 }
 
+// ============================================
+// Review 目录监听（全局共享，独立于 cwd）
+// ============================================
+
+export type ReviewChangeCallback = () => void;
+
+class ReviewWatcher {
+  private listeners = new Set<ReviewChangeCallback>();
+  private watcher: FSWatcher | null = null;
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  subscribe(callback: ReviewChangeCallback): () => void {
+    this.listeners.add(callback);
+    if (!this.watcher) this.start();
+    return () => {
+      this.listeners.delete(callback);
+      if (this.listeners.size === 0) this.stop();
+    };
+  }
+
+  private start() {
+    try {
+      // 确保信号文件存在（fs.watch 单文件要求文件已存在）
+      if (!existsSync(REVIEW_DIR)) mkdirSync(REVIEW_DIR, { recursive: true });
+      if (!existsSync(REVIEW_SIGNAL_FILE)) writeFileSync(REVIEW_SIGNAL_FILE, '0');
+      // 监听信号文件变更（API 写评论后调用 notifyReviewChange 写入此文件）
+      // fs.watch 单文件在 macOS(kqueue)/Linux(inotify) 上都能可靠检测内容变更
+      this.watcher = watch(REVIEW_SIGNAL_FILE, () => {
+        if (this.debounceTimer) clearTimeout(this.debounceTimer);
+        this.debounceTimer = setTimeout(() => this.notify(), 300);
+      });
+      this.watcher.on('error', () => {
+        this.stop();
+        setTimeout(() => { if (this.listeners.size > 0) this.start(); }, 2000);
+      });
+    } catch {
+      // 信号文件不存在等异常，忽略
+    }
+  }
+
+  private stop() {
+    if (this.watcher) { try { this.watcher.close(); } catch {} this.watcher = null; }
+    if (this.debounceTimer) { clearTimeout(this.debounceTimer); this.debounceTimer = null; }
+  }
+
+  private notify() {
+    for (const cb of this.listeners) {
+      try { cb(); } catch (err) { console.error('ReviewWatcher callback error:', err); }
+    }
+  }
+}
+
 // 全局单例
 export const fileWatcher = new FileWatcherManager();
+export const reviewWatcher = new ReviewWatcher();

@@ -1488,16 +1488,6 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       {gitStatus.statusSelectedFile.type === 'staged' ? '已暂存' : '未暂存'}
                     </span>
                     <div className="flex-1" />
-                    {/* Markdown 预览按钮 */}
-                    {isMarkdownFile(gitStatus.statusSelectedFile.file.path) && gitStatus.statusDiff && !gitStatus.statusDiff.isDeleted && (
-                      <button
-                        onClick={() => gitStatus.setShowStatusDiffPreview(true)}
-                        className="px-2 py-1 text-xs rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-accent"
-                        title="预览 Markdown 渲染效果"
-                      >
-                        预览
-                      </button>
-                    )}
                   </div>
                   <div className="flex-1 overflow-auto">
                     {isImageFile(gitStatus.statusSelectedFile.file.path) ? (
@@ -1517,6 +1507,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         isDeleted={gitStatus.statusDiff.isDeleted}
                         cwd={cwd}
                         enableComments={true}
+                        onPreview={isMarkdownFile(gitStatus.statusSelectedFile!.file.path) && !gitStatus.statusDiff.isDeleted ? () => gitStatus.setShowStatusDiffPreview(true) : undefined}
                       />
                     )}
                   </div>
@@ -1532,28 +1523,6 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           filePath={gitStatus.statusDiff.filePath}
                           cwd={cwd}
                           onClose={() => gitStatus.setShowStatusDiffPreview(false)}
-                          onShareReview={async () => {
-                            const title = (gitStatus.statusDiff!.filePath || '').split('/').pop() || gitStatus.statusDiff!.filePath || '';
-                            try {
-                              const res = await fetch('/api/review', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ title, content: gitStatus.statusDiff!.newContent, sourceFile: gitStatus.statusDiff!.filePath }),
-                              });
-                              if (!res.ok) throw new Error('Failed');
-                              const data = await res.json();
-                              window.open(`${window.location.origin}/review/${data.review.id}`, '_blank');
-                              try {
-                                const infoRes = await fetch('/api/review/share-info');
-                                const info = await infoRes.json();
-                                const shareUrl = info.shareBase
-                                  ? `${info.shareBase}/review/${data.review.id}`
-                                  : `${window.location.origin}/review/${data.review.id}`;
-                                await navigator.clipboard.writeText(shareUrl);
-                              } catch { /* ignore */ }
-                              toast(data.review.existing ? '已打开评审，链接已复制' : '评审已创建，链接已复制', 'success');
-                            } catch { toast('创建评审失败', 'error'); }
-                          }}
                         />
                       </div>
                     </div>
@@ -1618,28 +1587,6 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                 filePath={fileTree.selectedPath}
                 cwd={cwd}
                 onClose={() => fileTree.setShowMarkdownPreview(false)}
-                onShareReview={async () => {
-                  const title = (fileTree.selectedPath || '').split('/').pop() || fileTree.selectedPath || '';
-                  try {
-                    const res = await fetch('/api/review', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ title, content: fileTree.fileContent?.content || '', sourceFile: fileTree.selectedPath }),
-                    });
-                    if (!res.ok) throw new Error('Failed');
-                    const data = await res.json();
-                    window.open(`${window.location.origin}/review/${data.review.id}`, '_blank');
-                    try {
-                      const infoRes = await fetch('/api/review/share-info');
-                      const info = await infoRes.json();
-                      const shareUrl = info.shareBase
-                        ? `${info.shareBase}/review/${data.review.id}`
-                        : `${window.location.origin}/review/${data.review.id}`;
-                      await navigator.clipboard.writeText(shareUrl);
-                    } catch { /* ignore */ }
-                    toast(data.review.existing ? '已打开评审，链接已复制' : '评审已创建，链接已复制', 'success');
-                  } catch { toast('创建评审失败', 'error'); }
-                }}
               />
             </div>
           </div>

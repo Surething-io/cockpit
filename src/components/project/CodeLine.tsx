@@ -420,52 +420,58 @@ export const CodeLine = memo(function CodeLine({
       }}
       className={`flex ${flashLine === lineNum ? 'flash-line' : ''} ${isCursorLine ? 'vi-cursor-line' : ''} ${isInRange ? 'bg-blue-9/20' : hasComments ? 'bg-amber-9/10' : 'hover:bg-accent/50'}`}
     >
-      {/* ---- Blame 列 ---- */}
-      {blameLine && blameAuthorColor && (
-        <>
-          <div
-            className="w-1 flex-shrink-0"
-            style={{ backgroundColor: blameAuthorColor.border }}
-          />
-          <div
-            className="w-48 flex-shrink-0 px-2 flex items-center gap-2 border-r border-border text-muted-foreground cursor-pointer hover:bg-accent/50"
-            onMouseEnter={handleBlameEnter}
-            onMouseLeave={onBlameMouseLeave}
-            onClick={handleBlameClick}
-            title="点击查看 commit 详情"
-          >
-            {showBlameInfo ? (
-              <>
-                <span className="font-medium" style={{ color: blameAuthorColor.border }}>{blameLine.hash}</span>
-                <span className="truncate flex-1">{blameLine.author.split(' ')[0]}</span>
-              </>
-            ) : null}
-          </div>
-        </>
-      )}
-      {showLineNumbers && (
-        <span
-          className={`flex-shrink-0 flex items-center justify-end gap-0.5 pr-2 select-none border-r border-border font-variant-tabular ${
-            isInRange ? 'bg-blue-9/30 text-blue-11' : 'bg-card/50 text-slate-9'
-          }`}
-        >
-          {commentsEnabled && hasComments && firstComment && (
-            <button
-              onClick={(e) => onCommentBubbleClick(firstComment, e)}
-              className="w-4 h-4 flex items-center justify-center rounded hover:bg-accent text-amber-9"
-              title={`${lineCommentsCount} 条评论`}
+      {/* ---- Sticky: Blame + 行号（横向滚动时固定在左侧） ---- */}
+      <div
+        className="flex shrink-0 sticky left-0 z-[2] bg-secondary"
+        style={{ backgroundColor: isBlameHovered && blameAuthorColor ? blameAuthorColor.bg : undefined }}
+      >
+        {/* ---- Blame 列 ---- */}
+        {blameLine && blameAuthorColor && (
+          <>
+            <div
+              className="w-1 flex-shrink-0"
+              style={{ backgroundColor: blameAuthorColor.border }}
+            />
+            <div
+              className="w-48 flex-shrink-0 px-2 flex items-center gap-2 border-r border-border text-muted-foreground cursor-pointer hover:bg-accent/50"
+              onMouseEnter={handleBlameEnter}
+              onMouseLeave={onBlameMouseLeave}
+              onClick={handleBlameClick}
+              title="点击查看 commit 详情"
             >
-              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
-              </svg>
-            </button>
-          )}
-          {commentsEnabled && !hasComments && <span className="w-4" />}
-          <span className="text-right" style={{ minWidth: `${lineNumChars}ch` }}>{lineNum}</span>
-        </span>
-      )}
+              {showBlameInfo ? (
+                <>
+                  <span className="font-medium" style={{ color: blameAuthorColor.border }}>{blameLine.hash}</span>
+                  <span className="truncate flex-1">{blameLine.author.split(' ')[0]}</span>
+                </>
+              ) : null}
+            </div>
+          </>
+        )}
+        {showLineNumbers && (
+          <span
+            className={`flex-shrink-0 flex items-center justify-end gap-0.5 pr-2 select-none border-r border-border font-variant-tabular ${
+              isInRange ? 'bg-blue-9/30 text-blue-11' : 'bg-card/50 text-slate-9'
+            }`}
+          >
+            {commentsEnabled && hasComments && firstComment && (
+              <button
+                onClick={(e) => onCommentBubbleClick(firstComment, e)}
+                className="w-4 h-4 flex items-center justify-center rounded hover:bg-accent text-amber-9"
+                title={`${lineCommentsCount} 条评论`}
+              >
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
+            {commentsEnabled && !hasComments && <span className="w-4" />}
+            <span className="text-right" style={{ minWidth: `${lineNumChars}ch` }}>{lineNum}</span>
+          </span>
+        )}
+      </div>
       <span
-        className="flex-1 px-3 whitespace-pre overflow-x-auto select-text"
+        className="flex-1 px-3 whitespace-pre select-text"
         onClick={handleCodeClick}
         onMouseOver={handleCodeMouseOver}
         onMouseLeave={onTokenHoverLeave}

@@ -9,8 +9,6 @@ cd /path/to/cockpit
 npm install && npm link
 ```
 
-安装完成后，Chrome 插件会自动部署到 `~/.cockpit/chrome-extension/`。
-
 ## Quick Start
 
 ```bash
@@ -26,11 +24,9 @@ cock -v         # Show version
 1. Chrome 打开 `chrome://extensions/`
 2. 开启右上角「开发者模式」
 3. 点击「加载已解压的扩展程序」
-4. 按 `Cmd+Shift+G` → 粘贴 `~/.cockpit/chrome-extension` → 回车
+4. 选择源代码目录下的 `chrome-extension/` 文件夹
 
-之后更新 Cockpit 时插件会自动覆盖，无需重复操作。
-
-也可在 Cockpit 设置页查看插件状态和路径。
+源代码更新后插件自动生效，无需重复操作。也可在 Cockpit 设置页查看插件状态和路径。
 
 ## Browser Automation
 
@@ -82,12 +78,12 @@ cock terminal abcd --help                  # 查看完整命令列表
 ```bash
 npm run dev         # Start dev server (port 3456, HMR)
 npm run build       # Build for production
-npm run release     # Build + npm link
+npm run setup       # Build + npm link
 npm run lint        # Run ESLint
 ```
 
 开发时子命令连接 dev server：
 ```bash
-cock browser abcd snapshot --port 3456
-cock terminal abcd output --port 3456
+cock-dev browser abcd snapshot
+cock-dev terminal abcd output
 ```

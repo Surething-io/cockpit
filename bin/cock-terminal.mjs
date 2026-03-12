@@ -8,17 +8,15 @@
 
 const args = process.argv.slice(2);
 
-// 从 args 提取 --port（放在最前面，在解析 id/action 之前）
-function extractPort(argv) {
-  const idx = argv.indexOf('--port');
-  if (idx !== -1 && argv[idx + 1]) {
-    const p = parseInt(argv[idx + 1]);
-    argv.splice(idx, 2);
-    return p;
-  }
-  return null;
+// 从 ~/.cockpit/server.json 读取 prod 端口
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
+function readServerPort() {
+  try {
+    return JSON.parse(readFileSync(join(homedir(), '.cockpit', 'server.json'), 'utf8')).port;
+  } catch { return null; }
 }
-const cliPort = extractPort(args);
 
 // status: { running, command } — 传入时显示当前终端状态
 function printHelp(prefix = '<id>', status = null) {
@@ -73,8 +71,8 @@ if (args[0] === 'list') {
 
 const extraArgs = args.slice(2);
 
-// 端口：--port 优先 > 环境变量 COCKPIT_PORT > 默认 3457
-const port = cliPort || process.env.COCKPIT_PORT || 3457;
+// 端口：环境变量 COCKPIT_PORT > ~/.cockpit/server.json > 默认 3457
+const port = process.env.COCKPIT_PORT || readServerPort() || 3457;
 const baseUrl = `http://localhost:${port}`;
 
 async function run() {

@@ -1,5 +1,7 @@
 import { createServer } from 'http';
-import { networkInterfaces } from 'os';
+import { networkInterfaces, homedir } from 'os';
+import { writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import next from 'next';
 
 const dev = process.env.COCKPIT_ENV === 'dev';
@@ -43,6 +45,13 @@ app.prepare().then(async () => {
 
   server.listen(port, '127.0.0.1', () => {
     console.log(`> Ready on http://localhost:${port}`);
+
+    // 写入 server.json 供 CLI 子命令读取端口
+    try {
+      const cockpitDir = join(homedir(), '.cockpit');
+      mkdirSync(cockpitDir, { recursive: true });
+      writeFileSync(join(cockpitDir, 'server.json'), JSON.stringify({ pid: process.pid, port }, null, 2));
+    } catch {}
   });
 
   // ============================================

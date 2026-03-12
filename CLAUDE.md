@@ -33,7 +33,7 @@
   - `cock.mjs` - 主入口（启动 server，子命令分流，--help/--version）
   - `cock-browser.mjs` - `cock browser` 子命令
   - `cock-terminal.mjs` - `cock terminal` 子命令
-  - `postinstall.mjs` - 安装后自动部署 Chrome 插件到 ~/.cockpit/
+  - `postinstall.mjs` - 安装后修复 node-pty 权限（macOS）
 
 ## Key Features
 
@@ -48,7 +48,7 @@
 ```bash
 npm run dev      # Start dev server on port 3456
 npm run build    # Build for production
-npm run release  # Build + npm link
+npm run setup    # Build + npm link
 npm run lint     # Run ESLint
 cock             # Start production server (port 3457)
 cock -v          # Show version

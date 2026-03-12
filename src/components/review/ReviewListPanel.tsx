@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface ReviewSummary {
   id: string;
@@ -21,6 +21,13 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly }: ReviewL
   const [reviews, setReviews] = useState<ReviewSummary[]>([]);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
+
+  // Tooltip state
+  const [tooltip, setTooltip] = useState<{ id: string; text: string; top: number; left: number } | null>(null);
+
+  // Drag state
+  const dragId = useRef<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const fetchList = useCallback(async () => {
     try {
@@ -78,7 +85,60 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly }: ReviewL
     setDeleting(null);
   }, [deleting, currentReviewId, reviews, onSelect]);
 
+  // Drag & drop handlers (admin only)
+  const handleDragStart = useCallback((e: React.DragEvent, id: string) => {
+    dragId.current = id;
+    e.dataTransfer.effectAllowed = 'move';
+    const el = e.currentTarget as HTMLElement;
+    requestAnimationFrame(() => el.classList.add('opacity-30'));
+  }, []);
+
+  const handleDragEnd = useCallback((e: React.DragEvent) => {
+    dragId.current = null;
+    setDropTarget(null);
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.classList.remove('opacity-30');
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, id: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragId.current && dragId.current !== id) {
+      setDropTarget(id);
+    }
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    setDropTarget(null);
+    const sourceId = dragId.current;
+    dragId.current = null;
+    if (!sourceId || sourceId === targetId) return;
+
+    // 本地重排
+    setReviews(prev => {
+      const list = [...prev];
+      const fromIdx = list.findIndex(r => r.id === sourceId);
+      const toIdx = list.findIndex(r => r.id === targetId);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      const [item] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, item);
+
+      // 异步持久化
+      const order = list.map(r => r.id);
+      fetch('/api/review/order', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order }),
+      }).catch(() => { /* ignore */ });
+
+      return list;
+    });
+  }, []);
+
   const displayReviews = readOnly ? reviews.filter(r => r.active) : reviews;
+  const canDrag = !readOnly;
 
   return (
     <div className="h-full flex flex-col bg-secondary/50">
@@ -90,8 +150,22 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly }: ReviewL
         {displayReviews.map((r) => (
           <div
             key={r.id}
+            draggable={canDrag}
+            onDragStart={canDrag ? (e) => handleDragStart(e, r.id) : undefined}
+            onDragEnd={canDrag ? handleDragEnd : undefined}
+            onDragOver={canDrag ? (e) => handleDragOver(e, r.id) : undefined}
+            onDrop={canDrag ? (e) => handleDrop(e, r.id) : undefined}
+            onMouseEnter={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              setTooltip({ id: r.id, text: r.title, top: rect.top + rect.height / 2, left: rect.right });
+            }}
+            onMouseLeave={() => setTooltip(prev => prev?.id === r.id ? null : prev)}
             onClick={() => onSelect(r.id)}
-            className={`group px-3 py-2 cursor-pointer border-b border-border/50 transition-colors ${
+            className={`group px-3 py-2 cursor-pointer border-b transition-colors ${
+              dropTarget === r.id
+                ? 'border-b-brand border-t border-t-transparent'
+                : 'border-b-border/50'
+            } ${
               r.id === currentReviewId
                 ? 'bg-accent/60'
                 : 'hover:bg-accent/30'
@@ -152,6 +226,15 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly }: ReviewL
           </div>
         )}
       </div>
+      {/* Fixed tooltip */}
+      {tooltip && (
+        <div
+          className="fixed z-50 px-2 py-1 text-xs bg-popover text-popover-foreground border border-border rounded shadow-md whitespace-nowrap pointer-events-none"
+          style={{ top: tooltip.top, left: tooltip.left + 8, transform: 'translateY(-50%)' }}
+        >
+          {tooltip.text}
+        </div>
+      )}
     </div>
   );
 }

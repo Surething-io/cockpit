@@ -3,11 +3,10 @@
 import { useState, useCallback, memo } from 'react';
 import { toast } from '../../shared/Toast';
 
-/** 非默认端口时返回 --port 后缀 */
-function getPortSuffix(): string {
-  const defaultPort = '3457';
-  const port = typeof window !== 'undefined' ? window.location.port : defaultPort;
-  return port !== defaultPort ? ` --port ${port}` : '';
+/** dev 端口用 cock-dev，其他用 cock（prod 端口由 ~/.cockpit/server.json 自动识别） */
+function getCockBin(): string {
+  const port = typeof window !== 'undefined' ? window.location.port : '3457';
+  return port === '3456' ? 'cock-dev' : 'cock';
 }
 
 interface ShortIdBadgeProps {
@@ -37,7 +36,7 @@ export const ShortIdBadge = memo(function ShortIdBadge({
       // 注册 + 复制帮助命令
       await onRegister();
       setRegistered(true);
-      const cmd = `cock ${type} ${shortId}${getPortSuffix()}`;
+      const cmd = `${getCockBin()} ${type} ${shortId}`;
       navigator.clipboard.writeText(cmd);
       toast(`已复制: ${cmd}`);
     }

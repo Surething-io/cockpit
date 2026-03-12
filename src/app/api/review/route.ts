@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readdir } from 'fs/promises';
+import { join } from 'path';
 import { REVIEW_DIR, getReviewFilePath, readJsonFile, writeJsonFile, ensureDir } from '@/lib/paths';
 import { generateReviewId, ReviewData } from '@/lib/review-utils';
+
+const ORDER_FILE = join(REVIEW_DIR, '_order.json');
 
 // GET - 列出所有 review（返回摘要，不含完整 content）
 export async function GET() {
   try {
     await ensureDir(REVIEW_DIR);
     const files = await readdir(REVIEW_DIR);
-    const jsonFiles = files.filter(f => f.endsWith('.json'));
+    const jsonFiles = files.filter(f => f.endsWith('.json') && !f.startsWith('_'));
 
     const reviews: Array<{
       id: string;
@@ -34,7 +37,16 @@ export async function GET() {
       }
     }
 
-    // 按创建时间倒序
+    // 按 order 文件排序，不在 order 里的按创建时间追加到末尾
+    const order = await readJsonFile<string[]>(ORDER_FILE, []);
+    if (order.length > 0) {
+      const orderMap = new Map(order.map((id, i) => [id, i]));
+      const ordered = reviews.filter(r => orderMap.has(r.id));
+      const unordered = reviews.filter(r => !orderMap.has(r.id));
+      ordered.sort((a, b) => orderMap.get(a.id)! - orderMap.get(b.id)!);
+      unordered.sort((a, b) => b.createdAt - a.createdAt);
+      return NextResponse.json({ reviews: [...ordered, ...unordered] });
+    }
     reviews.sort((a, b) => b.createdAt - a.createdAt);
     return NextResponse.json({ reviews });
   } catch (error) {

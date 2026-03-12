@@ -21,6 +21,7 @@ Commands:
   terminal <id> <action>       Control terminal bubbles
 
 Options:
+  --port <port>                Set server port (default: 3457)
   -v, --version                Show version
   -h, --help                   Show this help`);
   process.exit(0);
@@ -32,6 +33,13 @@ if (process.argv[2] === '--version' || process.argv[2] === '-v') {
   const pkg = JSON.parse(readFileSync(resolve(PROJECT_ROOT, 'package.json'), 'utf8'));
   console.log(pkg.version);
   process.exit(0);
+}
+
+// --port 参数解析
+const portIdx = process.argv.indexOf('--port');
+if (portIdx !== -1 && process.argv[portIdx + 1]) {
+  process.env.PORT = process.argv[portIdx + 1];
+  process.argv.splice(portIdx, 2);
 }
 
 // 默认 prod 端口

@@ -183,8 +183,17 @@ if (params._positional?.length) {
   delete params._positional;
 }
 
-// 端口：--port 优先 > 环境变量 COCKPIT_PORT > 默认 3457
-const port = params.port || process.env.COCKPIT_PORT || 3457;
+// 端口：环境变量 COCKPIT_PORT > ~/.cockpit/server.json > 默认 3457
+let port = process.env.COCKPIT_PORT || 3457;
+if (!process.env.COCKPIT_PORT) {
+  try {
+    const { readFileSync } = await import('fs');
+    const { join } = await import('path');
+    const { homedir } = await import('os');
+    const serverJson = JSON.parse(readFileSync(join(homedir(), '.cockpit', 'server.json'), 'utf8'));
+    if (serverJson.port) port = serverJson.port;
+  } catch {}
+}
 delete params.port;
 const baseUrl = `http://localhost:${port}`;
 const timeout = params.timeout || 15000;

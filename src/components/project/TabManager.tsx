@@ -191,15 +191,22 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           if (switchToAgent) {
             handleViewChange('agent');
           }
-          // 红点清除由 useTabState 内部统一处理（switchTab / activeView useEffect）
-          // 不在这里直接写 state.json，避免 loading 中的红点被误清
+          // 用户查看该 session → 写 state.json 为 normal（loading 中的不清，避免红点误消失）
+          const targetTab = tabs.find(t => t.sessionId === sessionId);
+          if (initialCwd && !targetTab?.isLoading) {
+            fetch('/api/global-state', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ cwd: initialCwd, sessionId, status: 'normal' }),
+            }).catch(() => {});
+          }
         }
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [handleSelectSession, handleViewChange, initialCwd]);
+  }, [handleSelectSession, handleViewChange, initialCwd, tabs]);
 
   // 打开 Git Status 视图
   const handleShowGitStatus = useCallback(() => {

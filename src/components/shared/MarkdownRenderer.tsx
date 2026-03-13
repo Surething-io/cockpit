@@ -103,10 +103,14 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
         return <MermaidBlock code={code} isDark={isDark} />;
       }
 
-      // 从 HAST node 获取代码块在 markdown 源码中的行范围
+      // 从 rehypeSourceLines 注入到 <code> 上的 data-source-start 获取 <pre> 的行范围
+      // （<code> 自身的 node.position 与 <pre> 不一致，不可靠）
       // ``` 围栏占首尾各一行，实际代码内容从 start+1 开始
-      const prePosition = node?.position;
-      const codeStartLine = prePosition ? prePosition.start.line + 1 : 0;
+      const preSourceStart = Number((props as any)['data-source-start']) || 0;
+      const codeStartLine = preSourceStart ? preSourceStart + 1 : 0;
+      // lineProps 的 lineNumber 参数在 showLineNumbers=false 时始终为 false（库的 bug），
+      // 用闭包计数器自行追踪行号
+      let lineCounter = 0;
 
       return (
         <SyntaxHighlighter
@@ -115,11 +119,15 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
           PreTag="div"
           customStyle={{ margin: '0.75rem 0', borderRadius: '0.375rem', fontSize: '0.875rem' }}
           wrapLines
-          lineProps={(lineNumber: number) => ({
-            'data-source-start': codeStartLine + lineNumber - 1,
-            'data-source-end': codeStartLine + lineNumber - 1,
-            style: { display: 'block' },
-          } as any)}
+          lineProps={() => {
+            const sourceLine = codeStartLine + lineCounter;
+            lineCounter++;
+            return {
+              'data-source-start': sourceLine,
+              'data-source-end': sourceLine,
+              style: { display: 'block' },
+            } as any;
+          }}
         >
           {code}
         </SyntaxHighlighter>

@@ -91,7 +91,7 @@ interface MessageBubbleProps {
 }
 
 // 工具调用折叠显示的阈值
-const TOOL_CALLS_COLLAPSE_THRESHOLD = 3;
+const TOOL_CALLS_COLLAPSE_THRESHOLD = 1;
 
 // 使用 memo 优化，只有当 message 或 cwd 变化时才重新渲染
 export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork }: MessageBubbleProps) {

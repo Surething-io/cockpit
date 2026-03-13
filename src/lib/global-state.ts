@@ -18,6 +18,14 @@ interface GlobalState {
 }
 
 const MAX_SESSIONS = 15;
+const MAX_TEXT_LEN = 50; // title / lastUserMessage 最大字符数
+
+/** 按 Unicode 字符截断，超长加省略号 */
+function truncate(s: string | undefined): string | undefined {
+  if (!s) return s;
+  const chars = [...s]; // 展开为 code point 数组，emoji/中文各算 1
+  return chars.length <= MAX_TEXT_LEN ? s : chars.slice(0, MAX_TEXT_LEN).join('') + '…';
+}
 
 /**
  * 更新全局 session 状态
@@ -61,8 +69,8 @@ export async function updateGlobalState(
       sessionId,
       lastActive: Date.now(),
       status,
-      title: title || existing?.title,
-      lastUserMessage: lastUserMessage || existing?.lastUserMessage,
+      title: truncate(title || existing?.title),
+      lastUserMessage: truncate(lastUserMessage || existing?.lastUserMessage),
     };
 
     if (existingIndex >= 0) {

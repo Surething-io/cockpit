@@ -21,6 +21,20 @@ export function rehypeSourceLines() {
       if (!node.properties) node.properties = {};
       node.properties['data-source-start'] = node.position.start.line;
       node.properties['data-source-end'] = node.position.end.line;
+
+      // <pre> → 将位置信息也注入到子 <code> 元素上
+      // react-markdown 的 code 组件拿不到父 pre 的属性，
+      // 这里让 code 也携带 pre 的行范围，供 SyntaxHighlighter 逐行标注使用
+      if (node.tagName === 'pre') {
+        const codeChild = node.children?.find(
+          (c): c is Element => c.type === 'element' && c.tagName === 'code',
+        );
+        if (codeChild) {
+          if (!codeChild.properties) codeChild.properties = {};
+          codeChild.properties['data-source-start'] = node.position.start.line;
+          codeChild.properties['data-source-end'] = node.position.end.line;
+        }
+      }
     });
   };
 }

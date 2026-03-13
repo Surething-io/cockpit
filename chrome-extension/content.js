@@ -33,22 +33,22 @@
       const id = chrome.runtime.id;
       const version = (() => { try { return chrome.runtime.getManifest().version; } catch { return 'unknown'; } })();
 
-      function setBridgeData() {
-        const el = document.documentElement;
-        if (el) {
-          el.dataset.cockpitBridgeId = id;
-          el.dataset.cockpitBridgeVersion = version;
-          console.log(LOG_PREFIX, '顶层页面 bridge ID 已设置:', id);
-        } else {
-          console.warn(LOG_PREFIX, 'document.documentElement 不存在，等待 DOMContentLoaded');
-          document.addEventListener('DOMContentLoaded', () => {
-            document.documentElement.dataset.cockpitBridgeId = id;
-            document.documentElement.dataset.cockpitBridgeVersion = version;
-            console.log(LOG_PREFIX, '顶层页面 bridge ID 已设置 (DOMContentLoaded):', id);
-          }, { once: true });
-        }
+      // 通过 <meta> 标签暴露 bridge 信息（DOM 共享，跨 isolated world）
+      // 不修改 <html> 属性，避免 React hydration mismatch
+      function injectBridgeMeta() {
+        const head = document.head || document.documentElement;
+        const meta = document.createElement('meta');
+        meta.name = 'cockpit-bridge';
+        meta.dataset.id = id;
+        meta.dataset.version = version;
+        head.appendChild(meta);
+        console.log(LOG_PREFIX, '顶层页面 bridge meta 已注入:', id);
       }
-      setBridgeData();
+      if (document.head) {
+        injectBridgeMeta();
+      } else {
+        document.addEventListener('DOMContentLoaded', injectBridgeMeta, { once: true });
+      }
 
     }
     return;

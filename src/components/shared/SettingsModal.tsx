@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '../shared/ThemeProvider';
 import { toast } from '../shared/Toast';
+import { useCockpitBridge } from '@/hooks/useCockpitBridge';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -11,10 +12,12 @@ interface SettingsModalProps {
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { theme, setTheme } = useTheme();
-  const [extensionStatus, setExtensionStatus] = useState<'checking' | 'installed' | 'not-installed'>('checking');
-  const [extensionVersion, setExtensionVersion] = useState<string | null>(null);
+  const bridge = useCockpitBridge();
   const [extensionPath, setExtensionPath] = useState<string>('');
   const [appVersion, setAppVersion] = useState<string>('');
+
+  const extensionStatus = bridge ? 'installed' as const : 'not-installed' as const;
+  const extensionVersion = bridge?.version ?? null;
 
   // 获取版本号
   useEffect(() => {
@@ -25,19 +28,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       .catch(() => {});
   }, [isOpen]);
 
-  // 检测插件是否已安装 + 获取路径
+  // 获取插件目录路径
   useEffect(() => {
     if (!isOpen) return;
-    // 检查 content script 注入的 DOM dataset
-    const bridgeId = document.documentElement?.dataset?.cockpitBridgeId;
-    const bridgeVersion = document.documentElement?.dataset?.cockpitBridgeVersion;
-    if (bridgeId) {
-      setExtensionStatus('installed');
-      setExtensionVersion(bridgeVersion || null);
-    } else {
-      setExtensionStatus('not-installed');
-    }
-    // 获取插件目录路径
     fetch('/api/extension/version')
       .then(r => r.json())
       .then(d => { if (d.path) setExtensionPath(d.path); })
@@ -111,12 +104,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${
-                  extensionStatus === 'installed' ? 'bg-green-500' :
-                  extensionStatus === 'checking' ? 'bg-yellow-500 animate-pulse' :
-                  'bg-slate-400'
+                  extensionStatus === 'installed' ? 'bg-green-500' : 'bg-slate-400'
                 }`} />
                 <span>
-                  {extensionStatus === 'checking' && '检测中...'}
                   {extensionStatus === 'installed' && `Cockpit Bridge 已安装${extensionVersion ? ` (v${extensionVersion})` : ''}`}
                   {extensionStatus === 'not-installed' && 'Cockpit Bridge 未安装'}
                 </span>
@@ -147,20 +137,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 {extensionStatus === 'installed' && (
                   <button
                     onClick={() => {
-                      const extId = document.documentElement?.dataset?.cockpitBridgeId;
-                      if (extId && (window as any).chrome?.runtime?.sendMessage) {
-                        (window as any).chrome.runtime.sendMessage(extId, { type: 'reload' });
+                      if (bridge?.id && (window as any).chrome?.runtime?.sendMessage) {
+                        (window as any).chrome.runtime.sendMessage(bridge.id, { type: 'reload' });
                         toast('插件重载中...');
-                        // 重载后 content script 会重新注入，短暂显示未安装
-                        setExtensionStatus('checking');
-                        setTimeout(() => {
-                          const newId = document.documentElement?.dataset?.cockpitBridgeId;
-                          setExtensionStatus(newId ? 'installed' : 'not-installed');
-                          if (newId) {
-                            const v = document.documentElement?.dataset?.cockpitBridgeVersion;
-                            setExtensionVersion(v || null);
-                          }
-                        }, 1500);
+                        // 重载后 content script 会重新注入 window.__cockpitBridge
+                        // useCockpitBridge 会通过 cockpit-bridge-ready 事件自动更新
                       }
                     }}
                     className="px-3 py-1.5 text-xs border border-border text-foreground rounded-md hover:bg-muted transition-colors"

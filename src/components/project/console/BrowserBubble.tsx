@@ -56,16 +56,13 @@ function stripCockpitParam(url: string): string {
   }
 }
 
-/**
- * 获取 Chrome 扩展 ID（从 content script 注入的 DOM dataset 读取）
- */
-let _cachedExtensionId: string | null = null;
+import { getCockpitBridge } from '@/hooks/useCockpitBridge';
 
+/**
+ * 获取 Chrome 扩展 ID（从 content script 广播的 window.__cockpitBridge 读取）
+ */
 function getExtensionId(): string | null {
-  if (_cachedExtensionId) return _cachedExtensionId;
-  const fromDom = document.documentElement?.dataset?.cockpitBridgeId;
-  if (fromDom) { _cachedExtensionId = fromDom; return fromDom; }
-  return null;
+  return getCockpitBridge()?.id ?? null;
 }
 
 /**
@@ -162,6 +159,8 @@ export function BrowserBubble({
   useEffect(() => { setCurrentUrl(url); }, [url]);
 
   // ========== 空闲休眠 ==========
+  const isVisibleRef = useRef(true); // IntersectionObserver 驱动
+
   const goToSleep = useCallback(() => {
     if (isSleeping) return;
     setIsSleeping(true);
@@ -169,11 +168,39 @@ export function BrowserBubble({
     onSleep?.(id);
   }, [isSleeping, id, onSleep]);
 
+  const clearIdleTimer = useCallback(() => {
+    if (idleTimerRef.current) {
+      clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = null;
+    }
+  }, []);
+
   const resetIdleTimer = useCallback(() => {
     if (isSleeping) return;
-    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    clearIdleTimer();
+    // 可见时不倒计时：用户看得到，不应该休眠
+    if (isVisibleRef.current) return;
     idleTimerRef.current = setTimeout(goToSleep, IDLE_TIMEOUT);
-  }, [isSleeping, goToSleep]);
+  }, [isSleeping, goToSleep, clearIdleTimer]);
+
+  // IntersectionObserver：检测气泡是否在视口内
+  useEffect(() => {
+    const el = iframeWrapperRef.current;
+    if (!el || isSleeping) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      isVisibleRef.current = entry.isIntersecting;
+      if (entry.isIntersecting) {
+        // 进入视口 → 清除倒计时
+        clearIdleTimer();
+      } else {
+        // 离开视口 → 启动倒计时
+        if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = setTimeout(goToSleep, IDLE_TIMEOUT);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isSleeping, goToSleep, clearIdleTimer]);
 
   // Browser automation bridge (CLI → WS → postMessage → content script)
   // WS 按需连接：点击 shortId 徽标时 connect，休眠时 disconnect
@@ -185,15 +212,6 @@ export function BrowserBubble({
   useEffect(() => {
     if (isSleeping) bridgeDisconnect();
   }, [isSleeping, bridgeDisconnect]);
-
-  // 启动 / 清除空闲计时器
-  useEffect(() => {
-    if (isSleeping || !url) {
-      return () => { if (idleTimerRef.current) clearTimeout(idleTimerRef.current); };
-    }
-    resetIdleTimer();
-    return () => { if (idleTimerRef.current) clearTimeout(idleTimerRef.current); };
-  }, [isSleeping, url, resetIdleTimer]);
 
   // 如果 initialSleeping，不加载 iframe
   useEffect(() => {

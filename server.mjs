@@ -10,6 +10,20 @@ const port = parseInt(process.env.PORT || (dev ? '3456' : '3457'), 10);
 process.title = dev ? 'cockpit-dev' : 'cockpit';
 process.env.COCKPIT_PORT = String(port);
 
+// ============================================
+// 进程生命周期防护
+// 父进程死亡后 stdout/stderr 管道断裂，Next.js 的 uncaughtException handler
+// 会尝试 console.log 报错 → 写 stdout → EPIPE → 再次触发 handler → CPU 死循环
+// 在管道错误升级为 uncaughtException 之前拦截，直接退出
+// ============================================
+process.stdout.on('error', (err) => {
+  if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') process.exit(0);
+});
+process.stderr.on('error', (err) => {
+  if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') process.exit(0);
+});
+process.on('SIGHUP', () => process.exit(0));
+
 const app = next({ dev });
 const handle = app.getRequestHandler();
 

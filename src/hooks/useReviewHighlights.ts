@@ -1,12 +1,24 @@
 'use client';
 
-import { useEffect, RefObject, MutableRefObject, useCallback, useRef } from 'react';
+import { useEffect, RefObject, useCallback, useRef, useState } from 'react';
 import { ReviewComment } from '@/lib/review-utils';
 
-/**
- * Walk all text nodes in a container, returning an array of { node, start, end }
- * where start/end are the global character offsets in container.textContent.
- */
+// ============================================
+// Types
+// ============================================
+
+export interface HighlightRect {
+  commentId: string;
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
+// ============================================
+// Text node map (read-only, no DOM mutation)
+// ============================================
+
 function getTextNodeMap(container: HTMLElement): Array<{ node: Text; start: number; end: number }> {
   const result: Array<{ node: Text; start: number; end: number }> = [];
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
@@ -22,131 +34,156 @@ function getTextNodeMap(container: HTMLElement): Array<{ node: Text; start: numb
   return result;
 }
 
-/**
- * Remove all <mark class="review-highlight"> elements, unwrapping their content.
- */
-function clearHighlights(container: HTMLElement) {
-  const marks = container.querySelectorAll('mark.review-highlight');
-  marks.forEach(mark => {
-    const parent = mark.parentNode;
-    if (!parent) return;
-    while (mark.firstChild) {
-      parent.insertBefore(mark.firstChild, mark);
-    }
-    parent.removeChild(mark);
-    // Merge adjacent text nodes
-    parent.normalize();
-  });
-}
+// ============================================
+// Compute visual rects via Range.getClientRects()
+// ============================================
 
-/**
- * Apply highlights for a set of comment anchors.
- * Process in reverse startOffset order to avoid invalidating earlier offsets.
- */
-function applyHighlights(
+function computeHighlightRects(
   container: HTMLElement,
+  scrollContainer: HTMLElement,
   comments: ReviewComment[],
-  activeCommentId: string | null,
-) {
-  if (comments.length === 0) return;
+): HighlightRect[] {
+  const allRects: HighlightRect[] = [];
+  const scrollRect = scrollContainer.getBoundingClientRect();
 
-  // Sort by startOffset descending (apply from end to start to preserve offsets)
-  const sorted = [...comments].sort((a, b) => b.anchor.startOffset - a.anchor.startOffset);
+  const textNodes = getTextNodeMap(container);
+  if (textNodes.length === 0) return allRects;
 
-  for (const comment of sorted) {
+  for (const comment of comments) {
     const { startOffset, endOffset } = comment.anchor;
     if (startOffset >= endOffset) continue;
 
-    // Rebuild text node map each iteration (DOM changes with each wrap)
-    const textNodes = getTextNodeMap(container);
+    // Find the start text node + local offset
+    let startNode: Text | null = null;
+    let startNodeOffset = 0;
+    let endNode: Text | null = null;
+    let endNodeOffset = 0;
 
-    // Find text nodes that overlap [startOffset, endOffset)
     for (const { node, start, end } of textNodes) {
-      if (end <= startOffset || start >= endOffset) continue;
-
-      // Compute overlap within this text node
-      const overlapStart = Math.max(startOffset, start) - start;
-      const overlapEnd = Math.min(endOffset, end) - start;
-
-      if (overlapStart >= overlapEnd) continue;
-      if (!node.textContent) continue;
-
-      // Split the text node and wrap the overlap portion
-      const mark = document.createElement('mark');
-      const isPending = comment.id === '__pending__';
-      mark.className = `review-highlight${comment.id === activeCommentId ? ' active' : ''}${isPending ? ' pending' : ''}`;
-      mark.dataset.commentId = comment.id;
-
-      // Split at end first (to preserve start offset)
-      let targetNode: Text = node;
-      if (overlapEnd < (node.textContent.length)) {
-        targetNode.splitText(overlapEnd);
+      if (!startNode && startOffset >= start && startOffset < end) {
+        startNode = node;
+        startNodeOffset = startOffset - start;
       }
-      if (overlapStart > 0) {
-        targetNode = targetNode.splitText(overlapStart);
+      if (endOffset > start && endOffset <= end) {
+        endNode = node;
+        endNodeOffset = endOffset - start;
+        break;
       }
+    }
 
-      // Wrap the target node
-      targetNode.parentNode?.insertBefore(mark, targetNode);
-      mark.appendChild(targetNode);
+    if (!startNode || !endNode) continue;
+
+    // Create Range and get visual rects
+    const range = document.createRange();
+    try {
+      range.setStart(startNode, startNodeOffset);
+      range.setEnd(endNode, endNodeOffset);
+    } catch {
+      continue;
+    }
+
+    const clientRects = range.getClientRects();
+    for (const rect of clientRects) {
+      if (rect.width < 1 || rect.height < 1) continue;
+
+      allRects.push({
+        commentId: comment.id,
+        // Viewport-relative → scroll-container-absolute
+        top: rect.top - scrollRect.top + scrollContainer.scrollTop,
+        left: rect.left - scrollRect.left + scrollContainer.scrollLeft,
+        width: rect.width,
+        height: rect.height,
+      });
     }
   }
+
+  return allRects;
 }
+
+// ============================================
+// Hook
+// ============================================
 
 export function useReviewHighlights(
   containerRef: RefObject<HTMLDivElement | null>,
+  scrollRef: RefObject<HTMLDivElement | null>,
   comments: ReviewComment[],
   activeCommentId: string | null,
-  onHighlightClick: (commentId: string) => void,
-  scrollToHighlightRef: MutableRefObject<((commentId: string) => void) | undefined>,
 ) {
-  const onClickRef = useRef(onHighlightClick);
+  const [rects, setRects] = useState<HighlightRect[]>([]);
+  const rafRef = useRef<number>(0);
+  const commentsRef = useRef(comments);
   useEffect(() => {
-    onClickRef.current = onHighlightClick;
-  }, [onHighlightClick]);
+    commentsRef.current = comments;
+  }, [comments]);
 
-  // Apply/reapply highlights when comments or active comment changes
+  // Core recalc function (with shallow compare to avoid infinite loops)
+  const recalcRects = useCallback(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      const container = containerRef.current;
+      const scrollContainer = scrollRef.current;
+      if (!container || !scrollContainer) return;
+      const newRects = computeHighlightRects(container, scrollContainer, commentsRef.current);
+      setRects(prev => {
+        if (prev.length === newRects.length && prev.every((r, i) =>
+          r.commentId === newRects[i].commentId &&
+          Math.abs(r.top - newRects[i].top) < 0.5 &&
+          Math.abs(r.left - newRects[i].left) < 0.5 &&
+          Math.abs(r.width - newRects[i].width) < 0.5 &&
+          Math.abs(r.height - newRects[i].height) < 0.5
+        )) return prev;
+        return newRects;
+      });
+    });
+  }, [containerRef, scrollRef]);
+
+  // Recalc when comments or active comment changes
+  useEffect(() => {
+    recalcRects();
+  }, [comments, activeCommentId, recalcRects]);
+
+  // MutationObserver: recalc when MarkdownRenderer updates the DOM
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    // Small delay to ensure MarkdownRenderer has finished rendering
-    const timer = setTimeout(() => {
-      clearHighlights(container);
-      applyHighlights(container, comments, activeCommentId);
-    }, 50);
+    const mo = new MutationObserver(() => recalcRects());
+    mo.observe(container, { childList: true, subtree: true, characterData: true });
+    return () => mo.disconnect();
+  }, [containerRef, recalcRects]);
 
-    return () => clearTimeout(timer);
-  }, [containerRef, comments, activeCommentId]);
-
-  // Click handler for highlights (delegated)
+  // ResizeObserver: recalc on container size change (font load, image load, etc.)
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const handler = (e: MouseEvent) => {
-      const mark = (e.target as HTMLElement).closest('mark.review-highlight');
-      if (mark && mark instanceof HTMLElement && mark.dataset.commentId) {
-        e.stopPropagation();
-        onClickRef.current(mark.dataset.commentId);
-      }
+    const ro = new ResizeObserver(() => recalcRects());
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [containerRef, recalcRects]);
+
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
+  }, []);
 
-    container.addEventListener('click', handler);
-    return () => container.removeEventListener('click', handler);
-  }, [containerRef]);
-
-  // Expose scroll-to-highlight function
+  // Scroll to highlight
   const scrollToHighlight = useCallback((commentId: string) => {
-    const container = containerRef.current;
-    if (!container) return;
-    const mark = container.querySelector(`mark.review-highlight[data-comment-id="${commentId}"]`);
-    if (mark) {
-      mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  }, [containerRef]);
+    const scrollContainer = scrollRef.current;
+    if (!scrollContainer) return;
 
-  useEffect(() => {
-    scrollToHighlightRef.current = scrollToHighlight;
-  }, [scrollToHighlight, scrollToHighlightRef]);
+    const firstRect = rects.find(r => r.commentId === commentId);
+    if (!firstRect) return;
+
+    const containerHeight = scrollContainer.clientHeight;
+    scrollContainer.scrollTo({
+      top: firstRect.top - containerHeight / 2 + firstRect.height / 2,
+      behavior: 'smooth',
+    });
+  }, [scrollRef, rects]);
+
+  return { rects, scrollToHighlight };
 }

@@ -64,9 +64,10 @@ if (process.argv[2] === 'terminal') {
 }
 
 // Start (foreground, Ctrl+C to stop)
-// .next/ 由 prepare (npm run build) 预编译，安装后直接启动
+const isDev = process.env.COCKPIT_ENV === 'dev';
 const { existsSync } = await import('fs');
-if (!existsSync(resolve(PROJECT_ROOT, '.next', 'BUILD_ID'))) {
+// prod 模式需要预编译产物，dev 模式由 Next.js 即时编译
+if (!isDev && !existsSync(resolve(PROJECT_ROOT, '.next-prod', 'BUILD_ID'))) {
   console.error('No production build found.\n');
   console.error('Run: npm run build');
   process.exit(1);

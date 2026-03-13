@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback, useMemo, memo } from 'react';
 import { ImageInfo } from '@/types/chat';
 import { ImagePreview } from '../shared/ImagePreview';
 import { toast } from '../shared/Toast';
@@ -33,14 +33,13 @@ interface ChatInputProps {
   }) => void;
 }
 
-export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowComments, onShowUserMessages, onOpenNote, onCreateScheduledTask }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowComments, onShowUserMessages, onOpenNote, onCreateScheduledTask }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [images, setImages] = useState<ImageInfo[]>([]);
   const [commands, setCommands] = useState<CommandInfo[]>([]);
-  const [showCommands, setShowCommands] = useState(false);
   const [showScheduler, setShowScheduler] = useState(false);
-  const [filteredCommands, setFilteredCommands] = useState<CommandInfo[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [commandsDismissed, setCommandsDismissed] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const commandListRef = useRef<HTMLDivElement>(null);
 
@@ -58,8 +57,8 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
     textarea.style.height = `${newHeight}px`;
   }, []);
 
-  // 当输入内容变化时调整高度
-  useEffect(() => {
+  // 当输入内容变化时调整高度（useLayoutEffect：在 paint 前同步执行，避免双 paint 跳动）
+  useLayoutEffect(() => {
     adjustTextareaHeight();
   }, [input, adjustTextareaHeight]);
 
@@ -80,23 +79,29 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
     loadCommands();
   }, [cwd]);
 
-  // 监听输入变化，检测是否需要显示命令列表
-  useEffect(() => {
-    if (input.startsWith('/')) {
-      const keyword = input.toLowerCase();
-      const filtered = commands.filter((cmd) =>
-        cmd.name.toLowerCase().startsWith(keyword)
-      );
-      setFilteredCommands(filtered);
-      setShowCommands(filtered.length > 0);
-      setSelectedIndex(0);
-    } else {
-      setShowCommands(false);
-    }
+  // 命令过滤：useMemo 派生计算，消灭每次击键 3 个 setState
+  const filteredCommands = useMemo(() => {
+    if (!input.startsWith('/')) return [];
+    const keyword = input.toLowerCase();
+    return commands.filter((cmd) =>
+      cmd.name.toLowerCase().startsWith(keyword)
+    );
   }, [input, commands]);
 
+  const showCommands = !commandsDismissed && input.startsWith('/') && filteredCommands.length > 0;
+
+  // input 变化时重置选中索引和 dismiss 状态
+  const prevInputRef = useRef(input);
+  useLayoutEffect(() => {
+    if (prevInputRef.current !== input) {
+      setSelectedIndex(0);
+      if (commandsDismissed) setCommandsDismissed(false);
+      prevInputRef.current = input;
+    }
+  }, [input, commandsDismissed]);
+
   // 滚动选中项到可视区域
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (showCommands && commandListRef.current) {
       const selectedItem = commandListRef.current.children[selectedIndex] as HTMLElement;
       if (selectedItem) {
@@ -105,7 +110,7 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
     }
   }, [selectedIndex, showCommands]);
 
-  const handleSend = () => {
+  const handleSend = useCallback(() => {
     const trimmed = input.trim();
     const hasContent = trimmed || images.length > 0;
 
@@ -113,21 +118,19 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
       onSend(trimmed, images.length > 0 ? images : undefined);
       setInput('');
       setImages([]);
-      setShowCommands(false);
       // 重置 textarea 高度
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
       }
     }
-  };
+  }, [input, images, disabled, onSend]);
 
-  const handleSelectCommand = (command: CommandInfo) => {
+  const handleSelectCommand = useCallback((command: CommandInfo) => {
     setInput(command.name + ' ');
-    setShowCommands(false);
     textareaRef.current?.focus();
-  };
+  }, []);
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
     // 检查是否正在进行输入法组合输入（如中文拼音输入）
     if (e.nativeEvent.isComposing) {
       return;
@@ -152,7 +155,7 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
       }
       if (e.key === 'Escape') {
         e.preventDefault();
-        setShowCommands(false);
+        setCommandsDismissed(true);
         return;
       }
       if (e.key === 'Tab') {
@@ -167,7 +170,7 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
       e.preventDefault();
       handleSend();
     }
-  };
+  }, [showCommands, filteredCommands, selectedIndex, handleSelectCommand, handleSend]);
 
   const handlePaste = useCallback((e: ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData?.items;
@@ -398,4 +401,4 @@ export function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowCommen
 
     </div>
   );
-}
+});

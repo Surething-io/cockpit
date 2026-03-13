@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { ChatMessage, TokenUsage, ImageInfo } from '@/types/chat';
 import { MessageList, MessageListHandle } from './MessageList';
 import { ChatInput } from './ChatInput';
@@ -268,6 +268,27 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     }
   }, [initialCwd, sessionId, onOpenSession]);
 
+  // 稳定 ChatInput 的回调 props，配合 React.memo 避免不必要的重渲染
+  const handleShowComments = useCallback(() => {
+    setIsCommentsListOpen(true);
+  }, []);
+
+  const handleShowUserMessages = useCallback(() => {
+    setIsUserMessagesOpen(true);
+  }, []);
+
+  const handleCreateScheduledTask = useMemo(() => {
+    if (!onCreateScheduledTask || !initialCwd || !tabId || !sessionId) return undefined;
+    return (params: { message: string; type: 'once' | 'interval' | 'cron'; delayMinutes?: number; intervalMinutes?: number; activeFrom?: string; activeTo?: string; cron?: string }) => {
+      onCreateScheduledTask({
+        ...params,
+        cwd: initialCwd,
+        tabId,
+        sessionId,
+      });
+    };
+  }, [onCreateScheduledTask, initialCwd, tabId, sessionId]);
+
   return (
     <div className={`flex ${hideHeader && hideSidebar ? 'h-full' : 'h-screen'} bg-card`}>
       {/* Main Content */}
@@ -317,17 +338,10 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
           disabled={isLoading}
           cwd={initialCwd}
           onShowGitStatus={onShowGitStatus}
-          onShowComments={initialCwd ? () => setIsCommentsListOpen(true) : undefined}
-          onShowUserMessages={() => setIsUserMessagesOpen(true)}
+          onShowComments={initialCwd ? handleShowComments : undefined}
+          onShowUserMessages={handleShowUserMessages}
           onOpenNote={onOpenNote}
-          onCreateScheduledTask={onCreateScheduledTask && initialCwd && tabId && sessionId ? (params) => {
-            onCreateScheduledTask({
-              ...params,
-              cwd: initialCwd,
-              tabId,
-              sessionId,
-            });
-          } : undefined}
+          onCreateScheduledTask={handleCreateScheduledTask}
         />
       </div>
 

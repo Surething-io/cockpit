@@ -119,6 +119,10 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   onContentMutate,
   onEnterInsertMode,
   onViSave,
+  viStateRef,
+  initialCursorLine,
+  initialCursorCol,
+  onInitialCursorSet,
 }, ref) {
   // ========== 编辑模式状态 ==========
   const editContentRef = useRef(content); // ref：不触发 re-render，仅在 save/highlight 时读取
@@ -257,6 +261,29 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     onSearchPrev: goToPrevMatch,
     onSearchClear: () => { setSearchQuery(''); },
   });
+
+  // 持续同步 vi 光标位置到外部 ref（供 FileBrowserModal 读取，保存到最近访问）
+  useEffect(() => {
+    if (viStateRef) {
+      viStateRef.current = { cursorLine: vi.state.cursorLine, cursorCol: vi.state.cursorCol };
+    }
+  }, [viStateRef, vi.state.cursorLine, vi.state.cursorCol]);
+
+  // 文件切换回来时还原光标位置
+  const initialCursorAppliedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!viModeEnabled || editable) return;
+    if (initialCursorLine == null || !filePath) return;
+    // 每个文件只还原一次
+    if (initialCursorAppliedRef.current === filePath) return;
+    initialCursorAppliedRef.current = filePath;
+    vi.setCursorLine(initialCursorLine - 1); // 1-based → 0-based
+    if (initialCursorCol != null) {
+      vi.setCursorCol(initialCursorCol - 1);
+    }
+    onInitialCursorSet?.();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viModeEnabled, editable, initialCursorLine, initialCursorCol, filePath]);
 
   // Vi Normal mode keyboard listener (on container element)
   useEffect(() => {

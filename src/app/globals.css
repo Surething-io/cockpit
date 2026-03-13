@@ -619,44 +619,7 @@ body {
 mark.chat-search-match { background: rgba(217, 119, 6, 0.3); color: inherit; border-radius: 2px; }
 mark.chat-search-current { background: rgba(217, 119, 6, 0.6); color: inherit; border-radius: 2px; }
 
-/* ---- Review highlight ---- */
-mark.review-highlight {
-  background-color: rgba(234, 179, 8, 0.15);
-  border-bottom: 1px solid rgba(234, 179, 8, 0.7);
-  cursor: pointer;
-  transition: background-color 0.15s;
-  border-radius: 1px;
-  color: inherit;
-}
-mark.review-highlight:hover {
-  background-color: rgba(234, 179, 8, 0.3);
-}
-mark.review-highlight.active {
-  background-color: rgba(234, 179, 8, 0.4);
-  animation: review-highlight-flash 2s ease-out;
-}
-.dark mark.review-highlight {
-  background-color: rgba(234, 179, 8, 0.1);
-  border-bottom-color: rgba(234, 179, 8, 0.5);
-}
-.dark mark.review-highlight:hover {
-  background-color: rgba(234, 179, 8, 0.2);
-}
-.dark mark.review-highlight.active {
-  background-color: rgba(234, 179, 8, 0.3);
-}
-mark.review-highlight.pending {
-  background-color: rgba(234, 179, 8, 0.3);
-  border-bottom-color: rgba(234, 179, 8, 0.9);
-}
-.dark mark.review-highlight.pending {
-  background-color: rgba(234, 179, 8, 0.2);
-  border-bottom-color: rgba(234, 179, 8, 0.7);
-}
-@keyframes review-highlight-flash {
-  0%   { background-color: rgba(234, 179, 8, 0.5); }
-  100% { background-color: rgba(234, 179, 8, 0.15); }
-}
+/* Review highlight styles are rendered as inline styles in HighlightOverlayLayer.tsx */
 
 /* ============================================
    ANSI Terminal Color Classes (ansi_up)

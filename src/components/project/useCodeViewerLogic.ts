@@ -63,6 +63,14 @@ export interface CodeViewerProps {
   onEnterInsertMode?: (line: number) => void;
   /** Vi: :w 保存回调 */
   onViSave?: () => void;
+  /** 外部传入的 ref，CodeViewer 持续更新为当前 vi 光标位置（0-based） */
+  viStateRef?: React.MutableRefObject<{ cursorLine: number; cursorCol: number } | null>;
+  /** 还原光标行（1-based，文件切换回来时使用） */
+  initialCursorLine?: number | null;
+  /** 还原光标列（1-based） */
+  initialCursorCol?: number | null;
+  /** 光标还原完成回调 */
+  onInitialCursorSet?: () => void;
 }
 
 export interface FloatingToolbarData {

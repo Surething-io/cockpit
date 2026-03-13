@@ -4,9 +4,12 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { useState, useMemo, ComponentPropsWithoutRef } from 'react';
+import { memo, useState, useMemo, ComponentPropsWithoutRef } from 'react';
 import { useTheme } from './ThemeProvider';
 import { MermaidBlock } from './MermaidBlock';
+
+// Stable reference — avoid recreating on every render
+const REMARK_PLUGINS = [remarkGfm];
 
 interface MarkdownRendererProps {
   content: string;
@@ -146,10 +149,15 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
   };
 }
 
-export function MarkdownRenderer({ content, isUser = false, isStreaming = false, rehypePlugins }: MarkdownRendererProps) {
+export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser = false, isStreaming = false, rehypePlugins }: MarkdownRendererProps) {
   // 使用全局 Theme Context，避免每个组件都创建 MutationObserver
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
+
+  // Memoize components to keep stable references — prevents ReactMarkdown from
+  // tearing down and recreating the entire DOM tree on parent re-renders
+  const components = useMemo(() => createMarkdownComponents(isDark), [isDark]);
+  const streamComponents = useMemo(() => createMarkdownComponents(isDark, true), [isDark]);
 
   // 流式结束后或历史消息，检测并预处理 ASCII 图表
   const processedContent = useMemo(() => {
@@ -182,8 +190,8 @@ export function MarkdownRenderer({ content, isUser = false, isStreaming = false,
       <div className="markdown-body">
         {/* 已完成的行用 Markdown 渲染 */}
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          components={createMarkdownComponents(isDark, true)}
+          remarkPlugins={REMARK_PLUGINS}
+          components={streamComponents}
         >
           {completedLines}
         </ReactMarkdown>
@@ -198,15 +206,15 @@ export function MarkdownRenderer({ content, isUser = false, isStreaming = false,
   return (
     <div className="markdown-body">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={REMARK_PLUGINS}
         rehypePlugins={rehypePlugins}
-        components={createMarkdownComponents(isDark)}
+        components={components}
       >
         {processedContent}
       </ReactMarkdown>
     </div>
   );
-}
+});
 
 // 复制按钮组件
 function CopyButton({ text }: { text: string }) {

@@ -1,10 +1,12 @@
 'use client';
 
-import { useRef, useCallback, useState, useMemo, MutableRefObject } from 'react';
+import { useRef, useCallback, useState, useMemo, useEffect, MutableRefObject } from 'react';
 import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer';
 import { TocSidebar } from '@/components/shared/TocSidebar';
+import { useTheme } from '@/components/shared/ThemeProvider';
 import { rehypeSourceLines } from '@/lib/rehypeSourceLines';
 import { AddCommentPopup } from './AddCommentPopup';
+import { HighlightOverlayLayer } from './HighlightOverlayLayer';
 import { useReviewHighlights } from '@/hooks/useReviewHighlights';
 import { ReviewComment } from '@/lib/review-utils';
 
@@ -64,6 +66,8 @@ export function ReviewMarkdownPanel({
   onHighlightClick,
   scrollToHighlightRef,
 }: Props) {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [popupState, setPopupState] = useState<{
@@ -85,44 +89,68 @@ export function ReviewMarkdownPanel({
     } as ReviewComment];
   }, [comments, popupState]);
 
-  // Apply highlights via DOM manipulation
-  useReviewHighlights(containerRef, highlightComments, activeCommentId, onHighlightClick, scrollToHighlightRef);
+  // Compute highlight overlay rects (no DOM mutation)
+  const { rects, scrollToHighlight } = useReviewHighlights(
+    containerRef,
+    scrollRef,
+    highlightComments,
+    activeCommentId,
+  );
 
-  // Handle text selection
+  // Wire up scrollToHighlightRef for cross-panel scrolling
+  useEffect(() => {
+    scrollToHighlightRef.current = scrollToHighlight;
+  }, [scrollToHighlight, scrollToHighlightRef]);
+
+  // Stable ref for rects so click handler always sees latest
+  const rectsRef = useRef(rects);
+  useEffect(() => { rectsRef.current = rects; }, [rects]);
+
+  // Handle text selection + highlight click (via coordinate hit-test)
   const handleMouseUp = useCallback((e: React.MouseEvent) => {
-    if (!isActive) return;
-
     const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || !containerRef.current) {
-      return;
+    const hasSelection = selection && !selection.isCollapsed;
+
+    // If user selected text → show add-comment popup
+    if (hasSelection && isActive && containerRef.current) {
+      const range = selection.getRangeAt(0);
+      if (containerRef.current.contains(range.startContainer) &&
+          containerRef.current.contains(range.endContainer)) {
+        const offsets = computeTextOffsets(containerRef.current, range);
+        if (offsets) {
+          const scrollContainer = scrollRef.current ?? containerRef.current.parentElement!;
+          const scrollRect = scrollContainer.getBoundingClientRect();
+          setPopupState({
+            anchor: offsets,
+            position: {
+              top: e.clientY - scrollRect.top + scrollContainer.scrollTop + 8,
+              left: e.clientX - scrollRect.left,
+            },
+          });
+          selection.removeAllRanges();
+          return;
+        }
+      }
     }
 
-    const range = selection.getRangeAt(0);
+    // No text selected → check if click hits a highlight overlay (coordinate hit-test)
+    if (!hasSelection && !popupState) {
+      const scrollContainer = scrollRef.current;
+      if (!scrollContainer) return;
+      const scrollRect = scrollContainer.getBoundingClientRect();
+      const x = e.clientX - scrollRect.left + scrollContainer.scrollLeft;
+      const y = e.clientY - scrollRect.top + scrollContainer.scrollTop;
 
-    // Ensure selection is within our container
-    if (!containerRef.current.contains(range.startContainer) ||
-        !containerRef.current.contains(range.endContainer)) {
-      return;
+      for (const rect of rectsRef.current) {
+        if (rect.commentId === '__pending__') continue;
+        if (x >= rect.left && x <= rect.left + rect.width &&
+            y >= rect.top && y <= rect.top + rect.height) {
+          onHighlightClick(rect.commentId);
+          return;
+        }
+      }
     }
-
-    const offsets = computeTextOffsets(containerRef.current, range);
-    if (!offsets) return;
-
-    // Position popup at mouse up location
-    const scrollContainer = scrollRef.current ?? containerRef.current.parentElement!;
-    const scrollRect = scrollContainer.getBoundingClientRect();
-
-    setPopupState({
-      anchor: offsets,
-      position: {
-        top: e.clientY - scrollRect.top + scrollContainer.scrollTop + 8,
-        left: e.clientX - scrollRect.left,
-      },
-    });
-
-    // Clear browser selection so only yellow underline is visible
-    selection.removeAllRanges();
-  }, [isActive]);
+  }, [isActive, popupState, onHighlightClick]);
 
   const handleAddComment = useCallback((commentContent: string) => {
     if (!popupState) return;
@@ -143,6 +171,14 @@ export function ReviewMarkdownPanel({
         <div ref={containerRef} className="p-6 review-markdown-container">
           <MarkdownRenderer content={content} rehypePlugins={REHYPE_PLUGINS} />
         </div>
+
+        {/* Highlight overlay — pointer-events:none, purely visual */}
+        <HighlightOverlayLayer
+          rects={rects}
+          activeCommentId={activeCommentId}
+          pendingCommentId={popupState ? '__pending__' : null}
+          isDark={isDark}
+        />
 
         {popupState && (
           <AddCommentPopup

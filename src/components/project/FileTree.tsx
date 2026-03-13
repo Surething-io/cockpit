@@ -198,6 +198,7 @@ export interface FileTreeProps {
   onToggle: (path: string) => void;
   cwd: string;
   shouldScrollToSelected?: boolean;
+  onScrolledToSelected?: () => void;
   className?: string;
   renderActions?: (node: FileNode) => React.ReactNode;
   // 右键菜单操作回调
@@ -216,6 +217,7 @@ export function FileTree({
   onToggle,
   cwd,
   shouldScrollToSelected = false,
+  onScrolledToSelected,
   className,
   renderActions,
   onCreateFile,
@@ -236,7 +238,10 @@ export function FileTree({
     overscan: 10,
   });
 
-  // Scroll to selected file only when shouldScrollToSelected is true
+  // Scroll to selected file only when shouldScrollToSelected is true (one-shot)
+  const onScrolledRef = useRef(onScrolledToSelected);
+  onScrolledRef.current = onScrolledToSelected;
+
   useEffect(() => {
     if (shouldScrollToSelected && selectedPath && flatItems.length > 0) {
       const index = flatItems.findIndex(item => item.node.path === selectedPath);
@@ -244,6 +249,8 @@ export function FileTree({
         // 延迟执行确保 DOM 已渲染（tab 切换后需要等待 hidden 状态移除）
         const timer = setTimeout(() => {
           virtualizer.scrollToIndex(index, { align: 'center' });
+          // 滚动完成后自动重置标志，避免 expand/collapse 重复触发
+          onScrolledRef.current?.();
         }, 150);
         return () => clearTimeout(timer);
       }

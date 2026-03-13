@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { type CommitInfo } from '../components/project/CommitDetailPanel';
 import type { FileNode, FileContent, BlameLine } from '../components/project/fileBrowser/types';
 import { buildTreeFromPaths, collectAllDirPaths, computeMatchedPaths } from '../components/project/fileBrowser/utils';
+import type { RecentFileEntry } from '../app/api/files/recent/route';
 
 interface UseFileTreeOptions {
   cwd: string;
@@ -10,7 +11,7 @@ interface UseFileTreeOptions {
 export function useFileTree({ cwd }: UseFileTreeOptions) {
   // ========== File Browser State ==========
   const [files, setFiles] = useState<FileNode[]>([]);
-  const [recentFiles, setRecentFiles] = useState<string[]>([]);
+  const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
@@ -27,6 +28,11 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
   const [shouldScrollToSelected, setShouldScrollToSelected] = useState(false);
   // 跳转到的目标行号（搜索结果点击时使用）
   const [targetLineNumber, setTargetLineNumber] = useState<number | null>(null);
+  // 滚动对齐方式：'start'=还原位置（首行对齐），'center'=搜索/LSP跳转（居中高亮）
+  const [targetScrollAlign, setTargetScrollAlign] = useState<'center' | 'start'>('center');
+  // 还原光标位置（从最近访问切换回来时）
+  const [initialCursorLine, setInitialCursorLine] = useState<number | null>(null);
+  const [initialCursorCol, setInitialCursorCol] = useState<number | null>(null);
 
   // Blame state
   const [showBlame, setShowBlame] = useState(false);
@@ -42,9 +48,11 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
   const [showEditor, setShowEditor] = useState(false);
 
   // ========== Memoized Values ==========
+  const recentFilePaths = useMemo(() => recentFiles.map(f => f.path).filter(Boolean), [recentFiles]);
+
   const recentFilesTree = useMemo(() => {
-    return buildTreeFromPaths(recentFiles);
-  }, [recentFiles]);
+    return buildTreeFromPaths(recentFilePaths);
+  }, [recentFilePaths]);
 
   const recentTreeDirPaths = useMemo(() => {
     return new Set(collectAllDirPaths(recentFilesTree));
@@ -141,8 +149,8 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
   const addToRecentFiles = useCallback(async (filePath: string) => {
     // Optimistically update local state (move to front, avoid duplicates)
     setRecentFiles(prev => {
-      const filtered = prev.filter(f => f !== filePath);
-      return [filePath, ...filtered].slice(0, 15); // Keep max 15 recent files (same as API)
+      const filtered = prev.filter(f => f.path !== filePath);
+      return [{ path: filePath }, ...filtered].slice(0, 15);
     });
 
     // Persist to server (fire and forget)
@@ -156,6 +164,26 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
       console.error('Error adding to recent files:', err);
     }
   }, [cwd]);
+
+  /** 更新最近访问条目的光标/滚动位置（不改变顺序） */
+  const updateRecentFilePosition = useCallback((filePath: string, scrollLine: number, cursorLine: number, cursorCol: number) => {
+    // 乐观更新本地 state
+    setRecentFiles(prev => prev.map(f =>
+      f.path === filePath ? { ...f, scrollLine, cursorLine, cursorCol } : f
+    ));
+
+    // Persist to server (fire and forget)
+    fetch('/api/files/recent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cwd, file: filePath, scrollLine, cursorLine, cursorCol }),
+    }).catch(() => {});
+  }, [cwd]);
+
+  /** 查找文件在最近访问中的位置信息 */
+  const getRecentFilePosition = useCallback((filePath: string) => {
+    return recentFiles.find(f => f.path === filePath);
+  }, [recentFiles]);
 
   const loadBlame = useCallback(async (pathOverride?: string) => {
     const path = pathOverride || selectedPath;
@@ -212,8 +240,27 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
   }, [showBlame, blameLines.length, loadBlame]);
 
   const handleSelectFile = useCallback((path: string, lineNumber?: number) => {
+    if (!path) return;
     setSelectedPath(path);
     setTargetLineNumber(lineNumber ?? null);
+    // 如果没有指定行号，尝试从最近访问中还原位置
+    if (lineNumber == null) {
+      const pos = recentFiles.find(f => f.path === path);
+      if (pos?.scrollLine) {
+        setTargetLineNumber(pos.scrollLine);
+        setTargetScrollAlign('start');         // 还原位置：首行对齐
+        setInitialCursorLine(pos.cursorLine ?? null);
+        setInitialCursorCol(pos.cursorCol ?? null);
+      } else {
+        setTargetScrollAlign('center');
+        setInitialCursorLine(null);
+        setInitialCursorCol(null);
+      }
+    } else {
+      setTargetScrollAlign('center');          // 搜索/LSP跳转：居中高亮
+      setInitialCursorLine(null);
+      setInitialCursorCol(null);
+    }
     loadFileContent(path);
 
     // Auto-expand parent directories
@@ -238,7 +285,7 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
         return changed ? next : prev;
       });
     }
-  }, [loadFileContent, saveExpandedPaths]);
+  }, [loadFileContent, saveExpandedPaths, recentFiles]);
 
   const handleToggle = useCallback((path: string) => {
     if (searchTreeExpandedPaths) {
@@ -290,6 +337,12 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     setShouldScrollToSelected,
     targetLineNumber,
     setTargetLineNumber,
+    targetScrollAlign,
+    setTargetScrollAlign,
+    initialCursorLine,
+    initialCursorCol,
+    setInitialCursorLine,
+    setInitialCursorCol,
 
     // Shared file viewing state
     selectedPath,
@@ -298,6 +351,7 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     setFileContent,
     isLoadingContent,
     recentFiles,
+    recentFilePaths,
     setRecentFiles,
     recentFilesTree,
     recentTreeDirPaths,
@@ -323,6 +377,8 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     loadFiles,
     loadRecentFiles,
     addToRecentFiles,
+    updateRecentFilePosition,
+    getRecentFilePosition,
     loadFileContent,
     loadBlame,
     handleToggleBlame,

@@ -252,7 +252,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
               </div>
             )}
             {uniqueMessages.map((message) => (
-              <div key={message.id} data-message-id={message.id} className="transition-all duration-300">
+              <div key={message.id} data-message-id={message.id} className="transition-[box-shadow] duration-300">
                 <MessageBubble
                   message={message}
                   cwd={cwd}

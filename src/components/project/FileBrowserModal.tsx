@@ -44,6 +44,8 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const [hoverTooltip, setHoverTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   // CodeViewer 当前可见行号（1-based），用于编辑器 ↔ 查看器行位置同步
   const visibleLineRef = useRef<number>(1);
+  // vi 光标位置 ref（0-based），由 CodeViewer 持续更新
+  const viStateRef = useRef<{ cursorLine: number; cursorCol: number } | null>(null);
   // 从编辑器返回时要跳转的行号
   const [editorReturnLine, setEditorReturnLine] = useState<number | null>(null);
   // 编辑器 ref 和状态（用于顶部工具栏渲染保存/关闭按钮）
@@ -102,6 +104,29 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       toast('保存失败', 'error');
     }
   }, [cwd, fileTree]);
+
+  // ========== 切换文件前保存当前位置到最近访问 ==========
+  const saveCurrentFilePosition = useCallback(() => {
+    if (!fileTree.selectedPath) return;
+    const scrollLine = visibleLineRef.current;
+    const cursor = viStateRef.current;
+    if (scrollLine > 0) {
+      fileTree.updateRecentFilePosition(
+        fileTree.selectedPath,
+        scrollLine,
+        cursor ? cursor.cursorLine + 1 : scrollLine,  // 0-based → 1-based
+        cursor ? cursor.cursorCol + 1 : 1,
+      );
+    }
+  }, [fileTree]);
+
+  /** 包装 handleSelectFile：切换前自动保存当前文件位置 */
+  const handleSelectFileWithSave = useCallback((path: string, lineNumber?: number) => {
+    if (path !== fileTree.selectedPath) {
+      saveCurrentFilePosition();
+    }
+    fileTree.handleSelectFile(path, lineNumber);
+  }, [fileTree, saveCurrentFilePosition]);
 
   // ========== Search results: matchedPaths + matchMap（复用 FileTree） ==========
   const searchData = useMemo(() => {
@@ -177,7 +202,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       // 同文件：滚动到目标行
       fileTree.setTargetLineNumber(def.line);
     } else {
-      fileTree.handleSelectFile(relativePath, def.line);
+      handleSelectFileWithSave(relativePath, def.line);
     }
   }, [fileTree, cwd, isLSPSupported, lspDefinition, navHistory]);
 
@@ -200,7 +225,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     if (relativePath === fileTree.selectedPath) {
       fileTree.setTargetLineNumber(ref.line);
     } else {
-      fileTree.handleSelectFile(relativePath, ref.line);
+      handleSelectFileWithSave(relativePath, ref.line);
     }
   }, [fileTree, cwd, navHistory]);
 
@@ -303,7 +328,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     if (target.filePath === fileTree.selectedPath) {
       fileTree.setTargetLineNumber(target.lineNumber);
     } else {
-      fileTree.handleSelectFile(target.filePath, target.lineNumber);
+      handleSelectFileWithSave(target.filePath, target.lineNumber);
     }
   }, [fileTree, navHistory]);
 
@@ -315,7 +340,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     if (target.filePath === fileTree.selectedPath) {
       fileTree.setTargetLineNumber(target.lineNumber);
     } else {
-      fileTree.handleSelectFile(target.filePath, target.lineNumber);
+      handleSelectFileWithSave(target.filePath, target.lineNumber);
     }
   }, [fileTree, navHistory]);
 
@@ -418,14 +443,15 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
     if ((activeTab === 'tree' || activeTab === 'recent') && fileTree.recentFiles.length > 0) {
       const isFromOtherTab = prevTab === 'status' || prevTab === 'history';
-      const needsUpdate = !fileTree.selectedPath || (isFromOtherTab && fileTree.selectedPath !== fileTree.recentFiles[0]);
+      const firstRecentPath = fileTree.recentFiles[0].path;
+      const needsUpdate = !fileTree.selectedPath || (isFromOtherTab && fileTree.selectedPath !== firstRecentPath);
 
       if (needsUpdate) {
         fileTree.setShouldScrollToSelected(true);
-        fileTree.handleSelectFile(fileTree.recentFiles[0]);
+        handleSelectFileWithSave(firstRecentPath);
       }
     }
-  }, [activeTab, fileTree.recentFiles, fileTree.selectedPath, fileTree.handleSelectFile, fileTree]);
+  }, [activeTab, fileTree.recentFiles, fileTree.selectedPath, handleSelectFileWithSave, fileTree]);
 
   // ========== Refresh Handler ==========
   const handleRefresh = useCallback(() => {
@@ -836,7 +862,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               if (parentPath) {
                                 fileTree.setExpandedPaths(prev => new Set([...prev, parentPath]));
                               }
-                              fileTree.handleSelectFile(fullPath);
+                              handleSelectFileWithSave(fullPath);
                             } else {
                               const data = await res.json();
                               toast(data.error || '创建失败', 'error');
@@ -865,11 +891,12 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     gitStatusMap={gitStatusMap}
                     onSelect={(path) => {
                       fileTree.setShouldScrollToSelected(false);
-                      fileTree.handleSelectFile(path);
+                      handleSelectFileWithSave(path);
                     }}
                     onToggle={fileTree.handleToggle}
                     cwd={cwd}
                     shouldScrollToSelected={fileTree.shouldScrollToSelected}
+                    onScrolledToSelected={() => fileTree.setShouldScrollToSelected(false)}
                     onCreateFile={(dirPath) => fileTree.setCreatingItem({ type: 'file', parentPath: dirPath })}
                     onDelete={(path, isDir, name) => setDeleteConfirm({ path, isDirectory: isDir, name })}
                     onRefresh={() => fileTree.loadFiles()}
@@ -906,7 +933,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       matchedPaths={searchData.matchedPaths}
                       onSelect={(path) => {
                         const result = searchData.matchMap.get(path);
-                        fileTree.handleSelectFile(path, result?.matches[0]?.lineNumber);
+                        handleSelectFileWithSave(path, result?.matches[0]?.lineNumber);
                         if (!showSearchPanel) setShowSearchPanel(true);
                       }}
                       onToggle={handleSearchTreeToggle}
@@ -929,7 +956,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     files={fileTree.recentFilesTree}
                     selectedPath={fileTree.selectedPath}
                     expandedPaths={fileTree.recentTreeDirPaths}
-                    onSelect={fileTree.handleSelectFile}
+                    onSelect={handleSelectFileWithSave}
                     onToggle={NOOP}
                     cwd={cwd}
                   />
@@ -1377,13 +1404,20 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             cwd={cwd}
                             enableComments={true}
                             scrollToLine={editorReturnLine ?? fileTree.targetLineNumber}
-                            scrollToLineAlign={editorReturnLine != null ? 'start' : 'center'}
+                            scrollToLineAlign={editorReturnLine != null ? 'start' : fileTree.targetScrollAlign}
                             onScrollToLineComplete={() => {
                               setEditorReturnLine(null);
                               fileTree.setTargetLineNumber(null);
                             }}
                             highlightKeyword={activeTab === 'search' ? contentSearch.contentSearchQuery : null}
                             visibleLineRef={visibleLineRef}
+                            viStateRef={viStateRef}
+                            initialCursorLine={fileTree.initialCursorLine}
+                            initialCursorCol={fileTree.initialCursorCol}
+                            onInitialCursorSet={() => {
+                              fileTree.setInitialCursorLine(null);
+                              fileTree.setInitialCursorCol(null);
+                            }}
                             onCmdClick={isLSPSupported ? handleLSPCmdClick : undefined}
                             onTokenHover={isLSPSupported ? handleLSPTokenHover : undefined}
                             onTokenHoverLeave={isLSPSupported ? lspHover.onTokenMouseLeave : undefined}
@@ -1596,9 +1630,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         {showQuickOpen && (
           <QuickFileOpen
             files={fileTree.files}
-            recentFiles={fileTree.recentFiles}
+            recentFiles={fileTree.recentFilePaths}
             onSelectFile={(path) => {
-              fileTree.handleSelectFile(path);
+              handleSelectFileWithSave(path);
               fileTree.setShouldScrollToSelected(true);
               setActiveTab('tree');
             }}
@@ -1619,7 +1653,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     if (fileTree.selectedPath) {
                       navHistory.push({ filePath: fileTree.selectedPath, lineNumber: visibleLineRef.current });
                     }
-                    fileTree.handleSelectFile(path, lineNumber);
+                    handleSelectFileWithSave(path, lineNumber);
                   }}
                   onClose={() => setShowSearchPanel(false)}
                 />
@@ -1677,7 +1711,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       toast(`已删除 ${name}`, 'success');
                       fileTree.loadFiles();
                       if (fileTree.selectedPath === path) {
-                        fileTree.handleSelectFile('');
+                        handleSelectFileWithSave('');
                       }
                     } else {
                       const data = await res.json();

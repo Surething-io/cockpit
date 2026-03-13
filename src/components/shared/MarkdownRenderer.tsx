@@ -103,12 +103,23 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
         return <MermaidBlock code={code} isDark={isDark} />;
       }
 
+      // 从 HAST node 获取代码块在 markdown 源码中的行范围
+      // ``` 围栏占首尾各一行，实际代码内容从 start+1 开始
+      const prePosition = node?.position;
+      const codeStartLine = prePosition ? prePosition.start.line + 1 : 0;
+
       return (
         <SyntaxHighlighter
           style={isDark ? oneDark : oneLight}
           language={language}
           PreTag="div"
           customStyle={{ margin: '0.75rem 0', borderRadius: '0.375rem', fontSize: '0.875rem' }}
+          wrapLines
+          lineProps={(lineNumber: number) => ({
+            'data-source-start': codeStartLine + lineNumber - 1,
+            'data-source-end': codeStartLine + lineNumber - 1,
+            style: { display: 'block' },
+          } as any)}
         >
           {code}
         </SyntaxHighlighter>

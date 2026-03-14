@@ -17,9 +17,11 @@ interface ReviewListPanelProps {
   readOnly?: boolean;
   /** 变化时触发列表刷新（如评论数变化） */
   refreshTrigger?: number;
+  /** 查看评论 */
+  onViewComments?: (reviewId: string) => void;
 }
 
-export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTrigger }: ReviewListPanelProps) {
+export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTrigger, onViewComments }: ReviewListPanelProps) {
   const [reviews, setReviews] = useState<ReviewSummary[]>([]);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
@@ -214,6 +216,21 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
               )}
               {/* 标题 */}
               <span className="text-xs truncate flex-1">{r.title}</span>
+              {/* 查看评论按钮 */}
+              {r.commentCount > 0 && onViewComments && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewComments(r.id);
+                  }}
+                  className="flex-shrink-0 p-0.5 rounded text-muted-foreground/0 group-hover:text-muted-foreground/60 hover:!text-brand hover:!bg-brand/10 transition-colors"
+                  title="查看评论"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                  </svg>
+                </button>
+              )}
               {/* 管理按钮：仅管理员 */}
               {!readOnly && (
                 <>

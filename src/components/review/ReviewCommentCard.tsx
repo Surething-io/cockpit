@@ -2,7 +2,7 @@
 
 import { useState, forwardRef } from 'react';
 import { ReviewComment } from '@/lib/review-utils';
-import type { UserNameMap } from './ReviewPage';
+import type { UserNameMap } from './ReviewCommentsListModal';
 
 interface Props {
   comment: ReviewComment;

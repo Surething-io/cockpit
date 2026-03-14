@@ -6,6 +6,7 @@ interface IdentityProps {
   authorId: string;
   name: string;
   setName: (name: string) => void;
+  confirmName: (name: string) => void;
   randomize: () => void;
 }
 
@@ -33,7 +34,7 @@ export function ReviewIdentitySettings({ identity }: Props) {
   const handleSave = () => {
     const trimmed = editName.trim();
     if (trimmed && trimmed !== identity.name) {
-      identity.setName(trimmed);
+      identity.confirmName(trimmed);  // 主动改名 = 确认昵称 + 同步后端
     }
     setOpen(false);
   };
@@ -58,7 +59,7 @@ export function ReviewIdentitySettings({ identity }: Props) {
             type="text"
             value={editName}
             onChange={e => setEditName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSave(); }}
             className="w-full px-2 py-1 text-sm bg-secondary border border-border rounded focus:outline-none focus:border-brand"
             autoFocus
           />

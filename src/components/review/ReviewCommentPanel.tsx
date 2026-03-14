@@ -3,6 +3,7 @@
 import { useRef, useEffect, useCallback, MutableRefObject } from 'react';
 import { ReviewCommentCard } from './ReviewCommentCard';
 import { ReviewComment } from '@/lib/review-utils';
+import type { UserNameMap } from './ReviewPage';
 
 interface Props {
   comments: ReviewComment[];
@@ -10,7 +11,9 @@ interface Props {
   currentAuthorId: string;
   isActive: boolean;
   isAdmin?: boolean;
+  userNameMap: UserNameMap;
   onCommentClick: (commentId: string) => void;
+  onNavigateComment: (direction: 'prev' | 'next') => void;
   onDeleteComment: (commentId: string) => void;
   onEditComment: (commentId: string, content: string) => void;
   onToggleCommentClosed: (commentId: string, closed: boolean) => void;
@@ -26,7 +29,9 @@ export function ReviewCommentPanel({
   currentAuthorId,
   isActive,
   isAdmin,
+  userNameMap,
   onCommentClick,
+  onNavigateComment,
   onDeleteComment,
   onEditComment,
   onToggleCommentClosed,
@@ -55,10 +60,34 @@ export function ReviewCommentPanel({
 
   return (
     <div ref={containerRef} className="h-full flex flex-col bg-card">
-      <div className="px-4 py-2 bg-secondary border-b border-border flex-shrink-0">
+      <div className="px-4 py-2 bg-secondary border-b border-border flex-shrink-0 flex items-center">
         <span className="text-xs text-muted-foreground">
-          {comments.length === 0 ? '选中左侧文本添加评论' : `${comments.length} 条评论`}
+          {comments.length === 0
+            ? '选中左侧文本添加评论'
+            : activeCommentId
+              ? `${sortedComments.findIndex(c => c.id === activeCommentId) + 1}/${comments.length} 条评论`
+              : `${comments.length} 条评论`}
         </span>
+        {comments.length > 0 && (
+          <div className="flex items-center gap-1 ml-2">
+            <button
+              onClick={() => onNavigateComment('prev')}
+              className="px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors flex items-center gap-0.5"
+              title="上一条"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              上一条
+            </button>
+            <button
+              onClick={() => onNavigateComment('next')}
+              className="px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors flex items-center gap-0.5"
+              title="下一条"
+            >
+              下一条
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -84,6 +113,7 @@ export function ReviewCommentPanel({
                 isAdmin={isAdmin}
                 currentAuthorId={currentAuthorId}
                 canInteract={isActive}
+                userNameMap={userNameMap}
                 onClick={() => onCommentClick(comment.id)}
                 onDelete={() => onDeleteComment(comment.id)}
                 onEdit={(content) => onEditComment(comment.id, content)}

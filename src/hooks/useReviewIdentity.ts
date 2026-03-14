@@ -8,6 +8,7 @@ const STORAGE_KEY = 'cockpit-review-identity';
 interface ReviewIdentity {
   authorId: string;
   name: string;
+  nameConfirmed?: boolean;
 }
 
 function generateAuthorId(): string {
@@ -43,6 +44,19 @@ function loadIdentity(): ReviewIdentity {
   return identity;
 }
 
+function saveIdentity(identity: ReviewIdentity) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(identity));
+}
+
+/** 同步昵称到后端 */
+function syncToBackend(authorId: string, name: string) {
+  fetch('/api/review/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ authorId, name }),
+  }).catch(() => { /* 静默失败 */ });
+}
+
 export function useReviewIdentity() {
   // 初始空值，避免 SSR/hydration 不匹配
   const [identity, setIdentity] = useState<ReviewIdentity>({ authorId: '', name: '' });
@@ -52,10 +66,22 @@ export function useReviewIdentity() {
     setIdentity(loadIdentity());
   }, []);
 
+  /** 修改昵称（不改 confirmed 状态） */
   const setName = useCallback((name: string) => {
     setIdentity(prev => {
       const updated = { ...prev, name };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      saveIdentity(updated);
+      syncToBackend(updated.authorId, name);
+      return updated;
+    });
+  }, []);
+
+  /** 确认昵称（设 nameConfirmed=true + 同步后端） */
+  const confirmName = useCallback((name: string) => {
+    setIdentity(prev => {
+      const updated = { ...prev, name, nameConfirmed: true };
+      saveIdentity(updated);
+      syncToBackend(updated.authorId, name);
       return updated;
     });
   }, []);
@@ -64,5 +90,12 @@ export function useReviewIdentity() {
     setName(randomDisplayName());
   }, [setName]);
 
-  return { authorId: identity.authorId, name: identity.name, setName, randomize };
+  return {
+    authorId: identity.authorId,
+    name: identity.name,
+    nameConfirmed: !!identity.nameConfirmed,
+    setName,
+    confirmName,
+    randomize,
+  };
 }

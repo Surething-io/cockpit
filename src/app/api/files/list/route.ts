@@ -24,15 +24,24 @@ interface GitFileEntry {
 // Uses git ls-files -s to detect symlinks (mode 120000)
 async function getGitVisibleFiles(cwd: string): Promise<GitFileEntry[] | null> {
   try {
-    // git ls-files -s 输出格式: "mode hash stage\tpath"
-    // mode 120000 = symlink
-    const { stdout: stagedOut } = await execAsync(
-      'git -c core.quotePath=false ls-files -s',
-      { cwd, maxBuffer: 10 * 1024 * 1024 }
-    );
+    // 两个 git 命令互不依赖，并行执行
+    const [stagedResult, untrackedResult] = await Promise.all([
+      // git ls-files -s 输出格式: "mode hash stage\tpath"
+      // mode 120000 = symlink
+      execAsync(
+        'git -c core.quotePath=false ls-files -s',
+        { cwd, maxBuffer: 10 * 1024 * 1024 }
+      ),
+      // Untracked + .env files
+      // 使用 -c core.quotePath=false 避免中文文件名被转义为八进制
+      execAsync(
+        '(git -c core.quotePath=false ls-files --others --exclude-standard && find . -name ".env*" \\( -type f -o -type l \\) 2>/dev/null | sed "s|^\\./||") | sort -u',
+        { cwd, maxBuffer: 10 * 1024 * 1024 }
+      ),
+    ]);
 
     const entries = new Map<string, boolean>();
-    for (const line of stagedOut.split('\n')) {
+    for (const line of stagedResult.stdout.split('\n')) {
       if (!line) continue;
       const tabIdx = line.indexOf('\t');
       if (tabIdx === -1) continue;
@@ -41,16 +50,9 @@ async function getGitVisibleFiles(cwd: string): Promise<GitFileEntry[] | null> {
       if (path) entries.set(path, mode === '120000');
     }
 
-    // Untracked + .env files
-    // 使用 -c core.quotePath=false 避免中文文件名被转义为八进制
-    const { stdout: untrackedOut } = await execAsync(
-      '(git -c core.quotePath=false ls-files --others --exclude-standard && find . -name ".env*" \\( -type f -o -type l \\) 2>/dev/null | sed "s|^\\./||") | sort -u',
-      { cwd, maxBuffer: 10 * 1024 * 1024 }
-    );
-
     // Untracked 文件无法从 git 获取 mode，需要 lstat 检测 symlink
     const untrackedPaths: string[] = [];
-    for (const line of untrackedOut.split('\n')) {
+    for (const line of untrackedResult.stdout.split('\n')) {
       const p = line.trim();
       if (p && !entries.has(p)) {
         untrackedPaths.push(p);

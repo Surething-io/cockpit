@@ -5,10 +5,14 @@ import { ReviewMarkdownPanel } from './ReviewMarkdownPanel';
 import { ReviewCommentPanel } from './ReviewCommentPanel';
 import { ReviewIdentitySettings } from './ReviewIdentitySettings';
 import { ReviewListPanel } from './ReviewListPanel';
+import { NicknameModal } from './NicknameModal';
 import { useReviewIdentity } from '@/hooks/useReviewIdentity';
 import { useTheme } from '@/components/shared/ThemeProvider';
 import { ReviewData } from '@/lib/review-utils';
 import { toast } from '@/components/shared/Toast';
+
+/** authorId → 最新昵称 */
+export type UserNameMap = Record<string, string>;
 
 interface ReviewPageProps {
   reviewId: string;
@@ -23,6 +27,33 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
   const [isAdmin, setIsAdmin] = useState(false);
   const identity = useReviewIdentity();
   const { resolvedTheme, setTheme } = useTheme();
+  const [userNameMap, setUserNameMap] = useState<UserNameMap>({});
+  const [showNicknameModal, setShowNicknameModal] = useState(false);
+
+  // 拉取用户映射表
+  const fetchUserMap = useCallback(async () => {
+    try {
+      const res = await fetch('/api/review/users');
+      if (res.ok) {
+        const data = await res.json();
+        const map: UserNameMap = {};
+        for (const [id, record] of Object.entries(data.users)) {
+          map[id] = (record as { name: string }).name;
+        }
+        setUserNameMap(map);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  // 初始加载映射表
+  useEffect(() => { fetchUserMap(); }, [fetchUserMap]);
+
+  // 昵称未确认时弹 Modal（等 identity 加载完成后）
+  useEffect(() => {
+    if (identity.authorId && !identity.nameConfirmed) {
+      setShowNicknameModal(true);
+    }
+  }, [identity.authorId, identity.nameConfirmed]);
 
   // 判断管理员模式
   useEffect(() => {
@@ -77,11 +108,14 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
     fetchReview();
   }, [fetchReview]);
 
-  // Polling for multi-user refresh (every 3s)
+  // Polling for multi-user refresh (every 10s) + 顺带刷新用户映射表
   useEffect(() => {
-    const interval = setInterval(fetchReview, 10000);
+    const interval = setInterval(() => {
+      fetchReview();
+      fetchUserMap();
+    }, 10000);
     return () => clearInterval(interval);
-  }, [fetchReview]);
+  }, [fetchReview, fetchUserMap]);
 
   // Add comment
   const handleAddComment = useCallback(async (
@@ -243,16 +277,30 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
   const handleCommentClick = useCallback((commentId: string) => {
     setActiveCommentId(commentId);
     scrollToHighlightRef.current?.(commentId);
-    // Clear active after animation
-    setTimeout(() => setActiveCommentId(null), 2000);
   }, []);
 
   // Click highlight in left panel -> scroll to comment in right panel
   const handleHighlightClick = useCallback((commentId: string) => {
     setActiveCommentId(commentId);
     scrollToCommentRef.current?.(commentId);
-    setTimeout(() => setActiveCommentId(null), 2000);
   }, []);
+
+  // Navigate to prev/next comment (sorted by document position)
+  const navigateComment = useCallback((direction: 'prev' | 'next') => {
+    if (!review || review.comments.length === 0) return;
+    const sorted = [...review.comments].sort((a, b) => a.anchor.startOffset - b.anchor.startOffset);
+    const currentIndex = activeCommentId ? sorted.findIndex(c => c.id === activeCommentId) : -1;
+    let nextIndex: number;
+    if (direction === 'next') {
+      nextIndex = currentIndex < sorted.length - 1 ? currentIndex + 1 : 0;
+    } else {
+      nextIndex = currentIndex > 0 ? currentIndex - 1 : sorted.length - 1;
+    }
+    const target = sorted[nextIndex];
+    setActiveCommentId(target.id);
+    scrollToHighlightRef.current?.(target.id);
+    scrollToCommentRef.current?.(target.id);
+  }, [review, activeCommentId]);
 
   // 内容区域渲染
   const renderContent = () => {
@@ -298,7 +346,9 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
             currentAuthorId={identity.authorId}
             isActive={review.active}
             isAdmin={isAdmin}
+            userNameMap={userNameMap}
             onCommentClick={handleCommentClick}
+            onNavigateComment={navigateComment}
             onDeleteComment={handleDeleteComment}
             onEditComment={handleEditComment}
             onToggleCommentClosed={handleToggleCommentClosed}
@@ -314,6 +364,19 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
+      {/* 昵称设置 Modal */}
+      {showNicknameModal && (
+        <NicknameModal
+          currentName={identity.name}
+          onConfirm={(name) => {
+            identity.confirmName(name);
+            setShowNicknameModal(false);
+            fetchUserMap();
+          }}
+          onSkip={() => setShowNicknameModal(false)}
+        />
+      )}
+
       {/* Top Bar */}
       {review && (
         <div className="py-2 bg-secondary border-b border-border flex-shrink-0 flex justify-center">
@@ -342,11 +405,6 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
           >
             复制链接
           </button>
-
-          {/* Comment count */}
-          <span className="text-xs text-muted-foreground">
-            {review.comments.length} 条评论
-          </span>
 
           {/* Theme toggle */}
           <button

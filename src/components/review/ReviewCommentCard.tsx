@@ -2,6 +2,7 @@
 
 import { useState, forwardRef } from 'react';
 import { ReviewComment } from '@/lib/review-utils';
+import type { UserNameMap } from './ReviewPage';
 
 interface Props {
   comment: ReviewComment;
@@ -10,6 +11,7 @@ interface Props {
   isAdmin?: boolean;
   currentAuthorId: string;
   canInteract: boolean;
+  userNameMap: UserNameMap;
   onClick: () => void;
   onDelete: () => void;
   onEdit: (content: string) => void;
@@ -34,9 +36,11 @@ function formatTime(ts: number): string {
 }
 
 export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function ReviewCommentCard(
-  { comment, isActive, isOwnComment, isAdmin, currentAuthorId, canInteract, onClick, onDelete, onEdit, onToggleClosed, onAddReply, onDeleteReply, onEditReply },
+  { comment, isActive, isOwnComment, isAdmin, currentAuthorId, canInteract, userNameMap, onClick, onDelete, onEdit, onToggleClosed, onAddReply, onDeleteReply, onEditReply },
   ref
 ) {
+  // 优先用映射表中的最新昵称，fallback 到评论快照中的 author
+  const resolveAuthor = (authorId: string, fallback: string) => userNameMap[authorId] || fallback;
   const [replyContent, setReplyContent] = useState('');
   const [showReplyInput, setShowReplyInput] = useState(false);
   // Edit comment state
@@ -102,7 +106,7 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
         onClick={onClick}
       >
         <span className="w-4 h-4 rounded-full bg-brand/20 text-brand flex items-center justify-center text-[9px] font-bold flex-shrink-0">
-          {comment.author.charAt(0)}
+          {resolveAuthor(comment.authorId, comment.author).charAt(0)}
         </span>
         <span className="text-xs text-muted-foreground truncate flex-1">{truncatedAnchor}</span>
         <span className="text-[10px] text-muted-foreground/50 flex-shrink-0">已关闭</span>
@@ -148,9 +152,9 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
       {/* Comment header */}
       <div className="px-3 pt-2 flex items-center gap-2">
         <span className="w-5 h-5 rounded-full bg-brand/20 text-brand flex items-center justify-center text-[10px] font-bold flex-shrink-0">
-          {comment.author.charAt(0)}
+          {resolveAuthor(comment.authorId, comment.author).charAt(0)}
         </span>
-        <span className="text-xs font-medium">{comment.author}</span>
+        <span className="text-xs font-medium">{resolveAuthor(comment.authorId, comment.author)}</span>
         <span className="text-[10px] text-muted-foreground">{formatTime(comment.createdAt)}</span>
         <div className="flex-1" />
         {!editingComment && (
@@ -235,9 +239,9 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
             <div key={reply.id} className="py-2 border-b border-border last:border-b-0">
               <div className="flex items-center gap-2">
                 <span className="w-4 h-4 rounded-full bg-accent text-muted-foreground flex items-center justify-center text-[9px] font-bold flex-shrink-0">
-                  {reply.author.charAt(0)}
+                  {resolveAuthor(reply.authorId, reply.author).charAt(0)}
                 </span>
-                <span className="text-xs font-medium">{reply.author}</span>
+                <span className="text-xs font-medium">{resolveAuthor(reply.authorId, reply.author)}</span>
                 <span className="text-[10px] text-muted-foreground">{formatTime(reply.createdAt)}</span>
                 <div className="flex-1" />
                 {editingReplyId !== reply.id && (reply.authorId === currentAuthorId && canInteract || isAdmin) && (

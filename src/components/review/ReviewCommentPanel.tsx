@@ -3,7 +3,7 @@
 import { useRef, useEffect, useCallback, MutableRefObject } from 'react';
 import { ReviewCommentCard } from './ReviewCommentCard';
 import { ReviewComment } from '@/lib/review-utils';
-import type { UserNameMap } from './ReviewPage';
+import type { UserNameMap } from './ReviewCommentsListModal';
 
 interface Props {
   comments: ReviewComment[];

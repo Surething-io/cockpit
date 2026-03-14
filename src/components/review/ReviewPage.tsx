@@ -6,13 +6,11 @@ import { ReviewCommentPanel } from './ReviewCommentPanel';
 import { ReviewIdentitySettings } from './ReviewIdentitySettings';
 import { ReviewListPanel } from './ReviewListPanel';
 import { NicknameModal } from './NicknameModal';
+import { ReviewCommentsListModal, type UserNameMap } from './ReviewCommentsListModal';
 import { useReviewIdentity } from '@/hooks/useReviewIdentity';
 import { useTheme } from '@/components/shared/ThemeProvider';
 import { ReviewData } from '@/lib/review-utils';
 import { toast } from '@/components/shared/Toast';
-
-/** authorId → 最新昵称 */
-export type UserNameMap = Record<string, string>;
 
 interface ReviewPageProps {
   reviewId: string;
@@ -29,6 +27,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
   const { resolvedTheme, setTheme } = useTheme();
   const [userNameMap, setUserNameMap] = useState<UserNameMap>({});
   const [showNicknameModal, setShowNicknameModal] = useState(false);
+  const [showCommentsListModal, setShowCommentsListModal] = useState(false);
 
   // 拉取用户映射表
   const fetchUserMap = useCallback(async () => {
@@ -377,6 +376,22 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
         />
       )}
 
+      {/* 评论列表 Modal */}
+      {review && (
+        <ReviewCommentsListModal
+          isOpen={showCommentsListModal}
+          onClose={() => setShowCommentsListModal(false)}
+          comments={review.comments}
+          reviewTitle={review.title}
+          userNameMap={userNameMap}
+          onCommentClick={(commentId) => {
+            setActiveCommentId(commentId);
+            scrollToHighlightRef.current?.(commentId);
+            scrollToCommentRef.current?.(commentId);
+          }}
+        />
+      )}
+
       {/* Top Bar */}
       {review && (
         <div className="py-2 bg-secondary border-b border-border flex-shrink-0 flex justify-center">
@@ -397,6 +412,18 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
               {review.active ? '开放中' : '已关闭'}
             </span>
           )}
+
+          {/* View all comments */}
+          <button
+            onClick={() => setShowCommentsListModal(true)}
+            className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors text-muted-foreground flex items-center gap-1"
+            title="查看全部评论"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+            </svg>
+            查看评论
+          </button>
 
           {/* Copy link */}
           <button
@@ -429,7 +456,16 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
       <div className="flex-1 flex justify-center overflow-hidden">
         <div className="w-full max-w-[1800px] flex overflow-hidden">
           {/* Left sidebar - review list (始终挂载，不随状态卸载，宽度由组件自身控制) */}
-          <ReviewListPanel currentReviewId={currentId} onSelect={handleSelectReview} readOnly={!isAdmin} refreshTrigger={review?.comments.length} />
+          <ReviewListPanel
+            currentReviewId={currentId}
+            onSelect={handleSelectReview}
+            readOnly={!isAdmin}
+            refreshTrigger={review?.comments.length}
+            onViewComments={(reviewId) => {
+              if (reviewId !== currentId) handleSelectReview(reviewId);
+              setShowCommentsListModal(true);
+            }}
+          />
 
           {renderContent()}
         </div>

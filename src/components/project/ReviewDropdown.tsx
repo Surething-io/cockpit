@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { ReviewCommentsListModal, type UserNameMap } from '@/components/review/ReviewCommentsListModal';
+import type { ReviewComment } from '@/lib/review-utils';
 
 interface ReviewSummary {
   id: string;
@@ -51,10 +53,16 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
   const [open, setOpen] = useState(false);
   const [reviews, setReviews] = useState<ReviewSummary[]>([]);
   const [loading, setLoading] = useState(false);
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const [toggling, setToggling] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ id: string; text: string; top: number; left: number } | null>(null);
   const [lastViewed, setLastViewedState] = useState<Record<string, number>>({});
+
+  // 评论列表 Modal 状态
+  const [commentsModal, setCommentsModal] = useState<{
+    open: boolean;
+    comments: ReviewComment[];
+    title: string;
+    userNameMap: UserNameMap;
+  }>({ open: false, comments: [], title: '', userNameMap: {} });
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const dragId = useRef<string | null>(null);
@@ -112,10 +120,13 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
   // 组件挂载时也拉一次（用于初始红点判断）
   useEffect(() => { fetchList(); }, [fetchList]);
 
-  // 计算是否有任何未读
+  // 只展示 active 的评审
+  const activeReviews = useMemo(() => reviews.filter(r => r.active), [reviews]);
+
+  // 计算是否有任何未读（只看 active 的）
   const hasAnyUnread = useMemo(() => {
-    return reviews.some(r => hasUnread(r, lastViewed));
-  }, [reviews, lastViewed]);
+    return activeReviews.some(r => hasUnread(r, lastViewed));
+  }, [activeReviews, lastViewed]);
 
   // 点击 review → 标记已读 + 新标签页打开
   const handleOpen = useCallback((id: string) => {
@@ -124,37 +135,31 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
     window.open(`${window.location.origin}/review/${id}`, '_blank');
   }, []);
 
-  // Toggle active
-  const handleToggleActive = useCallback(async (e: React.MouseEvent, id: string, currentActive: boolean) => {
+  // 查看评论：拉取评审详情 + 用户映射，在当前页弹 Modal
+  const handleViewComments = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (toggling) return;
-    setToggling(id);
     try {
-      const res = await fetch(`/api/review/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ active: !currentActive }),
+      const [reviewRes, usersRes] = await Promise.all([
+        fetch(`/api/review/${id}`),
+        fetch('/api/review/users'),
+      ]);
+      if (!reviewRes.ok) return;
+      const { review } = await reviewRes.json();
+      const userNameMap: UserNameMap = {};
+      if (usersRes.ok) {
+        const { users } = await usersRes.json();
+        for (const [uid, record] of Object.entries(users)) {
+          userNameMap[uid] = (record as { name: string }).name;
+        }
+      }
+      setCommentsModal({
+        open: true,
+        comments: review.comments || [],
+        title: review.title,
+        userNameMap,
       });
-      if (res.ok) {
-        setReviews(prev => prev.map(r => r.id === id ? { ...r, active: !currentActive } : r));
-      }
     } catch { /* ignore */ }
-    setToggling(null);
-  }, [toggling]);
-
-  // Delete
-  const handleDelete = useCallback(async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (deleting) return;
-    setDeleting(id);
-    try {
-      const res = await fetch(`/api/review/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setReviews(prev => prev.filter(r => r.id !== id));
-      }
-    } catch { /* ignore */ }
-    setDeleting(null);
-  }, [deleting]);
+  }, []);
 
   // Drag & drop
   const handleDragStart = useCallback((e: React.DragEvent, id: string) => {
@@ -232,7 +237,7 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
           <div className="px-3 py-2 border-b border-border flex items-center justify-between">
             <div>
               <span className="text-xs font-medium text-muted-foreground">所有评审</span>
-              <span className="text-xs text-muted-foreground/60 ml-1.5">{reviews.length}</span>
+              <span className="text-xs text-muted-foreground/60 ml-1.5">{activeReviews.length}</span>
             </div>
             <button
               onClick={fetchList}
@@ -245,14 +250,14 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
             </button>
           </div>
 
-          {/* List */}
+          {/* List — 只展示 active 的评审 */}
           <div className="max-h-80 overflow-y-auto">
             {loading && reviews.length === 0 ? (
               <div className="px-3 py-4 text-xs text-muted-foreground/50 text-center">加载中...</div>
-            ) : reviews.length === 0 ? (
-              <div className="px-3 py-4 text-xs text-muted-foreground/50 text-center">暂无评审</div>
+            ) : activeReviews.length === 0 ? (
+              <div className="px-3 py-4 text-xs text-muted-foreground/50 text-center">暂无开放评审</div>
             ) : (
-              reviews.map((r) => {
+              activeReviews.map((r) => {
                 const unread = hasUnread(r, lastViewed);
                 return (
                   <div
@@ -275,38 +280,24 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
                     } hover:bg-accent/30`}
                   >
                     <div className="flex items-center gap-1.5 min-w-0">
-                      {/* 状态点：有未读评论时红色，否则按 active 状态显示 */}
+                      {/* 状态点：有未读评论时红色，否则绿色 */}
                       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                        unread ? 'bg-red-500' : r.active ? 'bg-green-500' : 'bg-muted-foreground/40'
+                        unread ? 'bg-red-500' : 'bg-green-500'
                       }`} />
                       {/* 标题 */}
                       <span className={`text-xs truncate flex-1 ${unread ? 'font-medium text-foreground' : ''}`}>{r.title}</span>
-                      {/* 开关按钮 */}
-                      <button
-                        onClick={(e) => handleToggleActive(e, r.id, r.active)}
-                        className={`flex-shrink-0 p-0.5 rounded text-muted-foreground/0 group-hover:text-muted-foreground/60 hover:!text-foreground hover:!bg-accent transition-colors ${
-                          toggling === r.id ? 'opacity-50 pointer-events-none' : ''
-                        }`}
-                        title={r.active ? '关闭评审' : '重新开放'}
-                      >
-                        {r.active ? (
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-                        ) : (
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.36 6.64A9 9 0 0 1 12 21 9 9 0 0 1 5.64 6.64"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-                        )}
-                      </button>
-                      {/* 删除按钮 */}
-                      <button
-                        onClick={(e) => handleDelete(e, r.id)}
-                        className={`flex-shrink-0 p-0.5 rounded text-muted-foreground/0 group-hover:text-muted-foreground/60 hover:!text-red-500 hover:!bg-red-500/10 transition-colors ${
-                          deleting === r.id ? 'opacity-50 pointer-events-none' : ''
-                        }`}
-                        title="删除评审"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                        </svg>
-                      </button>
+                      {/* 查看评论按钮 */}
+                      {r.commentCount > 0 && (
+                        <button
+                          onClick={(e) => handleViewComments(e, r.id)}
+                          className="flex-shrink-0 p-0.5 rounded text-muted-foreground/0 group-hover:text-muted-foreground/60 hover:!text-brand hover:!bg-brand/10 transition-colors"
+                          title="查看评论"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                     {/* 更新时间 + 评论数 */}
                     <div className="flex items-center gap-2 text-[10px] text-muted-foreground/50 mt-0.5 pl-3">
@@ -330,6 +321,15 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
           {tooltip.text}
         </div>
       )}
+
+      {/* 评论列表 Modal */}
+      <ReviewCommentsListModal
+        isOpen={commentsModal.open}
+        onClose={() => setCommentsModal(prev => ({ ...prev, open: false }))}
+        comments={commentsModal.comments}
+        reviewTitle={commentsModal.title}
+        userNameMap={commentsModal.userNameMap}
+      />
     </div>
   );
 }

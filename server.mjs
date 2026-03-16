@@ -98,6 +98,9 @@ app.prepare().then(async () => {
 
   const shareServer = createServer((req, res) => {
     if (isShareAllowed(req.url || '')) {
+      // 注入客户端真实 IP，供 /api/review/identify 使用
+      const clientIp = req.socket.remoteAddress || '';
+      req.headers['x-forwarded-for'] = clientIp;
       handle(req, res);
     } else {
       res.writeHead(403, { 'Content-Type': 'text/plain' });

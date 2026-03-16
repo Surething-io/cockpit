@@ -22,8 +22,6 @@ export async function GET() {
 
   return NextResponse.json({
     sharePort,
-    lanIPs,
-    // 优先返回第一个 LAN IP，通过 share server 的白名单端口
     shareBase: lanIPs.length > 0 ? `http://${lanIPs[0]}:${sharePort}` : null,
   });
 }

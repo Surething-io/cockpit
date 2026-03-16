@@ -49,10 +49,10 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
 
   // 昵称未确认时弹 Modal（等 identity 加载完成后）
   useEffect(() => {
-    if (identity.authorId && !identity.nameConfirmed) {
+    if (!identity.loading && identity.authorId && !identity.nameConfirmed) {
       setShowNicknameModal(true);
     }
-  }, [identity.authorId, identity.nameConfirmed]);
+  }, [identity.loading, identity.authorId, identity.nameConfirmed]);
 
   // 判断管理员模式
   useEffect(() => {

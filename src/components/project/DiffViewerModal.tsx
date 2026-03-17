@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import { Portal } from '../shared/Portal';
 import { X, ChevronRight, ChevronDown, FileText } from 'lucide-react';
 import { DiffView, DiffUnifiedView } from './DiffView';
 import type { ToolCallInfo } from '@/types/chat';
@@ -357,16 +357,16 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
 
   return (
     <>
-      {createPortal(modalContent, document.body)}
-      {hoverTooltip && createPortal(
+      <Portal>{modalContent}</Portal>
+      {hoverTooltip && <Portal>
         <div
           className="fixed z-[9999] px-2 py-1 bg-popover text-popover-foreground text-xs font-mono rounded shadow-lg border border-brand whitespace-nowrap pointer-events-none"
           style={{ left: hoverTooltip.x + 12, top: hoverTooltip.y + 16 }}
         >
           {hoverTooltip.text}
-        </div>,
-        document.body
-      )}
+        </div>
+      </Portal>
+      }
     </>
   );
 }

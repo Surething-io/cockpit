@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, memo } from 'react';
-import { createPortal } from 'react-dom';
+import { Portal } from '../shared/Portal';
 import { FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2 } from 'lucide-react';
 import { ChatMessage, MessageImage } from '@/types/chat';
 import { ToolCallModal } from './ToolCallModal';
@@ -18,11 +18,6 @@ interface ImageModalProps {
 }
 
 function ImageModal({ image, onClose }: ImageModalProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const modalContent = (
     <div
@@ -49,12 +44,7 @@ function ImageModal({ image, onClose }: ImageModalProps) {
     </div>
   );
 
-  // 客户端渲染时使用 Portal 到 body
-  if (mounted) {
-    return createPortal(modalContent, document.body);
-  }
-
-  return null;
+  return <Portal>{modalContent}</Portal>;
 }
 
 // MD 预览 Modal — 提供 MenuContainerProvider 使 FloatingToolbar 正常工作
@@ -66,7 +56,8 @@ function MdPreviewModal({ filePath, content, cwd, onClose }: {
   const [container, setContainer] = useState<HTMLElement | null>(null);
   useEffect(() => { setContainer(containerRef.current); }, []);
 
-  return createPortal(
+  return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div ref={containerRef} className="bg-card rounded-lg shadow-xl w-full max-w-[90%] h-[90vh] flex flex-col relative" onClick={e => e.stopPropagation()}>
         <MenuContainerProvider container={container}>
@@ -78,8 +69,8 @@ function MdPreviewModal({ filePath, content, cwd, onClose }: {
           />
         </MenuContainerProvider>
       </div>
-    </div>,
-    document.body,
+    </div>
+    </Portal>
   );
 }
 

@@ -56,8 +56,6 @@ export function TocSidebar({ content, containerRef, width = 'w-80' }: TocSidebar
   const [collapsed, setCollapsed] = useState(false);
   const [activeHeadingLine, setActiveHeadingLine] = useState<number | null>(null);
 
-  if (tocItems.length === 0) return null;
-
   // 点击 TOC 项 → 滚动到对应标题
   const handleTocClick = useCallback((sourceLine: number) => {
     const container = containerRef.current;
@@ -69,7 +67,6 @@ export function TocSidebar({ content, containerRef, width = 'w-80' }: TocSidebar
   }, [containerRef]);
 
   // Scroll spy
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
     const container = containerRef.current;
     if (!container || tocItems.length === 0) return;
@@ -103,6 +100,8 @@ export function TocSidebar({ content, containerRef, width = 'w-80' }: TocSidebar
       container.removeEventListener('scroll', handleScroll);
     };
   }, [tocItems, content, containerRef]);
+
+  if (tocItems.length === 0) return null;
 
   return (
     <div className={`border-r border-border flex-shrink-0 flex flex-col transition-[width] duration-200 ${collapsed ? 'w-8' : width}`}>

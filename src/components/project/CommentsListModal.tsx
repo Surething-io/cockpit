@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { clearAllComments, emitCommentsChange, fetchAllCommentsWithCode } from '@/hooks/useAllComments';
+import { Portal } from '../shared/Portal';
 import { toast } from '../shared/Toast';
 
 interface CodeComment {
@@ -54,13 +54,8 @@ function formatCommentsForCopy(comments: CopyableComment[]): string {
 export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }: CommentsListModalProps) {
   const [comments, setComments] = useState<CodeComment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isMounted, setIsMounted] = useState(false);
   const [copyingId, setCopyingId] = useState<string | null>(null); // 正在复制的评论 ID
   const [copyingAll, setCopyingAll] = useState(false); // 正在复制全部
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
 
   // Load all comments for the project
   const loadComments = useCallback(async () => {
@@ -170,7 +165,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
     });
   };
 
-  if (!isOpen || !isMounted) return null;
+  if (!isOpen) return null;
 
   const modalContent = (
     <div
@@ -327,5 +322,5 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
     </div>
   );
 
-  return createPortal(modalContent, document.body);
+  return <Portal>{modalContent}</Portal>;
 }

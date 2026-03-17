@@ -25,9 +25,17 @@ export interface BrowserItem {
   timestamp: string;
 }
 
+export interface DatabaseItem {
+  id: string;
+  connectionString: string;
+  displayName: string;
+  timestamp: string;
+}
+
 export type ConsoleItem =
   | { type: 'command'; data: Command }
-  | { type: 'browser'; data: BrowserItem };
+  | { type: 'browser'; data: BrowserItem }
+  | { type: 'database'; data: DatabaseItem };
 
 // ============================================
 // Helpers
@@ -82,7 +90,12 @@ function safeTruncate(str: string, maxLen: number): string {
   return skip > 0 ? s.slice(skip) : s;
 }
 
-export { isUrlInput, isPtyCommand };
+function isPostgresInput(input: string): boolean {
+  const trimmed = input.trim().toLowerCase();
+  return trimmed.startsWith('postgresql://') || trimmed.startsWith('postgres://');
+}
+
+export { isUrlInput, isPtyCommand, isPostgresInput };
 
 // ============================================
 // Hook
@@ -98,6 +111,7 @@ interface UseConsoleStateOptions {
 export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: UseConsoleStateOptions) {
   const [commands, setCommands] = useState<Command[]>([]);
   const [browserItems, setBrowserItems] = useState<BrowserItem[]>([]);
+  const [databaseItems, setDatabaseItems] = useState<DatabaseItem[]>([]);
   const [sleepingBubbles, setSleepingBubbles] = useState<Set<string>>(new Set());
   const [currentCwd, setCurrentCwd] = useState(initialShellCwd || cwd);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -116,6 +130,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
   const ptySizeRef = useRef<Map<string, { cols: number; rows: number }>>(new Map());
   const executeCommandRef = useRef<((command: string) => void) | null>(null);
   const addBrowserItemRef = useRef<((url: string) => void) | null>(null);
+  const addDatabaseItemRef = useRef<((connStr: string) => void) | null>(null);
   const consoleItemsRef = useRef<ConsoleItem[]>([]);
 
   // Scroll refs (passed in from ConsoleView)
@@ -207,10 +222,18 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
 
         const historyCommands: Command[] = [];
         const historyBrowsers: BrowserItem[] = [];
+        const historyDatabases: DatabaseItem[] = [];
         const restoredSleeping = new Set<string>();
 
         for (const entry of data.entries) {
-          if (entry.type === 'browser') {
+          if (entry.type === 'database') {
+            historyDatabases.push({
+              id: entry.id,
+              connectionString: entry.connectionString,
+              displayName: entry.displayName || entry.connectionString,
+              timestamp: entry.timestamp,
+            });
+          } else if (entry.type === 'browser') {
             historyBrowsers.push({
               id: entry.id,
               url: entry.url,
@@ -237,6 +260,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
         if (page === 0) {
           setCommands(historyCommands);
           setBrowserItems(historyBrowsers);
+          setDatabaseItems(historyDatabases);
           if (restoredSleeping.size > 0) setSleepingBubbles(restoredSleeping);
         } else {
           setCommands((prev) => {
@@ -247,6 +271,11 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
           setBrowserItems((prev) => {
             const existingIds = new Set(prev.map((b) => b.id));
             const newItems = historyBrowsers.filter((b) => !existingIds.has(b.id));
+            return [...prev, ...newItems];
+          });
+          setDatabaseItems((prev) => {
+            const existingIds = new Set(prev.map((d) => d.id));
+            const newItems = historyDatabases.filter((d) => !existingIds.has(d.id));
             return [...prev, ...newItems];
           });
         }
@@ -362,6 +391,11 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
 
     if (aliases[firstWord]) {
       actualCommand = aliases[firstWord] + (parts.length > 1 ? ' ' + parts.slice(1).join(' ') : '');
+    }
+
+    if (isPostgresInput(actualCommand)) {
+      addDatabaseItemRef.current?.(actualCommand.trim());
+      return;
     }
 
     if (isUrlInput(actualCommand)) {
@@ -637,7 +671,59 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     }
   }, [scrollToBottom, cwd, tabId, bubbleOrder]);
 
+  // ========== 数据库气泡 ==========
+
+  const addDatabaseItem = useCallback((connectionString: string) => {
+    let displayName = connectionString;
+    try {
+      const u = new URL(connectionString);
+      const db = u.pathname.replace(/^\//, '') || 'postgres';
+      displayName = `${db}@${u.hostname}${u.port ? ':' + u.port : ''}`;
+    } catch { /* keep raw string */ }
+
+    const item: DatabaseItem = {
+      id: `db-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      connectionString,
+      displayName,
+      timestamp: new Date().toISOString(),
+    };
+    setDatabaseItems(prev => [...prev, item]);
+    setSelectedCommandId(item.id);
+    setTimeout(scrollToBottom, 100);
+
+    if (tabId) {
+      fetch('/api/terminal/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cwd,
+          tabId,
+          entry: { type: 'database', id: item.id, connectionString, displayName: item.displayName, timestamp: item.timestamp },
+        }),
+      }).catch(e => console.error('Failed to save database item:', e));
+    }
+  }, [scrollToBottom, cwd, tabId]);
+
+  const closeDatabaseItem = useCallback((id: string) => {
+    setDatabaseItems(prev => prev.filter(item => item.id !== id));
+    setSelectedCommandId(prev => prev === id ? null : prev);
+
+    fetch('/api/db/disconnect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    }).catch(() => {});
+
+    if (tabId) {
+      fetch(
+        `/api/terminal/history?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}&commandId=${encodeURIComponent(id)}`,
+        { method: 'DELETE' },
+      ).catch(e => console.error('Failed to delete database item:', e));
+    }
+  }, [cwd, tabId]);
+
   addBrowserItemRef.current = addBrowserItem;
+  addDatabaseItemRef.current = addDatabaseItem;
   executeCommandRef.current = executeCommand;
 
   const closeBrowserItem = useCallback((id: string) => {
@@ -692,6 +778,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     const all: ConsoleItem[] = [
       ...commands.map(cmd => ({ type: 'command' as const, data: cmd })),
       ...browserItems.map(item => ({ type: 'browser' as const, data: item })),
+      ...databaseItems.map(item => ({ type: 'database' as const, data: item })),
     ];
     if (!bubbleOrder || bubbleOrder.length === 0) {
       return all.sort((a, b) => new Date(a.data.timestamp).getTime() - new Date(b.data.timestamp).getTime());
@@ -709,7 +796,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     ordered.sort((a, b) => orderIndex.get(a.data.id)! - orderIndex.get(b.data.id)!);
     unordered.sort((a, b) => new Date(a.data.timestamp).getTime() - new Date(b.data.timestamp).getTime());
     return [...ordered, ...unordered];
-  }, [commands, browserItems, bubbleOrder]);
+  }, [commands, browserItems, databaseItems, bubbleOrder]);
   consoleItemsRef.current = consoleItems;
 
   // ========== 命令历史数组（用于上下箭头导航） ==========
@@ -799,6 +886,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     // State
     commands,
     browserItems,
+    databaseItems,
     sleepingBubbles,
     consoleItems,
     currentCwd,
@@ -818,6 +906,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     ptySizeRef,
     executeCommandRef,
     addBrowserItemRef,
+    addDatabaseItemRef,
 
     // Actions
     executeCommand,
@@ -826,6 +915,8 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     deleteCommand,
     addBrowserItem,
     closeBrowserItem,
+    addDatabaseItem,
+    closeDatabaseItem,
     handleBubbleSleep,
     handleBubbleWake,
     loadHistory,

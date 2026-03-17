@@ -1731,6 +1731,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       {/* LSP HoverTooltip - portal 到 menuContainer 内，使用 absolute 定位 */}
       {lspHover.hoverInfo && menuContainer && createPortal(
         <HoverTooltip
+          ref={(el: HTMLDivElement | null) => { lspHover.tooltipElRef.current = el; }}
           displayString={lspHover.hoverInfo.displayString}
           documentation={lspHover.hoverInfo.documentation}
           x={lspHover.hoverInfo.x}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
 
 interface HoverTooltipProps {
   displayString: string;
@@ -70,8 +70,11 @@ function extractTokenName(displayString: string): string {
   return idMatch ? idMatch[1] : clean.split(/[(\s:]/)[0];
 }
 
-export function HoverTooltip({ displayString, documentation, x, y, container, onMouseEnter, onMouseLeave, onFindReferences, onSearch }: HoverTooltipProps) {
+export const HoverTooltip = forwardRef<HTMLDivElement, HoverTooltipProps>(function HoverTooltip({ displayString, documentation, x, y, container, onMouseEnter, onMouseLeave, onFindReferences, onSearch }, forwardedRef) {
   const ref = useRef<HTMLDivElement>(null);
+
+  // 合并 ref：内部用 ref，外部通过 forwardedRef 拿到同一个 DOM
+  useImperativeHandle(forwardedRef, () => ref.current!, []);
   const containerRect = container.getBoundingClientRect();
   const relX = x - containerRect.left;
   const relY = y - containerRect.top;
@@ -146,4 +149,4 @@ export function HoverTooltip({ displayString, documentation, x, y, container, on
       )}
     </div>
   );
-}
+});

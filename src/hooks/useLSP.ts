@@ -55,7 +55,51 @@ export function useLSPHover(cwd: string) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeRequestRef = useRef<number>(0);
-  const onCardRef = useRef(false); // 鼠标是否在卡片上
+  const onCardRef = useRef(false); // 鼠标是否在卡片（已激活 pointer-events-auto）上
+
+  // tooltip DOM ref + 全局鼠标位置（仅写 ref，零 re-render）
+  const tooltipElRef = useRef<HTMLDivElement | null>(null);
+  const mousePosRef = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { mousePosRef.current.x = e.clientX; mousePosRef.current.y = e.clientY; };
+    document.addEventListener('mousemove', h);
+    return () => document.removeEventListener('mousemove', h);
+  }, []);
+
+  // 命令式激活 tooltip 交互（pointer-events: auto + 绑定 mouseleave）
+  const activatedRef = useRef(false);
+  const nativeLeaveRef = useRef<(() => void) | null>(null);
+
+  const deactivateTooltip = useCallback(() => {
+    const el = tooltipElRef.current;
+    if (el && activatedRef.current) {
+      el.style.pointerEvents = 'none';
+    }
+    activatedRef.current = false;
+    if (nativeLeaveRef.current) {
+      tooltipElRef.current?.removeEventListener('mouseleave', nativeLeaveRef.current);
+      nativeLeaveRef.current = null;
+    }
+  }, []);
+
+  const activateTooltip = useCallback(() => {
+    const el = tooltipElRef.current;
+    if (!el || activatedRef.current) return;
+    activatedRef.current = true;
+    onCardRef.current = true;
+    el.style.pointerEvents = 'auto';
+
+    // 绑定原生 mouseleave（不走 React，不触发 re-render 直到真正需要隐藏）
+    const handleLeave = () => {
+      onCardRef.current = false;
+      deactivateTooltip();
+      activeRequestRef.current++;
+      setHoverInfo(null);
+    };
+    nativeLeaveRef.current = handleLeave;
+    el.addEventListener('mouseleave', handleLeave);
+  }, [deactivateTooltip]);
 
   const onTokenMouseEnter = useCallback((
     filePath: string,
@@ -100,13 +144,24 @@ export function useLSPHover(cwd: string) {
     // 立即废弃在途请求，防止 fetch 回来后触发 setHoverInfo
     activeRequestRef.current++;
     // 延迟清除卡片，给用户时间把鼠标移到卡片上
-    leaveTimerRef.current = setTimeout(() => {
-      if (!onCardRef.current) {
-        setHoverInfo(null);
+    leaveTimerRef.current = setTimeout(function checkAndHide() {
+      if (onCardRef.current) return; // 已在激活的卡片上
+      // 几何检测：鼠标是否在 tooltip rect 内（即使 pointer-events-none）
+      const el = tooltipElRef.current;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const { x, y } = mousePosRef.current;
+        if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+          // 鼠标在 tooltip 上 → 激活交互，不隐藏
+          activateTooltip();
+          return;
+        }
       }
+      setHoverInfo(null);
     }, 150);
-  }, []);
+  }, [activateTooltip]);
 
+  // onCardMouseEnter / onCardMouseLeave 保留给按钮区域的 pointer-events-auto 使用
   const onCardMouseEnter = useCallback(() => {
     onCardRef.current = true;
     if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
@@ -122,11 +177,19 @@ export function useLSPHover(cwd: string) {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
     onCardRef.current = false;
+    deactivateTooltip();
     activeRequestRef.current++;
     setHoverInfo(null);
-  }, []);
+  }, [deactivateTooltip]);
 
-  return { hoverInfo, onTokenMouseEnter, onTokenMouseLeave, onCardMouseEnter, onCardMouseLeave, clearHover };
+  // hoverInfo 清空时，重置激活状态
+  useEffect(() => {
+    if (!hoverInfo) {
+      deactivateTooltip();
+    }
+  }, [hoverInfo, deactivateTooltip]);
+
+  return { hoverInfo, onTokenMouseEnter, onTokenMouseLeave, onCardMouseEnter, onCardMouseLeave, clearHover, tooltipElRef };
 }
 
 // ============================================

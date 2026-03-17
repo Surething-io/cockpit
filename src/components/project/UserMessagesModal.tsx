@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect } from 'react';
+import { Portal } from '../shared/Portal';
 import { ChatMessage } from '@/types/chat';
 
 interface UserMessagesModalProps {
@@ -50,12 +50,7 @@ function truncateContent(content: string, maxLength: number = 50): string {
 }
 
 export function UserMessagesModal({ isOpen, onClose, messages, onSelectMessage }: UserMessagesModalProps) {
-  const [isMounted, setIsMounted] = useState(false);
 
-  // 确保客户端渲染
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
 
   // ESC 键关闭
   useEffect(() => {
@@ -71,7 +66,7 @@ export function UserMessagesModal({ isOpen, onClose, messages, onSelectMessage }
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen || !isMounted) return null;
+  if (!isOpen) return null;
 
   // 过滤出用户消息
   const userMessages = messages.filter(m => m.role === 'user');
@@ -149,6 +144,5 @@ export function UserMessagesModal({ isOpen, onClose, messages, onSelectMessage }
     </div>
   );
 
-  // 使用 Portal 渲染到 body，配合 fixed 定位确保在任何 Tab 都能正确显示
-  return createPortal(modalContent, document.body);
+  return <Portal>{modalContent}</Portal>;
 }

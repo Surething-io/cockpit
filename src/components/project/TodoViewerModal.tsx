@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { Portal } from '../shared/Portal';
 import { X, Circle, Loader, CheckCircle2 } from 'lucide-react';
 import type { ToolCallInfo } from '@/types/chat';
 
@@ -110,5 +110,5 @@ export function TodoViewerModal({ toolCall, onClose }: TodoViewerModalProps) {
     </div>
   );
 
-  return createPortal(modalContent, document.body);
+  return <Portal>{modalContent}</Portal>;
 }

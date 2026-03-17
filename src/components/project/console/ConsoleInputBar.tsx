@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Zap, Variable, LayoutGrid, List } from 'lucide-react';
 import { QuickCommandsPopover, useQuickCommands } from './QuickCommandsPopover';
-import { isUrlInput } from '@/hooks/useConsoleState';
+import { isUrlInput, isPostgresInput } from '@/hooks/useConsoleState';
 import type { CustomCommand } from '@/app/api/services/config/route';
 
 interface TaggedCommand extends CustomCommand {
@@ -18,6 +18,7 @@ interface ConsoleInputBarProps {
   onGridLayoutChange: (grid: boolean) => void;
   onExecute: (command: string) => void;
   onAddBrowser: (url: string) => void;
+  onAddDatabase?: (connStr: string) => void;
   onShowEnvManager: () => void;
   onOpenZsh: () => void;
   onOpenNote?: () => void;
@@ -31,6 +32,7 @@ export function ConsoleInputBar({
   onGridLayoutChange,
   onExecute,
   onAddBrowser,
+  onAddDatabase,
   onShowEnvManager,
   onOpenZsh,
   onOpenNote,
@@ -87,13 +89,15 @@ export function ConsoleInputBar({
   const handleSlashSelect = useCallback((cmd: CustomCommand) => {
     setShowSlashCommands(false);
     const finalCmd = cmd.command;
-    if (isUrlInput(finalCmd)) {
+    if (isPostgresInput(finalCmd)) {
+      onAddDatabase?.(finalCmd.trim());
+    } else if (isUrlInput(finalCmd)) {
       onAddBrowser(finalCmd.trim());
     } else {
       onExecute(finalCmd);
     }
     setInputValue('');
-  }, [onExecute, onAddBrowser]);
+  }, [onExecute, onAddBrowser, onAddDatabase]);
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -103,7 +107,9 @@ export function ConsoleInputBar({
     const expanded = expandCustomCommand(inputValue);
     const finalInput = expanded ?? inputValue;
 
-    if (isUrlInput(finalInput)) {
+    if (isPostgresInput(finalInput)) {
+      onAddDatabase?.(finalInput.trim());
+    } else if (isUrlInput(finalInput)) {
       onAddBrowser(finalInput.trim());
     } else {
       onExecute(finalInput);
@@ -112,7 +118,7 @@ export function ConsoleInputBar({
     setInputValue('');
     setHistoryIndex(-1);
     setTemporaryInput('');
-  }, [inputValue, onExecute, onAddBrowser, expandCustomCommand]);
+  }, [inputValue, onExecute, onAddBrowser, onAddDatabase, expandCustomCommand]);
 
   const handleAutocomplete = useCallback(async () => {
     if (!inputRef.current) return;

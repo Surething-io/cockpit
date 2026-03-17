@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
 import { ReviewComment } from '@/lib/review-utils';
+import { Portal } from '@/components/shared/Portal';
 import { toast } from '@/components/shared/Toast';
 
 /** authorId → 最新昵称 */
@@ -225,7 +225,7 @@ export function ReviewCommentsListModal({
     </div>
   );
 
-  return createPortal(modalContent, document.body);
+  return <Portal>{modalContent}</Portal>;
 }
 
 /** 单条评论行 */

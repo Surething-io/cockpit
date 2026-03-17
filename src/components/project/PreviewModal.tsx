@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { Portal } from '../shared/Portal';
 import { DiffView, DiffUnifiedView } from './DiffView';
 import { CodeViewer } from './CodeViewer';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
@@ -316,5 +316,5 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
     </div>
   );
 
-  return createPortal(modalContent, document.body);
+  return <Portal>{modalContent}</Portal>;
 }

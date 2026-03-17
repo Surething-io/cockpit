@@ -12,7 +12,7 @@ const OUTPUT_FILE_THRESHOLD = 4096;
 // 统一历史条目（命令 + 浏览器混存）
 // type 缺失时默认为 'command'（兼容旧数据）
 interface HistoryEntry {
-  type?: 'command' | 'browser';
+  type?: 'command' | 'browser' | 'database';
   id: string;
   timestamp: string;
   // command 类型字段
@@ -25,6 +25,9 @@ interface HistoryEntry {
   // browser 类型字段
   url?: string;
   sleeping?: boolean;
+  // database 类型字段
+  connectionString?: string;
+  displayName?: string;
 }
 
 // GET: 读取命令历史（分页）

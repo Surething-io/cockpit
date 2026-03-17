@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { useState } from 'react';
+import { Portal } from './Portal';
 import { ImageInfo } from '@/types/chat';
 
 interface ImagePreviewProps {
@@ -12,11 +12,6 @@ interface ImagePreviewProps {
 
 // 图片预览模态框 - 使用 Portal 渲染到 body，避免 transform 容器影响 fixed 定位
 function ImageModal({ image, onClose }: { image: ImageInfo; onClose: () => void }) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const modalContent = (
     <div
@@ -43,12 +38,7 @@ function ImageModal({ image, onClose }: { image: ImageInfo; onClose: () => void 
     </div>
   );
 
-  // 客户端渲染时使用 Portal 到 body
-  if (mounted) {
-    return createPortal(modalContent, document.body);
-  }
-
-  return null;
+  return <Portal>{modalContent}</Portal>;
 }
 
 export function ImagePreview({ images, onRemove, disabled }: ImagePreviewProps) {

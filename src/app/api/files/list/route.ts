@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { stat, readdir, lstat, readlink } from 'fs/promises';
+import { stat, readdir, lstat, readlink, realpath } from 'fs/promises';
 import { join, relative } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -148,12 +148,25 @@ async function resolveSymlinkTargets(nodes: FileNode[], cwd: string): Promise<vo
 }
 
 // Fallback: recursively read directory (for non-git repos)
+// visitedRealPaths tracks canonical paths to prevent symlink cycles
 async function readDirectoryRecursive(
   dirPath: string,
-  basePath: string
+  basePath: string,
+  visitedRealPaths?: Set<string>
 ): Promise<FileNode[]> {
 
   try {
+    // Cycle detection: resolve to real path and check if already visited
+    if (!visitedRealPaths) visitedRealPaths = new Set();
+    try {
+      const realDir = await realpath(dirPath);
+      if (visitedRealPaths.has(realDir)) return []; // cycle — stop recursion
+      visitedRealPaths.add(realDir);
+    } catch {
+      // dirPath doesn't exist (broken symlink target) — stop
+      return [];
+    }
+
     const entries = await readdir(dirPath, { withFileTypes: true });
     const nodes: FileNode[] = [];
 
@@ -182,12 +195,12 @@ async function readDirectoryRecursive(
       const node: FileNode = {
         name: entry.name,
         path: relativePath,
-        isDirectory: isDir && !isSymlink, // symlink to dir: show as symlink, don't recurse
+        isDirectory: isDir,
         ...(isSymlink ? { isSymlink: true } : {}),
       };
 
-      if (isDir && !isSymlink) {
-        node.children = await readDirectoryRecursive(fullPath, basePath);
+      if (isDir) {
+        node.children = await readDirectoryRecursive(fullPath, basePath, visitedRealPaths);
         // Only include directory if it has children
         if (node.children.length > 0) {
           nodes.push(node);
@@ -211,6 +224,52 @@ async function readDirectoryRecursive(
   }
 }
 
+// Post-process git tree: expand symlink-to-directory nodes with their filesystem children
+// git ls-files only lists the symlink itself (mode 120000), not the files inside the target dir
+async function expandSymlinkDirs(nodes: FileNode[], cwd: string, visitedRealPaths: Set<string>): Promise<void> {
+  const sortNodes = (list: FileNode[]) => {
+    list.sort((a, b) => {
+      if (a.isDirectory && !b.isDirectory) return -1;
+      if (!a.isDirectory && b.isDirectory) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  };
+
+  for (const node of nodes) {
+    // Symlink leaf node — check if it points to a directory
+    if (node.isSymlink && !node.isDirectory) {
+      try {
+        const fullPath = join(cwd, node.path);
+        const stats = await stat(fullPath);
+        if (stats.isDirectory()) {
+          const realDir = await realpath(fullPath);
+          if (!visitedRealPaths.has(realDir)) {
+            node.isDirectory = true;
+            // Pass a copy — readDirectoryRecursive will add realDir itself at entry
+            node.children = await readDirectoryRecursive(fullPath, cwd, new Set(visitedRealPaths));
+            // Mark visited AFTER call, to prevent sibling symlinks to the same target
+            visitedRealPaths.add(realDir);
+          } else {
+            // Cycle detected — show as empty expandable directory
+            node.isDirectory = true;
+            node.children = [];
+          }
+        }
+      } catch {
+        // Broken symlink or inaccessible — leave as leaf file
+      }
+    }
+
+    // Recurse into existing directory children (may contain nested symlinks)
+    if (node.children && node.children.length > 0) {
+      await expandSymlinkDirs(node.children, cwd, visitedRealPaths);
+    }
+  }
+
+  // Re-sort after some nodes may have changed from file → directory
+  sortNodes(nodes);
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const cwd = searchParams.get('cwd') || process.cwd();
@@ -228,6 +287,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Seed visited paths with cwd to prevent symlinks pointing back to project root
+    const visitedRealPaths = new Set<string>();
+    try { visitedRealPaths.add(await realpath(cwd)); } catch {}
+
     // Try git-based file listing first (much faster)
     const gitFiles = await getGitVisibleFiles(cwd);
 
@@ -235,9 +298,11 @@ export async function GET(request: NextRequest) {
     if (gitFiles !== null) {
       // Use git ls-files result - build tree from flat entries
       files = buildTreeFromEntries(gitFiles);
+      // Expand symlink-to-directory nodes with their filesystem children
+      await expandSymlinkDirs(files, cwd, visitedRealPaths);
     } else {
       // Fallback to recursive directory reading for non-git repos
-      files = await readDirectoryRecursive(targetPath, cwd);
+      files = await readDirectoryRecursive(targetPath, cwd, visitedRealPaths);
     }
 
     // Resolve symlink targets in parallel

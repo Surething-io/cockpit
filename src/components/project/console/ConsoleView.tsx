@@ -3,11 +3,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { CommandBubble } from './CommandBubble';
 import { BrowserBubble } from './BrowserBubble';
+import { DatabaseBubble } from './DatabaseBubble';
 import { EnvManager } from './EnvManager';
 import { AliasManager } from '../AliasManager';
 import { ConsoleInputBar } from './ConsoleInputBar';
 import { ConsoleScrollButtons } from './ConsoleScrollButtons';
-import { useConsoleState, type ConsoleItem } from '@/hooks/useConsoleState';
+import { useConsoleState, type ConsoleItem, type DatabaseItem } from '@/hooks/useConsoleState';
 import { interruptCommand as interruptCmd } from '@/lib/terminal/TerminalWsManager';
 
 interface ConsoleViewProps {
@@ -293,7 +294,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
                     onTitleMouseDown={handleTitleMouseDown}
                   />
                 </div>
-              ) : (
+              ) : item.type === 'browser' ? (
                 <div
                   key={item.data.id}
                   data-bubble-id={item.data.id}
@@ -324,6 +325,34 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
                     onWake={state.handleBubbleWake}
                   />
                 </div>
+              ) : (
+                <div
+                  key={item.data.id}
+                  data-bubble-id={item.data.id}
+                  className="rounded-lg transition-shadow"
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, item.data.id)}
+                  onDragOver={(e) => handleDragOver(e, item.data.id)}
+                  onDragEnter={handleDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onDragEnd={handleDragEnd}
+                >
+                  <DatabaseBubble
+                    id={item.data.id}
+                    connectionString={(item.data as DatabaseItem).connectionString}
+                    displayName={(item.data as DatabaseItem).displayName}
+                    selected={state.selectedCommandId === item.data.id}
+                    maximized={maximizedId === item.data.id}
+                    onSelect={() => { state.setSelectedCommandId(item.data.id); }}
+                    onClose={() => state.closeDatabaseItem(item.data.id)}
+                    onToggleMaximize={() => toggleMaximize(item.data.id)}
+                    expandedHeight={consoleHeight}
+                    bubbleContentHeight={bubbleContentHeight}
+                    timestamp={item.data.timestamp}
+                    onTitleMouseDown={handleTitleMouseDown}
+                  />
+                </div>
               )
             ))}
             </div>
@@ -351,6 +380,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
         onGridLayoutChange={(grid) => { setGridLayout(grid); saveSettings({ gridLayout: grid }); }}
         onExecute={state.executeCommand}
         onAddBrowser={state.addBrowserItem}
+        onAddDatabase={state.addDatabaseItem}
         onShowEnvManager={() => setShowEnvManager(true)}
         onOpenZsh={() => state.executeCommand('zsh')}
         onOpenNote={onOpenNote}

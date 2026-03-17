@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import { Portal } from '../shared/Portal';
 import { X, CircleDot, CheckSquare, Square, Copy, PenLine } from 'lucide-react';
 import { toast } from '../shared/Toast';
 import type { ToolCallInfo } from '@/types/chat';
@@ -287,5 +287,5 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
     </div>
   );
 
-  return createPortal(modalContent, document.body);
+  return <Portal>{modalContent}</Portal>;
 }

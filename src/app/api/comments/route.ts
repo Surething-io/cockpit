@@ -7,6 +7,7 @@ export interface CodeComment {
   startLine: number;
   endLine: number;
   content: string;
+  selectedText?: string; // 选中的原文（用于没有真实文件的场景，如 AI 消息气泡）
   createdAt: number;
   updatedAt?: number;
 }
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { cwd, filePath, startLine, endLine, content } = body;
+    const { cwd, filePath, startLine, endLine, content, selectedText } = body;
 
     if (!cwd || !filePath || startLine === undefined || endLine === undefined || content === undefined) {
       return NextResponse.json(
@@ -65,6 +66,7 @@ export async function POST(request: NextRequest) {
       startLine,
       endLine,
       content,
+      ...(selectedText ? { selectedText } : {}),
       createdAt: Date.now(),
     };
 

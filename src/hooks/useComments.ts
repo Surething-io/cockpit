@@ -13,7 +13,7 @@ interface UseCommentsReturn {
   comments: CodeComment[];
   isLoading: boolean;
   error: string | null;
-  addComment: (startLine: number, endLine: number, content: string) => Promise<CodeComment | null>;
+  addComment: (startLine: number, endLine: number, content: string, selectedText?: string) => Promise<CodeComment | null>;
   updateComment: (id: string, content: string) => Promise<boolean>;
   deleteComment: (id: string) => Promise<boolean>;
   refresh: () => Promise<void>;
@@ -65,13 +65,14 @@ export function useComments({ cwd, filePath }: UseCommentsOptions): UseCommentsR
   const addComment = useCallback(async (
     startLine: number,
     endLine: number,
-    content: string
+    content: string,
+    selectedText?: string
   ): Promise<CodeComment | null> => {
     try {
       const response = await fetch('/api/comments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, filePath, startLine, endLine, content }),
+        body: JSON.stringify({ cwd, filePath, startLine, endLine, content, ...(selectedText ? { selectedText } : {}) }),
       });
 
       if (response.ok) {

@@ -50,9 +50,10 @@ export async function fetchAllCommentsWithCode(cwd: string): Promise<CommentWith
     return [];
   }
 
-  // 2. 按文件分组
+  // 2. 按文件分组（跳过有 selectedText 的评论，不需要读取文件）
   const commentsByFile = new Map<string, CodeComment[]>();
   for (const comment of comments) {
+    if (comment.selectedText) continue; // 有 selectedText 的评论不需要读文件
     if (!commentsByFile.has(comment.filePath)) {
       commentsByFile.set(comment.filePath, []);
     }
@@ -82,6 +83,11 @@ export async function fetchAllCommentsWithCode(cwd: string): Promise<CommentWith
   // 4. 为每个评论提取代码
   const result: CommentWithCode[] = [];
   for (const comment of comments) {
+    // 有 selectedText 的评论直接用 selectedText 作为 codeContent
+    if (comment.selectedText) {
+      result.push({ ...comment, codeContent: comment.selectedText });
+      continue;
+    }
     const lines = fileContents.get(comment.filePath);
     let codeContent = '';
     if (lines) {
@@ -121,19 +127,38 @@ export async function clearAllComments(cwd: string): Promise<boolean> {
  * @param references 所有代码引用（历史评论 + 当前选中）
  * @param question 用户问题
  */
-export function buildAIMessage(references: CodeReference[], question: string): string {
-  const parts: string[] = ['代码引用:', ''];
+/** 虚拟 filePath 前缀，用于 AI 消息气泡中的评论 */
+export const CHAT_COMMENT_FILE = '__chat__';
 
-  references.forEach((ref, index) => {
-    parts.push(`[${index + 1}] ${ref.filePath}:${ref.startLine}-${ref.endLine}`);
-    parts.push('```');
-    parts.push(ref.codeContent);
-    parts.push('```');
+export function buildAIMessage(references: CodeReference[], question: string): string {
+  const chatRefs = references.filter(r => r.filePath === CHAT_COMMENT_FILE);
+  const fileRefs = references.filter(r => r.filePath !== CHAT_COMMENT_FILE);
+  const parts: string[] = [];
+
+  // 文件评论：保持原有格式
+  if (fileRefs.length > 0) {
+    parts.push('代码引用:', '');
+    fileRefs.forEach((ref, index) => {
+      parts.push(`[${index + 1}] ${ref.filePath}:${ref.startLine}-${ref.endLine}`);
+      parts.push('```');
+      parts.push(ref.codeContent);
+      parts.push('```');
+      if (ref.note) {
+        parts.push(`备注: ${ref.note}`);
+      }
+      parts.push('');
+    });
+  }
+
+  // 聊天评论：引用 + 评论
+  for (const ref of chatRefs) {
+    const quoted = ref.codeContent.split('\n').map(l => `> ${l}`).join('\n');
+    parts.push(quoted);
     if (ref.note) {
-      parts.push(`备注: ${ref.note}`);
+      parts.push(ref.note);
     }
     parts.push('');
-  });
+  }
 
   parts.push(`问题: ${question}`);
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, memo } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import { Portal } from '../shared/Portal';
 import { FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2 } from 'lucide-react';
 import { ChatMessage, MessageImage } from '@/types/chat';
@@ -48,18 +48,17 @@ function ImageModal({ image, onClose }: ImageModalProps) {
 }
 
 // MD 预览 Modal — 提供 MenuContainerProvider 使 FloatingToolbar 正常工作
+// container 用 callback ref（即 useState setter）：React 挂载 DOM 时同步调用，无时序问题
 function MdPreviewModal({ filePath, content, cwd, onClose }: {
   filePath: string; content: string; cwd: string;
   onClose: () => void;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
   const [container, setContainer] = useState<HTMLElement | null>(null);
-  useEffect(() => { setContainer(containerRef.current); }, []);
 
   return (
     <Portal>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div ref={containerRef} className="bg-card rounded-lg shadow-xl w-full max-w-[90%] h-[90vh] flex flex-col relative" onClick={e => e.stopPropagation()}>
+      <div ref={setContainer} className="bg-card rounded-lg shadow-xl w-full max-w-[90%] h-[90vh] flex flex-col relative" onClick={e => e.stopPropagation()}>
         <MenuContainerProvider container={container}>
           <InteractiveMarkdownPreview
             content={content}

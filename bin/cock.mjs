@@ -22,6 +22,7 @@ Commands:
 
 Options:
   --port <port>                Set server port (default: 3457)
+  --no-open                    Don't open browser after start
   -v, --version                Show version
   -h, --help                   Show this help`);
   process.exit(0);
@@ -33,6 +34,13 @@ if (process.argv[2] === '--version' || process.argv[2] === '-v') {
   const pkg = JSON.parse(readFileSync(resolve(PROJECT_ROOT, 'package.json'), 'utf8'));
   console.log(pkg.version);
   process.exit(0);
+}
+
+// --no-open
+const noOpenIdx = process.argv.indexOf('--no-open');
+if (noOpenIdx !== -1) {
+  process.env.COCKPIT_NO_OPEN = '1';
+  process.argv.splice(noOpenIdx, 1);
 }
 
 // --port 参数解析

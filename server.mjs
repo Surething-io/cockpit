@@ -1,4 +1,5 @@
 import { createServer } from 'http';
+import { exec } from 'child_process';
 import { networkInterfaces, homedir } from 'os';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
@@ -58,7 +59,8 @@ app.prepare().then(async () => {
   });
 
   server.listen(port, '127.0.0.1', () => {
-    console.log(`> Ready on http://localhost:${port}`);
+    const url = `http://localhost:${port}`;
+    console.log(`> Ready on ${url}`);
 
     // 写入 server.json 供 CLI 子命令读取端口
     try {
@@ -66,6 +68,12 @@ app.prepare().then(async () => {
       mkdirSync(cockpitDir, { recursive: true });
       writeFileSync(join(cockpitDir, 'server.json'), JSON.stringify({ pid: process.pid, port }, null, 2));
     } catch {}
+
+    // prod 模式自动打开浏览器（--no-open 禁用）
+    if (!dev && !process.env.COCKPIT_NO_OPEN) {
+      const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+      exec(`${cmd} ${url}`);
+    }
   });
 
   // ============================================

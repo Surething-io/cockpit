@@ -4,6 +4,11 @@ import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHand
 import { ChatMessage } from '@/types/chat';
 import { MessageBubble } from './MessageBubble';
 import { useChatSearch } from '@/hooks/useChatSearch';
+import { ToolbarRenderer, ToolbarData } from './FloatingToolbar';
+import { AddCommentInput, SendToAIInput } from './CodeInputCards';
+import { useChatContextOptional } from './ChatContext';
+import { useComments } from '@/hooks/useComments';
+import { fetchAllCommentsWithCode, buildAIMessage, clearAllComments, CHAT_COMMENT_FILE, type CodeReference } from '@/hooks/useAllComments';
 
 interface MessageListProps {
   messages: ChatMessage[];
@@ -35,6 +40,104 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const [showBottomButton, setShowBottomButton] = useState(false);
 
   const chatSearch = useChatSearch(outerRef);
+  const chatCtx = useChatContextOptional();
+
+  // --- 选择工具栏 & 持久化评论 ---
+  const floatingToolbarRef = useRef<ToolbarData | null>(null);
+  const bumpToolbarRef = useRef<() => void>(() => {});
+  const { addComment, refresh: refreshComments } = useComments({ cwd: cwd || '', filePath: CHAT_COMMENT_FILE });
+  const [commentInput, setCommentInput] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [sendAIInput, setSendAIInput] = useState<{ x: number; y: number; text: string } | null>(null);
+
+  // 选择检测 — 消息区域内的文本选择
+  const handleSelectionMouseUp = useCallback((e: React.MouseEvent) => {
+    if (commentInput || sendAIInput) return;
+
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) {
+      floatingToolbarRef.current = null;
+      bumpToolbarRef.current();
+      return;
+    }
+    const text = sel.toString().trim();
+    if (!text) {
+      floatingToolbarRef.current = null;
+      bumpToolbarRef.current();
+      return;
+    }
+    floatingToolbarRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      range: { start: 0, end: 0 },
+      selectedText: text,
+    };
+    bumpToolbarRef.current();
+  }, [commentInput, sendAIInput]);
+
+  // mousedown 时清除工具栏（除非点击的是工具栏/卡片本身）
+  const handleSelectionMouseDown = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('.floating-toolbar') || target.closest('[class*="z-[200]"]')) return;
+    if (floatingToolbarRef.current) {
+      floatingToolbarRef.current = null;
+      bumpToolbarRef.current();
+    }
+  }, []);
+
+  // 工具栏按钮回调
+  const handleAddComment = useCallback(() => {
+    const tb = floatingToolbarRef.current;
+    if (!tb) return;
+    setCommentInput({ x: tb.x, y: tb.y, text: tb.selectedText });
+    floatingToolbarRef.current = null;
+    bumpToolbarRef.current();
+    window.getSelection()?.removeAllRanges();
+  }, []);
+
+  const handleSendToAI = useCallback(() => {
+    const tb = floatingToolbarRef.current;
+    if (!tb) return;
+    setSendAIInput({ x: tb.x, y: tb.y, text: tb.selectedText });
+    floatingToolbarRef.current = null;
+    bumpToolbarRef.current();
+    window.getSelection()?.removeAllRanges();
+  }, []);
+
+  // 评论提交 — 持久化到 useComments
+  const handleCommentSubmit = useCallback(async (content: string) => {
+    if (!commentInput) return;
+    await addComment(0, 0, content, commentInput.text);
+    setCommentInput(null);
+  }, [commentInput, addComment]);
+
+  // 发送 AI 提交 — 复用 fetchAllCommentsWithCode + buildAIMessage + clearAllComments
+  const handleSendAISubmit = useCallback(async (question: string) => {
+    if (!sendAIInput || !chatCtx || !cwd) return;
+    try {
+      const allComments = await fetchAllCommentsWithCode(cwd);
+      const references: CodeReference[] = allComments.map(c => ({
+        filePath: c.filePath,
+        startLine: c.startLine,
+        endLine: c.endLine,
+        codeContent: c.codeContent,
+        note: c.content || undefined,
+      }));
+      // 当前选中文本作为最后一个引用
+      references.push({
+        filePath: CHAT_COMMENT_FILE,
+        startLine: 0,
+        endLine: 0,
+        codeContent: sendAIInput.text,
+      });
+      const message = buildAIMessage(references, question);
+      chatCtx.sendMessage(message);
+      await clearAllComments(cwd);
+      refreshComments();
+      setSendAIInput(null);
+    } catch (err) {
+      console.error('Failed to send to AI:', err);
+    }
+  }, [sendAIInput, chatCtx, cwd, refreshComments]);
 
   // 去重消息（防止重复 key 警告）
   const uniqueMessages = useMemo(() => {
@@ -185,7 +288,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   }, [messages.length, isActive]);
 
   return (
-    <div ref={outerRef} className="relative flex-1 overflow-hidden flex flex-col outline-none" tabIndex={-1}>
+    <div ref={outerRef} className="relative flex-1 overflow-hidden flex flex-col outline-none" tabIndex={-1} onMouseUp={handleSelectionMouseUp} onMouseDown={handleSelectionMouseDown}>
       {/* 搜索栏 */}
       {chatSearch.isSearchVisible && (
         <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-secondary border-b border-border">
@@ -300,6 +403,45 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </button>
+      )}
+
+      {/* 选择工具栏 */}
+      {outerRef.current && (
+        <ToolbarRenderer
+          floatingToolbarRef={floatingToolbarRef}
+          bumpRef={bumpToolbarRef}
+          container={outerRef.current}
+          onAddComment={handleAddComment}
+          onSendToAI={handleSendToAI}
+          isChatLoading={chatCtx?.isLoading}
+        />
+      )}
+
+      {/* 添加评论卡片 */}
+      {commentInput && outerRef.current && (
+        <AddCommentInput
+          x={commentInput.x}
+          y={commentInput.y}
+          range={{ start: 0, end: 0 }}
+          codeContent={commentInput.text}
+          container={outerRef.current}
+          onSubmit={handleCommentSubmit}
+          onClose={() => setCommentInput(null)}
+        />
+      )}
+
+      {/* 发送 AI 卡片 */}
+      {sendAIInput && outerRef.current && (
+        <SendToAIInput
+          x={sendAIInput.x}
+          y={sendAIInput.y}
+          range={{ start: 0, end: 0 }}
+          codeContent={sendAIInput.text}
+          container={outerRef.current}
+          onSubmit={handleSendAISubmit}
+          onClose={() => setSendAIInput(null)}
+          isChatLoading={chatCtx?.isLoading}
+        />
       )}
     </div>
   );

@@ -717,18 +717,30 @@ export function DatabaseBubble({
             <>
               {/* Left sidebar */}
               <div className="w-52 flex-shrink-0 border-r border-border flex flex-col overflow-hidden">
-                {/* Schema selector */}
-                {schemas.length > 1 && (
-                  <div className="p-1.5 border-b border-border">
+                {/* Schema selector + refresh */}
+                <div className="p-1.5 border-b border-border flex items-center gap-1">
+                  {schemas.length > 1 ? (
                     <select
                       value={activeSchema}
                       onChange={(e) => { setActiveSchema(e.target.value); setSelectedTable(null); }}
-                      className="w-full text-xs bg-background border border-input rounded px-1.5 py-1"
+                      className="flex-1 min-w-0 text-xs bg-background border border-input rounded px-1.5 py-1"
                     >
                       {schemas.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
-                  </div>
-                )}
+                  ) : (
+                    <span className="flex-1 min-w-0 text-xs text-muted-foreground truncate">{activeSchema}</span>
+                  )}
+                  <button
+                    onClick={loadTables}
+                    className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent active:bg-accent/50 transition-colors"
+                    title="刷新表列表"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 1v5h5" /><path d="M15 15v-5h-5" />
+                      <path d="M13.5 6A6 6 0 0 0 3.2 3.2L1 6" /><path d="M2.5 10a6 6 0 0 0 10.3 2.8L15 10" />
+                    </svg>
+                  </button>
+                </div>
                 {/* Type filter: T / V */}
                 <div className="flex items-center border-b border-border">
                   {(['table', 'view'] as const).map(f => (

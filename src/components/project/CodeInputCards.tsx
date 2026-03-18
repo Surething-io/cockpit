@@ -85,7 +85,9 @@ export function AddCommentInput({ x, y, range, codeContent, container, onSubmit,
       <div className="px-3 py-2 bg-amber-9/10 border-b border-border">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-amber-11">添加评论</span>
-          <span className="text-xs text-muted-foreground">行 {range.start}-{range.end}</span>
+          {(range.start > 0 || range.end > 0) && (
+            <span className="text-xs text-muted-foreground">行 {range.start}-{range.end}</span>
+          )}
         </div>
       </div>
       {/* 代码预览 */}
@@ -208,7 +210,9 @@ export function SendToAIInput({
       <div className="px-3 py-2 bg-brand/10 border-b border-border">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-brand">提问 AI</span>
-          <span className="text-xs text-muted-foreground">行 {range.start}-{range.end}</span>
+          {(range.start > 0 || range.end > 0) && (
+            <span className="text-xs text-muted-foreground">行 {range.start}-{range.end}</span>
+          )}
         </div>
         {filePath && <div className="mt-1 text-xs text-muted-foreground truncate">{filePath}</div>}
       </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { clearAllComments, emitCommentsChange, fetchAllCommentsWithCode } from '@/hooks/useAllComments';
+import { clearAllComments, emitCommentsChange, fetchAllCommentsWithCode, CHAT_COMMENT_FILE } from '@/hooks/useAllComments';
 import { Portal } from '../shared/Portal';
 import { toast } from '../shared/Toast';
 
@@ -11,6 +11,7 @@ interface CodeComment {
   startLine: number;
   endLine: number;
   content: string;
+  selectedText?: string;
   createdAt: number;
   updatedAt?: number;
 }
@@ -37,16 +38,30 @@ function formatCommentsForCopy(comments: CopyableComment[]): string {
 
   const parts: string[] = ['代码引用:', ''];
 
-  comments.forEach((comment, index) => {
-    parts.push(`[${index + 1}] ${comment.filePath}:${comment.startLine}-${comment.endLine}`);
-    parts.push('```');
-    parts.push(comment.codeContent);
-    parts.push('```');
+  const chatComments = comments.filter(c => c.filePath === CHAT_COMMENT_FILE);
+  const fileComments = comments.filter(c => c.filePath !== CHAT_COMMENT_FILE);
+
+  if (fileComments.length > 0) {
+    fileComments.forEach((comment, index) => {
+      parts.push(`[${index + 1}] ${comment.filePath}:${comment.startLine}-${comment.endLine}`);
+      parts.push('```');
+      parts.push(comment.codeContent);
+      parts.push('```');
+      if (comment.content) {
+        parts.push(`备注: ${comment.content}`);
+      }
+      parts.push('');
+    });
+  }
+
+  for (const comment of chatComments) {
+    const quoted = comment.codeContent.split('\n').map((l: string) => `> ${l}`).join('\n');
+    parts.push(quoted);
     if (comment.content) {
-      parts.push(`备注: ${comment.content}`);
+      parts.push(comment.content);
     }
     parts.push('');
-  });
+  }
 
   return parts.join('\n').trim();
 }
@@ -100,16 +115,23 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
   const handleCopySingle = async (comment: CodeComment) => {
     setCopyingId(comment.id);
     try {
-      // 获取代码内容
-      const fileResponse = await fetch(
-        `/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(comment.filePath)}`
-      );
-      if (!fileResponse.ok) {
-        throw new Error('Failed to read file');
+      let codeContent = '';
+
+      if (comment.selectedText) {
+        // 有 selectedText 的评论（如 AI 消息气泡）直接使用
+        codeContent = comment.selectedText;
+      } else {
+        // 从文件读取代码内容
+        const fileResponse = await fetch(
+          `/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(comment.filePath)}`
+        );
+        if (!fileResponse.ok) {
+          throw new Error('Failed to read file');
+        }
+        const fileData = await fileResponse.json();
+        const lines = (fileData.content || '').split('\n');
+        codeContent = lines.slice(comment.startLine - 1, comment.endLine).join('\n');
       }
-      const fileData = await fileResponse.json();
-      const lines = (fileData.content || '').split('\n');
-      const codeContent = lines.slice(comment.startLine - 1, comment.endLine).join('\n');
 
       const copyable: CopyableComment = {
         filePath: comment.filePath,
@@ -227,7 +249,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
                   {/* File header */}
                   <div className="px-3 py-2 bg-secondary border-b border-border">
                     <span className="text-sm font-medium text-foreground font-mono">
-                      {filePath}
+                      {filePath === CHAT_COMMENT_FILE ? 'AI 回复' : filePath}
                     </span>
                     <span className="ml-2 text-xs text-muted-foreground">
                       ({fileComments.length} 条评论)
@@ -244,14 +266,22 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="text-xs text-brand font-mono">
-                                行 {comment.startLine === comment.endLine
-                                  ? comment.startLine
-                                  : `${comment.startLine}-${comment.endLine}`}
-                              </span>
-                              <span className="text-xs text-muted-foreground">
-                                ({comment.endLine - comment.startLine + 1} 行)
-                              </span>
+                              {(comment.startLine > 0 || comment.endLine > 0) ? (
+                                <>
+                                  <span className="text-xs text-brand font-mono">
+                                    行 {comment.startLine === comment.endLine
+                                      ? comment.startLine
+                                      : `${comment.startLine}-${comment.endLine}`}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">
+                                    ({comment.endLine - comment.startLine + 1} 行)
+                                  </span>
+                                </>
+                              ) : comment.selectedText ? (
+                                <span className="text-xs text-muted-foreground italic truncate max-w-[200px]">
+                                  &ldquo;{comment.selectedText.slice(0, 50)}{comment.selectedText.length > 50 ? '...' : ''}&rdquo;
+                                </span>
+                              ) : null}
                               <span className="text-xs text-muted-foreground">
                                 {formatDate(comment.updatedAt || comment.createdAt)}
                               </span>

@@ -650,8 +650,8 @@ export function DatabaseBubble({
           data-drag-handle
           onDoubleClick={onToggleMaximize}
           onMouseDown={onTitleMouseDown}
-          className={`flex items-center gap-2 px-3 py-2 border-b border-border ${maximized ? 'bg-card' : 'bg-card/50'}`}
-          style={{ height: TOOLBAR_HEIGHT }}
+          className={`flex items-center gap-2 px-4 py-1.5 border-b border-border ${maximized ? 'bg-card' : 'bg-card/50'}`}
+          style={maximized ? { height: TOOLBAR_HEIGHT } : undefined}
         >
           <span className="text-sm flex-shrink-0">🐘</span>
           <span className="text-xs text-foreground truncate font-mono font-medium">{displayName}</span>
@@ -921,6 +921,19 @@ export function DatabaseBubble({
             </>
           )}
         </div>
+
+          {/* 底部状态栏 - 非放大模式 */}
+          {!maximized && (
+            <div className="border-t border-border px-4 py-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+              <span className={`inline-block w-2 h-2 rounded-full ${status === 'connected' ? 'bg-green-500' : status === 'error' ? 'bg-red-500' : 'bg-yellow-500 animate-pulse'}`} />
+              <span>{{ connecting: '连接中', connected: '已连接', error: '连接失败' }[status]}</span>
+              {status === 'connected' && selectedTable && (
+                <span className="text-muted-foreground/70">{selectedTable}</span>
+              )}
+              <span className="flex-1" />
+              {timestamp && <span className="text-[11px] flex-shrink-0">{formatTime(timestamp)}</span>}
+            </div>
+          )}
       </div>
     </div>
   );

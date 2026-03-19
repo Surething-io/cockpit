@@ -415,6 +415,19 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenNote={(cwd) => { setNoteProjectCwd(cwd ?? null); setIsNoteOpen(true); }}
         onSwitchProject={handleSwitchProject}
+        onAddProject={(cwd) => {
+          const existingIndex = projects.findIndex(p => p.cwd === cwd);
+          if (existingIndex >= 0) {
+            setActiveIndex(existingIndex);
+            saveProjects(projects, existingIndex, collapsed);
+          } else {
+            const newProjects = [...projects, { cwd }];
+            const newActiveIndex = newProjects.length - 1;
+            setProjects(newProjects);
+            setActiveIndex(newActiveIndex);
+            saveProjects(newProjects, newActiveIndex, collapsed);
+          }
+        }}
       />
 
       {/* 右侧内容区域 */}
@@ -454,6 +467,20 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         isOpen={isSessionBrowserOpen}
         onClose={() => setIsSessionBrowserOpen(false)}
         onSelectSession={handleAddProject}
+        onAddProject={(cwd) => {
+          const existingIndex = projects.findIndex(p => p.cwd === cwd);
+          if (existingIndex >= 0) {
+            setActiveIndex(existingIndex);
+            saveProjects(projects, existingIndex, collapsed);
+          } else {
+            const newProjects = [...projects, { cwd }];
+            const newActiveIndex = newProjects.length - 1;
+            setProjects(newProjects);
+            setActiveIndex(newActiveIndex);
+            saveProjects(newProjects, newActiveIndex, collapsed);
+          }
+          setIsSessionBrowserOpen(false);
+        }}
       />
 
       {/* Settings Modal */}

@@ -28,9 +28,11 @@ interface SessionBrowserProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectSession?: (cwd: string, sessionId: string) => void;
+  onAddProject?: (cwd: string) => void;
 }
 
-export function SessionBrowser({ isOpen, onClose, onSelectSession }: SessionBrowserProps) {
+export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject }: SessionBrowserProps) {
+  const [isPickingFolder, setIsPickingFolder] = useState(false);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [projectStates, setProjectStates] = useState<Record<string, ProjectState>>({});
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
@@ -136,6 +138,24 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession }: SessionBrow
     }
   }, [isOpen, loadProjects]);
 
+  // 打开文件夹选择器
+  const handlePickFolder = useCallback(async () => {
+    if (isPickingFolder) return;
+    setIsPickingFolder(true);
+    try {
+      const res = await fetch('/api/pick-folder');
+      const data = await res.json();
+      if (data.folder && onAddProject) {
+        onAddProject(data.folder);
+        onClose();
+      }
+    } catch {
+      // 忽略错误
+    } finally {
+      setIsPickingFolder(false);
+    }
+  }, [isPickingFolder, onAddProject, onClose]);
+
   // ESC 键关闭
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -201,6 +221,19 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession }: SessionBrow
               onChange={(e) => setSearchKeyword(e.target.value)}
               className="px-2 py-1 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
             />
+            {onAddProject && (
+              <button
+                onClick={handlePickFolder}
+                disabled={isPickingFolder}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                title="打开文件夹"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m3-3H9m-4 7h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                {isPickingFolder ? '选择中...' : '打开文件夹'}
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"

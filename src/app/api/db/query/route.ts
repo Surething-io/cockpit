@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { pgPoolManager } from '@/lib/db/PgPoolManager';
+import { pgPoolManager } from '@/lib/bubbles/database/PgPoolManager';
 
 const MAX_ROWS = 1000;
 

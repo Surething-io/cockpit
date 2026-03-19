@@ -11,7 +11,7 @@ import { GLOBAL_STATE_FILE, readJsonFile, getTerminalHistoryPath, getTerminalOut
 import { readFile } from 'fs/promises';
 import { getLastUserMessage } from './global-state';
 import { registerCommand, finalizeCommand, getRunningCommands, getRunningCommand, getRegistrySize, getAllProjectCwds } from './terminal/RunningCommandRegistry';
-import { registerBrowser, unregisterBrowser, resolvePendingRequest, getBrowserByShortId, createPendingRequest, sendCommandToBrowser, listBrowsers } from './browser/BrowserBridge';
+import { registerBrowser, unregisterBrowser, resolvePendingRequest, getBrowserByShortId, createPendingRequest, sendCommandToBrowser, listBrowsers } from './bubbles/browser/BrowserBridge';
 import { getTerminalByShortId, listTerminals, addOutputListener, addExitListener, registerTerminal, unregisterTerminal, getTerminalShortId } from './terminal/TerminalBridge';
 import { randomUUID } from 'crypto';
 

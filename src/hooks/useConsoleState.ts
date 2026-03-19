@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { executeCommand as execCmd, interruptCommand as interruptCmd, attachCommand, queryRunningCommands, sendStdin, resizePty, dispose as disposeTerminalWs } from '@/lib/terminal/TerminalWsManager';
+import { matchInput, getPlugin, generatePluginItemId, type PluginItemBase } from '@/lib/bubbles';
 
 // ============================================
 // Types
@@ -19,23 +20,9 @@ export interface Command {
   usePty?: boolean;
 }
 
-export interface BrowserItem {
-  id: string;
-  url: string;
-  timestamp: string;
-}
-
-export interface DatabaseItem {
-  id: string;
-  connectionString: string;
-  displayName: string;
-  timestamp: string;
-}
-
 export type ConsoleItem =
   | { type: 'command'; data: Command }
-  | { type: 'browser'; data: BrowserItem }
-  | { type: 'database'; data: DatabaseItem };
+  | { type: string; data: PluginItemBase };
 
 // ============================================
 // Helpers
@@ -43,11 +30,6 @@ export type ConsoleItem =
 
 function generateUniqueCommandId(): string {
   return `cmd-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
-
-function isUrlInput(input: string): boolean {
-  const trimmed = input.trim().toLowerCase();
-  return trimmed.startsWith('http://') || trimmed.startsWith('https://');
 }
 
 const PTY_COMMANDS = new Set(['zsh', 'bash', 'sh', 'fish', 'nu', 'python', 'python3', 'node', 'irb', 'lua', 'vim', 'nvim', 'vi', 'nano', 'emacs', 'top', 'htop', 'less', 'man']);
@@ -90,12 +72,7 @@ function safeTruncate(str: string, maxLen: number): string {
   return skip > 0 ? s.slice(skip) : s;
 }
 
-function isPostgresInput(input: string): boolean {
-  const trimmed = input.trim().toLowerCase();
-  return trimmed.startsWith('postgresql://') || trimmed.startsWith('postgres://');
-}
-
-export { isUrlInput, isPtyCommand, isPostgresInput };
+export { isPtyCommand, matchInput };
 
 // ============================================
 // Hook
@@ -110,8 +87,7 @@ interface UseConsoleStateOptions {
 
 export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: UseConsoleStateOptions) {
   const [commands, setCommands] = useState<Command[]>([]);
-  const [browserItems, setBrowserItems] = useState<BrowserItem[]>([]);
-  const [databaseItems, setDatabaseItems] = useState<DatabaseItem[]>([]);
+  const [pluginItems, setPluginItems] = useState<PluginItemBase[]>([]);
   const [sleepingBubbles, setSleepingBubbles] = useState<Set<string>>(new Set());
   const [currentCwd, setCurrentCwd] = useState(initialShellCwd || cwd);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -129,8 +105,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
   const commandHistoryRef = useRef<string[]>([]);
   const ptySizeRef = useRef<Map<string, { cols: number; rows: number }>>(new Map());
   const executeCommandRef = useRef<((command: string) => void) | null>(null);
-  const addBrowserItemRef = useRef<((url: string) => void) | null>(null);
-  const addDatabaseItemRef = useRef<((connStr: string) => void) | null>(null);
+  const addPluginItemRef = useRef<((type: string, input: string, afterId?: string) => void) | null>(null);
   const consoleItemsRef = useRef<ConsoleItem[]>([]);
 
   // Scroll refs (passed in from ConsoleView)
@@ -221,26 +196,23 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
         const data = await response.json();
 
         const historyCommands: Command[] = [];
-        const historyBrowsers: BrowserItem[] = [];
-        const historyDatabases: DatabaseItem[] = [];
+        const historyPluginItems: PluginItemBase[] = [];
         const restoredSleeping = new Set<string>();
 
         for (const entry of data.entries) {
-          if (entry.type === 'database') {
-            historyDatabases.push({
+          const plugin = getPlugin(entry.type);
+          if (plugin) {
+            // 插件类型：通过插件 fromHistory 恢复
+            const fields = plugin.fromHistory(entry);
+            historyPluginItems.push({
               id: entry.id,
-              connectionString: entry.connectionString,
-              displayName: entry.displayName || entry.connectionString,
+              _type: entry.type,
               timestamp: entry.timestamp,
-            });
-          } else if (entry.type === 'browser') {
-            historyBrowsers.push({
-              id: entry.id,
-              url: entry.url,
-              timestamp: entry.timestamp,
+              ...fields,
             });
             if (entry.sleeping) restoredSleeping.add(entry.id);
           } else {
+            // Command 类型
             if (entry.running) continue;
             historyCommands.push({
               id: entry.id.includes('-') && entry.id.split('-').length === 3
@@ -259,8 +231,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
 
         if (page === 0) {
           setCommands(historyCommands);
-          setBrowserItems(historyBrowsers);
-          setDatabaseItems(historyDatabases);
+          setPluginItems(historyPluginItems);
           if (restoredSleeping.size > 0) setSleepingBubbles(restoredSleeping);
         } else {
           setCommands((prev) => {
@@ -268,14 +239,9 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
             const newCommands = historyCommands.filter((cmd) => !existingIds.has(cmd.id));
             return [...prev, ...newCommands];
           });
-          setBrowserItems((prev) => {
-            const existingIds = new Set(prev.map((b) => b.id));
-            const newItems = historyBrowsers.filter((b) => !existingIds.has(b.id));
-            return [...prev, ...newItems];
-          });
-          setDatabaseItems((prev) => {
-            const existingIds = new Set(prev.map((d) => d.id));
-            const newItems = historyDatabases.filter((d) => !existingIds.has(d.id));
+          setPluginItems((prev) => {
+            const existingIds = new Set(prev.map((p) => p.id));
+            const newItems = historyPluginItems.filter((p) => !existingIds.has(p.id));
             return [...prev, ...newItems];
           });
         }
@@ -393,13 +359,9 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
       actualCommand = aliases[firstWord] + (parts.length > 1 ? ' ' + parts.slice(1).join(' ') : '');
     }
 
-    if (isPostgresInput(actualCommand)) {
-      addDatabaseItemRef.current?.(actualCommand.trim());
-      return;
-    }
-
-    if (isUrlInput(actualCommand)) {
-      addBrowserItemRef.current?.(actualCommand.trim());
+    const matchedPlugin = matchInput(actualCommand);
+    if (matchedPlugin) {
+      addPluginItemRef.current?.(matchedPlugin.type, actualCommand.trim());
       return;
     }
 
@@ -625,15 +587,20 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     }
   }, [cwd, tabId, cleanupOutputRefs]);
 
-  // ========== 浏览器气泡 ==========
+  // ========== 插件气泡（通用） ==========
 
-  const addBrowserItem = useCallback((url: string, afterId?: string) => {
-    const item: BrowserItem = {
-      id: `browser-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      url,
+  const addPluginItem = useCallback((type: string, input: string, afterId?: string) => {
+    const plugin = getPlugin(type);
+    if (!plugin) return;
+
+    const fields = plugin.parse(input);
+    const item: PluginItemBase = {
+      id: generatePluginItemId(plugin.idPrefix),
+      _type: type,
       timestamp: new Date().toISOString(),
+      ...fields,
     };
-    setBrowserItems(prev => [...prev, item]);
+    setPluginItems(prev => [...prev, item]);
     setSelectedCommandId(item.id);
     setTimeout(scrollToBottom, 100);
 
@@ -658,86 +625,44 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
       }
     }
 
+    // 持久化
     if (tabId) {
+      const historyFields = plugin.toHistory(item);
       fetch('/api/terminal/history', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cwd,
           tabId,
-          entry: { type: 'browser', id: item.id, url: item.url, timestamp: item.timestamp },
+          entry: { type, id: item.id, timestamp: item.timestamp, ...historyFields },
         }),
-      }).catch(e => console.error('Failed to save browser item:', e));
+      }).catch(e => console.error(`Failed to save ${type} item:`, e));
     }
   }, [scrollToBottom, cwd, tabId, bubbleOrder]);
 
-  // ========== 数据库气泡 ==========
-
-  const addDatabaseItem = useCallback((connectionString: string) => {
-    let displayName = connectionString;
-    try {
-      const u = new URL(connectionString);
-      const db = u.pathname.replace(/^\//, '') || 'postgres';
-      displayName = `${db}@${u.hostname}${u.port ? ':' + u.port : ''}`;
-    } catch { /* keep raw string */ }
-
-    const item: DatabaseItem = {
-      id: `db-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      connectionString,
-      displayName,
-      timestamp: new Date().toISOString(),
-    };
-    setDatabaseItems(prev => [...prev, item]);
-    setSelectedCommandId(item.id);
-    setTimeout(scrollToBottom, 100);
-
-    if (tabId) {
-      fetch('/api/terminal/history', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cwd,
-          tabId,
-          entry: { type: 'database', id: item.id, connectionString, displayName: item.displayName, timestamp: item.timestamp },
-        }),
-      }).catch(e => console.error('Failed to save database item:', e));
-    }
-  }, [scrollToBottom, cwd, tabId]);
-
-  const closeDatabaseItem = useCallback((id: string) => {
-    setDatabaseItems(prev => prev.filter(item => item.id !== id));
-    setSelectedCommandId(prev => prev === id ? null : prev);
-
-    fetch('/api/db/disconnect', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    }).catch(() => {});
-
-    if (tabId) {
-      fetch(
-        `/api/terminal/history?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}&commandId=${encodeURIComponent(id)}`,
-        { method: 'DELETE' },
-      ).catch(e => console.error('Failed to delete database item:', e));
-    }
-  }, [cwd, tabId]);
-
-  addBrowserItemRef.current = addBrowserItem;
-  addDatabaseItemRef.current = addDatabaseItem;
-  executeCommandRef.current = executeCommand;
-
-  const closeBrowserItem = useCallback((id: string) => {
-    setBrowserItems(prev => prev.filter(item => item.id !== id));
+  const closePluginItem = useCallback(async (id: string) => {
+    const item = pluginItems.find(p => p.id === id);
+    setPluginItems(prev => prev.filter(p => p.id !== id));
     setSelectedCommandId(prev => prev === id ? null : prev);
     setSleepingBubbles(prev => { const next = new Set(prev); next.delete(id); return next; });
 
+    // 调用插件的清理逻辑
+    if (item) {
+      const plugin = getPlugin(item._type);
+      plugin?.onClose?.(item);
+    }
+
+    // 删除持久化
     if (tabId) {
       fetch(
         `/api/terminal/history?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}&commandId=${encodeURIComponent(id)}`,
         { method: 'DELETE' },
-      ).catch(e => console.error('Failed to delete browser item:', e));
+      ).catch(e => console.error('Failed to delete plugin item:', e));
     }
-  }, [cwd, tabId]);
+  }, [pluginItems, cwd, tabId]);
+
+  addPluginItemRef.current = addPluginItem;
+  executeCommandRef.current = executeCommand;
 
   const persistSleeping = useCallback((id: string, sleeping: boolean) => {
     if (!tabId) return;
@@ -777,8 +702,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
   const consoleItems = useMemo<ConsoleItem[]>(() => {
     const all: ConsoleItem[] = [
       ...commands.map(cmd => ({ type: 'command' as const, data: cmd })),
-      ...browserItems.map(item => ({ type: 'browser' as const, data: item })),
-      ...databaseItems.map(item => ({ type: 'database' as const, data: item })),
+      ...pluginItems.map(item => ({ type: item._type, data: item })),
     ];
     if (!bubbleOrder || bubbleOrder.length === 0) {
       return all.sort((a, b) => new Date(a.data.timestamp).getTime() - new Date(b.data.timestamp).getTime());
@@ -796,7 +720,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     ordered.sort((a, b) => orderIndex.get(a.data.id)! - orderIndex.get(b.data.id)!);
     unordered.sort((a, b) => new Date(a.data.timestamp).getTime() - new Date(b.data.timestamp).getTime());
     return [...ordered, ...unordered];
-  }, [commands, browserItems, databaseItems, bubbleOrder]);
+  }, [commands, pluginItems, bubbleOrder]);
   consoleItemsRef.current = consoleItems;
 
   // ========== 命令历史数组（用于上下箭头导航） ==========
@@ -885,8 +809,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
   return {
     // State
     commands,
-    browserItems,
-    databaseItems,
+    pluginItems,
     sleepingBubbles,
     consoleItems,
     currentCwd,
@@ -905,18 +828,14 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     commandHistoryRef,
     ptySizeRef,
     executeCommandRef,
-    addBrowserItemRef,
-    addDatabaseItemRef,
 
     // Actions
     executeCommand,
     interruptCommand,
     rerunCommand,
     deleteCommand,
-    addBrowserItem,
-    closeBrowserItem,
-    addDatabaseItem,
-    closeDatabaseItem,
+    addPluginItem,
+    closePluginItem,
     handleBubbleSleep,
     handleBubbleWake,
     loadHistory,

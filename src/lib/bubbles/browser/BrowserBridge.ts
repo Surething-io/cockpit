@@ -6,7 +6,7 @@
  */
 
 import { WebSocket } from 'ws';
-import { toShortId } from '../shortId';
+import { toShortId } from '../../shortId';
 
 // ============================================================================
 // Registry

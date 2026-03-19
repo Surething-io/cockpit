@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { BUBBLE_CONTENT_HEIGHT } from './CommandBubble';
+import { BUBBLE_CONTENT_HEIGHT } from '@/components/project/console/CommandBubble';
 import { useToast } from '@/components/shared/Toast';
 
 // ============================================================================

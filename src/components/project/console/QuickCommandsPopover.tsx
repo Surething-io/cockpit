@@ -4,14 +4,14 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, X, Play } from 'lucide-react';
 import { Tooltip } from '@/components/shared/Tooltip';
 import type { CustomCommand } from '@/app/api/services/config/route';
-import { isUrlInput } from '@/hooks/useConsoleState';
+import { matchInput } from '@/hooks/useConsoleState';
 
 interface QuickCommandsPopoverProps {
   cwd: string;
   show: boolean;
   onClose: () => void;
   onExecute: (command: string) => void;
-  onAddBrowser: (url: string) => void;
+  onAddPluginItem?: (type: string, input: string) => void;
 }
 
 /** Inline add-command row */
@@ -120,7 +120,7 @@ function CommandSection({
   );
 }
 
-export function QuickCommandsPopover({ cwd, show, onClose, onExecute, onAddBrowser }: QuickCommandsPopoverProps) {
+export function QuickCommandsPopover({ cwd, show, onClose, onExecute, onAddPluginItem }: QuickCommandsPopoverProps) {
   const [globalCommands, setGlobalCommands] = useState<CustomCommand[]>([]);
   const [projectCommands, setProjectCommands] = useState<CustomCommand[]>([]);
   const [addingSection, setAddingSection] = useState<'global' | 'project' | null>(null);
@@ -191,12 +191,13 @@ export function QuickCommandsPopover({ cwd, show, onClose, onExecute, onAddBrows
 
   const handleExecute = useCallback((command: string) => {
     onClose();
-    if (isUrlInput(command)) {
-      onAddBrowser(command.trim());
+    const plugin = matchInput(command);
+    if (plugin) {
+      onAddPluginItem?.(plugin.type, command.trim());
     } else {
       onExecute(command);
     }
-  }, [onClose, onExecute, onAddBrowser]);
+  }, [onClose, onExecute, onAddPluginItem]);
 
   if (!show) return null;
 

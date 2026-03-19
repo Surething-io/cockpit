@@ -54,10 +54,39 @@ function hasAsciiArt(text: string): boolean {
   const lines = text.split('\n');
   const pipeLines = lines.filter(line => /^\s*\||\|\s*$/.test(line));
   if (pipeLines.length >= 3) {
+    // 排除表格模式：表格行的 | 数量一致（列数相同）且至少有 2 列（3 个 |）
+    // 例如 | col1 | col2 | 有 3 个 |，ASCII art 如 |  box  | 只有 2 个
+    const pipeCounts = pipeLines.map(line => (line.match(/\|/g) || []).length);
+    const allSame = pipeCounts.every(c => c === pipeCounts[0]);
+    if (allSame && pipeCounts[0] >= 3) {
+      return false;
+    }
     return true;
   }
 
   return false;
+}
+
+/**
+ * 预处理表格行：转义 backtick 内的 | 字符
+ * remark-gfm 在拆分表格列时不会跳过 code span 内的 |，
+ * 导致 `|` 被当作列分隔符，需要预处理转义为 \|
+ *
+ * GFM 表格解析顺序：先按 | 拆分列（\| 视为转义，不做分隔符），
+ * 再对每列内容做 inline 解析（backtick → code span）。
+ * 因此将 code span 内的 | 替换为 \|，表格解析阶段消耗 \，
+ * inline 阶段 code span 内只剩 |，渲染正确。
+ */
+function escapeTablePipes(content: string): string {
+  return content.replace(/^(\|.+\|)$/gm, (line) => {
+    // 跳过分隔行（全是 -:|空格）
+    if (/^\|[\s:|-]+\|$/.test(line)) return line;
+    // 将 backtick 内的 | 替换为 \|（GFM 表格转义管道符）
+    return line.replace(/`([^`]*)`/g, (match, inner) => {
+      if (!inner.includes('|')) return match;
+      return '`' + inner.replace(/\|/g, '\\|') + '`';
+    });
+  });
 }
 
 /**
@@ -184,7 +213,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
     if (isUser || isStreaming) {
       return content;
     }
-    return preprocessAsciiArt(content);
+    return escapeTablePipes(preprocessAsciiArt(content));
   }, [content, isUser, isStreaming]);
 
   // 用户消息使用简化样式
@@ -212,7 +241,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
           remarkPlugins={REMARK_PLUGINS}
           components={streamComponents}
         >
-          {completedLines}
+          {escapeTablePipes(completedLines)}
         </ReactMarkdown>
         {/* 当前正在输入的行用纯文本 */}
         {currentLine && (

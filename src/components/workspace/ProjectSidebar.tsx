@@ -27,6 +27,7 @@ interface ProjectSidebarProps {
   onOpenSettings: () => void;
   onOpenNote: (cwd?: string) => void;
   onSwitchProject: (cwd: string, sessionId: string) => void;
+  onAddProject: (cwd: string) => void;
 }
 
 // 从 cwd 提取项目名称
@@ -48,6 +49,7 @@ export function ProjectSidebar({
   onOpenSettings,
   onOpenNote,
   onSwitchProject,
+  onAddProject,
 }: ProjectSidebarProps) {
   const { pinnedSessions, unpinSession, updateTitle, reorder } = usePinnedSessions();
   const { tasks: scheduledTasks, unreadCount: scheduledUnread, reload: reloadScheduled, pauseTask, resumeTask, deleteTask: deleteScheduledTask, updateTask: updateScheduledTask, markRead: markScheduledRead, reorderTasks } = useScheduledTasks();
@@ -129,7 +131,7 @@ export function ProjectSidebar({
         collapsed ? 'w-12' : 'w-56'
       }`}
     >
-      {/* 浏览所有会话按钮 + 折叠按钮 */}
+      {/* 打开项目按钮 + 折叠按钮 */}
       <div
         className="p-2 border-b border-border relative"
         onMouseEnter={() => setIsHovered(true)}
@@ -140,12 +142,15 @@ export function ProjectSidebar({
             collapsed ? 'justify-center' : ''
           }`}
           onClick={onOpenSessionBrowser}
-          title="浏览所有会话"
+          title="打开项目"
         >
-          <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+          <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
           </svg>
-          {!collapsed && <span className="text-sm">浏览所有会话</span>}
+          {!collapsed && <span className="text-sm">打开项目</span>}
         </button>
         {/* 折叠按钮 */}
         {isHovered && (
@@ -166,7 +171,6 @@ export function ProjectSidebar({
               </svg>
             </button>
           ) : (
-            // 展开状态：小按钮放右侧
             <button
               className="absolute top-1/2 -translate-y-1/2 right-2 p-2 rounded-lg bg-accent text-foreground transition-colors z-10"
               onClick={onToggleCollapse}

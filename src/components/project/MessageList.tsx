@@ -65,6 +65,13 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       bumpToolbarRef.current();
       return;
     }
+    // 只有 AI 回复的气泡才弹出工具栏
+    const anchor = sel.anchorNode instanceof HTMLElement ? sel.anchorNode : sel.anchorNode?.parentElement;
+    if (anchor?.closest('[data-role="user"]')) {
+      floatingToolbarRef.current = null;
+      bumpToolbarRef.current();
+      return;
+    }
     floatingToolbarRef.current = {
       x: e.clientX,
       y: e.clientY,

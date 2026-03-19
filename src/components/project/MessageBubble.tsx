@@ -177,7 +177,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
 
   return (
     <>
-      <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} mb-4 group`}>
+      <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} mb-4 group`} data-role={message.role}>
         {/* 消息时间 - hover 时显示 */}
         {timeStr && (
           <span className="text-[11px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity mb-0.5 px-1">

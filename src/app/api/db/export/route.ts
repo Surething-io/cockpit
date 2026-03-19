@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { pgPoolManager } from '@/lib/db/PgPoolManager';
+import { pgPoolManager } from '@/lib/bubbles/database/PgPoolManager';
 
 function escapeCsvField(value: unknown): string {
   if (value === null || value === undefined) return '';

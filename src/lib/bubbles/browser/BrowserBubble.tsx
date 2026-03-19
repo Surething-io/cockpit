@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { toast } from '../../shared/Toast';
-import { BUBBLE_CONTENT_HEIGHT } from './CommandBubble';
+import { toast } from '@/components/shared/Toast';
+import { BUBBLE_CONTENT_HEIGHT } from '@/components/project/console/CommandBubble';
 import { useBrowserBridge } from '@/hooks/useBrowserBridge';
-import { ShortIdBadge } from './ShortIdBadge';
+import { ShortIdBadge } from '@/components/project/console/ShortIdBadge';
 
 // ============================================================================
 // Utility Functions

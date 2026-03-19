@@ -2,14 +2,13 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { CommandBubble } from './CommandBubble';
-import { BrowserBubble } from './BrowserBubble';
-import { DatabaseBubble } from './DatabaseBubble';
 import { EnvManager } from './EnvManager';
 import { AliasManager } from '../AliasManager';
 import { ConsoleInputBar } from './ConsoleInputBar';
 import { ConsoleScrollButtons } from './ConsoleScrollButtons';
-import { useConsoleState, type ConsoleItem, type DatabaseItem } from '@/hooks/useConsoleState';
+import { useConsoleState, type ConsoleItem } from '@/hooks/useConsoleState';
 import { interruptCommand as interruptCmd } from '@/lib/terminal/TerminalWsManager';
+import { getPlugin } from '@/lib/bubbles';
 
 interface ConsoleViewProps {
   cwd: string;
@@ -253,108 +252,79 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
               </div>
             )}
             <div className={maximizedId ? 'flex flex-col gap-3' : gridLayout ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-3'}>
-            {state.consoleItems.map((item) => (
-              item.type === 'command' ? (
-                <div
-                  key={item.data.id}
-                  data-bubble-id={item.data.id}
-                  className="group/cmd rounded-lg transition-shadow"
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, item.data.id)}
-                  onDragOver={(e) => handleDragOver(e, item.data.id)}
-                  onDragEnter={handleDragEnter}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onDragEnd={handleDragEnd}
-                >
-                  <CommandBubble
-                    commandId={item.data.id}
-                    tabId={tabId}
-                    projectCwd={cwd}
-                    command={item.data.command}
-                    output={item.data.output}
-                    exitCode={item.data.exitCode}
-                    isRunning={item.data.isRunning}
-                    selected={state.selectedCommandId === item.data.id}
-                    onSelect={() => { state.setSelectedCommandId(item.data.id); }}
-                    onInterrupt={item.data.isRunning ? () => state.interruptCommand(item.data.id) : undefined}
-                    onStdin={item.data.isRunning ? (data: string) => state.sendStdin(item.data.id, data) : undefined}
-                    onDelete={() => {
-                      if (item.data.isRunning && item.data.pid) interruptCmd(item.data.pid);
-                      state.deleteCommand(item.data.id);
+            {state.consoleItems.map((item) => {
+              const dragProps = {
+                draggable: true,
+                onDragStart: (e: React.DragEvent) => handleDragStart(e, item.data.id),
+                onDragOver: (e: React.DragEvent) => handleDragOver(e, item.data.id),
+                onDragEnter: handleDragEnter,
+                onDragLeave: handleDragLeave,
+                onDrop: handleDrop,
+                onDragEnd: handleDragEnd,
+              };
+
+              if (item.type === 'command') {
+                const cmd = item.data as import('@/hooks/useConsoleState').Command;
+                return (
+                  <div key={cmd.id} data-bubble-id={cmd.id} className="group/cmd rounded-lg transition-shadow" {...dragProps}>
+                    <CommandBubble
+                      commandId={cmd.id}
+                      tabId={tabId}
+                      projectCwd={cwd}
+                      command={cmd.command}
+                      output={cmd.output}
+                      exitCode={cmd.exitCode}
+                      isRunning={cmd.isRunning}
+                      selected={state.selectedCommandId === cmd.id}
+                      onSelect={() => { state.setSelectedCommandId(cmd.id); }}
+                      onInterrupt={cmd.isRunning ? () => state.interruptCommand(cmd.id) : undefined}
+                      onStdin={cmd.isRunning ? (data: string) => state.sendStdin(cmd.id, data) : undefined}
+                      onDelete={() => {
+                        if (cmd.isRunning && cmd.pid) interruptCmd(cmd.pid);
+                        state.deleteCommand(cmd.id);
+                      }}
+                      onRerun={() => state.rerunCommand(cmd.id)}
+                      timestamp={cmd.timestamp}
+                      usePty={cmd.usePty}
+                      onPtyResize={(cols, rows) => { state.ptySizeRef.current.set(cmd.id, { cols, rows }); state.resizePty(cmd.id, cols, rows); }}
+                      onToggleMaximize={() => toggleMaximize(cmd.id)}
+                      maximized={maximizedId === cmd.id}
+                      expandedHeight={consoleHeight}
+                      bubbleContentHeight={bubbleContentHeight}
+                      onTitleMouseDown={handleTitleMouseDown}
+                    />
+                  </div>
+                );
+              }
+
+              // 插件气泡：从注册表查找 Component
+              const plugin = getPlugin(item.type);
+              if (!plugin) return null;
+              const Comp = plugin.Component;
+              const pluginData = item.data as import('@/lib/bubblePlugins').PluginItemBase;
+              return (
+                <div key={pluginData.id} data-bubble-id={pluginData.id} className="rounded-lg transition-shadow" {...dragProps}>
+                  <Comp
+                    item={pluginData}
+                    selected={state.selectedCommandId === pluginData.id}
+                    maximized={maximizedId === pluginData.id}
+                    expandedHeight={consoleHeight}
+                    bubbleContentHeight={bubbleContentHeight}
+                    timestamp={pluginData.timestamp}
+                    onSelect={() => { state.setSelectedCommandId(pluginData.id); }}
+                    onClose={() => state.closePluginItem(pluginData.id)}
+                    onToggleMaximize={() => toggleMaximize(pluginData.id)}
+                    onTitleMouseDown={handleTitleMouseDown}
+                    extra={{
+                      addBrowserItem: (url: string, afterId: string) => state.addPluginItem('browser', url, afterId),
+                      initialSleeping: state.sleepingBubbles.has(pluginData.id),
+                      onSleep: state.handleBubbleSleep,
+                      onWake: state.handleBubbleWake,
                     }}
-                    onRerun={() => state.rerunCommand(item.data.id)}
-                    timestamp={item.data.timestamp}
-                    usePty={item.data.usePty}
-                    onPtyResize={(cols, rows) => { state.ptySizeRef.current.set(item.data.id, { cols, rows }); state.resizePty(item.data.id, cols, rows); }}
-                    onToggleMaximize={() => toggleMaximize(item.data.id)}
-                    maximized={maximizedId === item.data.id}
-                    expandedHeight={consoleHeight}
-                    bubbleContentHeight={bubbleContentHeight}
-                    onTitleMouseDown={handleTitleMouseDown}
                   />
                 </div>
-              ) : item.type === 'browser' ? (
-                <div
-                  key={item.data.id}
-                  data-bubble-id={item.data.id}
-                  className="rounded-lg transition-shadow"
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, item.data.id)}
-                  onDragOver={(e) => handleDragOver(e, item.data.id)}
-                  onDragEnter={handleDragEnter}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onDragEnd={handleDragEnd}
-                >
-                  <BrowserBubble
-                    id={item.data.id}
-                    url={(item.data as { url: string }).url}
-                    selected={state.selectedCommandId === item.data.id}
-                    maximized={maximizedId === item.data.id}
-                    onSelect={() => { state.setSelectedCommandId(item.data.id); }}
-                    onClose={() => state.closeBrowserItem(item.data.id)}
-                    onToggleMaximize={() => toggleMaximize(item.data.id)}
-                    onNewTab={state.addBrowserItem}
-                    expandedHeight={consoleHeight}
-                    bubbleContentHeight={bubbleContentHeight}
-                    timestamp={item.data.timestamp}
-                    onTitleMouseDown={handleTitleMouseDown}
-                    initialSleeping={state.sleepingBubbles.has(item.data.id)}
-                    onSleep={state.handleBubbleSleep}
-                    onWake={state.handleBubbleWake}
-                  />
-                </div>
-              ) : (
-                <div
-                  key={item.data.id}
-                  data-bubble-id={item.data.id}
-                  className="rounded-lg transition-shadow"
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, item.data.id)}
-                  onDragOver={(e) => handleDragOver(e, item.data.id)}
-                  onDragEnter={handleDragEnter}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onDragEnd={handleDragEnd}
-                >
-                  <DatabaseBubble
-                    id={item.data.id}
-                    connectionString={(item.data as DatabaseItem).connectionString}
-                    displayName={(item.data as DatabaseItem).displayName}
-                    selected={state.selectedCommandId === item.data.id}
-                    maximized={maximizedId === item.data.id}
-                    onSelect={() => { state.setSelectedCommandId(item.data.id); }}
-                    onClose={() => state.closeDatabaseItem(item.data.id)}
-                    onToggleMaximize={() => toggleMaximize(item.data.id)}
-                    expandedHeight={consoleHeight}
-                    bubbleContentHeight={bubbleContentHeight}
-                    timestamp={item.data.timestamp}
-                    onTitleMouseDown={handleTitleMouseDown}
-                  />
-                </div>
-              )
-            ))}
+              );
+            })}
             </div>
             <div ref={bottomRef} />
           </>
@@ -379,8 +349,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
         gridLayout={gridLayout}
         onGridLayoutChange={(grid) => { setGridLayout(grid); saveSettings({ gridLayout: grid }); }}
         onExecute={state.executeCommand}
-        onAddBrowser={state.addBrowserItem}
-        onAddDatabase={state.addDatabaseItem}
+        onAddPluginItem={state.addPluginItem}
         onShowEnvManager={() => setShowEnvManager(true)}
         onOpenZsh={() => state.executeCommand('zsh')}
         onOpenNote={onOpenNote}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { pgPoolManager } from '@/lib/bubbles/database/PgPoolManager';
+import { redisManager } from '@/lib/bubbles/redis/RedisManager';
 
 export async function POST(req: NextRequest) {
   try {
@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
     if (!id) {
       return NextResponse.json({ error: 'Missing id' }, { status: 400 });
     }
-    await pgPoolManager.disconnect(id);
+    await redisManager.disconnect(id);
     return NextResponse.json({ success: true });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);

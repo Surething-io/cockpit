@@ -13,10 +13,11 @@ interface FloatingToolbarProps {
   container: HTMLElement;
   onAddComment: () => void;
   onSendToAI: () => void;
+  onSearch?: () => void;
   isChatLoading?: boolean;
 }
 
-export function FloatingToolbar({ x, y, visible, container, onAddComment, onSendToAI, isChatLoading }: FloatingToolbarProps) {
+export function FloatingToolbar({ x, y, visible, container, onAddComment, onSendToAI, onSearch, isChatLoading }: FloatingToolbarProps) {
   const containerRect = container.getBoundingClientRect();
   const relX = x - containerRect.left;
   const relY = y - containerRect.top;
@@ -49,6 +50,14 @@ export function FloatingToolbar({ x, y, visible, container, onAddComment, onSend
       >
         发送 AI
       </button>
+      {onSearch && (
+        <button
+          className="px-3 py-1.5 text-xs font-medium border border-brand text-brand rounded-md hover:bg-brand/10 transition-colors"
+          onClick={onSearch}
+        >
+          搜索
+        </button>
+      )}
     </div>
   );
 }
@@ -71,10 +80,11 @@ interface ToolbarRendererProps {
   container: HTMLElement;
   onAddComment: () => void;
   onSendToAI: () => void;
+  onSearch?: () => void;
   isChatLoading?: boolean;
 }
 
-function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddComment, onSendToAI, isChatLoading }: ToolbarRendererProps) {
+function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddComment, onSendToAI, onSearch, isChatLoading }: ToolbarRendererProps) {
   const [version, forceRender] = useState(0);
 
   // 让父组件通过 bumpRef 触发本组件 re-render
@@ -93,6 +103,7 @@ function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddCom
       container={container}
       onAddComment={onAddComment}
       onSendToAI={onSendToAI}
+      onSearch={onSearch}
       isChatLoading={isChatLoading}
     />
   );

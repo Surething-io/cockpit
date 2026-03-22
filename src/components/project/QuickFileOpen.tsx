@@ -11,6 +11,7 @@ import { FileIcon } from '../shared/FileIcon';
 
 interface QuickFileOpenProps {
   files: FileNode[];
+  fileIndex?: string[] | null;
   recentFiles: string[];
   onSelectFile: (path: string) => void;
   onClose: () => void;
@@ -147,14 +148,14 @@ function HighlightedPath({ path, matchedIndices }: { path: string; matchedIndice
 // QuickFileOpen Component
 // ============================================
 
-export function QuickFileOpen({ files, recentFiles, onSelectFile, onClose }: QuickFileOpenProps) {
+export function QuickFileOpen({ files, fileIndex, recentFiles, onSelectFile, onClose }: QuickFileOpenProps) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Flatten all file paths
-  const allPaths = useMemo(() => flattenFilePaths(files), [files]);
+  // Use fileIndex when available (covers all files), fallback to tree flatten
+  const allPaths = useMemo(() => fileIndex ?? flattenFilePaths(files), [fileIndex, files]);
 
   // Compute results
   const results = useMemo(() => {

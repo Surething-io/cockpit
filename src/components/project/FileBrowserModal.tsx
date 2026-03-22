@@ -9,7 +9,8 @@ import { FileTree, type GitStatusMap, type GitStatusCode } from './FileTree';
 import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, collectFilesUnderNode } from './GitFileTree';
 import { MenuContainerProvider } from './FileContextMenu';
 import { CodeViewer } from './CodeViewer';
-import { isMarkdownFile } from './toolCallUtils';
+import { isMarkdownFile, formatAsHumanReadable } from './toolCallUtils';
+import { buildTreeFromPaths, collectAllDirPaths } from './fileBrowser/utils';
 import { InteractiveMarkdownPreview } from './InteractiveMarkdownPreview';
 import { FileIcon } from '../shared/FileIcon';
 import { type FileEditorHandle } from './FileEditorModal';
@@ -28,13 +29,14 @@ import { useGitStatus } from '../../hooks/useGitStatus';
 import { useGitHistory } from '../../hooks/useGitHistory';
 import { useLSPDefinition, useLSPHover, useLSPReferences, useLSPWarmup } from '../../hooks/useLSP';
 import { useNavigationHistory } from '../../hooks/useNavigationHistory';
+import { useJsonSearch, JsonSearchBar } from '../../hooks/useJsonSearch';
 import { getLanguageForFile } from '@/lib/lsp/types';
 import { HoverTooltip } from './HoverTooltip';
 import { ReferencesPanel } from './ReferencesPanel';
 import { SearchResultsPanel } from './SearchResultsPanel';
 import type { Location } from '@/lib/lsp/types';
 
-export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchTrigger }: FileBrowserModalProps) {
+export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchTrigger, initialSearchQuery, searchQueryTrigger }: FileBrowserModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const menuContainerRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
@@ -52,6 +54,12 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const editorHandleRef = useRef<FileEditorHandle>(null);
   const [editorState, setEditorState] = useState({ isDirty: false, isSaving: false });
   const [showSearchPanel, setShowSearchPanel] = useState(false);
+  const [jsonReadable, setJsonReadable] = useState(false);
+  const [jsonPreview, setJsonPreview] = useState<{ content: string; filePath: string } | null>(null);
+  const jsonPreRef = useRef<HTMLPreElement>(null);
+  const jsonSearch = useJsonSearch(jsonPreRef);
+  const jsonPreviewPreRef = useRef<HTMLPreElement>(null);
+  const jsonPreviewSearch = useJsonSearch(jsonPreviewPreRef);
 
   // ========== Hooks ==========
   const lspDefinition = useLSPDefinition(cwd);
@@ -128,28 +136,23 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     fileTree.handleSelectFile(path, lineNumber);
   }, [fileTree, saveCurrentFilePosition]);
 
-  // ========== Search results: matchedPaths + matchMap（复用 FileTree） ==========
+  // ========== Search results: 从搜索结果路径构建独立树（不依赖懒加载目录树） ==========
   const searchData = useMemo(() => {
     const results = contentSearch.contentSearchResults;
-    if (results.length === 0) return { matchedPaths: new Set<string>(), expandDirs: new Set<string>(), matchMap: new Map<string, SearchResult>() };
+    if (results.length === 0) return { files: [] as import('./fileBrowser/types').FileNode[], expandDirs: new Set<string>(), matchMap: new Map<string, SearchResult>() };
 
-    const matchedPaths = new Set<string>();
-    const expandDirs = new Set<string>();
     const matchMap = new Map<string, SearchResult>();
-
+    const filePaths: string[] = [];
     for (const r of results) {
       matchMap.set(r.path, r);
-      matchedPaths.add(r.path);
-      // 把所有祖先目录也加入 matchedPaths，否则 FileTree 过滤会跳过目录
-      const parts = r.path.split('/');
-      for (let i = 1; i < parts.length; i++) {
-        const dirPath = parts.slice(0, i).join('/');
-        matchedPaths.add(dirPath);
-        expandDirs.add(dirPath);
-      }
+      filePaths.push(r.path);
     }
 
-    return { matchedPaths, expandDirs, matchMap };
+    // 从搜索结果文件路径直接构建完整树，类似最近文件 Tab 的策略
+    const files = buildTreeFromPaths(filePaths);
+    const expandDirs = new Set(collectAllDirPaths(files));
+
+    return { files, expandDirs, matchMap };
   }, [contentSearch.contentSearchResults]);
 
   // 搜索树展开路径 — 搜索完成后默认全展开
@@ -309,6 +312,15 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     setActiveTab(initialTab);
   }, [initialTab, tabSwitchTrigger]);
 
+  // ========== Handle external search query (from Chat) ==========
+  useEffect(() => {
+    if (initialSearchQuery) {
+      setActiveTab('search');
+      contentSearch.setContentSearchQuery(initialSearchQuery);
+      contentSearch.performContentSearch(initialSearchQuery);
+    }
+  }, [searchQueryTrigger]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ========== Tab 切换处理 ==========
   const handleTabChange = useCallback((tab: TabType) => {
     setActiveTab(tab);
@@ -344,6 +356,49 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     }
   }, [fileTree, navHistory]);
 
+  // ========== Copy / Paste Handlers ==========
+  const handleCopyFile = useCallback(async (path: string) => {
+    const fileName = path.split('/').pop() || path;
+    try {
+      await fetch('/api/files/clipboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cwd, path }),
+      });
+      toast(`已复制: ${fileName}`, 'success');
+    } catch {
+      toast('复制失败', 'error');
+    }
+  }, [cwd]);
+
+  const handlePaste = useCallback(async (targetDir: string) => {
+    try {
+      // 统一从系统剪贴板读取文件路径
+      const clipRes = await fetch('/api/files/clipboard');
+      const clipData = await clipRes.json();
+      if (!clipData.path) {
+        toast('没有可粘贴的文件', 'info');
+        return;
+      }
+
+      const res = await fetch('/api/files/paste', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cwd, targetDir, sourceAbsPath: clipData.path }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast(`已粘贴: ${data.newName}`, 'success');
+        fileTree.loadDirectory(targetDir);
+        fileTree.loadFileIndex();
+      } else {
+        toast(data.error || '粘贴失败', 'error');
+      }
+    } catch {
+      toast('粘贴失败', 'error');
+    }
+  }, [cwd, fileTree]);
+
   // ========== Keyboard Shortcuts ==========
   const lastEscTimeRef = useRef<number>(0);
   useEffect(() => {
@@ -367,10 +422,60 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         return;
       }
 
+      // Cmd+C → 复制选中文件到系统剪贴板（仅目录树 tab 且非输入框内）
+      if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !e.shiftKey) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        const sel = window.getSelection()?.toString();
+        if ((activeTab === 'tree' || activeTab === 'recent') && fileTree.selectedPath && !sel && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+          e.preventDefault();
+          handleCopyFile(fileTree.selectedPath);
+          return;
+        }
+      }
+
+      // Cmd+V → 粘贴到选中文件所在目录
+      if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if ((activeTab === 'tree' || activeTab === 'recent') && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+          e.preventDefault();
+          handlePaste(getTargetDirPath(fileTree.selectedPath, fileTree.files));
+          return;
+        }
+      }
+
+      // Cmd+F in JSON readable mode → open JSON search
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        if (jsonPreview) {
+          e.preventDefault();
+          jsonPreviewSearch.open();
+          return;
+        }
+        if (jsonReadable && fileTree.selectedPath?.endsWith('.json')) {
+          e.preventDefault();
+          jsonSearch.open();
+          return;
+        }
+      }
+
       if (e.key === 'Escape') {
         // Close quick open first
         if (showQuickOpen) {
           setShowQuickOpen(false);
+          return;
+        }
+
+        // JSON 搜索栏优先关闭
+        if (jsonPreviewSearch.isVisible) {
+          jsonPreviewSearch.close();
+          return;
+        }
+        if (jsonSearch.isVisible) {
+          jsonSearch.close();
+          return;
+        }
+        // jsonPreview modal → 关闭 modal
+        if (jsonPreview) {
+          setJsonPreview(null);
           return;
         }
 
@@ -396,12 +501,12 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, fileTree.showBlame, fileTree.blameSelectedCommit, fileTree, showQuickOpen, lspReferences.visible, lspReferences.closeReferences, showSearchPanel, handleNavBack, handleNavForward]);
+  }, [onClose, fileTree.showBlame, fileTree.blameSelectedCommit, fileTree, showQuickOpen, lspReferences.visible, lspReferences.closeReferences, showSearchPanel, handleNavBack, handleNavForward, jsonReadable, jsonSearch, jsonPreview, jsonPreviewSearch, activeTab, handleCopyFile, handlePaste]);
 
   // ========== Initial Data Load (once on mount) ==========
   useEffect(() => {
-    fileTree.loadExpandedPaths();
     fileTree.loadFiles();
+    fileTree.loadFileIndex();
     fileTree.loadRecentFiles();
     gitStatus.fetchStatus();
     gitHistory.loadBranches();
@@ -420,6 +525,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   useEffect(() => {
     if (pageVisible && !prevVisibleRef.current) {
       fileTree.loadFiles();
+      fileTree.loadFileIndex();
       fileTree.loadRecentFiles();
       gitStatus.fetchStatus();
       gitHistory.loadBranches();
@@ -491,9 +597,14 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
       if (hasFileChange || hasGitChange) {
         promises.push(
-          fetch(`/api/files/list?cwd=${encodeURIComponent(cwd)}`)
+          fetch(`/api/files/init?cwd=${encodeURIComponent(cwd)}`)
             .then(res => res.json())
             .then(data => { if (!data.error) fileTree.setFiles(data.files || []); })
+        );
+        promises.push(
+          fetch(`/api/files/index?cwd=${encodeURIComponent(cwd)}`)
+            .then(res => res.json())
+            .then(data => { if (data.paths) fileTree.setFileIndex(data.paths); })
         );
         promises.push(
           fetch(`/api/files/recent?cwd=${encodeURIComponent(cwd)}`)
@@ -858,7 +969,8 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             if (res.ok) {
                               toast(`已创建文件: ${name}`, 'success');
                               fileTree.setCreatingItem(null);
-                              fileTree.loadFiles();
+                              fileTree.loadDirectory(parentPath);
+                              fileTree.loadFileIndex();
                               if (parentPath) {
                                 fileTree.setExpandedPaths(prev => new Set([...prev, parentPath]));
                               }
@@ -889,6 +1001,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     expandedPaths={fileTree.effectiveExpandedPaths}
                     matchedPaths={fileTree.matchedPaths}
                     gitStatusMap={gitStatusMap}
+                    loadingDirs={fileTree.loadingDirs}
                     onSelect={(path) => {
                       fileTree.setShouldScrollToSelected(false);
                       handleSelectFileWithSave(path);
@@ -900,6 +1013,8 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     onCreateFile={(dirPath) => fileTree.setCreatingItem({ type: 'file', parentPath: dirPath })}
                     onDelete={(path, isDir, name) => setDeleteConfirm({ path, isDirectory: isDir, name })}
                     onRefresh={() => fileTree.loadFiles()}
+                    onCopyFile={handleCopyFile}
+                    onPaste={handlePaste}
                   />
                 )}
               </div>
@@ -925,12 +1040,11 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         {contentSearch.searchStats.truncated && <span className="text-amber-11 ml-1">(结果已截断)</span>}
                       </div>
                     )}
-                    {/* 搜索结果目录树 — 复用 FileTree + matchedPaths */}
+                    {/* 搜索结果目录树 — 从搜索结果路径构建独立树 */}
                     <FileTree
-                      files={fileTree.files}
+                      files={searchData.files}
                       selectedPath={fileTree.selectedPath}
                       expandedPaths={searchTreeExpanded}
-                      matchedPaths={searchData.matchedPaths}
                       onSelect={(path) => {
                         const result = searchData.matchMap.get(path);
                         handleSelectFileWithSave(path, result?.matches[0]?.lineNumber);
@@ -1251,6 +1365,11 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   cwd={cwd}
                   embedded={true}
                   initialFilePath={fileTree.selectedPath || undefined}
+                  onContentSearch={(query) => {
+                    setActiveTab('search');
+                    contentSearch.setContentSearchQuery(query);
+                    contentSearch.performContentSearch(query);
+                  }}
                 />
               ) : fileTree.selectedPath ? (
                 <>
@@ -1333,6 +1452,19 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               复制
                             </button>
                           )}
+                          {fileTree.selectedPath?.endsWith('.json') && fileTree.fileContent?.type === 'text' && (
+                            <button
+                              onClick={() => setJsonReadable(v => !v)}
+                              className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
+                                jsonReadable
+                                  ? 'bg-brand text-white'
+                                  : 'text-muted-foreground hover:bg-accent'
+                              }`}
+                              title="切换 JSON 可读模式"
+                            >
+                              可读
+                            </button>
+                          )}
                           {fileTree.fileContent?.type === 'text' && isMarkdownFile(fileTree.selectedPath) && (
                               <button
                                 onClick={() => fileTree.setShowMarkdownPreview(true)}
@@ -1396,6 +1528,15 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           <div className="h-full flex items-center justify-center">
                             <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                           </div>
+                        ) : jsonReadable && fileTree.selectedPath?.endsWith('.json') ? (
+                          <div className="h-full flex flex-col bg-[#0d1117]">
+                            <JsonSearchBar search={jsonSearch} />
+                            <div className="flex-1 overflow-auto px-6 py-4">
+                              <pre ref={jsonPreRef} className="whitespace-pre-wrap break-words font-mono" style={{ fontSize: '0.8125rem', lineHeight: '1.5' }}>
+                                {formatAsHumanReadable(fileTree.fileContent.content)}
+                              </pre>
+                            </div>
+                          </div>
                         ) : (
                           <CodeViewer
                             ref={editorHandleRef}
@@ -1433,12 +1574,18 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             }}
                             onSaved={() => {
                               fileTree.loadFileContent(fileTree.selectedPath!);
+                              fileTree.setShowEditor(false);
                             }}
                             onEditorStateChange={setEditorState}
                             viMode={true}
                             onContentMutate={handleViContentMutate}
                             onEnterInsertMode={handleViEnterInsert}
                             onViSave={handleViSave}
+                            onContentSearch={(query) => {
+                              setActiveTab('search');
+                              contentSearch.setContentSearchQuery(query);
+                              contentSearch.performContentSearch(query);
+                            }}
                           />
                         )
                       ) : fileTree.fileContent.type === 'image' && fileTree.fileContent.content ? (
@@ -1541,7 +1688,19 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         isDeleted={gitStatus.statusDiff.isDeleted}
                         cwd={cwd}
                         enableComments={true}
-                        onPreview={isMarkdownFile(gitStatus.statusSelectedFile!.file.path) && !gitStatus.statusDiff.isDeleted ? () => gitStatus.setShowStatusDiffPreview(true) : undefined}
+                        onPreview={
+                          !gitStatus.statusDiff.isDeleted && isMarkdownFile(gitStatus.statusSelectedFile!.file.path)
+                            ? () => gitStatus.setShowStatusDiffPreview(true)
+                            : !gitStatus.statusDiff.isDeleted && gitStatus.statusSelectedFile!.file.path.endsWith('.json')
+                              ? () => setJsonPreview({ content: gitStatus.statusDiff!.newContent, filePath: gitStatus.statusDiff!.filePath })
+                              : undefined
+                        }
+                        previewLabel={gitStatus.statusSelectedFile!.file.path.endsWith('.json') ? '可读' : '预览'}
+                        onContentSearch={(query) => {
+                          setActiveTab('search');
+                          contentSearch.setContentSearchQuery(query);
+                          contentSearch.performContentSearch(query);
+                        }}
                       />
                     )}
                   </div>
@@ -1558,6 +1717,33 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           cwd={cwd}
                           onClose={() => gitStatus.setShowStatusDiffPreview(false)}
                         />
+                      </div>
+                    </div>
+                  )}
+                  {/* JSON 可读预览 Modal */}
+                  {jsonPreview && (
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setJsonPreview(null)}>
+                      <div
+                        className="bg-card rounded-lg shadow-xl w-full max-w-[90%] h-[90%] flex flex-col"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-between px-4 py-2 border-b border-border flex-shrink-0">
+                          <span className="text-sm text-muted-foreground font-mono truncate">{jsonPreview.filePath}</span>
+                          <button
+                            onClick={() => setJsonPreview(null)}
+                            className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                        <JsonSearchBar search={jsonPreviewSearch} />
+                        <div className="flex-1 overflow-auto px-6 py-4 bg-[#0d1117]">
+                          <pre ref={jsonPreviewPreRef} className="whitespace-pre-wrap break-words font-mono" style={{ fontSize: '0.8125rem', lineHeight: '1.5' }}>
+                            {formatAsHumanReadable(jsonPreview.content)}
+                          </pre>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1586,6 +1772,17 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     isDeleted={gitHistory.compareFileDiff.isDeleted}
                     cwd={cwd}
                     enableComments={true}
+                    onPreview={
+                      !gitHistory.compareFileDiff.isDeleted && gitHistory.compareFileDiff.filePath.endsWith('.json')
+                        ? () => setJsonPreview({ content: gitHistory.compareFileDiff!.newContent, filePath: gitHistory.compareFileDiff!.filePath })
+                        : undefined
+                    }
+                    previewLabel="可读"
+                    onContentSearch={(query) => {
+                      setActiveTab('search');
+                      contentSearch.setContentSearchQuery(query);
+                      contentSearch.performContentSearch(query);
+                    }}
                   />
                 ) : (
                   <div className="flex-1 flex items-center justify-center text-slate-9">
@@ -1599,6 +1796,11 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   commit={gitHistory.selectedCommit}
                   cwd={cwd}
                   embedded={true}
+                  onContentSearch={(query) => {
+                    setActiveTab('search');
+                    contentSearch.setContentSearchQuery(query);
+                    contentSearch.performContentSearch(query);
+                  }}
                 />
               ) : (
                 <div className="flex-1 flex items-center justify-center text-slate-9">
@@ -1630,6 +1832,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         {showQuickOpen && (
           <QuickFileOpen
             files={fileTree.files}
+            fileIndex={fileTree.fileIndex}
             recentFiles={fileTree.recentFilePaths}
             onSelectFile={(path) => {
               handleSelectFileWithSave(path);
@@ -1688,7 +1891,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
           <div className="bg-card border border-border rounded-lg shadow-xl p-4 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-sm font-medium text-foreground mb-2">确认删除</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              确定要删除 <span className="font-mono text-foreground">{deleteConfirm.name}</span> 吗？此操作不可恢复。
+              确定要将 <span className="font-mono text-foreground">{deleteConfirm.name}</span> 移动到回收站吗？
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -1708,8 +1911,10 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       body: JSON.stringify({ cwd, path }),
                     });
                     if (res.ok) {
-                      toast(`已删除 ${name}`, 'success');
-                      fileTree.loadFiles();
+                      toast(`已移动到回收站: ${name}`, 'success');
+                      const parentDir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
+                      fileTree.loadDirectory(parentDir);
+                      fileTree.loadFileIndex();
                       if (fileTree.selectedPath === path) {
                         handleSelectFileWithSave('');
                       }

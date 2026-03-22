@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { type CommitInfo } from '../components/project/CommitDetailPanel';
 import type { FileNode, FileContent, BlameLine } from '../components/project/fileBrowser/types';
-import { buildTreeFromPaths, collectAllDirPaths, computeMatchedPaths } from '../components/project/fileBrowser/utils';
+import { buildTreeFromPaths, collectAllDirPaths, computeMatchedPaths, computeMatchedPathsFromIndex, findNodeByPath } from '../components/project/fileBrowser/utils';
 import type { RecentFileEntry } from '../app/api/files/recent/route';
 
 interface UseFileTreeOptions {
@@ -11,6 +11,8 @@ interface UseFileTreeOptions {
 export function useFileTree({ cwd }: UseFileTreeOptions) {
   // ========== File Browser State ==========
   const [files, setFiles] = useState<FileNode[]>([]);
+  const [fileIndex, setFileIndex] = useState<string[] | null>(null);
+  const [loadingDirs, setLoadingDirs] = useState<Set<string>>(new Set());
   const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
@@ -60,8 +62,12 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
 
   const matchedPaths = useMemo(() => {
     if (!searchQuery) return null;
+    // Prefer fileIndex for search (covers all files including unloaded dirs)
+    if (fileIndex) {
+      return computeMatchedPathsFromIndex(fileIndex, searchQuery, searchExactMatch);
+    }
     return computeMatchedPaths(files, searchQuery, searchExactMatch);
-  }, [files, searchQuery, searchExactMatch]);
+  }, [files, fileIndex, searchQuery, searchExactMatch]);
 
   // 搜索态展开状态：从 matchedPaths 直接计算，每次搜索词变化都重新生成
   useEffect(() => {
@@ -70,34 +76,31 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
       return;
     }
     const expanded = new Set<string>();
-    const collectDirs = (nodes: FileNode[]) => {
-      for (const node of nodes) {
-        if (node.isDirectory && node.children && matchedPaths.has(node.path)) {
-          expanded.add(node.path);
-          collectDirs(node.children);
-        }
+    if (fileIndex) {
+      // With index: directories are paths in matchedPaths but not in fileIndex
+      const fileSet = new Set(fileIndex);
+      for (const p of matchedPaths) {
+        if (!fileSet.has(p)) expanded.add(p);
       }
-    };
-    collectDirs(files);
+    } else {
+      // Without index: traverse tree as before
+      const collectDirs = (nodes: FileNode[]) => {
+        for (const node of nodes) {
+          if (node.isDirectory && node.children && matchedPaths.has(node.path)) {
+            expanded.add(node.path);
+            collectDirs(node.children);
+          }
+        }
+      };
+      collectDirs(files);
+    }
     setSearchTreeExpandedPaths(expanded);
-  }, [matchedPaths, files]);
+  }, [matchedPaths, files, fileIndex]);
 
   // 搜索态用独立的展开状态，非搜索态用用户手动管理的状态
   const effectiveExpandedPaths = searchTreeExpandedPaths ?? expandedPaths;
 
   // ========== File Browser Functions ==========
-  const loadExpandedPaths = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/files/expanded?cwd=${encodeURIComponent(cwd)}`);
-      const data = await res.json();
-      if (data.paths && Array.isArray(data.paths) && data.paths.length > 0) {
-        setExpandedPaths(new Set(data.paths));
-      }
-    } catch (err) {
-      console.error('Error loading expanded paths:', err);
-    }
-  }, [cwd]);
-
   const saveExpandedPathsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveExpandedPaths = useCallback((paths: Set<string>) => {
     // Debounce save to avoid too many requests
@@ -121,12 +124,16 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     setIsLoadingFiles(true);
     setFileError(null);
     try {
-      const res = await fetch(`/api/files/list?cwd=${encodeURIComponent(cwd)}`);
+      const res = await fetch(`/api/files/init?cwd=${encodeURIComponent(cwd)}`);
       const data = await res.json();
       if (data.error) {
         setFileError(data.error);
       } else {
         setFiles(data.files || []);
+        // init returns expandedPaths from persisted state
+        if (data.expandedPaths && Array.isArray(data.expandedPaths)) {
+          setExpandedPaths(new Set(data.expandedPaths));
+        }
       }
     } catch (err) {
       console.error('Error loading files:', err);
@@ -135,6 +142,68 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
       setIsLoadingFiles(false);
     }
   }, [cwd]);
+
+  const loadFileIndex = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/files/index?cwd=${encodeURIComponent(cwd)}`);
+      const data = await res.json();
+      if (data.paths) {
+        setFileIndex(data.paths);
+      }
+    } catch (err) {
+      console.error('Error loading file index:', err);
+    }
+  }, [cwd]);
+
+  const loadDirectory = useCallback(async (dirPath: string) => {
+    setLoadingDirs(prev => new Set([...prev, dirPath]));
+    try {
+      const res = await fetch(`/api/files/readdir?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(dirPath)}`);
+      const data = await res.json();
+      if (data.children) {
+        setFiles(prev => {
+          if (!dirPath) {
+            // 根目录：替换顶层节点，保留已加载子目录的 children
+            const prevMap = new Map(prev.map(n => [n.path, n]));
+            return (data.children as FileNode[]).map(newNode => {
+              const existing = prevMap.get(newNode.path);
+              return existing?.children && newNode.isDirectory
+                ? { ...newNode, children: existing.children }
+                : newNode;
+            });
+          }
+          const next = structuredClone(prev);
+          const node = findNodeByPath(next, dirPath);
+          if (node) {
+            node.children = data.children;
+          }
+          return next;
+        });
+      }
+    } catch (err) {
+      console.error('Error loading directory:', err);
+    } finally {
+      setLoadingDirs(prev => {
+        const next = new Set(prev);
+        next.delete(dirPath);
+        return next;
+      });
+    }
+  }, [cwd]);
+
+  // Safety net: auto-load expanded dirs that don't have children yet
+  // Covers both normal expandedPaths and search searchTreeExpandedPaths
+  const loadingDirsRef = useRef(loadingDirs);
+  loadingDirsRef.current = loadingDirs;
+  useEffect(() => {
+    const pathsToCheck = searchTreeExpandedPaths ?? expandedPaths;
+    for (const p of pathsToCheck) {
+      const node = findNodeByPath(files, p);
+      if (node && node.isDirectory && !node.children && !loadingDirsRef.current.has(p)) {
+        loadDirectory(p);
+      }
+    }
+  }, [files, expandedPaths, searchTreeExpandedPaths, loadDirectory]);
 
   const loadRecentFiles = useCallback(async () => {
     try {
@@ -263,7 +332,7 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     }
     loadFileContent(path);
 
-    // Auto-expand parent directories
+    // Auto-expand parent directories + lazy load handled by safety net useEffect
     const parts = path.split('/');
     if (parts.length > 1) {
       const parentPaths: string[] = [];
@@ -301,6 +370,7 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
       });
     } else {
       // 非搜索态：修改用户展开状态，持久化
+      const isExpanding = !expandedPaths.has(path);
       setExpandedPaths(prev => {
         const next = new Set(prev);
         if (next.has(path)) {
@@ -311,13 +381,23 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
         saveExpandedPaths(next);
         return next;
       });
+      // Lazy load: expanding a dir that hasn't loaded children yet
+      if (isExpanding) {
+        const node = findNodeByPath(files, path);
+        if (node && node.isDirectory && !node.children) {
+          loadDirectory(path);
+        }
+      }
     }
-  }, [searchTreeExpandedPaths, saveExpandedPaths]);
+  }, [searchTreeExpandedPaths, saveExpandedPaths, expandedPaths, files, loadDirectory]);
 
   return {
     // File tree state
     files,
     setFiles,
+    fileIndex,
+    setFileIndex,
+    loadingDirs,
     expandedPaths,
     setExpandedPaths,
     searchTreeExpandedPaths,
@@ -372,9 +452,10 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     setShowEditor,
 
     // Actions
-    loadExpandedPaths,
     saveExpandedPaths,
     loadFiles,
+    loadFileIndex,
+    loadDirectory,
     loadRecentFiles,
     addToRecentFiles,
     updateRecentFilePosition,

@@ -71,6 +71,8 @@ export interface CodeViewerProps {
   initialCursorCol?: number | null;
   /** 光标还原完成回调 */
   onInitialCursorSet?: () => void;
+  /** 内容搜索回调（选中文本 → 全项目搜索） */
+  onContentSearch?: (query: string) => void;
 }
 
 export interface FloatingToolbarData {
@@ -145,7 +147,8 @@ export function useCodeViewerLogic({
   scrollToLineAlign = 'center',
   onScrollToLineComplete,
   visibleLineRef,
-}: Pick<CodeViewerProps, 'content' | 'filePath' | 'showSearch' | 'cwd' | 'enableComments' | 'scrollToLine' | 'scrollToLineAlign' | 'onScrollToLineComplete' | 'visibleLineRef'>) {
+  onContentSearch,
+}: Pick<CodeViewerProps, 'content' | 'filePath' | 'showSearch' | 'cwd' | 'enableComments' | 'scrollToLine' | 'scrollToLineAlign' | 'onScrollToLineComplete' | 'visibleLineRef' | 'onContentSearch'>) {
   const [isMounted, setIsMounted] = useState(false);
   const parentRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -644,6 +647,16 @@ export function useCodeViewerLogic({
     bumpToolbarRef.current();
   }, []);
 
+  // Click "search" in toolbar → trigger content search
+  const handleToolbarSearch = useCallback(() => {
+    const toolbar = floatingToolbarRef.current;
+    if (!toolbar || !onContentSearch) return;
+    const query = toolbar.selectedText.trim();
+    floatingToolbarRef.current = null;
+    bumpToolbarRef.current();
+    if (query) onContentSearch(query);
+  }, [onContentSearch]);
+
   // Submit new comment
   const handleCommentSubmit = useCallback(async (content: string) => {
     if (!addCommentInput) return;
@@ -820,6 +833,7 @@ export function useCodeViewerLogic({
     handleCommentBubbleClick,
     handleToolbarAddComment,
     handleToolbarSendToAI,
+    handleToolbarSearch,
     handleCommentSubmit,
     handleSendToAISubmit,
     getHighlightedLineHtml,

@@ -11,6 +11,7 @@ interface ScheduledTasksPanelProps {
   onSwitchProject: (cwd: string, sessionId: string) => void;
   onPause: (id: string) => void;
   onResume: (id: string) => void;
+  onTrigger: (id: string) => void;
   onDelete: (id: string) => void;
   onMarkRead: (id: string) => void;
   onUpdateTask: (id: string, fields: Partial<Pick<ScheduledTask, 'message' | 'type' | 'delayMinutes' | 'intervalMinutes' | 'activeFrom' | 'activeTo' | 'cron'>>) => void;
@@ -67,6 +68,7 @@ export function ScheduledTasksPanel({
   onSwitchProject,
   onPause,
   onResume,
+  onTrigger,
   onDelete,
   onMarkRead,
   onUpdateTask,
@@ -229,6 +231,16 @@ export function ScheduledTasksPanel({
                       </div>
                       {/* 操作按钮 */}
                       <div className="flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {/* 手动运行 */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onTrigger(task.id); }}
+                          className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-brand"
+                          title="立即运行"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        </button>
                         {/* 编辑 */}
                         <button
                           onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}

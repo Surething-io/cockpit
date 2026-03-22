@@ -1,6 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { rm, stat } from 'fs/promises';
+import { stat } from 'fs/promises';
 import { join, resolve } from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * macOS: 通过 osascript 将文件/文件夹移动到回收站
+ * 其他平台: fallback 到 rm
+ */
+async function moveToTrash(fullPath: string): Promise<void> {
+  if (process.platform === 'darwin') {
+    // osascript 调用 Finder 的 delete 命令（移动到回收站）
+    await execFileAsync('osascript', [
+      '-e',
+      `tell application "Finder" to delete (POSIX file "${fullPath}" as alias)`,
+    ]);
+  } else {
+    // 非 macOS 平台 fallback 到永久删除
+    const { rm } = await import('fs/promises');
+    const info = await stat(fullPath);
+    await rm(fullPath, { recursive: info.isDirectory(), force: true });
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,8 +42,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '不允许删除此路径' }, { status: 403 });
     }
 
-    const info = await stat(fullPath);
-    await rm(fullPath, { recursive: info.isDirectory(), force: true });
+    // 验证文件/目录存在
+    await stat(fullPath);
+
+    await moveToTrash(fullPath);
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {

@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { DiffView } from './DiffView';
 import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, type GitFileNode } from './GitFileTree';
+import { formatAsHumanReadable } from './toolCallUtils';
+import { useJsonSearch, JsonSearchBar } from '../../hooks/useJsonSearch';
 
 // Types
 export interface CommitInfo {
@@ -58,9 +60,10 @@ interface CommitDetailPanelProps {
   cwd: string;
   embedded?: boolean; // 内嵌模式，无 Modal 包装和标题栏
   initialFilePath?: string; // 初始选中的文件路径
+  onContentSearch?: (query: string) => void; // 选中文本 → 全项目搜索
 }
 
-export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = false, initialFilePath }: CommitDetailPanelProps) {
+export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = false, initialFilePath, onContentSearch }: CommitDetailPanelProps) {
   const [files, setFiles] = useState<FileChange[]>([]);
   const [fileTree, setFileTree] = useState<GitFileNode<unknown>[]>([]);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
@@ -68,11 +71,27 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
   const [fileDiff, setFileDiff] = useState<FileDiff | null>(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [isLoadingDiff, setIsLoadingDiff] = useState(false);
+  const [jsonPreview, setJsonPreview] = useState<{ content: string; filePath: string } | null>(null);
+  const commitPreRef = useRef<HTMLPreElement>(null);
+  const commitJsonSearch = useJsonSearch(commitPreRef);
 
-  // ESC to close
+  // ESC / Cmd+F
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f' && jsonPreview) {
+        e.preventDefault();
+        commitJsonSearch.open();
+        return;
+      }
       if (e.key === 'Escape') {
+        if (commitJsonSearch.isVisible) {
+          commitJsonSearch.close();
+          return;
+        }
+        if (jsonPreview) {
+          setJsonPreview(null);
+          return;
+        }
         onClose();
       }
     };
@@ -80,7 +99,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
     }
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, jsonPreview, commitJsonSearch]);
 
   // Load files when commit changes
   useEffect(() => {
@@ -235,12 +254,46 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
               isDeleted={fileDiff.isDeleted}
               cwd={cwd}
               enableComments={true}
+              onPreview={
+                !fileDiff.isDeleted && fileDiff.filePath.endsWith('.json')
+                  ? () => setJsonPreview({ content: fileDiff.newContent, filePath: fileDiff.filePath })
+                  : undefined
+              }
+              previewLabel="可读"
+              onContentSearch={onContentSearch}
             />
           ) : (
             <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
               选择文件查看差异
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const jsonPreviewModal = jsonPreview && (
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setJsonPreview(null)}>
+      <div
+        className="bg-card rounded-lg shadow-xl w-full max-w-[90%] h-[90%] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-2 border-b border-border flex-shrink-0">
+          <span className="text-sm text-muted-foreground font-mono truncate">{jsonPreview.filePath}</span>
+          <button
+            onClick={() => setJsonPreview(null)}
+            className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <JsonSearchBar search={commitJsonSearch} />
+        <div className="flex-1 overflow-auto px-6 py-4 bg-[#0d1117]">
+          <pre ref={commitPreRef} className="whitespace-pre-wrap break-words font-mono" style={{ fontSize: '0.8125rem', lineHeight: '1.5' }}>
+            {formatAsHumanReadable(jsonPreview.content)}
+          </pre>
         </div>
       </div>
     </div>
@@ -260,6 +313,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
           </svg>
         </button>
         {content}
+        {jsonPreviewModal}
       </div>
     );
   }
@@ -286,6 +340,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
 
         {/* Content */}
         {content}
+        {jsonPreviewModal}
       </div>
     </div>
   );

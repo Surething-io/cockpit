@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
             // 启用流式文本块
             includePartialMessages: true,
             // 启用 1M token 上下文窗口（beta）- 解决 "Prompt is too long" 问题
-            betas: ['context-1m-2025-08-07'],
+            // betas: ['context-1m-2025-08-07'],
             // 传入 abortController，用于取消 query
             abortController: queryAbortController,
           };

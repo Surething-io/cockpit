@@ -74,6 +74,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const [isGitRepo, setIsGitRepo] = useState(false);
   const [fileBrowserInitialTab, setFileBrowserInitialTab] = useState<'tree' | 'recent' | 'status' | 'history'>('tree');
   const [tabSwitchTrigger, setTabSwitchTrigger] = useState(0);
+  const [fileBrowserSearchQuery, setFileBrowserSearchQuery] = useState<string | null>(null);
+  const [searchQueryTrigger, setSearchQueryTrigger] = useState(0);
 
   // 从 project-settings 恢复 activeView
   useEffect(() => {
@@ -215,6 +217,13 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     handleViewChange('explorer');
   }, [handleViewChange]);
 
+  // 全项目搜索（从 Chat 触发）
+  const handleContentSearch = useCallback((query: string) => {
+    setFileBrowserSearchQuery(query);
+    setSearchQueryTrigger(n => n + 1);
+    handleViewChange('explorer');
+  }, [handleViewChange]);
+
   // 打开笔记
   const handleOpenNote = initialCwd ? useCallback(() => {
     window.parent.postMessage({ type: 'OPEN_NOTE', cwd: initialCwd }, '*');
@@ -280,6 +289,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                       isActive={tab.id === activeTabId && activeView === 'agent'}
                       onStateChange={updateTabState}
                       onShowGitStatus={handleShowGitStatus}
+                      onContentSearch={handleContentSearch}
                       onOpenNote={handleOpenNote}
                       onCreateScheduledTask={createScheduledTask}
                       onOpenSession={handleOpenSession}
@@ -296,6 +306,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                 cwd={initialCwd}
                 initialTab={fileBrowserInitialTab}
                 tabSwitchTrigger={tabSwitchTrigger}
+                initialSearchQuery={fileBrowserSearchQuery}
+                searchQueryTrigger={searchQueryTrigger}
               />
             </div>
 

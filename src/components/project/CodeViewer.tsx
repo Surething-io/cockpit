@@ -123,6 +123,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   initialCursorLine,
   initialCursorCol,
   onInitialCursorSet,
+  onContentSearch,
 }, ref) {
   // ========== 编辑模式状态 ==========
   const editContentRef = useRef(content); // ref：不触发 re-render，仅在 save/highlight 时读取
@@ -191,6 +192,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     handleCommentBubbleClick,
     handleToolbarAddComment,
     handleToolbarSendToAI,
+    handleToolbarSearch,
     handleCommentSubmit,
     handleSendToAISubmit,
     getHighlightedLineHtml,
@@ -211,6 +213,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     scrollToLineAlign: editable ? 'center' : scrollToLineAlign,
     onScrollToLineComplete: editable ? undefined : onScrollToLineComplete,
     visibleLineRef: editable ? undefined : visibleLineRef,
+    onContentSearch,
   });
 
   // Menu container for portal mounting (keeps floating elements within second screen)
@@ -1154,6 +1157,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
               container={menuContainer}
               onAddComment={handleToolbarAddComment}
               onSendToAI={handleToolbarSendToAI}
+              onSearch={onContentSearch ? handleToolbarSearch : undefined}
               isChatLoading={chatContext?.isLoading}
             />
           )}

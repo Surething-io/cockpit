@@ -111,4 +111,6 @@ export interface FileBrowserModalProps {
   cwd: string;
   initialTab?: TabType;
   tabSwitchTrigger?: number;
+  initialSearchQuery?: string | null;
+  searchQueryTrigger?: number;
 }

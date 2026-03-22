@@ -52,7 +52,7 @@ export function ProjectSidebar({
   onAddProject,
 }: ProjectSidebarProps) {
   const { pinnedSessions, unpinSession, updateTitle, reorder } = usePinnedSessions();
-  const { tasks: scheduledTasks, unreadCount: scheduledUnread, reload: reloadScheduled, pauseTask, resumeTask, deleteTask: deleteScheduledTask, updateTask: updateScheduledTask, markRead: markScheduledRead, reorderTasks } = useScheduledTasks();
+  const { tasks: scheduledTasks, unreadCount: scheduledUnread, reload: reloadScheduled, pauseTask, resumeTask, triggerTask, deleteTask: deleteScheduledTask, updateTask: updateScheduledTask, markRead: markScheduledRead, reorderTasks } = useScheduledTasks();
   const [isHovered, setIsHovered] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -245,6 +245,7 @@ export function ProjectSidebar({
           onSwitchProject={onSwitchProject}
           onPause={pauseTask}
           onResume={resumeTask}
+          onTrigger={triggerTask}
           onDelete={deleteScheduledTask}
           onMarkRead={markScheduledRead}
           onUpdateTask={updateScheduledTask}

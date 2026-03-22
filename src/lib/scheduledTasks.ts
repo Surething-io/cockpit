@@ -192,12 +192,14 @@ class ScheduledTaskManager {
 
     console.log(`[ScheduledTaskManager] Loaded ${this.tasks.length} tasks for port ${port}`);
 
-    // 重建 timer
+    // 重建 timer（过期任务会被重算 nextFireTime 或标记 completed）
     for (const task of this.tasks) {
       if (!task.paused && !task.completed) {
         this.scheduleTask(task);
       }
     }
+    // scheduleTask 可能修改了过期任务的 nextFireTime / completed，持久化
+    await this.saveToDisk();
   }
 
   /**
@@ -337,6 +339,28 @@ class ScheduledTaskManager {
   }
 
   /**
+   * 手动触发任务（立即执行，不影响原有调度）
+   */
+  async triggerTask(id: string): Promise<void> {
+    await this.ensureInit();
+    // 从磁盘读取最新数据
+    const allTasks = await readJsonFile<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
+    const task = allTasks.find(t => t.id === id);
+    if (!task) return;
+
+    // 同步到内存（确保 fireTask 能找到）
+    const memIdx = this.tasks.findIndex(t => t.id === id);
+    if (memIdx !== -1) {
+      this.tasks[memIdx] = task;
+    } else {
+      this.tasks.push(task);
+    }
+
+    // 直接触发（fireTask 内部会处理状态更新和持久化）
+    await this.fireTask(id);
+  }
+
+  /**
    * 标记任务已读
    */
   async markRead(id: string): Promise<void> {
@@ -375,14 +399,32 @@ class ScheduledTaskManager {
 
   // ---- Internal ----
 
-  private scheduleTask(task: ScheduledTask): void {
+  /**
+   * 调度任务。如果 nextFireTime 已过期，重算下一次触发时间而不是立即触发。
+   * 返回 true 表示已安排 timer，false 表示任务已过期且无法重算（once 类型）。
+   */
+  private scheduleTask(task: ScheduledTask): boolean {
     const now = Date.now();
-    const delay = Math.max(task.nextFireTime - now, 1000); // 至少 1s
 
+    if (task.nextFireTime <= now) {
+      // 已过期：重算下一次触发时间
+      if (task.type === 'interval' && task.intervalMinutes) {
+        task.nextFireTime = now + task.intervalMinutes * 60000;
+      } else if (task.type === 'cron' && task.cron) {
+        task.nextFireTime = getNextCronTime(task.cron);
+      } else {
+        // once 类型已过期，标记完成，不调度
+        task.completed = true;
+        return false;
+      }
+    }
+
+    const delay = task.nextFireTime - now;
     const timer = setTimeout(() => {
       this.fireTask(task.id);
     }, delay);
     this.timers.set(task.id, timer);
+    return true;
   }
 
   private clearTimer(id: string): void {

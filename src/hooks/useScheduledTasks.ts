@@ -139,6 +139,16 @@ export function useScheduledTasks() {
     notifyChanged();
   }, [reload]);
 
+  const triggerTask = useCallback(async (id: string) => {
+    await fetch('/api/scheduled-tasks', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, action: 'trigger' }),
+    }).catch(() => {});
+    reload();
+    notifyChanged();
+  }, [reload]);
+
   const markRead = useCallback(async (id: string) => {
     await fetch('/api/scheduled-tasks', {
       method: 'PATCH',
@@ -176,6 +186,7 @@ export function useScheduledTasks() {
     createTask,
     pauseTask,
     resumeTask,
+    triggerTask,
     deleteTask,
     updateTask,
     markRead,

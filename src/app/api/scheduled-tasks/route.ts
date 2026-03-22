@@ -88,6 +88,9 @@ export async function PATCH(request: NextRequest) {
       task = await scheduledTaskManager.pauseTask(id);
     } else if (action === 'resume') {
       task = await scheduledTaskManager.resumeTask(id);
+    } else if (action === 'trigger') {
+      await scheduledTaskManager.triggerTask(id);
+      return NextResponse.json({ success: true });
     } else if (action === 'markRead') {
       await scheduledTaskManager.markRead(id);
       return NextResponse.json({ success: true });

@@ -148,6 +148,35 @@ export function computeMatchedPaths(nodes: FileNode[], searchQuery: string, exac
   return matched;
 }
 
+/**
+ * 基于扁平路径索引的搜索匹配（用于懒加载树 + fileIndex）
+ */
+export function computeMatchedPathsFromIndex(fileIndex: string[], searchQuery: string, exactMatch: boolean = false): Set<string> {
+  const matched = new Set<string>();
+  if (!searchQuery) return matched;
+
+  const query = searchQuery.toLowerCase();
+
+  for (const filePath of fileIndex) {
+    const parts = filePath.split('/');
+
+    for (let i = 0; i < parts.length; i++) {
+      const nameLower = parts[i].toLowerCase();
+      const nameMatches = exactMatch ? nameLower === query : nameLower.includes(query);
+
+      if (nameMatches) {
+        // 添加完整文件路径 + 所有祖先目录
+        for (let j = 0; j <= parts.length - 1; j++) {
+          matched.add(parts.slice(0, j + 1).join('/'));
+        }
+        break; // 一条路径匹配一次即可
+      }
+    }
+  }
+
+  return matched;
+}
+
 export function formatRelativeTime(timestamp: number): string {
   const now = Date.now();
   const diff = now - timestamp * 1000;

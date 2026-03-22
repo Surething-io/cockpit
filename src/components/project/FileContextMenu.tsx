@@ -31,11 +31,14 @@ interface FileContextMenuProps {
   onCreateFile?: (dirPath: string) => void;
   onDelete?: (path: string, isDirectory: boolean, name: string) => void;
   onRefresh?: () => void;
+  onCopyFile?: (path: string) => void;
+  onPaste?: (targetDir: string) => void;
 }
 
 export function FileContextMenu({
   x, y, path, cwd, isDirectory, onClose,
   onCreateFile, onDelete, onRefresh,
+  onCopyFile, onPaste,
 }: FileContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const menuContainer = useContext(MenuContainerContext);
@@ -135,6 +138,22 @@ export function FileContextMenu({
           新建文件
         </button>
       )}
+      {onCopyFile && (
+        <button
+          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
+          onClick={() => { onClose(); onCopyFile(path); }}
+        >
+          复制{isDirectory ? '文件夹' : '文件'}
+        </button>
+      )}
+      {onPaste && (
+        <button
+          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
+          onClick={() => { onClose(); onPaste(targetDir); }}
+        >
+          粘贴到此处
+        </button>
+      )}
       {onDelete && (
         <button
           className="block w-full px-3 py-1.5 text-left text-sm text-destructive hover:bg-accent transition-colors"
@@ -145,7 +164,7 @@ export function FileContextMenu({
       )}
 
       {/* 分隔线 */}
-      {(onCreateFile || onDelete) && (
+      {(onCreateFile || onDelete || onCopyFile || onPaste) && (
         <div className="my-1 border-t border-border" />
       )}
 

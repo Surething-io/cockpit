@@ -39,9 +39,10 @@ interface ChatProps {
     cron?: string;
   }) => void;
   onOpenSession?: (sessionId: string, title?: string) => void; // 打开新的 session（用于 Fork）
+  onContentSearch?: (query: string) => void; // 选中文本 → 全项目搜索
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch }: ChatProps) {
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -326,6 +327,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
             onLoadMore={loadMoreHistory}
             onFork={handleFork}
             isActive={isActive}
+            onContentSearch={onContentSearch}
           />
         )}
 

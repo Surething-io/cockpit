@@ -8,6 +8,7 @@ import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { TocSidebar } from '../shared/TocSidebar';
 import { rehypeSourceLines } from '@/lib/rehypeSourceLines';
 import { toast } from '../shared/Toast';
+import { useJsonSearch, JsonSearchBar } from '../../hooks/useJsonSearch';
 import {
   isValidJson,
   formatAsJson,
@@ -164,11 +165,22 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
   };
 
   const [viewMode, setViewMode] = useState<ViewMode>(getDefaultMode());
+  const previewPreRef = useRef<HTMLPreElement>(null);
+  const jsonSearch = useJsonSearch(previewPreRef);
 
-  // ESC 键关闭
+  // ESC / Cmd+F 键盘处理
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f' && viewMode === 'readable' && isJson) {
+        e.preventDefault();
+        jsonSearch.open();
+        return;
+      }
       if (e.key === 'Escape') {
+        if (jsonSearch.isVisible) {
+          jsonSearch.close();
+          return;
+        }
         if (document.activeElement instanceof HTMLElement) {
           document.activeElement.blur();
         }
@@ -177,7 +189,7 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, viewMode, isJson, jsonSearch]);
 
   const renderContent = () => {
     if (viewMode === 'file' && filePath) {
@@ -191,9 +203,12 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
     }
     if (viewMode === 'readable' && isJson) {
       return (
-        <pre className="text-foreground whitespace-pre-wrap break-words" style={{ fontSize: '0.8125rem' }}>
-          {formatAsHumanReadable(content)}
-        </pre>
+        <>
+          <JsonSearchBar search={jsonSearch} />
+          <pre ref={previewPreRef} className="text-foreground whitespace-pre-wrap break-words" style={{ fontSize: '0.8125rem' }}>
+            {formatAsHumanReadable(content)}
+          </pre>
+        </>
       );
     }
     return (

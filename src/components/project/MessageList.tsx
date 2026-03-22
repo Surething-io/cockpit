@@ -20,6 +20,7 @@ interface MessageListProps {
   onLoadMore?: () => void;
   onFork?: (messageId: string) => void;
   isActive?: boolean; // Tab 是否激活（用于处理隐藏 Tab 的滚动问题）
+  onContentSearch?: (query: string) => void; // 选中文本 → 全项目搜索
 }
 
 // 暴露给父组件的方法
@@ -28,7 +29,7 @@ export interface MessageListHandle {
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
-  { messages, isLoading, cwd, sessionId, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true },
+  { messages, isLoading, cwd, sessionId, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch },
   ref
 ) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -109,6 +110,16 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     bumpToolbarRef.current();
     window.getSelection()?.removeAllRanges();
   }, []);
+
+  const handleSearch = useCallback(() => {
+    const tb = floatingToolbarRef.current;
+    if (!tb || !onContentSearch) return;
+    const query = tb.selectedText.trim();
+    floatingToolbarRef.current = null;
+    bumpToolbarRef.current();
+    window.getSelection()?.removeAllRanges();
+    if (query) onContentSearch(query);
+  }, [onContentSearch]);
 
   // 评论提交 — 持久化到 useComments
   const handleCommentSubmit = useCallback(async (content: string) => {
@@ -420,6 +431,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
           container={outerRef.current}
           onAddComment={handleAddComment}
           onSendToAI={handleSendToAI}
+          onSearch={onContentSearch ? handleSearch : undefined}
           isChatLoading={chatCtx?.isLoading}
         />
       )}

@@ -32,8 +32,11 @@ interface DiffViewProps {
   // Comment support
   cwd?: string;
   enableComments?: boolean;
-  // Markdown preview callback
+  // Preview callback (e.g. Markdown preview, JSON readable)
   onPreview?: () => void;
+  previewLabel?: string;
+  // Content search callback (selected text → project-wide search)
+  onContentSearch?: (query: string) => void;
 }
 
 // ============================================
@@ -52,10 +55,11 @@ interface ToolbarRendererProps {
   container: HTMLElement;
   onAddComment: () => void;
   onSendToAI: () => void;
+  onSearch?: () => void;
   isChatLoading: boolean;
 }
 
-function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddComment, onSendToAI, isChatLoading }: ToolbarRendererProps) {
+function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddComment, onSendToAI, onSearch, isChatLoading }: ToolbarRendererProps) {
   const [version, forceRender] = useState(0);
 
   // 让父组件（DiffView）通过 bumpRef 触发本组件 re-render
@@ -75,6 +79,7 @@ function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddCom
       container={container}
       onAddComment={onAddComment}
       onSendToAI={onSendToAI}
+      onSearch={onSearch}
       isChatLoading={isChatLoading}
     />
   );
@@ -85,7 +90,7 @@ const ToolbarRenderer = memo(ToolbarRendererInner);
 // Main DiffView Component (Split View)
 // ============================================
 
-export function DiffView({ oldContent, newContent, filePath, isNew = false, isDeleted = false, cwd, enableComments = false, onPreview }: DiffViewProps) {
+export function DiffView({ oldContent, newContent, filePath, isNew = false, isDeleted = false, cwd, enableComments = false, onPreview, previewLabel = '预览', onContentSearch }: DiffViewProps) {
   const diffLines = useMemo(() => computeLineDiff(oldContent, newContent), [oldContent, newContent]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const leftPanelRef = useRef<HTMLDivElement>(null);
@@ -308,6 +313,15 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
     bumpToolbarRef.current();
   }, []);
 
+  const handleToolbarSearch = useCallback(() => {
+    const toolbar = floatingToolbarRef.current;
+    if (!toolbar || !onContentSearch) return;
+    const query = toolbar.codeContent.trim();
+    floatingToolbarRef.current = null;
+    bumpToolbarRef.current();
+    if (query) onContentSearch(query);
+  }, [onContentSearch]);
+
   const handleSendToAISubmit = useCallback(async (question: string) => {
     if (!sendToAIInput || !chatContext || !cwd) return;
 
@@ -459,7 +473,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
                 onClick={onPreview}
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >
-                预览
+                {previewLabel}
               </button>
             )}
             {!isDeleted && newContent && (
@@ -593,6 +607,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
             container={menuContainer}
             onAddComment={handleToolbarAddComment}
             onSendToAI={handleToolbarSendToAI}
+            onSearch={onContentSearch ? handleToolbarSearch : undefined}
             isChatLoading={chatContext?.isLoading ?? false}
           />
           {addCommentInput && (

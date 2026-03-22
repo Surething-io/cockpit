@@ -41,16 +41,12 @@ const ROW_HEIGHT = 26;
 // Helper Functions
 // ============================================================================
 
-// 检查目录下是否有变更的文件（递归）
-function hasChangedFilesInDir(node: FileNode, gitStatusMap: GitStatusMap | null): boolean {
-  if (!gitStatusMap || !node.isDirectory || !node.children) return false;
-
-  for (const child of node.children) {
-    if (child.isDirectory) {
-      if (hasChangedFilesInDir(child, gitStatusMap)) return true;
-    } else {
-      if (gitStatusMap.has(child.path)) return true;
-    }
+// 检查目录下是否有变更的文件（前缀匹配，不依赖 children 是否已加载）
+function hasChangedFilesInDir(dirPath: string, gitStatusMap: GitStatusMap | null): boolean {
+  if (!gitStatusMap) return false;
+  const prefix = dirPath + '/';
+  for (const filePath of gitStatusMap.keys()) {
+    if (filePath.startsWith(prefix)) return true;
   }
   return false;
 }
@@ -71,7 +67,7 @@ function flattenTree(
     }
 
     const gitStatus = gitStatusMap?.get(node.path);
-    const hasChangedChildren = node.isDirectory ? hasChangedFilesInDir(node, gitStatusMap) : undefined;
+    const hasChangedChildren = node.isDirectory ? hasChangedFilesInDir(node.path, gitStatusMap) : undefined;
 
     result.push({ node, level, gitStatus, hasChangedChildren });
 
@@ -100,6 +96,7 @@ interface VirtualTreeRowProps {
   item: FlatTreeItem;
   isSelected: boolean;
   isExpanded: boolean;
+  isLoading?: boolean;
   onSelect: (path: string) => void;
   onToggle: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, path: string, isDirectory: boolean) => void;
@@ -110,6 +107,7 @@ const VirtualTreeRow = React.memo(function VirtualTreeRow({
   item,
   isSelected,
   isExpanded,
+  isLoading,
   onSelect,
   onToggle,
   onContextMenu,
@@ -152,13 +150,20 @@ const VirtualTreeRow = React.memo(function VirtualTreeRow({
       onContextMenu={handleContextMenu}
     >
       {node.isDirectory ? (
-        <svg
-          className={`w-4 h-4 flex-shrink-0 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-          viewBox="0 0 16 16"
-          fill="none"
-        >
-          <path d="M6 4 L10 8 L6 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        isLoading ? (
+          <svg className="w-4 h-4 flex-shrink-0 text-muted-foreground animate-spin" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" opacity="0.3" />
+            <path d="M14 8a6 6 0 0 0-6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        ) : (
+          <svg
+            className={`w-4 h-4 flex-shrink-0 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+            viewBox="0 0 16 16"
+            fill="none"
+          >
+            <path d="M6 4 L10 8 L6 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )
       ) : (
         <FileIcon name={node.name} size={16} className="flex-shrink-0 ml-4" />
       )}
@@ -194,6 +199,7 @@ export interface FileTreeProps {
   expandedPaths: Set<string>;
   matchedPaths?: Set<string> | null;
   gitStatusMap?: GitStatusMap | null;
+  loadingDirs?: Set<string>;
   onSelect: (path: string) => void;
   onToggle: (path: string) => void;
   cwd: string;
@@ -205,6 +211,8 @@ export interface FileTreeProps {
   onCreateFile?: (dirPath: string) => void;
   onDelete?: (path: string, isDirectory: boolean, name: string) => void;
   onRefresh?: () => void;
+  onCopyFile?: (path: string) => void;
+  onPaste?: (targetDir: string) => void;
 }
 
 export function FileTree({
@@ -213,6 +221,7 @@ export function FileTree({
   expandedPaths,
   matchedPaths = null,
   gitStatusMap = null,
+  loadingDirs,
   onSelect,
   onToggle,
   cwd,
@@ -223,6 +232,8 @@ export function FileTree({
   onCreateFile,
   onDelete,
   onRefresh,
+  onCopyFile,
+  onPaste,
 }: FileTreeProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const { contextMenu, showContextMenu, hideContextMenu } = useFileContextMenu();
@@ -296,6 +307,7 @@ export function FileTree({
                 item={item}
                 isSelected={selectedPath === item.node.path}
                 isExpanded={expandedPaths.has(item.node.path)}
+                isLoading={loadingDirs?.has(item.node.path)}
                 onSelect={onSelect}
                 onToggle={onToggle}
                 onContextMenu={showContextMenu}
@@ -317,6 +329,8 @@ export function FileTree({
           onCreateFile={onCreateFile}
           onDelete={onDelete}
           onRefresh={onRefresh}
+          onCopyFile={onCopyFile}
+          onPaste={onPaste}
         />
       )}
     </div>

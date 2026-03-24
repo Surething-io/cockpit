@@ -250,15 +250,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       target,
       world: 'MAIN',
       func: async (code) => {
+        // 层 1: 直接 eval — 覆盖表达式、多语句、IIFE、模板字面量等
+        // eval 自动返回最后一个表达式的值（类似 CDP replMode）
         try {
-          const isAsync = code.includes('await ');
-          if (isAsync) {
-            const data = await (0, eval)(`(async()=>{return(${code})})()`);
+          const result = (0, eval)(code);
+          const data = result instanceof Promise ? await result : result;
+          return { ok: true, data };
+        } catch (e1) {
+          // 层 2: AsyncFunction fallback — 覆盖含顶层 await 的代码
+          try {
+            const AF = Object.getPrototypeOf(async function(){}).constructor;
+            const data = await new AF(code)();
             return { ok: true, data };
+          } catch {
+            return { ok: false, error: e1.message };
           }
-          return { ok: true, data: (0, eval)(code) };
-        } catch (e) {
-          return { ok: false, error: e.message };
         }
       },
       args: [message.js],

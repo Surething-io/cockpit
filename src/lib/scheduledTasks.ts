@@ -339,16 +339,16 @@ class ScheduledTaskManager {
   }
 
   /**
-   * 手动触发任务（立即执行，不影响原有调度）
+   * 手动触发任务（后台执行，立即返回，不影响原有调度）
+   * 跳过 paused / activeRange 检查，直接发送消息。
    */
   async triggerTask(id: string): Promise<void> {
     await this.ensureInit();
-    // 从磁盘读取最新数据
     const allTasks = await readJsonFile<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
     const task = allTasks.find(t => t.id === id);
     if (!task) return;
 
-    // 同步到内存（确保 fireTask 能找到）
+    // 同步到内存
     const memIdx = this.tasks.findIndex(t => t.id === id);
     if (memIdx !== -1) {
       this.tasks[memIdx] = task;
@@ -356,8 +356,30 @@ class ScheduledTaskManager {
       this.tasks.push(task);
     }
 
-    // 直接触发（fireTask 内部会处理状态更新和持久化）
-    await this.fireTask(id);
+    // 后台执行，不阻塞 HTTP 请求（sendChatMessage 可能耗时几分钟）
+    this.fireTaskManual(id).catch(err => {
+      console.error(`[ScheduledTask] Manual trigger failed for ${id}:`, err);
+    });
+  }
+
+  /** 手动触发的内部实现，跳过 paused / activeRange 检查 */
+  private async fireTaskManual(id: string): Promise<void> {
+    const task = this.tasks.find(t => t.id === id);
+    if (!task) return;
+
+    console.log(`[ScheduledTask] Manual trigger ${id}: "${task.message}"`);
+    const success = await sendChatMessage(task);
+
+    task.lastFiredAt = Date.now();
+    task.lastResult = success ? 'success' : 'error';
+    task.unread = true;
+
+    // 手动触发不改变 completed / nextFireTime，不影响原有调度
+    await this.saveToDisk();
+
+    if (this.onTaskFired) {
+      this.onTaskFired(task);
+    }
   }
 
   /**

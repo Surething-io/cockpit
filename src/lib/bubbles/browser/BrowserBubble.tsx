@@ -175,25 +175,27 @@ export function BrowserBubble({
     }
   }, []);
 
-  const resetIdleTimer = useCallback(() => {
-    if (isSleeping) return;
-    clearIdleTimer();
-    // 可见时不倒计时：用户看得到，不应该休眠
-    if (isVisibleRef.current) return;
-    idleTimerRef.current = setTimeout(goToSleep, IDLE_TIMEOUT);
-  }, [isSleeping, goToSleep, clearIdleTimer]);
+  // Browser automation bridge (CLI → WS → postMessage → content script)
+  // WS 按需连接：点击 shortId 徽标时 connect，休眠时 disconnect
+  const iframeReady = !!readyUrl && !isSleeping && !isLoading;
+  const { shortId, connected: bridgeConnected, connect: bridgeConnect, disconnect: bridgeDisconnect } = useBrowserBridge(id, iframeRef, iframeReady);
+
+  // bridgeConnectedRef：供 IntersectionObserver 回调读取最新值
+  const bridgeConnectedRef = useRef(bridgeConnected);
+  bridgeConnectedRef.current = bridgeConnected;
 
   // IntersectionObserver：检测气泡是否在视口内
+  // 已连接时不启动休眠倒计时
   useEffect(() => {
     const el = iframeWrapperRef.current;
     if (!el || isSleeping) return;
     const observer = new IntersectionObserver(([entry]) => {
       isVisibleRef.current = entry.isIntersecting;
-      if (entry.isIntersecting) {
-        // 进入视口 → 清除倒计时
+      if (entry.isIntersecting || bridgeConnectedRef.current) {
+        // 进入视口 或 bridge 已连接 → 清除倒计时
         clearIdleTimer();
       } else {
-        // 离开视口 → 启动倒计时
+        // 离开视口 且 未连接 → 启动倒计时
         if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
         idleTimerRef.current = setTimeout(goToSleep, IDLE_TIMEOUT);
       }
@@ -202,16 +204,22 @@ export function BrowserBubble({
     return () => observer.disconnect();
   }, [isSleeping, goToSleep, clearIdleTimer]);
 
-  // Browser automation bridge (CLI → WS → postMessage → content script)
-  // WS 按需连接：点击 shortId 徽标时 connect，休眠时 disconnect
-  // 收到 WS 命令时 onActivity → resetIdleTimer 延后休眠
-  const iframeReady = !!readyUrl && !isSleeping && !isLoading;
-  const { shortId, connected: bridgeConnected, connect: bridgeConnect, disconnect: bridgeDisconnect } = useBrowserBridge(id, iframeRef, iframeReady, resetIdleTimer);
-
-  // 休眠时同时断开 bridge WS
+  // bridge 连接状态变化时调整休眠策略
   useEffect(() => {
-    if (isSleeping) bridgeDisconnect();
-  }, [isSleeping, bridgeDisconnect]);
+    if (isSleeping) {
+      // 休眠时断开 bridge WS
+      bridgeDisconnect();
+      return;
+    }
+    if (bridgeConnected) {
+      // 连接中 → 取消休眠倒计时
+      clearIdleTimer();
+    } else if (!isVisibleRef.current) {
+      // 断开连接 且 不可见 → 启动倒计时
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = setTimeout(goToSleep, IDLE_TIMEOUT);
+    }
+  }, [bridgeConnected, isSleeping, bridgeDisconnect, clearIdleTimer, goToSleep]);
 
   // 如果 initialSleeping，不加载 iframe
   useEffect(() => {
@@ -397,8 +405,6 @@ export function BrowserBubble({
           ${maximized ? 'rounded-none overflow-visible border-0' : 'border overflow-hidden rounded-2xl rounded-bl-md rounded-br-md'}
           ${maximized ? '' : selected ? 'border-brand' : 'border-brand/30'}`}
         onClick={maximized ? undefined : onSelect}
-        onMouseMove={resetIdleTimer}
-        onMouseDown={resetIdleTimer}
       >
         {/* ---- 标题栏（放大时显示精简版，缩小时显示完整版） ---- */}
         {maximized ? (

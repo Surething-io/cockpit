@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, mkdir, stat, lstat, realpath, rename, unlink } from 'fs/promises';
+import { writeFile, mkdir, stat, lstat, realpath, rename, unlink, chmod } from 'fs/promises';
 import { join, dirname } from 'path';
 import { randomUUID } from 'crypto';
 
@@ -67,10 +67,21 @@ export async function POST(request: NextRequest) {
     const dir = dirname(writePath);
     await mkdir(dir, { recursive: true });
 
+    // 读取原文件权限（用于写入后恢复）
+    let originalMode: number | undefined;
+    try {
+      const st = await stat(writePath);
+      originalMode = st.mode;
+    } catch { /* 新文件，无需保留权限 */ }
+
     // P1: 原子写入 — 先写临时文件，再 rename
     const tmpPath = `${writePath}.${randomUUID()}.tmp`;
     try {
       await writeFile(tmpPath, content, 'utf-8');
+      // 恢复原文件权限（writeFile 新建文件默认 0o644，会丢失 +x 等权限）
+      if (originalMode !== undefined) {
+        await chmod(tmpPath, originalMode);
+      }
       await rename(tmpPath, writePath);
     } catch (error) {
       // 清理临时文件

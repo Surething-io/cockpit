@@ -18,14 +18,12 @@ import { toShortId } from '@/lib/shortId';
  * - shortId 始终可用（客户端 CRC32 计算）
  * - WS 按需建立：connect() 返回 Promise，连接成功后 resolve
  * - 重复 connect() 不重复建连（已连接时立即 resolve）
- * - 收到 WS 命令时触发 onActivity（重置空闲计时器）
  * - disconnect() 断开 WS
  */
 export function useBrowserBridge(
   fullId: string,
   iframeRef: React.RefObject<HTMLIFrameElement | null>,
   iframeReady: boolean,
-  onActivity?: () => void,
 ) {
   const shortId = useMemo(() => toShortId(fullId), [fullId]);
   const [connected, setConnected] = useState(false);
@@ -35,8 +33,6 @@ export function useBrowserBridge(
   const shouldConnectRef = useRef(false);
 
   // 用 ref 追踪最新值，避免 effect 因这些变化而重建 WS
-  const onActivityRef = useRef(onActivity);
-  onActivityRef.current = onActivity;
   const iframeReadyRef = useRef(iframeReady);
   iframeReadyRef.current = iframeReady;
 
@@ -177,7 +173,6 @@ export function useBrowserBridge(
         try { msg = JSON.parse(event.data as string); } catch { return; }
 
         if (msg.type === 'browser:cmd') {
-          onActivityRef.current?.();
           const cmd = msg as unknown as BrowserCmd;
           if (iframeRef.current?.contentWindow && iframeReadyRef.current) {
             sendToIframe(cmd);

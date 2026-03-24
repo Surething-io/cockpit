@@ -2,6 +2,12 @@
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import { remarkAlert } from 'remark-github-blockquote-alert';
+import rehypeRaw from 'rehype-raw';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
+import 'remark-github-blockquote-alert/alert.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { memo, useState, useMemo, ComponentPropsWithoutRef } from 'react';
@@ -9,7 +15,8 @@ import { useTheme } from './ThemeProvider';
 import { MermaidBlock } from './MermaidBlock';
 
 // Stable reference — avoid recreating on every render
-const REMARK_PLUGINS = [remarkGfm];
+const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkAlert];
+const REHYPE_PLUGINS_BASE = [rehypeRaw, rehypeKatex];
 
 interface MarkdownRendererProps {
   content: string;
@@ -188,9 +195,17 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
       <td className="px-4 py-2 border-b border-border" {...rest}>{children}</td>
     ),
     hr: ({ node, ...rest }: any) => <hr className="my-4 border-border" {...rest} />,
-    img: ({ src, alt, node, ...props }: any) => (
-      <img src={src} alt={alt || ''} className="max-w-full h-auto rounded-lg my-3" {...props} />
-    ),
+    img: ({ src, alt, node, height, width, style, ...props }: any) => {
+      // 有显式尺寸的 HTML <img>（如 <img height="28">）：保留原始尺寸，内联显示
+      // height/width 必须转为 inline style，否则被 Tailwind preflight 的 img { height: auto } 覆盖
+      const hasExplicitSize = height || width || style;
+      if (!hasExplicitSize) {
+        return <img src={src} alt={alt || ''} className="max-w-full h-auto rounded-lg my-3" {...props} />;
+      }
+      const px = (v: string | number | undefined) => v ? (/^\d+$/.test(String(v)) ? `${v}px` : String(v)) : undefined;
+      const mergedStyle = { ...style, height: px(height) ?? style?.height, width: px(width) ?? style?.width };
+      return <img src={src} alt={alt || ''} style={mergedStyle} className="inline-block align-middle" {...props} />;
+    },
     strong: ({ children, node, ...rest }: any) => <strong className="font-bold" {...rest}>{children}</strong>,
     em: ({ children, node, ...rest }: any) => <em className="italic" {...rest}>{children}</em>,
     del: ({ children, node, ...rest }: any) => <del className="line-through" {...rest}>{children}</del>,
@@ -221,6 +236,12 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
     return <div className="whitespace-pre-wrap break-words">{content}</div>;
   }
 
+  // 合并 rehype 插件：基础插件（rehype-raw + rehype-katex）+ 调用方传入的插件
+  const mergedRehypePlugins = useMemo(() => {
+    if (!rehypePlugins?.length) return REHYPE_PLUGINS_BASE;
+    return [...REHYPE_PLUGINS_BASE, ...rehypePlugins];
+  }, [rehypePlugins]);
+
   // 流式输出中：已完成的行用 Markdown 渲染，最后一行用纯文本（避免频繁重解析）
   if (isStreaming) {
     const lastNewlineIndex = content.lastIndexOf('\n');
@@ -239,6 +260,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
         {/* 已完成的行用 Markdown 渲染 */}
         <ReactMarkdown
           remarkPlugins={REMARK_PLUGINS}
+          rehypePlugins={REHYPE_PLUGINS_BASE}
           components={streamComponents}
         >
           {escapeTablePipes(completedLines)}
@@ -255,7 +277,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
     <div className="markdown-body">
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}
-        rehypePlugins={rehypePlugins}
+        rehypePlugins={mergedRehypePlugins}
         components={components}
       >
         {processedContent}

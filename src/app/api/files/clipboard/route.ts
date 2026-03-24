@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stat } from 'fs/promises';
-import { join, resolve } from 'path';
-import { execFile } from 'child_process';
+import { join, resolve, sep } from 'path';
+import { execFile, execSync } from 'child_process';
 import { promisify } from 'util';
+import { isMac, isWindows } from '@/lib/platform';
 
 const execFileAsync = promisify(execFile);
 
 /**
- * POST /api/files/clipboard — 将文件引用写入系统剪贴板（macOS）
- * VSCode / Finder 可直接粘贴
+ * POST /api/files/clipboard — 将文件引用写入系统剪贴板
  */
 export async function POST(request: NextRequest) {
   try {
@@ -22,20 +22,23 @@ export async function POST(request: NextRequest) {
     const basePath = resolve(cwd);
     const fullPath = resolve(join(basePath, filePath));
 
-    if (!fullPath.startsWith(basePath + '/')) {
+    if (!fullPath.startsWith(basePath + sep)) {
       return NextResponse.json({ error: '不允许操作此路径' }, { status: 403 });
     }
 
     await stat(fullPath);
 
-    if (process.platform === 'darwin') {
-      await execFileAsync('osascript', [
-        '-e',
-        `set the clipboard to POSIX file "${fullPath}"`,
-      ]);
+    if (isMac) {
+      await execFileAsync('osascript', ['-e', `set the clipboard to POSIX file "${fullPath}"`]);
+    } else if (isWindows) {
+      execSync(`powershell -Command "Set-Clipboard -Value '${fullPath.replace(/'/g, "''")}'"`);
     } else {
-      // 非 macOS：复制绝对路径为文本
-      await execFileAsync('xclip', ['-selection', 'clipboard'], { input: fullPath } as never);
+      // Linux: xclip，fallback xsel
+      try {
+        await execFileAsync('xclip', ['-selection', 'clipboard'], { input: fullPath } as never);
+      } catch {
+        execSync(`echo -n '${fullPath.replace(/'/g, "\\'")}' | xsel --clipboard`);
+      }
     }
 
     return NextResponse.json({ success: true });
@@ -50,24 +53,37 @@ export async function POST(request: NextRequest) {
  */
 export async function GET() {
   try {
-    if (process.platform !== 'darwin') {
-      return NextResponse.json({ path: null });
+    let clipPath: string | null = null;
+
+    if (isMac) {
+      try {
+        const { stdout } = await execFileAsync('osascript', ['-e', 'POSIX path of (the clipboard as «class furl»)']);
+        clipPath = stdout.trim().replace(/\/$/, '');
+      } catch { /* 剪贴板不是文件引用 */ }
+    } else if (isWindows) {
+      try {
+        const result = execSync('powershell -Command "Get-Clipboard"', { encoding: 'utf8', timeout: 3000 }).trim();
+        if (result && !result.includes('\n')) clipPath = result;
+      } catch { /* ignore */ }
+    } else {
+      // Linux: xclip，fallback xsel
+      try {
+        const { stdout } = await execFileAsync('xclip', ['-selection', 'clipboard', '-o']);
+        const result = stdout.trim();
+        if (result && !result.includes('\n')) clipPath = result;
+      } catch {
+        try {
+          const result = execSync('xsel --clipboard --output', { encoding: 'utf8', timeout: 3000 }).trim();
+          if (result && !result.includes('\n')) clipPath = result;
+        } catch { /* ignore */ }
+      }
     }
 
-    // 尝试读取剪贴板中的文件引用
-    try {
-      const { stdout } = await execFileAsync('osascript', [
-        '-e',
-        'POSIX path of (the clipboard as «class furl»)',
-      ]);
-      const clipPath = stdout.trim().replace(/\/$/, ''); // 去掉尾部斜杠
-      if (clipPath) {
-        // 验证文件存在
+    if (clipPath) {
+      try {
         await stat(clipPath);
         return NextResponse.json({ path: clipPath });
-      }
-    } catch {
-      // 剪贴板不是文件引用，忽略
+      } catch { /* 不是有效文件路径 */ }
     }
 
     return NextResponse.json({ path: null });

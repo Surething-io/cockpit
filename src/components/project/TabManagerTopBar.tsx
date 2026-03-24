@@ -288,6 +288,28 @@ export function TabManagerTopBar({
               </svg>
             </button>
           )}
+          {/* VS Code 打开按钮 */}
+          <button
+            onClick={async () => {
+              if (activeTab?.cwd) {
+                try {
+                  await fetch('/api/open-vscode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cwd: activeTab.cwd }),
+                  });
+                } catch {
+                  // 忽略错误
+                }
+              }
+            }}
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            title="在 VS Code 中打开"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17.583 2.213L12 7.393 6.417 2.213 1 6.17v11.66l5.417 3.957L12 16.607l5.583 5.18L23 17.83V6.17l-5.417-3.957zM6.417 17.83L3 15.33V8.67l3.417-2.5v11.66zm11.166 0V6.17L21 8.67v6.66l-3.417 2.5z" />
+            </svg>
+          </button>
           {/* Cursor 打开按钮 */}
           <button
             onClick={async () => {
@@ -346,6 +368,14 @@ export function TabManagerTopBar({
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
+          </button>
+          {/* Surething 网站 */}
+          <button
+            onClick={() => window.open('https://www.surething.io?from=cockpit', '_blank')}
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            title="打开 Surething"
+          >
+            <img src="https://surething.io/logo.png" alt="Surething" className="w-5 h-5 rounded-sm" />
           </button>
         </div>
       </div>

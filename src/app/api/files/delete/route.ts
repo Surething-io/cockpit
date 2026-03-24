@@ -1,27 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { stat } from 'fs/promises';
-import { join, resolve } from 'path';
-import { execFile } from 'child_process';
+import { stat, rm } from 'fs/promises';
+import { join, resolve, sep } from 'path';
+import { execFile, execSync } from 'child_process';
 import { promisify } from 'util';
+import { isMac, isWindows } from '@/lib/platform';
 
 const execFileAsync = promisify(execFile);
 
 /**
- * macOS: 通过 osascript 将文件/文件夹移动到回收站
- * 其他平台: fallback 到 rm
+ * 将文件/文件夹移动到回收站，各平台实现不同
+ * 所有平台在回收站不可用时 fallback 到永久删除
  */
 async function moveToTrash(fullPath: string): Promise<void> {
-  if (process.platform === 'darwin') {
-    // osascript 调用 Finder 的 delete 命令（移动到回收站）
+  if (isMac) {
     await execFileAsync('osascript', [
       '-e',
       `tell application "Finder" to delete (POSIX file "${fullPath}" as alias)`,
     ]);
+  } else if (isWindows) {
+    // PowerShell: 移动到回收站
+    try {
+      const escaped = fullPath.replace(/'/g, "''");
+      execSync(`powershell -Command "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('${escaped}','OnlyErrorDialogs','SendToRecycleBin')"`, { timeout: 10000 });
+    } catch {
+      // fallback: 永久删除
+      const info = await stat(fullPath);
+      await rm(fullPath, { recursive: info.isDirectory(), force: true });
+    }
   } else {
-    // 非 macOS 平台 fallback 到永久删除
-    const { rm } = await import('fs/promises');
-    const info = await stat(fullPath);
-    await rm(fullPath, { recursive: info.isDirectory(), force: true });
+    // Linux: gio trash，fallback rm
+    try {
+      execSync(`gio trash "${fullPath}"`, { timeout: 5000 });
+    } catch {
+      const info = await stat(fullPath);
+      await rm(fullPath, { recursive: info.isDirectory(), force: true });
+    }
   }
 }
 
@@ -38,7 +51,7 @@ export async function POST(request: NextRequest) {
     const fullPath = resolve(join(basePath, filePath));
 
     // 安全检查：路径必须在 cwd 内，不能删 cwd 本身
-    if (!fullPath.startsWith(basePath + '/')) {
+    if (!fullPath.startsWith(basePath + sep)) {
       return NextResponse.json({ error: '不允许删除此路径' }, { status: 403 });
     }
 

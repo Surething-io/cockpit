@@ -7,6 +7,7 @@ import { AnsiUp } from 'ansi_up';
 import type { XtermSearchHandle } from './XtermRenderer';
 import { toShortId } from '@/lib/shortId';
 import { ShortIdBadge } from './ShortIdBadge';
+import { modKey } from '@/lib/platform';
 
 const XtermRenderer = lazy(() => import('./XtermRenderer').then(m => ({ default: m.XtermRenderer })));
 
@@ -394,7 +395,7 @@ export const CommandBubble = memo(function CommandBubble({
               <button
                 onClick={() => onToggleMaximize?.()}
                 className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title="还原 (⌘M / ESC)"
+                title={`还原 (${modKey()}M / ESC)`}
               >
                 <X className="w-4 h-4" />
               </button>

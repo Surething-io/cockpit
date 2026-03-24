@@ -6,9 +6,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 interface ProjectInfo {
-  name: string;        // 最后一级目录名（用于排序）
-  fullPath: string;    // 完整路径（用于显示）
-  encodedPath: string; // 编码后的路径（用于查询 session）
+  name: string;        // Last path component (used for sorting)
+  fullPath: string;    // Full path (used for display)
+  encodedPath: string; // Encoded path (used to query sessions)
   sessionCount: number;
 }
 
@@ -21,7 +21,7 @@ interface SessionsIndex {
   originalPath?: string;
 }
 
-// 从 sessions-index.json 读取真实项目路径
+// Read the real project path from sessions-index.json
 function getProjectPathFromIndex(projectDir: string): string | null {
   const indexPath = path.join(projectDir, 'sessions-index.json');
   if (!fs.existsSync(indexPath)) {
@@ -32,23 +32,23 @@ function getProjectPathFromIndex(projectDir: string): string | null {
     const content = fs.readFileSync(indexPath, 'utf-8');
     const index: SessionsIndex = JSON.parse(content);
 
-    // 优先使用 originalPath
+    // Prefer originalPath
     if (index.originalPath) {
       return index.originalPath;
     }
 
-    // 否则从第一个 entry 的 projectPath 获取
+    // Otherwise get it from the projectPath of the first entry
     if (index.entries && index.entries.length > 0 && index.entries[0].projectPath) {
       return index.entries[0].projectPath;
     }
   } catch {
-    // 解析失败，返回 null
+    // Parse failed, return null
   }
 
   return null;
 }
 
-// 从 jsonl 文件中读取 cwd 字段
+// Read the cwd field from jsonl files
 function getProjectPathFromJsonl(projectDir: string): string | null {
   try {
     const files = fs.readdirSync(projectDir)
@@ -67,20 +67,20 @@ function getProjectPathFromJsonl(projectDir: string): string | null {
             return obj.cwd;
           }
         } catch {
-          // 忽略解析错误
+          // Ignore parse errors
         }
       }
     }
   } catch {
-    // 忽略读取错误
+    // Ignore read errors
   }
 
   return null;
 }
 
-// 回退方案：不再简单替换 - 为 /（会把 ai-assistant-sionea 错误解码为 ai/assistant/sionea）
-// 只依赖 sessions-index.json 和 jsonl 中的 cwd 字段获取真实路径
-// 如果都没有，返回 null 跳过该项目
+// Fallback: no longer do a simple replacement of - with / (which incorrectly decodes ai-assistant-sionea as ai/assistant/sionea)
+// Rely only on sessions-index.json and the cwd field in jsonl to get the real path
+// If neither is available, return null and skip the project
 function fallbackDecodeProjectPath(_encodedPath: string): string | null {
   return null;
 }
@@ -89,7 +89,7 @@ export async function GET() {
   try {
     const projectsDir = CLAUDE_PROJECTS_DIR;
 
-    // 检查目录是否存在
+    // Check if the directory exists
     if (!fs.existsSync(projectsDir)) {
       return new Response(JSON.stringify([]), {
         status: 200,
@@ -97,7 +97,7 @@ export async function GET() {
       });
     }
 
-    // 读取所有项目目录
+    // Read all project directories
     const projectDirs = fs.readdirSync(projectsDir, { withFileTypes: true })
       .filter(dirent => dirent.isDirectory())
       .map(dirent => dirent.name);
@@ -107,19 +107,19 @@ export async function GET() {
     for (const projectDirName of projectDirs) {
       const projectPath = path.join(projectsDir, projectDirName);
 
-      // 优先从 sessions-index.json 获取真实路径，其次从 jsonl 文件读取 cwd
-      // 不使用 fallback 解码（- 替换为 / 会导致路径错误）
+      // Prefer getting the real path from sessions-index.json, then from the cwd field in jsonl
+      // Do not use fallback decoding (replacing - with / causes incorrect paths)
       const fullPath = getProjectPathFromIndex(projectPath)
         || getProjectPathFromJsonl(projectPath)
         || fallbackDecodeProjectPath(projectDirName);
 
-      // 无法确定真实路径时跳过该项目
+      // Skip the project when the real path cannot be determined
       if (!fullPath) continue;
 
-      // 获取最后一级目录名
+      // Get the last path component
       const projectName = path.basename(fullPath);
 
-      // 统计 session 数量（排除 agent-* 开头的子进程文件）
+      // Count sessions (exclude subprocess files starting with agent-)
       const sessionCount = fs.readdirSync(projectPath)
         .filter(file => file.endsWith('.jsonl') && !file.startsWith('agent-'))
         .length;
@@ -134,7 +134,7 @@ export async function GET() {
       }
     }
 
-    // 按最后一级目录名字母排序
+    // Sort alphabetically by last path component
     projects.sort((a, b) => a.name.localeCompare(b.name));
 
     return new Response(JSON.stringify(projects), {

@@ -23,7 +23,7 @@ interface AskQuestionViewerModalProps {
   onClose: () => void;
 }
 
-/** 从单个 toolCall 中提取问题和答案 */
+/** Extract questions and answers from a single toolCall */
 function extractQA(toolCall: ToolCallInfo): { questions: QuestionItem[]; answers: Record<string, string> } {
   const questions = (toolCall.input?.questions as QuestionItem[]) || [];
   const inputAnswers = (toolCall.input?.answers as Record<string, string>) || {};
@@ -43,22 +43,22 @@ function extractQA(toolCall: ToolCallInfo): { questions: QuestionItem[]; answers
   return { questions, answers: { ...inputAnswers, ...resultAnswers } };
 }
 
-/** 生成问题的唯一 key */
+/** Generate a unique key for a question */
 function questionKey(tcIdx: number, qIdx: number): string {
   return `${tcIdx}-${qIdx}`;
 }
 
 export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewerModalProps) {
-  // 每个问题的答案选择: key = "tcIdx-qIdx", value = 选中的 label 或自定义文本
+  // Answer selection per question: key = "tcIdx-qIdx", value = selected label or custom text
   const [selections, setSelections] = useState<Record<string, string>>({});
-  // 自定义输入展开状态
+  // Custom input expanded state
   const [customInputOpen, setCustomInputOpen] = useState<Record<string, boolean>>({});
-  // 自定义输入文本
+  // Custom input text
   const [customTexts, setCustomTexts] = useState<Record<string, string>>({});
-  // 勾选状态（用于复制）: key = "tcIdx-qIdx"
+  // Checked state (for copying): key = "tcIdx-qIdx"
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
-  // 初始化已有答案
+  // Initialize existing answers
   useEffect(() => {
     const initial: Record<string, string> = {};
     toolCalls.forEach((tc, tcIdx) => {
@@ -78,7 +78,7 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
     setSelections(initial);
   }, [toolCalls]);
 
-  // ESC 关闭
+  // ESC to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -87,7 +87,7 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  // 统计
+  // Counts
   const totalQuestions = toolCalls.reduce((sum, tc) => {
     const { questions } = extractQA(tc);
     return sum + questions.length;
@@ -131,7 +131,7 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
       const { questions } = extractQA(tc);
       questions.forEach((q, qIdx) => {
         const key = questionKey(tcIdx, qIdx);
-        // 有勾选时只复制勾选的，没有勾选时复制全部
+        // If any are checked, copy only checked ones; otherwise copy all
         if (hasChecked && !checked[key]) return;
         const answer = selections[key];
         parts.push(`Q: ${q.question}`);

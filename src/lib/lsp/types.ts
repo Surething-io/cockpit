@@ -1,71 +1,71 @@
 // ============================================
-// LSP 统一接口定义
-// 所有 Language Server adapter 实现此接口
+// Unified LSP interface definitions
+// All Language Server adapters implement this interface.
 // ============================================
 
 import type { ChildProcess } from 'child_process';
 
-/** 代码位置 */
+/** Code location */
 export interface Location {
   file: string;
   line: number;      // 1-based
   column: number;    // 1-based
-  lineText?: string; // 该行源码，用于前端展示
+  lineText?: string; // source text of the line, for frontend display
 }
 
-/** 悬浮类型信息 */
+/** Hover type information */
 export interface HoverInfo {
-  displayString: string;   // 类型签名
+  displayString: string;   // type signature
   documentation?: string;  // JSDoc / docstring
   kind?: string;           // function / variable / class ...
 }
 
-/** Language Server adapter 统一接口 */
+/** Unified Language Server adapter interface */
 export interface LanguageServerAdapter {
   readonly language: string;
 
-  /** 启动 Language Server 进程 */
+  /** Spawn the Language Server process */
   spawn(): ChildProcess;
 
-  /** 发送初始化请求（部分 LS 需要） */
+  /** Send the initialization request (required by some LSes) */
   initialize?(): Promise<void>;
 
-  /** 通知 LS 打开文件 */
+  /** Notify the LS that a file was opened */
   openFile(filePath: string, content: string): void;
 
-  /** 通知 LS 文件已关闭 */
+  /** Notify the LS that a file was closed */
   closeFile?(filePath: string): void;
 
-  /** 跳转定义 */
+  /** Go to definition */
   definition(filePath: string, line: number, column: number): Promise<Location[]>;
 
-  /** 悬浮类型信息 */
+  /** Hover type info */
   hover(filePath: string, line: number, column: number): Promise<HoverInfo | null>;
 
-  /** 引用查找 */
+  /** Find references */
   references(filePath: string, line: number, column: number): Promise<Location[]>;
 
-  /** 优雅关闭 */
+  /** Graceful shutdown */
   shutdown(): void;
 }
 
-/** LSP Server 实例（Registry 内部使用） */
+/** LSP Server instance (used internally by the Registry) */
 export interface LSPServerInstance {
   language: string;
-  cwd: string;               // 项目根目录（绝对路径）
+  cwd: string;               // project root directory (absolute path)
   adapter: LanguageServerAdapter;
   process: ChildProcess;
-  openedFiles: Set<string>;  // 已 open 的文件路径
-  lastOpenedFile?: string;   // 当前活跃文件，切换时 reload
-  ready: boolean;            // 初始化完成标志
-  readyPromise: Promise<void>; // 等待初始化完成
-  lastUsedAt: number;        // 最后使用时间戳（LRU + idle 超时用）
+  openedFiles: Set<string>;  // paths of files that have been opened
+  lastOpenedFile?: string;   // currently active file; reloaded on switch
+  ready: boolean;            // initialization complete flag
+  readyPromise: Promise<void>; // resolves when initialization is complete
+  lastUsedAt: number;        // last-used timestamp (for LRU + idle timeout)
 }
 
-/** 支持 LSP 的语言 */
+/** Languages with LSP support */
 export type SupportedLanguage = 'typescript' | 'python';
 
-/** 根据文件扩展名获取语言类型 */
+/** Get the language type for a file based on its extension */
 export function getLanguageForFile(filePath: string): SupportedLanguage | null {
   const ext = filePath.split('.').pop()?.toLowerCase();
   if (!ext) return null;

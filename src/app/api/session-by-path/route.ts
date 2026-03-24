@@ -65,7 +65,7 @@ interface ChatMessage {
 }
 
 
-// 文件指纹：mtime + size，轻量判断文件是否有变更
+// File fingerprint: mtime + size, lightweight check for file changes
 function getFileFingerprint(filePath: string): string {
   const stat = fs.statSync(filePath);
   return `${stat.mtimeMs}-${stat.size}`;
@@ -76,11 +76,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const cwd = body.cwd as string;
     const sessionId = body.sessionId as string;
-    // 分页参数：limit = 每页 turn 数量（一个 turn = user + assistant 消息对）
-    // beforeTurnIndex = 加载此 turn 之前的消息（用于向上滚动加载更多）
+    // Pagination params: limit = number of turns per page (one turn = user + assistant message pair)
+    // beforeTurnIndex = load messages before this turn index (used for scroll-up to load more)
     const limit = body.limit as number | undefined;
     const beforeTurnIndex = body.beforeTurnIndex as number | undefined;
-    // 轻量检查：客户端传上次的指纹，未变更则返回 304 等效响应
+    // Lightweight check: client sends last fingerprint; return a 304-equivalent if unchanged
     const ifFingerprint = body.ifFingerprint as string | undefined;
 
     if (!cwd || !sessionId) {
@@ -90,10 +90,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 构建完整的 session 文件路径
+    // Build the full session file path
     const sessionPath = getClaudeSessionPath(cwd, sessionId);
 
-    // 检查文件是否存在
+    // Check if the file exists
     if (!fs.existsSync(sessionPath)) {
       return new Response(JSON.stringify({ error: 'Session not found', messages: [] }), {
         status: 404,
@@ -101,10 +101,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 获取文件指纹
+    // Get the file fingerprint
     const fingerprint = getFileFingerprint(sessionPath);
 
-    // 如果客户端指纹与服务端一致，数据未变更，跳过解析
+    // If the client fingerprint matches the server's, data is unchanged; skip parsing
     if (ifFingerprint && ifFingerprint === fingerprint) {
       return new Response(JSON.stringify({ notModified: true, fingerprint }), {
         status: 200,
@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 读取并解析 JSONL 文件（支持分页）
+    // Read and parse the JSONL file (with pagination support)
     const { messages, title, usage, totalTurns, hasMore } = await parseTranscriptFile(sessionPath, limit, beforeTurnIndex);
 
     return new Response(JSON.stringify({ messages, sessionId, title, usage, totalTurns, hasMore, fingerprint }), {
@@ -128,19 +128,19 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// 过滤命令标签，提取有意义的内容
+// Filter command tags and extract meaningful content
 function filterCommandTags(text: string): string {
-  // 首先尝试提取 command-args
+  // First try to extract command-args
   const argsMatch = text.match(/<command-args>([^<]*)<\/command-args>/);
   if (argsMatch && argsMatch[1].trim()) {
     return argsMatch[1].trim();
   }
-  // 如果没有 args，尝试提取 command-name
+  // If no args, try to extract command-name
   const nameMatch = text.match(/<command-name>([^<]*)<\/command-name>/);
   if (nameMatch && nameMatch[1].trim()) {
     return nameMatch[1].trim();
   }
-  // 过滤所有命令标签
+  // Filter all command tags
   let filtered = text.replace(/<command-message>[^<]*<\/command-message>/g, '');
   filtered = filtered.replace(/<command-name>[^<]*<\/command-name>/g, '');
   filtered = filtered.replace(/<command-args>[^<]*<\/command-args>/g, '');
@@ -149,13 +149,13 @@ function filterCommandTags(text: string): string {
   return filtered.trim();
 }
 
-// 截断消息到指定长度
+// Truncate a message to the specified length
 function truncateMessage(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
   return text.slice(0, maxLength) + '...';
 }
 
-// 生成标题（不截断，保留完整内容）
+// Generate a title (no truncation, preserve full content)
 function generateTitle(summary: string, userMessages: string[]): string {
   if (summary) return summary;
 
@@ -164,22 +164,22 @@ function generateTitle(summary: string, userMessages: string[]): string {
     const filtered = filterCommandTags(msg);
     if (!filtered) continue;
 
-    // 如果是命令（以/开头），保存命令名并继续找下一条消息
+    // If it's a command (starts with /), save the command name and continue to the next message
     if (filtered.startsWith('/') && !commandName) {
       commandName = filtered;
       continue;
     }
 
-    // 如果之前有命令名，组合显示
+    // If a command name was saved before, combine them
     if (commandName) {
       return `${commandName} ${filtered}`;
     }
 
-    // 普通消息直接作为标题
+    // Regular message used directly as the title
     return filtered;
   }
 
-  // 如果只有命令名没有后续消息，显示命令名
+  // If there is only a command name with no subsequent messages, show the command name
   if (commandName) return commandName;
 
   return 'Untitled Session';
@@ -207,12 +207,12 @@ async function parseTranscriptFile(
       if (obj.type === 'user' || obj.type === 'assistant') {
         rawMessages.push(obj);
 
-        // 收集最后一条 assistant 消息的 usage
+        // Collect the usage of the last assistant message
         if (obj.type === 'assistant' && obj.message?.usage) {
           lastUsage = obj.message.usage;
         }
 
-        // 收集用户文本消息用于生成标题
+        // Collect user text messages for title generation
         if (obj.type === 'user' && !obj.isMeta && obj.message?.content) {
           const content = obj.message.content;
           if (typeof content === 'string') {
@@ -225,21 +225,21 @@ async function parseTranscriptFile(
           }
         }
       }
-      // 收集 summary
+      // Collect summary
       if (obj.type === 'summary' && obj.summary) {
         summary = obj.summary;
       }
     } catch {
-      // 忽略解析错误的行
+      // Ignore lines with parse errors
     }
   }
 
-  // 转换消息格式（全量）
+  // Convert message format (full set)
   const allMessages = convertToChatMessages(rawMessages);
   const title = generateTitle(summary, userTextMessages);
 
-  // 计算 turn 数量：一个 turn = 一个 user 消息 + 对应的 assistant 消息
-  // 这里简化处理：每个 user 消息开始一个新 turn
+  // Count turns: one turn = one user message + the corresponding assistant message
+  // Simplified here: each user message starts a new turn
   const turns: ChatMessage[][] = [];
   let currentTurn: ChatMessage[] = [];
 
@@ -259,17 +259,17 @@ async function parseTranscriptFile(
 
   const totalTurns = turns.length;
 
-  // 如果没有分页参数，返回全量消息
+  // If there are no pagination params, return all messages
   if (limit === undefined) {
     return { messages: allMessages, title, usage: lastUsage, totalTurns, hasMore: false };
   }
 
-  // 分页逻辑：从 beforeTurnIndex 往前取 limit 个 turn
+  // Pagination logic: take `limit` turns going back from beforeTurnIndex
   const endIndex = beforeTurnIndex !== undefined ? beforeTurnIndex : totalTurns;
   const startIndex = Math.max(0, endIndex - limit);
   const hasMore = startIndex > 0;
 
-  // 取出指定范围的 turns 并扁平化为消息数组
+  // Extract the specified range of turns and flatten into a message array
   const selectedTurns = turns.slice(startIndex, endIndex);
   const messages = selectedTurns.flat();
 
@@ -281,7 +281,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
   let currentAssistantMessage: ChatMessage | null = null;
   const toolResults = new Map<string, string>();
 
-  // 第一遍：收集所有工具结果
+  // First pass: collect all tool results
   for (const msg of rawMessages) {
     if (msg.type === 'user' && msg.message?.content && Array.isArray(msg.message.content)) {
       for (const block of msg.message.content) {
@@ -292,9 +292,9 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
     }
   }
 
-  // 第二遍：构建消息列表
+  // Second pass: build the message list
   for (const msg of rawMessages) {
-    // 处理用户文本消息
+    // Handle user text messages
     if (msg.type === 'user' && msg.message?.role === 'user' && msg.message?.content) {
       const content = msg.message.content;
       if (typeof content === 'string') {
@@ -343,7 +343,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
       }
     }
 
-    // 处理助手消息
+    // Handle assistant messages
     if (msg.type === 'assistant' && msg.message?.content) {
       const content = msg.message.content;
       if (!Array.isArray(content)) continue;

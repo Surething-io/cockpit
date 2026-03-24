@@ -28,20 +28,20 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<Theme>('system');
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
 
-  // 获取系统主题
+  // Get system theme
   const getSystemTheme = useCallback((): 'light' | 'dark' => {
     if (typeof window === 'undefined') return 'light';
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }, []);
 
-  // 应用主题到 DOM
+  // Apply theme to DOM
   const applyTheme = useCallback((resolved: 'light' | 'dark') => {
     const root = document.documentElement;
     root.classList.remove('light', 'dark');
     root.classList.add(resolved);
     setResolvedTheme(resolved);
 
-    // 更新 PWA 标题栏颜色
+    // Update PWA title bar color
     const themeColorMeta = document.querySelector('meta[name="theme-color"]');
     const color = resolved === 'dark' ? '#111113' : '#f9f9fb';
     if (themeColorMeta) {
@@ -49,7 +49,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     }
   }, []);
 
-  // 设置主题
+  // Set theme
   const setTheme = useCallback((newTheme: Theme) => {
     setThemeState(newTheme);
     localStorage.setItem('theme', newTheme);
@@ -57,14 +57,14 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     const resolved = newTheme === 'system' ? getSystemTheme() : newTheme;
     applyTheme(resolved);
 
-    // 通知所有子 iframe 更新主题
+    // Notify all child iframes to update theme
     const iframes = document.querySelectorAll('iframe');
     iframes.forEach((iframe) => {
       iframe.contentWindow?.postMessage({ type: 'THEME_CHANGE', theme: newTheme }, '*');
     });
   }, [getSystemTheme, applyTheme]);
 
-  // 初始化主题
+  // Initialize theme
   useEffect(() => {
     const stored = localStorage.getItem('theme') as Theme | null;
     const initialTheme = stored || 'system';
@@ -74,7 +74,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     applyTheme(resolved);
   }, [getSystemTheme, applyTheme]);
 
-  // 监听系统主题变化
+  // Listen for system theme changes
   useEffect(() => {
     if (theme !== 'system') return;
 
@@ -87,7 +87,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     return () => mediaQuery.removeEventListener('change', handler);
   }, [theme, applyTheme]);
 
-  // 监听父窗口发来的主题变更消息（iframe 场景）
+  // Listen for theme change messages from parent window (iframe scenario)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'THEME_CHANGE') {

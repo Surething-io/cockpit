@@ -24,7 +24,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
   const [searchKeyword, setSearchKeyword] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // 加载当前项目的 session 列表
+  // Load the session list for the current project
   const loadSessions = useCallback(async () => {
     if (!cwd) return;
 
@@ -32,7 +32,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
     setError(null);
 
     try {
-      // 将 cwd 编码为目录名格式
+      // Encode cwd as directory name format
       const encodedPath = cwd.replace(/\//g, '-');
       const response = await fetch(`/api/sessions/projects/${encodeURIComponent(encodedPath)}`);
       if (!response.ok) {
@@ -50,14 +50,14 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
   useEffect(() => {
     if (isOpen) {
       loadSessions();
-      // 自动聚焦到搜索框
+      // Auto-focus the search input
       setTimeout(() => {
         searchInputRef.current?.focus();
       }, 100);
     }
   }, [isOpen, loadSessions]);
 
-  // ESC 键关闭
+  // Close on ESC key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -69,16 +69,16 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
   }, [isOpen, onClose]);
 
   const handleSessionClick = (session: SessionInfo) => {
-    // 从 sessionPath 中提取 sessionId（文件名去掉 .jsonl）
+    // Extract sessionId from sessionPath (filename without .jsonl)
     const fileName = session.path.split('/').pop() || '';
     const sessionId = fileName.replace('.jsonl', '');
 
     if (onSelectSession) {
-      // 如果有 onSelectSession 回调，使用它（在 TabManager 中添加新标签）
+      // Use onSelectSession callback if provided (adds a new tab in TabManager)
       onSelectSession(sessionId, session.title);
       onClose();
     } else {
-      // 否则通知父级 Workspace 打开
+      // Otherwise notify parent Workspace to open
       window.parent.postMessage({
         type: 'OPEN_PROJECT',
         cwd,
@@ -98,7 +98,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
     });
   };
 
-  // 过滤 session
+  // Filter sessions
   const filteredSessions = sessions.filter((session) => {
     if (!searchKeyword) return true;
     const keyword = searchKeyword.toLowerCase();

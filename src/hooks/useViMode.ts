@@ -61,7 +61,7 @@ export function useViMode({
   onSearchClear,
 }: UseViModeOptions) {
   const [mode, setMode] = useState<ViMode>('normal');
-  const [cursorLine, setCursorLine] = useState(-1); // -1 = 未激活，用户点击后才显示光标
+  const [cursorLine, setCursorLine] = useState(-1); // -1 = inactive; cursor becomes visible after the first click
   const [cursorCol, setCursorCol] = useState(0);
   const [isDirty, setIsDirty] = useState(false);
   const [keyBuffer, setKeyBuffer] = useState('');
@@ -417,7 +417,7 @@ export function useViMode({
 
     // ---- Command mode: handle input ----
     if (mode === 'command') {
-      // IME 输入中（中文候选词确认）不拦截 Enter/Backspace
+      // Don't intercept Enter/Backspace during IME composition (e.g., confirming candidate words)
       if (e.isComposing) return false;
       if (e.key === 'Escape' || isCtrlC) {
         exitCommand();
@@ -445,7 +445,7 @@ export function useViMode({
 
     // ---- Search mode: handle input ----
     if (mode === 'search') {
-      // IME 输入中（中文候选词确认）不拦截 Enter/Backspace
+      // Don't intercept Enter/Backspace during IME composition (e.g., confirming candidate words)
       if (e.isComposing) return false;
       if (e.key === 'Escape' || isCtrlC) {
         exitSearch();
@@ -471,7 +471,7 @@ export function useViMode({
     }
 
     // ---- Normal mode ----
-    // 光标未激活时（-1），任意操作先激活到第 0 行
+    // When cursor is inactive (-1), any action first activates it at line 0
     if (cursorLine < 0) {
       setCursorLine(0);
       setCursorCol(0);

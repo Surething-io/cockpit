@@ -1,7 +1,7 @@
 import React from 'react';
 
 // ============================================
-// JSON 工具函数
+// JSON utility functions
 // ============================================
 
 export function isValidJson(content: string): boolean {
@@ -23,7 +23,7 @@ export function formatAsJson(content: string): string {
 }
 
 // ============================================
-// 人类可读格式化
+// Human-readable formatting
 // ============================================
 
 export function formatAsHumanReadable(content: string): React.ReactNode {
@@ -35,7 +35,7 @@ export function formatAsHumanReadable(content: string): React.ReactNode {
   }
 }
 
-// github-dark JSON token 颜色
+// github-dark JSON token colors
 const C_KEY = '#79c0ff';   // property key
 const C_STR = '#a5d6ff';   // string value
 const C_NUM = '#79c0ff';   // number
@@ -46,7 +46,7 @@ const C_FOLD = '#6e7681';  // fold toggle
 const s = (color: string, text: string | React.ReactNode) =>
   React.createElement('span', { style: { color } }, text);
 
-/** 判断一个值渲染后是否超过 3 行（用于决定是否可折叠） */
+/** Determine if a value renders to more than 3 lines (used to decide if it can be collapsed) */
 function isMultilineValue(value: unknown): boolean {
   if (typeof value === 'string') {
     const text = value.replace(/\\n/g, '\n');
@@ -55,7 +55,7 @@ function isMultilineValue(value: unknown): boolean {
   return false;
 }
 
-/** 可折叠的 key: value 条目，点击长文本本身切换折叠/展开 */
+/** Collapsible key: value entry, click long text itself to toggle collapse/expand */
 function CollapsibleEntry({ label, labelColor, value, indent }: {
   label: string; labelColor: string; value: unknown; indent: number;
 }) {
@@ -66,7 +66,7 @@ function CollapsibleEntry({ label, labelColor, value, indent }: {
   const onClick = (e: React.MouseEvent) => {
     const dx = e.clientX - downPos.current.x;
     const dy = e.clientY - downPos.current.y;
-    if (dx * dx + dy * dy > 25) return; // 拖选不触发
+    if (dx * dx + dy * dy > 25) return; // Drag-select does not trigger
     e.stopPropagation();
     setCollapsed(v => !v);
   };
@@ -144,7 +144,7 @@ function formatValueHumanReadable(value: unknown, indent: number): React.ReactNo
 }
 
 // ============================================
-// Edit 工具输入检测
+// Edit tool input detection
 // ============================================
 
 export interface EditInput {
@@ -171,7 +171,7 @@ export function isEditInput(content: string): EditInput | null {
 }
 
 // ============================================
-// 图片文件检测
+// Image file detection
 // ============================================
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico', '.avif']);
@@ -186,7 +186,7 @@ export function isMarkdownFile(filePath: string): boolean {
 }
 
 // ============================================
-// 文件路径提取
+// File path extraction
 // ============================================
 
 export function getFilePath(content: string): string | null {
@@ -196,7 +196,7 @@ export function getFilePath(content: string): string | null {
       return parsed.file_path;
     }
   } catch {
-    // 非 JSON：检查是否是单行绝对路径（如工具结果直接返回文件路径）
+    // Not JSON: check if it's a single-line absolute path (e.g. tool result returning file path directly)
     const trimmed = content.trim();
     if (trimmed.startsWith('/') && !trimmed.includes('\n') && trimmed.length < 500) {
       return trimmed;

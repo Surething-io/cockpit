@@ -1,45 +1,45 @@
 /**
- * 跨平台工具函数
- * 服务端 + 客户端共用（客户端函数通过 typeof navigator 判断）
+ * Cross-platform utility functions
+ * Shared by server and client (client functions guard with typeof navigator)
  */
 
 // ============================================================================
-// 服务端平台检测
+// Server-side platform detection
 // ============================================================================
 
 export const isMac = process.platform === 'darwin';
 export const isWindows = process.platform === 'win32';
 export const isLinux = process.platform === 'linux';
 
-/** 用户默认 shell */
+/** User's default shell */
 export function getDefaultShell(): string {
   if (isWindows) return process.env.COMSPEC || 'powershell.exe';
   return process.env.SHELL || '/bin/sh';
 }
 
-/** 默认 PATH fallback */
+/** Default PATH fallback */
 export function getDefaultPath(): string {
   if (isWindows) return process.env.PATH || '';
   return process.env.PATH || '/usr/local/bin:/usr/bin:/bin';
 }
 
 // ============================================================================
-// 客户端平台检测（UI 快捷键文案）
+// Client-side platform detection (UI keyboard shortcut labels)
 // ============================================================================
 
-/** 客户端是否 macOS（浏览器环境） */
+/** Whether the client is macOS (browser environment) */
 export function isMacClient(): boolean {
   if (typeof navigator === 'undefined') return false;
   return /Mac|iPhone|iPad/.test(navigator.platform || '')
     || ((navigator as any).userAgentData?.platform === 'macOS');
 }
 
-/** 修饰键文案：macOS → '⌘'，其他 → 'Ctrl+' */
+/** Modifier key label: macOS → '⌘', others → 'Ctrl+' */
 export function modKey(): string {
   return isMacClient() ? '⌘' : 'Ctrl+';
 }
 
-/** 修饰键符号（无加号）：macOS → '⌘'，其他 → 'Ctrl' */
+/** Modifier key symbol without plus sign: macOS → '⌘', others → 'Ctrl' */
 export function modKeyBare(): string {
   return isMacClient() ? '⌘' : 'Ctrl';
 }

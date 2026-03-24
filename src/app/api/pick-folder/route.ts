@@ -5,7 +5,7 @@ import { isMac, isWindows } from '@/lib/platform';
 
 /**
  * GET /api/pick-folder
- * 调用系统原生文件夹选择对话框，返回选中的绝对路径
+ * Open the native system folder picker dialog and return the selected absolute path
  */
 export async function GET() {
   try {
@@ -21,7 +21,7 @@ export async function GET() {
       const ps = `Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.SelectedPath = '${home}'; if($d.ShowDialog() -eq 'OK'){$d.SelectedPath}`;
       result = execSync(`powershell -Command "${ps}"`, { encoding: 'utf8', timeout: 60000 }).trim();
     } else {
-      // Linux: zenity，fallback kdialog
+      // Linux: zenity, fallback to kdialog
       try {
         result = execSync(`zenity --file-selection --directory --title="选择项目文件夹" 2>/dev/null`, { encoding: 'utf8', timeout: 60000 }).trim();
       } catch {
@@ -30,14 +30,14 @@ export async function GET() {
     }
 
     if (result) {
-      // 去掉末尾斜杠
+      // Strip trailing slash
       const folder = result.replace(/[/\\]$/, '');
       return NextResponse.json({ folder });
     }
 
     return NextResponse.json({ folder: null });
   } catch {
-    // 用户点了取消，或命令不可用
+    // User cancelled, or the command is unavailable
     return NextResponse.json({ folder: null });
   }
 }

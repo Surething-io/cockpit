@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'cwd is required' }, { status: 400 });
     }
 
-    // 执行 cursor 命令打开目录
+    // Run the cursor command to open the directory
     exec(`cursor "${cwd}"`, (error) => {
       if (error) {
         console.error('Failed to open cursor:', error);

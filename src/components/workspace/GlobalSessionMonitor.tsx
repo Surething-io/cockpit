@@ -22,7 +22,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // 点击外部关闭（包括点击 iframe）
+  // Close on outside click (including clicking into an iframe)
   useEffect(() => {
     if (!isOpen) return;
 
@@ -32,7 +32,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
       }
     };
 
-    // 点击 iframe 会导致父窗口失焦
+    // Clicking an iframe causes the parent window to lose focus
     const handleBlur = () => {
       setIsOpen(false);
     };
@@ -45,7 +45,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
     };
   }, [isOpen]);
 
-  // 切换到指定 session（iframe 的 SWITCH_SESSION handler 会写 state.json status=normal）
+  // Switch to the specified session (iframe SWITCH_SESSION handler writes state.json status=normal)
   const handleSessionClick = useCallback((session: GlobalSession) => {
     onSwitchProject(session.cwd, session.sessionId);
     setIsOpen(false);
@@ -54,7 +54,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
   const loadingCount = sessions.filter(s => s.status === 'loading').length;
   const unreadCount = sessions.filter(s => s.status === 'unread').length;
 
-  // 格式化时间
+  // Format timestamp
   const formatTime = (timestamp: number) => {
     const diff = Date.now() - timestamp;
     const minutes = Math.floor(diff / 60000);
@@ -65,7 +65,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
     return `${Math.floor(hours / 24)}天前`;
   };
 
-  // 获取项目名称
+  // Get project name
   const getProjectName = (cwd: string) => cwd.split('/').pop() || cwd;
 
   return (
@@ -77,12 +77,12 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
         }`}
         title="最近会话"
       >
-        {/* 闪电图标表示活动状态 */}
+        {/* Lightning icon indicates active state */}
         <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
         {!collapsed && <span className="text-sm flex-1 text-left">最近会话</span>}
-        {/* badge：loading 橙色脉冲 + 未读红色静态，各自独立显示 */}
+        {/* Badge: loading orange pulse + unread red static, displayed independently */}
         {loadingCount > 0 && (
           <span className={`min-w-[18px] h-[18px] px-1 text-white text-xs font-medium rounded-full flex items-center justify-center bg-orange-9 animate-pulse ${
             collapsed ? 'absolute -top-1 -right-1' : ''
@@ -99,7 +99,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
         )}
       </button>
 
-      {/* 下拉列表 - 向右上弹出 */}
+      {/* Dropdown list - pops up to the upper right */}
       {isOpen && (
         <div className="absolute left-full bottom-0 ml-2 w-80 h-[450px] bg-popover border border-border rounded-lg shadow-lg z-50 flex flex-col">
           <div className="px-3 py-2 border-b border-border bg-muted/50 flex-shrink-0 rounded-t-lg">
@@ -125,7 +125,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
                     index !== sessions.length - 1 ? 'border-b border-border/50' : ''
                   } ${currentCwd === session.cwd ? 'bg-accent/50' : ''}`}
                 >
-                  {/* 状态指示器：loading 闪烁橙点 / 未读红色静态点 / 普通灰点 */}
+                  {/* Status indicator: loading blinking orange dot / unread red static dot / normal gray dot */}
                   <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${
                     session.status === 'loading'
                       ? 'bg-orange-9 animate-pulse'

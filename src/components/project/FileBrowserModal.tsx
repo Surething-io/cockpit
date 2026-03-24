@@ -44,13 +44,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const [deleteConfirm, setDeleteConfirm] = useState<{ path: string; isDirectory: boolean; name: string } | null>(null);
   const [showQuickOpen, setShowQuickOpen] = useState(false);
   const [hoverTooltip, setHoverTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
-  // CodeViewer 当前可见行号（1-based），用于编辑器 ↔ 查看器行位置同步
+  // CodeViewer currently visible line number (1-based), used to sync editor ↔ viewer position
   const visibleLineRef = useRef<number>(1);
-  // vi 光标位置 ref（0-based），由 CodeViewer 持续更新
+  // Vi cursor position ref (0-based), continuously updated by CodeViewer
   const viStateRef = useRef<{ cursorLine: number; cursorCol: number } | null>(null);
-  // 从编辑器返回时要跳转的行号
+  // Line number to jump to when returning from editor
   const [editorReturnLine, setEditorReturnLine] = useState<number | null>(null);
-  // 编辑器 ref 和状态（用于顶部工具栏渲染保存/关闭按钮）
+  // Editor ref and state (used to render save/close buttons in the top toolbar)
   const editorHandleRef = useRef<FileEditorHandle>(null);
   const [editorState, setEditorState] = useState({ isDirty: false, isSaving: false });
   const [showSearchPanel, setShowSearchPanel] = useState(false);
@@ -74,7 +74,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const gitStatus = useGitStatus({ cwd, addToRecentFiles: fileTree.addToRecentFiles });
   const gitHistory = useGitHistory({ cwd, addToRecentFiles: fileTree.addToRecentFiles });
 
-  // ========== Vi Mode 回调 ==========
+  // ========== Vi Mode Callbacks ==========
   const handleViContentMutate = useCallback((newContent: string) => {
     fileTree.setFileContent(prev =>
       prev?.type === 'text' ? { ...prev, content: newContent } : prev
@@ -113,7 +113,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     }
   }, [cwd, fileTree]);
 
-  // ========== 切换文件前保存当前位置到最近访问 ==========
+  // ========== Save current position to recent files before switching ==========
   const saveCurrentFilePosition = useCallback(() => {
     if (!fileTree.selectedPath) return;
     const scrollLine = visibleLineRef.current;
@@ -122,13 +122,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       fileTree.updateRecentFilePosition(
         fileTree.selectedPath,
         scrollLine,
-        cursor ? cursor.cursorLine + 1 : scrollLine,  // 0-based → 1-based
+        cursor ? cursor.cursorLine + 1 : scrollLine,  // 0-based → 1-based (convert)
         cursor ? cursor.cursorCol + 1 : 1,
       );
     }
   }, [fileTree]);
 
-  /** 包装 handleSelectFile：切换前自动保存当前文件位置 */
+  /** Wrap handleSelectFile: auto-save current file position before switching */
   const handleSelectFileWithSave = useCallback((path: string, lineNumber?: number) => {
     if (path !== fileTree.selectedPath) {
       saveCurrentFilePosition();
@@ -136,7 +136,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     fileTree.handleSelectFile(path, lineNumber);
   }, [fileTree, saveCurrentFilePosition]);
 
-  // ========== Search results: 从搜索结果路径构建独立树（不依赖懒加载目录树） ==========
+  // ========== Search results: build an independent tree from search result paths (no lazy-loaded dir tree) ==========
   const searchData = useMemo(() => {
     const results = contentSearch.contentSearchResults;
     if (results.length === 0) return { files: [] as import('./fileBrowser/types').FileNode[], expandDirs: new Set<string>(), matchMap: new Map<string, SearchResult>() };
@@ -148,14 +148,14 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       filePaths.push(r.path);
     }
 
-    // 从搜索结果文件路径直接构建完整树，类似最近文件 Tab 的策略
+    // Build a full tree directly from search result file paths, similar to the recent files tab strategy
     const files = buildTreeFromPaths(filePaths);
     const expandDirs = new Set(collectAllDirPaths(files));
 
     return { files, expandDirs, matchMap };
   }, [contentSearch.contentSearchResults]);
 
-  // 搜索树展开路径 — 搜索完成后默认全展开
+  // Search tree expanded paths — fully expanded by default after search completes
   const [searchTreeExpanded, setSearchTreeExpanded] = useState<Set<string>>(new Set());
   useEffect(() => {
     setSearchTreeExpanded(searchData.expandDirs);
@@ -189,20 +189,20 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     if (definitions.length === 0) return;
 
     const def = definitions[0];
-    // tsserver 返回绝对路径，转为相对路径（相对于 cwd）
+    // tsserver returns absolute paths; convert to relative (relative to cwd)
     const cwdPrefix = cwd.endsWith('/') ? cwd : cwd + '/';
     const relativePath = def.file.startsWith(cwdPrefix)
       ? def.file.slice(cwdPrefix.length)
       : def.file;
 
-    // 跳转前把当前位置压入导航历史
+    // Push current position to navigation history before jumping
     navHistory.push({
       filePath: fileTree.selectedPath,
       lineNumber: visibleLineRef.current,
     });
 
     if (relativePath === fileTree.selectedPath) {
-      // 同文件：滚动到目标行
+      // Same file: scroll to target line
       fileTree.setTargetLineNumber(def.line);
     } else {
       handleSelectFileWithSave(relativePath, def.line);
@@ -220,7 +220,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       ? ref.file.slice(cwdPrefix.length)
       : ref.file;
 
-    // 跳转前把当前位置压入导航历史
+    // Push current position to navigation history before jumping
     if (fileTree.selectedPath) {
       navHistory.push({ filePath: fileTree.selectedPath, lineNumber: visibleLineRef.current });
     }
@@ -263,7 +263,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     setMenuContainer(menuContainerRef.current);
   }, []);
 
-  // ========== 全局 data-tooltip 事件代理 ==========
+  // ========== Global data-tooltip event delegation ==========
   useEffect(() => {
     const container = menuContainerRef.current;
     if (!container) return;
@@ -321,11 +321,11 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     }
   }, [searchQueryTrigger]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ========== Tab 切换处理 ==========
+  // ========== Tab Switch Handler ==========
   const handleTabChange = useCallback((tab: TabType) => {
     setActiveTab(tab);
     fileTree.setBlameSelectedCommit(null);
-    // 切到历史 tab 时兜底刷新 commits（防止 watch 事件丢失导致数据过期）
+    // Refresh commits when switching to the history tab as a fallback (prevents stale data from missed watch events)
     if (tab === 'history' && gitHistory.selectedBranch) {
       gitHistory.loadCommits(gitHistory.selectedBranch);
     }
@@ -373,7 +373,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
   const handlePaste = useCallback(async (targetDir: string) => {
     try {
-      // 统一从系统剪贴板读取文件路径
+      // Read the file path from the system clipboard
       const clipRes = await fetch('/api/files/clipboard');
       const clipData = await clipRes.json();
       if (!clipData.path) {
@@ -404,7 +404,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl+- → Go Back / Ctrl+Shift+- → Go Forward
-      // 用 e.code 判断物理按键，避免 Shift 把 '-' 变成 '_'
+      // Use e.code to detect the physical key, avoiding Shift turning '-' into '_'
       if (e.ctrlKey && !e.metaKey && e.code === 'Minus') {
         e.preventDefault();
         if (e.shiftKey) {
@@ -422,7 +422,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         return;
       }
 
-      // Cmd+C → 复制选中文件到系统剪贴板（仅目录树 tab 且非输入框内）
+      // Cmd+C → copy selected file to system clipboard (only in tree/recent tab and not inside an input)
       if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !e.shiftKey) {
         const tag = (e.target as HTMLElement)?.tagName;
         const sel = window.getSelection()?.toString();
@@ -433,7 +433,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         }
       }
 
-      // Cmd+V → 粘贴到选中文件所在目录
+      // Cmd+V → paste into the directory of the selected file
       if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
         const tag = (e.target as HTMLElement)?.tagName;
         if ((activeTab === 'tree' || activeTab === 'recent') && tag !== 'INPUT' && tag !== 'TEXTAREA') {
@@ -464,7 +464,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
           return;
         }
 
-        // JSON 搜索栏优先关闭
+        // Close JSON search bar first
         if (jsonPreviewSearch.isVisible) {
           jsonPreviewSearch.close();
           return;
@@ -473,7 +473,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
           jsonSearch.close();
           return;
         }
-        // jsonPreview modal → 关闭 modal
+        // jsonPreview modal → close modal
         if (jsonPreview) {
           setJsonPreview(null);
           return;
@@ -485,7 +485,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         }
         lastEscTimeRef.current = now;
 
-        // 优先关闭底部面板
+        // Close bottom panel first
         if (lspReferences.visible) {
           lspReferences.closeReferences();
         } else if (showSearchPanel) {
@@ -513,14 +513,14 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 监听外部 git 操作（如 ChatInput 的暂存按钮）触发刷新
+  // Listen for external git operations (e.g., ChatInput's stage button) to trigger a refresh
   useEffect(() => {
     const handler = () => { gitStatus.fetchStatus(); };
     window.addEventListener('git-status-changed', handler);
     return () => window.removeEventListener('git-status-changed', handler);
   }, [gitStatus.fetchStatus]);
 
-  // iframe 恢复可见时，刷新一次数据（WS 暂停期间可能遗漏变更）
+  // Refresh data once when the iframe becomes visible again (changes may be missed while WS is paused)
   const prevVisibleRef = useRef(pageVisible);
   useEffect(() => {
     if (pageVisible && !prevVisibleRef.current) {
@@ -577,7 +577,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const isRefreshLoading = fileTree.isLoadingFiles || gitStatus.statusLoading || gitHistory.isLoadingBranches || gitHistory.isLoadingCommits;
 
   // ========== Auto-sync via SSE file watching ==========
-  // 用 ref 保存最新值，避免 SSE 回调依赖频繁变化的 state
+  // Use ref to store the latest values, avoiding SSE callbacks depending on frequently changing state
   const selectedBranchRef = useRef(gitHistory.selectedBranch);
   selectedBranchRef.current = gitHistory.selectedBranch;
   const selectedPathRef = useRef(fileTree.selectedPath);
@@ -632,14 +632,14 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               });
             })
         );
-        // 刷新当前正在查看的 diff
+        // Refresh the currently viewed diff
         gitStatus.refreshDiff();
 
         if (hasGitChange) {
-          // 分支切换时同步 BranchSelector
+          // Sync BranchSelector when the branch changes
           gitHistory.loadBranches();
         }
-        // 刷新 commits 列表（git 事件如 commit/rebase/merge，file 事件如文件变更都需要）
+        // Refresh commits list (needed for git events like commit/rebase/merge and file change events)
         const branch = selectedBranchRef.current;
         if (branch) {
           promises.push(
@@ -668,14 +668,14 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     } catch (err) {
       console.error('File watch handler error:', err);
     }
-  // fileTree/gitStatus/gitHistory 是 hooks 返回的稳定对象引用，不会频繁变化
+  // fileTree/gitStatus/gitHistory are stable object references returned by hooks and do not change frequently
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd]);
 
   useWebSocket({
     url: `/ws/watch?cwd=${encodeURIComponent(cwd)}`,
     onMessage: handleWatchMessage,
-    enabled: pageVisible,  // 隐藏的 iframe 暂停文件监听，避免无效并发请求
+    enabled: pageVisible,  // Pause file watching for hidden iframes to avoid unnecessary concurrent requests
   });
 
   // ========== Helper: locate in tree ==========
@@ -785,7 +785,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     </button>
                   )}
                 </div>
-                {/* 目录全匹配开关 */}
+                {/* Exact directory match toggle */}
                 <button
                   onClick={() => fileTree.setSearchDirExact(v => !v)}
                   className={`px-1 py-0.5 rounded transition-colors text-xs font-mono font-bold border ${
@@ -797,9 +797,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                 >
                   ab
                 </button>
-                {/* 功能按钮组 */}
+                {/* Action button group */}
                 <div className="flex items-center gap-0.5">
-                  {/* 刷新 */}
+                  {/* Refresh */}
                   <button
                     onClick={() => fileTree.loadFiles()}
                     className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
@@ -809,7 +809,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
                   </button>
-                  {/* 折叠所有 */}
+                  {/* Collapse all */}
                   <button
                     onClick={() => fileTree.searchTreeExpandedPaths ? fileTree.setSearchTreeExpandedPaths(new Set()) : fileTree.setExpandedPaths(new Set())}
                     className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
@@ -908,7 +908,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       selectedBranch={gitHistory.selectedBranch}
                       onSelect={(branch) => {
                         gitHistory.setSelectedBranch(branch);
-                        // 对比模式下切换分支自动刷新
+                        // Auto-refresh when switching branches in compare mode
                         if (gitHistory.compareMode) {
                           gitHistory.loadCompareFiles(branch);
                         }
@@ -931,11 +931,11 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               </div>
             )}
 
-            {/* List Content - 使用 CSS 显示/隐藏避免组件重新挂载 */}
+            {/* List Content - use CSS show/hide to avoid component remounting */}
             <div className="flex-1 overflow-hidden flex flex-col">
               {/* Tree Tab */}
               <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'tree' ? '' : 'hidden'}`}>
-                {/* 新建文件输入框 */}
+                {/* New file input box */}
                 {fileTree.creatingItem && (
                   <div className="px-2 py-1.5 border-b border-border bg-secondary flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">
@@ -1033,14 +1033,14 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   </div>
                 ) : (
                   <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
-                    {/* 搜索统计 */}
+                    {/* Search statistics */}
                     {contentSearch.searchStats && (
                       <div className="px-3 py-1.5 text-xs text-muted-foreground bg-secondary border-b border-border flex-shrink-0">
                         {contentSearch.searchStats.totalFiles} 个文件，{contentSearch.searchStats.totalMatches} 处匹配
                         {contentSearch.searchStats.truncated && <span className="text-amber-11 ml-1">(结果已截断)</span>}
                       </div>
                     )}
-                    {/* 搜索结果目录树 — 从搜索结果路径构建独立树 */}
+                    {/* Search result directory tree — built from search result paths */}
                     <FileTree
                       files={searchData.files}
                       selectedPath={fileTree.selectedPath}
@@ -1276,7 +1276,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     </div>
                   </div>
                 ) : gitHistory.compareMode ? (
-                  /* 对比模式：左侧显示文件变更列表（替换 commit 列表） */
+                  /* Compare mode: show file changes list on the left (replaces commit list) */
                   <div className="flex-1 overflow-y-auto">
                     {gitHistory.isLoadingCompareFiles ? (
                       <div className="p-4 text-center text-muted-foreground text-sm">加载对比文件中...</div>
@@ -1391,7 +1391,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                         </svg>
                       </button>
-                      {/* 定位按钮 */}
+                      {/* Locate button */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1410,7 +1410,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {fileTree.showEditor ? (
                         <>
-                          {/* 编辑模式：保存 + 关闭 */}
+                          {/* Edit mode: save + close */}
                           {editorState.isDirty && (
                             <span className="text-xs text-amber-11">未保存</span>
                           )}
@@ -1439,7 +1439,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         </>
                       ) : (
                         <>
-                          {/* 查看模式：复制/编辑/预览/Blame */}
+                          {/* View mode: copy/edit/preview/blame */}
                           {fileTree.fileContent?.type === 'text' && fileTree.fileContent.content && (
                             <button
                               onClick={() => {
@@ -1573,8 +1573,10 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               setEditorReturnLine(currentLine);
                             }}
                             onSaved={() => {
+                              const line = visibleLineRef.current ?? 1;
                               fileTree.loadFileContent(fileTree.selectedPath!);
                               fileTree.setShowEditor(false);
+                              setEditorReturnLine(line);
                             }}
                             onEditorStateChange={setEditorState}
                             viMode={true}
@@ -1646,7 +1648,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                       </svg>
                     </button>
-                    {/* 在目录树中定位 */}
+                    {/* Locate in directory tree */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1704,7 +1706,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       />
                     )}
                   </div>
-                  {/* Git 变更 Markdown 预览 Modal（支持框选评论 + 发送 AI） */}
+                  {/* Git changes Markdown preview modal (supports selection comments + send to AI) */}
                   {gitStatus.showStatusDiffPreview && gitStatus.statusDiff && (
                     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => gitStatus.setShowStatusDiffPreview(false)}>
                       <div
@@ -1720,7 +1722,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       </div>
                     </div>
                   )}
-                  {/* JSON 可读预览 Modal */}
+                  {/* JSON readable preview modal */}
                   {jsonPreview && (
                     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setJsonPreview(null)}>
                       <div
@@ -1758,7 +1760,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
             {/* History - Right Panel */}
             {activeTab === 'history' && !gitHistory.historyError && (
               gitHistory.compareMode ? (
-                /* 对比模式：右侧仅显示 diff */
+                /* Compare mode: right panel shows diff only */
                 gitHistory.isLoadingCompareDiff ? (
                   <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
                     加载差异中...
@@ -1811,7 +1813,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
           </div>
         </div>
 
-        {/* Markdown 预览 Modal（支持框选评论 + 发送 AI） */}
+        {/* Markdown preview modal (supports selection comments + send to AI) */}
         {fileTree.showMarkdownPreview && fileTree.fileContent?.type === 'text' && fileTree.selectedPath && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => fileTree.setShowMarkdownPreview(false)}>
             <div
@@ -1842,7 +1844,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
             onClose={() => setShowQuickOpen(false)}
           />
         )}
-        {/* 底部面板 - 搜索结果 / 引用，同时存在时左右各半 */}
+        {/* Bottom panel - search results / references, split equally when both are visible */}
         {(showSearchResults || lspReferences.visible) && (
           <div className={`flex ${lspReferences.visible && showSearchResults ? '' : 'flex-col'}`}>
             {showSearchResults && (
@@ -1852,7 +1854,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   loading={contentSearch.isSearching}
                   totalMatches={contentSearch.searchStats?.totalMatches ?? 0}
                   onSelect={(path, lineNumber) => {
-                    // 跳转前把当前位置压入导航历史
+                    // Push current position to navigation history before jumping
                     if (fileTree.selectedPath) {
                       navHistory.push({ filePath: fileTree.selectedPath, lineNumber: visibleLineRef.current });
                     }
@@ -1875,7 +1877,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
           </div>
         )}
       </div>
-      {/* 全局 tooltip - portal 到 body 顶层 */}
+      {/* Global tooltip - portaled to document body top */}
       {hoverTooltip && createPortal(
         <div
           className="fixed z-[9999] px-2 py-1 bg-popover text-popover-foreground text-xs font-mono rounded shadow-lg border border-brand whitespace-nowrap pointer-events-none"
@@ -1885,7 +1887,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         </div>,
         document.body
       )}
-      {/* 删除确认对话框 */}
+      {/* Delete confirmation dialog */}
       {deleteConfirm && createPortal(
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50" onClick={() => setDeleteConfirm(null)}>
           <div className="bg-card border border-border rounded-lg shadow-xl p-4 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
@@ -1933,7 +1935,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         </div>,
         document.body
       )}
-      {/* LSP HoverTooltip - portal 到 menuContainer 内，使用 absolute 定位 */}
+      {/* LSP HoverTooltip - portaled inside menuContainer, using absolute positioning */}
       {lspHover.hoverInfo && menuContainer && createPortal(
         <HoverTooltip
           ref={(el: HTMLDivElement | null) => { lspHover.tooltipElRef.current = el; }}

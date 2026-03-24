@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 import { TabManager } from '@/components/project/TabManager';
 
-// 禁用静态预渲染，改为动态渲染（解决 SSR hooks 问题）
+// Disable static pre-rendering; use dynamic rendering (fixes SSR hooks issues)
 export const dynamic = 'force-dynamic';
 
 interface ProjectPageProps {

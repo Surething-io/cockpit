@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { modKey } from '@/lib/platform';
 
-// Cron 表达式转中文描述
+// Convert cron expression to human-readable description
 function describeCron(expr: string): string | null {
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) return null;
@@ -13,7 +13,7 @@ function describeCron(expr: string): string | null {
   const monthNames: Record<string, string> = { '1': '1月', '2': '2月', '3': '3月', '4': '4月', '5': '5月', '6': '6月', '7': '7月', '8': '8月', '9': '9月', '10': '10月', '11': '11月', '12': '12月' };
 
   try {
-    // 时间部分
+    // Time part
     let timeStr = '';
     if (min.includes('/') || hour.includes('/')) {
       if (hour === '*' && min.includes('/')) {
@@ -22,7 +22,7 @@ function describeCron(expr: string): string | null {
       if (min === '0' && hour.includes('/')) {
         return `每 ${hour.split('/')[1]} 小时整点`;
       }
-      return null; // 复杂情况不翻译
+      return null; // Complex patterns are not handled
     }
     const h = parseInt(hour, 10);
     const m = parseInt(min, 10);
@@ -38,16 +38,16 @@ function describeCron(expr: string): string | null {
       timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     }
 
-    // 日期部分
+    // Date part
     const parts2: string[] = [];
 
-    // 月份
+    // Month
     if (month !== '*') {
       const months = month.split(',').map(m => monthNames[m] || `${m}月`);
       parts2.push(months.join('、'));
     }
 
-    // 日
+    // Day of month
     if (dom !== '*') {
       if (dom.includes('-')) {
         const [a, b] = dom.split('-');
@@ -59,7 +59,7 @@ function describeCron(expr: string): string | null {
       }
     }
 
-    // 星期
+    // Day of week
     if (dow !== '*') {
       if (dow === '1-5') {
         parts2.push('工作日');
@@ -100,7 +100,7 @@ interface TaskParams {
 interface ScheduleTaskPopoverProps {
   onClose: () => void;
   onCreate: (params: TaskParams) => void;
-  /** 编辑模式：传入现有任务数据 */
+  /** Edit mode: pass in existing task data */
   editTask?: {
     id: string;
     message: string;
@@ -114,7 +114,7 @@ interface ScheduleTaskPopoverProps {
   onUpdate?: (id: string, params: TaskParams) => void;
 }
 
-// 快捷预设
+// Quick presets
 const PRESETS = {
   once: [
     { label: '5 分钟后', value: 5 },
@@ -153,12 +153,12 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
   const popoverRef = useRef<HTMLDivElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
 
-  // 自动聚焦
+  // Auto-focus
   useEffect(() => {
     messageRef.current?.focus();
   }, []);
 
-  // 点击外部关闭
+  // Close on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
@@ -234,7 +234,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
       </div>
 
       <div className="p-3 space-y-3">
-        {/* 消息内容 */}
+        {/* Message content */}
         <div>
           <label className="text-xs text-muted-foreground mb-1 block">发送消息</label>
           <textarea
@@ -247,7 +247,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
           />
         </div>
 
-        {/* 类型选择 */}
+        {/* Type selection */}
         <div>
           <label className="text-xs text-muted-foreground mb-1 block">类型</label>
           <div className="flex gap-1">
@@ -267,7 +267,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
           </div>
         </div>
 
-        {/* 快捷预设 */}
+        {/* Quick presets */}
         <div>
           <label className="text-xs text-muted-foreground mb-1 block">快捷选择</label>
           <div className="grid grid-cols-2 gap-1">
@@ -294,7 +294,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
           </div>
         </div>
 
-        {/* 自定义输入 */}
+        {/* Custom input */}
         <div>
           <label className="text-xs text-muted-foreground mb-1 block">
             {type === 'cron' ? '自定义 Cron 表达式' : '自定义分钟数'}
@@ -326,7 +326,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
           )}
         </div>
 
-        {/* 活跃时间范围（仅周期任务） */}
+        {/* Active time range (interval tasks only) */}
         {type === 'interval' && (
           <div>
             <label className="flex items-center gap-2 text-xs text-muted-foreground mb-1 cursor-pointer">
@@ -358,7 +358,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
           </div>
         )}
 
-        {/* 创建按钮 */}
+        {/* Submit button */}
         <button
           onClick={handleSubmit}
           disabled={!isValid()}

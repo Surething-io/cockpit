@@ -1,7 +1,7 @@
 import { registerBubble, type BubbleComponentProps, type PluginItemBase } from '../../bubblePlugins';
 import { BrowserBubble } from './BrowserBubble';
 
-/** Browser 气泡数据 */
+/** Browser bubble data */
 export interface BrowserPluginItem extends PluginItemBase {
   url: string;
 }

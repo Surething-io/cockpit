@@ -82,7 +82,7 @@ export function ScheduledTasksPanel({
   const runningCount = activeTasks.filter(t => !t.paused).length;
   const completedTasks = tasks.filter(t => t.completed);
 
-  // 拖动排序状态
+  // Drag-to-reorder state
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
@@ -104,7 +104,7 @@ export function ScheduledTasksPanel({
     const newList = [...activeTasks];
     const [moved] = newList.splice(dragIndex, 1);
     newList.splice(index, 0, moved);
-    // 活跃任务新顺序 + 已完成任务保持原序
+    // New order for active tasks + completed tasks retain original order
     onReorder([...newList, ...completedTasks].map(t => t.id));
     setDragIndex(null);
     setDragOverIndex(null);
@@ -115,7 +115,7 @@ export function ScheduledTasksPanel({
     setDragOverIndex(null);
   }, []);
 
-  // 自动刷新显示（倒计时）
+  // Auto-refresh display (countdown)
   const [, setTick] = useState(0);
   useEffect(() => {
     if (!isOpen) return;
@@ -123,7 +123,7 @@ export function ScheduledTasksPanel({
     return () => clearInterval(timer);
   }, [isOpen]);
 
-  // 点击外部关闭
+  // Close on outside click
   useEffect(() => {
     if (!isOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
@@ -149,13 +149,13 @@ export function ScheduledTasksPanel({
         }`}
         title="定时任务"
       >
-        {/* 时钟图标 */}
+        {/* Clock icon */}
         <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <circle cx="12" cy="12" r="10" strokeWidth={2} />
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2" />
         </svg>
         {!collapsed && <span className="text-sm flex-1 text-left">定时任务</span>}
-        {/* 红点 / 数量 */}
+        {/* Red dot / count badge */}
         {unreadCount > 0 ? (
           <span className={`min-w-[18px] h-[18px] px-1 text-white text-xs font-medium rounded-full flex items-center justify-center bg-red-500 ${
             collapsed ? 'absolute -top-1 -right-1' : ''
@@ -169,7 +169,7 @@ export function ScheduledTasksPanel({
         ) : null}
       </button>
 
-      {/* 下拉面板 */}
+      {/* Dropdown panel */}
       {isOpen && (
         <div className="absolute left-full bottom-0 ml-2 w-96 max-h-[500px] bg-popover border border-border rounded-lg shadow-lg z-50 flex flex-col">
           <div className="px-3 py-2 border-b border-border bg-muted/50 flex-shrink-0 rounded-t-lg flex items-center justify-between">
@@ -185,7 +185,7 @@ export function ScheduledTasksPanel({
               </div>
             ) : (
               <>
-                {/* 活跃任务 */}
+                {/* Active tasks */}
                 {activeTasks.map((task, index) => (
                   <div
                     key={task.id}
@@ -206,7 +206,7 @@ export function ScheduledTasksPanel({
                     }}
                   >
                     <div className="flex items-start gap-2">
-                      {/* 状态点 */}
+                      {/* Status dot */}
                       <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${getStatusColor(task)}`} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -229,9 +229,9 @@ export function ScheduledTasksPanel({
                           )}
                         </div>
                       </div>
-                      {/* 操作按钮 */}
+                      {/* Action buttons */}
                       <div className="flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {/* 手动运行 */}
+                        {/* Run immediately */}
                         <button
                           onClick={(e) => { e.stopPropagation(); onTrigger(task.id); }}
                           className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-brand"
@@ -241,7 +241,7 @@ export function ScheduledTasksPanel({
                             <path d="M8 5v14l11-7z" />
                           </svg>
                         </button>
-                        {/* 编辑 */}
+                        {/* Edit */}
                         <button
                           onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
                           className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
@@ -251,7 +251,7 @@ export function ScheduledTasksPanel({
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
                         </button>
-                        {/* 暂停/恢复 */}
+                        {/* Pause/Resume */}
                         {task.paused ? (
                           <button
                             onClick={(e) => { e.stopPropagation(); onResume(task.id); }}
@@ -273,7 +273,7 @@ export function ScheduledTasksPanel({
                             </svg>
                           </button>
                         )}
-                        {/* 删除 */}
+                        {/* Delete */}
                         <button
                           onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
                           className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-destructive"
@@ -288,7 +288,7 @@ export function ScheduledTasksPanel({
                   </div>
                 ))}
 
-                {/* 已完成任务 */}
+                {/* Completed tasks */}
                 {completedTasks.length > 0 && (
                   <>
                     <div className="px-3 py-1.5 text-xs text-muted-foreground bg-muted/30 border-b border-border/50">
@@ -333,7 +333,7 @@ export function ScheduledTasksPanel({
         </div>
       )}
 
-      {/* 编辑弹窗 */}
+      {/* Edit modal */}
       {editingTask && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/30" onClick={() => setEditingTask(null)} />

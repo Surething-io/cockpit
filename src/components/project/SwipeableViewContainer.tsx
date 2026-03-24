@@ -36,16 +36,16 @@ interface SwipeableViewContainerProps {
 }
 
 /**
- * 检查元素是否可横向滚动
+ * Check whether an element can scroll horizontally
  */
 function canScrollHorizontally(element: Element | null): boolean {
   while (element) {
     const style = window.getComputedStyle(element);
     const overflowX = style.overflowX;
 
-    // 检查是否设置了横向滚动
+    // Check if horizontal scrolling is enabled
     if (overflowX === 'auto' || overflowX === 'scroll') {
-      // 检查是否有实际的横向滚动空间
+      // Check if there is actual horizontal scroll space
       if (element.scrollWidth > element.clientWidth) {
         return true;
       }
@@ -61,56 +61,56 @@ export function SwipeableViewContainer({ activeView, onViewChange, children }: S
   const isTransitioningRef = useRef(false);
   const dragOffsetRef = useRef(0);
 
-  // 实时偏移量（像素），用于触发重渲染
+  // Live offset in pixels, used to trigger re-renders
   const [dragOffsetPx, setDragOffsetPx] = useState(0);
-  // 是否正在拖动
+  // Whether a drag is in progress
   const [isDragging, setIsDragging] = useState(false);
 
   const currentIndex = VIEWS.indexOf(activeView);
   const pageCount = VIEWS.length;
   const maxPage = VIEWS.length - 1;
 
-  // 参数
-  const SCALE_FACTOR = 6;          // 滑动灵敏度（调大更灵敏）
-  const RELEASE_TIMEOUT = 60;      // 松手判定超时（60ms）
-  const SWITCH_THRESHOLD = 0.12;   // 切换阈值（调小更容易切换）
-  const TRANSITION_DURATION = 80;  // 动画时长（80ms）
+  // Parameters
+  const SCALE_FACTOR = 6;          // Swipe sensitivity (higher = more sensitive)
+  const RELEASE_TIMEOUT = 60;      // Release detection timeout (60ms)
+  const SWITCH_THRESHOLD = 0.12;   // Switch threshold (lower = easier to switch)
+  const TRANSITION_DURATION = 80;  // Animation duration (80ms)
 
-  // 当 activeView 变化时，重置 dragOffset
+  // Reset dragOffset when activeView changes
   useEffect(() => {
     dragOffsetRef.current = 0;
     setDragOffsetPx(0);
   }, [activeView]);
 
-  // 全屏监听 wheel 事件
+  // Listen to wheel events at the document level
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
-      // 只处理横向滚动
+      // Handle horizontal scroll only
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 2) {
-        // iframe 内的滚动不拦截
+        // Do not intercept scroll events inside iframes
         const target = e.target as Element;
         if (target.tagName === 'IFRAME') return;
-        // 智能判断：检查事件目标是否在可横向滚动的元素内
+        // Smart check: if the target is inside a horizontally-scrollable element, let it handle the scroll
         if (canScrollHorizontally(target)) {
-          // 让元素自己处理横向滚动
+          // Let the element handle horizontal scrolling itself
           return;
         }
 
         e.preventDefault();
         e.stopPropagation();
 
-        // 如果正在过渡动画中，新的滑动打断过渡
+        // If a transition is in progress, a new swipe interrupts it
         if (isTransitioningRef.current) {
           isTransitioningRef.current = false;
         }
 
-        // 计算容器宽度（单页宽度）
+        // Calculate container width (single page width)
         const pageWidth = window.innerWidth;
 
-        // 计算新的偏移量
+        // Calculate new offset
         let newOffset = dragOffsetRef.current - e.deltaX * SCALE_FACTOR;
 
-        // 边界检测
+        // Boundary check
         const canGoLeft = currentIndex > 0;
         const canGoRight = currentIndex < maxPage;
 
@@ -121,20 +121,20 @@ export function SwipeableViewContainer({ activeView, onViewChange, children }: S
           newOffset = 0;
         }
 
-        // 限制最大偏移量为一个页面宽度
+        // Clamp offset to one page width maximum
         newOffset = Math.max(-pageWidth, Math.min(pageWidth, newOffset));
 
-        // 更新 ref 和 state
+        // Update ref and state
         dragOffsetRef.current = newOffset;
         setDragOffsetPx(newOffset);
         setIsDragging(true);
 
-        // 清除之前的超时
+        // Clear the previous timeout
         if (wheelTimeoutRef.current) {
           clearTimeout(wheelTimeoutRef.current);
         }
 
-        // 设置超时来检测松手
+        // Set timeout to detect release
         wheelTimeoutRef.current = setTimeout(() => {
           const finalOffset = dragOffsetRef.current;
           const threshold = pageWidth * SWITCH_THRESHOLD;
@@ -164,13 +164,13 @@ export function SwipeableViewContainer({ activeView, onViewChange, children }: S
       }
     };
 
-    // 在 document 级别监听，capture 阶段
+    // Listen at document level, capture phase
     document.addEventListener('wheel', handleWheel, { passive: false, capture: true });
     return () => document.removeEventListener('wheel', handleWheel, { capture: true });
   }, [currentIndex, maxPage, onViewChange]);
 
-  // 计算下划线偏移量（-1 到 1 范围，用于 ViewSwitcherBar）
-  // 使用 state 来确保 SSR 和客户端一致
+  // Compute underline offset (-1 to 1 range, used by ViewSwitcherBar)
+  // Use state to ensure SSR and client consistency
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);
@@ -199,11 +199,11 @@ export function SwipeableViewContainer({ activeView, onViewChange, children }: S
 }
 
 // ============================================================================
-// SwipeableContent - 可滑动的内容区域（三个视图）
+// SwipeableContent - Swipeable content area (three views)
 // ============================================================================
 
 interface SwipeableContentProps {
-  children: ReactNode; // 三个视图内容
+  children: ReactNode; // Three view contents
 }
 
 export function SwipeableContent({ children }: SwipeableContentProps) {
@@ -214,7 +214,7 @@ export function SwipeableContent({ children }: SwipeableContentProps) {
   const currentIndex = VIEWS.indexOf(activeView);
   const pageCount = VIEWS.length;
 
-  // 防止浏览器自动滚动
+  // Prevent browser from auto-scrolling
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -229,7 +229,7 @@ export function SwipeableContent({ children }: SwipeableContentProps) {
     return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // 计算内容区域的 transform
+  // Calculate the transform for the content area
   const getTransform = () => {
     const pagePercent = 100 / pageCount;
     const basePercent = -currentIndex * pagePercent;
@@ -264,7 +264,7 @@ export function SwipeableContent({ children }: SwipeableContentProps) {
 }
 
 // ============================================================================
-// ViewSwitcherBar - 标题栏中的视图切换按钮（使用 context 获取滑动状态）
+// ViewSwitcherBar - View switch buttons in the title bar (uses context for swipe state)
 // ============================================================================
 
 export function ViewSwitcherBar() {
@@ -275,7 +275,7 @@ export function ViewSwitcherBar() {
 
   const currentIndex = VIEWS.indexOf(activeView);
 
-  // 计算下划线位置和宽度
+  // Calculate underline position and width
   const calculateUnderlineStyle = () => {
     if (!containerRef.current || buttonRefs.current.length === 0) {
       return { left: 0, width: 0 };
@@ -313,12 +313,12 @@ export function ViewSwitcherBar() {
     return { left, width };
   };
 
-  // 更新下划线位置
+  // Update underline position
   useEffect(() => {
     setUnderlineStyle(calculateUnderlineStyle());
   }, [currentIndex, dragOffset]);
 
-  // 监听窗口大小变化
+  // Listen to window resize
   useEffect(() => {
     const handleResize = () => {
       setUnderlineStyle(calculateUnderlineStyle());
@@ -327,8 +327,8 @@ export function ViewSwitcherBar() {
     return () => window.removeEventListener('resize', handleResize);
   }, [currentIndex, dragOffset]);
 
-  // 计算当前有效索引（考虑滑动偏移）
-  // 当 dragOffset 为 0 或 NaN 时，使用 currentIndex
+  // Compute current effective index (accounting for swipe offset)
+  // When dragOffset is 0 or NaN, fall back to currentIndex
   const safeOffset = Number.isFinite(dragOffset) ? dragOffset : 0;
   const effectiveIndex = Math.max(0, Math.min(VIEWS.length - 1, currentIndex - safeOffset));
   const nearestIndex = Math.round(effectiveIndex);
@@ -353,7 +353,7 @@ export function ViewSwitcherBar() {
         </button>
       ))}
 
-      {/* 下划线指示器 */}
+      {/* Underline indicator */}
       <div
         className={`absolute bottom-0 h-0.5 bg-brand ${isDragging ? '' : 'transition-all duration-100 ease-out'}`}
         style={{

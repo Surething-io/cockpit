@@ -1,7 +1,7 @@
 /**
- * 共享的 shortId 工具：CRC32 → 4 位 [a-z] 确定性映射
+ * Shared shortId utility: deterministic CRC32 → 4-character [a-z] mapping.
  *
- * 用于 BrowserBridge 和 TerminalBridge，避免重复实现。
+ * Used by BrowserBridge and TerminalBridge to avoid duplicate implementations.
  */
 
 export function crc32(str: string): number {

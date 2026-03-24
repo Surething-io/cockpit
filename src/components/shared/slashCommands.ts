@@ -1,7 +1,7 @@
 import { Editor } from '@tiptap/react';
 
 // ============================================
-// Markdown 提取辅助函数
+// Markdown extraction helpers
 // ============================================
 
 export function getMarkdown(editor: Editor): string {
@@ -10,7 +10,7 @@ export function getMarkdown(editor: Editor): string {
 }
 
 // ============================================
-// 斜杠命令定义
+// Slash command definitions
 // ============================================
 
 export interface SlashCommand {

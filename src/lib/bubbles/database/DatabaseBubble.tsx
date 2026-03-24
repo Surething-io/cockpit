@@ -101,7 +101,7 @@ function quoteIdent(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
-/** 构建 WHERE 子句 + 参数数组 */
+/** Build a WHERE clause and parameter array */
 function buildWhereClause(filters: Record<string, ColumnFilter>): { where: string; params: unknown[] } {
   const parts: string[] = [];
   const params: unknown[] = [];
@@ -132,14 +132,14 @@ function buildWhereClause(filters: Record<string, ColumnFilter>): { where: strin
   return { where: parts.length > 0 ? ` WHERE ${parts.join(' AND ')}` : '', params };
 }
 
-/** 将任意值转为显示字符串，处理对象/数组 */
+/** Convert any value to a display string, handling objects and arrays */
 function displayValue(v: unknown): string {
   if (v === null || v === undefined) return '';
   if (typeof v === 'object') return JSON.stringify(v);
   return String(v);
 }
 
-/** tooltip 用：JSON 美化展示 */
+/** Pretty-print JSON for tooltip display */
 function tooltipValue(text: string): string {
   try {
     const parsed = JSON.parse(text);
@@ -149,7 +149,7 @@ function tooltipValue(text: string): string {
 }
 
 // ============================================================================
-// CellTooltip — 自定义悬浮提示（替代 title 属性）
+// CellTooltip — custom hover tooltip (replaces the title attribute)
 // ============================================================================
 
 const TOOLTIP_MAX_W = 600;
@@ -175,15 +175,15 @@ function CellTooltip({ text }: { text: string }) {
     timerRef.current = setTimeout(() => {
       const el = wrapRef.current;
       if (!el) return;
-      // 未被截断则不弹 tooltip
+      // Skip tooltip if the text is not truncated
       if (el.scrollWidth <= el.clientWidth) return;
       const rect = el.getBoundingClientRect();
       const vw = window.innerWidth;
-      // 右边界不超出视口
+      // Keep right edge within viewport
       const maxW = Math.min(TOOLTIP_MAX_W, vw - rect.left - TOOLTIP_MARGIN);
       const x = maxW < 200 ? Math.max(TOOLTIP_MARGIN, vw - TOOLTIP_MAX_W - TOOLTIP_MARGIN) : rect.left;
       const finalMaxW = maxW < 200 ? Math.min(TOOLTIP_MAX_W, vw - TOOLTIP_MARGIN * 2) : maxW;
-      // 比较上下可用空间，空间大的一侧弹出，并限制高度不溢出视口
+      // Open on whichever side has more space; clamp height to avoid viewport overflow
       const vh = window.innerHeight;
       const spaceAbove = rect.top - TOOLTIP_MARGIN;
       const spaceBelow = vh - rect.bottom - TOOLTIP_MARGIN;
@@ -923,7 +923,7 @@ export function DatabaseBubble({
           )}
         </div>
 
-          {/* 底部状态栏 - 非放大模式 */}
+          {/* Bottom status bar - non-maximized mode */}
           {!maximized && (
             <div className="border-t border-border px-4 py-1.5 flex items-center gap-2 text-xs text-muted-foreground">
               <span className={`inline-block w-2 h-2 rounded-full ${status === 'connected' ? 'bg-green-500' : status === 'error' ? 'bg-red-500' : 'bg-yellow-500 animate-pulse'}`} />
@@ -941,7 +941,7 @@ export function DatabaseBubble({
 }
 
 // ============================================================================
-// StructureView — 表结构展示
+// StructureView — table structure display
 // ============================================================================
 
 function StructureView({ columns, primaryKeys, foreignKeys, indexes }: {
@@ -1017,7 +1017,7 @@ function StructureView({ columns, primaryKeys, foreignKeys, indexes }: {
 }
 
 // ============================================================================
-// FilterDropdown — 列筛选下拉
+// FilterDropdown — column filter dropdown
 // ============================================================================
 
 function FilterDropdown({ filter, onApply, onClear, onToggle, onClose, colName, anchorRect }: {
@@ -1033,7 +1033,7 @@ function FilterDropdown({ filter, onApply, onClear, onToggle, onClose, colName, 
   const [value, setValue] = useState(filter?.value || '');
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // 点击外部关闭
+  // Close on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
@@ -1055,7 +1055,7 @@ function FilterDropdown({ filter, onApply, onClear, onToggle, onClose, colName, 
     if (e.key === 'Enter') { e.preventDefault(); handleApply(); }
   };
 
-  // 计算位置
+  // Compute dropdown position
   const dropW = 220;
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1000;
   let left = anchorRect.left;
@@ -1130,7 +1130,7 @@ function FilterDropdown({ filter, onApply, onClear, onToggle, onClose, colName, 
 }
 
 // ============================================================================
-// DataView — 数据浏览 + 选择 + 编辑
+// DataView — data browser with selection and inline editing
 // ============================================================================
 
 function DataView({
@@ -1171,7 +1171,7 @@ function DataView({
   const [filterDropdownCol, setFilterDropdownCol] = useState<string | null>(null);
   const [filterAnchorRect, setFilterAnchorRect] = useState({ left: 0, bottom: 0 });
 
-  // ESC 退出编辑模式 / 新增行模式 / 筛选下拉（必须在早返回之前，遵守 Hooks 规则）
+  // ESC: exit edit mode / add-row mode / filter dropdown (must be before early returns to follow Rules of Hooks)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -1191,7 +1191,7 @@ function DataView({
   const fields = result?.fields || [];
   const rows = result?.rows || [];
 
-  // 列名 → 类型映射
+  // Column name → type mapping
   const colTypeMap: Record<string, string> = {};
   for (const c of columns) {
     colTypeMap[c.name] = c.type + (c.maxLength ? `(${c.maxLength})` : '');
@@ -1398,7 +1398,7 @@ function DataView({
 }
 
 // ============================================================================
-// SqlView — SQL 编辑器
+// SqlView — SQL editor
 // ============================================================================
 
 function SqlView({

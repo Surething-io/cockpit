@@ -5,7 +5,7 @@ import { ReviewData, generateCommentId } from '@/lib/review-utils';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-// POST - 添加评论
+// POST - Add a comment
 // body: { author, authorId, content, anchor: { startOffset, endOffset, selectedText } }
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
@@ -53,8 +53,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// PATCH - 编辑评论内容 或 切换关闭状态
-// body: { commentId, content } 或 { commentId, closed }
+// PATCH - Edit comment content or toggle closed state
+// body: { commentId, content } or { commentId, closed }
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
 
@@ -98,7 +98,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// DELETE - 删除评论
+// DELETE - Delete a comment
 // ?commentId=xxx
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   const { id } = await params;

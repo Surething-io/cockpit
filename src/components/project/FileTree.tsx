@@ -18,17 +18,17 @@ export interface FileNode {
   symlinkTarget?: string;
 }
 
-// Git 状态类型: M=修改, A=新增, D=删除, ?=未跟踪, R=重命名
+// Git status type: M=modified, A=added, D=deleted, ?=untracked, R=renamed
 export type GitStatusCode = 'M' | 'A' | 'D' | '?' | 'R';
 
-// Git 状态映射: path -> status code
+// Git status map: path -> status code
 export type GitStatusMap = Map<string, GitStatusCode>;
 
 interface FlatTreeItem {
   node: FileNode;
   level: number;
   gitStatus?: GitStatusCode;
-  hasChangedChildren?: boolean; // 目录下是否有变更的文件
+  hasChangedChildren?: boolean; // Whether the directory contains changed files
 }
 
 // ============================================================================
@@ -41,7 +41,7 @@ const ROW_HEIGHT = 26;
 // Helper Functions
 // ============================================================================
 
-// 检查目录下是否有变更的文件（前缀匹配，不依赖 children 是否已加载）
+// Check if the directory contains changed files (prefix match, does not depend on whether children are loaded)
 function hasChangedFilesInDir(dirPath: string, gitStatusMap: GitStatusMap | null): boolean {
   if (!gitStatusMap) return false;
   const prefix = dirPath + '/';
@@ -61,7 +61,7 @@ function flattenTree(
   const result: FlatTreeItem[] = [];
 
   for (const node of nodes) {
-    // 如果有搜索过滤，检查是否匹配
+    // If search filter is active, check if the node matches
     if (matchedPaths !== null && !matchedPaths.has(node.path)) {
       continue;
     }
@@ -83,13 +83,13 @@ function flattenTree(
 // VirtualTreeRow Component
 // ============================================================================
 
-// Git 状态颜色配置
+// Git status color configuration
 const GIT_STATUS_COLORS: Record<GitStatusCode, { text: string; bg: string }> = {
-  'M': { text: 'text-amber-11', bg: 'bg-amber-9/20' },      // 修改 - 黄色
-  'A': { text: 'text-green-11', bg: 'bg-green-9/20' },      // 新增 - 绿色
-  'D': { text: 'text-red-11', bg: 'bg-red-9/20' },          // 删除 - 红色
-  '?': { text: 'text-slate-9', bg: 'bg-slate-9/20' },       // 未跟踪 - 灰色
-  'R': { text: 'text-blue-11', bg: 'bg-blue-9/20' },        // 重命名 - 蓝色
+  'M': { text: 'text-amber-11', bg: 'bg-amber-9/20' },      // modified - yellow
+  'A': { text: 'text-green-11', bg: 'bg-green-9/20' },      // added - green
+  'D': { text: 'text-red-11', bg: 'bg-red-9/20' },          // deleted - red
+  '?': { text: 'text-slate-9', bg: 'bg-slate-9/20' },       // untracked - gray
+  'R': { text: 'text-blue-11', bg: 'bg-blue-9/20' },        // renamed - blue
 };
 
 interface VirtualTreeRowProps {
@@ -128,14 +128,14 @@ const VirtualTreeRow = React.memo(function VirtualTreeRow({
     onContextMenu(e, node.path, node.isDirectory);
   }, [node.path, node.isDirectory, onContextMenu]);
 
-  // 文件名的颜色类（文件和目录都支持变色）
+  // Color class for file/directory name (both support color changes)
   const isEnvFile = !node.isDirectory && (node.name === '.env' || node.name.startsWith('.env.'));
   const nameColorClass = gitStatus
     ? statusColors!.text
     : hasChangedChildren
-    ? 'text-amber-11'  // 目录下有变更文件时目录名变色
+    ? 'text-amber-11'  // Directory name color changes when it contains changed files
     : isEnvFile
-    ? 'text-yellow-600 dark:text-yellow-500'  // .env 敏感文件高亮
+    ? 'text-yellow-600 dark:text-yellow-500'  // Highlight .env sensitive files
     : isSelected && !node.isDirectory
     ? 'text-brand'
     : 'text-foreground';
@@ -173,17 +173,17 @@ const VirtualTreeRow = React.memo(function VirtualTreeRow({
       {node.isSymlink && (
         <span className="text-xs text-muted-foreground flex-shrink-0">→</span>
       )}
-      {/* 文件的 Git 状态标识（靠右） */}
+      {/* File Git status badge (right-aligned) */}
       {gitStatus && (
         <span className={`text-xs font-mono px-1 rounded ${statusColors!.text} ${statusColors!.bg} flex-shrink-0`}>
           {gitStatus}
         </span>
       )}
-      {/* 目录下有变更文件时显示小圆点（靠右） */}
+      {/* Show a dot when the directory contains changed files (right-aligned) */}
       {node.isDirectory && hasChangedChildren && (
         <span className="w-1.5 h-1.5 rounded-full bg-amber-9 flex-shrink-0" />
       )}
-      {/* 自定义右侧内容 */}
+      {/* Custom right-side content */}
       {renderActions?.(node)}
     </div>
   );
@@ -207,7 +207,7 @@ export interface FileTreeProps {
   onScrolledToSelected?: () => void;
   className?: string;
   renderActions?: (node: FileNode) => React.ReactNode;
-  // 右键菜单操作回调
+  // Context menu operation callbacks
   onCreateFile?: (dirPath: string) => void;
   onDelete?: (path: string, isDirectory: boolean, name: string) => void;
   onRefresh?: () => void;
@@ -257,10 +257,10 @@ export function FileTree({
     if (shouldScrollToSelected && selectedPath && flatItems.length > 0) {
       const index = flatItems.findIndex(item => item.node.path === selectedPath);
       if (index >= 0) {
-        // 延迟执行确保 DOM 已渲染（tab 切换后需要等待 hidden 状态移除）
+        // Delay to ensure the DOM is rendered (must wait for hidden state to be removed after tab switch)
         const timer = setTimeout(() => {
           virtualizer.scrollToIndex(index, { align: 'center' });
-          // 滚动完成后自动重置标志，避免 expand/collapse 重复触发
+          // Auto-reset the flag after scrolling to avoid re-triggering on expand/collapse
           onScrolledRef.current?.();
         }, 150);
         return () => clearTimeout(timer);

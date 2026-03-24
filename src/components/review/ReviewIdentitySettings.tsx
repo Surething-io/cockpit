@@ -34,7 +34,7 @@ export function ReviewIdentitySettings({ identity }: Props) {
   const handleSave = () => {
     const trimmed = editName.trim();
     if (trimmed && trimmed !== identity.name) {
-      identity.confirmName(trimmed);  // 主动改名 = 确认昵称 + 同步后端
+      identity.confirmName(trimmed);  // Explicit rename = confirm nickname + sync backend
     }
     setOpen(false);
   };

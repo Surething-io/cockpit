@@ -32,7 +32,7 @@ function getHostFromUrl(url: string): string {
   }
 }
 
-/** 给 URL 追加 _cockpit=1 参数，让 background 的 webNavigation 追踪 + DNR 网络层剥离 */
+/** Append _cockpit=1 param to the URL so background webNavigation can track it and the DNR network layer can strip it */
 function addCockpitParam(url: string): string {
   if (!url) return url;
   try {
@@ -45,7 +45,7 @@ function addCockpitParam(url: string): string {
   }
 }
 
-/** 从 URL 中移除 _cockpit 参数（用于显示） */
+/** Remove the _cockpit param from a URL (for display purposes) */
 function stripCockpitParam(url: string): string {
   if (!url) return url;
   try {
@@ -60,22 +60,22 @@ function stripCockpitParam(url: string): string {
 import { getCockpitBridge } from '@/hooks/useCockpitBridge';
 
 /**
- * 获取 Chrome 扩展 ID（从 content script 广播的 window.__cockpitBridge 读取）
+ * Get the Chrome extension ID (read from window.__cockpitBridge broadcast by the content script).
  */
 function getExtensionId(): string | null {
   return getCockpitBridge()?.id ?? null;
 }
 
 /**
- * 通过 externally_connectable 直接调用插件 background，
- * 预创建 Cookie 注入规则。返回 true 表示成功。
+ * Call the extension background directly via externally_connectable
+ * to pre-create the cookie injection rule. Returns true on success.
  *
- * 流程：BrowserBubble → chrome.runtime.sendMessage(extId) → background
- * 无 content script 中转，无 postMessage，100% 可靠。
+ * Flow: BrowserBubble → chrome.runtime.sendMessage(extId) → background
+ * No content script relay, no postMessage — 100% reliable.
  */
 async function prepareCookies(url: string): Promise<boolean> {
   const extId = getExtensionId();
-  if (!extId) return false; // 插件未安装
+  if (!extId) return false; // Extension not installed
 
   return new Promise((resolve) => {
     try {
@@ -83,7 +83,7 @@ async function prepareCookies(url: string): Promise<boolean> {
       const chromeRuntime = (globalThis as any).chrome?.runtime;
       if (!chromeRuntime?.sendMessage) { resolve(false); return; }
 
-      const timer = setTimeout(() => resolve(false), 2000); // 2s 超时兜底
+      const timer = setTimeout(() => resolve(false), 2000); // 2s timeout fallback
       chromeRuntime.sendMessage(extId, { type: 'prepare-iframe', url }, (response: { ok?: boolean } | undefined) => {
         clearTimeout(timer);
         resolve(response?.ok ?? false);
@@ -94,7 +94,7 @@ async function prepareCookies(url: string): Promise<boolean> {
   });
 }
 
-/** 判断 URL 是否为 localhost（不需要 Cookie 预注入） */
+/** Check if the URL is localhost (no cookie pre-injection needed) */
 function isLocalUrl(url: string): boolean {
   try {
     const h = new URL(url).hostname;
@@ -103,11 +103,11 @@ function isLocalUrl(url: string): boolean {
 }
 
 // ============================================================================
-// BrowserBubble — 单个网页气泡卡片（用于 ConsoleView）
+// BrowserBubble — single webpage bubble card (used in ConsoleView)
 // ============================================================================
 
-const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 分钟
-/** 放大顶栏高度 */
+const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+/** Maximized toolbar height */
 const TOOLBAR_HEIGHT = 41;
 
 interface BrowserBubbleProps {
@@ -115,9 +115,9 @@ interface BrowserBubbleProps {
   id: string;
   selected: boolean;
   maximized: boolean;
-  /** 放大时的内容区高度（由 ConsoleView 传入 scrollRef.clientHeight） */
+  /** Content area height when maximized (passed in from ConsoleView's scrollRef.clientHeight) */
   expandedHeight?: number;
-  /** 非放大时的内容高度（50% 布局，由 ConsoleView 计算） */
+  /** Content height when not maximized (50% layout, computed by ConsoleView) */
   bubbleContentHeight?: number;
   onSelect: () => void;
   onClose: () => void;
@@ -150,22 +150,22 @@ export function BrowserBubble({
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentUrl, setCurrentUrl] = useState(url);
-  const [readyUrl, setReadyUrl] = useState<string | null>(null); // Cookie 就绪后的 iframe src
+  const [readyUrl, setReadyUrl] = useState<string | null>(null); // iframe src after cookies are ready
   const [isSleeping, setIsSleeping] = useState(initialSleeping ?? false);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const iframeWrapperRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // 同步外部 url prop 变化
+  // Sync external url prop changes
   useEffect(() => { setCurrentUrl(url); }, [url]);
 
-  // ========== 空闲休眠 ==========
-  const isVisibleRef = useRef(true); // IntersectionObserver 驱动
+  // ========== Idle sleep ==========
+  const isVisibleRef = useRef(true); // Driven by IntersectionObserver
 
   const goToSleep = useCallback(() => {
     if (isSleeping) return;
     setIsSleeping(true);
-    setReadyUrl(null); // 卸载 iframe
+    setReadyUrl(null); // Unmount the iframe
     onSleep?.(id);
   }, [isSleeping, id, onSleep]);
 
@@ -177,26 +177,26 @@ export function BrowserBubble({
   }, []);
 
   // Browser automation bridge (CLI → WS → postMessage → content script)
-  // WS 按需连接：点击 shortId 徽标时 connect，休眠时 disconnect
+  // WS connects on demand: connect when clicking the shortId badge, disconnect on sleep
   const iframeReady = !!readyUrl && !isSleeping && !isLoading;
   const { shortId, connected: bridgeConnected, connect: bridgeConnect, disconnect: bridgeDisconnect } = useBrowserBridge(id, iframeRef, iframeReady);
 
-  // bridgeConnectedRef：供 IntersectionObserver 回调读取最新值
+  // bridgeConnectedRef: lets IntersectionObserver callbacks read the latest value
   const bridgeConnectedRef = useRef(bridgeConnected);
   bridgeConnectedRef.current = bridgeConnected;
 
-  // IntersectionObserver：检测气泡是否在视口内
-  // 已连接时不启动休眠倒计时
+  // IntersectionObserver: detect whether the bubble is in the viewport
+  // Don't start the sleep countdown when bridge is connected
   useEffect(() => {
     const el = iframeWrapperRef.current;
     if (!el || isSleeping) return;
     const observer = new IntersectionObserver(([entry]) => {
       isVisibleRef.current = entry.isIntersecting;
       if (entry.isIntersecting || bridgeConnectedRef.current) {
-        // 进入视口 或 bridge 已连接 → 清除倒计时
+        // Entered viewport or bridge is connected → cancel countdown
         clearIdleTimer();
       } else {
-        // 离开视口 且 未连接 → 启动倒计时
+        // Left viewport and not connected → start countdown
         if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
         idleTimerRef.current = setTimeout(goToSleep, IDLE_TIMEOUT);
       }
@@ -205,24 +205,24 @@ export function BrowserBubble({
     return () => observer.disconnect();
   }, [isSleeping, goToSleep, clearIdleTimer]);
 
-  // bridge 连接状态变化时调整休眠策略
+  // Adjust sleep strategy when bridge connection state changes
   useEffect(() => {
     if (isSleeping) {
-      // 休眠时断开 bridge WS
+      // Disconnect bridge WS when sleeping
       bridgeDisconnect();
       return;
     }
     if (bridgeConnected) {
-      // 连接中 → 取消休眠倒计时
+      // Connected → cancel sleep countdown
       clearIdleTimer();
     } else if (!isVisibleRef.current) {
-      // 断开连接 且 不可见 → 启动倒计时
+      // Disconnected and not visible → start countdown
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       idleTimerRef.current = setTimeout(goToSleep, IDLE_TIMEOUT);
     }
   }, [bridgeConnected, isSleeping, bridgeDisconnect, clearIdleTimer, goToSleep]);
 
-  // 如果 initialSleeping，不加载 iframe
+  // If initialSleeping, don't load the iframe
   useEffect(() => {
     if (initialSleeping) {
       setReadyUrl(null);
@@ -230,11 +230,11 @@ export function BrowserBubble({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 唤醒
+  // Wake up
   const doWake = useCallback(() => {
     setIsSleeping(false);
     onWake?.(id);
-    // 重新加载 iframe
+    // Reload the iframe
     const cockpitUrl = addCockpitParam(url);
     if (isLocalUrl(url)) {
       setReadyUrl(cockpitUrl);
@@ -243,13 +243,13 @@ export function BrowserBubble({
     }
   }, [url, id, onWake]);
 
-  // Cookie 预注入：通过 externally_connectable 直连 background，await 返回后再设置 iframe src
+  // Cookie pre-injection: connect directly to background via externally_connectable, then set iframe src after awaiting
   useEffect(() => {
     if (!url || isSleeping) { if (!url) setReadyUrl(null); return; }
 
     const cockpitUrl = addCockpitParam(url);
 
-    // localhost 不需要 Cookie 预注入
+    // localhost doesn't need cookie pre-injection
     if (isLocalUrl(url)) {
       setReadyUrl(cockpitUrl);
       return;
@@ -265,10 +265,10 @@ export function BrowserBubble({
 
   const handleIframeLoad = useCallback(() => setIsLoading(false), []);
 
-  // 防止 iframe 交互导致父级滚动容器滚动
-  // 两种来源：(1) 跨域 iframe wheel scroll chaining (compositor 层传播)
-  //          (2) 点击 iframe → 浏览器 focus auto-scroll-into-view (程序化修改 scrollTop)
-  // overflow:hidden 只能挡 (1)，(2) 需要 scroll 事件监听 + scrollTop 恢复
+  // Prevent iframe interactions from scrolling the parent scroll container.
+  // Two sources: (1) cross-origin iframe wheel scroll chaining (compositor-layer propagation)
+  //              (2) clicking iframe → browser focus auto-scroll-into-view (programmatic scrollTop change)
+  // overflow:hidden only blocks (1); (2) requires a scroll event listener + scrollTop restoration
   useEffect(() => {
     const wrapper = iframeWrapperRef.current;
     if (!wrapper) return;
@@ -318,13 +318,13 @@ export function BrowserBubble({
     };
   }, []);
 
-  // 监听 Chrome 插件 postMessage（链接拦截 & 导航通知）
+  // Listen for Chrome extension postMessage (link interception & navigation notifications)
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
       if (!e.data || typeof e.data.type !== 'string') return;
       if (!e.data.type.startsWith('cockpit:')) return;
 
-      // 匹配消息来源：event.source 是发送消息的 iframe contentWindow
+      // Match message source: event.source is the iframe contentWindow that sent the message
       const iframe = iframeWrapperRef.current?.querySelector('iframe');
       if (!iframe || e.source !== iframe.contentWindow) return;
 
@@ -344,7 +344,7 @@ export function BrowserBubble({
     setLoadError('页面加载失败');
   }, []);
 
-  // 刷新：休眠时唤醒，否则重置 iframe src
+  // Refresh: wake from sleep, otherwise reset iframe src
   const doRefresh = useCallback(() => {
     if (isSleeping) {
       doWake();
@@ -360,7 +360,7 @@ export function BrowserBubble({
     }
   }, [isSleeping, doWake, readyUrl]);
 
-  // URL 变化时重置加载状态
+  // Reset loading state when URL changes
   useEffect(() => {
     if (url && !isSleeping) {
       setIsLoading(true);
@@ -368,12 +368,12 @@ export function BrowserBubble({
     }
   }, [url, isSleeping]);
 
-  // 在新窗口打开
+  // Open in a new window
   const handleOpenExternal = useCallback(() => {
     if (currentUrl) window.open(currentUrl, '_blank');
   }, [currentUrl]);
 
-  // ESC 退出最大化 / Cmd+M 切换最大化
+  // ESC to exit maximize / Cmd+M to toggle maximize
   useEffect(() => {
     if (!selected && !maximized) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -393,7 +393,7 @@ export function BrowserBubble({
 
   const host = getHostFromUrl(currentUrl);
 
-  // 放大时的内容高度（减去顶栏）
+  // Content height when maximized (minus toolbar)
   const contentHeight = maximized && expandedHeight
     ? expandedHeight - TOOLBAR_HEIGHT
     : (bubbleContentHeight ?? BUBBLE_CONTENT_HEIGHT);
@@ -407,7 +407,7 @@ export function BrowserBubble({
           ${maximized ? '' : selected ? 'border-brand' : 'border-brand/30'}`}
         onClick={maximized ? undefined : onSelect}
       >
-        {/* ---- 标题栏（放大时显示精简版，缩小时显示完整版） ---- */}
+        {/* ---- Title bar (compact when maximized, full when normal) ---- */}
         {maximized ? (
           <div
             onDoubleClick={onToggleMaximize}
@@ -437,7 +437,7 @@ export function BrowserBubble({
             <span className="text-xs text-muted-foreground truncate font-mono">
               {currentUrl || '空白页'}
             </span>
-            {/* 复制网址 */}
+            {/* Copy URL */}
             {currentUrl && (
               <button
                 onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(currentUrl); toast('已复制网址'); }}
@@ -512,7 +512,7 @@ export function BrowserBubble({
             <span className="font-mono text-foreground truncate">
               {currentUrl || '空白页'}
             </span>
-            {/* 复制网址 */}
+            {/* Copy URL */}
             {currentUrl && (
               <button
                 onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(currentUrl); toast('已复制网址'); }}
@@ -528,7 +528,7 @@ export function BrowserBubble({
             {isLoading && (
               <span className="inline-block w-3 h-3 border border-brand border-t-transparent rounded-full animate-spin flex-shrink-0" />
             )}
-            {/* 新窗口打开 */}
+            {/* Open in new window */}
             <button
               onClick={(e) => { e.stopPropagation(); handleOpenExternal(); }}
               className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
@@ -538,7 +538,7 @@ export function BrowserBubble({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
               </svg>
             </button>
-            {/* 刷新 */}
+            {/* Refresh */}
             <button
               onClick={(e) => { e.stopPropagation(); doRefresh(); }}
               className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
@@ -548,7 +548,7 @@ export function BrowserBubble({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
-            {/* 关闭 */}
+            {/* Close */}
             <button
               onClick={(e) => { e.stopPropagation(); onClose(); }}
               className="p-0.5 rounded text-destructive hover:text-destructive/80 transition-colors flex-shrink-0"
@@ -561,10 +561,10 @@ export function BrowserBubble({
           </div>
         )}
 
-        {/* ---- 内容区（iframe 或休眠占位）---- */}
+        {/* ---- Content area (iframe or sleep placeholder) ---- */}
         <div ref={iframeWrapperRef} className="w-full" style={{ height: contentHeight }}>
           {isSleeping ? (
-            /* 休眠：显示网址占位符 */
+            /* Sleeping: show URL placeholder */
             <div
               className="relative overflow-hidden cursor-pointer group h-full"
               onClick={(e) => { e.stopPropagation(); doRefresh(); }}
@@ -575,7 +575,7 @@ export function BrowserBubble({
                 </svg>
                 <p className="text-xs text-muted-foreground/60">{host}</p>
               </div>
-              {/* 悬停刷新提示 */}
+              {/* Hover-to-refresh hint */}
               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 text-white text-xs">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -638,7 +638,7 @@ export function BrowserBubble({
           )}
         </div>
 
-        {/* ---- 底部状态栏（仅缩小时显示） ---- */}
+        {/* ---- Bottom status bar (shown only when not maximized) ---- */}
         {!maximized && url && (
           <div className="border-t border-border px-4 py-2 flex items-center gap-2 text-xs text-muted-foreground">
             <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${isSleeping ? 'bg-yellow-500' : isLoading ? 'bg-brand animate-pulse' : loadError ? 'bg-red-500' : 'bg-green-500'}`} />

@@ -43,26 +43,26 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const commandListRef = useRef<HTMLDivElement>(null);
 
-  // 自动调整 textarea 高度
+  // Auto-adjust textarea height
   const adjustTextareaHeight = useCallback(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
-    // 重置高度以获取正确的 scrollHeight
+    // Reset height to get the correct scrollHeight
     textarea.style.height = 'auto';
-    // 设置新高度，最小 38px（单行），最大 200px（约 8-10 行）
+    // Set new height: min 38px (single line), max 200px (approx 8-10 lines)
     const minHeight = 38;
     const maxHeight = 200;
     const newHeight = Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight));
     textarea.style.height = `${newHeight}px`;
   }, []);
 
-  // 当输入内容变化时调整高度（useLayoutEffect：在 paint 前同步执行，避免双 paint 跳动）
+  // Adjust height when input changes (useLayoutEffect: runs synchronously before paint to avoid double-paint flicker)
   useLayoutEffect(() => {
     adjustTextareaHeight();
   }, [input, adjustTextareaHeight]);
 
-  // 加载命令列表
+  // Load command list
   useEffect(() => {
     const loadCommands = async () => {
       try {
@@ -79,7 +79,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
     loadCommands();
   }, [cwd]);
 
-  // 命令过滤：useMemo 派生计算，消灭每次击键 3 个 setState
+  // Command filtering: useMemo derived computation, eliminates 3 setState calls per keystroke
   const filteredCommands = useMemo(() => {
     if (!input.startsWith('/')) return [];
     const keyword = input.toLowerCase();
@@ -90,7 +90,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
 
   const showCommands = !commandsDismissed && input.startsWith('/') && filteredCommands.length > 0;
 
-  // input 变化时重置选中索引和 dismiss 状态
+  // Reset selected index and dismiss state when input changes
   const prevInputRef = useRef(input);
   useLayoutEffect(() => {
     if (prevInputRef.current !== input) {
@@ -100,7 +100,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
     }
   }, [input, commandsDismissed]);
 
-  // 滚动选中项到可视区域
+  // Scroll selected item into view
   useLayoutEffect(() => {
     if (showCommands && commandListRef.current) {
       const selectedItem = commandListRef.current.children[selectedIndex] as HTMLElement;
@@ -118,7 +118,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
       onSend(trimmed, images.length > 0 ? images : undefined);
       setInput('');
       setImages([]);
-      // 重置 textarea 高度
+      // Reset textarea height
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
       }
@@ -131,12 +131,12 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
   }, []);
 
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // 检查是否正在进行输入法组合输入（如中文拼音输入）
+    // Check if IME composition is in progress (e.g., Chinese pinyin input)
     if (e.nativeEvent.isComposing) {
       return;
     }
 
-    // 命令列表键盘导航
+    // Command list keyboard navigation
     if (showCommands && filteredCommands.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -165,7 +165,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
       }
     }
 
-    // 普通发送（排除 IME 组合状态）
+    // Normal send (excluding IME composition state)
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSend();
@@ -186,7 +186,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
         const file = item.getAsFile();
         if (!file) continue;
 
-        // 检查文件大小
+        // Check file size
         if (file.size > MAX_IMAGE_SIZE) {
           alert(`图片大小超过限制（最大 5MB），当前大小: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
           continue;
@@ -197,7 +197,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
           const dataUrl = event.target?.result as string;
           if (!dataUrl) return;
 
-          // 从 data URL 中提取 base64 部分（兼容所有 MIME 类型）
+          // Extract base64 portion from data URL (compatible with all MIME types)
           const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
 
           const newImage: ImageInfo = {
@@ -244,7 +244,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
     <div className="border-t border-border bg-card relative">
       <ImagePreview images={images} onRemove={handleRemoveImage} disabled={disabled} />
 
-      {/* 命令候选列表 */}
+      {/* Command candidate list */}
       {showCommands && filteredCommands.length > 0 && (
         <div
           ref={commandListRef}
@@ -277,7 +277,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
       )}
 
       <div className="flex gap-2 items-end p-4">
-        {/* Git 暂存所有文件按钮 */}
+        {/* Git stage all files button */}
         <button
           onClick={async () => {
             try {
@@ -305,14 +305,14 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
           </svg>
         </button>
 
-        {/* Git 查看变更按钮 - 生成中也可点击 */}
+        {/* Git view changes button - clickable even during generation */}
         {onShowGitStatus && (
           <button
             onClick={onShowGitStatus}
             className="p-2 text-brand hover:text-teal-10 hover:bg-brand/10 active:bg-brand/20 active:scale-95 rounded-lg transition-all"
             title="查看 Git 变更"
           >
-            {/* Git 分支图标 */}
+            {/* Git branch icon */}
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <circle cx="6" cy="6" r="2" strokeWidth={2} />
               <circle cx="18" cy="6" r="2" strokeWidth={2} />
@@ -322,7 +322,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
           </button>
         )}
 
-        {/* 查看评论按钮 */}
+        {/* View comments button */}
         {onShowComments && (
           <button
             onClick={onShowComments}
@@ -335,7 +335,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
           </button>
         )}
 
-        {/* 用户消息列表按钮 */}
+        {/* User messages list button */}
         {onShowUserMessages && (
           <button
             onClick={onShowUserMessages}
@@ -348,7 +348,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
           </button>
         )}
 
-        {/* 项目笔记按钮 */}
+        {/* Project notes button */}
         {onOpenNote && (
           <button
             onClick={onOpenNote}
@@ -361,7 +361,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
           </button>
         )}
 
-        {/* 定时任务按钮 */}
+        {/* Scheduled task button */}
         {onCreateScheduledTask && (
           <div className="relative">
             <button

@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 interface TooltipProps {
   content: string;
   children: ReactNode;
-  delay?: number; // 悬停多久后显示，默认 300ms
+  delay?: number; // How long to hover before showing, default 300ms
   className?: string;
 }
 
@@ -37,7 +37,7 @@ export function Tooltip({ content, children, delay = 300, className = '' }: Tool
     setIsVisible(false);
   };
 
-  // 显示后调整位置，防止超出屏幕
+  // Adjust position after showing to prevent overflow off screen
   useEffect(() => {
     if (isVisible && tooltipRef.current) {
       const rect = tooltipRef.current.getBoundingClientRect();
@@ -45,15 +45,15 @@ export function Tooltip({ content, children, delay = 300, className = '' }: Tool
       let newLeft = position.left;
       let newTop = position.top;
 
-      // 防止右边超出屏幕
+      // Prevent overflowing right edge
       if (rect.right > window.innerWidth - 8) {
         newLeft = window.innerWidth - rect.width - 8;
       }
-      // 防止左边超出屏幕
+      // Prevent overflowing left edge
       if (rect.left < 8) {
         newLeft = 8;
       }
-      // 防止底部超出屏幕，改为显示在鼠标上方
+      // Prevent overflowing bottom edge, show above cursor instead
       if (rect.bottom > window.innerHeight - 8) {
         newTop = mouseRef.current.y - rect.height - 8;
       }

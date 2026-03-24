@@ -14,8 +14,8 @@ type Story = StoryObj<typeof meta>;
 
 // Note: This component requires API calls to fetch session data.
 // In Storybook, you would need to set up MSW (Mock Service Worker) to mock these endpoints:
-// - GET /api/sessions/projects - 获取项目列表
-// - GET /api/sessions/projects/:encodedPath - 获取项目的 session 列表
+// - GET /api/sessions/projects - fetch project list
+// - GET /api/sessions/projects/:encodedPath - fetch session list for a project
 
 export const Default: Story = {
   args: {

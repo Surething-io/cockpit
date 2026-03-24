@@ -19,7 +19,7 @@ interface TranscriptMessage {
       tool_use_id?: string;
       content?: string;
       is_error?: boolean;
-      // 图片相关字段
+      // Image-related fields
       source?: {
         type: string;
         media_type: string;
@@ -70,11 +70,11 @@ export async function GET(
       });
     }
 
-    // 动态获取当前工作目录并构造 transcript 文件路径
+    // Dynamically get the current working directory and construct the transcript file path
     const cwd = process.cwd();
     const transcriptPath = getClaudeSessionPath(cwd, sessionId);
 
-    // 检查文件是否存在
+    // Check if the file exists
     if (!fs.existsSync(transcriptPath)) {
       return new Response(JSON.stringify({ error: 'Session not found', messages: [] }), {
         status: 404,
@@ -82,7 +82,7 @@ export async function GET(
       });
     }
 
-    // 读取并解析 JSONL 文件
+    // Read and parse the JSONL file
     const messages = await parseTranscriptFile(transcriptPath);
 
     return new Response(JSON.stringify({ messages }), {
@@ -114,11 +114,11 @@ async function parseTranscriptFile(filePath: string): Promise<ChatMessage[]> {
         rawMessages.push(obj);
       }
     } catch {
-      // 忽略解析错误的行
+      // Ignore lines with parse errors
     }
   }
 
-  // 转换消息格式
+  // Convert message format
   return convertToChatMessages(rawMessages);
 }
 
@@ -127,7 +127,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
   let currentAssistantMessage: ChatMessage | null = null;
   const toolResults = new Map<string, string>();
 
-  // 第一遍：收集所有工具结果
+  // First pass: collect all tool results
   for (const msg of rawMessages) {
     if (msg.type === 'user' && msg.message?.content && Array.isArray(msg.message.content)) {
       for (const block of msg.message.content) {
@@ -138,14 +138,14 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
     }
   }
 
-  // 第二遍：构建消息列表
+  // Second pass: build the message list
   for (const msg of rawMessages) {
-    // 处理用户文本消息
+    // Handle user text messages
     if (msg.type === 'user' && msg.message?.role === 'user' && msg.message?.content) {
-      // content 可能是字符串或数组
+      // content may be a string or an array
       const content = msg.message.content;
       if (typeof content === 'string') {
-        // 如果有未完成的 assistant 消息，先保存
+        // If there is an unfinished assistant message, save it first
         if (currentAssistantMessage) {
           chatMessages.push(currentAssistantMessage);
           currentAssistantMessage = null;
@@ -166,9 +166,9 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
       const textBlocks = content.filter((b) => b.type === 'text');
       const imageBlocks = content.filter((b) => b.type === 'image' && b.source);
 
-      // 只有当有文本或图片时才创建用户消息
+      // Only create a user message when there is text or images
       if (textBlocks.length > 0 || imageBlocks.length > 0) {
-        // 如果有未完成的 assistant 消息，先保存
+        // If there is an unfinished assistant message, save it first
         if (currentAssistantMessage) {
           chatMessages.push(currentAssistantMessage);
           currentAssistantMessage = null;
@@ -181,7 +181,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
           timestamp: msg.timestamp,
         };
 
-        // 添加图片
+        // Add images
         if (imageBlocks.length > 0) {
           userMessage.images = imageBlocks.map((b) => ({
             type: 'base64' as const,
@@ -194,7 +194,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
       }
     }
 
-    // 处理助手消息
+    // Handle assistant messages
     if (msg.type === 'assistant' && msg.message?.content) {
       const content = msg.message.content;
       if (!Array.isArray(content)) continue;
@@ -202,10 +202,10 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
       const textBlocks = content.filter((b) => b.type === 'text');
       const toolBlocks = content.filter((b) => b.type === 'tool_use');
 
-      // 如果是新的一轮对话（有文本内容且之前的 assistant 消息已完成）
+      // Start of a new conversation turn (has text content and the previous assistant message is done)
       if (textBlocks.length > 0) {
         if (currentAssistantMessage) {
-          // 追加文本到当前消息
+          // Append text to the current message
           currentAssistantMessage.content += textBlocks.map((b) => b.text || '').join('\n');
         } else {
           currentAssistantMessage = {
@@ -218,7 +218,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
         }
       }
 
-      // 处理工具调用
+      // Handle tool calls
       if (toolBlocks.length > 0) {
         if (!currentAssistantMessage) {
           currentAssistantMessage = {
@@ -244,7 +244,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
     }
   }
 
-  // 保存最后一个 assistant 消息
+  // Save the last assistant message
   if (currentAssistantMessage) {
     chatMessages.push(currentAssistantMessage);
   }

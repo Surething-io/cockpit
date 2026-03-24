@@ -63,7 +63,7 @@ export default function RootLayout({
                   }
                   document.documentElement.classList.add(resolved);
                 } catch (e) {}
-                // 注销残留的 Service Worker（PWA 已移除）
+                // Unregister any leftover Service Workers (PWA has been removed)
                 if ('serviceWorker' in navigator) {
                   navigator.serviceWorker.getRegistrations().then(function(regs) {
                     regs.forEach(function(r) { r.unregister(); });

@@ -39,7 +39,7 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
   { comment, isActive, isOwnComment, isAdmin, currentAuthorId, canInteract, userNameMap, onClick, onDelete, onEdit, onToggleClosed, onAddReply, onDeleteReply, onEditReply },
   ref
 ) {
-  // 优先用映射表中的最新昵称，fallback 到评论快照中的 author
+  // Prefer latest nickname from the map, fallback to author in comment snapshot
   const resolveAuthor = (authorId: string, fallback: string) => userNameMap[authorId] || fallback;
   const [replyContent, setReplyContent] = useState('');
   const [showReplyInput, setShowReplyInput] = useState(false);
@@ -94,10 +94,10 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
     ? comment.anchor.selectedText.slice(0, 77) + '...'
     : comment.anchor.selectedText;
 
-  // 关闭/重开评论：开放时所有人可操作
+  // Close/reopen comment: all users can act when open
   const canToggleClosed = isAdmin || isOwnComment || canInteract;
 
-  // 已关闭：折叠为一行
+  // Closed: collapse to one line
   if (comment.closed) {
     return (
       <div

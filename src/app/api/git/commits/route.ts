@@ -12,12 +12,12 @@ export async function GET(request: NextRequest) {
   const offset = parseInt(searchParams.get('offset') || '0', 10);
 
   try {
-    // 获取提交历史
-    // 使用 %x00 (NUL) 作为字段分隔符, %x01 (SOH) 作为记录分隔符
-    // 格式: hash|shortHash|author|authorEmail|date|subject|body
+    // Get commit history.
+    // Use %x00 (NUL) as field separator, %x01 (SOH) as record separator.
+    // Format: hash|shortHash|author|authorEmail|date|subject|body
     const format = '%H%x00%h%x00%an%x00%ae%x00%ci%x00%s%x00%b%x01';
     const skipArg = offset > 0 ? `--skip=${offset}` : '';
-    // -c core.quotePath=false 避免中文文件名被转义为八进制
+    // -c core.quotePath=false prevents Chinese filenames from being escaped as octal
     const { stdout } = await execAsync(
       `git -c core.quotePath=false log ${branch} --format="${format}" -n ${limit} ${skipArg}`,
       { cwd, maxBuffer: 10 * 1024 * 1024 }

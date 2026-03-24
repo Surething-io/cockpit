@@ -22,10 +22,10 @@ interface TabManagerProps {
 }
 
 export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
-  // activeView 需要在 useTabState 之前声明，因为 useTabState 需要它来判断未读
+  // activeView must be declared before useTabState, as useTabState needs it to determine unread state
   const [activeView, setActiveView] = useState<ViewType>('agent');
 
-  // Tab 状态管理
+  // Tab state management
   const {
     tabs,
     activeTabId,
@@ -45,10 +45,10 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     handleTabDragEnd,
   } = useTabState({ initialCwd, initialSessionId, activeView });
 
-  // Pin 状态管理
+  // Pin state management
   const { isPinned, pinSession, unpinSession } = usePinnedSessions();
 
-  // 定时任务
+  // Scheduled tasks
   const { createTask: createScheduledTask } = useScheduledTasks();
 
   const isTabPinned = useCallback((tabId: string) => {
@@ -66,7 +66,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     }
   }, [tabs, isPinned, pinSession, unpinSession, initialCwd]);
 
-  // UI 状态
+  // UI state
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
   const [isWorktreeOpen, setIsWorktreeOpen] = useState(false);
   const [isAliasManagerOpen, setIsAliasManagerOpen] = useState(false);
@@ -77,7 +77,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const [fileBrowserSearchQuery, setFileBrowserSearchQuery] = useState<string | null>(null);
   const [searchQueryTrigger, setSearchQueryTrigger] = useState(0);
 
-  // 从 project-settings 恢复 activeView
+  // Restore activeView from project-settings
   useEffect(() => {
     if (!initialCwd) return;
     fetch(`/api/project-settings?cwd=${encodeURIComponent(initialCwd)}`)
@@ -88,7 +88,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
       .catch(() => {});
   }, [initialCwd]);
 
-  // 截图状态：自动切换 console view + 顶部提示条 + 截图完成后恢复
+  // Screenshot state: auto-switch to console view + top banner + restore after screenshot completes
   const [screenshotActive, setScreenshotActive] = useState(false);
   const preScreenshotViewRef = useRef<ViewType | null>(null);
 
@@ -96,12 +96,12 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     const handler = (e: Event) => {
       const { active } = (e as CustomEvent).detail;
       if (active) {
-        // 截图开始：保存当前视图，切到 console
+        // Screenshot started: save current view and switch to console
         preScreenshotViewRef.current = activeView;
         setActiveView('console');
         setScreenshotActive(true);
       } else {
-        // 截图完成：恢复之前的视图
+        // Screenshot finished: restore previous view
         setScreenshotActive(false);
         if (preScreenshotViewRef.current && preScreenshotViewRef.current !== 'console') {
           setActiveView(preScreenshotViewRef.current);
@@ -113,7 +113,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     return () => window.removeEventListener('cockpit-screenshot-state', handler);
   }, [activeView]);
 
-  // 切屏时持久化 activeView 并通知父级 Workspace
+  // Persist activeView on panel switch and notify parent Workspace
   const handleViewChange = useCallback((view: ViewType) => {
     setActiveView(view);
     if (!initialCwd) return;
@@ -125,7 +125,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     window.parent.postMessage({ type: 'VIEW_CHANGE', cwd: initialCwd, view }, '*');
   }, [initialCwd]);
 
-  // 加载 Git 仓库信息（分支）
+  // Load Git repository info (branch)
   const loadGitInfo = useCallback(async () => {
     if (!initialCwd) return;
     try {
@@ -147,7 +147,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
 
   useEffect(() => { loadGitInfo(); }, [loadGitInfo]);
 
-  // 监听 git 变更事件，实时更新分支名
+  // Listen for git change events and update branch name in real time
   const handleWatchMessage = useCallback((msg: unknown) => {
     const { data } = msg as { type: string; data: Array<{ type: string }> };
     if (data?.some(e => e.type === 'git')) {
@@ -161,7 +161,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     enabled: !!initialCwd,
   });
 
-  // 键盘快捷键：Cmd+1/2/3/4 切换视图
+  // Keyboard shortcuts: Cmd+1/2/3 to switch views
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
@@ -182,18 +182,18 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // 监听父窗口消息（用于 Workspace 切换 session）
+  // Listen for messages from the parent window (used by Workspace to switch sessions)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'SWITCH_SESSION') {
         const { sessionId, switchToAgent } = event.data;
         if (sessionId) {
           handleSelectSession(sessionId);
-          // 从侧边栏（最近会话/常用会话/定时任务）跳转时，自动切到 Agent 视图
+          // When navigating from sidebar (recent/pinned sessions/scheduled tasks), auto-switch to Agent view
           if (switchToAgent) {
             handleViewChange('agent');
           }
-          // 用户查看该 session → 写 state.json 为 normal（loading 中的不清，避免红点误消失）
+          // User viewed this session → write state.json as normal (skip sessions still loading to avoid clearing the unread indicator prematurely)
           const targetTab = tabs.find(t => t.sessionId === sessionId);
           if (initialCwd && !targetTab?.isLoading) {
             fetch('/api/global-state', {
@@ -210,21 +210,21 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     return () => window.removeEventListener('message', handleMessage);
   }, [handleSelectSession, handleViewChange, initialCwd, tabs]);
 
-  // 打开 Git Status 视图
+  // Open the Git Status view
   const handleShowGitStatus = useCallback(() => {
     setFileBrowserInitialTab('status');
     setTabSwitchTrigger(n => n + 1);
     handleViewChange('explorer');
   }, [handleViewChange]);
 
-  // 全项目搜索（从 Chat 触发）
+  // Project-wide content search (triggered from Chat)
   const handleContentSearch = useCallback((query: string) => {
     setFileBrowserSearchQuery(query);
     setSearchQueryTrigger(n => n + 1);
     handleViewChange('explorer');
   }, [handleViewChange]);
 
-  // 打开笔记
+  // Open note
   const handleOpenNote = initialCwd ? useCallback(() => {
     window.parent.postMessage({ type: 'OPEN_NOTE', cwd: initialCwd }, '*');
   }, [initialCwd]) : undefined;
@@ -235,7 +235,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     <div className="flex h-screen bg-card">
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar - 始终显示 */}
+        {/* Top bar - always visible */}
         <TabManagerTopBar
           initialCwd={initialCwd}
           activeTab={activeTab}
@@ -247,7 +247,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           onBranchSwitched={loadGitInfo}
         />
 
-        {/* 截图进行中提示条 */}
+        {/* Screenshot in progress banner */}
         {screenshotActive && (
           <div className="flex items-center justify-center gap-2 py-1 bg-brand/15 text-brand text-xs font-medium border-b border-brand/20">
             <span className="animate-pulse">●</span>
@@ -255,10 +255,10 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           </div>
         )}
 
-        {/* 内容区域 - 根据 activeView 切换（滑动效果） */}
+        {/* Content area - switches based on activeView (swipe effect) */}
         {initialCwd ? (
           <SwipeableContent>
-            {/* AGENT 视图：Tab bar + Chat */}
+            {/* AGENT view: Tab bar + Chat */}
             <div className="w-1/3 h-full flex flex-col overflow-hidden">
               <TabBar
                 tabs={tabs}
@@ -299,7 +299,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               </div>
             </div>
 
-            {/* EXPLORER 视图：FileBrowser */}
+            {/* EXPLORER view: FileBrowser */}
             <div className="w-1/3 h-full overflow-hidden">
               <FileBrowserModal
                 onClose={() => handleViewChange('agent')}
@@ -311,13 +311,13 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               />
             </div>
 
-            {/* CONSOLE 视图：命令执行 + 浏览器 */}
+            {/* CONSOLE view: command execution + browser */}
             <div className="w-1/3 h-full overflow-hidden">
               <ConsoleView cwd={initialCwd} tabId="default" onOpenNote={handleOpenNote} />
             </div>
           </SwipeableContent>
         ) : (
-          /* 无 cwd 时，只显示 Tab bar + Chat */
+          /* When no cwd is set, only show Tab bar + Chat */
           <div className="flex-1 flex flex-col overflow-hidden">
             <TabBar
               tabs={tabs}

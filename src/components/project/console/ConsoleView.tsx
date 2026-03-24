@@ -41,7 +41,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
   const consoleItemsRef = useRef<ConsoleItem[]>([]);
   consoleItemsRef.current = state.consoleItems;
 
-  // ========== 滚动检测 ==========
+  // ========== Scroll detection ==========
 
   const checkIfAtBottom = useCallback(() => {
     const container = state.scrollRef.current;
@@ -64,7 +64,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
     topRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  // ========== 设置 ==========
+  // ========== Settings ==========
 
   const loadSettings = async () => {
     try {
@@ -94,7 +94,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
 
   useEffect(() => { loadSettings(); }, []);
 
-  // ========== 拖拽排序 ==========
+  // ========== Drag-to-reorder ==========
 
   const handleTitleMouseDown = useCallback(() => {
     dragEnabledRef.current = true;
@@ -154,7 +154,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
     state.saveBubbleOrder(newIds);
   }, [state.saveBubbleOrder]);
 
-  // ========== 放大/缩小 ==========
+  // ========== Maximize/minimize ==========
 
   const toggleMaximize = useCallback((id: string) => {
     setMaximizedId(prev => prev === id ? null : id);
@@ -173,7 +173,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [state.selectedCommandId, toggleMaximize]);
 
-  // 跟踪可视区域高度
+  // Track visible area height
   useEffect(() => {
     const el = state.scrollRef.current;
     if (!el) return;
@@ -185,7 +185,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
     return () => ro.disconnect();
   }, [state.scrollRef]);
 
-  // 放大第1步：测量可视高度
+  // Maximize step 1: measure visible height
   useEffect(() => {
     const el = state.scrollRef.current;
     if (!el) return;
@@ -198,7 +198,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
     return () => { if (el) el.style.overflow = ''; };
   }, [maximizedId, state.scrollRef]);
 
-  // 放大第2步：滚动到目标 + 锁定
+  // Maximize step 2: scroll to target + lock
   useEffect(() => {
     const el = state.scrollRef.current;
     if (!el || !maximizedId || !consoleHeight) return;
@@ -212,7 +212,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
     return () => cancelAnimationFrame(rafId);
   }, [maximizedId, consoleHeight, state.scrollRef]);
 
-  // 监听 ChatInput 的终端命令执行事件
+  // Listen for terminal command execution events from ChatInput
   useEffect(() => {
     const handler = (e: Event) => {
       const command = (e as CustomEvent).detail?.command;
@@ -224,14 +224,14 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
     return () => window.removeEventListener('execute-terminal-command', handler);
   }, [state.executeCommand]);
 
-  // 气泡 50% 布局
+  // Bubble 50% layout
   const bubbleContentHeight = scrollAreaHeight > 0
     ? Math.floor((scrollAreaHeight - 32 - 12) / 2 - TOOLBAR_HEIGHT)
     : undefined;
 
   return (
     <div ref={terminalRootRef} className="h-full flex flex-col bg-background relative">
-      {/* 命令历史区域 */}
+      {/* Command history area */}
       <div ref={state.scrollRef} onScroll={handleScroll} className={`flex-1 overflow-y-auto ${maximizedId ? '' : 'py-4 px-4'}`}>
         {state.consoleItems.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
@@ -297,7 +297,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
                 );
               }
 
-              // 插件气泡：从注册表查找 Component
+              // Plugin bubble: find Component from registry
               const plugin = getPlugin(item.type);
               if (!plugin) return null;
               const Comp = plugin.Component;
@@ -331,7 +331,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
         )}
       </div>
 
-      {/* 跳转按钮 */}
+      {/* Jump buttons */}
       {!maximizedId && state.consoleItems.length > 0 && (
         <ConsoleScrollButtons
           showTop={showTopButton}
@@ -341,7 +341,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
         />
       )}
 
-      {/* 底部输入区域 */}
+      {/* Bottom input area */}
       <ConsoleInputBar
         cwd={cwd}
         currentCwd={state.currentCwd}

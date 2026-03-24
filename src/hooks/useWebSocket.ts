@@ -3,13 +3,13 @@ import { useEffect, useRef } from 'react';
 interface UseWebSocketOptions {
   /** WebSocket URL path, e.g. '/ws/watch?cwd=...' */
   url: string;
-  /** 收到业务消息时的回调（不含 ping） */
+  /** Callback for incoming business messages (excludes ping) */
   onMessage: (data: unknown) => void;
-  /** 是否启用，默认 true */
+  /** Whether enabled, defaults to true */
   enabled?: boolean;
 }
 
-/* ---------- per-URL 连接复用 ---------- */
+/* ---------- per-URL connection sharing ---------- */
 
 type Listener = (data: unknown) => void;
 
@@ -49,19 +49,19 @@ function getOrCreateConnection(url: string): SharedConnection {
           if (msg.type === 'ping') return;
           conn.listeners.forEach(listener => listener(msg));
         } catch {
-          // 忽略解析错误
+          // Ignore parse errors
         }
       };
 
       ws.onclose = () => {
-        if (conn.listeners.size === 0) return; // 已无订阅者，不重连
+        if (conn.listeners.size === 0) return; // No subscribers left, skip reconnect
         const delay = Math.min(1000 * Math.pow(1.5, conn.retryCount), 10000);
         conn.retryCount++;
         conn.retryTimer = setTimeout(() => conn.connect(), delay);
       };
 
       ws.onerror = () => {
-        // onclose 会紧跟触发
+        // onclose will fire immediately after
       };
 
       conn.ws = ws;
@@ -83,8 +83,8 @@ function getOrCreateConnection(url: string): SharedConnection {
 /* ---------- hook ---------- */
 
 /**
- * WebSocket hook，封装连接、自动重连（指数退避）、心跳处理
- * 相同 URL 的多个调用共享同一条 WebSocket 连接
+ * WebSocket hook wrapping connection, auto-reconnect (exponential backoff), and heartbeat handling.
+ * Multiple calls with the same URL share a single WebSocket connection.
  */
 export function useWebSocket({ url, onMessage, enabled = true }: UseWebSocketOptions): void {
   const onMessageRef = useRef(onMessage);

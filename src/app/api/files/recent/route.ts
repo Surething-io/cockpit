@@ -5,12 +5,12 @@ const MAX_RECENT_FILES = 15;
 
 export interface RecentFileEntry {
   path: string;
-  scrollLine?: number;   // 屏幕首行（1-based）
-  cursorLine?: number;   // 光标行（1-based）
-  cursorCol?: number;    // 光标列（1-based）
+  scrollLine?: number;   // First visible line on screen (1-based)
+  cursorLine?: number;   // Cursor line (1-based)
+  cursorCol?: number;    // Cursor column (1-based)
 }
 
-/** 读取并规范化：兼容旧格式 string 条目，过滤无效数据 */
+/** Read and normalize: backward compatible with old string entries, filter invalid data */
 function normalize(raw: unknown[]): RecentFileEntry[] {
   return raw
     .map(item => typeof item === 'string' ? { path: item } : item as RecentFileEntry)
@@ -55,16 +55,16 @@ export async function POST(request: NextRequest) {
     const hasPosition = scrollLine != null || cursorLine != null;
 
     if (hasPosition) {
-      // 更新已有条目的位置信息，不改变顺序
+      // Update position info for existing entry without changing order
       const idx = files.findIndex(f => f.path === file);
       if (idx !== -1) {
         if (scrollLine != null) files[idx].scrollLine = scrollLine;
         if (cursorLine != null) files[idx].cursorLine = cursorLine;
         if (cursorCol != null) files[idx].cursorCol = cursorCol;
       }
-      // 条目不存在则忽略（不应该出现这种情况）
+      // Ignore if entry does not exist (should not happen)
     } else {
-      // 添加文件到列表头部（去重）
+      // Add file to top of list (deduplicated)
       files = files.filter(f => f.path !== file);
       files.unshift({ path: file });
       files = files.slice(0, MAX_RECENT_FILES);

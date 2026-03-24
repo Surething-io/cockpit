@@ -30,14 +30,14 @@ interface CommandBubbleProps {
   onPtyResize?: (cols: number, rows: number) => void;
   onToggleMaximize?: () => void;
   maximized?: boolean;
-  /** 放大时的总高度（由 ConsoleView 传入 scrollRef.clientHeight） */
+  /** Total height when maximized (passed in from ConsoleView's scrollRef.clientHeight) */
   expandedHeight?: number;
-  /** 非放大时的内容高度（50% 布局，由 ConsoleView 计算） */
+  /** Content height when not maximized (50% layout, computed by ConsoleView) */
   bubbleContentHeight?: number;
   onTitleMouseDown?: () => void;
 }
 
-// 格式化时间：01-15 14:30
+// Format time: 01-15 14:30
 const formatTime = (ts?: string) => {
   if (!ts) return '';
   const d = new Date(ts);
@@ -49,7 +49,7 @@ const formatTime = (ts?: string) => {
   return `${month}-${day} ${hours}:${minutes}`;
 };
 
-// 控制键映射表
+// Control key mapping table
 const CTRL_KEY_MAP: Record<string, string> = {
   c: '\x03', // SIGINT
   d: '\x04', // EOF
@@ -61,17 +61,17 @@ const CTRL_KEY_MAP: Record<string, string> = {
   w: '\x17', // kill word
 };
 
-// 全屏顶栏高度（px）
+// Fullscreen top bar height (px)
 const FULLSCREEN_BAR_HEIGHT = 41;
 
-/** 气泡内容区固定高度（px），确保垂直方向刚好放下 2 个完整气泡 */
+/** Bubble content area fixed height (px), ensures exactly 2 full bubbles fit vertically */
 export const BUBBLE_CONTENT_HEIGHT = 360;
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 const stripAnsi = (s: string) => s.replace(ANSI_RE, '');
 
-/** Pipe 搜索/过滤视图 */
+/** Pipe search/filter view */
 function PipeSearchView({
   output,
   query,
@@ -105,12 +105,12 @@ function PipeSearchView({
         if (mode === 'filter' && !matches) return null;
 
         if (!matches) {
-          // 无匹配：正常渲染 ANSI
+          // No match: render ANSI normally
           const html = ansiUp.current!.ansi_to_html(line);
           return <div key={i} dangerouslySetInnerHTML={{ __html: html }} />;
         }
 
-        // 有匹配：高亮匹配文本
+        // Has match: highlight matched text
         const parts: React.ReactNode[] = [];
         let lastIdx = 0;
         const lowerPlain = plain.toLowerCase();
@@ -120,12 +120,12 @@ function PipeSearchView({
           const pos = lowerPlain.indexOf(q, searchFrom);
           if (pos === -1) break;
 
-          // 匹配前的文本
+          // Text before match
           if (pos > lastIdx) {
             parts.push(<span key={`t${lastIdx}`}>{plain.slice(lastIdx, pos)}</span>);
           }
 
-          // 匹配的高亮文本
+          // Highlighted match text
           const thisMatchIdx = matchCount++;
           const isCurrent = thisMatchIdx === currentIdx;
           parts.push(
@@ -142,7 +142,7 @@ function PipeSearchView({
           searchFrom = lastIdx;
         }
 
-        // 匹配后的剩余文本
+        // Remaining text after match
         if (lastIdx < plain.length) {
           parts.push(<span key={`t${lastIdx}`}>{plain.slice(lastIdx)}</span>);
         }
@@ -186,19 +186,19 @@ export const CommandBubble = memo(function CommandBubble({
   const [isOverflowing, setIsOverflowing] = useState(false);
   const [stdinValue, setStdinValue] = useState('');
 
-  const xtermSearchRef = useRef<XtermSearchHandle>(null); // xterm 搜索接口
+  const xtermSearchRef = useRef<XtermSearchHandle>(null); // xterm search interface
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // 搜索状态（PTY 和 Pipe 共用）
+  // Search state (shared by PTY and Pipe)
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  /** Pipe 搜索模式：'search' 高亮匹配 / 'filter' 只显示匹配行 */
+  /** Pipe search mode: 'search' highlights matches / 'filter' shows only matching lines */
   const [pipeSearchMode, setPipeSearchMode] = useState<'search' | 'filter'>('search');
-  /** Pipe 搜索当前匹配索引（用于 Enter/Shift+Enter 跳转） */
+  /** Pipe search current match index (used for Enter/Shift+Enter navigation) */
   const [pipeMatchIdx, setPipeMatchIdx] = useState(0);
   const pipeMatchRefs = useRef<(HTMLElement | null)[]>([]);
 
-  // ANSI 解析器 & 增量追踪
+  // ANSI parser & incremental tracking
   const ansiUpRef = useRef<AnsiUp | null>(null);
   const parsedLenRef = useRef(0);
 
@@ -268,7 +268,7 @@ export const CommandBubble = memo(function CommandBubble({
     toast('已复制输出');
   };
 
-  // ESC 关闭全屏
+  // ESC to exit fullscreen
   useEffect(() => {
     if (!maximized) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -284,7 +284,7 @@ export const CommandBubble = memo(function CommandBubble({
 
   const lineCount = output ? output.split('\n').length : 0;
 
-  // 搜索：Cmd+F 唤出，ESC 关闭
+  // Search: Cmd+F to open, ESC to close
   const openSearch = useCallback(() => {
     setSearchVisible(true);
     requestAnimationFrame(() => searchInputRef.current?.focus());
@@ -302,12 +302,12 @@ export const CommandBubble = memo(function CommandBubble({
     if (usePty) {
       xtermSearchRef.current?.findNext(q);
     } else {
-      // Pipe: 跳到下一个匹配
+      // Pipe: jump to next match
       setPipeMatchIdx(prev => {
         const next = prev + 1;
         const el = pipeMatchRefs.current[next];
         if (el) { el.scrollIntoView({ block: 'nearest' }); return next; }
-        // 循环到第一个
+        // Wrap around to first
         pipeMatchRefs.current[0]?.scrollIntoView({ block: 'nearest' });
         return 0;
       });
@@ -332,7 +332,7 @@ export const CommandBubble = memo(function CommandBubble({
     }
   }, [usePty]);
 
-  // Cmd+F / ESC 快捷键（选中时响应，不限放大/缩小）
+  // Cmd+F / ESC shortcuts (respond when selected, regardless of maximize state)
   useEffect(() => {
     if (!selected) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -353,7 +353,7 @@ export const CommandBubble = memo(function CommandBubble({
     return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, [selected, searchVisible, openSearch, closeSearch]);
 
-  // 内容区高度：放大 > 50%布局 > 默认固定高度
+  // Content area height: maximized > 50% layout > default fixed height
   const contentHeight = maximized && expandedHeight
     ? expandedHeight - FULLSCREEN_BAR_HEIGHT
     : (bubbleContentHeight ?? BUBBLE_CONTENT_HEIGHT);
@@ -368,9 +368,9 @@ export const CommandBubble = memo(function CommandBubble({
           }`}
           onClick={onSelect}
         >
-          {/* 命令行头部 */}
+          {/* Command header */}
           {maximized ? (
-            /* 放大时的顶栏 */
+            /* Top bar when maximized */
             <div
               onDoubleClick={() => onToggleMaximize?.()}
               className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card"
@@ -401,7 +401,7 @@ export const CommandBubble = memo(function CommandBubble({
               </button>
             </div>
           ) : (
-            /* 缩小时的标题栏 */
+            /* Title bar when minimized */
             <div
               data-drag-handle
               onMouseDown={() => onTitleMouseDown?.()}
@@ -473,7 +473,7 @@ export const CommandBubble = memo(function CommandBubble({
             </div>
           )}
 
-          {/* 搜索栏 - Cmd+F 唤出（PTY 和 Pipe 通用） */}
+          {/* Search bar - Cmd+F to open (shared by PTY and Pipe) */}
           {searchVisible && (
             <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card" style={{ flexShrink: 0 }}>
               <Search className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
@@ -501,7 +501,7 @@ export const CommandBubble = memo(function CommandBubble({
                 autoComplete="off"
                 spellCheck="false"
               />
-              {/* Pipe 模式切换：搜索 / 过滤 */}
+              {/* Pipe mode toggle: search / filter */}
               {!usePty && (
                 <div className="flex items-center gap-0.5 text-xs flex-shrink-0">
                   <button
@@ -543,7 +543,7 @@ export const CommandBubble = memo(function CommandBubble({
             </div>
           )}
 
-          {/* 输出内容 */}
+          {/* Output content */}
           {usePty ? (
             <div style={{ height: contentHeight, overflow: 'hidden' }}>
               <Suspense fallback={<div className="px-4 py-2 text-xs text-muted-foreground" style={{ height: contentHeight }}>加载终端...</div>}>
@@ -571,7 +571,7 @@ export const CommandBubble = memo(function CommandBubble({
             </div>
           )}
 
-          {/* 运行中状态栏 - 最大化时隐藏 */}
+          {/* Running status bar - hidden when maximized */}
           {isRunning && !maximized && (
             <div className="border-t border-border px-4 py-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
               <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse flex-shrink-0" />
@@ -622,7 +622,7 @@ export const CommandBubble = memo(function CommandBubble({
             </div>
           )}
 
-          {/* 已结束：退出代码 - 最大化时隐藏 */}
+          {/* Finished: exit code - hidden when maximized */}
           {!isRunning && exitCode !== undefined && !maximized && (
             <div className="border-t border-border px-4 py-2 flex items-center gap-2 text-xs text-muted-foreground">
               <span className={`inline-block w-2 h-2 rounded-full ${exitCode === 0 ? 'bg-green-500' : 'bg-red-500'}`} />

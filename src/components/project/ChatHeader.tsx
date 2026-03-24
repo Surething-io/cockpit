@@ -39,7 +39,7 @@ export function ChatHeader({
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {/* 显示项目路径 */}
+          {/* Show project path */}
           {cwd && (
             <span
               className="text-sm text-foreground max-w-md truncate cursor-help"
@@ -48,13 +48,13 @@ export function ChatHeader({
               {cwd}
             </span>
           )}
-          {/* 如果没有 cwd 但有 sessionId，则显示 sessionId */}
+          {/* If no cwd but sessionId exists, show sessionId */}
           {!cwd && sessionId && (
             <span className="text-xs text-muted-foreground">
               Session: {sessionId.slice(0, 8)}...
             </span>
           )}
-          {/* 当前项目 Sessions 按钮（仅当有 cwd 时显示） */}
+          {/* Current project Sessions button (only shown when cwd is present) */}
           {cwd && (
             <button
               onClick={onOpenProjectSessions}
@@ -66,7 +66,7 @@ export function ChatHeader({
               </svg>
             </button>
           )}
-          {/* 全局 Session Browser 按钮 */}
+          {/* Global Session Browser button */}
           <button
             onClick={onOpenSessionBrowser}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
@@ -76,7 +76,7 @@ export function ChatHeader({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             </svg>
           </button>
-          {/* 复制 claude -r 命令按钮 */}
+          {/* Copy claude -r command button */}
           {sessionId && (
             <button
               onClick={() => {
@@ -104,7 +104,7 @@ export function ChatHeader({
               )}
             </button>
           )}
-          {/* 设置按钮 */}
+          {/* Settings button */}
           <button
             onClick={onOpenSettings}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"

@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, '..');
 
 // node-pty permission fix (macOS / Linux)
-// Windows 不需要 chmod；动态检测 platform-arch
+// Windows does not need chmod; dynamically detect platform-arch
 if (process.platform !== 'win32') {
   try {
     const spawnHelper = join(

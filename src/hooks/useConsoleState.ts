@@ -39,7 +39,7 @@ function isPtyCommand(command: string): boolean {
 }
 
 /**
- * 安全截断：从尾部保留 maxLen 字符，然后跳过切点处被截断的 ANSI 序列和 surrogate pair
+ * Safe truncation: keep the last maxLen characters from the tail, then skip any ANSI sequences or surrogate pairs truncated at the cut point
  */
 function safeTruncate(str: string, maxLen: number): string {
   let s = str.slice(-maxLen);
@@ -111,13 +111,13 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
   // Scroll refs (passed in from ConsoleView)
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // 初始化时通知父组件当前目录
+  // Notify parent component of the current directory on initialization
   useEffect(() => {
     onCwdChange?.(cwd);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ========== RAF 节流输出 ==========
+  // ========== RAF-throttled output ==========
 
   const flushPendingOutput = useCallback(() => {
     if (pendingOutputRef.current.size > 0) {
@@ -174,7 +174,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     return commandOutputRef.current.get(commandId) || '';
   }, [flushPendingOutput]);
 
-  // ========== 滚动 ==========
+  // ========== Scroll ==========
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
@@ -182,7 +182,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     }
   }, []);
 
-  // ========== 历史 ==========
+  // ========== History ==========
 
   const loadHistory = useCallback(async (page: number = 0) => {
     if (!tabId) return;
@@ -202,7 +202,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
         for (const entry of data.entries) {
           const plugin = getPlugin(entry.type);
           if (plugin) {
-            // 插件类型：通过插件 fromHistory 恢复
+            // Plugin type: restore via plugin's fromHistory method
             const fields = plugin.fromHistory(entry);
             historyPluginItems.push({
               id: entry.id,
@@ -212,7 +212,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
             });
             if (entry.sleeping) restoredSleeping.add(entry.id);
           } else {
-            // Command 类型
+            // Command type
             if (entry.running) continue;
             historyCommands.push({
               id: entry.id.includes('-') && entry.id.split('-').length === 3
@@ -279,7 +279,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     }
   }, [cwd, tabId, currentCwd]);
 
-  // ========== 恢复运行中的命令 ==========
+  // ========== Reattach running commands ==========
 
   const reattachRunning = useCallback(async (cancelled: { current: boolean }) => {
     try {
@@ -319,7 +319,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
           projectCwd: cwd,
           onData: (type, data) => {
             if (type === 'pid') {
-              // 已有 pid，忽略
+              // Already has pid, ignore
             } else if (type === 'stdout' || type === 'stderr') {
               appendOutput(commandId, data.data as string);
             } else if (type === 'exit') {
@@ -344,11 +344,11 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
         });
       }
     } catch {
-      // 网络错误，忽略
+      // Network error, ignore
     }
   }, [cwd, tabId, appendOutput, flushAndGetOutput, cleanupOutputRefs]);
 
-  // ========== 命令执行 ==========
+  // ========== Command execution ==========
 
   const executeCommand = useCallback(async (command: string) => {
     const parts = command.trim().split(/\s+/);
@@ -389,7 +389,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     if (usePty) commandPtyRef.current.add(commandId);
     setTimeout(scrollToBottom, 100);
 
-    // cd 命令特殊处理
+    // Special handling for cd command
     if (actualCommand.trim().startsWith('cd ')) {
       const targetDir = actualCommand.trim().substring(3).trim();
       let newCwd = currentCwd;
@@ -472,7 +472,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     }
   }, [aliases, currentCwd, customEnv, tabId, cwd, appendOutput, flushAndGetOutput, cleanupOutputRefs, scrollToBottom, onCwdChange, saveCdToHistory]);
 
-  // ========== 中断命令 ==========
+  // ========== Interrupt command ==========
 
   const interruptCommand = useCallback((commandId: string) => {
     const cmd = commands.find((c) => c.id === commandId);
@@ -481,7 +481,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     }
   }, [commands]);
 
-  // ========== 重新运行 ==========
+  // ========== Re-run command ==========
 
   const rerunCommand = useCallback(async (commandId: string) => {
     const cmd = commands.find((c) => c.id === commandId);
@@ -570,7 +570,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     }
   }, [commands, aliases, currentCwd, customEnv, tabId, cwd, appendOutput, flushAndGetOutput, cleanupOutputRefs]);
 
-  // ========== 删除命令 ==========
+  // ========== Delete command ==========
 
   const deleteCommand = useCallback(async (commandId: string) => {
     setCommands((prev) => prev.filter((cmd) => cmd.id !== commandId));
@@ -587,7 +587,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     }
   }, [cwd, tabId, cleanupOutputRefs]);
 
-  // ========== 插件气泡（通用） ==========
+  // ========== Plugin bubbles (generic) ==========
 
   const addPluginItem = useCallback((type: string, input: string, afterId?: string) => {
     const plugin = getPlugin(type);
@@ -604,7 +604,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     setSelectedCommandId(item.id);
     setTimeout(scrollToBottom, 100);
 
-    // 插入到 afterId 后面（通过 bubbleOrder 控制位置）
+    // Insert after afterId (position controlled via bubbleOrder)
     if (afterId) {
       const currentOrder = bubbleOrder && bubbleOrder.length > 0
         ? [...bubbleOrder]
@@ -625,7 +625,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
       }
     }
 
-    // 持久化
+    // Persist
     if (tabId) {
       const historyFields = plugin.toHistory(item);
       fetch('/api/terminal/history', {
@@ -646,13 +646,13 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     setSelectedCommandId(prev => prev === id ? null : prev);
     setSleepingBubbles(prev => { const next = new Set(prev); next.delete(id); return next; });
 
-    // 调用插件的清理逻辑
+    // Invoke plugin cleanup logic
     if (item) {
       const plugin = getPlugin(item._type);
       plugin?.onClose?.(item);
     }
 
-    // 删除持久化
+    // Delete persisted entry
     if (tabId) {
       fetch(
         `/api/terminal/history?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}&commandId=${encodeURIComponent(id)}`,
@@ -683,7 +683,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     persistSleeping(id, false);
   }, [persistSleeping]);
 
-  // ========== 气泡排序 ==========
+  // ========== Bubble ordering ==========
 
   const saveBubbleOrder = useCallback(async (newOrder: string[]) => {
     setBubbleOrder(newOrder);
@@ -697,7 +697,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     } catch { /* ignore */ }
   }, [cwd, tabId]);
 
-  // ========== 合并列表 ==========
+  // ========== Merged list ==========
 
   const consoleItems = useMemo<ConsoleItem[]>(() => {
     const all: ConsoleItem[] = [
@@ -723,7 +723,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
   }, [commands, pluginItems, bubbleOrder]);
   consoleItemsRef.current = consoleItems;
 
-  // ========== 命令历史数组（用于上下箭头导航） ==========
+  // ========== Command history array (used for up/down arrow navigation) ==========
 
   useEffect(() => {
     const historyCommands = commands
@@ -732,7 +732,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     commandHistoryRef.current = historyCommands;
   }, [commands]);
 
-  // ========== 初始化 ==========
+  // ========== Initialization ==========
 
   const loadEnv = async () => {
     try {
@@ -790,7 +790,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     return () => { cancelled.current = true; };
   }, [loadHistory, reattachRunning]);
 
-  // 清理 RAF
+  // Clean up RAF
   useEffect(() => {
     return () => {
       if (rafIdRef.current !== null) {
@@ -799,7 +799,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     };
   }, []);
 
-  // 组件卸载时关闭 terminal WS
+  // Close the terminal WS when the component unmounts
   useEffect(() => {
     return () => {
       disposeTerminalWs();

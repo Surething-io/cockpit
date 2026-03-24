@@ -6,7 +6,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useTheme } from './ThemeProvider';
 
-// Mermaid 懒加载 + 单例
+// Mermaid lazy-load + singleton
 let mermaidInstance: typeof import('mermaid').default | null = null;
 let mermaidLoading: Promise<typeof import('mermaid').default> | null = null;
 
@@ -22,7 +22,7 @@ async function getMermaid() {
 }
 
 // ============================================
-// MermaidBlock - 气泡内的 mermaid 渲染组件
+// MermaidBlock - mermaid rendering component inside a bubble
 // ============================================
 
 interface MermaidBlockProps {
@@ -37,7 +37,7 @@ export function MermaidBlock({ code, isDark }: MermaidBlockProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const renderCountRef = useRef(0);
 
-  // 渲染 mermaid
+  // Render mermaid
   useEffect(() => {
     let cancelled = false;
     const renderId = `mermaid-${Math.random().toString(36).slice(2, 9)}-${++renderCountRef.current}`;
@@ -70,7 +70,7 @@ export function MermaidBlock({ code, isDark }: MermaidBlockProps) {
   return (
     <>
       <div className="my-3 rounded-lg border border-border overflow-hidden">
-        {/* Tab 栏 */}
+        {/* Tab bar */}
         <div className="flex items-center justify-end gap-1 px-3 py-1.5 border-b border-border">
           <TabButton active={tab === 'diagram'} onClick={() => setTab('diagram')}>
             <span className="text-xs">📊</span> 图表
@@ -80,7 +80,7 @@ export function MermaidBlock({ code, isDark }: MermaidBlockProps) {
           </TabButton>
         </div>
 
-        {/* 内容区 */}
+        {/* Content area */}
         {tab === 'diagram' ? (
           <div className="p-4">
             {error ? (
@@ -116,7 +116,7 @@ export function MermaidBlock({ code, isDark }: MermaidBlockProps) {
         )}
       </div>
 
-      {/* Modal - Portal 到 body，绕开父级 overflow/stacking context */}
+      {/* Modal - portalled to body to bypass parent overflow/stacking context */}
       {modalOpen && svgHtml && createPortal(
         <MermaidModal
           svgHtml={svgHtml}
@@ -152,14 +152,14 @@ function TabButton({ active, onClick, children }: {
 }
 
 // ============================================
-// MermaidModal - 全屏缩放/拖拽查看
+// MermaidModal - fullscreen zoom/pan view
 // ============================================
 
 function MermaidModal({ svgHtml, onClose }: {
   svgHtml: string;
   onClose: () => void;
 }) {
-  // ESC 关闭
+  // ESC to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -170,7 +170,7 @@ function MermaidModal({ svgHtml, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* 背景遮罩 */}
+      {/* Background overlay */}
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
       {/* Modal */}
@@ -189,7 +189,7 @@ function MermaidModal({ svgHtml, onClose }: {
           </button>
         </div>
 
-        {/* 图表区域 - SVG fit 满容器 */}
+        {/* Diagram area - SVG fits the container */}
         <div className="flex-1 min-h-0 flex items-center justify-center p-6">
           <div
             className="w-full h-full flex items-center justify-center [&>svg]:max-w-full [&>svg]:max-h-full"

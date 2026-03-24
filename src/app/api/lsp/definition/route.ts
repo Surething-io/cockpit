@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ definitions: [] });
     }
 
-    // 确保文件已打开
+    // Ensure the file is open
     const absPath = resolve(cwd || process.cwd(), filePath);
     try {
       const content = await readFile(absPath, 'utf-8');

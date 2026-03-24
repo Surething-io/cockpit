@@ -5,7 +5,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 
-/** 暴露给父组件的搜索接口 */
+/** Search interface exposed to parent component */
 export interface XtermSearchHandle {
   findNext: (query: string) => boolean;
   findPrevious: (query: string) => boolean;
@@ -13,24 +13,24 @@ export interface XtermSearchHandle {
 }
 
 interface XtermRendererProps {
-  /** 累积的原始 PTY 输出（含 ANSI 控制序列） */
+  /** Accumulated raw PTY output (including ANSI control sequences) */
   output: string;
-  /** 是否正在运行 */
+  /** Whether currently running */
   isRunning: boolean;
-  /** 逐键输入回调（PTY 模式下每个按键立即发送） */
+  /** Per-keystroke input callback (each key sent immediately in PTY mode) */
   onInput?: (data: string) => void;
-  /** 终端尺寸变化回调（通知服务端 PTY resize） */
+  /** Terminal size change callback (notify server of PTY resize) */
   onResize?: (cols: number, rows: number) => void;
-  /** 是否最大化 */
+  /** Whether maximized */
   maximized?: boolean;
-  /** 非最大化时的固定高度（px） */
+  /** Fixed height when not maximized (px) */
   height?: number;
 }
 
 /**
- * 使用 xterm.js 渲染 PTY 输出
- * 支持完整的终端控制序列（光标移动、清屏、alternate buffer 等）
- * 运行中时启用 stdin 输入，逐键发送到 PTY
+ * Render PTY output using xterm.js
+ * Supports full terminal control sequences (cursor movement, clear screen, alternate buffer, etc.)
+ * Enables stdin input when running, sends each key to PTY
  */
 export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererProps>(function XtermRenderer({
   output,
@@ -50,7 +50,7 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
   onInputRef.current = onInput;
   onResizeRef.current = onResize;
 
-  // 暴露搜索接口
+  // Expose search interface
   useImperativeHandle(ref, () => ({
     findNext: (query: string) => {
       return searchAddonRef.current?.findNext(query, { caseSensitive: false, decorations: {
@@ -77,7 +77,7 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
     },
   }), []);
 
-  // 初始化 xterm
+  // Initialize xterm
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -121,14 +121,14 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
     term.loadAddon(searchAddon);
     term.open(containerRef.current);
 
-    // 逐键转发到 PTY
+    // Forward each key to PTY
     term.onData((data: string) => {
       if (onInputRef.current) {
         onInputRef.current(data);
       }
     });
 
-    // 初始 fit + 通知服务端尺寸
+    // Initial fit + notify server of size
     try {
       fitAddon.fit();
       if (onResizeRef.current) {
@@ -150,14 +150,14 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
     };
   }, []);
 
-  // 增量写入新数据
+  // Write new data incrementally
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
 
     let didReset = false;
 
-    // 检测 output 截断（重跑时 output 变短）
+    // Detect output truncation (output gets shorter on rerun)
     if (output.length < writtenLenRef.current) {
       term.reset();
       writtenLenRef.current = 0;
@@ -170,20 +170,20 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
       writtenLenRef.current = output.length;
     }
 
-    // reset 后 xterm 内部 textarea 可能失焦，需要延迟重新聚焦
+    // After reset xterm's internal textarea may lose focus, delay to refocus
     if (didReset && onInputRef.current) {
       requestAnimationFrame(() => term.focus());
     }
   }, [output]);
 
-  // 运行状态变化时聚焦终端
+  // Focus terminal when running state changes
   useEffect(() => {
     if (isRunning && termRef.current) {
       termRef.current.focus();
     }
   }, [isRunning]);
 
-  // resize: fit xterm 并通知服务端 PTY 调整尺寸
+  // resize: fit xterm and notify server to resize PTY
   const doFit = useCallback(() => {
     const term = termRef.current;
     const fitAddon = fitAddonRef.current;
@@ -196,17 +196,17 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
     } catch { /* ignore */ }
   }, []);
 
-  // maximized 变化时触发 fit
-  // 需要多帧延迟：DOM 移动（useLayoutEffect）后容器尺寸可能需要几帧才稳定
+  // Trigger fit when maximized changes
+  // Needs multi-frame delay: container size may take a few frames to stabilize after DOM move (useLayoutEffect)
   useEffect(() => {
     requestAnimationFrame(() => {
       doFit();
-      // 再延迟一帧确保 xterm 内部布局更新后二次 fit
+      // Delay one more frame to ensure xterm internal layout updates before second fit
       requestAnimationFrame(doFit);
     });
   }, [maximized, doFit]);
 
-  // 容器尺寸变化时 fit
+  // Fit when container size changes
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;

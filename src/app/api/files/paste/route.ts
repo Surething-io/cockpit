@@ -3,7 +3,7 @@ import { stat, cp } from 'fs/promises';
 import { join, resolve, basename, extname } from 'path';
 
 /**
- * 生成不冲突的目标名称
+ * Generate a non-conflicting destination name.
  * file.ts → file copy.ts → file copy 2.ts → ...
  * dir → dir copy → dir copy 2 → ...
  */
@@ -11,14 +11,14 @@ async function getUniqueName(targetDir: string, originalName: string): Promise<s
   const ext = extname(originalName);
   const base = basename(originalName, ext);
 
-  // 先检查原名是否冲突
+  // Check if original name conflicts first
   try {
     await stat(join(targetDir, originalName));
   } catch {
-    return originalName; // 不存在，直接用
+    return originalName; // Does not exist, use directly
   }
 
-  // 有冲突，尝试 "file copy.ext"
+  // Conflict found, try "file copy.ext"
   let candidate = `${base} copy${ext}`;
   try {
     await stat(join(targetDir, candidate));
@@ -26,7 +26,7 @@ async function getUniqueName(targetDir: string, originalName: string): Promise<s
     return candidate;
   }
 
-  // 继续尝试 "file copy 2.ext", "file copy 3.ext", ...
+  // Continue trying "file copy 2.ext", "file copy 3.ext", ...
   let counter = 2;
   while (counter < 100) {
     candidate = `${base} copy ${counter}${ext}`;
@@ -38,13 +38,13 @@ async function getUniqueName(targetDir: string, originalName: string): Promise<s
     }
   }
 
-  throw new Error('无法生成唯一文件名');
+  throw new Error('Failed to generate a unique filename');
 }
 
 /**
  * POST /api/files/paste
  * body: { cwd, targetDir, sourceAbsPath }
- * - sourceAbsPath: 源文件的绝对路径（统一从系统剪贴板获取）
+ * - sourceAbsPath: absolute path of source file (obtained from system clipboard)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -64,24 +64,24 @@ export async function POST(request: NextRequest) {
 
     const srcAbsPath = resolve(sourceAbsPath);
 
-    // 验证源文件存在
+    // Verify source file exists
     const srcStat = await stat(srcAbsPath);
 
-    // 验证目标目录存在
+    // Verify target directory exists
     const targetStat = await stat(targetAbsDir);
     if (!targetStat.isDirectory()) {
       return NextResponse.json({ error: '目标不是文件夹' }, { status: 400 });
     }
 
-    // 生成不冲突的文件名
+    // Generate non-conflicting filename
     const srcName = basename(srcAbsPath);
     const destName = await getUniqueName(targetAbsDir, srcName);
     const destPath = join(targetAbsDir, destName);
 
-    // 复制（递归支持文件夹）
+    // Copy (recursive, supports folders)
     await cp(srcAbsPath, destPath, { recursive: srcStat.isDirectory() });
 
-    // 返回新文件的相对路径
+    // Return relative path of the new file
     const relPath = targetDir ? `${targetDir}/${destName}` : destName;
 
     return NextResponse.json({ success: true, newPath: relPath, newName: destName });

@@ -76,7 +76,7 @@ async function apiPost(path: string, body: Record<string, unknown>) {
   return data;
 }
 
-/** 格式化 Redis 命令结果用于 CLI 显示 */
+/** Format a Redis command result for CLI display */
 function formatResult(result: unknown, indent: number = 0): string {
   const pad = ' '.repeat(indent);
   if (result === null) return `${pad}(nil)`;
@@ -112,7 +112,7 @@ function TypeBadge({ type }: { type: string }) {
 }
 
 // ============================================================================
-// CellTooltip — 悬浮提示
+// CellTooltip — hover tooltip
 // ============================================================================
 
 function CellTooltip({ text }: { text: string }) {
@@ -329,7 +329,7 @@ export function RedisBubble({
     setCliLoading(true);
     setCliInput('');
 
-    // 解析命令：第一个词是命令名，后续是参数（支持引号包裹）
+    // Parse command: first token is the command name, rest are args (quoted strings supported)
     const parts: string[] = [];
     const re = /(?:"([^"]*)")|(?:'([^']*)')|(\S+)/g;
     let m: RegExpExecArray | null;
@@ -606,7 +606,7 @@ export function RedisBubble({
 }
 
 // ============================================================================
-// DataTabContent — 根据 key 类型展示值
+// DataTabContent — display value based on key type
 // ============================================================================
 
 function DataTabContent({
@@ -894,7 +894,7 @@ function DataTabContent({
 }
 
 // ============================================================================
-// InfoTabContent — Redis INFO 信息展示
+// InfoTabContent — Redis INFO display
 // ============================================================================
 
 function InfoTabContent({ infoText, onRefresh }: { infoText: string; onRefresh: () => void }) {
@@ -906,7 +906,7 @@ function InfoTabContent({ infoText, onRefresh }: { infoText: string; onRefresh: 
     );
   }
 
-  // 解析 INFO 文本为分段
+  // Parse INFO text into sections
   const sections: { title: string; items: { key: string; value: string }[] }[] = [];
   let current: { title: string; items: { key: string; value: string }[] } | null = null;
   for (const line of infoText.split('\n')) {

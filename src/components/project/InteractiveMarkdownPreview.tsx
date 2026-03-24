@@ -17,16 +17,16 @@ import { ShareReviewToggle } from '../shared/ShareReviewToggle';
 
 // ============================================
 // InteractiveMarkdownPreview
-// Markdown 预览 + 框选评论 + 发送 AI
-// 所有交互映射回原始 MD 源码行范围
+// Markdown preview + selection comments + send to AI
+// All interactions map back to original MD source line ranges
 // ============================================
 
 interface InteractiveMarkdownPreviewProps {
-  content: string;       // 原始 markdown 源码
-  filePath: string;      // 文件路径（评论数据绑定 + 发送 AI 引用）
+  content: string;       // Raw markdown source
+  filePath: string;      // File path (comment data binding + AI reference)
   cwd: string;           // useComments + fetchAllCommentsWithCode
   onClose: () => void;
-  /** 相对路径，用于 review sourceFile 匹配。不传则从 filePath + cwd 推导 */
+  /** Relative path for review sourceFile matching. Derived from filePath + cwd if not provided */
   sourceFile?: string;
 }
 
@@ -43,7 +43,7 @@ interface ViewingCommentData {
   y: number;
 }
 
-// 从 DOM 节点向上查找 data-source-start/end 属性
+// Walk up from a DOM node to find data-source-start/end attributes
 function getSourceRange(node: Node): { start: number; end: number } | null {
   const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node as Element;
   if (!el || !('closest' in el)) return null;
@@ -55,7 +55,7 @@ function getSourceRange(node: Node): { start: number; end: number } | null {
   return { start: parseInt(start, 10), end: parseInt(end, 10) };
 }
 
-// rehypePlugins 数组保持引用稳定避免 ReactMarkdown 重渲染
+// Keep rehypePlugins array reference stable to avoid ReactMarkdown re-renders
 const REHYPE_PLUGINS = [rehypeSourceLines];
 
 export function InteractiveMarkdownPreview({
@@ -65,7 +65,7 @@ export function InteractiveMarkdownPreview({
   onClose,
   sourceFile: sourceFileProp,
 }: InteractiveMarkdownPreviewProps) {
-  // 推导 sourceFile（相对路径）
+  // Derive sourceFile (relative path)
   const sourceFile = sourceFileProp
     || (cwd && filePath.startsWith(cwd) ? filePath.slice(cwd.endsWith('/') ? cwd.length : cwd.length + 1) : filePath);
   // === Refs ===
@@ -90,8 +90,8 @@ export function InteractiveMarkdownPreview({
   useEffect(() => { setIsMounted(true); }, []);
 
   // ============================================
-  // 选区检测 → FloatingToolbar
-  // 与 useCodeViewerLogic 相同的 ref 模式
+  // Selection detection → FloatingToolbar
+  // Same ref pattern as useCodeViewerLogic
   // ============================================
   useEffect(() => {
     const area = containerRef.current;
@@ -103,7 +103,7 @@ export function InteractiveMarkdownPreview({
       isDragging = true;
       downX = e.clientX;
       downY = e.clientY;
-      // 清除上一次 toolbar
+      // Clear previous toolbar
       if (floatingToolbarRef.current) {
         floatingToolbarRef.current = null;
         bumpToolbarRef.current();
@@ -113,7 +113,7 @@ export function InteractiveMarkdownPreview({
     const handleMouseUp = (e: MouseEvent) => {
       isDragging = false;
 
-      // 忽略 toolbar/input card 自身的点击
+      // Ignore clicks on the toolbar/input card itself
       const target = e.target as HTMLElement;
       if (target.closest?.('.floating-toolbar') || target.closest?.('[data-comment-card]')) return;
 
@@ -135,7 +135,7 @@ export function InteractiveMarkdownPreview({
       const range = selection.getRangeAt(0);
       if (!area.contains(range.commonAncestorContainer)) return;
 
-      // 从选区两端查找 data-source-* 属性
+      // Find data-source-* attributes from both ends of the selection
       const startRange = getSourceRange(range.startContainer);
       const endRange = getSourceRange(range.endContainer);
 
@@ -209,7 +209,7 @@ export function InteractiveMarkdownPreview({
     setAddCommentInput(null);
   }, [addCommentInput, addComment]);
 
-  // Submit to AI — 同 useCodeViewerLogic 逻辑
+  // Submit to AI — same logic as useCodeViewerLogic
   const handleSendToAISubmit = useCallback(async (question: string) => {
     if (!sendToAIInput || !chatContext) return;
 
@@ -227,7 +227,7 @@ export function InteractiveMarkdownPreview({
         });
       }
 
-      // 当前选中：提取原始 Markdown 源码对应行
+      // Current selection: extract corresponding lines from the raw Markdown source
       const startIdx = Math.max(0, sendToAIInput.range.start - 1);
       const endIdx = Math.min(sourceLines.length, sendToAIInput.range.end);
       const selectedSourceContent = sourceLines.slice(startIdx, endIdx).join('\n');
@@ -251,13 +251,13 @@ export function InteractiveMarkdownPreview({
   }, [sendToAIInput, chatContext, filePath, cwd, sourceLines, refreshComments]);
 
   // ============================================
-  // 已有评论指示器定位
+  // Existing comment indicator positioning
   // ============================================
 
-  // 按评论行范围分组
+  // Group comments by line range
   const commentGroups = useMemo(() => {
     if (comments.length === 0) return [];
-    // 用 startLine-endLine 作为 key 分组
+    // Use startLine-endLine as the grouping key
     const map = new Map<string, CodeComment[]>();
     for (const c of comments) {
       const key = `${c.startLine}-${c.endLine}`;
@@ -281,7 +281,7 @@ export function InteractiveMarkdownPreview({
       setCommentPositions([]);
       return;
     }
-    // 稍等 MarkdownRenderer 完成渲染
+    // Wait briefly for MarkdownRenderer to finish rendering
     const timer = setTimeout(() => {
       const container = containerRef.current;
       if (!container) return;
@@ -289,7 +289,7 @@ export function InteractiveMarkdownPreview({
       const allAnnotated = container.querySelectorAll('[data-source-start]');
 
       for (const group of commentGroups) {
-        // 找最小包含评论行范围的 DOM 元素
+        // Find the smallest DOM element that contains the comment line range
         let bestEl: HTMLElement | null = null;
         let bestSize = Infinity;
         for (const el of allAnnotated) {
@@ -319,7 +319,7 @@ export function InteractiveMarkdownPreview({
   }, [commentGroups, content]);
 
   // ============================================
-  // ESC 键分层关闭
+  // ESC key layered dismissal
   // ============================================
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -374,7 +374,7 @@ export function InteractiveMarkdownPreview({
             />
           </div>
 
-          {/* 评论指示器 */}
+          {/* Comment indicators */}
           {commentPositions.map(({ key, top, comments: lineComments }) => (
             <div
               key={key}

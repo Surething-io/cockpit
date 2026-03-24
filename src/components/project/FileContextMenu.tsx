@@ -23,11 +23,11 @@ export function useMenuContainer() {
 interface FileContextMenuProps {
   x: number;
   y: number;
-  path: string; // 相对路径
-  cwd: string; // 工作目录
+  path: string; // relative path
+  cwd: string; // working directory
   isDirectory: boolean;
   onClose: () => void;
-  // 操作回调
+  // Operation callbacks
   onCreateFile?: (dirPath: string) => void;
   onDelete?: (path: string, isDirectory: boolean, name: string) => void;
   onRefresh?: () => void;
@@ -43,17 +43,17 @@ export function FileContextMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const menuContainer = useContext(MenuContainerContext);
 
-  // 计算各种路径
+  // Compute various path variants
   const fileName = path.split('/').pop() || path;
   const absolutePath = `${cwd}/${path}`;
   const relativeDirPath = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
   const absoluteDirPath = relativeDirPath ? `${cwd}/${relativeDirPath}` : cwd;
 
-  // 如果是目录，目录路径就是自己
+  // If it's a directory, the dir path is itself
   const actualRelativeDirPath = isDirectory ? path : relativeDirPath;
   const actualAbsoluteDirPath = isDirectory ? absolutePath : absoluteDirPath;
 
-  // 点击外部关闭菜单
+  // Close menu on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -75,18 +75,18 @@ export function FileContextMenu({
     };
   }, [onClose]);
 
-  // 计算相对于容器的位置
+  // Calculate position relative to the container
   const [position, setPosition] = useState({ x: 0, y: 0 });
   useEffect(() => {
     if (menuRef.current && menuContainer) {
       const containerRect = menuContainer.getBoundingClientRect();
       const menuRect = menuRef.current.getBoundingClientRect();
 
-      // 计算相对于容器的坐标
+      // Calculate coordinates relative to container
       let relX = x - containerRect.left;
       let relY = y - containerRect.top;
 
-      // 避免超出容器边界
+      // Clamp to stay within container bounds
       relX = Math.min(relX, containerRect.width - menuRect.width - 8);
       relY = Math.min(relY, containerRect.height - menuRect.height - 8);
       relX = Math.max(8, relX);
@@ -94,7 +94,7 @@ export function FileContextMenu({
 
       setPosition({ x: relX, y: relY });
     } else if (menuRef.current) {
-      // 没有容器时，使用视口坐标
+      // Without a container, use viewport coordinates
       const rect = menuRef.current.getBoundingClientRect();
       const newX = Math.min(x, window.innerWidth - rect.width - 8);
       const newY = Math.min(y, window.innerHeight - rect.height - 8);
@@ -112,7 +112,7 @@ export function FileContextMenu({
     onClose();
   }, [onClose]);
 
-  // 新建/操作的目标目录
+  // Target directory for create/operations
   const targetDir = isDirectory ? path : relativeDirPath;
 
   const copyMenuItems = [
@@ -129,7 +129,7 @@ export function FileContextMenu({
       className="absolute z-[200] bg-card border border-border rounded-lg shadow-lg py-1 w-fit whitespace-nowrap"
       style={{ left: position.x, top: position.y }}
     >
-      {/* 操作类菜单 */}
+      {/* Operation menu items */}
       {onCreateFile && (
         <button
           className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
@@ -163,12 +163,12 @@ export function FileContextMenu({
         </button>
       )}
 
-      {/* 分隔线 */}
+      {/* Divider */}
       {(onCreateFile || onDelete || onCopyFile || onPaste) && (
         <div className="my-1 border-t border-border" />
       )}
 
-      {/* 复制路径类菜单 */}
+      {/* Copy path menu items */}
       {copyMenuItems.map((item, index) => (
         <button
           key={index}
@@ -181,7 +181,7 @@ export function FileContextMenu({
     </div>
   );
 
-  // Portal 到指定容器，或直接渲染
+  // Portal to the specified container, or render directly
   if (menuContainer) {
     return createPortal(menuElement, menuContainer);
   }

@@ -8,7 +8,7 @@ import { updateGlobalState, getSessionTitle } from './global-state';
 
 export interface ScheduledTask {
   id: string;
-  port: number;            // 创建时的实例端口，用于隔离 dev/prod
+  port: number;            // instance port at creation time, used to isolate dev/prod
   cwd: string;
   tabId: string;
   sessionId: string;       // chat session id
@@ -16,12 +16,12 @@ export interface ScheduledTask {
   type: 'once' | 'interval' | 'cron';
   delayMinutes?: number;   // type=once
   intervalMinutes?: number; // type=interval
-  activeFrom?: string;     // type=interval 活跃时间范围开始, "09:00"
-  activeTo?: string;       // type=interval 活跃时间范围结束, "18:00"
+  activeFrom?: string;     // type=interval active time range start, "09:00"
+  activeTo?: string;       // type=interval active time range end, "18:00"
   cron?: string;           // type=cron, e.g. "0 9 * * *"
   nextFireTime: number;    // timestamp ms
   paused: boolean;
-  completed?: boolean;     // type=once 触发后
+  completed?: boolean;     // type=once: set after firing
   unread?: boolean;
   lastFiredAt?: number;
   lastResult?: 'success' | 'error';
@@ -54,7 +54,7 @@ function parseCronField(field: string, min: number, max: number): number[] {
 }
 
 /**
- * 计算 cron 表达式的下一个触发时间
+ * Calculate the next fire time for a cron expression.
  */
 export function getNextCronTime(cronExpr: string, after: Date = new Date()): number {
   const parts = cronExpr.trim().split(/\s+/);
@@ -66,7 +66,7 @@ export function getNextCronTime(cronExpr: string, after: Date = new Date()): num
   const months = parseCronField(parts[3], 1, 12);
   const dows = parseCronField(parts[4], 0, 6); // 0=Sunday
 
-  // 从 after + 1min 开始逐分钟扫描，最多扫 366 天
+  // Scan minute-by-minute starting from after + 1 min; cap at 366 days
   const candidate = new Date(after);
   candidate.setSeconds(0, 0);
   candidate.setMinutes(candidate.getMinutes() + 1);
@@ -94,7 +94,7 @@ export function getNextCronTime(cronExpr: string, after: Date = new Date()): num
 }
 
 // ============================================
-// Send Chat Message (直接调用 SDK，不走 HTTP)
+// Send Chat Message (invokes SDK directly, bypasses HTTP)
 // ============================================
 
 async function sendChatMessage(task: ScheduledTask): Promise<boolean> {
@@ -112,7 +112,7 @@ async function sendChatMessage(task: ScheduledTask): Promise<boolean> {
       betas: ['context-1m-2025-08-07' as const],
     };
 
-    // 标记 loading
+    // Mark as loading
     await updateGlobalState(task.cwd, task.sessionId, 'loading', undefined, task.message).catch(() => {});
 
     const response = query({
@@ -120,19 +120,19 @@ async function sendChatMessage(task: ScheduledTask): Promise<boolean> {
       options,
     });
 
-    // 消费完整个流（等待完成）
+    // Consume the full stream (wait for completion)
     for await (const _message of response) {
-      // 只需消费流，不需要处理
+      // Only consume the stream; no processing needed
     }
 
-    // 标记结束
+    // Mark as done
     const title = await getSessionTitle(task.cwd, task.sessionId);
     await updateGlobalState(task.cwd, task.sessionId, 'unread', title);
 
     return true;
   } catch (error) {
     console.error(`[ScheduledTask] Failed to send message for task ${task.id}:`, error);
-    // 标记结束
+    // Mark as done
     await updateGlobalState(task.cwd, task.sessionId, 'unread').catch(() => {});
     return false;
   }
@@ -153,33 +153,33 @@ class ScheduledTaskManager {
   private onTaskFired: TaskFiredCallback | null = null;
 
   /**
-   * 获取当前端口（从显式 init 或环境变量推断）
+   * Return the current port (from explicit init or environment variables).
    */
   private getPort(): number {
     if (this.port) return this.port;
-    // 优先使用显式设置的 COCKPIT_PORT
+    // Prefer explicitly set COCKPIT_PORT
     const envPort = parseInt(process.env.COCKPIT_PORT || '0', 10);
     if (envPort) { this.port = envPort; return this.port; }
-    // 回退：用 COCKPIT_ENV 推断，与 server.mjs 同逻辑
+    // Fallback: infer from COCKPIT_ENV, matching server.mjs logic
     const isDev = process.env.COCKPIT_ENV === 'dev';
     this.port = isDev ? 3456 : 3457;
     return this.port;
   }
 
   /**
-   * 确保已初始化（懒初始化，支持被 API route 的不同模块实例调用）
+   * Ensure the manager is initialized (lazy init; supports calls from different module instances in API routes).
    */
   async ensureInit(): Promise<void> {
     if (this.initialized) return;
     if (this.initPromise) return this.initPromise;
     const port = this.getPort();
-    if (!port) return; // 无法确定端口，跳过
+    if (!port) return; // Cannot determine port; skip
     this.initPromise = this.init(port);
     return this.initPromise;
   }
 
   /**
-   * 初始化：加载磁盘任务，重建 timer
+   * Initialize: load tasks from disk and rebuild timers.
    */
   async init(port: number): Promise<void> {
     if (this.initialized) return;
@@ -187,30 +187,30 @@ class ScheduledTaskManager {
     this.initialized = true;
 
     const allTasks = await readJsonFile<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
-    // 只加载当前实例端口的任务
+    // Load only tasks belonging to the current instance's port
     this.tasks = allTasks.filter(t => t.port === port);
 
     console.log(`[ScheduledTaskManager] Loaded ${this.tasks.length} tasks for port ${port}`);
 
-    // 重建 timer（过期任务会被重算 nextFireTime 或标记 completed）
+    // Rebuild timers (expired tasks get their nextFireTime recalculated or are marked completed)
     for (const task of this.tasks) {
       if (!task.paused && !task.completed) {
         this.scheduleTask(task);
       }
     }
-    // scheduleTask 可能修改了过期任务的 nextFireTime / completed，持久化
+    // scheduleTask may have modified nextFireTime / completed for expired tasks; persist
     await this.saveToDisk();
   }
 
   /**
-   * 注册 task-fired 回调（用于 WS 广播）
+   * Register a task-fired callback (used for WS broadcast).
    */
   setOnTaskFired(cb: TaskFiredCallback): void {
     this.onTaskFired = cb;
   }
 
   /**
-   * 从磁盘读取当前端口的任务（解决模块双实例内存不一致问题）
+   * Read tasks for the current port from disk (avoids in-memory inconsistency between dual module instances).
    */
   private async readTasksFromDisk(): Promise<ScheduledTask[]> {
     const port = this.getPort();
@@ -220,18 +220,18 @@ class ScheduledTaskManager {
   }
 
   /**
-   * 获取当前实例的所有任务（每次从磁盘读取，确保跨实例一致性）
+   * Return all tasks for the current instance (reads from disk each time to ensure cross-instance consistency).
    */
   async getTasks(): Promise<ScheduledTask[]> {
     await this.ensureInit();
     const tasks = await this.readTasksFromDisk();
-    // 按 sortIndex 排序（无 sortIndex 的按 createdAt 排到末尾）
+    // Sort by sortIndex; tasks without sortIndex fall back to createdAt
     tasks.sort((a, b) => (a.sortIndex ?? a.createdAt) - (b.sortIndex ?? b.createdAt));
     return tasks;
   }
 
   /**
-   * 获取未读任务数（每次从磁盘读取）
+   * Return the count of unread tasks (reads from disk each time).
    */
   async getUnreadCount(): Promise<number> {
     await this.ensureInit();
@@ -240,18 +240,18 @@ class ScheduledTaskManager {
   }
 
   /**
-   * 添加任务
+   * Add a task.
    */
   async addTask(task: Omit<ScheduledTask, 'port'>): Promise<ScheduledTask> {
     await this.ensureInit();
     const fullTask: ScheduledTask = { ...task, port: this.getPort() };
 
-    // 直接追加到磁盘（解决双实例问题）
+    // Append directly to disk (avoids dual-instance issues)
     const allTasks = await readJsonFile<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
     allTasks.push(fullTask);
     await writeJsonFile(SCHEDULED_TASKS_FILE, allTasks);
 
-    // 同步内存（server.mjs 实例需要建 timer）
+    // Sync in-memory state (the server.mjs instance needs to set a timer)
     this.tasks.push(fullTask);
     if (!fullTask.paused && !fullTask.completed) {
       this.scheduleTask(fullTask);
@@ -260,7 +260,7 @@ class ScheduledTaskManager {
   }
 
   /**
-   * 更新任务（磁盘读→改→写，解决双实例问题）
+   * Update a task (read → modify → write to disk; avoids dual-instance issues).
    */
   async updateTask(id: string, fields: Partial<ScheduledTask>): Promise<ScheduledTask | null> {
     await this.ensureInit();
@@ -272,7 +272,7 @@ class ScheduledTaskManager {
     allTasks[idx] = task;
     await writeJsonFile(SCHEDULED_TASKS_FILE, allTasks);
 
-    // 同步内存（server.mjs 实例需要重建 timer）
+    // Sync in-memory state (the server.mjs instance needs to rebuild its timer)
     const memIdx = this.tasks.findIndex(t => t.id === id);
     if (memIdx !== -1) {
       this.tasks[memIdx] = task;
@@ -285,7 +285,7 @@ class ScheduledTaskManager {
   }
 
   /**
-   * 删除任务（磁盘读→改→写，解决双实例问题）
+   * Delete a task (read → modify → write to disk; avoids dual-instance issues).
    */
   async deleteTask(id: string): Promise<boolean> {
     await this.ensureInit();
@@ -296,7 +296,7 @@ class ScheduledTaskManager {
     allTasks.splice(idx, 1);
     await writeJsonFile(SCHEDULED_TASKS_FILE, allTasks);
 
-    // 同步内存
+    // Sync in-memory state
     const memIdx = this.tasks.findIndex(t => t.id === id);
     if (memIdx !== -1) {
       this.clearTimer(id);
@@ -306,22 +306,22 @@ class ScheduledTaskManager {
   }
 
   /**
-   * 暂停任务
+   * Pause a task.
    */
   async pauseTask(id: string): Promise<ScheduledTask | null> {
     return this.updateTask(id, { paused: true });
   }
 
   /**
-   * 恢复任务
+   * Resume a task.
    */
   async resumeTask(id: string): Promise<ScheduledTask | null> {
-    // 从磁盘读取最新数据
+    // Read latest data from disk
     const allTasks = await readJsonFile<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
     const task = allTasks.find(t => t.id === id);
     if (!task) return null;
 
-    // 重算 nextFireTime
+    // Recalculate nextFireTime
     const now = Date.now();
     let nextFireTime = task.nextFireTime;
     if (nextFireTime <= now) {
@@ -330,7 +330,7 @@ class ScheduledTaskManager {
       } else if (task.type === 'cron' && task.cron) {
         nextFireTime = getNextCronTime(task.cron);
       } else {
-        // once 且已过期，设为 1 分钟后
+        // once type already expired; schedule 1 minute from now
         nextFireTime = now + 60000;
       }
     }
@@ -339,8 +339,8 @@ class ScheduledTaskManager {
   }
 
   /**
-   * 手动触发任务（后台执行，立即返回，不影响原有调度）
-   * 跳过 paused / activeRange 检查，直接发送消息。
+   * Manually trigger a task (runs in the background; returns immediately; does not affect the existing schedule).
+   * Skips paused / activeRange checks and sends the message directly.
    */
   async triggerTask(id: string): Promise<void> {
     await this.ensureInit();
@@ -348,7 +348,7 @@ class ScheduledTaskManager {
     const task = allTasks.find(t => t.id === id);
     if (!task) return;
 
-    // 同步到内存
+    // Sync to in-memory state
     const memIdx = this.tasks.findIndex(t => t.id === id);
     if (memIdx !== -1) {
       this.tasks[memIdx] = task;
@@ -356,13 +356,13 @@ class ScheduledTaskManager {
       this.tasks.push(task);
     }
 
-    // 后台执行，不阻塞 HTTP 请求（sendChatMessage 可能耗时几分钟）
+    // Execute in the background to avoid blocking the HTTP request (sendChatMessage can take minutes)
     this.fireTaskManual(id).catch(err => {
       console.error(`[ScheduledTask] Manual trigger failed for ${id}:`, err);
     });
   }
 
-  /** 手动触发的内部实现，跳过 paused / activeRange 检查 */
+  /** Internal implementation for manual trigger; skips paused / activeRange checks. */
   private async fireTaskManual(id: string): Promise<void> {
     const task = this.tasks.find(t => t.id === id);
     if (!task) return;
@@ -374,7 +374,7 @@ class ScheduledTaskManager {
     task.lastResult = success ? 'success' : 'error';
     task.unread = true;
 
-    // 手动触发不改变 completed / nextFireTime，不影响原有调度
+    // Manual trigger does not change completed / nextFireTime; preserves the existing schedule
     await this.saveToDisk();
 
     if (this.onTaskFired) {
@@ -383,14 +383,14 @@ class ScheduledTaskManager {
   }
 
   /**
-   * 标记任务已读
+   * Mark a task as read.
    */
   async markRead(id: string): Promise<void> {
     await this.updateTask(id, { unread: false });
   }
 
   /**
-   * 标记所有已读（直接操作磁盘，解决双实例问题）
+   * Mark all tasks as read (operates directly on disk; avoids dual-instance issues).
    */
   async markAllRead(): Promise<void> {
     await this.ensureInit();
@@ -407,7 +407,7 @@ class ScheduledTaskManager {
   }
 
   /**
-   * 重排任务顺序（按传入的 id 数组顺序写入 sortIndex）
+   * Reorder tasks by writing sortIndex values based on the given id array order.
    */
   async reorderTasks(orderedIds: string[]): Promise<void> {
     await this.ensureInit();
@@ -422,20 +422,20 @@ class ScheduledTaskManager {
   // ---- Internal ----
 
   /**
-   * 调度任务。如果 nextFireTime 已过期，重算下一次触发时间而不是立即触发。
-   * 返回 true 表示已安排 timer，false 表示任务已过期且无法重算（once 类型）。
+   * Schedule a task. If nextFireTime has already passed, recalculate the next fire time instead of firing immediately.
+   * Returns true if a timer was set, or false if the task has expired and cannot be rescheduled (once type).
    */
   private scheduleTask(task: ScheduledTask): boolean {
     const now = Date.now();
 
     if (task.nextFireTime <= now) {
-      // 已过期：重算下一次触发时间
+      // Expired: recalculate the next fire time
       if (task.type === 'interval' && task.intervalMinutes) {
         task.nextFireTime = now + task.intervalMinutes * 60000;
       } else if (task.type === 'cron' && task.cron) {
         task.nextFireTime = getNextCronTime(task.cron);
       } else {
-        // once 类型已过期，标记完成，不调度
+        // once type has expired; mark as completed and do not schedule
         task.completed = true;
         return false;
       }
@@ -458,7 +458,7 @@ class ScheduledTaskManager {
   }
 
   /**
-   * 检查当前时间是否在 interval 任务的活跃时间范围内
+   * Check whether the current time falls within the active time range for an interval task.
    */
   private isInActiveRange(task: ScheduledTask): boolean {
     if (task.type !== 'interval' || !task.activeFrom || !task.activeTo) return true;
@@ -468,7 +468,7 @@ class ScheduledTaskManager {
     const current = now.getHours() * 60 + now.getMinutes();
     const from = fh * 60 + fm;
     const to = th * 60 + tm;
-    // 支持跨午夜如 22:00 ~ 06:00
+    // Support cross-midnight ranges such as 22:00 ~ 06:00
     if (from <= to) {
       return current >= from && current <= to;
     } else {
@@ -480,7 +480,7 @@ class ScheduledTaskManager {
     const task = this.tasks.find(t => t.id === id);
     if (!task || task.paused) return;
 
-    // 周期任务：不在活跃时间范围内则跳过，直接安排下一次
+    // Recurring task: if outside the active range, skip and schedule the next occurrence
     if (!this.isInActiveRange(task)) {
       console.log(`[ScheduledTask] Skipping task ${id}: outside active range ${task.activeFrom}-${task.activeTo}`);
       if (task.type === 'interval' && task.intervalMinutes) {
@@ -493,10 +493,10 @@ class ScheduledTaskManager {
 
     console.log(`[ScheduledTask] Firing task ${id}: "${task.message}"`);
 
-    // 执行发送
+    // Execute the send
     const success = await sendChatMessage(task);
 
-    // 更新状态
+    // Update state
     task.lastFiredAt = Date.now();
     task.lastResult = success ? 'success' : 'error';
     task.unread = true;
@@ -513,7 +513,7 @@ class ScheduledTaskManager {
 
     await this.saveToDisk();
 
-    // 通知前端
+    // Notify the frontend
     if (this.onTaskFired) {
       this.onTaskFired(task);
     }
@@ -521,7 +521,7 @@ class ScheduledTaskManager {
 
   private async saveToDisk(): Promise<void> {
     try {
-      // 读取全部任务（包含其他端口的），合并后写回
+      // Read all tasks (including other ports), merge, then write back
       const allTasks = await readJsonFile<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
       const otherTasks = allTasks.filter(t => t.port !== this.port);
       await writeJsonFile(SCHEDULED_TASKS_FILE, [...otherTasks, ...this.tasks]);
@@ -531,5 +531,5 @@ class ScheduledTaskManager {
   }
 }
 
-// 全局单例
+// Global singleton
 export const scheduledTaskManager = new ScheduledTaskManager();

@@ -67,7 +67,7 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
     setOpen(false);
   }, []);
 
-  // 点击外部关闭
+  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
@@ -79,7 +79,7 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
     return () => document.removeEventListener('mousedown', handler);
   }, [open, handleClose]);
 
-  // 打开后聚焦搜索框
+  // Focus the search box when opened
   useEffect(() => {
     if (open) {
       setTimeout(() => searchRef.current?.focus(), 50);
@@ -133,7 +133,7 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
 
       {open && (
         <div className="absolute top-full left-0 mt-1 w-64 bg-popover border border-border rounded-lg shadow-lg z-50 overflow-hidden">
-          {/* 搜索框 */}
+          {/* Search box */}
           <div className="p-2 border-b border-border">
             <input
               ref={searchRef}
@@ -148,7 +148,7 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
             />
           </div>
 
-          {/* 分支列表 */}
+          {/* Branch list */}
           <div className="max-h-60 overflow-y-auto p-1">
             {loading ? (
               <div className="text-xs text-muted-foreground text-center py-4">加载中...</div>
@@ -194,7 +194,7 @@ export function TabManagerTopBar({
   return (
     <div className="border-b border-border bg-card shrink-0">
       <div className="flex items-center justify-between px-4 py-2 relative">
-        {/* 左侧：Logo + 项目路径 + Git 分支 */}
+        {/* Left: Logo + project path + Git branch */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <img
@@ -235,7 +235,7 @@ export function TabManagerTopBar({
               </h1>
             )}
           </div>
-          {/* Git 分支 + Worktree + 切换 */}
+          {/* Git branch + Worktree + switch */}
           {isGitRepo && initialCwd && (
             <div className="flex items-center gap-1">
               <button
@@ -257,16 +257,16 @@ export function TabManagerTopBar({
           )}
         </div>
 
-        {/* 中间：视图切换按钮 - 绝对定位居中 */}
+        {/* Center: view switcher buttons - absolutely positioned at center */}
         <div className="absolute left-1/2 -translate-x-1/2">
           <ViewSwitcherBar />
         </div>
 
-        {/* 右侧：会话相关 */}
+        {/* Right: session-related */}
         <div className="flex items-center gap-2">
-          {/* 评审管理 */}
+          {/* Review management */}
           <ReviewDropdown cwd={initialCwd} />
-          {/* 刷新当前项目 */}
+          {/* Reload current project */}
           <button
             onClick={() => window.location.reload()}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
@@ -276,7 +276,7 @@ export function TabManagerTopBar({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
-          {/* 当前项目 Sessions 按钮 */}
+          {/* Current project Sessions button */}
           {initialCwd && (
             <button
               onClick={onOpenProjectSessions}
@@ -288,7 +288,7 @@ export function TabManagerTopBar({
               </svg>
             </button>
           )}
-          {/* VS Code 打开按钮 */}
+          {/* Open in VS Code button */}
           <button
             onClick={async () => {
               if (activeTab?.cwd) {
@@ -299,7 +299,7 @@ export function TabManagerTopBar({
                     body: JSON.stringify({ cwd: activeTab.cwd }),
                   });
                 } catch {
-                  // 忽略错误
+                  // Ignore errors
                 }
               }
             }}
@@ -310,7 +310,7 @@ export function TabManagerTopBar({
               <path d="M17.583 2.213L12 7.393 6.417 2.213 1 6.17v11.66l5.417 3.957L12 16.607l5.583 5.18L23 17.83V6.17l-5.417-3.957zM6.417 17.83L3 15.33V8.67l3.417-2.5v11.66zm11.166 0V6.17L21 8.67v6.66l-3.417 2.5z" />
             </svg>
           </button>
-          {/* Cursor 打开按钮 */}
+          {/* Open in Cursor button */}
           <button
             onClick={async () => {
               if (activeTab?.cwd) {
@@ -321,7 +321,7 @@ export function TabManagerTopBar({
                     body: JSON.stringify({ cwd: activeTab.cwd }),
                   });
                 } catch {
-                  // 忽略错误
+                  // Ignore errors
                 }
               }
             }}
@@ -332,7 +332,7 @@ export function TabManagerTopBar({
               <path d="M4.5 2L20.5 12L4.5 22V2Z" />
             </svg>
           </button>
-          {/* 复制 claude -r 命令按钮 */}
+          {/* Copy claude -r command button */}
           {activeTab?.sessionId && (
             <button
               onClick={() => {
@@ -349,7 +349,7 @@ export function TabManagerTopBar({
               </svg>
             </button>
           )}
-          {/* 全局命令别名 */}
+          {/* Global command aliases */}
           <button
             onClick={onOpenAliasManager}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
@@ -359,7 +359,7 @@ export function TabManagerTopBar({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12h-6m-4 0a8 8 0 1116 0 8 8 0 01-16 0zm4 0h.01" />
             </svg>
           </button>
-          {/* Token 统计 */}
+          {/* Token stats */}
           <button
             onClick={() => window.parent.postMessage({ type: 'OPEN_TOKEN_STATS' }, '*')}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
@@ -369,13 +369,13 @@ export function TabManagerTopBar({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
           </button>
-          {/* Surething 网站 */}
+          {/* Surething website */}
           <button
-            onClick={() => window.open('https://www.surething.io?from=cockpit', '_blank')}
+            onClick={() => window.open('https://surething.io?from=cockpit', '_blank')}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
             title="打开 Surething"
           >
-            <img src="https://surething.io/logo.png" alt="Surething" className="w-5 h-5 rounded-sm" />
+            <img src="https://surething.io/logo.png?from=cockpit" alt="Surething" className="w-5 h-5 rounded-sm" />
           </button>
         </div>
       </div>

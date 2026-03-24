@@ -12,7 +12,7 @@ const DEFAULT_ALIASES: Record<string, string> = {
   'gc': 'git commit',
 };
 
-// GET: 获取全局命令别名
+// GET: Fetch global command aliases
 export async function GET() {
   try {
     const aliasesFilePath = getGlobalAliasesPath();
@@ -25,7 +25,7 @@ export async function GET() {
         headers: { 'Content-Type': 'application/json' },
       });
     } catch {
-      // 文件不存在，返回默认别名
+      // File does not exist, return default aliases
       return new Response(JSON.stringify({ aliases: DEFAULT_ALIASES }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -40,7 +40,7 @@ export async function GET() {
   }
 }
 
-// POST: 保存全局命令别名
+// POST: Save global command aliases
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

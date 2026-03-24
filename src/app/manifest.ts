@@ -15,7 +15,7 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: '#f9f9fb',
     theme_color: '#111113',
     orientation: 'portrait-primary',
-    // Chrome 139+: 点击匹配 scope 的链接时，复用已有 PWA 窗口而非打开新 Chrome Tab
+    // Chrome 139+: reuse the existing PWA window instead of opening a new Chrome tab when a matching scope link is clicked
     launch_handler: {
       client_mode: 'navigate-existing',
     },

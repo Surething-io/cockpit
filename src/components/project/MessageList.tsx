@@ -19,11 +19,11 @@ interface MessageListProps {
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
   onFork?: (messageId: string) => void;
-  isActive?: boolean; // Tab 是否激活（用于处理隐藏 Tab 的滚动问题）
-  onContentSearch?: (query: string) => void; // 选中文本 → 全项目搜索
+  isActive?: boolean; // Whether the tab is active (handles scroll issues for hidden tabs)
+  onContentSearch?: (query: string) => void; // Selected text → project-wide search
 }
 
-// 暴露给父组件的方法
+// Methods exposed to parent component
 export interface MessageListHandle {
   scrollToMessage: (messageId: string) => void;
 }
@@ -43,14 +43,14 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const chatSearch = useChatSearch(outerRef);
   const chatCtx = useChatContextOptional();
 
-  // --- 选择工具栏 & 持久化评论 ---
+  // --- Selection toolbar & persistent comments ---
   const floatingToolbarRef = useRef<ToolbarData | null>(null);
   const bumpToolbarRef = useRef<() => void>(() => {});
   const { addComment, refresh: refreshComments } = useComments({ cwd: cwd || '', filePath: CHAT_COMMENT_FILE });
   const [commentInput, setCommentInput] = useState<{ x: number; y: number; text: string } | null>(null);
   const [sendAIInput, setSendAIInput] = useState<{ x: number; y: number; text: string } | null>(null);
 
-  // 选择检测 — 消息区域内的文本选择
+  // Selection detection — text selection within the message area
   const handleSelectionMouseUp = useCallback((e: React.MouseEvent) => {
     if (commentInput || sendAIInput) return;
 
@@ -66,7 +66,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       bumpToolbarRef.current();
       return;
     }
-    // 只有 AI 回复的气泡才弹出工具栏
+    // Only show the toolbar for AI reply bubbles
     const anchor = sel.anchorNode instanceof HTMLElement ? sel.anchorNode : sel.anchorNode?.parentElement;
     if (anchor?.closest('[data-role="user"]')) {
       floatingToolbarRef.current = null;
@@ -82,7 +82,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     bumpToolbarRef.current();
   }, [commentInput, sendAIInput]);
 
-  // mousedown 时清除工具栏（除非点击的是工具栏/卡片本身）
+  // Clear the toolbar on mousedown (unless clicking the toolbar/card itself)
   const handleSelectionMouseDown = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.closest('.floating-toolbar') || target.closest('[class*="z-[200]"]')) return;
@@ -92,7 +92,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     }
   }, []);
 
-  // 工具栏按钮回调
+  // Toolbar button callbacks
   const handleAddComment = useCallback(() => {
     const tb = floatingToolbarRef.current;
     if (!tb) return;
@@ -121,14 +121,14 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     if (query) onContentSearch(query);
   }, [onContentSearch]);
 
-  // 评论提交 — 持久化到 useComments
+  // Comment submit — persist via useComments
   const handleCommentSubmit = useCallback(async (content: string) => {
     if (!commentInput) return;
     await addComment(0, 0, content, commentInput.text);
     setCommentInput(null);
   }, [commentInput, addComment]);
 
-  // 发送 AI 提交 — 复用 fetchAllCommentsWithCode + buildAIMessage + clearAllComments
+  // Send to AI submit — reuse fetchAllCommentsWithCode + buildAIMessage + clearAllComments
   const handleSendAISubmit = useCallback(async (question: string) => {
     if (!sendAIInput || !chatCtx || !cwd) return;
     try {
@@ -140,7 +140,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         codeContent: c.codeContent,
         note: c.content || undefined,
       }));
-      // 当前选中文本作为最后一个引用
+      // Treat the currently selected text as the last reference
       references.push({
         filePath: CHAT_COMMENT_FILE,
         startLine: 0,
@@ -157,7 +157,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     }
   }, [sendAIInput, chatCtx, cwd, refreshComments]);
 
-  // 去重消息（防止重复 key 警告）
+  // Deduplicate messages (prevent duplicate key warnings)
   const uniqueMessages = useMemo(() => {
     const seen = new Set<string>();
     return messages.filter((msg) => {
@@ -167,11 +167,11 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     });
   }, [messages]);
 
-  // 记录加载更多前的滚动位置，用于保持滚动位置
+  // Record scroll position before loading more, to restore it afterward
   const scrollHeightBeforeLoadRef = useRef(0);
   const shouldRestoreScrollRef = useRef(false);
 
-  // 检查是否在底部附近（距离底部 < 50px）
+  // Check if near the bottom (within 50px of the bottom)
   const checkIfAtBottom = useCallback(() => {
     const container = containerRef.current;
     if (!container) return true;
@@ -179,7 +179,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     return container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
   }, []);
 
-  // 检查是否在顶部附近（距离顶部 < 50px）
+  // Check if near the top (within 50px of the top)
   const checkIfAtTop = useCallback(() => {
     const container = containerRef.current;
     if (!container) return true;
@@ -187,17 +187,17 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     return container.scrollTop < threshold;
   }, []);
 
-  // 监听滚动事件
+  // Listen to scroll events
   const handleScroll = useCallback(() => {
     const atBottom = checkIfAtBottom();
     const atTop = checkIfAtTop();
     setShouldAutoScroll(atBottom);
-    setShowTopButton(!atTop); // 不在顶部时显示跳顶按钮
+    setShowTopButton(!atTop); // Show scroll-to-top button when not at the top
     setShowBottomButton(!atBottom);
 
-    // 当滚动到顶部且有更多历史时，触发加载更多
+    // When scrolled to the top with more history available, trigger load-more
     if (atTop && hasMoreHistory && !isLoadingMore && onLoadMore) {
-      // 记录当前滚动高度，用于加载后恢复位置
+      // Record current scroll height to restore position after loading
       const container = containerRef.current;
       if (container) {
         scrollHeightBeforeLoadRef.current = container.scrollHeight;
@@ -207,26 +207,26 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     }
   }, [checkIfAtBottom, checkIfAtTop, hasMoreHistory, isLoadingMore, onLoadMore]); // hasMoreHistory still needed for loading more logic
 
-  // 跳转到顶部
+  // Scroll to top
   const scrollToTop = useCallback(() => {
     topRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  // 跳转到底部
+  // Scroll to bottom
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  // 滚动到指定消息
+  // Scroll to a specific message
   const scrollToMessage = useCallback((messageId: string) => {
     const container = containerRef.current;
     if (!container) return;
 
-    // 查找消息对应的 DOM 元素
+    // Find the DOM element for the message
     const messageElement = container.querySelector(`[data-message-id="${messageId}"]`);
     if (messageElement) {
       messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // 添加高亮效果
+      // Add highlight effect
       messageElement.classList.add('ring-2', 'ring-brand', 'ring-offset-2');
       setTimeout(() => {
         messageElement.classList.remove('ring-2', 'ring-brand', 'ring-offset-2');
@@ -234,46 +234,46 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     }
   }, []);
 
-  // 暴露方法给父组件
+  // Expose methods to parent component
   useImperativeHandle(ref, () => ({
     scrollToMessage,
   }), [scrollToMessage]);
 
-  // 记录上一次消息数量，用于判断是否有新消息
+  // Track the previous message count to detect new messages
   const prevMessageCountRef = useRef(0);
-  // 标记是否是初次加载
+  // Flag for whether this is the initial load
   const isInitialLoadRef = useRef(true);
 
-  // 消息变化时滚动逻辑（仅处理新消息，初次加载由下面的 useEffect 处理）
+  // Scroll logic on message change (new messages only; initial load handled by a separate useEffect)
   useEffect(() => {
     const prevCount = prevMessageCountRef.current;
     const currentCount = messages.length;
     prevMessageCountRef.current = currentCount;
 
-    // 初次加载由单独的 useEffect 处理
+    // Initial load is handled by a separate useEffect
     if (isInitialLoadRef.current) {
       return;
     }
 
-    // 有新消息且在底部：平滑滚动
+    // New messages arrived while at the bottom: smooth scroll
     if (shouldAutoScroll && currentCount > prevCount) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, shouldAutoScroll]);
 
-  // isLoading 变化时也检查是否需要滚动（显示/隐藏思考中提示）
+  // Also check scroll on isLoading change (showing/hiding the "thinking" indicator)
   useEffect(() => {
     if (shouldAutoScroll && isLoading) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [isLoading, shouldAutoScroll]);
 
-  // 加载更多历史后恢复滚动位置
+  // Restore scroll position after loading more history
   useEffect(() => {
     if (shouldRestoreScrollRef.current && !isLoadingMore) {
       const container = containerRef.current;
       if (container) {
-        // 计算新增内容的高度差，保持视觉位置不变
+        // Calculate the height delta of newly added content to preserve visual position
         const heightDiff = container.scrollHeight - scrollHeightBeforeLoadRef.current;
         container.scrollTop = heightDiff;
         shouldRestoreScrollRef.current = false;
@@ -281,10 +281,10 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     }
   }, [messages, isLoadingMore]);
 
-  // 标记是否需要在激活时滚动到底部
+  // Flag whether a scroll-to-bottom is needed when the tab becomes active
   const needsScrollOnActivateRef = useRef(false);
 
-  // 当 Tab 激活时，如果之前因为隐藏而无法滚动，现在补偿滚动
+  // When the tab activates, compensate for any scroll that was blocked while hidden
   useEffect(() => {
     if (isActive && needsScrollOnActivateRef.current && messages.length > 0) {
       needsScrollOnActivateRef.current = false;
@@ -292,14 +292,14 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     }
   }, [isActive, messages.length]);
 
-  // 修改初次加载逻辑：如果 Tab 隐藏，标记需要在激活时滚动
+  // Initial load logic: if the tab is hidden, mark that scroll is needed on activation
   useEffect(() => {
     if (isInitialLoadRef.current && messages.length > 0) {
       isInitialLoadRef.current = false;
       if (isActive) {
         bottomRef.current?.scrollIntoView({ behavior: 'instant' });
       } else {
-        // Tab 隐藏时，标记需要在激活时滚动
+        // Tab is hidden — mark that scroll should happen on activation
         needsScrollOnActivateRef.current = true;
       }
     }
@@ -307,7 +307,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
 
   return (
     <div ref={outerRef} className="relative flex-1 overflow-hidden flex flex-col outline-none" tabIndex={-1} onMouseUp={handleSelectionMouseUp} onMouseDown={handleSelectionMouseDown}>
-      {/* 搜索栏 */}
+      {/* Search bar */}
       {chatSearch.isSearchVisible && (
         <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-secondary border-b border-border">
           <input
@@ -354,7 +354,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         ) : (
           <>
             <div ref={topRef} />
-            {/* 加载更多历史的提示 */}
+            {/* Load-more history indicator */}
             {hasMoreHistory && (
               <div className="flex justify-center py-3">
                 {isLoadingMore ? (
@@ -397,7 +397,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         )}
       </div>
 
-      {/* 跳转到顶部按钮 */}
+      {/* Scroll to top button */}
       {showTopButton && messages.length > 0 && (
         <button
           onClick={scrollToTop}
@@ -410,7 +410,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         </button>
       )}
 
-      {/* 跳转到底部按钮 */}
+      {/* Scroll to bottom button */}
       {showBottomButton && messages.length > 0 && (
         <button
           onClick={scrollToBottom}
@@ -423,7 +423,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         </button>
       )}
 
-      {/* 选择工具栏 */}
+      {/* Selection toolbar */}
       {outerRef.current && (
         <ToolbarRenderer
           floatingToolbarRef={floatingToolbarRef}
@@ -436,7 +436,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         />
       )}
 
-      {/* 添加评论卡片 */}
+      {/* Add comment card */}
       {commentInput && outerRef.current && (
         <AddCommentInput
           x={commentInput.x}
@@ -449,7 +449,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         />
       )}
 
-      {/* 发送 AI 卡片 */}
+      {/* Send to AI card */}
       {sendAIInput && outerRef.current && (
         <SendToAIInput
           x={sendAIInput.x}

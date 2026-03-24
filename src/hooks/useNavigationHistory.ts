@@ -8,32 +8,32 @@ export interface NavEntry {
 const MAX_HISTORY = 50;
 
 /**
- * 导航历史栈（Go Back / Go Forward）
- * 仅记录 Cmd+Click 跳转前的位置
+ * Navigation history stack (Go Back / Go Forward)
+ * Only records the position before a Cmd+Click jump
  */
 export function useNavigationHistory() {
-  // 后退栈：最新的在末尾
+  // Back stack: newest entry at the end
   const backStackRef = useRef<NavEntry[]>([]);
-  // 前进栈：最新的在末尾
+  // Forward stack: newest entry at the end
   const forwardStackRef = useRef<NavEntry[]>([]);
 
   /**
-   * 跳转前调用：把当前位置压入后退栈，清空前进栈
+   * Call before navigating: push the current position onto the back stack and clear the forward stack
    */
   const push = useCallback((entry: NavEntry) => {
     backStackRef.current.push(entry);
-    // 限制栈深度
+    // Limit stack depth
     if (backStackRef.current.length > MAX_HISTORY) {
       backStackRef.current = backStackRef.current.slice(-MAX_HISTORY);
     }
-    // 新跳转后前进栈失效
+    // A new navigation invalidates the forward stack
     forwardStackRef.current = [];
   }, []);
 
   /**
-   * Go Back：弹出后退栈，把当前位置压入前进栈
-   * @param currentEntry 当前位置（会压入前进栈）
-   * @returns 要跳回的位置，或 null（栈空）
+   * Go Back: pop from the back stack and push the current position onto the forward stack
+   * @param currentEntry Current position (will be pushed onto the forward stack)
+   * @returns The position to jump back to, or null if the stack is empty
    */
   const goBack = useCallback((currentEntry: NavEntry): NavEntry | null => {
     if (backStackRef.current.length === 0) return null;
@@ -46,9 +46,9 @@ export function useNavigationHistory() {
   }, []);
 
   /**
-   * Go Forward：弹出前进栈，把当前位置压入后退栈
-   * @param currentEntry 当前位置（会压入后退栈）
-   * @returns 要跳到的位置，或 null（栈空）
+   * Go Forward: pop from the forward stack and push the current position onto the back stack
+   * @param currentEntry Current position (will be pushed onto the back stack)
+   * @returns The position to jump forward to, or null if the stack is empty
    */
   const goForward = useCallback((currentEntry: NavEntry): NavEntry | null => {
     if (forwardStackRef.current.length === 0) return null;

@@ -32,7 +32,7 @@ export function AddCommentInput({ x, y, range, codeContent, container, onSubmit,
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
 
-  // 截取代码内容（如果太长则显示前几行）
+  // Truncate code content (show only first few lines if too long)
   const displayCode = codeContent?.split('\n').slice(0, 5).join('\n');
   const hasMoreLines = codeContent ? codeContent.split('\n').length > 5 : false;
 
@@ -73,7 +73,7 @@ export function AddCommentInput({ x, y, range, codeContent, container, onSubmit,
     if (isSubmitting || !content.trim()) return;
     setIsSubmitting(true);
     onSubmit(content.trim());
-    // 组件会被父组件卸载，不需要 setIsSubmitting(false)
+    // Component will be unmounted by parent, no need to setIsSubmitting(false)
   };
 
   return (
@@ -90,7 +90,7 @@ export function AddCommentInput({ x, y, range, codeContent, container, onSubmit,
           )}
         </div>
       </div>
-      {/* 代码预览 */}
+      {/* Code preview */}
       {codeContent && (
         <div className="px-3 py-2 bg-secondary/50 border-b border-border max-h-24 overflow-hidden">
           <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all">
@@ -197,7 +197,7 @@ export function SendToAIInput({
     onClose();
   };
 
-  // 截取代码内容（如果太长则显示前几行）
+  // Truncate code content (show only first few lines if too long)
   const displayCode = codeContent?.split('\n').slice(0, 5).join('\n');
   const hasMoreLines = codeContent ? codeContent.split('\n').length > 5 : false;
 
@@ -216,7 +216,7 @@ export function SendToAIInput({
         </div>
         {filePath && <div className="mt-1 text-xs text-muted-foreground truncate">{filePath}</div>}
       </div>
-      {/* 代码预览 */}
+      {/* Code preview */}
       {codeContent && (
         <div className="px-3 py-2 bg-secondary/50 border-b border-border max-h-24 overflow-hidden">
           <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all">

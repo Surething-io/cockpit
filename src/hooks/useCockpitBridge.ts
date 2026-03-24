@@ -3,10 +3,10 @@
 import { useSyncExternalStore } from 'react';
 
 /**
- * Chrome 扩展的 content script（isolated world）往 <head> 插入：
+ * The Chrome extension's content script (isolated world) injects into <head>:
  *   <meta name="cockpit-bridge" data-id="xxx" data-version="1.0.1">
  *
- * DOM 是共享的，页面侧可以读取。不修改 <html> 属性，不触发 hydration mismatch。
+ * The DOM is shared, so the page can read it. Does not modify <html> attributes and does not trigger hydration mismatches.
  */
 
 interface CockpitBridge {
@@ -14,7 +14,7 @@ interface CockpitBridge {
   version: string;
 }
 
-// ---------- 从 DOM 读取 ----------
+// ---------- Read from DOM ----------
 
 function readFromDom(): CockpitBridge | null {
   if (typeof document === 'undefined') return null;
@@ -25,7 +25,7 @@ function readFromDom(): CockpitBridge | null {
   return id ? { id, version: version || 'unknown' } : null;
 }
 
-// ---------- 外部 store（singleton，所有组件共享） ----------
+// ---------- External store (singleton, shared across all components) ----------
 
 let snapshot: CockpitBridge | null = null;
 const listeners = new Set<() => void>();
@@ -37,11 +37,11 @@ function notify() {
 function subscribe(cb: () => void) {
   listeners.add(cb);
 
-  // 每次有新订阅时尝试从 DOM 刷新（应对 meta 延迟插入的场景）
+  // Attempt a DOM refresh on every new subscription (handles delayed meta tag insertion)
   const current = readFromDom();
   if (current && !snapshot) {
     snapshot = current;
-    // 下一个微任务通知，避免在 subscribe 内同步触发
+    // Notify on the next microtask to avoid synchronous dispatch inside subscribe
     Promise.resolve().then(notify);
   }
 
@@ -51,12 +51,12 @@ function subscribe(cb: () => void) {
 function getSnapshot() { return snapshot; }
 function getServerSnapshot() { return null; }
 
-// 初始读取
+// Initial read
 if (typeof document !== 'undefined') {
   snapshot = readFromDom();
 }
 
-// 监听 <head> 子节点变化，捕获 meta 标签的动态插入
+// Watch for child node changes in <head> to detect dynamically inserted meta tags
 if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
   const observer = new MutationObserver(() => {
     const current = readFromDom();
@@ -65,7 +65,7 @@ if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') 
       notify();
     }
   });
-  // content script 会插入到 head 或 documentElement
+  // content script inserts into head or documentElement
   const target = document.head || document.documentElement;
   if (target) {
     observer.observe(target, { childList: true });
@@ -78,9 +78,9 @@ export function useCockpitBridge(): CockpitBridge | null {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
-// ---------- 命令式 API（给非 React 代码用） ----------
+// ---------- Imperative API (for non-React code) ----------
 
 export function getCockpitBridge(): CockpitBridge | null {
-  // 优先用缓存，fallback 实时读 DOM
+  // Prefer cached value; fall back to reading DOM live
   return snapshot ?? readFromDom();
 }

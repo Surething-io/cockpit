@@ -6,7 +6,7 @@ import { generateReviewId, ReviewData } from '@/lib/review-utils';
 
 const ORDER_FILE = join(REVIEW_DIR, '_order.json');
 
-// GET - 列出所有 review（返回摘要，不含完整 content）
+// GET - List all reviews (returns summaries, not the full content)
 export async function GET() {
   try {
     await ensureDir(REVIEW_DIR);
@@ -28,7 +28,7 @@ export async function GET() {
       const id = file.replace('.json', '');
       const data = await readJsonFile<ReviewData>(getReviewFilePath(id), null as unknown as ReviewData);
       if (data) {
-        // 计算最新评论/回复时间
+        // Calculate the timestamp of the most recent comment/reply
         let lastCommentAt: number | undefined;
         for (const c of data.comments) {
           if (!lastCommentAt || c.createdAt > lastCommentAt) lastCommentAt = c.createdAt;
@@ -49,7 +49,7 @@ export async function GET() {
       }
     }
 
-    // 按 order 文件排序，不在 order 里的按创建时间追加到末尾
+    // Sort by the order file; append items not in order by creation time
     const order = await readJsonFile<string[]>(ORDER_FILE, []);
     if (order.length > 0) {
       const orderMap = new Map(order.map((id, i) => [id, i]));
@@ -67,7 +67,7 @@ export async function GET() {
   }
 }
 
-// POST - 创建 review（同一文件复用已有 review）
+// POST - Create a review (reuse existing review for the same file)
 // body: { title, content, sourceFile }
 export async function POST(request: NextRequest) {
   try {
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     const existing = await readJsonFile<ReviewData>(filePath, null as unknown as ReviewData);
 
     if (existing) {
-      // 已有 review：更新快照内容和标题，保留评论，重新激活
+      // Existing review: update snapshot content and title, preserve comments, re-activate
       existing.content = content;
       existing.title = title;
       existing.active = true;

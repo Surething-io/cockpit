@@ -6,7 +6,7 @@ import { PreviewModal } from './PreviewModal';
 import { toast } from '../shared/Toast';
 
 // ============================================
-// 工具图标映射
+// Tool icon mapping
 // ============================================
 
 const TOOL_ICONS: Record<string, string> = {
@@ -21,7 +21,7 @@ const TOOL_ICONS: Record<string, string> = {
 };
 
 // ============================================
-// ToolCallModal - 工具调用展示组件
+// ToolCallModal - tool call display component
 // ============================================
 
 interface ToolCallProps {
@@ -35,7 +35,7 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
 
   const toolIcon = TOOL_ICONS[toolCall.name] || '🔧';
 
-  // 从 input 中提取文件路径或关键信息
+  // Extract file path or key info from input
   const getDisplayInfo = () => {
     const input = toolCall.input;
     if (toolCall.name === 'Bash' && input.command && typeof input.command === 'string') {
@@ -56,7 +56,7 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
     return null;
   };
 
-  // 获取相对于 cwd 的路径
+  // Get path relative to cwd
   const getRelativePath = (fullPath: string) => {
     if (cwd && fullPath.startsWith(cwd)) {
       const relativePath = fullPath.slice(cwd.length);
@@ -131,7 +131,7 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
             </span>
           </>
         )}
-        {/* 右侧操作区 */}
+        {/* Right action area */}
         <span className="ml-auto flex items-center gap-2">
           {expanded && !toolCall.isLoading && (
             <>
@@ -193,7 +193,7 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
         </div>
       )}
 
-      {/* 预览模态窗口 */}
+      {/* Preview modal */}
       {previewContent && (
         <PreviewModal
           title={previewContent.title}

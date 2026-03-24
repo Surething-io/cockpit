@@ -25,36 +25,36 @@ interface TranscriptLine {
   };
 }
 
-// 截断消息到指定长度
+// Truncate a message to the specified length
 function truncateMessage(msg: string, maxLength: number = 50): string {
   if (msg.length <= maxLength) return msg;
   return msg.slice(0, maxLength) + '...';
 }
 
-// 过滤 command 标签，提取纯文本内容
+// Filter command tags and extract plain text content
 function filterCommandTags(text: string): string {
-  // 提取 <command-args> 中的内容（这是用户实际输入的内容）
+  // Extract the content of <command-args> (the user's actual input)
   const argsMatch = text.match(/<command-args>([^<]*)<\/command-args>/);
   if (argsMatch && argsMatch[1].trim()) {
     return argsMatch[1].trim();
   }
-  // 如果没有 args 或 args 为空，提取命令名称（如 /qa）
+  // If there are no args or args is empty, extract the command name (e.g. /qa)
   const nameMatch = text.match(/<command-name>([^<]*)<\/command-name>/);
   if (nameMatch && nameMatch[1].trim()) {
     return nameMatch[1].trim();
   }
-  // 移除所有 command 和系统标签
+  // Remove all command and system tags
   let filtered = text.replace(/<command-message>[^<]*<\/command-message>/g, '');
   filtered = filtered.replace(/<command-name>[^<]*<\/command-name>/g, '');
   filtered = filtered.replace(/<command-args>[^<]*<\/command-args>/g, '');
   filtered = filtered.replace(/<local-command-stdout>[\s\S]*?<\/local-command-stdout>/g, '');
   filtered = filtered.replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>/g, '');
-  // 清理多余空白
+  // Remove extra whitespace
   return filtered.trim();
 }
 
-// 生成标题：优先 summary，其次遍历 userMessages 找到第一个有效内容
-// 如果第一条是纯命令（如 /qa），则追加下一条有效内容
+// Generate a title: prefer summary; otherwise iterate userMessages for the first valid content
+// If the first entry is a bare command (e.g. /qa), append the next valid content
 function generateTitle(summary: string, userMessages: string[]): string {
   if (summary) return summary;
 
@@ -63,28 +63,28 @@ function generateTitle(summary: string, userMessages: string[]): string {
     const filtered = filterCommandTags(msg);
     if (!filtered) continue;
 
-    // 如果是纯命令（以 / 开头），记录下来并继续找下一条
+    // If it is a bare command (starts with /), record it and keep looking
     if (filtered.startsWith('/') && !commandName) {
       commandName = filtered;
       continue;
     }
 
-    // 找到实际内容（不截断，保留完整内容）
+    // Found actual content (no truncation, preserve full content)
     if (commandName) {
-      // 追加命令名和实际内容
+      // Append command name and actual content
       return `${commandName} ${filtered}`;
     }
     return filtered;
   }
 
-  // 如果只有命令没有后续内容
+  // If there is only a command with no subsequent content
   if (commandName) return commandName;
   return 'Untitled Session';
 }
 
-// 从 jsonl 文件提取用户消息内容
+// Extract user message content from a jsonl file
 function extractUserMessageContent(line: TranscriptLine): string | null {
-  // 跳过非用户消息和元数据消息
+  // Skip non-user messages and metadata messages
   if (line.type !== 'user') return null;
   if (line.isMeta) return null;
 
@@ -105,7 +105,7 @@ function extractUserMessageContent(line: TranscriptLine): string | null {
   return null;
 }
 
-// 解析单个 session 文件
+// Parse a single session file
 async function parseSessionFile(filePath: string): Promise<{ title: string; userMessages: string[] }> {
   const fileStream = fs.createReadStream(filePath);
   const rl = readline.createInterface({
@@ -120,25 +120,25 @@ async function parseSessionFile(filePath: string): Promise<{ title: string; user
     try {
       const obj = JSON.parse(line) as TranscriptLine;
 
-      // 提取标题 (summary)
+      // Extract title (summary)
       if (obj.type === 'summary' && obj.summary) {
         title = obj.summary;
       }
 
-      // 提取用户消息
+      // Extract user messages
       const msgContent = extractUserMessageContent(obj);
       if (msgContent) {
         userMessages.push(msgContent);
       }
     } catch {
-      // 忽略解析错误
+      // Ignore parse errors
     }
   }
 
   return { title, userMessages };
 }
 
-// 获取文件修改时间
+// Get the file modification time
 function getFileModifiedTime(filePath: string): Date {
   const stats = fs.statSync(filePath);
   return stats.mtime;
@@ -160,7 +160,7 @@ export async function GET(
 
     const projectPath = path.join(CLAUDE_PROJECTS_DIR, encodedPath);
 
-    // 检查目录是否存在
+    // Check if the directory exists
     if (!fs.existsSync(projectPath)) {
       return new Response(JSON.stringify({ error: 'Project not found' }), {
         status: 404,
@@ -168,7 +168,7 @@ export async function GET(
       });
     }
 
-    // 读取所有 .jsonl 文件（排除 agent-* 开头的子进程文件）
+    // Read all .jsonl files (exclude subprocess files starting with agent-)
     const sessionFiles = fs.readdirSync(projectPath)
       .filter(file => file.endsWith('.jsonl') && !file.startsWith('agent-'))
       .map(file => ({
@@ -176,7 +176,7 @@ export async function GET(
         path: path.join(projectPath, file),
         modifiedAt: getFileModifiedTime(path.join(projectPath, file)),
       }))
-      // 按修改时间倒序排序
+      // Sort by modification time descending
       .sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime());
 
     const sessions: SessionInfo[] = [];
@@ -185,17 +185,17 @@ export async function GET(
       try {
         const { title, userMessages } = await parseSessionFile(sessionFile.path);
 
-        // 过滤掉没有用户消息的空 session（只有 queue-operation）
+        // Filter out empty sessions with no user messages (only queue-operation)
         if (userMessages.length === 0) {
           continue;
         }
 
-        // 获取前5条和后5条用户消息
+        // Get the first 5 and last 5 user messages
         let firstMessages: string[] = [];
         let lastMessages: string[] = [];
 
         if (userMessages.length <= 10) {
-          // 总数不超过10条，全部放在 firstMessages
+          // Total does not exceed 10 entries; put all in firstMessages
           firstMessages = userMessages.map(m => truncateMessage(m));
         } else {
           firstMessages = userMessages.slice(0, 5).map(m => truncateMessage(m));
@@ -211,7 +211,7 @@ export async function GET(
         });
       } catch (error) {
         console.error(`Error parsing session file ${sessionFile.path}:`, error);
-        // 跳过解析失败的文件
+        // Skip files that fail to parse
       }
     }
 

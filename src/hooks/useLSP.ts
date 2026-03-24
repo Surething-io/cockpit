@@ -55,9 +55,9 @@ export function useLSPHover(cwd: string) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeRequestRef = useRef<number>(0);
-  const onCardRef = useRef(false); // 鼠标是否在卡片（已激活 pointer-events-auto）上
+  const onCardRef = useRef(false); // Whether the mouse is over the card (with pointer-events-auto activated)
 
-  // tooltip DOM ref + 全局鼠标位置（仅写 ref，零 re-render）
+  // tooltip DOM ref + global mouse position (ref-only writes, zero re-renders)
   const tooltipElRef = useRef<HTMLDivElement | null>(null);
   const mousePosRef = useRef({ x: 0, y: 0 });
 
@@ -67,7 +67,7 @@ export function useLSPHover(cwd: string) {
     return () => document.removeEventListener('mousemove', h);
   }, []);
 
-  // 命令式激活 tooltip 交互（pointer-events: auto + 绑定 mouseleave）
+  // Imperatively activate tooltip interaction (pointer-events: auto + bind mouseleave)
   const activatedRef = useRef(false);
   const nativeLeaveRef = useRef<(() => void) | null>(null);
 
@@ -90,7 +90,7 @@ export function useLSPHover(cwd: string) {
     onCardRef.current = true;
     el.style.pointerEvents = 'auto';
 
-    // 绑定原生 mouseleave（不走 React，不触发 re-render 直到真正需要隐藏）
+    // Bind native mouseleave (bypasses React, avoids re-render until the tooltip actually needs to hide)
     const handleLeave = () => {
       onCardRef.current = false;
       deactivateTooltip();
@@ -141,18 +141,18 @@ export function useLSPHover(cwd: string) {
 
   const onTokenMouseLeave = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    // 立即废弃在途请求，防止 fetch 回来后触发 setHoverInfo
+    // Immediately invalidate in-flight requests to prevent a stale fetch from triggering setHoverInfo
     activeRequestRef.current++;
-    // 延迟清除卡片，给用户时间把鼠标移到卡片上
+    // Delay hiding the card to give the user time to move the mouse onto it
     leaveTimerRef.current = setTimeout(function checkAndHide() {
-      if (onCardRef.current) return; // 已在激活的卡片上
-      // 几何检测：鼠标是否在 tooltip rect 内（即使 pointer-events-none）
+      if (onCardRef.current) return; // Already on the activated card
+      // Geometry check: is the mouse within the tooltip rect (even when pointer-events-none)
       const el = tooltipElRef.current;
       if (el) {
         const r = el.getBoundingClientRect();
         const { x, y } = mousePosRef.current;
         if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
-          // 鼠标在 tooltip 上 → 激活交互，不隐藏
+          // Mouse is over the tooltip → activate interaction, do not hide
           activateTooltip();
           return;
         }
@@ -161,7 +161,7 @@ export function useLSPHover(cwd: string) {
     }, 150);
   }, [activateTooltip]);
 
-  // onCardMouseEnter / onCardMouseLeave 保留给按钮区域的 pointer-events-auto 使用
+  // onCardMouseEnter / onCardMouseLeave are reserved for the button area's pointer-events-auto region
   const onCardMouseEnter = useCallback(() => {
     onCardRef.current = true;
     if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
@@ -182,7 +182,7 @@ export function useLSPHover(cwd: string) {
     setHoverInfo(null);
   }, [deactivateTooltip]);
 
-  // hoverInfo 清空时，重置激活状态
+  // When hoverInfo is cleared, reset the activation state
   useEffect(() => {
     if (!hoverInfo) {
       deactivateTooltip();
@@ -233,7 +233,7 @@ export function useLSPReferences(cwd: string) {
 }
 
 // ============================================
-// LSP Warmup Hook - 选中文件时预启动 Language Server
+// LSP Warmup Hook - Pre-start the Language Server when a file is selected
 // ============================================
 
 export function useLSPWarmup(cwd: string, selectedPath: string | null) {
@@ -245,7 +245,7 @@ export function useLSPWarmup(cwd: string, selectedPath: string | null) {
 
     warmedRef.current = selectedPath;
 
-    // fire-and-forget，不阻塞 UI
+    // fire-and-forget, does not block the UI
     fetch('/api/lsp/warmup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -20,16 +20,16 @@ import { useViMode } from '@/hooks/useViMode';
 // Re-export utilities used by other modules
 export { getHighlighter, getLanguageFromPath } from '@/lib/codeHighlighter';
 
-// contentEditable 行 div 的内联样式（用于 innerHTML 字符串拼接）
+// Inline style for contentEditable line divs (used in innerHTML string concatenation)
 const EDITOR_LINE_STYLE = 'white-space:pre;padding:0 12px;min-height:20px;line-height:20px';
 
-// ========== contentEditable 光标工具 ==========
+// ========== contentEditable cursor utilities ==========
 function saveCursorPosition(container: HTMLElement): { line: number; offset: number } | null {
   const sel = window.getSelection();
   if (!sel?.rangeCount) return null;
   const range = sel.getRangeAt(0);
 
-  // 找到光标所在的行 div
+  // Find the line div where the cursor resides
   let node: Node | null = range.startContainer;
   while (node && node.parentElement !== container) {
     node = node.parentElement;
@@ -39,7 +39,7 @@ function saveCursorPosition(container: HTMLElement): { line: number; offset: num
   const lineIndex = Array.from(container.children).indexOf(node as Element);
   if (lineIndex < 0) return null;
 
-  // 计算行内字符偏移
+  // Calculate character offset within the line
   const preRange = document.createRange();
   preRange.selectNodeContents(node);
   preRange.setEnd(range.startContainer, range.startOffset);
@@ -70,7 +70,7 @@ function restoreCursorPosition(container: HTMLElement, pos: { line: number; offs
     remaining -= len;
   }
 
-  // fallback: 放到行末
+  // fallback: place at end of line
   const sel = window.getSelection();
   const range = document.createRange();
   range.selectNodeContents(lineEl);
@@ -84,7 +84,7 @@ function buildEditorHTML(lineHtmls: string[]): string {
 }
 
 // ============================================
-// ToolbarRenderer — 已提取到 FloatingToolbar.tsx，通过 import 使用
+// ToolbarRenderer — extracted to FloatingToolbar.tsx, imported from there
 
 // ============================================
 // CodeViewer Component
@@ -125,8 +125,8 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   onInitialCursorSet,
   onContentSearch,
 }, ref) {
-  // ========== 编辑模式状态 ==========
-  const editContentRef = useRef(content); // ref：不触发 re-render，仅在 save/highlight 时读取
+  // ========== Edit mode state ==========
+  const editContentRef = useRef(content); // ref: no re-render, only read during save/highlight
   const isDirtyRef = useRef(false);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -137,10 +137,10 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   const editScrollRef = useRef<HTMLDivElement>(null);
   const mtimeRef = useRef<number | undefined>(initialMtime);
 
-  // 编辑模式的 debounce 高亮
+  // Debounced highlight for edit mode
   const editDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isHighlightingRef = useRef(false); // 防止 re-highlight 触发 onInput
-  const isComposingRef = useRef(false); // IME 输入中标记，防止拼音写入文件
+  const isHighlightingRef = useRef(false); // Prevent re-highlight from triggering onInput
+  const isComposingRef = useRef(false); // IME composition flag, prevents pinyin from being written to file
 
   const {
     // Refs
@@ -204,11 +204,11 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     inlineBlameLineRef,
     inlineBlameVersion,
   } = useCodeViewerLogic({
-    content,  // 编辑模式下也传原始 content，避免每次按键触发 useLineHighlight 全文 re-tokenize
+    content,  // Pass original content even in edit mode, to avoid useLineHighlight re-tokenizing the entire file on every keystroke
     filePath,
     showSearch,
     cwd,
-    enableComments: editable ? false : enableComments, // 编辑模式下禁用 comments
+    enableComments: editable ? false : enableComments, // Disable comments in edit mode
     scrollToLine: editable ? null : scrollToLine,
     scrollToLineAlign: editable ? 'center' : scrollToLineAlign,
     onScrollToLineComplete: editable ? undefined : onScrollToLineComplete,
@@ -223,7 +223,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   const LINE_HEIGHT = 20;
   const viCommandInputRef = useRef<HTMLInputElement>(null);
   const viSearchInputRef = useRef<HTMLInputElement>(null);
-  // 记录进入 Insert 模式时的光标目标位置（行 + 列），供编辑模式初始化 effect 使用
+  // Record cursor target position (line + col) when entering Insert mode, used by edit mode init effect
   const viInsertPosRef = useRef({ line: 0, col: 0 });
 
   const vi = useViMode({
@@ -233,7 +233,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
       onContentMutate?.(newContent);
     },
     onEnterInsert: (line, col, variant) => {
-      // 根据 variant 计算编辑器中的实际光标列
+      // Calculate the actual cursor column in the editor based on variant
       let targetCol = col;
       if (variant === 'a') targetCol = col + 1;
       else if (variant === 'A') targetCol = (lines[line] ?? '').length;
@@ -265,22 +265,22 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     onSearchClear: () => { setSearchQuery(''); },
   });
 
-  // 持续同步 vi 光标位置到外部 ref（供 FileBrowserModal 读取，保存到最近访问）
+  // Continuously sync vi cursor position to external ref (read by FileBrowserModal, saved to recent visits)
   useEffect(() => {
     if (viStateRef) {
       viStateRef.current = { cursorLine: vi.state.cursorLine, cursorCol: vi.state.cursorCol };
     }
   }, [viStateRef, vi.state.cursorLine, vi.state.cursorCol]);
 
-  // 文件切换回来时还原光标位置
+  // Restore cursor position when switching back to this file
   const initialCursorAppliedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!viModeEnabled || editable) return;
     if (initialCursorLine == null || !filePath) return;
-    // 每个文件只还原一次
+    // Restore only once per file
     if (initialCursorAppliedRef.current === filePath) return;
     initialCursorAppliedRef.current = filePath;
-    vi.setCursorLine(initialCursorLine - 1); // 1-based → 0-based
+    vi.setCursorLine(initialCursorLine - 1); // convert 1-based → 0-based
     if (initialCursorCol != null) {
       vi.setCursorCol(initialCursorCol - 1);
     }
@@ -374,7 +374,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   // Double-click on code area → select word + highlight matches (no scroll)
   const viDblClickHandler = useCallback((e: React.MouseEvent) => {
     if (!viModeEnabled || editable) return;
-    // 浏览器双击自动选中单词，直接取 selection 文本
+    // Browser double-click auto-selects the word; read selection text directly
     requestAnimationFrame(() => {
       const sel = window.getSelection();
       const word = sel?.toString().trim();
@@ -394,43 +394,43 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     }
   }, [vi.state.mode]);
 
-  // ========== mousedown 时立即清除 hover 卡片 ==========
+  // ========== Clear hover card immediately on mousedown ==========
   useEffect(() => {
     const el = parentRef.current;
     if (!el) return;
     const handleMouseDown = () => {
-      // 立即版：mousedown 意味着用户要操作代码，不需要 150ms 延迟
+      // Immediate: mousedown means user is about to interact with code, no 150ms delay needed
       (onTokenHoverCancel ?? onTokenHoverLeave)?.();
     };
     el.addEventListener('mousedown', handleMouseDown);
     return () => el.removeEventListener('mousedown', handleMouseDown);
   }, [onTokenHoverCancel, onTokenHoverLeave]);
 
-  // ========== 交互状态矩阵：浮层活跃时抑制 hover / cmd+click ==========
-  // toolbar 的 suppressHoverRef 已在 useCodeViewerLogic 的事件处理中直接管理；
-  // 此处仅处理 addCommentInput / sendToAIInput 等 state 变化的情况。
+  // ========== Interaction state matrix: suppress hover / cmd+click when overlay is active ==========
+  // suppressHoverRef for toolbar is managed directly in useCodeViewerLogic's event handlers;
+  // here we only handle state changes from addCommentInput / sendToAIInput etc.
   useEffect(() => {
     if (addCommentInput || sendToAIInput) {
       suppressHoverRef.current = true;
       onTokenHoverLeave?.();
     } else if (!floatingToolbarRef.current) {
-      // 只在 toolbar 也不存在时才解除抑制
+      // Only release suppression when toolbar also does not exist
       suppressHoverRef.current = false;
     }
   }, [addCommentInput, sendToAIInput, onTokenHoverLeave]);
 
-  // ========== 选区恢复：re-render 后 DOM 被替换时从逻辑坐标恢复浏览器选区 ==========
+  // ========== Selection restore: recover browser selection from logical coordinates when DOM is replaced after re-render ==========
   useLayoutEffect(() => {
     const saved = savedSelectionRef.current;
-    if (!saved) return; // 没有保存的选区，跳过
+    if (!saved) return; // No saved selection, skip
     const sel = window.getSelection();
-    if (sel && !sel.isCollapsed) return; // 选区仍然存在，无需恢复
-    // 选区丢失 → 从逻辑坐标恢复
+    if (sel && !sel.isCollapsed) return; // Selection still exists, no need to restore
+    // Selection lost → restore from logical coordinates
     const container = parentRef.current;
     if (!container) return;
     const startLineEl = container.querySelector(`[data-line="${saved.startLine}"]`);
     const endLineEl = container.querySelector(`[data-line="${saved.endLine}"]`);
-    if (!startLineEl || !endLineEl) return; // 行不在视口内（虚拟滚动回收了）
+    if (!startLineEl || !endLineEl) return; // Lines not in viewport (recycled by virtual scroll)
     const start = resolveCharOffset(startLineEl, saved.startOffset);
     const end = resolveCharOffset(endLineEl, saved.endOffset);
     if (!start || !end) return;
@@ -441,11 +441,11 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
       sel?.removeAllRanges();
       sel?.addRange(range);
     } catch {
-      // offset 越界等异常静默忽略
+      // Silently ignore offset overflow and similar exceptions
     }
   });
 
-  // 包装 hover / cmd+click 回调，读 ref 判断是否抑制（ref 不影响 memo 稳定性）
+  // Wrap hover / cmd+click callbacks, read ref to check suppression (ref does not affect memo stability)
   const guardedTokenHover = useCallback((line: number, column: number, rect: { x: number; y: number }) => {
     if (suppressHoverRef.current) return;
     onTokenHover?.(line, column, rect);
@@ -456,17 +456,17 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     onCmdClick?.(line, column);
   }, [onCmdClick]);
 
-  // 行号列：最少4位数字宽度
+  // Line number column: minimum 4 digits wide
   const lineNumChars = Math.max(4, String(editable ? editLineCount : lines.length).length);
 
-  // 最长行的可视宽度（ch 单位），用于统一横向滚动
+  // Visual width of the longest line (in ch units), for consistent horizontal scrolling
   const maxLineVisualWidth = useMemo(() => {
     let max = 0;
     for (const line of lines) {
       let w = 0;
       for (let i = 0; i < line.length; i++) {
         if (line[i] === '\t') {
-          w += 2 - (w % 2); // tab-size: 2，对齐到 2 的倍数
+          w += 2 - (w % 2); // tab-size: 2, align to multiple of 2
         } else {
           w += 1;
         }
@@ -476,7 +476,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     return max;
   }, [lines]);
 
-  // ========== 编辑模式：进入/退出同步 ==========
+  // ========== Edit mode: enter/exit sync ==========
   useEffect(() => {
     if (editable) {
       editContentRef.current = content;
@@ -490,13 +490,13 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     }
   }, [editable, content, initialMtime]);
 
-  // 进入编辑模式时：设置 innerHTML、focus、滚动到当前位置
+  // When entering edit mode: set innerHTML, focus, scroll to current position
   useEffect(() => {
     if (!editable) return;
     const container = editableRef.current;
     if (!container) return;
 
-    // 用只读模式已有的高亮 HTML 初始化 contentEditable
+    // Initialize contentEditable with highlighted HTML already available from read-only mode
     const editLineArr = content.split('\n');
     const lineHtmls = editLineArr.map((line, i) => {
       return highlightedLines[i] || escapeHtml(line || ' ');
@@ -504,7 +504,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     container.innerHTML = buildEditorHTML(lineHtmls);
 
     requestAnimationFrame(() => {
-      // Vi 模式：光标定位到 vi 光标位置；非 vi：定位到视口首行
+      // Vi mode: position cursor at vi cursor position; non-vi: position at first visible line
       let cursorLineIdx: number;
       let cursorOffset: number;
       if (viModeEnabled) {
@@ -515,47 +515,47 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
         cursorOffset = 0;
       }
 
-      // 1. focus + 光标定位（可能触发浏览器自动滚动到光标/顶部）
+      // 1. focus + cursor positioning (may trigger browser auto-scroll to cursor/top)
       container.focus();
       restoreCursorPosition(container, { line: cursorLineIdx, offset: cursorOffset });
 
-      // 2. 滚动：保持与只读模式相同的视口位置
+      // 2. Scroll: maintain the same viewport position as read-only mode
       const scrollLine = visibleLineRef?.current ?? 1;
-      const scrollTop = (scrollLine - 1) * 20; // LINE_HEIGHT = 20
+      const scrollTop = (scrollLine - 1) * 20; // LINE_HEIGHT = 20px
       if (editScrollRef.current) editScrollRef.current.scrollTop = scrollTop;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editable]);
 
-  // 通知父组件 dirty/saving 状态
+  // Notify parent of dirty/saving state
   useEffect(() => {
     if (editable) {
       onEditorStateChange?.({ isDirty, isSaving });
     }
   }, [editable, isDirty, isSaving, onEditorStateChange]);
 
-  // ========== 编辑模式：contentEditable handlers ==========
+  // ========== Edit mode: contentEditable handlers ==========
   const extractTextFromEditable = useCallback((): string => {
     const container = editableRef.current;
     if (!container) return editContentRef.current;
     const lines: string[] = [];
     for (const child of container.childNodes) {
       const text = (child as HTMLElement).textContent || '';
-      // 空行在 DOM 中用 ' ' 占位防止 div 塌陷，提取时还原为空字符串
+      // Empty lines use ' ' as placeholder in DOM to prevent div collapse, restore to empty string on extract
       lines.push(text === ' ' ? '' : text);
     }
     return lines.join('\n');
   }, []);
 
-  // 命令式 debounce 高亮（不依赖 React state，不触发 re-render）
+  // Imperative debounced highlight (does not depend on React state, no re-render)
   const triggerHighlightDebounce = useCallback(() => {
     if (editDebounceRef.current) clearTimeout(editDebounceRef.current);
     editDebounceRef.current = setTimeout(async () => {
       const container = editableRef.current;
       if (!container) return;
-      if (isComposingRef.current) return; // IME 输入中不重建 DOM，否则会打断候选窗口
+      if (isComposingRef.current) return; // Don't rebuild DOM during IME composition, would break candidate window
 
-      // 从 DOM 提取最新内容写入 ref
+      // Extract latest content from DOM and write to ref
       editContentRef.current = extractTextFromEditable();
 
       try {
@@ -570,36 +570,36 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
         });
         const highlighted = result.tokens.map(lineTokens => tokensToHtml(lineTokens));
 
-        // 保存光标 → 替换 innerHTML → 恢复光标
+        // Save cursor → replace innerHTML → restore cursor
         const cursorPos = saveCursorPosition(container);
         isHighlightingRef.current = true;
         container.innerHTML = buildEditorHTML(highlighted);
         isHighlightingRef.current = false;
         if (cursorPos) restoreCursorPosition(container, cursorPos);
       } catch {
-        // 高亮失败，不更新 DOM
+        // Highlight failed, don't update DOM
       }
     }, 300);
   }, [filePath, extractTextFromEditable]);
 
-  // 清理 debounce timer
+  // Clean up debounce timer
   useEffect(() => {
     if (!editable) return;
     return () => { if (editDebounceRef.current) clearTimeout(editDebounceRef.current); };
   }, [editable]);
 
-  // 同步行数 & dirty 标记（仅在真正变化时 setState，普通按键零 re-render）
+  // Sync line count & dirty flag (only setState on actual change, zero re-render for normal keystrokes)
   const syncEditMeta = useCallback(() => {
     const container = editableRef.current;
     if (!container) return;
 
-    // dirty：首次变脏后不再重复 setState
+    // dirty: don't repeat setState after first becoming dirty
     if (!isDirtyRef.current) {
       isDirtyRef.current = true;
       setIsDirty(true);
     }
 
-    // 行数：从 DOM children 数量直接取，O(1)
+    // Line count: read directly from DOM children count, O(1)
     const newLineCount = container.children.length;
     if (newLineCount !== editLineCountRef.current) {
       editLineCountRef.current = newLineCount;
@@ -609,24 +609,24 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
 
   const handleContentInput = useCallback(() => {
     if (isHighlightingRef.current) return;
-    if (isComposingRef.current) return; // IME 输入中不同步，等 compositionend
+    if (isComposingRef.current) return; // Don't sync during IME composition, wait for compositionend
     syncEditMeta();
     triggerHighlightDebounce();
   }, [syncEditMeta, triggerHighlightDebounce]);
 
   const handleEditKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
-    // IME 输入中（如中文候选词确认）不拦截
+    // Don't intercept during IME composition (e.g., confirming Chinese candidates)
     if (e.nativeEvent.isComposing) return;
 
-    // Tab → 插入 2 空格
+    // Tab → insert 2 spaces
     if (e.key === 'Tab') {
       e.preventDefault();
       document.execCommand('insertText', false, '  ');
     }
-    // Enter → 确保插入纯文本换行，而不是浏览器默认的 <div>
+    // Enter → ensure plain text newline is inserted, not browser's default <div>
     if (e.key === 'Enter') {
       e.preventDefault();
-      // 插入换行：在当前位置分割 div
+      // Insert newline: split div at current position
       const container = editableRef.current;
       if (!container) return;
       const sel = window.getSelection();
@@ -634,14 +634,14 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
       const range = sel.getRangeAt(0);
       range.deleteContents();
 
-      // 找到当前行 div
+      // Find the current line div
       let lineEl: Node | null = range.startContainer;
       while (lineEl && lineEl.parentElement !== container) {
         lineEl = lineEl.parentElement;
       }
       if (!lineEl || !(lineEl instanceof HTMLElement)) return;
 
-      // 分割当前行：光标后的内容移到新行
+      // Split current line: content after cursor moves to new line
       const cursorPos = saveCursorPosition(container);
       const lineIdx = Array.from(container.children).indexOf(lineEl);
       const fullText = lineEl.textContent || '';
@@ -649,19 +649,19 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
       const beforeText = fullText.substring(0, splitAt);
       const afterText = fullText.substring(splitAt);
 
-      // 更新当前行
+      // Update current line
       lineEl.innerHTML = escapeHtml(beforeText || ' ');
 
-      // 创建新行 div
+      // Create new line div
       const newLineEl = document.createElement('div');
       newLineEl.setAttribute('style', EDITOR_LINE_STYLE);
       newLineEl.innerHTML = escapeHtml(afterText || ' ');
       lineEl.after(newLineEl);
 
-      // 光标移到新行开头
+      // Move cursor to start of new line
       restoreCursorPosition(container, { line: lineIdx + 1, offset: 0 });
 
-      // 同步 meta + 触发高亮
+      // Sync meta + trigger highlight
       syncEditMeta();
       triggerHighlightDebounce();
     }
@@ -673,10 +673,10 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     document.execCommand('insertText', false, text);
   }, []);
 
-  // ========== 编辑模式：保存逻辑 ==========
+  // ========== Edit mode: save logic ==========
   const doSave = useCallback(async (skipConflictCheck = false) => {
     if (!cwd) return;
-    // 保存前从 DOM 提取最新内容（确保 ref 是最新的）
+    // Extract latest content from DOM before saving (ensure ref is up-to-date)
     editContentRef.current = extractTextFromEditable();
     setIsSaving(true);
     try {
@@ -730,7 +730,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
 
   const handleRevertToDisk = useCallback(() => {
     if (conflictState.diskContent !== undefined) {
-      // 将磁盘内容写入 ref 并重建 contentEditable DOM
+      // Write disk content to ref and rebuild contentEditable DOM
       editContentRef.current = conflictState.diskContent;
       const lc = conflictState.diskContent.split('\n').length;
       editLineCountRef.current = lc;
@@ -738,7 +738,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
       const newDirty = conflictState.diskContent !== content;
       isDirtyRef.current = newDirty;
       setIsDirty(newDirty);
-      // 重建编辑器内容
+      // Rebuild editor content
       const container = editableRef.current;
       if (container) {
         const editLineArr = conflictState.diskContent.split('\n');
@@ -751,7 +751,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   }, [conflictState.diskContent, content, onSaved, triggerHighlightDebounce]);
 
   const getCurrentLine = useCallback((): number => {
-    // 返回可视区域首行（而非光标行），确保退出编辑模式后视图位置一致
+    // Return first visible line (not cursor line), to maintain consistent view position when exiting edit mode
     const scrollEl = editScrollRef.current;
     if (scrollEl) return Math.floor(scrollEl.scrollTop / 20) + 1;
     return visibleLineRef?.current ?? 1;
@@ -765,7 +765,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     onEditorClose?.(getCurrentLine());
   }, [isDirty, onEditorClose, getCurrentLine]);
 
-  // Cmd+S 保存（编辑模式）
+  // Cmd+S to save (edit mode)
   useEffect(() => {
     if (!editable) return;
     const handler = (e: KeyboardEvent) => {
@@ -778,15 +778,15 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     return () => document.removeEventListener('keydown', handler);
   }, [editable, handleSave]);
 
-  // Vi Insert → Normal 的退出逻辑（提取光标位置 + 通知父组件）
+  // Vi Insert → Normal exit logic (extract cursor position + notify parent)
   const viExitInsert = useCallback(() => {
     const currentContent = extractTextFromEditable();
     onContentMutate?.(currentContent);
 
-    // 从 contentEditable 获取真实光标位置（行 + 列）
+    // Get actual cursor position (line + col) from contentEditable
     const container = editableRef.current;
     const cursorPos = container ? saveCursorPosition(container) : null;
-    const scrollLine = getCurrentLine(); // 仅用于滚动恢复
+    const scrollLine = getCurrentLine(); // Used only for scroll restoration
 
     vi.enterNormal();
     if (cursorPos) {
@@ -799,7 +799,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     onEditorClose?.(scrollLine);
   }, [extractTextFromEditable, onContentMutate, getCurrentLine, onEditorClose, vi]);
 
-  // ESC / Ctrl+C: vi 模式下回到 Normal，非 vi 模式下关闭编辑器
+  // ESC / Ctrl+C: in vi mode return to Normal, in non-vi mode close editor
   useEffect(() => {
     if (!editable) return;
     const handler = (e: KeyboardEvent) => {
@@ -810,7 +810,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
         e.stopPropagation();
         if (viModeEnabled) {
           if (isDirtyRef.current) {
-            // 有未保存修改，弹确认对话框
+            // Unsaved changes, show confirmation dialog
             confirm('有未保存的修改，确定退出编辑模式？', { danger: true, confirmText: '放弃修改', cancelText: '继续编辑' })
               .then(ok => { if (ok) viExitInsert(); });
           } else {
@@ -833,7 +833,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     get isSaving() { return isSaving; },
   }), [handleSave, handleEditorClose, isDirty, isSaving]);
 
-  // ========== Blame 状态 ==========
+  // ========== Blame state ==========
   const hasBlame = !!(blameLines && blameLines.length > 0);
 
   const authorColorMap = useMemo(() => {
@@ -881,12 +881,12 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     setBlameTooltip(null);
   }, [onSelectCommit]);
 
-  // ========== 行号列宽度 ==========
+  // ========== Line number column width ==========
   const lineNumberWidth = `${lineNumChars + 2}ch`;
 
   return (
     <div ref={containerRef} className={`h-full flex flex-col outline-none ${className}`} tabIndex={0} onClick={viClickHandler} onDoubleClick={viDblClickHandler}>
-      {/* 冲突提示条（编辑模式） */}
+      {/* Conflict warning bar (edit mode) */}
       {editable && conflictState.show && (
         <div className="px-4 py-2 bg-amber-500/15 border-b border-amber-500/30 flex items-center gap-3 flex-shrink-0">
           <svg className="w-5 h-5 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -904,7 +904,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
         </div>
       )}
 
-      {/* Search Bar（非编辑模式） */}
+      {/* Search bar (read-only mode) */}
       {!editable && showSearch && isSearchVisible && (
         <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-secondary border-b border-border">
           <input
@@ -959,11 +959,11 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
         </div>
       )}
 
-      {/* ========== 编辑模式：contentEditable ========== */}
+      {/* ========== Edit mode: contentEditable ========== */}
       {editable ? (
         <div ref={editScrollRef} className="flex-1 overflow-auto bg-secondary">
           <div className="flex" style={{ minHeight: '100%' }}>
-            {/* 行号列（sticky：横向滚动时固定在左侧） */}
+            {/* Line number column (sticky: pinned to left on horizontal scroll) */}
             <div
               className="flex-shrink-0 font-mono text-sm select-none sticky left-0 z-[2] bg-secondary"
               style={{ width: lineNumberWidth }}
@@ -975,7 +975,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
               ))}
             </div>
 
-            {/* contentEditable 代码区 - 单层，光标/选区/文字天然对齐 */}
+            {/* contentEditable code area - single layer, cursor/selection/text naturally aligned */}
             <div
               ref={editableRef}
               contentEditable
@@ -997,7 +997,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
           </div>
         </div>
       ) : (
-        /* ========== 只读模式：虚拟滚动 ========== */
+        /* ========== Read-only mode: virtual scroll ========== */
         <div
           ref={parentRef}
           className={`flex-1 overflow-auto font-mono text-sm bg-secondary${cmdHeld ? ' cmd-held-container' : ''}`}
@@ -1006,9 +1006,9 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
             style={{
               height: `${virtualizer.getTotalSize()}px`,
               minWidth: '100%',
-              // 统一横向滚动：内层宽度 = 行号列 + 代码内容 + 余量（blame 列由 CSS calc 追加）
+              // Consistent horizontal scroll: inner width = line number col + code content + buffer (blame col appended via CSS calc)
               width: hasBlame
-                ? `calc(${lineNumChars + maxLineVisualWidth + 10}ch + 13rem)` // 13rem ≈ w-1 + w-48 blame 列
+                ? `calc(${lineNumChars + maxLineVisualWidth + 10}ch + 13rem)` // 13rem ≈ w-1 + w-48 blame column
                 : `${lineNumChars + maxLineVisualWidth + 10}ch`,
               position: 'relative',
             }}
@@ -1027,9 +1027,8 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
               const firstComment = lineComments?.[0];
               const isInRange = !!(addCommentInput && lineNum >= addCommentInput.range.start && lineNum <= addCommentInput.range.end);
 
-              // Inline blame annotation: 只有 mouseup 所在行显示
-              // Inline blame annotation: 只有 mouseup 所在行显示
-              // inlineBlameVersion 在此读取以订阅 ref 变化触发的 re-render
+              // Inline blame annotation: only show on the line where mouseup occurred
+              // inlineBlameVersion is read here to subscribe to re-renders triggered by ref changes
               const inlineBlameLine = inlineBlameVersion >= 0 ? inlineBlameLineRef.current : null;
               const inlineBlameData = (!editable && inlineBlameLines && inlineBlameLine === lineNum)
                 ? (inlineBlameLines[lineIndex] ?? null)
@@ -1079,7 +1078,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
         </div>
       )}
 
-      {/* ========== Vi Mode 状态栏 ========== */}
+      {/* ========== Vi Mode status bar ========== */}
       {viModeEnabled && (
         <div className="vi-status-bar flex-shrink-0 h-6 bg-card border-t border-border flex items-center px-3 text-xs font-mono select-none">
           {vi.state.mode === 'normal' && (
@@ -1096,7 +1095,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
                 value={vi.state.commandInput}
                 onChange={e => vi.setCommandInput(e.target.value)}
                 onKeyDown={e => {
-                  // IME 输入中不拦截（中文候选词确认的 Enter）
+                  // Don't intercept during IME composition (Enter from confirming Chinese candidates)
                   if (e.nativeEvent.isComposing) return;
                   const isCtrlC = e.ctrlKey && e.key === 'c' && !e.metaKey && !e.shiftKey;
                   if (e.key === 'Enter' || e.key === 'Escape' || isCtrlC) {
@@ -1148,8 +1147,8 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
       {/* Floating elements via Portal to menu container (keeps within second screen) */}
       {isMounted && menuContainer && createPortal(
         <>
-          {/* Floating Toolbar — 独立 ToolbarRenderer 组件管理自身状态，
-              CodeViewer 不会因 toolbar 显隐而重渲染 → 选区得以保留 */}
+          {/* Floating Toolbar — separate ToolbarRenderer component manages its own state,
+              CodeViewer does not re-render on toolbar show/hide → selection is preserved */}
           {!editable && (
             <ToolbarRenderer
               floatingToolbarRef={floatingToolbarRef}
@@ -1235,7 +1234,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
                 {formatRelativeTime(blameTooltip.line.time)}
                 {' · '}
                 {new Date(blameTooltip.line.time * 1000).toLocaleString()}
-                <span className="ml-2 text-brand">点击查看详情</span>
+                <span className="ml-2 text-brand">Click to view details</span>
               </div>
             </div>
           )}

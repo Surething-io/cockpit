@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import type { CodeComment } from '@/hooks/useComments';
 import type { BlameLine } from './fileBrowser/types';
 
-/** 相对时间格式化（中文） */
+/** Format relative time */
 function formatRelativeTime(unixTimestamp: number): string {
   const now = Date.now();
   const diff = now - unixTimestamp * 1000;
@@ -30,7 +30,7 @@ function formatRelativeTime(unixTimestamp: number): string {
 function InlineBlameAnnotation({ blame, onClick }: { blame: BlameLine; onClick?: (blame: BlameLine) => void }) {
   const spanRef = useRef<HTMLSpanElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
-  // 全部用 ref 跟踪状态，零 useState → 显示/隐藏 tooltip 不触发任何 re-render
+  // Track all state with refs, zero useState → showing/hiding tooltip triggers no re-render
   const showingRef = useRef(false);
   const onCardRef = useRef(false);
   const enterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -63,14 +63,14 @@ function InlineBlameAnnotation({ blame, onClick }: { blame: BlameLine; onClick?:
     tip.style.top = `${y}px`;
   }, []);
 
-  // 命令式隐藏（无 setState）
+  // Imperative hide (no setState)
   const hideTip = useCallback(() => {
     if (enterTimerRef.current) { clearTimeout(enterTimerRef.current); enterTimerRef.current = null; }
     if (leaveTimerRef.current) { clearTimeout(leaveTimerRef.current); leaveTimerRef.current = null; }
     showingRef.current = false;
     onCardRef.current = false;
     if (tipRef.current) tipRef.current.style.display = 'none';
-    // 移除点击外部监听
+    // Remove outside click listener
     if (clickCtxRef.current) {
       document.removeEventListener('mousedown', clickCtxRef.current.down);
       document.removeEventListener('mouseup', clickCtxRef.current.up);
@@ -78,17 +78,17 @@ function InlineBlameAnnotation({ blame, onClick }: { blame: BlameLine; onClick?:
     }
   }, []);
 
-  // 命令式显示（无 setState）
+  // Imperative show (no setState)
   const showTip = useCallback(() => {
     const tip = tipRef.current;
     if (!tip || showingRef.current) return;
     showingRef.current = true;
-    // 先显示在屏幕外，等下一帧测量后定位
+    // Show off-screen first, then position after next frame measurement
     tip.style.left = '-9999px';
     tip.style.top = '-9999px';
     tip.style.display = 'block';
     requestAnimationFrame(() => requestAnimationFrame(positionTip));
-    // 添加点击外部关闭（区分点击和框选）
+    // Add outside click to close (distinguish click from drag-select)
     let downX = 0, downY = 0;
     const isInside = (target: Node) =>
       !!(tipRef.current?.contains(target) || spanRef.current?.contains(target));
@@ -102,7 +102,7 @@ function InlineBlameAnnotation({ blame, onClick }: { blame: BlameLine; onClick?:
     clickCtxRef.current = { down: handleDown, up: handleUp };
   }, [positionTip, hideTip]);
 
-  // span mouseenter → 延迟显示（有选区时跳过，避免干扰拖选交互）
+  // span mouseenter → delayed show (skip if selection exists to avoid interfering with drag-select)
   const handleEnter = useCallback(() => {
     if (enterTimerRef.current) clearTimeout(enterTimerRef.current);
     if (leaveTimerRef.current) { clearTimeout(leaveTimerRef.current); leaveTimerRef.current = null; }
@@ -112,7 +112,7 @@ function InlineBlameAnnotation({ blame, onClick }: { blame: BlameLine; onClick?:
     enterTimerRef.current = setTimeout(showTip, 500);
   }, [showTip]);
 
-  // span mouseleave → 延迟关闭，给用户时间移到卡片上
+  // span mouseleave → delayed close, giving user time to move to the card
   const handleLeave = useCallback(() => {
     if (enterTimerRef.current) { clearTimeout(enterTimerRef.current); enterTimerRef.current = null; }
     if (!showingRef.current) return;
@@ -121,37 +121,37 @@ function InlineBlameAnnotation({ blame, onClick }: { blame: BlameLine; onClick?:
     }, 200);
   }, [hideTip]);
 
-  // 卡片 enter → 取消关闭
+  // Card enter → cancel close
   const handleCardEnter = useCallback(() => {
     onCardRef.current = true;
     if (leaveTimerRef.current) { clearTimeout(leaveTimerRef.current); leaveTimerRef.current = null; }
   }, []);
 
-  // 卡片 leave → 立即关闭
+  // Card leave → close immediately
   const handleCardLeave = useCallback(() => {
     onCardRef.current = false;
     hideTip();
   }, [hideTip]);
 
-  // 点击卡片打开 blame 详情（tooltip 内有框选文本时不触发）
+  // Click card to open blame details (does not trigger when text is selected within tooltip)
   const handleTipClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     const sel = window.getSelection();
-    // 只检查 tooltip 内部的选区，避免外部选区干扰
+    // Only check selection within tooltip to avoid interference from external selections
     if (sel && sel.toString().length > 0 && tipRef.current?.contains(sel.anchorNode)) return;
     onClickRef.current?.(blameRef.current);
     hideTip();
   }, [hideTip]);
 
-  // 组件卸载时清理
+  // Clean up on component unmount
   useEffect(() => () => hideTip(), [hideTip]);
 
   const dateStr = new Date(blame.time * 1000).toLocaleString();
   const firstLine = blame.message.split('\n')[0] || '';
   const body = blame.message.split('\n').slice(1).join('\n').trim();
 
-  // tooltip 始终渲染（display:none），显示/隐藏通过 ref 命令式切换，不触发 re-render
-  // portal 在 span 外部（Fragment），避免 React Portal 事件冒泡干扰 span 的 onMouseLeave
+  // Tooltip always rendered (display:none), show/hide toggled imperatively via ref, no re-render
+  // Portal is outside span (Fragment) to avoid React Portal event bubbling interfering with span's onMouseLeave
   return (
     <>
       <span
@@ -202,7 +202,7 @@ export const AUTHOR_COLORS = [
 ];
 
 // ============================================
-// Memoized Code Line Component - 避免 floatingToolbar 状态变化触发重渲染
+// Memoized Code Line Component - avoid re-renders triggered by floatingToolbar state changes
 // ============================================
 
 export interface CodeLineProps {
@@ -214,22 +214,22 @@ export interface CodeLineProps {
   lineCommentsCount?: number;
   isInRange: boolean;
   showLineNumbers: boolean;
-  /** 行号最少字符数（如 4 表示最多9999行），用于统一宽度 */
+  /** Minimum characters for line number (e.g. 4 means up to 9999 lines), for consistent width */
   lineNumChars: number;
   commentsEnabled: boolean;
   virtualItemSize: number;
   virtualItemStart: number;
   onCommentBubbleClick: (comment: CodeComment, e: React.MouseEvent) => void;
-  /** Cmd+Click 跳转定义 */
+  /** Cmd+Click to jump to definition */
   onCmdClick?: (line: number, column: number) => void;
-  /** 悬浮 token 事件 */
+  /** Token hover events */
   onTokenHover?: (line: number, column: number, rect: { x: number; y: number }) => void;
   onTokenHoverLeave?: () => void;
-  /** 闪烁高亮的行号 */
+  /** Line number to flash-highlight */
   flashLine?: number | null;
-  // ---- Blame 相关 ----
+  // ---- Blame-related ----
   blameLine?: BlameLine;
-  /** 是否显示 blame 信息（同 commit 分组中只有首行显示） */
+  /** Whether to show blame info (only first line of each commit group shows it) */
   showBlameInfo?: boolean;
   blameAuthorColor?: { bg: string; border: string };
   isBlameHovered?: boolean;
@@ -240,19 +240,19 @@ export interface CodeLineProps {
   inlineBlameData?: BlameLine | null;
   onInlineBlameClick?: (blame: BlameLine) => void;
   // ---- Vi mode ----
-  /** Vi-mode: 当前行是否为光标行 */
+  /** Vi-mode: whether this is the cursor line */
   isCursorLine?: boolean;
-  /** Vi-mode: 光标列号 (0-based)，仅 isCursorLine 时有效 */
+  /** Vi-mode: cursor column (0-based), only valid when isCursorLine is true */
   cursorCol?: number;
 }
 
 /**
- * 从点击位置计算 column
- * 使用 caretRangeFromPoint 精确定位点击的文本偏移，
- * 再遍历文本节点累加 column
+ * Calculate column from click position
+ * Uses caretRangeFromPoint to precisely locate the text offset at the click position,
+ * then walks text nodes to accumulate the column
  */
 function getColumnFromClick(e: React.MouseEvent, codeSpan: HTMLElement): number {
-  // 用浏览器 API 精确获取点击位置对应的文本节点和偏移
+  // Use browser API to precisely get the text node and offset at the click position
   const range = document.caretRangeFromPoint(e.clientX, e.clientY);
   if (!range || !codeSpan.contains(range.startContainer)) {
     return 1;
@@ -261,7 +261,7 @@ function getColumnFromClick(e: React.MouseEvent, codeSpan: HTMLElement): number 
   const targetNode = range.startContainer;
   const targetOffset = range.startOffset;
 
-  // 遍历代码行内所有文本节点，累加到目标节点的 column
+  // Walk all text nodes in the code line to accumulate column up to the target node
   const walker = document.createTreeWalker(codeSpan, NodeFilter.SHOW_TEXT);
   let column = 1;
   let node: Text | null;
@@ -278,16 +278,16 @@ function getColumnFromClick(e: React.MouseEvent, codeSpan: HTMLElement): number 
 }
 
 /**
- * 在高亮 HTML 中插入 vi 块光标。
- * 遍历 HTML 文本节点，找到第 col 个字符并用 <span class="vi-char-cursor"> 包裹。
- * 正确处理 HTML 实体（&lt; 等）和多宽度字符（中文 2ch）。
+ * Insert vi block cursor into highlighted HTML.
+ * Walk HTML text nodes, find the col-th character and wrap it with <span class="vi-char-cursor">.
+ * Correctly handles HTML entities (&lt; etc.) and multi-width characters (CJK 2ch).
  */
 function insertCursorIntoHtml(html: string, col: number): string {
   let textIdx = 0;
   let i = 0;
 
   while (i < html.length) {
-    // 跳过 HTML 标签
+    // Skip HTML tags
     if (html[i] === '<') {
       const closeIdx = html.indexOf('>', i);
       if (closeIdx !== -1) {
@@ -296,11 +296,11 @@ function insertCursorIntoHtml(html: string, col: number): string {
       }
     }
 
-    // 到达目标字符位置
+    // Reached target character position
     if (textIdx === col) {
       let charEnd: number;
       if (html[i] === '&') {
-        // HTML 实体（&lt; &gt; &amp; 等）视为单个字符
+        // HTML entities (&lt; &gt; &amp; etc.) count as a single character
         const semiIdx = html.indexOf(';', i);
         charEnd = (semiIdx !== -1 && semiIdx - i < 10) ? semiIdx + 1 : i + 1;
       } else {
@@ -314,7 +314,7 @@ function insertCursorIntoHtml(html: string, col: number): string {
       );
     }
 
-    // 前进到下一个字符
+    // Advance to next character
     if (html[i] === '&') {
       const semiIdx = html.indexOf(';', i);
       i = (semiIdx !== -1 && semiIdx - i < 10) ? semiIdx + 1 : i + 1;
@@ -324,7 +324,7 @@ function insertCursorIntoHtml(html: string, col: number): string {
     textIdx++;
   }
 
-  // 光标在行尾（空行或超出）— 显示一个空格宽的光标块
+  // Cursor at end of line (empty line or overflow) — show a space-wide cursor block
   return html + '<span class="vi-char-cursor"> </span>';
 }
 
@@ -358,7 +358,7 @@ export const CodeLine = memo(function CodeLine({
   isCursorLine,
   cursorCol,
 }: CodeLineProps) {
-  // 将 vi 块光标内联到高亮 HTML 中（正确处理中文等多宽度字符）
+  // Inline vi block cursor into highlighted HTML (correctly handles CJK and other multi-width characters)
   const finalHtml = useMemo(() => {
     if (!isCursorLine || cursorCol == null) return highlightedHtml;
     return insertCursorIntoHtml(highlightedHtml, cursorCol);
@@ -372,7 +372,7 @@ export const CodeLine = memo(function CodeLine({
     const codeSpan = e.currentTarget;
     const column = getColumnFromClick(e, codeSpan);
 
-    // 清除 Cmd+Click 可能产生的文本选区，避免干扰后续交互
+    // Clear text selection that Cmd+Click may produce, to avoid interfering with subsequent interactions
     window.getSelection()?.removeAllRanges();
 
     onCmdClick(lineNum, column);
@@ -380,14 +380,14 @@ export const CodeLine = memo(function CodeLine({
 
   const handleCodeMouseOver = useCallback((e: React.MouseEvent<HTMLSpanElement>) => {
     if (!onTokenHover) return;
-    // 鼠标按下拖选文本时，跳过 hover 逻辑，避免触发状态更新导致 selection 丢失
+    // Skip hover logic when mouse button is held (drag-selecting), to avoid state updates losing selection
     if (e.buttons !== 0) return;
-    // 有选区时跳过，避免干扰选区交互
+    // Skip when there is a selection, to avoid interfering with selection interaction
     const sel = window.getSelection();
     if (sel && !sel.isCollapsed) return;
 
     const target = e.target as HTMLElement;
-    // 只处理 span 内的 token（有 style 属性的 span）
+    // Only handle tokens inside span (spans with style attribute)
     if (target.tagName !== 'SPAN' || !target.style.color) return;
 
     const codeSpan = e.currentTarget;
@@ -420,12 +420,12 @@ export const CodeLine = memo(function CodeLine({
       }}
       className={`flex ${flashLine === lineNum ? 'flash-line' : ''} ${isCursorLine ? 'vi-cursor-line' : ''} ${isInRange ? 'bg-blue-9/20' : hasComments ? 'bg-amber-9/10' : 'hover:bg-accent/50'}`}
     >
-      {/* ---- Sticky: Blame + 行号（横向滚动时固定在左侧） ---- */}
+      {/* ---- Sticky: Blame + line number (pinned to left on horizontal scroll) ---- */}
       <div
         className="flex shrink-0 sticky left-0 z-[2] bg-secondary"
         style={{ backgroundColor: isBlameHovered && blameAuthorColor ? blameAuthorColor.bg : undefined }}
       >
-        {/* ---- Blame 列 ---- */}
+        {/* ---- Blame column ---- */}
         {blameLine && blameAuthorColor && (
           <>
             <div

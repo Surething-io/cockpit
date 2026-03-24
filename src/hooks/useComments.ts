@@ -25,7 +25,7 @@ export function useComments({ cwd, filePath }: UseCommentsOptions): UseCommentsR
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 加载评论
+  // Load comments
   const refresh = useCallback(async () => {
     if (!cwd || !filePath) return;
 
@@ -49,19 +49,19 @@ export function useComments({ cwd, filePath }: UseCommentsOptions): UseCommentsR
     }
   }, [cwd, filePath]);
 
-  // 初始加载
+  // Initial load
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  // 订阅全局评论变更事件
+  // Subscribe to global comment change events
   useEffect(() => {
     return subscribeCommentsChange(() => {
       refresh();
     });
   }, [refresh]);
 
-  // 添加评论
+  // Add comment
   const addComment = useCallback(async (
     startLine: number,
     endLine: number,
@@ -86,7 +86,7 @@ export function useComments({ cwd, filePath }: UseCommentsOptions): UseCommentsR
     return null;
   }, [cwd, filePath]);
 
-  // 更新评论
+  // Update comment
   const updateComment = useCallback(async (id: string, content: string): Promise<boolean> => {
     try {
       const response = await fetch('/api/comments', {
@@ -108,7 +108,7 @@ export function useComments({ cwd, filePath }: UseCommentsOptions): UseCommentsR
     return false;
   }, [cwd]);
 
-  // 删除评论
+  // Delete comment
   const deleteComment = useCallback(async (id: string): Promise<boolean> => {
     try {
       const response = await fetch(
@@ -126,7 +126,7 @@ export function useComments({ cwd, filePath }: UseCommentsOptions): UseCommentsR
     return false;
   }, [cwd]);
 
-  // 获取某行相关的评论（该行在评论范围内）
+  // Get comments associated with a given line (line falls within the comment range)
   const getCommentsForLine = useCallback((line: number): CodeComment[] => {
     return comments.filter(c => line >= c.startLine && line <= c.endLine);
   }, [comments]);

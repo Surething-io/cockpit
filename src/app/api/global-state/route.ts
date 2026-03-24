@@ -15,23 +15,23 @@ interface GlobalState {
   sessions: GlobalSession[];
 }
 
-// GET: 获取全局 sessions 列表
+// GET: Retrieve global sessions list
 export async function GET() {
   const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
-  // 兼容旧格式：isLoading → status
+  // Backward compatible: isLoading → status
   for (const s of state.sessions) {
     if (!s.status) {
       const legacy = s as GlobalSession & { isLoading?: boolean };
       s.status = legacy.isLoading ? 'loading' : 'normal';
     }
   }
-  // 按 lastActive 降序排序
+  // Sort by lastActive descending
   state.sessions.sort((a, b) => b.lastActive - a.lastActive);
 
-  // 只保留最近 15 条
+  // Keep only the most recent 15 entries
   const recentSessions = state.sessions.slice(0, 15);
 
-  // 为每个 session 获取最后一条用户消息（并行执行）
+  // Fetch last user message for each session (parallel execution)
   const sessionsWithLastMessage = await Promise.all(
     recentSessions.map(async (session) => {
       const lastUserMessage = await getLastUserMessage(session.cwd, session.sessionId);
@@ -42,7 +42,7 @@ export async function GET() {
   return NextResponse.json({ sessions: sessionsWithLastMessage });
 }
 
-// POST: 更新 session 状态
+// POST: Update session status
 // body: { cwd: string, sessionId: string, status: SessionStatus, title?: string }
 export async function POST(request: Request) {
   const body = await request.json();

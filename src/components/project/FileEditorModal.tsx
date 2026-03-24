@@ -15,11 +15,11 @@ interface FileEditorInlineProps {
   initialContent: string;
   initialMtime?: number;
   cwd: string;
-  /** 进入编辑时 CodeViewer 的当前可见行号（1-based） */
+  /** Current visible line number in CodeViewer when entering edit mode (1-based) */
   initialLine?: number;
   onClose: (currentLine: number) => void;
   onSaved?: () => void;
-  /** 通知父组件 dirty/saving 状态变化 */
+  /** Notify parent of dirty/saving state changes */
   onStateChange?: (state: { isDirty: boolean; isSaving: boolean }) => void;
 }
 
@@ -51,12 +51,12 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
     mtimeRef.current = initialMtime;
   }, [initialContent, initialMtime]);
 
-  // 通知父组件状态变化
+  // Notify parent of state changes
   useEffect(() => {
     onStateChange?.({ isDirty, isSaving });
   }, [isDirty, isSaving, onStateChange]);
 
-  // Mount 时 focus + 滚动到指定行
+  // On mount: focus and scroll to the specified line
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -64,7 +64,7 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
     if (initialLine && initialLine > 1) {
       const lh = getLineHeight();
       ta.scrollTop = (initialLine - 1) * lh;
-      // 将光标放到目标行开头
+      // Place cursor at the beginning of the target line
       const lines = initialContent.split('\n');
       let charPos = 0;
       for (let i = 0; i < Math.min(initialLine - 1, lines.length); i++) {
@@ -75,7 +75,7 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** 获取实际行高（首次调用时测量并缓存） */
+  /** Get the actual line height (measured and cached on first call) */
   const measuredLineHeight = useRef<number>(0);
   const getLineHeight = useCallback((): number => {
     if (measuredLineHeight.current > 0) return measuredLineHeight.current;
@@ -86,7 +86,7 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
     return measuredLineHeight.current;
   }, []);
 
-  /** 获取当前可见首行号（1-based） */
+  /** Get the current first visible line number (1-based) */
   const getCurrentLine = useCallback((): number => {
     const ta = textareaRef.current;
     if (!ta) return initialLine || 1;
@@ -99,7 +99,7 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
     setIsDirty(newContent !== initialContent);
   }, [initialContent]);
 
-  // Tab 键插入 2 空格
+  // Tab key inserts 2 spaces
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Tab') {
       e.preventDefault();
@@ -110,7 +110,7 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
       const newValue = value.substring(0, start) + '  ' + value.substring(end);
       setContent(newValue);
       setIsDirty(newValue !== initialContent);
-      // 恢复光标位置
+      // Restore cursor position
       requestAnimationFrame(() => {
         ta.selectionStart = ta.selectionEnd = start + 2;
       });
@@ -226,14 +226,14 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
     get isSaving() { return isSaving; },
   }), [handleSave, handleClose, isDirty, isSaving]);
 
-  // 行号（根据内容计算）
+  // Line count (calculated from content)
   const lineCount = content.split('\n').length;
   const lineNumChars = Math.max(4, String(lineCount).length);
   const lineNumberWidth = `${lineNumChars + 2}ch`;
 
   return (
     <div className="flex flex-col h-full">
-      {/* 冲突提示条 */}
+      {/* Conflict warning bar */}
       {conflictState.show && (
         <div className="px-4 py-2 bg-amber-500/15 border-b border-amber-500/30 flex items-center gap-3 flex-shrink-0">
           <svg className="w-5 h-5 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -261,7 +261,7 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
 
       {/* Editor area with line numbers */}
       <div className="flex-1 overflow-hidden flex bg-secondary">
-        {/* 行号列 */}
+        {/* Line number column */}
         <LineNumbers lineCount={lineCount} width={lineNumberWidth} textareaRef={textareaRef} />
         {/* textarea */}
         <textarea
@@ -286,7 +286,7 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
 });
 
 /**
- * 行号列组件 — 与 textarea 滚动同步
+ * Line number column component — synced with textarea scroll
  */
 function LineNumbers({
   lineCount,
@@ -299,7 +299,7 @@ function LineNumbers({
 }) {
   const lineNumRef = useRef<HTMLDivElement>(null);
 
-  // 同步滚动
+  // Sync scroll
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;

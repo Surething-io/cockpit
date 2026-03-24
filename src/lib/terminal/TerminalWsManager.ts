@@ -1,11 +1,11 @@
 /**
  * Terminal WebSocket Manager
- * 单个 WS 连接管理所有终端命令的执行、stdin、attach、interrupt
+ * A single WS connection manages execution, stdin, attach, and interrupt for all terminal commands
  *
- * 关键设计：
- * 1. onclose 实例引用对比 —— React Strict Mode 下旧 WS 的 onclose 异步触发时不覆盖新连接
- * 2. 共享 Promise 模式 —— 多个 TerminalView 同时 queryRunningCommands 时共享同一次查询
- * 3. dispose 先 resolve 再清空 —— 防止 Promise 永久挂起
+ * Key design decisions:
+ * 1. onclose instance reference comparison — prevents old WS onclose from overwriting new connection under React Strict Mode
+ * 2. Shared Promise pattern — multiple TerminalViews calling queryRunningCommands simultaneously share a single query
+ * 3. dispose resolves before clearing — prevents Promises from hanging indefinitely
  */
 
 type MessageHandler = (type: string, data: Record<string, unknown>) => void;
@@ -21,10 +21,10 @@ let retryCount = 0;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let closed = false;
 
-// 每个 commandId 对应的回调
+// Callbacks keyed by commandId
 const commandCallbacks = new Map<string, PendingCallbacks>();
 
-// running 查询：使用共享 Promise + resolve 回调
+// Running query: uses a shared Promise + resolve callback
 let runningCallback: ((commands: Array<Record<string, unknown>>) => void) | null = null;
 let pendingRunningPromise: Promise<Array<Record<string, unknown>>> | null = null;
 
@@ -40,7 +40,7 @@ function handleMessage(event: MessageEvent) {
   const type = msg.type as string;
   if (type === 'ping') return;
 
-  // running 查询响应
+  // Running query response
   if (type === 'running') {
     if (runningCallback) {
       runningCallback(msg.commands as Array<Record<string, unknown>>);
@@ -49,7 +49,7 @@ function handleMessage(event: MessageEvent) {
     return;
   }
 
-  // 按 commandId 分发
+  // Dispatch by commandId
   const commandId = msg.commandId as string;
   if (!commandId) return;
 
@@ -59,12 +59,12 @@ function handleMessage(event: MessageEvent) {
   if (type === 'error') {
     cb.onError(msg.error as string);
   } else {
-    // 去掉 commandId，保持与原 SSE 兼容的数据格式
+    // Strip commandId to preserve the original SSE-compatible data format
     const { commandId: _, type: __, ...data } = msg;
     cb.onData(type, data);
   }
 
-  // exit/error 后清理回调
+  // Clean up callbacks after exit/error
   if (type === 'exit' || type === 'error') {
     commandCallbacks.delete(commandId);
   }
@@ -83,7 +83,7 @@ function connect() {
   myWs.onmessage = handleMessage;
 
   myWs.onclose = () => {
-    // 关键：如果 ws 已经指向更新的连接，说明此回调来自旧连接，忽略
+    // Key: if ws already points to a newer connection, this callback is from the old connection — ignore it
     if (ws !== myWs) return;
     ws = null;
     if (closed) return;
@@ -94,7 +94,7 @@ function connect() {
   };
 
   myWs.onerror = () => {
-    // onclose 会紧跟触发
+    // onclose will fire immediately after
   };
 }
 
@@ -105,13 +105,13 @@ function sendMessage(msg: Record<string, unknown>) {
 }
 
 /**
- * 确保 WS 连接已建立（幂等）
+ * Ensure the WS connection is established (idempotent)
  */
 export function ensureConnection(projectCwd: string): void {
   const url = getWsUrl(projectCwd);
   if (wsUrl === url && ws) return;
 
-  // 关闭旧连接
+  // Close the old connection
   dispose();
   closed = false;
   wsUrl = url;
@@ -119,7 +119,7 @@ export function ensureConnection(projectCwd: string): void {
 }
 
 /**
- * 等待 WS 连接就绪
+ * Wait for the WS connection to be ready
  */
 function waitForOpen(): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -142,7 +142,7 @@ function waitForOpen(): Promise<void> {
 }
 
 /**
- * 执行命令
+ * Execute a command
  */
 export async function executeCommand(options: {
   cwd: string;
@@ -167,14 +167,14 @@ export async function executeCommand(options: {
     return;
   }
 
-  // 防止同一 commandId 重复注册（rerun 场景）
+  // Prevent duplicate registration for the same commandId (rerun scenario)
   commandCallbacks.delete(commandId);
   commandCallbacks.set(commandId, { onData, onError });
   sendMessage({ type: 'exec', commandId, command, cwd, tabId, env, ...(usePty ? { usePty: true } : {}), ...(cols ? { cols, rows } : {}) });
 }
 
 /**
- * 重新接入正在运行的命令
+ * Re-attach to a running command
  */
 export async function attachCommand(options: {
   commandId: string;
@@ -197,38 +197,38 @@ export async function attachCommand(options: {
 }
 
 /**
- * 发送 stdin 数据到进程
+ * Send stdin data to the process
  */
 export function sendStdin(commandId: string, data: string): void {
   sendMessage({ type: 'stdin', commandId, data });
 }
 
 /**
- * 调整 PTY 终端尺寸
+ * Resize the PTY terminal
  */
 export function resizePty(commandId: string, cols: number, rows: number): void {
   sendMessage({ type: 'resize', commandId, cols, rows });
 }
 
 /**
- * 中断命令（发送 SIGTERM）
+ * Interrupt a command (send SIGTERM)
  */
 export function interruptCommand(pid: number): void {
   sendMessage({ type: 'interrupt', pid });
 }
 
 /**
- * 查询正在运行的命令列表
+ * Query the list of running commands
  *
- * 使用共享 Promise：多个 TerminalView 同时调用时，共享同一次查询结果。
- * 关键：pendingRunningPromise 必须在第一个 await 之前同步设置，
- * 否则多个调用方都会跳过 if 检查导致发送多次查询。
+ * Uses a shared Promise: multiple TerminalViews calling simultaneously share a single query result.
+ * Key: pendingRunningPromise must be set synchronously before the first await,
+ * otherwise multiple callers all pass the if-check and send duplicate queries.
  */
 export function queryRunningCommands(projectCwd: string): Promise<Array<Record<string, unknown>>> {
-  // 如果已有进行中的查询，直接共享同一个 Promise
+  // If a query is already in progress, share the same Promise
   if (pendingRunningPromise) return pendingRunningPromise;
 
-  // 同步设置 pendingRunningPromise（在任何 await 之前！）
+  // Set pendingRunningPromise synchronously (before any await!)
   pendingRunningPromise = _doRunningQuery(projectCwd);
   return pendingRunningPromise;
 }
@@ -247,7 +247,7 @@ async function _doRunningQuery(projectCwd: string): Promise<Array<Record<string,
         resolve(commands);
       };
       sendMessage({ type: 'running' });
-      // 超时保护
+      // Timeout guard
       setTimeout(() => {
         if (runningCallback) {
           runningCallback = null;
@@ -261,25 +261,25 @@ async function _doRunningQuery(projectCwd: string): Promise<Array<Record<string,
 }
 
 /**
- * 取消某个命令的回调监听（不杀进程）
+ * Detach callback listeners for a command (does not kill the process)
  */
 export function detachCommand(commandId: string): void {
   commandCallbacks.delete(commandId);
 }
 
 /**
- * 关闭 WS 连接
+ * Close the WS connection
  */
 export function dispose(): void {
   closed = true;
   if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
   if (ws) {
     const dyingWs = ws;
-    ws = null;  // 先置 null，确保 dyingWs 的 onclose 中 ws !== myWs 成立
+    ws = null;  // Set to null first so that dyingWs.onclose sees ws !== myWs
     dyingWs.close();
   }
   commandCallbacks.clear();
-  // 先 resolve 挂起的 running 查询（返回空），再清空回调，防止 Promise 永久挂起
+  // Resolve any pending running query (returning empty) before clearing the callback, to prevent the Promise from hanging indefinitely
   if (runningCallback) {
     runningCallback([]);
     runningCallback = null;

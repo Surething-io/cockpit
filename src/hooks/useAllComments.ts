@@ -1,19 +1,19 @@
 import type { CodeComment } from '@/app/api/comments/route';
 
 // ============================================
-// 评论变更事件系统
+// Comment change event system
 // ============================================
 
 type CommentsChangeListener = () => void;
 const listeners = new Set<CommentsChangeListener>();
 
-/** 订阅评论变更事件 */
+/** Subscribe to comment change events */
 export function subscribeCommentsChange(listener: CommentsChangeListener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
-/** 触发评论变更事件（通知所有订阅者刷新） */
+/** Emit a comment change event (notify all subscribers to refresh) */
 export function emitCommentsChange(): void {
   listeners.forEach(listener => listener());
 }
@@ -31,14 +31,14 @@ export interface CodeReference {
   startLine: number;
   endLine: number;
   codeContent: string;
-  note?: string; // 评论内容，可选
+  note?: string; // Optional comment text
 }
 
 /**
- * 获取所有评论并读取对应代码
+ * Fetch all comments and read the corresponding code
  */
 export async function fetchAllCommentsWithCode(cwd: string): Promise<CommentWithCode[]> {
-  // 1. 获取所有评论
+  // 1. Fetch all comments
   const response = await fetch(`/api/comments?cwd=${encodeURIComponent(cwd)}`);
   if (!response.ok) {
     throw new Error('Failed to fetch comments');
@@ -50,17 +50,17 @@ export async function fetchAllCommentsWithCode(cwd: string): Promise<CommentWith
     return [];
   }
 
-  // 2. 按文件分组（跳过有 selectedText 的评论，不需要读取文件）
+  // 2. Group by file (skip comments with selectedText — no need to read the file)
   const commentsByFile = new Map<string, CodeComment[]>();
   for (const comment of comments) {
-    if (comment.selectedText) continue; // 有 selectedText 的评论不需要读文件
+    if (comment.selectedText) continue; // Comments with selectedText do not need to read the file
     if (!commentsByFile.has(comment.filePath)) {
       commentsByFile.set(comment.filePath, []);
     }
     commentsByFile.get(comment.filePath)!.push(comment);
   }
 
-  // 3. 读取每个文件的内容
+  // 3. Read the content of each file
   const fileContents = new Map<string, string[]>();
   await Promise.all(
     Array.from(commentsByFile.keys()).map(async (filePath) => {
@@ -80,10 +80,10 @@ export async function fetchAllCommentsWithCode(cwd: string): Promise<CommentWith
     })
   );
 
-  // 4. 为每个评论提取代码
+  // 4. Extract code for each comment
   const result: CommentWithCode[] = [];
   for (const comment of comments) {
-    // 有 selectedText 的评论直接用 selectedText 作为 codeContent
+    // For comments with selectedText, use selectedText directly as codeContent
     if (comment.selectedText) {
       result.push({ ...comment, codeContent: comment.selectedText });
       continue;
@@ -102,7 +102,7 @@ export async function fetchAllCommentsWithCode(cwd: string): Promise<CommentWith
 }
 
 /**
- * 清空所有评论
+ * Clear all comments
  */
 export async function clearAllComments(cwd: string): Promise<boolean> {
   try {
@@ -111,7 +111,7 @@ export async function clearAllComments(cwd: string): Promise<boolean> {
       { method: 'DELETE' }
     );
     if (response.ok) {
-      // 触发全局刷新事件
+      // Emit global refresh event
       emitCommentsChange();
       return true;
     }
@@ -123,11 +123,11 @@ export async function clearAllComments(cwd: string): Promise<boolean> {
 }
 
 /**
- * 构建发送到 AI 的消息
- * @param references 所有代码引用（历史评论 + 当前选中）
- * @param question 用户问题
+ * Build the message to send to AI
+ * @param references All code references (historical comments + current selection)
+ * @param question User question
  */
-/** 虚拟 filePath 前缀，用于 AI 消息气泡中的评论 */
+/** Virtual filePath prefix used for comments in AI message bubbles */
 export const CHAT_COMMENT_FILE = '__chat__';
 
 export function buildAIMessage(references: CodeReference[], question: string): string {
@@ -135,7 +135,7 @@ export function buildAIMessage(references: CodeReference[], question: string): s
   const fileRefs = references.filter(r => r.filePath !== CHAT_COMMENT_FILE);
   const parts: string[] = [];
 
-  // 文件评论：保持原有格式
+  // File comments: keep existing format
   if (fileRefs.length > 0) {
     parts.push('代码引用:', '');
     fileRefs.forEach((ref, index) => {
@@ -150,7 +150,7 @@ export function buildAIMessage(references: CodeReference[], question: string): s
     });
   }
 
-  // 聊天评论：引用 + 评论
+  // Chat comments: quote + comment
   for (const ref of chatRefs) {
     const quoted = ref.codeContent.split('\n').map(l => `> ${l}`).join('\n');
     parts.push(quoted);

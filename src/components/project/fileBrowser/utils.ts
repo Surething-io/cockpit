@@ -1,7 +1,7 @@
 import type { FileNode } from './types';
 
 /**
- * 递归查找文件节点
+ * Recursively find a file node
  */
 export function findNodeByPath(nodes: FileNode[], path: string): FileNode | null {
   for (const node of nodes) {
@@ -15,16 +15,16 @@ export function findNodeByPath(nodes: FileNode[], path: string): FileNode | null
 }
 
 /**
- * 获取目标目录路径（用于新建文件/文件夹）
- * 如果选中的是目录，返回该目录路径
- * 如果选中的是文件，返回其父目录路径
- * 如果没有选中，返回空字符串（根目录）
+ * Get target directory path (for creating new file/folder)
+ * If selection is a directory, return that directory path
+ * If selection is a file, return its parent directory path
+ * If nothing is selected, return empty string (root directory)
  */
 export function getTargetDirPath(selectedPath: string | null, files: FileNode[]): string {
   if (!selectedPath) return '';
   const node = findNodeByPath(files, selectedPath);
   if (node?.isDirectory) return selectedPath;
-  // 文件的父目录
+  // Parent directory of file
   const parts = selectedPath.split('/');
   parts.pop();
   return parts.join('/');
@@ -102,7 +102,7 @@ export function computeMatchedPaths(nodes: FileNode[], searchQuery: string, exac
 
   const query = searchQuery.toLowerCase();
 
-  // 将节点及其所有子孙全部加入 matched
+  // Add node and all its descendants to matched
   const addAllDescendants = (node: FileNode) => {
     matched.add(node.path);
     if (node.children) {
@@ -116,7 +116,7 @@ export function computeMatchedPaths(nodes: FileNode[], searchQuery: string, exac
     const nameLower = node.name.toLowerCase();
     const nameMatches = exactMatch ? nameLower === query : nameLower.includes(query);
 
-    // 目录名命中：该目录下所有子孙全部显示
+    // Directory name match: show all descendants under that directory
     if (nameMatches && node.children) {
       addAllDescendants(node);
       ancestors.forEach(p => matched.add(p));
@@ -149,7 +149,7 @@ export function computeMatchedPaths(nodes: FileNode[], searchQuery: string, exac
 }
 
 /**
- * 基于扁平路径索引的搜索匹配（用于懒加载树 + fileIndex）
+ * Search matching based on flat path index (used for lazy-loaded tree + fileIndex)
  */
 export function computeMatchedPathsFromIndex(fileIndex: string[], searchQuery: string, exactMatch: boolean = false): Set<string> {
   const matched = new Set<string>();
@@ -165,11 +165,11 @@ export function computeMatchedPathsFromIndex(fileIndex: string[], searchQuery: s
       const nameMatches = exactMatch ? nameLower === query : nameLower.includes(query);
 
       if (nameMatches) {
-        // 添加完整文件路径 + 所有祖先目录
+        // Add full file path + all ancestor directories
         for (let j = 0; j <= parts.length - 1; j++) {
           matched.add(parts.slice(0, j + 1).join('/'));
         }
-        break; // 一条路径匹配一次即可
+        break; // Match each path at most once
       }
     }
   }

@@ -11,7 +11,7 @@ interface UserMessagesModalProps {
   onSelectMessage: (messageId: string) => void;
 }
 
-// 从 message.id 解析时间戳（格式：user-{timestamp}）
+// Parse timestamp from message.id (format: user-{timestamp})
 function parseTimestamp(messageId: string): number | null {
   const match = messageId.match(/^user-(\d+)/);
   if (match) {
@@ -20,7 +20,7 @@ function parseTimestamp(messageId: string): number | null {
   return null;
 }
 
-// 格式化时间戳为可读格式
+// Format timestamp to human-readable format
 function formatTime(timestamp: number): string {
   const date = new Date(timestamp);
   const now = new Date();
@@ -30,7 +30,7 @@ function formatTime(timestamp: number): string {
     return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
   }
 
-  // 如果不是今天，显示日期和时间
+  // If not today, show date and time
   return date.toLocaleDateString('zh-CN', {
     month: '2-digit',
     day: '2-digit',
@@ -39,9 +39,9 @@ function formatTime(timestamp: number): string {
   });
 }
 
-// 截断消息内容
+// Truncate message content
 function truncateContent(content: string, maxLength: number = 50): string {
-  // 移除多余空白和换行
+  // Remove extra whitespace and newlines
   const cleaned = content.replace(/\s+/g, ' ').trim();
   if (cleaned.length <= maxLength) {
     return cleaned;
@@ -52,7 +52,7 @@ function truncateContent(content: string, maxLength: number = 50): string {
 export function UserMessagesModal({ isOpen, onClose, messages, onSelectMessage }: UserMessagesModalProps) {
 
 
-  // ESC 键关闭
+  // ESC key to close
   useEffect(() => {
     if (!isOpen) return;
 
@@ -68,7 +68,7 @@ export function UserMessagesModal({ isOpen, onClose, messages, onSelectMessage }
 
   if (!isOpen) return null;
 
-  // 过滤出用户消息
+  // Filter user messages
   const userMessages = messages.filter(m => m.role === 'user');
 
   const handleSelect = (messageId: string) => {
@@ -117,17 +117,17 @@ export function UserMessagesModal({ isOpen, onClose, messages, onSelectMessage }
                     className="w-full px-4 py-3 text-left hover:bg-accent transition-colors"
                   >
                     <div className="flex items-start gap-3">
-                      {/* 序号 */}
+                      {/* Index */}
                       <span className="text-xs text-muted-foreground font-mono w-6 shrink-0 pt-0.5">
                         {index + 1}.
                       </span>
-                      {/* 内容 */}
+                      {/* Content */}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-foreground break-words">
                           {truncateContent(message.content)}
                         </p>
                       </div>
-                      {/* 时间 */}
+                      {/* Time */}
                       {timeStr && (
                         <span className="text-xs text-muted-foreground shrink-0 pt-0.5">
                           {timeStr}

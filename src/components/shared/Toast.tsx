@@ -106,7 +106,7 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
 }
 
 // ============================================
-// confirm() - 自定义确认对话框（替代 window.confirm）
+// confirm() - Custom confirm dialog (replaces window.confirm)
 // ============================================
 
 export function confirm(message: string, options?: {
@@ -130,12 +130,12 @@ export function confirm(message: string, options?: {
       }, { once: true });
     };
 
-    // 点击背景关闭
+    // Close on background click
     overlay.addEventListener('mousedown', (e) => {
       if (e.target === overlay) cleanup(false);
     });
 
-    // ESC 关闭
+    // ESC to close
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
@@ -176,13 +176,13 @@ export function confirm(message: string, options?: {
 
     document.body.appendChild(overlay);
 
-    // 自动 focus 确认按钮
+    // Auto-focus the confirm button
     (overlay.querySelector('[data-action="confirm"]') as HTMLButtonElement)?.focus();
   });
 }
 
 // ============================================
-// 简单的独立 Toast 函数（不需要 Provider）
+// Simple standalone toast function (no Provider needed)
 // ============================================
 let toastContainer: HTMLDivElement | null = null;
 let toastRoot: ReturnType<typeof import('react-dom/client').createRoot> | null = null;

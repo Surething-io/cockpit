@@ -45,9 +45,9 @@ interface DiffViewProps {
 const ROW_HEIGHT = 20;
 
 // ============================================
-// ToolbarRenderer - 独立状态，避免 DiffView 重渲染
-// 只有 toolbar 自身的显示/隐藏触发此组件 re-render，
-// DiffView 的虚拟列表完全不受影响 → 选区得以保留。
+// ToolbarRenderer - independent state, avoids DiffView re-renders.
+// Only toolbar's own show/hide triggers this component's re-render;
+// DiffView's virtual list is completely unaffected → selection is preserved.
 // ============================================
 interface ToolbarRendererProps {
   floatingToolbarRef: React.RefObject<{ x: number; y: number; range: { start: number; end: number }; codeContent: string } | null>;
@@ -62,13 +62,13 @@ interface ToolbarRendererProps {
 function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddComment, onSendToAI, onSearch, isChatLoading }: ToolbarRendererProps) {
   const [version, forceRender] = useState(0);
 
-  // 让父组件（DiffView）通过 bumpRef 触发本组件 re-render
-  // 放在 useEffect 中以遵循 React Compiler 规范（render 期间不写 ref）
+  // Let parent (DiffView) trigger re-render via bumpRef
+  // Placed in useEffect to comply with React Compiler rules (no ref writes during render)
   useEffect(() => {
     bumpRef.current = () => forceRender(v => v + 1);
   }, [bumpRef]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- version 仅用于触发 re-read ref
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- version is only used to trigger re-read of ref
   const toolbar = useMemo(() => floatingToolbarRef.current, [version]);
 
   return (
@@ -117,8 +117,8 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
     y: number;
   } | null>(null);
 
-  // Floating toolbar - ref 存储数据 + bumpToolbarRef 触发 ToolbarRenderer 重渲染
-  // 关键：不在 DiffView 上持有 state，避免虚拟列表 reconciliation 导致选区丢失
+  // Floating toolbar - ref stores data + bumpToolbarRef triggers ToolbarRenderer re-render
+  // Key: don't hold state on DiffView to avoid virtual list reconciliation losing selection
   const floatingToolbarRef = useRef<{
     x: number;
     y: number;
@@ -169,7 +169,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
   }, [comments]);
 
   // Handle text selection in right panel
-  // 三段式事件流（对齐 useCodeViewerLogic）：mousedown / mouseup / selectionchange
+  // Three-phase event flow (aligned with useCodeViewerLogic): mousedown / mouseup / selectionchange
   useEffect(() => {
     if (!commentsEnabled) return;
 
@@ -177,7 +177,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
     let isDragging = false;
     let downX = 0, downY = 0;
 
-    // mousedown：标记拖选开始，清除旧 toolbar
+    // mousedown: mark drag-select start, clear old toolbar
     const handleMouseDown = (e: MouseEvent) => {
       isDragging = true;
       downX = e.clientX;
@@ -188,15 +188,15 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
       }
     };
 
-    // mouseup：标记拖选结束，计算选区并显示 toolbar
+    // mouseup: mark drag-select end, compute selection and show toolbar
     const handleMouseUp = (e: MouseEvent) => {
       isDragging = false;
 
-      // 点击 FloatingToolbar 按钮时，不清除 toolbar，让 onClick 正常触发
+      // When clicking a FloatingToolbar button, don't clear toolbar so onClick fires normally
       const target = e.target as HTMLElement;
       if (target.closest?.('.floating-toolbar')) return;
 
-      // 移动 ≤ 5px 视为点击（含双击/三击），不弹出 toolbar
+      // Movement ≤ 5px is treated as click (including double/triple click), don't show toolbar
       const moved = Math.abs(e.clientX - downX) > 5 || Math.abs(e.clientY - downY) > 5;
 
       const selection = window.getSelection();
@@ -256,8 +256,8 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
       }
     };
 
-    // selectionchange：选区消失时隐藏 toolbar
-    // 拖选期间跳过，避免高频触发不必要的 re-render
+    // selectionchange: hide toolbar when selection disappears
+    // Skip during drag-select to avoid high-frequency unnecessary re-renders
     const handleSelectionChange = () => {
       if (isDragging) return;
       if (!floatingToolbarRef.current) return;

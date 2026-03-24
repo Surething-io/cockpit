@@ -3,7 +3,7 @@ import { join, resolve, dirname } from 'path';
 import { REVIEW_SIGNAL_FILE, REVIEW_DIR } from './paths';
 
 export interface FileEvent {
-  /** 'file' = 普通文件变更, 'git' = .git 目录变更, 'review' = review 文件变更 */
+  /** 'file' = regular file change, 'git' = .git directory change, 'review' = review file change */
   type: 'file' | 'git' | 'review';
 }
 
@@ -14,34 +14,34 @@ interface WatcherEntry {
   listeners: Set<FileChangeCallback>;
   pendingEvents: FileEvent[];
   debounceTimer: ReturnType<typeof setTimeout> | null;
-  /** throttle 定时器：首个事件到达后最多等 THROTTLE_MS 必须 flush */
+  /** Throttle timer: must flush within THROTTLE_MS after the first event arrives */
   throttleTimer: ReturnType<typeof setTimeout> | null;
-  /** cwd watcher 出错后的重建定时器，防止多次并发重建 */
+  /** Rebuild timer after a cwd watcher error, prevents multiple concurrent rebuilds */
   cwdRestartTimer: ReturnType<typeof setTimeout> | null;
 }
 
-/** Git 关键文件，变化意味着 git 操作（commit, checkout, merge 等） */
+/** Key Git files whose changes indicate a git operation (commit, checkout, merge, etc.) */
 const GIT_WATCH_FILES = [
   '.git/HEAD',
-  // 不监听 .git/index：git status 会刷新其 stat cache 导致反馈循环
-  // commit/checkout/merge 等操作都会同时修改 HEAD 或 refs，无需靠 index 检测
+  // Do not watch .git/index: git status refreshes its stat cache, causing a feedback loop.
+  // commit/checkout/merge all modify HEAD or refs simultaneously; index is not needed.
   '.git/MERGE_HEAD',
   '.git/REBASE_HEAD',
 ];
 
-/** Git 关键目录 */
+/** Key Git directories to watch */
 const GIT_WATCH_DIRS = [
   '.git/refs',
 ];
 
 const DEBOUNCE_MS = 500;
-/** AI 编码等高频场景下，事件聚合的最大等待时间（throttle 上限） */
+/** Maximum wait time for event aggregation in high-frequency scenarios like AI coding (throttle ceiling) */
 const THROTTLE_MS = 3000;
 
 /**
- * 获取实际的 .git 目录路径
- * 普通仓库: cwd/.git (目录)
- * Worktree: cwd/.git 是文件，内容为 "gitdir: /path/to/main/.git/worktrees/xxx"
+ * Resolve the actual .git directory path.
+ * Normal repo: cwd/.git (directory).
+ * Worktree: cwd/.git is a file containing "gitdir: /path/to/main/.git/worktrees/xxx".
  */
 function resolveGitDir(cwd: string): string {
   const dotGit = join(cwd, '.git');
@@ -50,14 +50,14 @@ function resolveGitDir(cwd: string): string {
     if (stat.isDirectory()) {
       return dotGit;
     }
-    // .git 是文件（worktree）
+    // .git is a file (worktree)
     const content = readFileSync(dotGit, 'utf-8').trim();
     const match = content.match(/^gitdir:\s*(.+)$/);
     if (match) {
       return resolve(cwd, match[1]);
     }
   } catch {
-    // .git 不存在
+    // .git does not exist
   }
   return dotGit; // fallback
 }
@@ -66,8 +66,8 @@ class FileWatcherManager {
   private watchers = new Map<string, WatcherEntry>();
 
   /**
-   * 订阅某个 cwd 的文件变更事件
-   * @returns unsubscribe 函数
+   * Subscribe to file change events for a given cwd.
+   * @returns unsubscribe function
    */
   subscribe(cwd: string, callback: FileChangeCallback): () => void {
     let entry = this.watchers.get(cwd);
@@ -90,7 +90,7 @@ class FileWatcherManager {
 
     entry.listeners.delete(callback);
 
-    // 最后一个 listener 退出时，关闭所有 watcher 并清理定时器
+    // When the last listener is removed, close all watchers and clear timers
     if (entry.listeners.size === 0) {
       if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
       if (entry.throttleTimer) clearTimeout(entry.throttleTimer);
@@ -113,16 +113,16 @@ class FileWatcherManager {
     };
 
     const pushEvent = (event: FileEvent) => {
-      // 去重：同类型事件在同一个窗口内只保留一个
+      // Deduplicate: keep at most one event of each type per window
       if (!entry.pendingEvents.some(e => e.type === event.type)) {
         entry.pendingEvents.push(event);
       }
-      // debounce：每次新事件重置，变更停止 500ms 后 flush（快速响应零星变更）
+      // Debounce: reset on each new event, flush 500ms after changes stop (responsive to sparse changes)
       if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
       entry.debounceTimer = setTimeout(() => {
         this.flush(entry);
       }, DEBOUNCE_MS);
-      // throttle：首个事件启动，最多等 THROTTLE_MS 后强制 flush（高频变更时不会一直等待）
+      // Throttle: start on the first event, force flush after THROTTLE_MS (prevents indefinite waiting during high-frequency changes)
       if (!entry.throttleTimer) {
         entry.throttleTimer = setTimeout(() => {
           this.flush(entry);
@@ -130,16 +130,16 @@ class FileWatcherManager {
       }
     };
 
-    // ========== 监听 cwd（recursive）==========
-    // macOS 原生支持 recursive，1 个 fd 监听整个目录树
-    // 出错时（如系统 inotify 耗尽）自动重建，避免监听静默失效
+    // ========== Watch cwd (recursive) ==========
+    // macOS natively supports recursive watching; one fd covers the entire directory tree.
+    // On error (e.g. inotify exhaustion), rebuild automatically to prevent silent watch failure.
     const startCwdWatcher = () => {
       try {
         const cwdWatcher = watch(cwd, { recursive: true }, (_eventType, filename) => {
           if (!filename) return;
           if (filename.startsWith('.next/') || filename.startsWith('node_modules/')) return;
-          // .git 目录：只响应关键文件变化（HEAD、refs），忽略 index 等高频变化
-          // 利用 FSEvents 的可靠性弥补单文件 kqueue watcher 在原子替换后失效的问题
+          // .git directory: only respond to key file changes (HEAD, refs); ignore high-frequency changes like index.
+          // Leverage FSEvents reliability to compensate for single-file kqueue watchers invalidating after atomic renames.
           if (filename.startsWith('.git/')) {
             if (filename === '.git/HEAD' || filename.startsWith('.git/refs/')) {
               pushEvent({ type: 'git' });
@@ -150,11 +150,11 @@ class FileWatcherManager {
         });
         cwdWatcher.on('error', (err) => {
           console.error(`File watcher error for ${cwd}:`, err);
-          // 从数组中移除失效的 watcher，释放引用
+          // Remove the stale watcher from the array to release the reference
           const idx = entry.watchers.indexOf(cwdWatcher);
           if (idx !== -1) entry.watchers.splice(idx, 1);
           try { cwdWatcher.close(); } catch { /* already closed */ }
-          // 仍有订阅者时，2 秒后重建（防止多次并发重建）
+          // If subscribers still exist, rebuild after 2s (prevents multiple concurrent rebuilds)
           if (entry.listeners.size > 0 && !entry.cwdRestartTimer) {
             entry.cwdRestartTimer = setTimeout(() => {
               entry.cwdRestartTimer = null;
@@ -169,18 +169,18 @@ class FileWatcherManager {
     };
     startCwdWatcher();
 
-    // ========== 监听 git 关键文件 ==========
-    // 支持 worktree：.git 可能是文件而非目录
+    // ========== Watch key Git files ==========
+    // Support worktrees: .git may be a file rather than a directory.
     const gitDir = resolveGitDir(cwd);
 
-    // kqueue 绑定 inode，git 原子替换（write tmp + rename）后 watcher 失效
-    // 非 worktree 有 FSEvents 递归 watcher 兜底，worktree 的 HEAD 在 cwd 外无人兜底
-    // 因此每次事件后关闭旧 watcher 并重建，绑定新 inode
+    // kqueue binds to an inode; after git's atomic replace (write tmp + rename) the watcher expires.
+    // Non-worktrees fall back to the FSEvents recursive watcher; worktree HEAD outside cwd has no fallback.
+    // Therefore, close and rebuild the watcher after each event to bind the new inode.
     const watchGitFile = (filePath: string) => {
       try {
         const w = watch(filePath, () => {
           pushEvent({ type: 'git' });
-          // 重建：关闭当前 watcher，绑定新 inode
+          // Rebuild: close the current watcher, bind the new inode
           try { w.close(); } catch { /* ignore */ }
           const idx = entry.watchers.indexOf(w);
           if (idx !== -1) entry.watchers.splice(idx, 1);
@@ -191,14 +191,14 @@ class FileWatcherManager {
         w.on('error', () => {
           const idx = entry.watchers.indexOf(w);
           if (idx !== -1) entry.watchers.splice(idx, 1);
-          // 文件可能暂时不存在（如 MERGE_HEAD），延迟重试
+          // File may be temporarily absent (e.g. MERGE_HEAD); retry after a delay
           if (entry.listeners.size > 0 && existsSync(filePath)) {
             setTimeout(() => watchGitFile(filePath), 500);
           }
         });
         entry.watchers.push(w);
       } catch {
-        // 文件不存在，忽略
+        // File does not exist; ignore
       }
     };
 
@@ -207,7 +207,7 @@ class FileWatcherManager {
       watchGitFile(join(gitDir, filename));
     }
 
-    // ========== 监听 git 关键目录 ==========
+    // ========== Watch key Git directories ==========
     for (const gitDirName of GIT_WATCH_DIRS) {
       const dirName = gitDirName.replace('.git/', '');
       try {
@@ -215,11 +215,11 @@ class FileWatcherManager {
           pushEvent({ type: 'git' });
         });
         w.on('error', () => {
-          // 目录可能不存在，忽略
+          // Directory may not exist; ignore
         });
         entry.watchers.push(w);
       } catch {
-        // 目录不存在，忽略
+        // Directory does not exist; ignore
       }
     }
 
@@ -227,7 +227,7 @@ class FileWatcherManager {
   }
 
   private flush(entry: WatcherEntry): void {
-    // 清理定时器，防止重复 flush
+    // Clear timers to prevent duplicate flushes
     if (entry.debounceTimer) { clearTimeout(entry.debounceTimer); entry.debounceTimer = null; }
     if (entry.throttleTimer) { clearTimeout(entry.throttleTimer); entry.throttleTimer = null; }
 
@@ -236,7 +236,7 @@ class FileWatcherManager {
     const events = [...entry.pendingEvents];
     entry.pendingEvents = [];
 
-    // 通知所有 listener
+    // Notify all listeners
     for (const callback of entry.listeners) {
       try {
         callback(events);
@@ -248,7 +248,7 @@ class FileWatcherManager {
 }
 
 // ============================================
-// Review 目录监听（全局共享，独立于 cwd）
+// Review directory watcher (global singleton, independent of cwd)
 // ============================================
 
 export type ReviewChangeCallback = () => void;
@@ -269,11 +269,11 @@ class ReviewWatcher {
 
   private start() {
     try {
-      // 确保信号文件存在（fs.watch 单文件要求文件已存在）
+      // Ensure the signal file exists (fs.watch on a single file requires the file to already exist)
       if (!existsSync(REVIEW_DIR)) mkdirSync(REVIEW_DIR, { recursive: true });
       if (!existsSync(REVIEW_SIGNAL_FILE)) writeFileSync(REVIEW_SIGNAL_FILE, '0');
-      // 监听信号文件变更（API 写评论后调用 notifyReviewChange 写入此文件）
-      // fs.watch 单文件在 macOS(kqueue)/Linux(inotify) 上都能可靠检测内容变更
+      // Watch the signal file for changes (written by notifyReviewChange after the API saves a comment)
+      // Single-file fs.watch reliably detects content changes on both macOS (kqueue) and Linux (inotify)
       this.watcher = watch(REVIEW_SIGNAL_FILE, () => {
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
         this.debounceTimer = setTimeout(() => this.notify(), 300);
@@ -283,7 +283,7 @@ class ReviewWatcher {
         setTimeout(() => { if (this.listeners.size > 0) this.start(); }, 2000);
       });
     } catch {
-      // 信号文件不存在等异常，忽略
+      // Signal file missing or other error; ignore
     }
   }
 
@@ -299,6 +299,6 @@ class ReviewWatcher {
   }
 }
 
-// 全局单例
+// Global singletons
 export const fileWatcher = new FileWatcherManager();
 export const reviewWatcher = new ReviewWatcher();

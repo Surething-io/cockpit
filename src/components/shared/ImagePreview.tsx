@@ -10,7 +10,7 @@ interface ImagePreviewProps {
   disabled?: boolean;
 }
 
-// 图片预览模态框 - 使用 Portal 渲染到 body，避免 transform 容器影响 fixed 定位
+// Image preview modal - rendered into body via Portal to avoid fixed positioning issues inside transform containers
 function ImageModal({ image, onClose }: { image: ImageInfo; onClose: () => void }) {
 
   const modalContent = (
@@ -78,7 +78,7 @@ export function ImagePreview({ images, onRemove, disabled }: ImagePreviewProps) 
         ))}
       </div>
 
-      {/* 图片预览模态框 */}
+      {/* Image preview modal */}
       {previewImage && (
         <ImageModal image={previewImage} onClose={() => setPreviewImage(null)} />
       )}

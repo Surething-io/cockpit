@@ -3,8 +3,8 @@ import { createHash } from 'crypto';
 import { isMac, isWindows } from './platform';
 
 /**
- * 通过 ARP 表查询 IP 对应的 MAC 地址
- * 仅适用于同一 L2 子网的局域网设备
+ * Look up the MAC address for an IP via the ARP table.
+ * Only works for devices on the same L2 subnet.
  */
 export function getMacByIp(ip: string): string | null {
   try {
@@ -24,12 +24,12 @@ export function getMacByIp(ip: string): string | null {
       const match = output.match(/([0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2})/);
       if (match) return match[1].toLowerCase();
     }
-  } catch { /* arp 失败或超时 */ }
+  } catch { /* arp failed or timed out */ }
   return null;
 }
 
 /**
- * 将 MAC 地址 hash 为稳定的 authorId（不暴露原始 MAC）
+ * Hash a MAC address into a stable authorId (without exposing the raw MAC).
  */
 export function macToAuthorId(mac: string): string {
   return createHash('sha256').update(`cockpit:${mac}`).digest('hex').slice(0, 16);

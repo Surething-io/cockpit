@@ -18,13 +18,13 @@ export async function POST(request: NextRequest) {
     const basePath = cwd || process.cwd();
     const fullPath = join(basePath, filePath);
 
-    // 如果是创建文件夹
+    // If creating a directory
     if (createDir) {
       await mkdir(fullPath, { recursive: true });
       return NextResponse.json({ success: true });
     }
 
-    // 创建文件
+    // Create file
     if (content === undefined || content === null) {
       return NextResponse.json(
         { error: 'Content is required' },
@@ -32,13 +32,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // P0: 冲突检测 — 保存前检查 mtime 是否一致
+    // P0: Conflict detection — check mtime consistency before saving
     if (expectedMtime !== undefined && expectedMtime !== null) {
       try {
         const currentStats = await stat(fullPath);
         const currentMtime = currentStats.mtimeMs;
         if (Math.abs(currentMtime - expectedMtime) > 1) {
-          // 文件在编辑期间被外部修改
+          // File was modified externally during editing
           return NextResponse.json({
             success: false,
             conflict: true,
@@ -48,11 +48,11 @@ export async function POST(request: NextRequest) {
           }, { status: 409 });
         }
       } catch {
-        // 文件不存在（可能被删除），允许继续创建
+        // File does not exist (possibly deleted), allow creation to proceed
       }
     }
 
-    // P2: Symlink 保护 — 如果是符号链接，写入真实目标文件
+    // P2: Symlink protection — if it is a symlink, write to the real target file
     let writePath = fullPath;
     try {
       const lstats = await lstat(fullPath);
@@ -60,36 +60,36 @@ export async function POST(request: NextRequest) {
         writePath = await realpath(fullPath);
       }
     } catch {
-      // 文件不存在，正常创建
+      // File does not exist, create normally
     }
 
     // Ensure directory exists
     const dir = dirname(writePath);
     await mkdir(dir, { recursive: true });
 
-    // 读取原文件权限（用于写入后恢复）
+    // Read original file permissions (to restore after writing)
     let originalMode: number | undefined;
     try {
       const st = await stat(writePath);
       originalMode = st.mode;
-    } catch { /* 新文件，无需保留权限 */ }
+    } catch { /* New file, no permissions to preserve */ }
 
-    // P1: 原子写入 — 先写临时文件，再 rename
+    // P1: Atomic write — write to temp file first, then rename
     const tmpPath = `${writePath}.${randomUUID()}.tmp`;
     try {
       await writeFile(tmpPath, content, 'utf-8');
-      // 恢复原文件权限（writeFile 新建文件默认 0o644，会丢失 +x 等权限）
+      // Restore original file permissions (writeFile defaults to 0o644, losing +x and other permissions)
       if (originalMode !== undefined) {
         await chmod(tmpPath, originalMode);
       }
       await rename(tmpPath, writePath);
     } catch (error) {
-      // 清理临时文件
+      // Clean up temp file
       try { await unlink(tmpPath); } catch { /* ignore */ }
       throw error;
     }
 
-    // 返回新的 mtime
+    // Return new mtime
     const newStats = await stat(fullPath);
     return NextResponse.json({
       success: true,

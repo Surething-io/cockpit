@@ -22,14 +22,14 @@ export interface TabInfo {
 interface UseTabStateOptions {
   initialCwd?: string;
   initialSessionId?: string;
-  /** 当前视图（agent/explorer/console），用于判断未读：不在 agent 屏时活跃 tab 也标记未读 */
+  /** Current view (agent/explorer/console), used to determine unread: active tab also marked unread when not on agent screen */
   activeView?: string;
 }
 
 export function useTabState({ initialCwd, initialSessionId, activeView }: UseTabStateOptions) {
-  // 标记是否已从服务端加载过 sessions
+  // Mark whether sessions have been loaded from server
   const hasLoadedRef = useRef(false);
-  // 标记是否正在初始化（避免初始化过程中触发保存）
+  // Mark whether currently initializing (avoid triggering save during initialization)
   const isInitializingRef = useRef(true);
   const activeViewRef = useRef(activeView);
   activeViewRef.current = activeView;
@@ -37,7 +37,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   const pageVisibleRef = useRef(pageVisible);
   pageVisibleRef.current = pageVisible;
 
-  // 初始化标签页（先创建一个临时标签，后续会被服务端数据覆盖）
+  // Initialize tabs (first create a temporary tab, later overwritten by server data)
   const [tabs, setTabs] = useState<TabInfo[]>(() => [{
     id: `tab-${Date.now()}`,
     cwd: initialCwd,
@@ -45,14 +45,14 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   }]);
   const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id);
 
-  // 未读 Tab（会话完成但未切换查看）
+  // Unread tabs (session completed but not yet viewed)
   const [unreadTabs, setUnreadTabs] = useState<Set<string>>(new Set());
 
   // Ref for tabs (avoid stale closures in callbacks)
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
 
-  // 更新 state.json 中 session 状态（通知 Workspace 层）
+  // Update session status in state.json (notify Workspace layer)
   const updateSessionStatus = useCallback((sessionId: string, status: string) => {
     if (!initialCwd || !sessionId) return;
     fetch('/api/global-state', {
@@ -62,11 +62,11 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     }).catch(() => {});
   }, [initialCwd]);
 
-  // Tab 拖拽状态
+  // Tab drag state
   const [dragTabIndex, setDragTabIndex] = useState<number | null>(null);
   const [dragOverTabIndex, setDragOverTabIndex] = useState<number | null>(null);
 
-  // 从服务端加载保存的 sessions，并与 URL 参数合并
+  // Load saved sessions from server and merge with URL params
   useEffect(() => {
     if (!initialCwd || hasLoadedRef.current) return;
     hasLoadedRef.current = true;
@@ -79,7 +79,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
           const savedSessions: string[] = data.sessions || [];
           const savedActiveSessionId: string | undefined = data.activeSessionId;
 
-          // 合并 URL sessionId 和 session.json 中的 sessions（去重）
+          // Merge URL sessionId with sessions in session.json (deduplicate)
           let allSessions = [...savedSessions];
           if (initialSessionId && !allSessions.includes(initialSessionId)) {
             allSessions = [initialSessionId, ...allSessions];
@@ -93,7 +93,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
               title: `Session ${sessionId.slice(0, 6)}...`,
             }));
 
-            // 激活优先级：URL sessionId > session.json activeSessionId > 第一个
+            // Activation priority: URL sessionId > session.json activeSessionId > first
             let activeSessionToUse = initialSessionId || savedActiveSessionId;
             let activeIndex = activeSessionToUse ? allSessions.indexOf(activeSessionToUse) : -1;
             if (activeIndex < 0) activeIndex = 0;
@@ -118,7 +118,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     loadSessions();
   }, [initialCwd, initialSessionId]);
 
-  // 当 tabs 或 activeTabId 变化时保存到服务端
+  // Save to server when tabs or activeTabId changes
   useEffect(() => {
     if (isInitializingRef.current || !initialCwd) return;
 
@@ -138,7 +138,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     });
   }, [tabs, activeTabId, initialCwd]);
 
-  // 切换 Tab 时通知父级 Workspace（由父级统一更新 URL）
+  // Notify parent Workspace when switching tab (parent handles URL update)
   useEffect(() => {
     if (isInitializingRef.current || !initialCwd) return;
 
@@ -152,7 +152,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     }, '*');
   }, [activeTabId, tabs, initialCwd]);
 
-  // 添加新标签页（插入到当前标签的右边）
+  // Add new tab (insert to the right of current tab)
   const addTab = useCallback((cwd?: string, sessionId?: string, title?: string) => {
     const newTab: TabInfo = {
       id: `tab-${Date.now()}`,
@@ -172,7 +172,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     setActiveTabId(newTab.id);
   }, [activeTabId]);
 
-  // 关闭标签页
+  // Close tab
   const closeTab = useCallback((tabId: string) => {
     setTabs((prev) => {
       const newTabs = prev.filter((t) => t.id !== tabId);
@@ -192,7 +192,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     });
   }, [activeTabId, initialCwd]);
 
-  // 处理侧边栏点击 session - 添加新标签
+  // Handle sidebar session click - add new tab
   const handleSelectSession = useCallback((sid: string, title?: string) => {
     const existingTab = tabs.find((t) => t.sessionId === sid);
     if (existingTab) {
@@ -202,32 +202,32 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     }
   }, [tabs, initialCwd, addTab]);
 
-  // 新建空白标签
+  // Create new blank tab
   const handleNewTab = useCallback(() => {
     addTab(initialCwd);
   }, [initialCwd, addTab]);
 
-  // 打开新 session（用于 Fork，总是创建新标签）
+  // Open new session (for Fork, always creates a new tab)
   const handleOpenSession = useCallback((sid: string, title?: string) => {
     addTab(initialCwd, sid, title);
   }, [initialCwd, addTab]);
 
-  // 更新标签页状态（loading、sessionId）
+  // Update tab state (loading, sessionId)
   const updateTabState = useCallback((tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string }) => {
     setTabs((prev) => {
       const oldTab = prev.find(t => t.id === tabId);
       if (oldTab?.isLoading && updates.isLoading === false) {
-        // 用户"正在看"需同时满足 3 个条件：
-        // 1. 是当前活跃 tab
-        // 2. 在 agent 屏（不在 explorer/console）
-        // 3. iframe 对用户可见（是当前活跃项目）
+        // User "is watching" requires all 3 conditions:
+        // 1. Is the current active tab
+        // 2. On the agent screen (not explorer/console)
+        // 3. iframe is visible to user (is the current active project)
         const isOnAgent = !activeViewRef.current || activeViewRef.current === 'agent';
         const isUserWatching = tabId === activeTabId && isOnAgent && pageVisibleRef.current;
         if (!isUserWatching) {
           setUnreadTabs(u => new Set(u).add(tabId));
-          // state.json 已被 /api/chat 设为 'unread'，无需写
+          // state.json already set to 'unread' by /api/chat, no need to write
         } else {
-          // 用户正在看 → 修正 state.json 为 'normal'（/api/chat 默认设的 'unread'）
+          // User is watching → correct state.json to 'normal' (/api/chat defaults to 'unread')
           const sid = oldTab.sessionId || updates.sessionId;
           if (sid) updateSessionStatus(sid, 'normal');
         }
@@ -238,8 +238,8 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     });
   }, [activeTabId, updateSessionStatus]);
 
-  // 切回 agent 屏 / 切换 tab / iframe 变为可见时，清除当前活跃 tab 的未读
-  // 必须同时满足：在 agent 屏 + iframe 可见
+  // Clear unread for current active tab when switching back to agent screen / switching tab / iframe becomes visible
+  // Must satisfy both: on agent screen + iframe visible
   useEffect(() => {
     const isOnAgent = !activeView || activeView === 'agent';
     if (isOnAgent && pageVisible) {
@@ -247,7 +247,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         if (!u.has(activeTabId)) return u;
         const next = new Set(u);
         next.delete(activeTabId);
-        // 同步写 state.json
+        // Sync write state.json
         const tab = tabsRef.current.find(t => t.id === activeTabId);
         if (tab?.sessionId) updateSessionStatus(tab.sessionId, 'normal');
         return next;
@@ -255,21 +255,21 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     }
   }, [activeView, activeTabId, pageVisible, updateSessionStatus]);
 
-  // 切换 Tab 并清除未读
+  // Switch tab and clear unread
   const switchTab = useCallback((tabId: string) => {
     setActiveTabId(tabId);
     setUnreadTabs(u => {
       if (!u.has(tabId)) return u;
       const next = new Set(u);
       next.delete(tabId);
-      // 同步写 state.json
+      // Sync write to state.json
       const tab = tabsRef.current.find(t => t.id === tabId);
       if (tab?.sessionId) updateSessionStatus(tab.sessionId, 'normal');
       return next;
     });
   }, [updateSessionStatus]);
 
-  // Tab 拖拽排序
+  // Tab drag-to-reorder
   const handleTabDragStart = useCallback((index: number) => {
     setDragTabIndex(index);
   }, []);

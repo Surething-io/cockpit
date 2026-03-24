@@ -4,7 +4,7 @@ import { getBubbleOrderPath, readJsonFile, writeJsonFile } from '@/lib/paths';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// GET: 获取气泡排序
+// GET: Fetch bubble order
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: 保存气泡排序
+// POST: Save bubble order
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

@@ -8,7 +8,7 @@ import { isMac, isWindows } from '@/lib/platform';
 const execFileAsync = promisify(execFile);
 
 /**
- * POST /api/files/clipboard — 将文件引用写入系统剪贴板
+ * POST /api/files/clipboard — Write file reference to system clipboard
  */
 export async function POST(request: NextRequest) {
   try {
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     } else if (isWindows) {
       execSync(`powershell -Command "Set-Clipboard -Value '${fullPath.replace(/'/g, "''")}'"`);
     } else {
-      // Linux: xclip，fallback xsel
+      // Linux: xclip, fallback xsel
       try {
         await execFileAsync('xclip', ['-selection', 'clipboard'], { input: fullPath } as never);
       } catch {
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * GET /api/files/clipboard — 从系统剪贴板读取文件路径
+ * GET /api/files/clipboard — Read file path from system clipboard
  */
 export async function GET() {
   try {
@@ -59,14 +59,14 @@ export async function GET() {
       try {
         const { stdout } = await execFileAsync('osascript', ['-e', 'POSIX path of (the clipboard as «class furl»)']);
         clipPath = stdout.trim().replace(/\/$/, '');
-      } catch { /* 剪贴板不是文件引用 */ }
+      } catch { /* Clipboard does not contain a file reference */ }
     } else if (isWindows) {
       try {
         const result = execSync('powershell -Command "Get-Clipboard"', { encoding: 'utf8', timeout: 3000 }).trim();
         if (result && !result.includes('\n')) clipPath = result;
       } catch { /* ignore */ }
     } else {
-      // Linux: xclip，fallback xsel
+      // Linux: xclip, fallback xsel
       try {
         const { stdout } = await execFileAsync('xclip', ['-selection', 'clipboard', '-o']);
         const result = stdout.trim();
@@ -83,7 +83,7 @@ export async function GET() {
       try {
         await stat(clipPath);
         return NextResponse.json({ path: clipPath });
-      } catch { /* 不是有效文件路径 */ }
+      } catch { /* Not a valid file path */ }
     }
 
     return NextResponse.json({ path: null });

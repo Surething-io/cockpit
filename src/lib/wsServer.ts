@@ -31,11 +31,11 @@ interface GlobalState {
 
 const HEARTBEAT_INTERVAL = 30000;
 
-// 追踪所有 global-state WS 客户端，用于广播定时任务通知
+// Track all global-state WS clients for broadcasting scheduled task notifications
 const globalStateClients = new Set<WebSocket>();
 
 /**
- * 向所有 global-state 客户端广播消息
+ * Broadcast a message to all global-state clients
  */
 export function broadcastToGlobalState(msg: Record<string, unknown>): void {
   const data = JSON.stringify(msg);
@@ -65,8 +65,8 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
 });
 
 /**
- * 处理 HTTP upgrade 请求，仅接受 /ws/ 路径
- * 返回 true 表示已处理，false 表示不属于 ws 路径
+ * Handle HTTP upgrade requests, only accept /ws/ paths
+ * Returns true if handled, false if not a ws path
  */
 export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean {
   const { pathname } = parse(req.url || '', true);
@@ -82,7 +82,7 @@ export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer
 }
 
 /**
- * /ws/watch?cwd=... — 文件变更监听
+ * /ws/watch?cwd=... — file change listener
  */
 function handleFileWatch(ws: WebSocket, cwd: string): void {
   if (!cwd) {
@@ -98,7 +98,7 @@ function handleFileWatch(ws: WebSocket, cwd: string): void {
 
   const unsubscribe = fileWatcher.subscribe(cwd, send);
 
-  // 附带 review 目录变更事件
+  // Also subscribe to review directory change events
   const unsubReview = reviewWatcher.subscribe(() => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'watch', data: [{ type: 'review' }] }));
@@ -119,7 +119,7 @@ function handleFileWatch(ws: WebSocket, cwd: string): void {
 }
 
 /**
- * /ws/global-state — 全局状态监听
+ * /ws/global-state — global state listener
  */
 function handleGlobalState(ws: WebSocket): void {
   globalStateClients.add(ws);
@@ -129,7 +129,7 @@ function handleGlobalState(ws: WebSocket): void {
     if (closed || ws.readyState !== WebSocket.OPEN) return;
     try {
       const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
-      // 兼容旧格式：isLoading → status
+      // Backward compatibility: isLoading → status
       for (const s of state.sessions) {
         if (!s.status) {
           const legacy = s as GlobalSession & { isLoading?: boolean };
@@ -141,7 +141,7 @@ function handleGlobalState(ws: WebSocket): void {
 
       const sessionsWithLastMessage = await Promise.all(
         recentSessions.map(async (session) => {
-          // loading 时 state.json 已有最新 lastUserMessage（chat route 写入），无需读 transcript
+          // When loading, state.json already has the latest lastUserMessage (written by chat route), no need to read transcript
           if (session.status === 'loading' && session.lastUserMessage) {
             return session;
           }
@@ -157,12 +157,12 @@ function handleGlobalState(ws: WebSocket): void {
     }
   };
 
-  // 串行化 sendState：上一次执行中的新变更合并为一次，保证不乱序
+  // Serialize sendState: merge new changes that arrive during execution into one send, ensuring order
   let sending = false;
   let pendingSend = false;
   const scheduleSend = () => {
     if (sending) {
-      pendingSend = true;  // 标记有待处理的变更，当前完成后再发一次
+      pendingSend = true;  // Mark pending change; send once more after current completes
       return;
     }
     sending = true;
@@ -170,15 +170,15 @@ function handleGlobalState(ws: WebSocket): void {
       sending = false;
       if (pendingSend) {
         pendingSend = false;
-        scheduleSend();   // 用最新的 state.json 再推一次
+        scheduleSend();   // Push once more with the latest state.json
       }
     });
   };
 
-  // 立即推送一次
+  // Push immediately once
   scheduleSend();
 
-  // 监听 state.json
+  // Watch state.json
   const dir = dirname(GLOBAL_STATE_FILE);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
@@ -221,7 +221,7 @@ function handleGlobalState(ws: WebSocket): void {
 // ========== Terminal ==========
 
 /**
- * 获取进程的所有后代进程 PID（深度优先，叶子进程在前）
+ * Get all descendant PIDs of a process (depth-first, leaf processes first)
  */
 function getDescendantPids(pid: number): number[] {
   const descendants: number[] = [];
@@ -230,7 +230,7 @@ function getDescendantPids(pid: number): number[] {
       let result: string;
       if (isWindows) {
         result = execSync(`wmic process where (ParentProcessId=${parentPid}) get ProcessId /format:list`, { encoding: 'utf-8', timeout: 3000 }).trim();
-        // wmic 输出: "ProcessId=1234"
+        // wmic output: "ProcessId=1234"
         const childPids = result.split('\n').map(l => l.replace(/\r/, '').match(/ProcessId=(\d+)/)?.[1]).filter(Boolean).map(Number);
         for (const childPid of childPids) { collect(childPid); descendants.push(childPid); }
       } else {
@@ -245,16 +245,16 @@ function getDescendantPids(pid: number): number[] {
 }
 
 /**
- * /ws/terminal?projectCwd=... — Terminal 命令执行与 stdin 交互
+ * /ws/terminal?projectCwd=... — Terminal command execution and stdin interaction
  *
- * 客户端 → 服务端消息：
+ * Client → Server messages:
  *   { type: 'exec', commandId, command, cwd, tabId, env? }
  *   { type: 'stdin', commandId, data }
  *   { type: 'attach', commandId }
  *   { type: 'interrupt', pid }
- *   { type: 'running' }       — 查询正在运行的命令列表
+ *   { type: 'running' }       — query the list of running commands
  *
- * 服务端 → 客户端消息：
+ * Server → Client messages:
  *   { type: 'pid', commandId, pid }
  *   { type: 'stdout', commandId, data }
  *   { type: 'stderr', commandId, data }
@@ -270,7 +270,7 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
 
   let closed = false;
 
-  // 每个命令的输出监听器清理函数
+  // Cleanup functions for each command's output listeners
   const cleanupMap = new Map<string, () => void>();
 
   const send = (msg: Record<string, unknown>) => {
@@ -286,11 +286,11 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
   }, HEARTBEAT_INTERVAL);
 
   /**
-   * 为子进程挂载输出 + 退出监听（pipe 模式）
-   * WS 断开时清理监听（进程继续运行）
+   * Attach output + exit listeners to a child process (pipe mode)
+   * Clean up listeners on WS disconnect (process continues running)
    */
   function attachPipeListeners(commandId: string, child: import('child_process').ChildProcess) {
-    // 先清理旧监听
+    // Clean up old listeners first
     const oldCleanup = cleanupMap.get(commandId);
     if (oldCleanup) oldCleanup();
 
@@ -328,11 +328,11 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
   }
 
   /**
-   * 为 PTY 进程挂载输出 + 退出监听
-   * PTY 模式下 stdout/stderr 合并为单一 data 流
+   * Attach output + exit listeners to a PTY process
+   * In PTY mode, stdout/stderr are merged into a single data stream
    */
   function attachPtyListeners(commandId: string, pty: import('node-pty').IPty) {
-    // 先清理旧监听
+    // Clean up old listeners first
     const oldCleanup = cleanupMap.get(commandId);
     if (oldCleanup) oldCleanup();
 
@@ -374,7 +374,7 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
         return;
       }
 
-      // 构建最小环境（不继承 Next.js dev server 污染）
+      // Build a minimal environment (avoid inheriting Next.js dev server pollution)
       const childEnv: Record<string, string | undefined> = {
         HOME: process.env.HOME,
         USER: process.env.USER,
@@ -392,9 +392,9 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
         const userShell = getDefaultShell();
 
         if (usePty) {
-          // PTY 模式：使用 node-pty 创建伪终端
-          // 适用于需要 TTY 的交互式命令（claude、vim、htop 等）
-          // node-pty env 必须全部为 string（不能有 undefined），且需要 PATH
+          // PTY mode: use node-pty to create a pseudo-terminal
+          // For interactive commands that require a TTY (claude, vim, htop, etc.)
+          // node-pty env must be all strings (no undefined), and requires PATH
           const ptyEnv: Record<string, string> = {
             PATH: getDefaultPath(),
           };
@@ -409,8 +409,8 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
             env: ptyEnv,
           });
 
-          // node-pty 需要一个 dummy ChildProcess 以兼容 attach 逻辑
-          // 创建一个不做任何事的占位 ChildProcess
+          // node-pty needs a dummy ChildProcess to be compatible with attach logic
+          // Create a placeholder ChildProcess that does nothing
           const dummyChild = spawn('true', [], { stdio: 'ignore' });
 
           registerCommand({
@@ -428,7 +428,7 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
           send({ type: 'pid', commandId, pid: ptyProcess.pid });
           attachPtyListeners(commandId, ptyProcess);
         } else {
-          // Pipe 模式：传统 spawn（默认）
+          // Pipe mode: traditional spawn (default)
           const child = spawn(userShell, ['--login', '-c', command], {
             cwd,
             env: childEnv as NodeJS.ProcessEnv,
@@ -463,12 +463,12 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
       if (!cmd) return;
 
       if (cmd.usePty && cmd.ptyProcess) {
-        // PTY 模式：直接写入 PTY，控制字符由 PTY 自行处理
+        // PTY mode: write directly to PTY, control characters handled by PTY itself
         try { cmd.ptyProcess.write(data); } catch { /* already exited */ }
       } else {
-        // Pipe 模式：控制字符需要转为真实信号/操作
+        // Pipe mode: control characters must be converted to real signals/operations
         if (data === '\x03' && cmd.pid) {
-          // Ctrl+C → SIGINT（发给进程组）
+          // Ctrl+C → SIGINT (send to process group)
           try { process.kill(-cmd.pid, 'SIGINT'); } catch {
             try { process.kill(cmd.pid, 'SIGINT'); } catch { /* already exited */ }
           }
@@ -476,7 +476,7 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
           // Ctrl+Z → SIGTSTP
           try { process.kill(cmd.pid, 'SIGTSTP'); } catch { /* already exited */ }
         } else if (data === '\x04') {
-          // Ctrl+D → 关闭 stdin（发送 EOF）
+          // Ctrl+D → close stdin (send EOF)
           try { cmd.process.stdin?.end(); } catch { /* already closed */ }
         } else if (cmd.process.stdin?.writable) {
           cmd.process.stdin.write(data);
@@ -491,16 +491,16 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
         return;
       }
 
-      // 发送 pid
+      // Send pid
       send({ type: 'pid', commandId, pid: cmd.pid });
 
-      // 发送已缓冲的全部输出
+      // Send all buffered output
       const buffered = cmd.outputLines.join('\n') + (cmd.outputPartial ? '\n' + cmd.outputPartial : '');
       if (buffered) {
         send({ type: 'stdout', commandId, data: buffered });
       }
 
-      // 挂载 WS 转发监听（旧的已被前一个 WS 断开时清理）
+      // Attach WS forwarding listeners (old ones were cleaned up when the previous WS disconnected)
       if (cmd.usePty && cmd.ptyProcess) {
         attachPtyListeners(commandId, cmd.ptyProcess);
       } else {
@@ -518,7 +518,7 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
       for (const p of allPids) {
         try { process.kill(p, 'SIGTERM'); } catch { /* ignore */ }
       }
-      // 1s 后 SIGKILL
+      // SIGKILL after 1s
       setTimeout(() => {
         for (const p of allPids) {
           try { process.kill(p, 0); process.kill(p, 'SIGKILL'); } catch { /* already exited */ }
@@ -526,7 +526,7 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
       }, 1000);
 
     } else if (type === 'resize') {
-      // PTY 模式下调整终端尺寸
+      // Resize terminal in PTY mode
       const { commandId, cols, rows } = msg as { commandId: string; cols: number; rows: number };
       const cmd = getRunningCommand(commandId);
       if (cmd?.usePty && cmd.ptyProcess) {
@@ -547,7 +547,7 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
   ws.on('close', () => {
     closed = true;
     clearInterval(heartbeat);
-    // 清理所有输出监听（但不杀进程，允许 re-attach）
+    // Clean up all output listeners (without killing processes, allowing re-attach)
     for (const cleanup of cleanupMap.values()) {
       cleanup();
     }
@@ -558,7 +558,7 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
 // ========== Terminal CLI HTTP API ==========
 
 /**
- * 从磁盘读取已结束命令的输出（JSONL 历史 + 独立 outputFile）
+ * Read finished command output from disk (JSONL history + separate outputFile)
  */
 async function readFinishedOutput(projectCwd: string, tabId: string, commandId: string): Promise<{ output: string; exitCode: number } | undefined> {
   try {
@@ -581,8 +581,8 @@ async function readFinishedOutput(projectCwd: string, tabId: string, commandId: 
 }
 
 /**
- * 处理 /api/terminal/<action> 请求
- * 与 handleBrowserApi 同一模式，在 server.mjs 中拦截。
+ * Handle /api/terminal/<action> requests
+ * Same pattern as handleBrowserApi; intercepted in server.mjs.
  */
 export async function handleTerminalApi(req: IncomingMessage, res: import('http').ServerResponse): Promise<boolean> {
   const { pathname } = parse(req.url || '', true);
@@ -606,7 +606,7 @@ export async function handleTerminalApi(req: IncomingMessage, res: import('http'
     return true;
   }
 
-  // register：用户点击 shortId 标识时按需注册
+  // register: on-demand registration when the user clicks a shortId badge
   if (action === 'register') {
     const { tabId, commandId, command, projectCwd } = body as { tabId?: string; commandId?: string; command?: string; projectCwd?: string };
     if (!tabId || !commandId || !command) { sendJson(400, { ok: false, error: 'Missing tabId/commandId/command' }); return true; }
@@ -615,7 +615,7 @@ export async function handleTerminalApi(req: IncomingMessage, res: import('http'
     return true;
   }
 
-  // unregister：取消注册
+  // unregister: deregister a terminal
   if (action === 'unregister') {
     const { commandId } = body as { commandId?: string };
     if (!commandId) { sendJson(400, { ok: false, error: 'Missing commandId' }); return true; }
@@ -634,11 +634,11 @@ export async function handleTerminalApi(req: IncomingMessage, res: import('http'
 
   if (action === 'output') {
     if (cmd) {
-      // 运行中：从内存缓冲区读取
+      // Still running: read from in-memory buffer
       const output = cmd.outputLines.join('\n') + (cmd.outputPartial ? '\n' + cmd.outputPartial : '');
       sendJson(200, { ok: true, data: { output, command: entry.command, pid: cmd.pid, running: true } });
     } else {
-      // 已结束：从磁盘读取（JSONL 历史 + outputFile）
+      // Finished: read from disk (JSONL history + outputFile)
       if (!entry.projectCwd) { sendJson(404, { ok: false, error: 'Command projectCwd unknown' }); return true; }
       const historyOutput = await readFinishedOutput(entry.projectCwd, entry.tabId, entry.commandId);
       if (historyOutput !== undefined) {
@@ -673,11 +673,11 @@ export async function handleTerminalApi(req: IncomingMessage, res: import('http'
 // ========== Terminal Follow WS ==========
 
 /**
- * /ws/terminal-follow?id=<shortId> — 实时输出流
+ * /ws/terminal-follow?id=<shortId> — live output stream
  *
- * 1. 先发 buffered output
- * 2. 实时推新输出 { type: 'output', data }
- * 3. 进程退出时发 { type: 'exit', code } 后关闭
+ * 1. Send buffered output first
+ * 2. Push new output in real time: { type: 'output', data }
+ * 3. Send { type: 'exit', code } and close when the process exits
  */
 function handleTerminalFollow(ws: WebSocket, shortId: string): void {
   if (!shortId) { ws.close(4400, 'Missing id parameter'); return; }
@@ -687,7 +687,7 @@ function handleTerminalFollow(ws: WebSocket, shortId: string): void {
 
   const cmd = getRunningCommand(entry.commandId);
 
-  // 发送已缓冲的输出
+  // Send buffered output
   if (cmd) {
     const buffered = cmd.outputLines.join('\n') + (cmd.outputPartial ? '\n' + cmd.outputPartial : '');
     if (buffered) {
@@ -695,7 +695,7 @@ function handleTerminalFollow(ws: WebSocket, shortId: string): void {
     }
   }
 
-  // 挂载实时监听
+  // Attach real-time listeners
   const unsubOutput = addOutputListener(entry.commandId, (data: string) => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'output', data }));
@@ -725,11 +725,11 @@ function handleTerminalFollow(ws: WebSocket, shortId: string): void {
 // ========== Browser Automation HTTP API ==========
 
 /**
- * 处理 /api/browser/<action> 请求
+ * Handle /api/browser/<action> requests
  *
- * 必须在 server.mjs 中拦截，不走 Next.js API route，
- * 因为 Next.js dev 模式会把 route 打包成独立模块实例，
- * 与 wsServer 的 BrowserBridge registry 不共享内存。
+ * Must be intercepted in server.mjs rather than a Next.js API route,
+ * because Next.js dev mode bundles each route as a separate module instance
+ * that does not share memory with the BrowserBridge registry in wsServer.
  */
 export async function handleBrowserApi(req: IncomingMessage, res: import('http').ServerResponse): Promise<boolean> {
   const { pathname } = parse(req.url || '', true);
@@ -738,7 +738,7 @@ export async function handleBrowserApi(req: IncomingMessage, res: import('http')
 
   const action = match[1];
 
-  // 读取请求体
+  // Read request body
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
   let body: { id?: string; params?: Record<string, unknown>; timeout?: number };
@@ -757,7 +757,7 @@ export async function handleBrowserApi(req: IncomingMessage, res: import('http')
     return true;
   }
 
-  // unregister：断开 WS 并删除注册条目
+  // unregister: close WS and remove registration entry
   if (action === 'unregister') {
     if (!id) { sendJson(400, { ok: false, error: 'Missing browser id' }); return true; }
     const browser = getBrowserByShortId(id);
@@ -795,17 +795,17 @@ export async function handleBrowserApi(req: IncomingMessage, res: import('http')
 // ========== Browser Automation Bridge ==========
 
 /**
- * /ws/browser?fullId=... — 浏览器气泡自动化桥
+ * /ws/browser?fullId=... — browser bubble automation bridge
  *
- * BrowserBubble 组件连接此 WS，注册 shortId，
- * 接收来自 API 的自动化命令，转发给 iframe content script，
- * 并将结果返回。
+ * BrowserBubble connects to this WS, registers a shortId,
+ * receives automation commands from the API, forwards them to the iframe content script,
+ * and returns the results.
  *
- * 服务端 → 客户端：
+ * Server → Client:
  *   { type: 'registered', shortId: 'abcd' }
  *   { type: 'browser:cmd', reqId, action, params }
  *
- * 客户端 → 服务端：
+ * Client → Server:
  *   { type: 'browser:cmd-result', reqId, ok, data?, error? }
  */
 function handleBrowser(ws: WebSocket, fullId: string): void {

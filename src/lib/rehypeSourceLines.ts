@@ -2,11 +2,13 @@ import { visit } from 'unist-util-visit';
 import type { Root, Element } from 'hast';
 
 /**
- * Rehype plugin: 将 HAST 节点的源码位置信息（markdown 原始行号）
- * 注入为 data-source-start / data-source-end 属性到渲染后的 DOM 元素上。
+ * Rehype plugin: inject source location info (original markdown line numbers)
+ * from HAST nodes as data-source-start / data-source-end attributes on the
+ * rendered DOM elements.
  *
- * 只注解块级元素（p, h1-h6, li, blockquote, pre, table 等），
- * 内联元素（span, a, code, em, strong）跳过，因为它们的父块元素已经覆盖了。
+ * Only block-level elements (p, h1-h6, li, blockquote, pre, table, etc.) are
+ * annotated; inline elements (span, a, code, em, strong) are skipped because
+ * their parent block element already covers them.
  */
 
 const BLOCK_TAGS = new Set([
@@ -22,9 +24,9 @@ export function rehypeSourceLines() {
       node.properties['data-source-start'] = node.position.start.line;
       node.properties['data-source-end'] = node.position.end.line;
 
-      // <pre> → 将位置信息也注入到子 <code> 元素上
-      // react-markdown 的 code 组件拿不到父 pre 的属性，
-      // 这里让 code 也携带 pre 的行范围，供 SyntaxHighlighter 逐行标注使用
+      // <pre> → also inject position info into the child <code> element.
+      // react-markdown's code component cannot access the parent pre's attributes,
+      // so code carries the pre's line range for SyntaxHighlighter to annotate per line.
       if (node.tagName === 'pre') {
         const codeChild = node.children?.find(
           (c): c is Element => c.type === 'element' && c.tagName === 'code',

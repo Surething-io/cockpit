@@ -6,7 +6,7 @@ import { ReviewData } from '@/lib/review-utils';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-// GET - 获取单个 review 完整数据
+// GET - Fetch the full data for a single review
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
 
@@ -28,7 +28,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// PUT - 更新 review（toggle active, update title）
+// PUT - Update a review (toggle active, update title)
 // body: { active?, title? }
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
@@ -59,7 +59,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// DELETE - 删除 review
+// DELETE - Delete a review
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
 

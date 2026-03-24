@@ -15,7 +15,7 @@ interface ProjectItemProps {
   onOpenNote?: () => void;
 }
 
-// 数字 SVG 图标组件
+// Numbered SVG icon component
 function NumberIcon({ number, isActive }: { number: number; isActive: boolean }) {
   return (
     <svg
@@ -71,11 +71,11 @@ export function ProjectItem({
     >
       <div className="relative flex-shrink-0">
         <NumberIcon number={index + 1} isActive={isActive} />
-        {/* 未读红点 - 数字右上角（loading 时不显示，避免重叠） */}
+        {/* Unread red dot - top-right of number icon (hidden while loading to avoid overlap) */}
         {hasUnread && !isActive && !isLoading && (
           <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500" />
         )}
-        {/* 运行中黄点 - 数字右上角 */}
+        {/* Running orange dot - top-right of number icon */}
         {isLoading && (
           <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-orange-9 animate-pulse" />
         )}
@@ -85,17 +85,17 @@ export function ProjectItem({
         <>
           <span className="flex-1 truncate text-sm">{name}</span>
 
-          {/* 状态指示器：活跃(品牌色)，loading 红点已移到数字右上角 */}
+          {/* Status indicator: active (brand color), loading dot moved to top-right of number */}
           {!isLoading && isActive ? (
             <span className="w-2 h-2 rounded-full bg-brand flex-shrink-0" />
           ) : null}
         </>
       )}
 
-      {/* 操作按钮 - 展开状态悬停时显示 */}
+      {/* Action buttons - shown on hover in expanded state */}
       {isHovered && !collapsed && (
         <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
-          {/* 笔记按钮 */}
+          {/* Note button */}
           {onOpenNote && (
             <button
               className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
@@ -110,7 +110,7 @@ export function ProjectItem({
               </svg>
             </button>
           )}
-          {/* 关闭按钮 */}
+          {/* Close button */}
           <button
             className="p-1 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-500 transition-colors"
             onClick={(e) => {

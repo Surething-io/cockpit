@@ -3,46 +3,46 @@
 import { createContext, useContext, useState, useCallback, useRef, useMemo, ReactNode } from 'react';
 
 interface ChatContextType {
-  // 发送消息到当前激活的 Chat
+  // Send a message to the currently active Chat
   sendMessage: (message: string) => void;
-  // 当前 Chat 是否正在加载（流式响应中）
+  // Whether the current Chat is loading (streaming response)
   isLoading: boolean;
-  // 注册 Chat 的 sendMessage 方法（由 Chat 组件调用）
+  // Register the Chat's sendMessage method (called by Chat component)
   registerChat: (sendFn: (message: string) => void, tabId: string) => void;
-  // 注销 Chat
+  // Unregister a Chat
   unregisterChat: (tabId: string) => void;
-  // 设置当前激活的 Tab
+  // Set the currently active Tab
   setActiveTab: (tabId: string) => void;
-  // 设置加载状态
+  // Set loading state
   setIsLoading: (loading: boolean) => void;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  // 使用 ref 存储 senders，避免状态更新导致无限循环
+  // Use ref to store senders, avoiding infinite loops from state updates
   const chatSendersRef = useRef<Map<string, (message: string) => void>>(new Map());
-  // 当前激活的 Tab ID
+  // Currently active Tab ID
   const activeTabIdRef = useRef<string | null>(null);
-  // 当前是否在加载中（这个需要触发 UI 更新，所以用 state）
+  // Whether currently loading (needs to trigger UI updates, so use state)
   const [isLoading, setIsLoading] = useState(false);
 
-  // 注册 Chat 的 sendMessage 方法（不触发重新渲染）
+  // Register Chat's sendMessage method (does not trigger re-render)
   const registerChat = useCallback((sendFn: (message: string) => void, tabId: string) => {
     chatSendersRef.current.set(tabId, sendFn);
   }, []);
 
-  // 注销 Chat（不触发重新渲染）
+  // Unregister Chat (does not trigger re-render)
   const unregisterChat = useCallback((tabId: string) => {
     chatSendersRef.current.delete(tabId);
   }, []);
 
-  // 设置当前激活的 Tab（不触发重新渲染）
+  // Set the currently active Tab (does not trigger re-render)
   const setActiveTab = useCallback((tabId: string) => {
     activeTabIdRef.current = tabId;
   }, []);
 
-  // 发送消息到当前激活的 Chat
+  // Send message to the currently active Chat
   const sendMessage = useCallback((message: string) => {
     const activeTabId = activeTabIdRef.current;
     if (!activeTabId) {
@@ -57,7 +57,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // 使用 useMemo 稳定 context value，避免不必要的重新渲染
+  // Use useMemo to stabilize context value, avoiding unnecessary re-renders
   const contextValue = useMemo(() => ({
     sendMessage,
     isLoading,
@@ -82,7 +82,7 @@ export function useChatContext() {
   return context;
 }
 
-// 可选的 hook，在 Provider 外部使用时返回 null
+// Optional hook, returns null when used outside Provider
 export function useChatContextOptional() {
   return useContext(ChatContext);
 }

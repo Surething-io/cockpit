@@ -36,7 +36,7 @@ export function EmptyState({ onSelectSession }: EmptyStateProps) {
   const [searchKeyword, setSearchKeyword] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // 加载项目列表
+  // Load project list
   const loadProjects = useCallback(async () => {
     setIsLoadingProjects(true);
     setError(null);
@@ -55,7 +55,7 @@ export function EmptyState({ onSelectSession }: EmptyStateProps) {
     }
   }, []);
 
-  // 加载某个项目的 session 列表
+  // Load session list for a given project
   const loadProjectSessions = useCallback(async (encodedPath: string) => {
     setProjectStates(prev => ({
       ...prev,
@@ -94,7 +94,7 @@ export function EmptyState({ onSelectSession }: EmptyStateProps) {
     }
   }, []);
 
-  // 切换项目展开/折叠状态
+  // Toggle project expand/collapse state
   const toggleProject = useCallback((encodedPath: string) => {
     const currentState = projectStates[encodedPath];
 

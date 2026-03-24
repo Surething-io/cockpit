@@ -4,7 +4,7 @@ import { REVIEW_DIR, writeJsonFile, ensureDir } from '@/lib/paths';
 
 const ORDER_FILE = join(REVIEW_DIR, '_order.json');
 
-// PUT - 保存排序
+// PUT - Save sort order
 // body: { order: string[] }
 export async function PUT(request: NextRequest) {
   try {

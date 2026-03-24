@@ -35,15 +35,15 @@ export function useChatStream(
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // 用于在 handleStreamEvent 中获取最新的 sessionId
+  // Used to get latest sessionId in handleStreamEvent
   const sessionIdRef = useRef<string | null>(sessionId);
   sessionIdRef.current = sessionId;
 
-  // 流式文本缓冲区 - 用于节流 setState
+  // Streaming text buffer - used to throttle setState
   const streamBufferRef = useRef<{ messageId: string; text: string } | null>(null);
   const streamFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 刷新缓冲区到 state
+  // Flush buffer to state
   const flushStreamBuffer = useCallback(() => {
     const buffer = streamBufferRef.current;
     if (buffer && buffer.text) {
@@ -60,7 +60,7 @@ export function useChatStream(
     streamFlushTimerRef.current = null;
   }, [setMessages]);
 
-  // 停止生成
+  // Stop generation
   const handleStop = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -68,11 +68,11 @@ export function useChatStream(
     }
   }, []);
 
-  // SSE 事件处理
+  // SSE event handling
   const handleStreamEvent = useCallback((event: Record<string, unknown>, messageId: string) => {
     const eventType = event.type as string;
 
-    // 处理 session_id
+    // Handle session_id
     if (eventType === 'system' && event.subtype === 'init') {
       const newSessionId = event.session_id as string;
       onSessionId(newSessionId);
@@ -80,20 +80,20 @@ export function useChatStream(
       return;
     }
 
-    // 处理流式文本块（打字机效果）- 使用缓冲区节流
+    // Handle streaming text chunk (typewriter effect) - use buffer throttle
     if (eventType === 'stream_event') {
       const streamEvent = event.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
       if (streamEvent?.type === 'content_block_delta' && streamEvent.delta?.type === 'text_delta') {
         const deltaText = streamEvent.delta.text || '';
 
-        // 累积到缓冲区
+        // Accumulate to buffer
         if (!streamBufferRef.current || streamBufferRef.current.messageId !== messageId) {
           streamBufferRef.current = { messageId, text: deltaText };
         } else {
           streamBufferRef.current.text += deltaText;
         }
 
-        // 节流：每 50ms 刷新一次
+        // Throttle: flush every 50ms
         if (!streamFlushTimerRef.current) {
           streamFlushTimerRef.current = setTimeout(flushStreamBuffer, 50);
         }
@@ -101,12 +101,12 @@ export function useChatStream(
       return;
     }
 
-    // 处理文本内容（完整消息）
+    // Handle text content (complete message)
     if (eventType === 'assistant') {
       const message = event.message as { content?: Array<{ text?: string; name?: string; id?: string; input?: Record<string, unknown> }> } | undefined;
       if (message?.content) {
         for (const block of message.content) {
-          // 处理工具调用
+          // Handle tool call
           if ('name' in block && block.name) {
             const toolCall: ToolCallInfo = {
               id: (block.id as string) || `tool-${Date.now()}`,
@@ -117,7 +117,7 @@ export function useChatStream(
             setMessages((prev) =>
               prev.map((msg) => {
                 if (msg.id !== messageId) return msg;
-                // 避免重复添加
+                // Avoid duplicate additions
                 const exists = msg.toolCalls?.some((tc) => tc.id === toolCall.id);
                 if (exists) return msg;
                 return {
@@ -131,7 +131,7 @@ export function useChatStream(
       }
     }
 
-    // 处理工具结果
+    // Handle tool result
     if (eventType === 'user') {
       const message = event.message as { content?: Array<{ tool_use_id?: string; content?: string }> } | undefined;
       if (message?.content) {
@@ -161,16 +161,16 @@ export function useChatStream(
       }
     }
 
-    // 处理最终结果
+    // Handle final result
     if (eventType === 'result') {
-      // 流结束，立即刷新缓冲区
+      // Stream ended, flush buffer immediately
       if (streamFlushTimerRef.current) {
         clearTimeout(streamFlushTimerRef.current);
         streamFlushTimerRef.current = null;
       }
       flushStreamBuffer();
 
-      // 新会话第一条消息完成后，获取标题
+      // After first message in new session completes, fetch title
       const currentSessionId = sessionIdRef.current;
       if (currentSessionId && cwd) {
         setMessages((prev) => {
@@ -181,7 +181,7 @@ export function useChatStream(
         });
       }
 
-      // 捕获 token 使用信息
+      // Capture token usage info
       const usage = event.usage as { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } | undefined;
       const totalCostUsd = event.total_cost_usd as number | undefined;
 
@@ -212,17 +212,17 @@ export function useChatStream(
     }
   }, [setMessages, flushStreamBuffer, onSessionId, onFetchTitle, cwd]);
 
-  // 发送消息
+  // Send message
   const handleSend = useCallback(
     async (content: string, images?: ImageInfo[]) => {
-      // 转换图片格式
+      // Convert image format
       const messageImages: MessageImage[] | undefined = images?.map((img) => ({
         type: 'base64' as const,
         media_type: img.media_type,
         data: img.data,
       }));
 
-      // 添加用户消息
+      // Add user message
       const userMessage: ChatMessage = {
         id: `user-${Date.now()}`,
         role: 'user',
@@ -232,7 +232,7 @@ export function useChatStream(
       setMessages((prev) => [...prev, userMessage]);
       setIsLoading(true);
 
-      // 创建助手消息占位
+      // Create assistant message placeholder
       const assistantMessageId = `assistant-${Date.now()}`;
       const assistantMessage: ChatMessage = {
         id: assistantMessageId,
@@ -243,7 +243,7 @@ export function useChatStream(
       };
       setMessages((prev) => [...prev, assistantMessage]);
 
-      // 创建 AbortController 用于中断请求
+      // Create AbortController for interrupting request
       abortControllerRef.current = new AbortController();
 
       try {
@@ -288,15 +288,15 @@ export function useChatStream(
                 const event = JSON.parse(data);
                 handleStreamEvent(event, assistantMessageId);
               } catch {
-                // 忽略解析错误
+                // Ignore parse errors
               }
             }
           }
         }
       } catch (error) {
-        // 如果是用户主动中断，不显示错误信息
+        // If user actively interrupted, do not show error message
         if (error instanceof Error && error.name === 'AbortError') {
-          // 保留已生成的内容，仅结束流式状态
+          // Keep already-generated content, only end streaming state
         } else {
           console.error('Chat error:', error);
           setMessages((prev) =>

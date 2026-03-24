@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-// Material Icon Theme 风格的文件图标颜色
+// File icon colors in Material Icon Theme style
 const FILE_COLORS: Record<string, string> = {
   // TypeScript / JavaScript
   ts: '#3178c6',
@@ -94,7 +94,7 @@ const FILE_COLORS: Record<string, string> = {
   default: '#8a8a8a',
 };
 
-// 特殊文件名映射
+// Special filename mapping
 const SPECIAL_FILES: Record<string, string> = {
   'package.json': '#cb3837',
   'package-lock.json': '#cb3837',
@@ -166,7 +166,7 @@ export function FileIcon({ name, className = '', size = 16 }: FileIconProps) {
     );
   }
 
-  // React (JSX/TSX) - 已经在上面处理了，这里可以加个 React 特有的
+  // React (JSX/TSX) - already handled above, this adds a React-specific variant
   if (ext === 'jsx' || (ext === 'tsx' && name.includes('component'))) {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
@@ -358,7 +358,7 @@ export function FileIcon({ name, className = '', size = 16 }: FileIconProps) {
   );
 }
 
-// 文件夹图标（保留备用）
+// Folder icon (kept for future use)
 interface FolderIconProps {
   isOpen?: boolean;
   className?: string;

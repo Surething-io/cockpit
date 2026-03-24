@@ -3,9 +3,9 @@
 /**
  * cock browser <id> <action> [args...]
  *
- * CLI 入口：解析参数，通过 HTTP API 发送命令到浏览器气泡，输出结果。
+ * CLI entry point: parse arguments, send commands to browser bubble via HTTP API, print results.
  *
- * 用法示例：
+ * Usage examples:
  *   cock browser abcd snapshot
  *   cock browser abcd navigate --url https://example.com
  *   cock browser abcd click --ref e5
@@ -16,13 +16,13 @@
  *   cock browser abcd network --status 4xx,5xx
  *   cock browser abcd assert --ref e5 --visible true
  *   cock browser abcd perf --metric timing
- *   cock browser abcd list   (列出所有已连接的浏览器)
+ *   cock browser abcd list   (list all connected browsers)
  */
 
 const args = process.argv.slice(2);
 
-// 帮助文本
-// status: { connected, title, url } — 传入时显示当前浏览器状态
+// Help text
+// status: { connected, title, url } — when passed, display current browser status
 function printHelp(prefix = '<id>', status = null) {
   console.log(`Control a Chrome tab — inspect elements, navigate, interact, and debug.
 
@@ -105,7 +105,7 @@ if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
   process.exit(0);
 }
 
-// 解析参数
+// Parse arguments
 let id, action;
 
 if (args[0] === 'list') {
@@ -116,12 +116,12 @@ if (args[0] === 'list') {
   action = args[1];
 
   if (!action || action === '--help' || action === '-h') {
-    // 只传 id 不传 action（或传 --help）→ 显示状态 + 帮助
+    // Only id provided without action (or --help) → show status + help
     action = '_status';
   }
 }
 
-// 解析 flags: --key value 对
+// Parse flags: --key value pairs
 function parseFlags(flagArgs) {
   const params = {};
   let i = 0;
@@ -131,26 +131,26 @@ function parseFlags(flagArgs) {
       const key = arg.slice(2);
       const next = flagArgs[i + 1];
 
-      // 布尔 flag（没有下一个参数，或下一个也是 --flag）
+      // Boolean flag (no next argument, or next is also a --flag)
       if (!next || next.startsWith('--')) {
         params[key] = true;
         i++;
       } else {
-        // 尝试解析为数字/boolean/JSON
+        // Try parsing as number/boolean/JSON
         let value = next;
         if (value === 'true') value = true;
         else if (value === 'false') value = false;
         else if (/^\d+$/.test(value)) value = parseInt(value);
         else if (/^\d+\.\d+$/.test(value)) value = parseFloat(value);
         else {
-          // 尝试 JSON 解析（数组、对象）
+          // Try JSON parsing (arrays, objects)
           try { value = JSON.parse(value); } catch { /* keep as string */ }
         }
         params[key] = value;
         i += 2;
       }
     } else {
-      // 位置参数：第一个作为 ref 或 url 的快捷方式
+      // Positional argument: first one is shorthand for ref or url
       if (!params._positional) params._positional = [];
       params._positional.push(arg);
       i++;
@@ -161,7 +161,7 @@ function parseFlags(flagArgs) {
 
 const params = parseFlags(args.slice(action === 'list' ? 1 : 2));
 
-// 位置参数处理：某些命令的第一个位置参数有特殊含义
+// Positional argument handling: some commands treat the first positional as a special value
 if (params._positional?.length) {
   const pos = params._positional;
   if (action === 'navigate' && !params.url) params.url = pos[0];
@@ -183,7 +183,7 @@ if (params._positional?.length) {
   delete params._positional;
 }
 
-// 端口：环境变量 COCKPIT_PORT > ~/.cockpit/server.json > 默认 3457
+// Port: env COCKPIT_PORT > ~/.cockpit/server.json > default 3457
 let port = process.env.COCKPIT_PORT || 3457;
 if (!process.env.COCKPIT_PORT) {
   try {
@@ -199,7 +199,7 @@ const baseUrl = `http://localhost:${port}`;
 const timeout = params.timeout || 15000;
 delete params.timeout;
 
-// 快速获取 browser 的 url 和 title（2s 超时，失败静默返回空）
+// Quickly fetch browser url and title (2s timeout, silently return empty on failure)
 async function fetchBrowserInfo(shortId) {
   try {
     const [urlRes, titleRes] = await Promise.all([
@@ -225,9 +225,9 @@ async function fetchBrowserInfo(shortId) {
   }
 }
 
-// 发送请求
+// Send request
 async function run() {
-  // 只传 id 不传 action → 显示帮助 + 状态
+  // Only id provided without action → show help + status
   if (action === '_status') {
     let status = null;
     try {
@@ -262,7 +262,7 @@ async function run() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeout + 5000), // HTTP 超时比命令超时多 5s
+      signal: AbortSignal.timeout(timeout + 5000), // HTTP timeout is 5s more than command timeout
     });
 
     const data = await response.json();
@@ -273,7 +273,7 @@ async function run() {
       process.exit(1);
     }
 
-    // 格式化输出
+    // Format output
     await formatOutput(action, data.data);
   } catch (err) {
     if (err.name === 'TimeoutError' || err.code === 'ABORT_ERR') {
@@ -292,23 +292,23 @@ async function formatOutput(action, data) {
     return;
   }
 
-  // 特殊格式化
+  // Special formatting
   switch (action) {
     case 'snapshot':
-      // a11y tree 直接输出文本
+      // a11y tree: output as plain text
       console.log(typeof data === 'string' ? data : JSON.stringify(data, null, 2));
       return;
 
     case 'url':
     case 'title':
     case 'cookies':
-      // 简单值直接输出
+      // Simple values: output directly
       console.log(data);
       return;
 
     case 'screenshot':
       if (data.image) {
-        // data URL → 保存为 PNG 文件，输出路径（供 Read 工具查看）
+        // data URL → save as PNG file, output path (for Read tool to view)
         const { writeFileSync } = await import('fs');
         const { tmpdir } = await import('os');
         const { join } = await import('path');
@@ -423,7 +423,7 @@ async function formatOutput(action, data) {
       break;
   }
 
-  // 默认：JSON 输出
+  // Default: JSON output
   if (typeof data === 'object') {
     console.log(JSON.stringify(data, null, 2));
   } else {
@@ -431,5 +431,5 @@ async function formatOutput(action, data) {
   }
 }
 
-// 导出 promise 以便外部 await
+// Export promise for external await
 export const done = run();

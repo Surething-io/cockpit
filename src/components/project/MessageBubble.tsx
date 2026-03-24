@@ -24,7 +24,7 @@ function ImageModal({ image, onClose }: ImageModalProps) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
       onClick={onClose}
     >
-      {/* 关闭按钮 */}
+      {/* Close button */}
       <button
         onClick={onClose}
         className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center text-white/80 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors"
@@ -34,7 +34,7 @@ function ImageModal({ image, onClose }: ImageModalProps) {
         </svg>
       </button>
 
-      {/* 图片 */}
+      {/* Image */}
       <img
         src={`data:${image.media_type};base64,${image.data}`}
         alt="图片预览"
@@ -47,8 +47,8 @@ function ImageModal({ image, onClose }: ImageModalProps) {
   return <Portal>{modalContent}</Portal>;
 }
 
-// MD 预览 Modal — 提供 MenuContainerProvider 使 FloatingToolbar 正常工作
-// container 用 callback ref（即 useState setter）：React 挂载 DOM 时同步调用，无时序问题
+// MD preview modal — provides MenuContainerProvider so FloatingToolbar works correctly
+// container uses a callback ref (i.e. useState setter): React calls it synchronously on mount, avoiding timing issues
 function MdPreviewModal({ filePath, content, cwd, onClose }: {
   filePath: string; content: string; cwd: string;
   onClose: () => void;
@@ -80,10 +80,10 @@ interface MessageBubbleProps {
   onFork?: (messageId: string) => void;
 }
 
-// 工具调用折叠显示的阈值
+// Threshold for collapsing tool calls
 const TOOL_CALLS_COLLAPSE_THRESHOLD = 1;
 
-// 使用 memo 优化，只有当 message 或 cwd 变化时才重新渲染
+// Use memo optimization — only re-render when message or cwd changes
 export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork }: MessageBubbleProps) {
   const [previewImage, setPreviewImage] = useState<MessageImage | null>(null);
   const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
@@ -95,12 +95,12 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   const shouldCollapseToolCalls = toolCallsCount > TOOL_CALLS_COLLAPSE_THRESHOLD;
   const canFork = !!sessionId && !!cwd && !!onFork;
 
-  // 是否有 Edit/Write 工具调用
+  // Whether there are Edit/Write tool calls
   const hasFileChanges = useMemo(() => {
     return message.toolCalls?.some(tc => tc.name === 'Edit' || tc.name === 'Write') || false;
   }, [message.toolCalls]);
 
-  // 最后一个 TodoWrite 调用
+  // Last TodoWrite call
   const lastTodoWrite = useMemo(() => {
     if (!message.toolCalls) return null;
     for (let i = message.toolCalls.length - 1; i >= 0; i--) {
@@ -109,13 +109,13 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     return null;
   }, [message.toolCalls]);
 
-  // 所有 AskUserQuestion 调用
+  // All AskUserQuestion calls
   const askQuestionCalls = useMemo(() => {
     if (!message.toolCalls) return [];
     return message.toolCalls.filter(tc => tc.name === 'AskUserQuestion');
   }, [message.toolCalls]);
 
-  // 从 Read/Edit/Write 工具调用中提取去重的 .md 文件路径
+  // Extract deduplicated .md file paths from Read/Edit/Write tool calls
   const mdFiles = useMemo(() => {
     if (!message.toolCalls) return [];
     const seen = new Set<string>();
@@ -134,7 +134,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   const [mdPreviewFile, setMdPreviewFile] = useState<string | null>(null);
   const [mdFileContent, setMdFileContent] = useState<string | null>(null);
 
-  // 选中 md 文件时 fetch 内容
+  // Fetch content when an md file is selected
   useEffect(() => {
     if (!mdPreviewFile) { setMdFileContent(null); return; }
     let cancelled = false;
@@ -146,7 +146,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   }, [mdPreviewFile]);
 
 
-  // 复制消息内容
+  // Copy message content
   const handleCopy = () => {
     if (message.content) {
       navigator.clipboard.writeText(message.content);
@@ -154,14 +154,14 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     }
   };
 
-  // Fork 会话（从此消息点分叉）
+  // Fork session (branch from this message)
   const handleFork = () => {
     if (canFork) {
       onFork!(message.id);
     }
   };
 
-  // 格式化时间：01-15 14:30
+  // Format time as: 01-15 14:30
   const formatTime = (ts?: string) => {
     if (!ts) return '';
     const d = new Date(ts);
@@ -178,14 +178,14 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   return (
     <>
       <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} mb-4 group`} data-role={message.role}>
-        {/* 消息时间 - hover 时显示 */}
+        {/* Message timestamp — shown on hover */}
         {timeStr && (
           <span className="text-[11px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity mb-0.5 px-1">
             {timeStr}
           </span>
         )}
         <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} w-full`}>
-        {/* 用户消息的操作按钮在左边 */}
+        {/* Action buttons for user messages — on the left */}
         {isUser && (
           <div className="self-start mt-2 mr-1 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
             {message.content && (
@@ -224,7 +224,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
               : 'bg-accent text-foreground dark:text-slate-11 rounded-2xl rounded-bl-md'
           } px-4 py-2`}
         >
-          {/* 图片内容 */}
+          {/* Image content */}
           {hasImages && (
             <div className={`flex flex-wrap gap-2 ${message.content ? 'mb-2' : ''}`}>
               {message.images!.map((image, index) => (
@@ -243,7 +243,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             </div>
           )}
 
-          {/* 文本内容 - 使用 Markdown 渲染 */}
+          {/* Text content — rendered as Markdown */}
           {message.content && (
             <div className="break-words">
               <MarkdownRenderer content={message.content} isUser={isUser} isStreaming={message.isStreaming} />
@@ -253,7 +253,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             </div>
           )}
 
-          {/* 内联 Todo 展示 */}
+          {/* Inline Todo display */}
           {lastTodoWrite && (() => {
             const todos = (lastTodoWrite.input?.todos as Array<{ content: string; status: string; activeForm?: string }>) || [];
             const completed = todos.filter(t => t.status === 'completed').length;
@@ -300,7 +300,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             );
           })()}
 
-          {/* MD 文件列表 */}
+          {/* MD file list */}
           {mdFiles.length > 0 && (
             <div className={`${message.content || hasImages || lastTodoWrite ? 'mt-2' : ''}`}>
               <div className="border border-border rounded-lg overflow-hidden bg-secondary/50 px-3 py-2 space-y-0.5">
@@ -322,11 +322,11 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             </div>
           )}
 
-          {/* 工具调用 */}
+          {/* Tool calls */}
           {message.toolCalls && message.toolCalls.length > 0 && (
             <div className={`${message.content || hasImages ? 'mt-2' : ''}`}>
               {shouldCollapseToolCalls ? (
-                // 折叠模式：显示摘要和展开按钮
+                // Collapsed mode: show summary and expand button
                 <div className="border border-border rounded-lg overflow-hidden bg-secondary">
                   <div className="flex items-center">
                     <button
@@ -369,7 +369,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                   )}
                 </div>
               ) : (
-                // 正常模式：直接显示所有工具调用
+                // Normal mode: show all tool calls directly
                 message.toolCalls.map((toolCall, index) => (
                   <ToolCallModal key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} />
                 ))
@@ -377,7 +377,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             </div>
           )}
         </div>
-        {/* AI 消息的操作按钮在右边 */}
+        {/* Action buttons for AI messages — on the right */}
         {!isUser && (
           <div className="self-start mt-2 ml-1 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
             {message.content && (
@@ -411,22 +411,22 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
         </div>
       </div>
 
-      {/* 图片预览模态窗口 */}
+      {/* Image preview modal */}
       {previewImage && (
         <ImageModal image={previewImage} onClose={() => setPreviewImage(null)} />
       )}
 
-      {/* Diff 查看器 */}
+      {/* Diff viewer */}
       {showDiffViewer && message.toolCalls && (
         <DiffViewerModal toolCalls={message.toolCalls} cwd={cwd} onClose={() => setShowDiffViewer(false)} />
       )}
 
-      {/* AskQuestion 查看器 */}
+      {/* AskQuestion viewer */}
       {showAskQuestionViewer && askQuestionCalls.length > 0 && (
         <AskQuestionViewerModal toolCalls={askQuestionCalls} onClose={() => setShowAskQuestionViewer(false)} />
       )}
 
-      {/* MD 文件交互预览 */}
+      {/* MD file interactive preview */}
       {mdPreviewFile && mdFileContent !== null && (
         <MdPreviewModal
           filePath={mdPreviewFile}

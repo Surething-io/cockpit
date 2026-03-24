@@ -8,7 +8,7 @@ function randomStr(len: number): string {
   return Math.random().toString(36).slice(2, 2 + len);
 }
 
-/** 根据文件路径生成固定的 review ID，同一文件始终返回同一 ID */
+/** Generate a stable review ID from a file path; the same file always returns the same ID */
 export function generateReviewId(sourceFile: string): string {
   const hash = createHash('sha256').update(sourceFile).digest('hex').slice(0, 12);
   return `rv-${hash}`;

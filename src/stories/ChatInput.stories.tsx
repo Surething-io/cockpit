@@ -30,5 +30,5 @@ export const Disabled: Story = {
   },
 };
 
-// 说明：图片粘贴功能需要在浏览器中实际粘贴 PNG 图片来测试
-// 粘贴图片后会在输入框上方显示缩略图预览
+// Note: The image paste feature requires actually pasting a PNG image in the browser to test.
+// After pasting, a thumbnail preview will appear above the input field.

@@ -145,12 +145,12 @@ export function QuickCommandsPopover({ cwd, show, onClose, onExecute, onAddPlugi
     }
   }, [cwd]);
 
-  // 打开时加载
+  // Load on open
   useEffect(() => {
     if (show) loadCommands();
   }, [show, loadCommands]);
 
-  // 点击外部关闭
+  // Close on outside click
   useEffect(() => {
     if (!show) return;
     const handleClickOutside = (e: MouseEvent) => {

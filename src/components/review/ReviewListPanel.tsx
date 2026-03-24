@@ -15,9 +15,9 @@ interface ReviewListPanelProps {
   currentReviewId: string;
   onSelect: (reviewId: string) => void;
   readOnly?: boolean;
-  /** 变化时触发列表刷新（如评论数变化） */
+  /** Trigger list refresh on change (e.g. comment count changes) */
   refreshTrigger?: number;
-  /** 查看评论 */
+  /** View comments */
   onViewComments?: (reviewId: string) => void;
 }
 
@@ -48,7 +48,7 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
     fetchList();
   }, [fetchList]);
 
-  // 切换评审 或 评论数变化时刷新列表
+  // Refresh list when switching review or comment count changes
   useEffect(() => {
     fetchList();
   }, [currentReviewId, refreshTrigger, fetchList]);
@@ -78,7 +78,7 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
       const res = await fetch(`/api/review/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setReviews(prev => prev.filter(r => r.id !== id));
-        // 如果删了当前的，切到列表里第一个
+        // If the current one was deleted, switch to the first in the list
         if (id === currentReviewId) {
           const remaining = reviews.filter(r => r.id !== id);
           if (remaining.length > 0) {
@@ -121,7 +121,7 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
     dragId.current = null;
     if (!sourceId || sourceId === targetId) return;
 
-    // 本地重排
+    // Reorder locally
     setReviews(prev => {
       const list = [...prev];
       const fromIdx = list.findIndex(r => r.id === sourceId);
@@ -130,7 +130,7 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
       const [item] = list.splice(fromIdx, 1);
       list.splice(toIdx, 0, item);
 
-      // 异步持久化
+      // Persist asynchronously
       const order = list.map(r => r.id);
       fetch('/api/review/order', {
         method: 'PUT',
@@ -145,7 +145,7 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
   const displayReviews = readOnly ? reviews.filter(r => r.active) : reviews;
   const canDrag = !readOnly;
 
-  // 折叠态
+  // Collapsed state
   if (collapsed) {
     return (
       <div className="h-full flex flex-col items-center bg-secondary/50 w-9 flex-shrink-0 border-r border-border">
@@ -208,15 +208,15 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
             }`}
           >
             <div className="flex items-center gap-1.5 min-w-0">
-              {/* 状态点 */}
+              {/* Status dot */}
               {!readOnly && (
                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
                   r.active ? 'bg-green-500' : 'bg-muted-foreground/40'
                 }`} />
               )}
-              {/* 标题 */}
+              {/* Title */}
               <span className="text-xs truncate flex-1">{r.title}</span>
-              {/* 查看评论按钮 */}
+              {/* View comments button */}
               {r.commentCount > 0 && onViewComments && (
                 <button
                   onClick={(e) => {
@@ -231,10 +231,10 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
                   </svg>
                 </button>
               )}
-              {/* 管理按钮：仅管理员 */}
+              {/* Admin-only management buttons */}
               {!readOnly && (
                 <>
-                  {/* 开关按钮 */}
+                  {/* Toggle button */}
                   <button
                     onClick={(e) => handleToggleActive(e, r.id, r.active)}
                     className={`flex-shrink-0 p-0.5 rounded text-muted-foreground/0 group-hover:text-muted-foreground/60 hover:!text-foreground hover:!bg-accent transition-colors ${
@@ -248,7 +248,7 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.36 6.64A9 9 0 0 1 12 21 9 9 0 0 1 5.64 6.64"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
                     )}
                   </button>
-                  {/* 删除按钮 */}
+                  {/* Delete button */}
                   <button
                     onClick={(e) => handleDelete(e, r.id)}
                     className={`flex-shrink-0 p-0.5 rounded text-muted-foreground/0 group-hover:text-muted-foreground/60 hover:!text-red-500 hover:!bg-red-500/10 transition-colors ${
@@ -263,7 +263,7 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
                 </>
               )}
             </div>
-            {/* 评论数 */}
+            {/* Comment count */}
             {r.commentCount > 0 && (
               <div className={`text-[10px] text-muted-foreground/50 mt-0.5 ${readOnly ? '' : 'pl-3'}`}>
                 {r.commentCount} 条评论

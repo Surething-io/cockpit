@@ -43,22 +43,22 @@ if (noOpenIdx !== -1) {
   process.argv.splice(noOpenIdx, 1);
 }
 
-// --port 参数解析
+// Parse --port argument
 const portIdx = process.argv.indexOf('--port');
 if (portIdx !== -1 && process.argv[portIdx + 1]) {
   process.env.PORT = process.argv[portIdx + 1];
   process.argv.splice(portIdx, 2);
 }
 
-// 默认 prod 端口
+// Default prod port
 if (!process.env.COCKPIT_PORT) {
   process.env.COCKPIT_PORT = '3457';
 }
 
-// 子命令分流
+// Subcommand routing
 if (process.argv[2] === 'browser') {
-  // cock browser <id> <action> [args...] → 委托给 cock-browser.mjs
-  process.argv.splice(2, 1); // 移除 'browser'，让 cock-browser.mjs 从 argv[2] 开始解析
+  // cock browser <id> <action> [args...] → delegate to cock-browser.mjs
+  process.argv.splice(2, 1); // Remove 'browser' so cock-browser.mjs parses from argv[2]
   const mod = await import('./cock-browser.mjs');
   await mod.done;
   process.exit(0);
@@ -74,7 +74,7 @@ if (process.argv[2] === 'terminal') {
 // Start (foreground, Ctrl+C to stop)
 const isDev = process.env.COCKPIT_ENV === 'dev';
 const { existsSync } = await import('fs');
-// prod 模式需要预编译产物，dev 模式由 Next.js 即时编译
+// prod mode requires a pre-built artifact; dev mode is compiled on-the-fly by Next.js
 if (!isDev && !existsSync(resolve(PROJECT_ROOT, '.next-prod', 'BUILD_ID'))) {
   console.error('No production build found.\n');
   console.error('Run: npm run build');

@@ -6,7 +6,7 @@ import path from 'path';
 
 const execAsync = promisify(exec);
 
-// POST - 放弃变更
+// POST - Discard changes
 // body: { cwd, files: string[], isUntracked?: boolean }
 export async function POST(request: NextRequest) {
   try {
@@ -25,12 +25,12 @@ export async function POST(request: NextRequest) {
     for (const file of files) {
       try {
         if (isUntracked) {
-          // 删除 untracked 文件
+          // Delete untracked file
           const filePath = path.join(cwd, file);
           await fs.unlink(filePath);
           results.push({ file, success: true });
         } else {
-          // git restore 已跟踪文件
+          // git restore tracked file
           await execAsync(`git restore "${file}"`, { cwd });
           results.push({ file, success: true });
         }

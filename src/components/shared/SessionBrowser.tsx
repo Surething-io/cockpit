@@ -40,11 +40,11 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
   const [searchKeyword, setSearchKeyword] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // 加载项目列表
+  // Load project list
   const loadProjects = useCallback(async () => {
     setIsLoadingProjects(true);
     setError(null);
-    // 重置所有项目状态（全部折叠）
+    // Reset all project states (collapse all)
     setProjectStates({});
     try {
       const response = await fetch('/api/sessions/projects');
@@ -60,7 +60,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
     }
   }, []);
 
-  // 加载某个项目的 session 列表
+  // Load session list for a specific project
   const loadProjectSessions = useCallback(async (encodedPath: string) => {
     setProjectStates(prev => ({
       ...prev,
@@ -99,12 +99,12 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
     }
   }, []);
 
-  // 切换项目展开/折叠状态
+  // Toggle project expand/collapse state
   const toggleProject = useCallback((encodedPath: string) => {
     const currentState = projectStates[encodedPath];
 
     if (currentState?.isExpanded) {
-      // 折叠
+      // Collapse
       setProjectStates(prev => ({
         ...prev,
         [encodedPath]: {
@@ -113,7 +113,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
         },
       }));
     } else {
-      // 展开并加载（如果还没加载过）
+      // Expand and load (if not already loaded)
       if (!currentState?.sessions?.length) {
         loadProjectSessions(encodedPath);
       } else {
@@ -131,14 +131,14 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
   useEffect(() => {
     if (isOpen) {
       loadProjects();
-      // 自动聚焦到搜索框
+      // Auto-focus the search input
       setTimeout(() => {
         searchInputRef.current?.focus();
       }, 100);
     }
   }, [isOpen, loadProjects]);
 
-  // 打开文件夹选择器
+  // Open folder picker
   const handlePickFolder = useCallback(async () => {
     if (isPickingFolder) return;
     setIsPickingFolder(true);
@@ -150,13 +150,13 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
         onClose();
       }
     } catch {
-      // 忽略错误
+      // Ignore errors
     } finally {
       setIsPickingFolder(false);
     }
   }, [isPickingFolder, onAddProject, onClose]);
 
-  // ESC 键关闭
+  // Close on ESC key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -168,11 +168,11 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
   }, [isOpen, onClose]);
 
   const handleSessionClick = (cwd: string, sessionPath: string) => {
-    // 从 sessionPath 中提取 sessionId（文件名去掉 .jsonl）
+    // Extract sessionId from sessionPath (filename without .jsonl)
     const fileName = sessionPath.split('/').pop() || '';
     const sessionId = fileName.replace('.jsonl', '');
 
-    // 如果有 onSelectSession 回调，使用它；否则通知父级 Workspace 打开
+    // Use onSelectSession callback if provided; otherwise notify parent Workspace to open
     if (onSelectSession) {
       onSelectSession(cwd, sessionId);
     } else {

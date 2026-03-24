@@ -8,8 +8,8 @@ import { isMac, isWindows } from '@/lib/platform';
 const execFileAsync = promisify(execFile);
 
 /**
- * 将文件/文件夹移动到回收站，各平台实现不同
- * 所有平台在回收站不可用时 fallback 到永久删除
+ * Move file/folder to trash; implementation differs per platform.
+ * All platforms fall back to permanent deletion when trash is unavailable.
  */
 async function moveToTrash(fullPath: string): Promise<void> {
   if (isMac) {
@@ -18,17 +18,17 @@ async function moveToTrash(fullPath: string): Promise<void> {
       `tell application "Finder" to delete (POSIX file "${fullPath}" as alias)`,
     ]);
   } else if (isWindows) {
-    // PowerShell: 移动到回收站
+    // PowerShell: move to recycle bin
     try {
       const escaped = fullPath.replace(/'/g, "''");
       execSync(`powershell -Command "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('${escaped}','OnlyErrorDialogs','SendToRecycleBin')"`, { timeout: 10000 });
     } catch {
-      // fallback: 永久删除
+      // fallback: permanent deletion
       const info = await stat(fullPath);
       await rm(fullPath, { recursive: info.isDirectory(), force: true });
     }
   } else {
-    // Linux: gio trash，fallback rm
+    // Linux: gio trash, fallback rm
     try {
       execSync(`gio trash "${fullPath}"`, { timeout: 5000 });
     } catch {
@@ -50,12 +50,12 @@ export async function POST(request: NextRequest) {
     const basePath = resolve(cwd);
     const fullPath = resolve(join(basePath, filePath));
 
-    // 安全检查：路径必须在 cwd 内，不能删 cwd 本身
+    // Safety check: path must be inside cwd and cannot be cwd itself
     if (!fullPath.startsWith(basePath + sep)) {
       return NextResponse.json({ error: '不允许删除此路径' }, { status: 403 });
     }
 
-    // 验证文件/目录存在
+    // Verify file/directory exists
     await stat(fullPath);
 
     await moveToTrash(fullPath);

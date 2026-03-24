@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'cwd is required' }, { status: 400 });
     }
 
-    // 执行 code 命令打开目录
+    // Run the code command to open the directory
     exec(`code "${cwd}"`, (error) => {
       if (error) {
         console.error('Failed to open VS Code:', error);

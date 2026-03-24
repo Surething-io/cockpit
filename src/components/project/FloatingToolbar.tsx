@@ -22,7 +22,7 @@ export function FloatingToolbar({ x, y, visible, container, onAddComment, onSend
   const relX = x - containerRect.left;
   const relY = y - containerRect.top;
 
-  // 定位在鼠标右上方：向上偏移 40px，向右偏移 8px
+  // Position above-right of cursor: offset 40px up, 8px to the right
   const toolbarTop = Math.max(0, relY - 40);
   const toolbarLeft = relX + 8;
 
@@ -63,8 +63,8 @@ export function FloatingToolbar({ x, y, visible, container, onAddComment, onSend
 }
 
 // ============================================
-// ToolbarRenderer - 独立状态，避免父组件重渲染
-// 只有 toolbar 自身的显示/隐藏触发此组件 re-render。
+// ToolbarRenderer - isolated state to avoid parent component re-renders
+// Only the toolbar's own show/hide triggers a re-render of this component.
 // ============================================
 
 export interface ToolbarData {
@@ -87,12 +87,12 @@ interface ToolbarRendererProps {
 function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddComment, onSendToAI, onSearch, isChatLoading }: ToolbarRendererProps) {
   const [version, forceRender] = useState(0);
 
-  // 让父组件通过 bumpRef 触发本组件 re-render
+  // Allow parent to trigger a re-render of this component via bumpRef
   useEffect(() => {
     bumpRef.current = () => forceRender(v => v + 1);
   }, [bumpRef]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- version 仅用于触发 re-read ref
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- version is only used to trigger re-reading the ref
   const toolbar = useMemo(() => floatingToolbarRef.current, [version]);
 
   return (

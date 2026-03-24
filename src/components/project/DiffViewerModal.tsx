@@ -12,7 +12,7 @@ import type { ToolCallInfo } from '@/types/chat';
 
 interface FileChange {
   filePath: string;
-  /** 唯一标识，用于区分同一文件的多次变更 */
+  /** Unique identifier to distinguish multiple changes to the same file */
   uid: string;
   type: 'edit' | 'write';
   old_string: string;
@@ -34,7 +34,7 @@ interface DiffViewerModalProps {
 }
 
 // ============================================
-// 从 toolCalls 中提取 Edit/Write 变更
+// Extract Edit/Write changes from toolCalls
 // ============================================
 
 function toRelativePath(filePath: string, cwd?: string): string {
@@ -79,7 +79,7 @@ function extractFileChanges(toolCalls: ToolCallInfo[], cwd?: string): FileChange
 }
 
 // ============================================
-// 构建目录树
+// Build directory tree
 // ============================================
 
 function buildTree(changes: FileChange[]): TreeNode[] {
@@ -95,11 +95,11 @@ function buildTree(changes: FileChange[]): TreeNode[] {
       const fullPath = parts.slice(0, i + 1).join('/');
 
       if (isFile) {
-        // 文件节点不去重，每次变更都创建新节点
+        // File nodes are not deduplicated; create a new node for each change
         const node: TreeNode = { name, fullPath, isFile: true, children: [], change };
         current.push(node);
       } else {
-        // 目录节点复用
+        // Reuse directory nodes
         let node = current.find(n => n.name === name && !n.isFile);
         if (!node) {
           node = { name, fullPath, isFile: false, children: [] };
@@ -113,11 +113,11 @@ function buildTree(changes: FileChange[]): TreeNode[] {
   return root;
 }
 
-// 找公共前缀深度，跳过只有单个子目录的层级
+// Find common prefix depth, skip levels with only a single subdirectory
 function collapseTree(nodes: TreeNode[]): TreeNode[] {
   return nodes.map(node => {
     if (!node.isFile && node.children.length === 1 && !node.children[0].isFile) {
-      // 合并单子目录
+      // Merge single-child directory
       const child = node.children[0];
       const merged: TreeNode = {
         ...child,
@@ -131,7 +131,7 @@ function collapseTree(nodes: TreeNode[]): TreeNode[] {
 }
 
 // ============================================
-// 目录树节点组件
+// Directory tree node component
 // ============================================
 
 function TreeNodeItem({
@@ -171,7 +171,7 @@ function TreeNodeItem({
     );
   }
 
-  // 目录
+  // Directory
   return (
     <div>
       <button
@@ -208,7 +208,7 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
   const [hoverTooltip, setHoverTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
-  // ========== data-tooltip 事件代理 ==========
+  // ========== data-tooltip event delegation ==========
   useEffect(() => {
     const container = sidebarRef.current;
     if (!container) return;
@@ -248,7 +248,7 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
     };
   }, []);
 
-  // ESC 关闭
+  // ESC to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -261,7 +261,7 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
 
   if (changes.length === 0) return null;
 
-  // 提取文件名用于标题
+  // Extract filename for title
   const selectedFileName = selected ? selected.filePath.split('/').pop() : '';
 
   const modalContent = (
@@ -281,7 +281,7 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
             </h3>
           </div>
           <div className="flex items-center gap-3">
-            {/* 视图模式切换 */}
+            {/* View mode toggle */}
             <div className="flex items-center gap-1 bg-accent rounded p-0.5">
               <button
                 onClick={() => setViewMode('unified')}
@@ -315,7 +315,7 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
 
         {/* Body: sidebar + diff */}
         <div className="flex-1 flex overflow-hidden">
-          {/* 左侧文件树 */}
+          {/* Left file tree */}
           <div ref={sidebarRef} className="w-56 flex-shrink-0 border-r border-border overflow-y-auto py-2">
             {tree.map((node, i) => (
               <TreeNodeItem
@@ -327,7 +327,7 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
             ))}
           </div>
 
-          {/* 右侧 Diff */}
+          {/* Right Diff */}
           <div className="flex-1 overflow-auto">
             {selected ? (
               viewMode === 'unified' ? (

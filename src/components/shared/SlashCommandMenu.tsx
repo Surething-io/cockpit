@@ -5,7 +5,7 @@ import { Editor } from '@tiptap/react';
 import { slashCommands, type SlashCommand } from './slashCommands';
 
 // ============================================
-// 斜杠命令菜单组件
+// Slash command menu component
 // ============================================
 
 interface SlashCommandMenuProps {
@@ -25,13 +25,13 @@ export function SlashCommandMenu({ editor, query, position, onClose }: SlashComm
       cmd.description.toLowerCase().includes(query.toLowerCase())
   );
 
-  // 重置选中索引
+  // Reset selected index
   useEffect(() => {
     setSelectedIndex(0);
   }, [query]);
 
   const executeCommand = (cmd: SlashCommand) => {
-    // 删除 / 和查询文本
+    // Delete / and query text
     editor.chain().focus().deleteRange({
       from: editor.state.selection.from - query.length - 1,
       to: editor.state.selection.from,
@@ -40,7 +40,7 @@ export function SlashCommandMenu({ editor, query, position, onClose }: SlashComm
     onClose();
   };
 
-  // 键盘导航
+  // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowDown') {

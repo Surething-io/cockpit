@@ -20,7 +20,7 @@ import {
 } from './toolCallUtils';
 
 // ============================================
-// FilePreview - 文件预览组件
+// FilePreview - File preview component
 // ============================================
 
 interface FilePreviewProps {
@@ -37,7 +37,7 @@ function FilePreview({ filePath }: FilePreviewProps) {
   const isImage = isImageFile(filePath);
 
   useEffect(() => {
-    // 图片文件不需要加载文本内容
+    // Image files do not need text content loading
     if (isImage) {
       setIsLoading(false);
       return;
@@ -81,7 +81,7 @@ function FilePreview({ filePath }: FilePreviewProps) {
     );
   }
 
-  // 图片文件：直接用 <img> 展示
+  // Image file: render directly with <img>
   if (isImageFile(filePath)) {
     const rawUrl = `/api/file?path=${encodeURIComponent(filePath)}&raw=true`;
     return (
@@ -120,7 +120,7 @@ function FilePreview({ filePath }: FilePreviewProps) {
 }
 
 // ============================================
-// FilePreviewMarkdown - MD 预览（带 TOC 侧边栏）
+// FilePreviewMarkdown - Markdown preview (with TOC sidebar)
 // ============================================
 
 const REHYPE_PLUGINS = [rehypeSourceLines];
@@ -138,7 +138,7 @@ function FilePreviewMarkdown({ content }: { content: string }) {
 }
 
 // ============================================
-// PreviewModal - 预览模态窗口组件
+// PreviewModal - Preview modal window component
 // ============================================
 
 export type ViewMode = 'readable' | 'json' | 'diff-unified' | 'diff-split' | 'file';
@@ -168,7 +168,7 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
   const previewPreRef = useRef<HTMLPreElement>(null);
   const jsonSearch = useJsonSearch(previewPreRef);
 
-  // ESC / Cmd+F 键盘处理
+  // ESC / Cmd+F keyboard handling
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'f' && viewMode === 'readable' && isJson) {
@@ -249,7 +249,7 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
             )}
           </div>
           <div className="flex items-center gap-3">
-            {/* 视图模式切换 */}
+            {/* View mode toggle */}
             {isJson && (
               <div className="flex items-center gap-1 bg-accent rounded p-0.5">
                 {hasDiffMode && (

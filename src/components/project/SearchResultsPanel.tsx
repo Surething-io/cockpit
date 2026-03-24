@@ -13,7 +13,7 @@ interface SearchResultsPanelProps {
   onClose: () => void;
 }
 
-/** Shiki 语法高亮所有匹配行 */
+/** Syntax-highlight all matching lines with Shiki */
 function useHighlightedSearchLines(results: SearchResult[]) {
   const [htmlMap, setHtmlMap] = useState<Map<string, string>>(new Map());
   const [isDark, setIsDark] = useState(false);

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { modKey } from '@/lib/platform';
 
 // Cron 表达式转中文描述
 function describeCron(expr: string): string | null {
@@ -363,7 +364,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
           disabled={!isValid()}
           className="w-full py-1.5 text-sm font-medium rounded bg-brand text-white hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {isEdit ? '保存 (⌘↩)' : '创建 (⌘↩)'}
+          {isEdit ? `保存 (${modKey()}↩)` : `创建 (${modKey()}↩)`}
         </button>
       </div>
     </div>

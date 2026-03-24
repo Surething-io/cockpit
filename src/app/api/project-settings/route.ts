@@ -11,7 +11,7 @@ interface ProjectSettings {
 }
 
 const DEFAULT_SETTINGS: ProjectSettings = {
-  gridLayout: false,
+  gridLayout: true,
   usePty: false,
 };
 

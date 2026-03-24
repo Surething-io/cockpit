@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { modKey } from '@/lib/platform';
 import type { CodeComment } from '@/hooks/useComments';
 
 // ============================================
@@ -166,7 +167,7 @@ export function AddCommentForm({ startLine, endLine, onSubmit, onCancel }: AddCo
           onKeyDown={handleKeyDown}
           className="w-full px-2 py-1.5 text-sm bg-card border border-border rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-9"
           rows={3}
-          placeholder="输入评论... (Cmd+Enter 提交, Esc 取消)"
+          placeholder={`输入评论... (${modKey()}Enter 提交, Esc 取消)`}
         />
         <div className="flex items-center justify-end gap-2">
           <button

@@ -14,6 +14,7 @@ import { registerCommand, finalizeCommand, getRunningCommands, getRunningCommand
 import { registerBrowser, unregisterBrowser, resolvePendingRequest, getBrowserByShortId, createPendingRequest, sendCommandToBrowser, listBrowsers } from './bubbles/browser/BrowserBridge';
 import { getTerminalByShortId, listTerminals, addOutputListener, addExitListener, registerTerminal, unregisterTerminal, getTerminalShortId } from './terminal/TerminalBridge';
 import { randomUUID } from 'crypto';
+import { isWindows, getDefaultShell, getDefaultPath } from './platform';
 
 interface GlobalSession {
   cwd: string;
@@ -226,11 +227,16 @@ function getDescendantPids(pid: number): number[] {
   const descendants: number[] = [];
   function collect(parentPid: number) {
     try {
-      const result = execSync(`pgrep -P ${parentPid}`, { encoding: 'utf-8', timeout: 3000 }).trim();
-      const childPids = result.split('\n').filter(Boolean).map(Number);
-      for (const childPid of childPids) {
-        collect(childPid);
-        descendants.push(childPid);
+      let result: string;
+      if (isWindows) {
+        result = execSync(`wmic process where (ParentProcessId=${parentPid}) get ProcessId /format:list`, { encoding: 'utf-8', timeout: 3000 }).trim();
+        // wmic 输出: "ProcessId=1234"
+        const childPids = result.split('\n').map(l => l.replace(/\r/, '').match(/ProcessId=(\d+)/)?.[1]).filter(Boolean).map(Number);
+        for (const childPid of childPids) { collect(childPid); descendants.push(childPid); }
+      } else {
+        result = execSync(`pgrep -P ${parentPid}`, { encoding: 'utf-8', timeout: 3000 }).trim();
+        const childPids = result.split('\n').filter(Boolean).map(Number);
+        for (const childPid of childPids) { collect(childPid); descendants.push(childPid); }
       }
     } catch { /* no children */ }
   }
@@ -383,14 +389,14 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
       };
 
       try {
-        const userShell = process.env.SHELL || '/bin/zsh';
+        const userShell = getDefaultShell();
 
         if (usePty) {
           // PTY 模式：使用 node-pty 创建伪终端
           // 适用于需要 TTY 的交互式命令（claude、vim、htop 等）
           // node-pty env 必须全部为 string（不能有 undefined），且需要 PATH
           const ptyEnv: Record<string, string> = {
-            PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+            PATH: getDefaultPath(),
           };
           for (const [k, v] of Object.entries(childEnv)) {
             if (v !== undefined) ptyEnv[k] = v;

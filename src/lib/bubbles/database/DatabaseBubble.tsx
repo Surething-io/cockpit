@@ -4,6 +4,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { BUBBLE_CONTENT_HEIGHT } from '@/components/project/console/CommandBubble';
 import { useToast } from '@/components/shared/Toast';
+import { modKey } from '@/lib/platform';
 
 // ============================================================================
 // Types
@@ -671,7 +672,7 @@ export function DatabaseBubble({
           <button
             onClick={(e) => { e.stopPropagation(); onToggleMaximize(); }}
             className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-            title={maximized ? '退出最大化 (⌘M)' : '最大化 (⌘M)'}
+            title={maximized ? `退出最大化 (${modKey()}M)` : `最大化 (${modKey()}M)`}
           >
             {maximized ? (
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1422,7 +1423,7 @@ function SqlView({
           value={sqlInput}
           onChange={(e) => onSqlChange(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="输入 SQL... (⌘+Enter 执行)"
+          placeholder={`输入 SQL... (${modKey()}Enter 执行)`}
           className="w-full h-20 px-2 py-1.5 text-xs font-mono bg-background border border-input rounded resize-y focus:outline-none focus:ring-1 focus:ring-ring"
           spellCheck={false}
         />

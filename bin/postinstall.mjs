@@ -8,9 +8,15 @@ import { execSync } from 'child_process';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, '..');
 
-// node-pty permission fix (macOS)
-try {
-  const spawnHelper = join(projectRoot, 'node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper');
-  accessSync(spawnHelper);
-  execSync(`chmod +x "${spawnHelper}"`);
-} catch {}
+// node-pty permission fix (macOS / Linux)
+// Windows 不需要 chmod；动态检测 platform-arch
+if (process.platform !== 'win32') {
+  try {
+    const spawnHelper = join(
+      projectRoot,
+      `node_modules/node-pty/prebuilds/${process.platform}-${process.arch}/spawn-helper`,
+    );
+    accessSync(spawnHelper);
+    execSync(`chmod +x "${spawnHelper}"`);
+  } catch {}
+}

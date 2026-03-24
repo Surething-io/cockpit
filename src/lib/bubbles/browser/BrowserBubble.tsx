@@ -5,6 +5,7 @@ import { toast } from '@/components/shared/Toast';
 import { BUBBLE_CONTENT_HEIGHT } from '@/components/project/console/CommandBubble';
 import { useBrowserBridge } from '@/hooks/useBrowserBridge';
 import { ShortIdBadge } from '@/components/project/console/ShortIdBadge';
+import { modKey } from '@/lib/platform';
 
 // ============================================================================
 // Utility Functions
@@ -473,7 +474,7 @@ export function BrowserBubble({
             <button
               onClick={onToggleMaximize}
               className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-              title="退出最大化 (⌘M)"
+              title={`退出最大化 (${modKey()}M)`}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3" />

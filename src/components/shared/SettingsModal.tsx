@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '../shared/ThemeProvider';
 import { toast } from '../shared/Toast';
+import { isMacClient } from '@/lib/platform';
 import { useCockpitBridge } from '@/hooks/useCockpitBridge';
 
 interface SettingsModalProps {
@@ -120,7 +121,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   <p>1. 打开 Chrome 地址栏输入 <code className="px-1 py-0.5 bg-muted rounded text-foreground">chrome://extensions</code></p>
                   <p>2. 开启右上角「开发者模式」</p>
                   <p>3. 点击「加载已解压的扩展程序」</p>
-                  <p>4. 按 <kbd className="px-1 py-0.5 bg-muted rounded text-foreground">Cmd+Shift+G</kbd> → 粘贴下方路径 → 回车</p>
+                  {isMacClient() && <p>4. 按 <kbd className="px-1 py-0.5 bg-muted rounded text-foreground">Cmd+Shift+G</kbd> → 粘贴下方路径 → 回车</p>}
                 </div>
               )}
               <div className="flex gap-2">

@@ -15,7 +15,7 @@ const DEFAULT_SETTINGS: ProjectSettings = {
   usePty: false,
 };
 
-// GET: 获取项目设置
+// GET: Fetch project settings
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: 保存项目设置（增量合并）
+// POST: Save project settings (incremental merge)
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

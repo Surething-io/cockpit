@@ -6,7 +6,7 @@ const execAsync = promisify(exec);
 
 export interface GitStageRequest {
   cwd?: string;
-  files: string[]; // 文件路径列表，支持单个或多个
+  files: string[]; // List of file paths, supports single or multiple
 }
 
 export async function POST(request: NextRequest) {
@@ -18,13 +18,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing or invalid files parameter' }, { status: 400 });
     }
 
-    // 检查是否是 git 仓库
+    // Check if this is a git repository
     await execAsync('git rev-parse --git-dir', { cwd });
 
-    // 转义文件路径，处理空格和特殊字符
+    // Escape file paths to handle spaces and special characters
     const escapedFiles = files.map(f => `"${f.replace(/"/g, '\\"')}"`).join(' ');
 
-    // 执行 git add
+    // Run git add
     await execAsync(`git add ${escapedFiles}`, { cwd });
 
     return NextResponse.json({

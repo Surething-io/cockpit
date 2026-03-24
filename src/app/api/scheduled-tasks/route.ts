@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/scheduled-tasks
- * 获取当前实例的所有定时任务
+ * Fetch all scheduled tasks for the current instance
  */
 export async function GET() {
   try {
@@ -21,7 +21,7 @@ export async function GET() {
 
 /**
  * POST /api/scheduled-tasks
- * 创建新定时任务
+ * Create a new scheduled task
  */
 export async function POST(request: NextRequest) {
   try {
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
 
 /**
  * PATCH /api/scheduled-tasks
- * 更新任务（暂停/恢复/标记已读/修改）
+ * Update a task (pause/resume/mark read/edit)
  */
 export async function PATCH(request: NextRequest) {
   try {
@@ -101,7 +101,7 @@ export async function PATCH(request: NextRequest) {
       await scheduledTaskManager.reorderTasks(fields.orderedIds);
       return NextResponse.json({ success: true });
     } else if (action === 'update' && fields) {
-      // 编辑任务：重新计算 nextFireTime
+      // Edit task: recalculate nextFireTime
       const now = Date.now();
       const updatedFields = { ...fields };
       if (fields.type === 'once' && fields.delayMinutes) {
@@ -112,7 +112,7 @@ export async function PATCH(request: NextRequest) {
       } else if (fields.type === 'cron' && fields.cron) {
         updatedFields.nextFireTime = getNextCronTime(fields.cron);
       }
-      updatedFields.paused = false; // 编辑后自动恢复
+      updatedFields.paused = false; // Auto-resume after edit
       task = await scheduledTaskManager.updateTask(id, updatedFields);
     } else if (fields) {
       task = await scheduledTaskManager.updateTask(id, fields);
@@ -131,7 +131,7 @@ export async function PATCH(request: NextRequest) {
 
 /**
  * DELETE /api/scheduled-tasks
- * 删除任务
+ * Delete a task
  */
 export async function DELETE(request: NextRequest) {
   try {

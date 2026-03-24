@@ -14,7 +14,7 @@ function getLanIPs(): string[] {
   return ips;
 }
 
-// GET - 返回分享服务的 LAN 地址
+// GET - Return the LAN address of the sharing service
 export async function GET() {
   const port = parseInt(process.env.COCKPIT_PORT || '3456', 10);
   const sharePort = port + 1000;

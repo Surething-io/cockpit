@@ -17,7 +17,7 @@ import { SlashCommandMenu } from './SlashCommandMenu';
 import { NoteToolbar } from './NoteToolbar';
 
 // ============================================
-// NoteModal 主组件
+// NoteModal main component
 // ============================================
 
 interface NoteModalProps {
@@ -33,16 +33,16 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasUnsavedChanges = useRef(false);
 
-  // 斜杠命令状态
+  // Slash command state
   const [slashMenu, setSlashMenu] = useState<{ query: string; position: { top: number; left: number } } | null>(null);
   const slashStartPos = useRef<number | null>(null);
 
-  // API URL（全局笔记 vs 项目笔记）
+  // API URL (global note vs project note)
   const noteApiUrl = projectCwd
     ? `/api/note?cwd=${encodeURIComponent(projectCwd)}`
     : '/api/note';
 
-  // 保存笔记
+  // Save note
   const saveNote = useCallback(async (content: string) => {
     setIsSaving(true);
     try {
@@ -59,7 +59,7 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
     }
   }, [noteApiUrl]);
 
-  // 5 秒防抖保存
+  // Debounced save with 5-second delay
   const debouncedSave = useCallback((content: string) => {
     hasUnsavedChanges.current = true;
     if (saveTimerRef.current) {
@@ -70,7 +70,7 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
     }, 5000);
   }, [saveNote]);
 
-  // Tiptap 编辑器
+  // Tiptap editor
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -107,7 +107,7 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
         class: 'tiptap-editor focus:outline-none min-h-[60vh] px-6 py-4',
       },
       handleClick: (view, pos, event) => {
-        // Cmd/Ctrl + 点击打开链接
+        // Cmd/Ctrl + click to open link
         if (event.metaKey || event.ctrlKey) {
           const attrs = view.state.doc.resolve(pos).marks().find(m => m.type.name === 'link')?.attrs;
           if (attrs?.href) {
@@ -118,7 +118,7 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
         return false;
       },
       handleKeyDown: (_view, event) => {
-        // Backspace 在空代码块中退出代码块
+        // Backspace in empty code block exits the code block
         if (event.key === 'Backspace' && editorRef.current) {
           const ed = editorRef.current;
           if (ed.isActive('codeBlock')) {
@@ -130,7 +130,7 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
             }
           }
         }
-        // 输入 / 时触发斜杠命令
+        // Trigger slash command on / input
         if (event.key === '/' && !slashMenu) {
           setTimeout(() => {
             if (!editorRef.current) return;
@@ -155,7 +155,7 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
       const md = getMarkdown(editor);
       debouncedSave(md);
 
-      // 更新斜杠命令查询
+      // Update slash command query
       if (slashStartPos.current !== null) {
         const { from } = editor.state.selection;
         if (from < slashStartPos.current) {
@@ -174,13 +174,13 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
     },
   });
 
-  // 保存 editor ref 供 handleKeyDown 闭包使用
+  // Store editor ref for use inside handleKeyDown closure
   const editorRef = useRef(editor);
   useEffect(() => {
     editorRef.current = editor;
   }, [editor]);
 
-  // 打开时加载内容
+  // Load content when opened
   useEffect(() => {
     if (!isOpen || !editor) return;
 
@@ -197,7 +197,7 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
       .finally(() => setIsLoading(false));
   }, [isOpen, editor, noteApiUrl]);
 
-  // 关闭时保存
+  // Save on close
   const handleClose = useCallback(() => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -212,7 +212,7 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
     onClose();
   }, [editor, saveNote, onClose]);
 
-  // 清理 timer
+  // Cleanup timer
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) {
@@ -221,7 +221,7 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
     };
   }, []);
 
-  // ESC 关闭（斜杠菜单打开时 ESC 先关闭菜单）
+  // ESC to close (when slash menu is open, ESC closes the menu first)
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -242,7 +242,7 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* 背景遮罩 */}
+      {/* Background overlay */}
       <div className="absolute inset-0 bg-black/50" onClick={handleClose} />
 
       {/* Modal */}
@@ -265,10 +265,10 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
           </button>
         </div>
 
-        {/* 工具栏 */}
+        {/* Toolbar */}
         <NoteToolbar editor={editor} />
 
-        {/* 编辑器区域 */}
+        {/* Editor area */}
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center py-12 text-muted-foreground">
@@ -280,7 +280,7 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
         </div>
       </div>
 
-      {/* 斜杠命令菜单 */}
+      {/* Slash command menu */}
       {slashMenu && editor && (
         <SlashCommandMenu
           editor={editor}

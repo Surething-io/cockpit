@@ -11,7 +11,7 @@ interface UserRecord {
 
 type UsersMap = Record<string, UserRecord>;
 
-// GET - 返回所有用户映射 { [authorId]: { name, confirmedAt } }
+// GET - Return all user mappings { [authorId]: { name, confirmedAt } }
 export async function GET() {
   try {
     await ensureDir(REVIEW_DIR);
@@ -23,7 +23,7 @@ export async function GET() {
   }
 }
 
-// POST - 创建/更新单个用户 { authorId, name }
+// POST - Create/update a single user { authorId, name }
 export async function POST(request: NextRequest) {
   try {
     const { authorId, name } = await request.json();

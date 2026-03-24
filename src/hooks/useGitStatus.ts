@@ -104,7 +104,7 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
     }
   }, [cwd, fetchStatus]);
 
-  // 批量暂存（目录下所有文件）
+  // Stage all files under a directory
   const handleStageFiles = useCallback(async (paths: string[]) => {
     if (paths.length === 0) return;
     try {
@@ -124,7 +124,7 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
     }
   }, [cwd, fetchStatus]);
 
-  // 批量取消暂存（目录下所有文件）
+  // Unstage all files under a directory
   const handleUnstageFiles = useCallback(async (paths: string[]) => {
     if (paths.length === 0) return;
     try {
@@ -144,14 +144,14 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
     }
   }, [cwd, fetchStatus]);
 
-  // 批量放弃变更（目录下所有文件）
+  // Discard changes for all files under a directory
   const handleDiscardFiles = useCallback(async (files: GitFileStatus[]) => {
     if (files.length === 0) return;
     try {
       const untrackedFiles = files.filter(f => f.status === 'untracked').map(f => f.path);
       const trackedFiles = files.filter(f => f.status !== 'untracked').map(f => f.path);
 
-      // 删除 untracked 文件
+      // Delete untracked files
       if (untrackedFiles.length > 0) {
         const response = await fetch('/api/git/discard', {
           method: 'POST',
@@ -163,7 +163,7 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
         }
       }
 
-      // checkout tracked 文件
+      // Checkout tracked files
       if (trackedFiles.length > 0) {
         const response = await fetch('/api/git/discard', {
           method: 'POST',
@@ -221,7 +221,7 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
     }
   }, [cwd, status, fetchStatus]);
 
-  // 放弃单个文件的变更
+  // Discard changes for a single file
   const handleDiscardFile = useCallback(async (file: GitFileStatus) => {
     try {
       const isUntracked = file.status === 'untracked';
@@ -241,17 +241,17 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
     }
   }, [cwd, fetchStatus]);
 
-  // 放弃工作区所有变更
+  // Discard all working tree changes
   const handleDiscardAll = useCallback(async () => {
     if (!status?.unstaged.length) return;
     if (!confirm(`确定要放弃工作区的 ${status.unstaged.length} 个文件的变更吗？此操作不可恢复。`)) return;
 
     try {
-      // 分离 untracked 和已跟踪文件
+      // Separate untracked and tracked files
       const untrackedFiles = status.unstaged.filter(f => f.status === 'untracked').map(f => f.path);
       const trackedFiles = status.unstaged.filter(f => f.status !== 'untracked').map(f => f.path);
 
-      // 放弃已跟踪文件的变更
+      // Discard changes for tracked files
       if (trackedFiles.length > 0) {
         await fetch('/api/git/discard', {
           method: 'POST',
@@ -260,7 +260,7 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
         });
       }
 
-      // 删除 untracked 文件
+      // Delete untracked files
       if (untrackedFiles.length > 0) {
         await fetch('/api/git/discard', {
           method: 'POST',

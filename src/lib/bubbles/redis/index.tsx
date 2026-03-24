@@ -1,7 +1,7 @@
 import { registerBubble, type BubbleComponentProps, type PluginItemBase } from '../../bubblePlugins';
 import { RedisBubble } from './RedisBubble';
 
-/** Redis 气泡数据 */
+/** Redis bubble data */
 export interface RedisPluginItem extends PluginItemBase {
   connectionString: string;
   displayName: string;

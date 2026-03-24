@@ -7,12 +7,12 @@ import { promisify } from 'util';
 const execAsync = promisify(exec);
 
 /**
- * 通过 git 获取所有文件路径（tracked + untracked + ignored）
- * 返回去重后的扁平路径数组，或 null（非 git 仓库）
+ * Get all file paths via git (tracked + untracked + ignored).
+ * Returns a deduplicated flat path array, or null if not a git repository.
  */
 async function getGitAllPaths(cwd: string): Promise<string[] | null> {
   try {
-    // 三个 git 命令并行：tracked、untracked、ignored
+    // Run three git commands in parallel: tracked, untracked, ignored
     const [trackedResult, untrackedResult, ignoredResult] = await Promise.all([
       execAsync(
         'git -c core.quotePath=false ls-files',
@@ -25,7 +25,7 @@ async function getGitAllPaths(cwd: string): Promise<string[] | null> {
       execAsync(
         'git -c core.quotePath=false ls-files --others --ignored --exclude-standard',
         { cwd, maxBuffer: 10 * 1024 * 1024 }
-      ).catch(() => ({ stdout: '' })), // ignored 可能失败（无 .gitignore 等）
+      ).catch(() => ({ stdout: '' })), // ignored may fail (no .gitignore, etc.)
     ]);
 
     const paths = new Set<string>();
@@ -40,12 +40,12 @@ async function getGitAllPaths(cwd: string): Promise<string[] | null> {
 
     return Array.from(paths).sort();
   } catch {
-    return null; // 非 git 仓库
+    return null; // Not a git repository
   }
 }
 
 /**
- * 递归收集所有文件路径（非 git 仓库 fallback）
+ * Recursively collect all file paths (fallback for non-git repositories).
  */
 async function collectAllPaths(dirPath: string, basePath: string): Promise<string[]> {
   const paths: string[] = [];
@@ -67,7 +67,7 @@ async function collectAllPaths(dirPath: string, basePath: string): Promise<strin
 
 /**
  * GET /api/files/index?cwd=...
- * 返回 { paths: string[] } — 扁平路径数组（仅文件）
+ * Returns { paths: string[] } — flat path array (files only)
  */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -79,13 +79,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Path is not a directory' }, { status: 400 });
     }
 
-    // 尝试 git 方式
+    // Try git approach first
     const gitPaths = await getGitAllPaths(cwd);
     if (gitPaths !== null) {
       return NextResponse.json({ paths: gitPaths });
     }
 
-    // 非 git 仓库 fallback：递归 readdir
+    // Non-git repository fallback: recursive readdir
     const paths = await collectAllPaths(cwd, cwd);
     paths.sort();
     return NextResponse.json({ paths });

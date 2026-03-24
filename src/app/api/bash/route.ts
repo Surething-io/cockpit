@@ -6,8 +6,8 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/bash
- * 轻量 bash 执行端点，用于 Chat 的 ! 前缀命令
- * 不走 terminal WS，不产生 console 气泡
+ * Lightweight bash execution endpoint for Chat's ! prefix commands.
+ * Does not use terminal WS and does not produce console bubbles.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
         cwd: cwd || process.cwd(),
         timeout,
         maxBuffer: 1024 * 1024, // 1MB
-        env: { ...process.env, FORCE_COLOR: '0' }, // 禁用颜色输出
+        env: { ...process.env, FORCE_COLOR: '0' }, // Disable color output
       }, (error, stdout, stderr) => {
         resolve({
           stdout: stdout || '',

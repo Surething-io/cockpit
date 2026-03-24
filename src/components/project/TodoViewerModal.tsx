@@ -30,7 +30,7 @@ function StatusIcon({ status }: { status: TodoItem['status'] }) {
 export function TodoViewerModal({ toolCall, onClose }: TodoViewerModalProps) {
   const todos = (toolCall.input?.todos as TodoItem[]) || [];
 
-  // ESC 关闭
+  // ESC to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();

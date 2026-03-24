@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { type BundledLanguage, getHighlighter, getLanguageFromPath, escapeHtml, tokensToHtml } from '@/lib/codeHighlighter';
 
 /**
- * 整文件一次 codeToTokens，返回 HTML 字符串数组。
- * 先渲染纯文本，再异步分批上色，避免大文件白屏。
+ * Run codeToTokens on the entire file at once and return an array of HTML strings.
+ * First render plain text, then asynchronously apply syntax highlighting in batches to avoid white-screen on large files.
  */
 export function useLineHighlight(lines: string[], filePath: string): string[] {
   const [highlightedLines, setHighlightedLines] = useState<string[]>([]);
@@ -40,7 +40,7 @@ export function useLineHighlight(lines: string[], filePath: string): string[] {
     }
     prevLinesKeyRef.current = currentKey;
 
-    // 先渲染纯文本，避免白屏等待
+    // Render plain text first to avoid waiting with a blank screen
     setHighlightedLines(lines.map(l => escapeHtml(l || ' ')));
 
     let cancelled = false;
@@ -61,7 +61,7 @@ export function useLineHighlight(lines: string[], filePath: string): string[] {
         const htmlLines: string[] = [];
         for (let i = 0; i < result.tokens.length; i++) {
           htmlLines[i] = tokensToHtml(result.tokens[i]);
-          // 每 500 行 yield 一次，避免阻塞主线程
+          // Yield every 500 lines to avoid blocking the main thread
           if (i % 500 === 0 && i > 0) {
             await new Promise(r => setTimeout(r, 0));
             if (cancelled) return;

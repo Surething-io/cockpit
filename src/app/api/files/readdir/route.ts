@@ -13,14 +13,14 @@ interface FileNode {
 
 /**
  * GET /api/files/readdir?cwd=...&path=src/components
- * 返回指定目录的直接子节点 { children: FileNode[] }
+ * Returns direct children of the specified directory { children: FileNode[] }
  */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const cwd = searchParams.get('cwd') || process.cwd();
   const path = searchParams.get('path') || '';
 
-  // 安全校验：不允许 .. 遍历
+  // Safety check: disallow .. traversal
   if (path.includes('..')) {
     return NextResponse.json({ error: 'Invalid path' }, { status: 400 });
   }
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
         ...(isSymlink ? { isSymlink: true } : {}),
       };
 
-      // 解析 symlink target
+      // Resolve symlink target
       if (isSymlink) {
         try {
           node.symlinkTarget = await readlink(join(absPath, entry.name));

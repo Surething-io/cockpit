@@ -37,7 +37,7 @@ function formatTime(ts: number) {
   return `${mm}-${dd} ${hh}:${min}`;
 }
 
-/** 判断某个 review 是否有未读评论 */
+/** Check whether a review has unread comments */
 function hasUnread(r: ReviewSummary, lastViewed: Record<string, number>): boolean {
   if (!r.lastCommentAt) return false;
   const viewed = lastViewed[r.id];
@@ -45,9 +45,9 @@ function hasUnread(r: ReviewSummary, lastViewed: Record<string, number>): boolea
 }
 
 /**
- * ReviewDropdown - TopBar 中的评审管理下拉面板
- * 功能对齐 ReviewListPanel：列表、状态、toggle active、删除、拖拽排序
- * + 新评论红点通知（fswatch → ws/watch → review 事件）
+ * ReviewDropdown - Review management dropdown panel in the TopBar
+ * Feature-aligned with ReviewListPanel: list, status, toggle active, delete, drag-to-reorder
+ * + New comment red-dot notifications (fswatch → ws/watch → review event)
  */
 export function ReviewDropdown({ cwd }: { cwd?: string }) {
   const [open, setOpen] = useState(false);
@@ -56,7 +56,7 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
   const [tooltip, setTooltip] = useState<{ id: string; text: string; top: number; left: number } | null>(null);
   const [lastViewed, setLastViewedState] = useState<Record<string, number>>({});
 
-  // 评论列表 Modal 状态
+  // Comments list modal state
   const [commentsModal, setCommentsModal] = useState<{
     open: boolean;
     comments: ReviewComment[];
@@ -68,12 +68,12 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
   const dragId = useRef<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
-  // 初始化 lastViewed from localStorage
+  // Initialize lastViewed from localStorage
   useEffect(() => {
     setLastViewedState(getLastViewed());
   }, []);
 
-  // 点击外部关闭
+  // Close when clicking outside
   useEffect(() => {
     if (!open) return;
     const handleClick = (e: MouseEvent) => {
@@ -85,7 +85,7 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
-  // 拉取列表
+  // Fetch the review list
   const fetchList = useCallback(async () => {
     setLoading(true);
     try {
@@ -98,12 +98,12 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
     setLoading(false);
   }, []);
 
-  // 打开面板时加载
+  // Load when the panel opens
   useEffect(() => {
     if (open) fetchList();
   }, [open, fetchList]);
 
-  // 订阅 /ws/watch 的 review 事件，收到后静默刷新列表（更新红点状态）
+  // Subscribe to /ws/watch review events; silently refresh the list on receipt (update red-dot state)
   const handleWsMessage = useCallback((msg: unknown) => {
     const { data } = msg as { type: string; data: Array<{ type: string }> };
     if (data?.some(e => e.type === 'review')) {
@@ -117,25 +117,25 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
     enabled: !!cwd,
   });
 
-  // 组件挂载时也拉一次（用于初始红点判断）
+  // Also fetch once on mount (for initial red-dot determination)
   useEffect(() => { fetchList(); }, [fetchList]);
 
-  // 只展示 active 的评审
+  // Only show active reviews
   const activeReviews = useMemo(() => reviews.filter(r => r.active), [reviews]);
 
-  // 计算是否有任何未读（只看 active 的）
+  // Check whether any active review has unread comments
   const hasAnyUnread = useMemo(() => {
     return activeReviews.some(r => hasUnread(r, lastViewed));
   }, [activeReviews, lastViewed]);
 
-  // 点击 review → 标记已读 + 新标签页打开
+  // Click review → mark as read + open in new tab
   const handleOpen = useCallback((id: string) => {
     setLastViewed(id);
     setLastViewedState(getLastViewed());
     window.open(`${window.location.origin}/review/${id}`, '_blank');
   }, []);
 
-  // 查看评论：拉取评审详情 + 用户映射，在当前页弹 Modal
+  // View comments: fetch review details + user map, show modal on current page
   const handleViewComments = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     try {
@@ -225,7 +225,7 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
         </svg>
-        {/* 按钮级红点 */}
+        {/* Button-level red dot */}
         {hasAnyUnread && (
           <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
         )}
@@ -250,7 +250,7 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
             </button>
           </div>
 
-          {/* List — 只展示 active 的评审 */}
+          {/* List — only show active reviews */}
           <div className="max-h-80 overflow-y-auto">
             {loading && reviews.length === 0 ? (
               <div className="px-3 py-4 text-xs text-muted-foreground/50 text-center">加载中...</div>
@@ -280,13 +280,13 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
                     } hover:bg-accent/30`}
                   >
                     <div className="flex items-center gap-1.5 min-w-0">
-                      {/* 状态点：有未读评论时红色，否则绿色 */}
+                      {/* Status dot: red when there are unread comments, green otherwise */}
                       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
                         unread ? 'bg-red-500' : 'bg-green-500'
                       }`} />
-                      {/* 标题 */}
+                      {/* Title */}
                       <span className={`text-xs truncate flex-1 ${unread ? 'font-medium text-foreground' : ''}`}>{r.title}</span>
-                      {/* 查看评论按钮 */}
+                      {/* View comments button */}
                       {r.commentCount > 0 && (
                         <button
                           onClick={(e) => handleViewComments(e, r.id)}
@@ -299,7 +299,7 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
                         </button>
                       )}
                     </div>
-                    {/* 更新时间 + 评论数 */}
+                    {/* Updated time + comment count */}
                     <div className="flex items-center gap-2 text-[10px] text-muted-foreground/50 mt-0.5 pl-3">
                       <span>{formatTime(r.updatedAt || r.createdAt)}</span>
                       {r.commentCount > 0 && <span>{r.commentCount} 条评论</span>}
@@ -322,7 +322,7 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
         </div>
       )}
 
-      {/* 评论列表 Modal */}
+      {/* Comments list modal */}
       <ReviewCommentsListModal
         isOpen={commentsModal.open}
         onClose={() => setCommentsModal(prev => ({ ...prev, open: false }))}

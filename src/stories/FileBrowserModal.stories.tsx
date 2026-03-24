@@ -117,7 +117,7 @@ Git 历史标签页
   },
 };
 
-// Interactive demo - FileBrowserModal 不再有 isOpen 属性，直接渲染
+// Interactive demo - FileBrowserModal no longer has an isOpen prop; it renders directly
 function InteractiveDemo() {
   const [tab, setTab] = useState<'tree' | 'recent' | 'status' | 'history'>('tree');
   const [key, setKey] = useState(0);

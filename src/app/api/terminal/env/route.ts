@@ -6,7 +6,7 @@ import { getTerminalEnvPath, ensureParentDir } from '@/lib/paths';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// GET: 获取环境变量
+// GET: Fetch environment variables
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
         headers: { 'Content-Type': 'application/json' },
       });
     } catch (error) {
-      // 文件不存在，返回空对象
+      // File does not exist, return empty object
       return new Response(JSON.stringify({ env: {} }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: 保存环境变量
+// POST: Save environment variables
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     const envFilePath = getTerminalEnvPath(cwd, tabId);
     await ensureParentDir(envFilePath);
 
-    // 保存环境变量
+    // Save environment variables
     await fs.writeFile(envFilePath, JSON.stringify(env, null, 2), 'utf-8');
 
     return new Response(JSON.stringify({ success: true }), {

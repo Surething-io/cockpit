@@ -1,8 +1,8 @@
 // ============================================
 // LSP Server Registry
-// 每个 (语言, 项目cwd) 独立一个 Language Server 实例
-// LRU 淘汰（上限 5 个）+ idle 超时自动清理（5 分钟）
-// 使用 globalThis 确保 Turbopack 模块隔离下共享同一实例
+// One Language Server instance per (language, project cwd).
+// LRU eviction (max 5) + idle timeout auto-cleanup (5 minutes).
+// Uses globalThis to share one instance across Turbopack module isolation.
 // ============================================
 
 import { resolve } from 'path';
@@ -14,8 +14,8 @@ const GLOBAL_KEY = Symbol.for('lsp_server_registry');
 const IDLE_TIMER_KEY = Symbol.for('lsp_idle_timer');
 
 const MAX_SERVERS = 5;
-const IDLE_TIMEOUT = 5 * 60 * 1000;  // 5 分钟
-const IDLE_CHECK_INTERVAL = 60 * 1000; // 每 60 秒检查一次
+const IDLE_TIMEOUT = 5 * 60 * 1000;  // 5 minutes
+const IDLE_CHECK_INTERVAL = 60 * 1000; // check every 60 seconds
 
 type GlobalWithRegistry = typeof globalThis & {
   [key: symbol]: Map<string, LSPServerInstance> | ReturnType<typeof setInterval> | undefined;
@@ -27,7 +27,7 @@ function getRegistry(): Map<string, LSPServerInstance> {
     g[GLOBAL_KEY] = new Map<string, LSPServerInstance>();
     console.log('[lsp-registry] initialized');
 
-    // 进程退出时清理所有 Language Server
+    // Clean up all Language Servers on process exit
     process.on('exit', () => {
       shutdownAll();
     });
@@ -35,12 +35,12 @@ function getRegistry(): Map<string, LSPServerInstance> {
   return g[GLOBAL_KEY] as Map<string, LSPServerInstance>;
 }
 
-/** 构造 registry key：language:absoluteCwd */
+/** Build a registry key: language:absoluteCwd */
 function makeKey(language: string, cwd: string): string {
   return `${language}:${resolve(cwd)}`;
 }
 
-/** 创建对应语言的 adapter */
+/** Create the adapter for the specified language */
 function createAdapter(language: SupportedLanguage): LanguageServerAdapter | null {
   switch (language) {
     case 'typescript':
@@ -57,12 +57,12 @@ function createAdapter(language: SupportedLanguage): LanguageServerAdapter | nul
 }
 
 // ============================================
-// Idle 超时清理
+// Idle timeout cleanup
 // ============================================
 
 function startIdleTimer(): void {
   const g = globalThis as GlobalWithRegistry;
-  if (g[IDLE_TIMER_KEY]) return; // 已在运行
+  if (g[IDLE_TIMER_KEY]) return; // already running
 
   g[IDLE_TIMER_KEY] = setInterval(() => {
     const registry = getRegistry();
@@ -80,13 +80,13 @@ function startIdleTimer(): void {
       }
     }
 
-    // registry 空了就停止定时器
+    // Stop the timer when the registry is empty
     if (registry.size === 0) {
       stopIdleTimer();
     }
   }, IDLE_CHECK_INTERVAL);
 
-  // 不阻止进程退出
+  // Do not prevent process exit
   if (typeof (g[IDLE_TIMER_KEY] as ReturnType<typeof setInterval>).unref === 'function') {
     (g[IDLE_TIMER_KEY] as ReturnType<typeof setInterval>).unref();
   }
@@ -101,14 +101,14 @@ function stopIdleTimer(): void {
 }
 
 // ============================================
-// LRU 淘汰
+// LRU eviction
 // ============================================
 
-/** 淘汰最久没用的实例，直到 registry.size < MAX_SERVERS */
+/** Evict the least-recently-used instance until registry.size < MAX_SERVERS */
 function evictIfNeeded(): void {
   const registry = getRegistry();
   while (registry.size >= MAX_SERVERS) {
-    // 找 lastUsedAt 最小的
+    // Find the entry with the smallest lastUsedAt
     let oldestKey: string | null = null;
     let oldestTime = Infinity;
     for (const [key, instance] of registry) {
@@ -131,12 +131,12 @@ function evictIfNeeded(): void {
 }
 
 // ============================================
-// 公开 API
+// Public API
 // ============================================
 
 /**
- * 获取或创建 Language Server 实例
- * 每个 (语言, cwd) 独立一个实例
+ * Get or create a Language Server instance.
+ * One instance per (language, cwd) pair.
  */
 export async function getOrCreateServer(language: SupportedLanguage, cwd: string): Promise<LSPServerInstance | null> {
   const resolvedCwd = resolve(cwd);
@@ -150,7 +150,7 @@ export async function getOrCreateServer(language: SupportedLanguage, cwd: string
     return existing;
   }
 
-  // LRU 淘汰
+  // LRU eviction
   evictIfNeeded();
 
   const adapter = createAdapter(language);
@@ -177,16 +177,16 @@ export async function getOrCreateServer(language: SupportedLanguage, cwd: string
   registry.set(key, instance);
   console.log(`[lsp-registry] started ${language} server for ${resolvedCwd}, pid=${childProcess.pid}`);
 
-  // 启动 idle 定时器
+  // Start the idle timer
   startIdleTimer();
 
-  // 监听进程退出，自动清理
+  // Auto-clean up when the process exits
   childProcess.on('exit', () => {
     console.log(`[lsp-registry] ${language} server exited (cwd=${resolvedCwd})`);
     registry.delete(key);
   });
 
-  // 初始化（如果 adapter 需要，如 pyright 的 LSP initialize 握手）
+  // Initialize if the adapter requires it (e.g. pyright's LSP initialize handshake)
   if (adapter.initialize) {
     try {
       await adapter.initialize();
@@ -202,7 +202,7 @@ export async function getOrCreateServer(language: SupportedLanguage, cwd: string
 }
 
 /**
- * 获取已运行的 Language Server（不启动新的）
+ * Get an already-running Language Server (does not start a new one).
  */
 export function getServer(language: SupportedLanguage, cwd: string): LSPServerInstance | undefined {
   const key = makeKey(language, cwd);
@@ -214,7 +214,7 @@ export function getServer(language: SupportedLanguage, cwd: string): LSPServerIn
 }
 
 /**
- * 确保文件在对应 LS 中已打开
+ * Ensure a file is open in the corresponding Language Server.
  */
 export async function ensureFileOpen(
   server: LSPServerInstance,
@@ -224,13 +224,13 @@ export async function ensureFileOpen(
   server.lastUsedAt = Date.now();
 
   if (!server.openedFiles.has(filePath)) {
-    // 首次打开
+    // First open
     server.openedFiles.add(filePath);
     server.adapter.openFile(filePath, content);
     server.lastOpenedFile = filePath;
     return;
   }
-  // 已打开过：仅在切换文件时 reload 一次，同一文件连续请求不重复 reload
+  // Already opened: reload only when switching files; consecutive requests for the same file skip reload
   if (server.lastOpenedFile !== filePath) {
     server.adapter.openFile(filePath, content);
     server.lastOpenedFile = filePath;
@@ -238,7 +238,7 @@ export async function ensureFileOpen(
 }
 
 /**
- * 关闭指定语言 + cwd 的 Language Server
+ * Shut down the Language Server for the specified language and cwd.
  */
 export function shutdown(language: SupportedLanguage, cwd: string): void {
   const key = makeKey(language, cwd);
@@ -252,7 +252,7 @@ export function shutdown(language: SupportedLanguage, cwd: string): void {
 }
 
 /**
- * 关闭所有 Language Server
+ * Shut down all Language Servers.
  */
 export function shutdownAll(): void {
   const registry = getRegistry();
@@ -269,7 +269,7 @@ export function shutdownAll(): void {
 }
 
 /**
- * 获取所有运行中的 Language Server 状态
+ * Get the status of all running Language Servers.
  */
 export function getStatus(): Array<{
   language: string;

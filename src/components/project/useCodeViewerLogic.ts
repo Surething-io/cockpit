@@ -23,55 +23,55 @@ export interface CodeViewerProps {
   cwd?: string;
   enableComments?: boolean;
   scrollToLine?: number | null;
-  /** 跳转对齐方式：'center'（默认，导航跳转）或 'start'（编辑模式返回） */
+  /** Scroll alignment: 'center' (default, navigation jump) or 'start' (return from edit mode) */
   scrollToLineAlign?: 'center' | 'start';
   onScrollToLineComplete?: () => void;
   highlightKeyword?: string | null;
-  /** 外部传入的 ref，CodeViewer 会持续更新为当前可见首行号（1-based） */
+  /** External ref, CodeViewer continuously updates it with the current visible first line number (1-based) */
   visibleLineRef?: React.MutableRefObject<number>;
-  /** LSP: Cmd+Click 跳转定义回调 */
+  /** LSP: Cmd+Click go-to-definition callback */
   onCmdClick?: (line: number, column: number) => void;
-  /** LSP: 悬浮 token 回调 */
+  /** LSP: hover token callback */
   onTokenHover?: (line: number, column: number, rect: { x: number; y: number }) => void;
-  /** LSP: 悬浮离开回调（150ms 延迟，给用户移向卡片留时间） */
+  /** LSP: hover leave callback (150ms delay to give user time to move toward card) */
   onTokenHoverLeave?: () => void;
-  /** LSP: 立即取消 hover（mousedown 等场景，不需要延迟） */
+  /** LSP: cancel hover immediately (mousedown etc., no delay needed) */
   onTokenHoverCancel?: () => void;
-  /** Blame 数据（传入时显示 blame 列） */
+  /** Blame data (shows blame column when provided) */
   blameLines?: BlameLine[];
-  /** Inline blame 数据（行内注释用，文件打开时自动加载） */
+  /** Inline blame data (for inline annotations, auto-loaded on file open) */
   inlineBlameLines?: BlameLine[];
-  /** Blame: 点击 commit 回调 */
+  /** Blame: click commit callback */
   onSelectCommit?: (commit: CommitInfo) => void;
-  // ---- 编辑模式 ----
-  /** 是否处于编辑模式 */
+  // ---- Edit mode ----
+  /** Whether in edit mode */
   editable?: boolean;
-  /** 文件 mtime（保存冲突检测） */
+  /** File mtime (save conflict detection) */
   initialMtime?: number;
-  /** 编辑器关闭回调（传回当前行号） */
+  /** Editor close callback (passes back current line number) */
   onEditorClose?: (currentLine: number) => void;
-  /** 保存成功回调 */
+  /** Save success callback */
   onSaved?: () => void;
-  /** 编辑器状态变化回调 */
+  /** Editor state change callback */
   onEditorStateChange?: (state: { isDirty: boolean; isSaving: boolean }) => void;
-  // ---- Vi 模式 ----
-  /** 启用 vi 键盘模式（默认 false） */
+  // ---- Vi mode ----
+  /** Enable vi keyboard mode (default false) */
   viMode?: boolean;
-  /** Vi Normal 模式下内容修改回调（dd/p/x/o/O 只改内存，不写磁盘） */
+  /** Vi Normal mode content mutation callback (dd/p/x/o/O only modify memory, not disk) */
   onContentMutate?: (newContent: string) => void;
-  /** Vi: 进入 Insert 模式回调（触发父组件设置 editable=true） */
+  /** Vi: enter Insert mode callback (triggers parent to set editable=true) */
   onEnterInsertMode?: (line: number) => void;
-  /** Vi: :w 保存回调 */
+  /** Vi: :w save callback */
   onViSave?: () => void;
-  /** 外部传入的 ref，CodeViewer 持续更新为当前 vi 光标位置（0-based） */
+  /** External ref, CodeViewer continuously updates to current vi cursor position (0-based) */
   viStateRef?: React.MutableRefObject<{ cursorLine: number; cursorCol: number } | null>;
-  /** 还原光标行（1-based，文件切换回来时使用） */
+  /** Restore cursor line (1-based, used when switching back to file) */
   initialCursorLine?: number | null;
-  /** 还原光标列（1-based） */
+  /** Restore cursor column (1-based) */
   initialCursorCol?: number | null;
-  /** 光标还原完成回调 */
+  /** Cursor restore complete callback */
   onInitialCursorSet?: () => void;
-  /** 内容搜索回调（选中文本 → 全项目搜索） */
+  /** Content search callback (selected text → project-wide search) */
   onContentSearch?: (query: string) => void;
 }
 
@@ -101,10 +101,10 @@ export type RowData =
   | { type: 'add-comment'; startLine: number; endLine: number };
 
 // ============================================
-// 选区逻辑坐标工具
+// Selection logical coordinate utilities
 // ============================================
 
-/** 计算 node+offset 在 [data-line] 行内的字符偏移 */
+/** Compute the character offset of node+offset within a [data-line] row element */
 function charOffsetInLine(lineEl: Element, node: Node, offset: number): number {
   const walker = document.createTreeWalker(lineEl, NodeFilter.SHOW_TEXT);
   let chars = 0;
@@ -116,7 +116,7 @@ function charOffsetInLine(lineEl: Element, node: Node, offset: number): number {
   return chars + offset; // fallback
 }
 
-/** 根据字符偏移找到 [data-line] 行内的 text node + offset */
+/** Resolve a character offset to a text node + offset within a [data-line] row element */
 export function resolveCharOffset(lineEl: Element, charOffset: number): { node: Node; offset: number } | null {
   const walker = document.createTreeWalker(lineEl, NodeFilter.SHOW_TEXT);
   let remaining = charOffset;
@@ -128,7 +128,7 @@ export function resolveCharOffset(lineEl: Element, charOffset: number): { node: 
     if (remaining <= len) return { node: cur, offset: remaining };
     remaining -= len;
   }
-  // 超出末尾，定位到最后一个 text node 的末端
+  // Past the end: position at the tail of the last text node
   if (last) return { node: last, offset: last.textContent!.length };
   return null;
 }
@@ -165,7 +165,7 @@ export function useCodeViewerLogic({
   // Cmd key state (for LSP Cmd+Click)
   const [cmdHeld, setCmdHeld] = useState(false);
 
-  // Flash line state (跳转目标行高亮 3 秒)
+  // Flash line state (highlight jump target line for 3 seconds)
   const [flashLine, setFlashLine] = useState<number | null>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -181,21 +181,21 @@ export function useCodeViewerLogic({
   // Comment UI state
   const [viewingComment, setViewingComment] = useState<ViewingCommentData | null>(null);
 
-  // Floating toolbar - 使用 ref 存储数据，避免触发 CodeViewer 重渲染
+  // Floating toolbar - store data in ref to avoid triggering CodeViewer re-render
   const floatingToolbarRef = useRef<FloatingToolbarData | null>(null);
-  // bumpToolbarRef: 由 CodeViewer 中的 ToolbarRenderer 注入，调用后只触发 ToolbarRenderer re-render
+  // bumpToolbarRef: injected by ToolbarRenderer in CodeViewer; calling it triggers only a ToolbarRenderer re-render
   const bumpToolbarRef = useRef<() => void>(() => {});
 
-  // 当浮层（toolbar / addComment / sendToAI）活跃时，抑制 hover 和 cmd+click
+  // Suppress hover and cmd+click when float layer (toolbar / addComment / sendToAI) is active
   const suppressHoverRef = useRef(false);
 
-  // 选区逻辑坐标：re-render 后 DOM 节点被替换时用于恢复选区
+  // Selection logical coordinates: used to restore selection when DOM nodes are replaced after re-render
   const savedSelectionRef = useRef<{ startLine: number; startOffset: number; endLine: number; endOffset: number } | null>(null);
 
   const [addCommentInput, setAddCommentInput] = useState<InputCardData | null>(null);
   const [sendToAIInput, setSendToAIInput] = useState<InputCardData | null>(null);
 
-  // Inline blame annotation — 当前 mouseup 所在行号
+  // Inline blame annotation — line number at current mouseup
   const inlineBlameLineRef = useRef<number | null>(null);
   const [inlineBlameVersion, setInlineBlameVersion] = useState(0);
 
@@ -265,7 +265,7 @@ export function useCodeViewerLogic({
     overscan: 10,
   });
 
-  // 持续更新外部 visibleLineRef：从 virtualizer 的可见范围中取第一个 code 行
+  // Continuously update external visibleLineRef: take first code line from virtualizer's visible range
   useEffect(() => {
     if (!visibleLineRef) return;
     const el = parentRef.current;
@@ -273,11 +273,11 @@ export function useCodeViewerLogic({
     const onScroll = () => {
       const range = virtualizer.range;
       if (!range) return;
-      // range.startIndex 包含 overscan，需要从 scrollTop 反推真正可见的第一行
+      // range.startIndex includes overscan, derive truly visible first line from scrollTop
       const scrollTop = el.scrollTop;
       const items = virtualizer.getVirtualItems();
       for (const item of items) {
-        // 找到第一个 start >= scrollTop 的 item（即真正可见，不是 overscan）
+        // Find first item with start >= scrollTop (truly visible, not overscan)
         if (item.start >= scrollTop) {
           const row = rowData[item.index];
           if (row?.type === 'code') {
@@ -288,7 +288,7 @@ export function useCodeViewerLogic({
       }
     };
     el.addEventListener('scroll', onScroll, { passive: true });
-    // 初始化
+    // Initialize
     onScroll();
     return () => el.removeEventListener('scroll', onScroll);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -377,7 +377,7 @@ export function useCodeViewerLogic({
     setMatchScrollTrigger(prev => prev + 1);
   }, [matches.length]);
 
-  // 跳转到指定行号
+  // Jump to specified line number
   const scrollToLineRef = useRef(scrollToLine);
   scrollToLineRef.current = scrollToLine;
 
@@ -390,7 +390,7 @@ export function useCodeViewerLogic({
         const doScroll = () => {
           virtualizer.scrollToIndex(rowIndex, { align: scrollToLineAlign });
 
-          // 仅导航跳转（center）时闪烁高亮，编辑返回（start）不闪
+          // Flash highlight only for navigation jumps (center); not for returning from edit (start)
           if (scrollToLineAlign === 'center') {
             if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
             setFlashLine(targetLine);
@@ -401,10 +401,10 @@ export function useCodeViewerLogic({
         };
 
         if (scrollToLineAlign === 'start') {
-          // 编辑模式返回：无延迟，立即滚动
+          // Returning from edit mode: scroll immediately without delay
           requestAnimationFrame(doScroll);
         } else {
-          // 导航跳转：等虚拟滚动布局就绪
+          // Navigation jump: wait for virtual scroll layout to be ready
           setTimeout(doScroll, 150);
         }
       }
@@ -445,28 +445,28 @@ export function useCodeViewerLogic({
     let isDragging = false;
     let downX = 0, downY = 0;
 
-    // mousedown：标记拖选开始，抑制 hover，清除旧 toolbar + 保存的选区
+    // mousedown: mark drag-select start, suppress hover, clear old toolbar + saved selection
     const handleMouseDown = (e: MouseEvent) => {
       isDragging = true;
       downX = e.clientX;
       downY = e.clientY;
       savedSelectionRef.current = null;
-      suppressHoverRef.current = true; // 拖动期间抑制 hover，防止 LSP hover 触发父组件 re-render
+      suppressHoverRef.current = true; // Suppress hover during drag to prevent LSP hover triggering parent re-render
       if (floatingToolbarRef.current) {
         floatingToolbarRef.current = null;
         bumpToolbarRef.current();
       }
     };
 
-    // mouseup：标记拖选结束，计算选区并显示 toolbar
+    // mouseup: mark drag-select end, compute selection and show toolbar
     const handleMouseUp = (e: MouseEvent) => {
       isDragging = false;
 
-      // 点击 FloatingToolbar 按钮时，不清除 toolbar，让 onClick 正常触发
+      // When clicking FloatingToolbar button, don't clear toolbar, let onClick fire normally
       const target = e.target as HTMLElement;
       if (target.closest?.('.floating-toolbar')) return;
 
-      // 移动 ≤ 5px 视为点击（含双击/三击），不弹出 toolbar
+      // Movement ≤ 5px treated as click (including double/triple click), do not show toolbar
       const moved = Math.abs(e.clientX - downX) > 5 || Math.abs(e.clientY - downY) > 5;
 
       const selection = window.getSelection();
@@ -527,7 +527,7 @@ export function useCodeViewerLogic({
         suppressHoverRef.current = true;
         bumpToolbarRef.current();
 
-        // 保存选区逻辑坐标：re-render 后 DOM 被替换时用于恢复
+        // Save selection logical coordinates: used to restore when DOM is replaced after re-render
         const startLineEl = startNode.nodeType === Node.TEXT_NODE
           ? startNode.parentElement?.closest('[data-line]')
           : (startNode as Element).closest('[data-line]');
@@ -545,8 +545,8 @@ export function useCodeViewerLogic({
       }
     };
 
-    // selectionchange：选区消失时隐藏 toolbar
-    // 拖选期间跳过，避免高频触发不必要的 re-render
+    // selectionchange: hide toolbar when selection disappears
+    // Skip during drag-select to avoid high-frequency unnecessary re-renders
     const handleSelectionChange = () => {
       if (isDragging) return;
       if (!floatingToolbarRef.current) return;
@@ -569,7 +569,7 @@ export function useCodeViewerLogic({
     };
   }, [commentsEnabled]);
 
-  // Inline blame annotation — mouseup 时记录所在行号
+  // Inline blame annotation — record line number on mouseup
   useEffect(() => {
     const codeArea = parentRef.current;
     if (!codeArea) return;
@@ -584,9 +584,9 @@ export function useCodeViewerLogic({
     };
 
     const handleMouseUp = (e: MouseEvent) => {
-      // 只处理代码区内的 mouseup
+      // Only handle mouseup within the code area
       if (!codeArea.contains(e.target as Node)) {
-        // 如果 mouseup 在 inline blame tooltip 内，不清除行号（tooltip portal 在 document.body 上）
+        // If mouseup is inside inline blame tooltip, don't clear line number (tooltip portal is on document.body)
         if ((e.target as HTMLElement).closest?.('[data-inline-blame-tip]')) return;
         if (inlineBlameLineRef.current !== null) {
           inlineBlameLineRef.current = null;
@@ -595,9 +595,9 @@ export function useCodeViewerLogic({
         return;
       }
 
-      // 有文本选区时跳过 inline blame 更新：
-      // mouseup 所在行的 CodeLine 会因 inlineBlameData prop 变化而 re-render，
-      // 导致该行 DOM 重建、选区锚点丢失。
+      // Skip inline blame update when there's a text selection:
+      // The CodeLine at the mouseup line would re-render due to inlineBlameData prop change,
+      // causing DOM rebuild for that line and losing selection anchor.
       const sel = window.getSelection();
       if (sel && !sel.isCollapsed && sel.toString().trim()) {
         return;
@@ -606,9 +606,9 @@ export function useCodeViewerLogic({
       const line = getLineFromEvent(e);
       if (line !== inlineBlameLineRef.current) {
         inlineBlameLineRef.current = line;
-        // 延迟到下一帧再触发 re-render，避免在 mouseup→click 之间
-        // 的 microtask checkpoint 中 React flush 导致 fiber 树重建，
-        // 使紧随的 click 事件丢失 onClick 路由
+        // Defer re-render to next frame to avoid React flush during mouseup→click
+        // microtask checkpoint rebuilding the fiber tree,
+        // which would cause the subsequent click event to lose its onClick route
         requestAnimationFrame(() => setInlineBlameVersion(v => v + 1));
       }
     };
@@ -700,16 +700,16 @@ export function useCodeViewerLogic({
     }
   }, [sendToAIInput, chatContext, filePath, cwd, refreshComments]);
 
-  // Highlight match in line — 基于纯文本位置拼接，避免在 HTML 上做正则替换导致指数膨胀
+  // Highlight match in line — splice by plain text position to avoid exponential growth from regex on HTML
   const getHighlightedLineHtml = useCallback((lineIndex: number, html: string, highlightKeyword: string | null | undefined): string => {
     const line = lines[lineIndex];
     if (!line) return html;
 
-    // 收集需要高亮的区间 [startCol, endCol, className]
+    // Collect intervals to highlight [startCol, endCol, className]
     type Segment = { start: number; end: number; cls: string };
     const segments: Segment[] = [];
 
-    // 1. 内部搜索高亮
+    // 1. Internal search highlight
     if (searchQuery && matches.length > 0) {
       const lineMatches = matches.filter(m => m.lineIndex === lineIndex);
       for (const match of lineMatches) {
@@ -719,7 +719,7 @@ export function useCodeViewerLogic({
       }
     }
 
-    // 2. 外部关键词高亮（搜索不活跃时）
+    // 2. External keyword highlight (when search is not active)
     if (highlightKeyword && !searchQuery && highlightKeyword.length >= 1) {
       const kwLower = highlightKeyword.toLowerCase();
       const lineLower = line.toLowerCase();
@@ -732,14 +732,14 @@ export function useCodeViewerLogic({
 
     if (segments.length === 0) return html;
 
-    // 按位置排序，去重重叠
+    // Sort by position, deduplicate overlaps
     segments.sort((a, b) => a.start - b.start || a.end - b.end);
 
-    // 基于纯文本位置切分，逐段 escapeHtml + 包裹高亮标签
+    // Split by plain text position, escapeHtml each segment + wrap with highlight tag
     const parts: string[] = [];
     let cursor = 0;
     for (const seg of segments) {
-      if (seg.start < cursor) continue; // 跳过重叠
+      if (seg.start < cursor) continue; // Skip overlapping segment
       if (seg.start > cursor) {
         parts.push(escapeHtml(line.substring(cursor, seg.start)));
       }
@@ -751,25 +751,25 @@ export function useCodeViewerLogic({
       parts.push(escapeHtml(line.substring(cursor)));
     }
 
-    // 如果有 Shiki 高亮的 HTML（含 <span style=...> 标签），则保留 Shiki HTML；
-    // 只有当 html !== escapeHtml(line) 时才表示有语法高亮
+    // If there is Shiki-highlighted HTML (with <span style=...> tags), keep Shiki HTML;
+    // Only when html !== escapeHtml(line) indicates syntax highlighting exists
     const plainHtml = escapeHtml(line);
     if (html !== plainHtml) {
-      // Shiki HTML 模式：用安全的单次正则替换纯文本段
-      // 为避免在 HTML 标签上误替换，采用混合策略：
-      // 对每个高亮段，精确替换第一个纯文本匹配
+      // Shiki HTML mode: use safe single-pass regex replacement on plain text segments
+      // To avoid replacing inside HTML tags, use a mixed strategy:
+      // For each highlight segment, precisely replace the first plain text match
       let result = html;
       for (const seg of segments) {
         const matchText = line.substring(seg.start, seg.end);
         const escapedMatch = escapeHtml(matchText);
         const escapedForRegex = escapedMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        // 只替换不在 HTML 标签内的第一个匹配（不用 'g' 标志）
+        // Only replace the first match not inside HTML tags (without 'g' flag)
         const safeRegex = new RegExp(`(?<=>)([^<]*?)(${escapedForRegex})`, '');
         const replacement = `$1<span class="${seg.cls}">${escapedMatch}</span>`;
         const newResult = result.replace(safeRegex, replacement);
-        // 安全检查：如果替换后字符串长度异常增长则跳过
+        // Safety check: skip if replaced string length grows abnormally
         if (newResult.length > result.length + 200) {
-          // 单次替换不应增长超过 ~100 字符，如果超过说明匹配到了错误位置
+          // Single replacement should not grow more than ~100 chars; if it does, the match was at the wrong position
           continue;
         }
         result = newResult;
@@ -777,7 +777,7 @@ export function useCodeViewerLogic({
       return result;
     }
 
-    // 纯文本模式（没有 Shiki 高亮）：直接用拼接结果
+    // Plain text mode (no Shiki highlight): use spliced result directly
     return parts.join('');
   }, [searchQuery, matches, currentMatchIndex, lines]);
 

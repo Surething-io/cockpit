@@ -3,10 +3,10 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 
 /**
- * JSON 可读模式的内容搜索 hook
- * 使用 CSS Custom Highlight API 高亮匹配，不修改 DOM、不触发 re-render
+ * Content search hook for JSON readable mode.
+ * Uses the CSS Custom Highlight API for highlighting matches — no DOM mutation, no re-render.
  */
-// 动态注入 ::highlight 样式（Turbopack/PostCSS 不认识此伪元素，无法放 globals.css）
+// Dynamically inject ::highlight styles (Turbopack/PostCSS does not recognize this pseudo-element, so it cannot go in globals.css)
 const STYLE_ID = 'json-search-highlight-style';
 function ensureHighlightStyle() {
   if (document.getElementById(STYLE_ID)) return;
@@ -24,12 +24,12 @@ export function useJsonSearch(preRef: React.RefObject<HTMLPreElement | null>) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
-  // 存储所有匹配的 Range，用于 scrollIntoView
+  // Store all matched Ranges for scrollIntoView
   const rangesRef = useRef<Range[]>([]);
 
-  // ---- 核心：在 <pre> textContent 中找匹配，生成 Range，注册 CSS highlight ----
+  // ---- Core: find matches in <pre> textContent, build Ranges, register CSS highlight ----
   const runSearch = useCallback(() => {
-    // 清理旧高亮
+    // Clear old highlights
     CSS.highlights?.delete('json-search');
     CSS.highlights?.delete('json-search-current');
     rangesRef.current = [];
@@ -47,7 +47,7 @@ export function useJsonSearch(preRef: React.RefObject<HTMLPreElement | null>) {
     const q = caseSensitive ? query : query.toLowerCase();
     const searchText = caseSensitive ? text : text.toLowerCase();
 
-    // 找出所有匹配的 [start, end) 偏移
+    // Find all matching [start, end) offsets
     const offsets: [number, number][] = [];
     let pos = 0;
     while (pos < searchText.length) {
@@ -63,12 +63,12 @@ export function useJsonSearch(preRef: React.RefObject<HTMLPreElement | null>) {
       return;
     }
 
-    // 用 TreeWalker 遍历文本节点，将偏移映射为 DOM Range
+    // Use TreeWalker to iterate text nodes and map offsets to DOM Ranges
     const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
     let charIndex = 0;
     let offsetIdx = 0;
     const ranges: Range[] = [];
-    // 每个 Range 可能跨多个文本节点，用 partial 追踪
+    // Each Range may span multiple text nodes; track partial state with pendingRange
     let pendingRange: Range | null = null;
     let pendingEnd = 0;
 
@@ -78,31 +78,31 @@ export function useJsonSearch(preRef: React.RefObject<HTMLPreElement | null>) {
       const nodeStart = charIndex;
       const nodeEnd = charIndex + nodeLen;
 
-      // 处理在此节点范围内开始或进行中的匹配
+      // Process matches that start or are in progress within this node's range
       while (offsetIdx < offsets.length) {
         const [mStart, mEnd] = offsets[offsetIdx];
 
-        if (mStart >= nodeEnd) break; // 此匹配在后面的节点
+        if (mStart >= nodeEnd) break; // this match is in a later node
 
         if (!pendingRange) {
-          // 匹配开始于此节点
+          // Match starts in this node
           if (mStart >= nodeStart) {
             pendingRange = document.createRange();
             pendingRange.setStart(node, mStart - nodeStart);
             pendingEnd = mEnd;
           } else {
-            break; // 不该到这里
+            break; // should never reach here
           }
         }
 
-        // 匹配结束于此节点
+        // Match ends in this node
         if (pendingEnd <= nodeEnd) {
           pendingRange!.setEnd(node, pendingEnd - nodeStart);
           ranges.push(pendingRange!);
           pendingRange = null;
           offsetIdx++;
         } else {
-          // 匹配跨到下一个节点
+          // Match continues into the next node
           break;
         }
       }
@@ -114,42 +114,42 @@ export function useJsonSearch(preRef: React.RefObject<HTMLPreElement | null>) {
     setMatchCount(ranges.length);
     setCurrentIndex(prev => ranges.length > 0 ? Math.min(prev, ranges.length - 1) : 0);
 
-    // 注册 CSS highlight
+    // Register CSS highlight
     if (CSS.highlights && ranges.length > 0) {
       CSS.highlights.set('json-search', new Highlight(...ranges));
     }
   }, [preRef, query, caseSensitive]);
 
-  // ---- 更新当前匹配高亮 + 滚动 ----
+  // ---- Update current match highlight + scroll ----
   const updateCurrentHighlight = useCallback((index: number) => {
     CSS.highlights?.delete('json-search-current');
     const range = rangesRef.current[index];
     if (!range || !CSS.highlights) return;
     CSS.highlights.set('json-search-current', new Highlight(range));
 
-    // 滚动到当前匹配
+    // Scroll to the current match
     const rect = range.getBoundingClientRect();
     const container = preRef.current?.parentElement;
     if (container) {
       const cRect = container.getBoundingClientRect();
       if (rect.top < cRect.top || rect.bottom > cRect.bottom) {
-        // 将匹配滚到容器中部
+        // Scroll the match to the center of the container
         container.scrollTop += rect.top - cRect.top - cRect.height / 2 + rect.height / 2;
       }
     }
   }, [preRef]);
 
-  // query / caseSensitive 变化 → 重新搜索
+  // Re-run search when query or caseSensitive changes
   useEffect(() => {
     runSearch();
   }, [runSearch]);
 
-  // currentIndex 变化 → 更新当前匹配高亮
+  // Update current match highlight when currentIndex changes
   useEffect(() => {
     updateCurrentHighlight(currentIndex);
   }, [currentIndex, matchCount, updateCurrentHighlight]);
 
-  // MutationObserver: CollapsibleEntry 折叠/展开时自动重新搜索
+  // MutationObserver: re-run search when CollapsibleEntry collapses or expands
   useEffect(() => {
     const pre = preRef.current;
     if (!pre || !query) return;
@@ -158,7 +158,7 @@ export function useJsonSearch(preRef: React.RefObject<HTMLPreElement | null>) {
     return () => observer.disconnect();
   }, [preRef, query, runSearch]);
 
-  // 关闭搜索 / 卸载时清理
+  // Clean up when search is closed or component unmounts
   useEffect(() => {
     if (!isVisible) {
       CSS.highlights?.delete('json-search');
@@ -174,7 +174,7 @@ export function useJsonSearch(preRef: React.RefObject<HTMLPreElement | null>) {
     };
   }, []);
 
-  // ---- 导航 ----
+  // ---- Navigation ----
   const goToNext = useCallback(() => {
     if (matchCount === 0) return;
     setCurrentIndex(prev => (prev + 1) % matchCount);
@@ -219,7 +219,7 @@ export function useJsonSearch(preRef: React.RefObject<HTMLPreElement | null>) {
   };
 }
 
-/** 搜索栏 UI，配合 useJsonSearch 使用 */
+/** Search bar UI, used together with useJsonSearch */
 export function JsonSearchBar({ search }: { search: ReturnType<typeof useJsonSearch> }) {
   if (!search.isVisible) return null;
   return React.createElement('div', { className: 'flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-secondary border-b border-border' },

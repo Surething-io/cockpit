@@ -3,10 +3,10 @@ import { getSessionFilePath, readJsonFile, writeJsonFile } from '@/lib/paths';
 
 interface ProjectState {
   sessions: string[];
-  activeSessionId?: string; // 当前激活的 Tab 对应的 sessionId
+  activeSessionId?: string; // sessionId of the currently active tab
 }
 
-// GET: 读取项目的 sessions 列表
+// GET: Read the project's session list
 // ?cwd=/path/to/project
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   return NextResponse.json(state);
 }
 
-// POST: 更新项目的 sessions 列表和激活的 sessionId
+// POST: Update the project's session list and the active sessionId
 // body: { cwd: string, sessions: string[], activeSessionId?: string }
 export async function POST(request: Request) {
   const body = await request.json();

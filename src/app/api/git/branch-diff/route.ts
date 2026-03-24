@@ -4,7 +4,7 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-// 去除 git 对包含空格的文件名加的引号
+// Strip quotes that git adds to filenames containing spaces
 function unquotePath(path: string): string {
   if (path.startsWith('"') && path.endsWith('"')) {
     return path.slice(1, -1);
@@ -23,8 +23,8 @@ interface FileChange {
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const cwd = searchParams.get('cwd') || process.cwd();
-  const base = searchParams.get('base'); // 对比的基准分支
-  const file = searchParams.get('file'); // 可选：获取指定文件的 diff
+  const base = searchParams.get('base'); // Base branch to compare against
+  const file = searchParams.get('file'); // Optional: get diff for a specific file
 
   if (!base) {
     return NextResponse.json(
@@ -34,12 +34,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // 如果指定了文件，返回该文件的 diff 内容
+    // If a file is specified, return its diff content
     if (file) {
       return await getBranchFileDiff(cwd, base, file);
     }
 
-    // 否则返回变更文件列表
+    // Otherwise return the list of changed files
     return await getBranchChangedFiles(cwd, base);
   } catch (error) {
     console.error('Error getting branch diff:', error);
@@ -51,9 +51,9 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * 获取当前 HEAD 与 base 分支之间的文件变更列表
- * 使用两点直接对比 git diff base HEAD（等同于 PR diff）
- * old=base（目标分支），new=HEAD（当前分支）
+ * Get the list of changed files between the current HEAD and the base branch.
+ * Uses two-dot diff: git diff base HEAD (equivalent to PR diff).
+ * old=base (target branch), new=HEAD (current branch)
  */
 async function getBranchChangedFiles(cwd: string, base: string) {
   const nameStatusCmd = `git -c core.quotePath=false diff ${base} HEAD --name-status`;
@@ -62,7 +62,7 @@ async function getBranchChangedFiles(cwd: string, base: string) {
   const { stdout: nameStatus } = await execAsync(nameStatusCmd, { cwd, maxBuffer: 10 * 1024 * 1024 });
   const { stdout: numstat } = await execAsync(numstatCmd, { cwd, maxBuffer: 10 * 1024 * 1024 });
 
-  // 解析 numstat
+  // Parse numstat
   const statsMap = new Map<string, { additions: number; deletions: number }>();
   numstat.split('\n').filter(Boolean).forEach(line => {
     const parts = line.split('\t');
@@ -75,7 +75,7 @@ async function getBranchChangedFiles(cwd: string, base: string) {
     }
   });
 
-  // 解析 name-status
+  // Parse name-status
   const files: FileChange[] = [];
   nameStatus.split('\n').filter(Boolean).forEach(line => {
     const parts = line.split('\t');
@@ -108,13 +108,13 @@ async function getBranchChangedFiles(cwd: string, base: string) {
 }
 
 /**
- * 获取某个文件在当前 HEAD 与 base 分支之间的 diff
- * 方向：old=base（目标分支），new=HEAD（当前分支）
- * 等同于 PR diff：展示当前分支相对于目标分支的变更
+ * Get the diff for a file between the current HEAD and the base branch.
+ * Direction: old=base (target branch), new=HEAD (current branch).
+ * Equivalent to PR diff: shows changes in the current branch relative to the target branch.
  */
 async function getBranchFileDiff(cwd: string, base: string, file: string) {
   try {
-    // old = 目标分支（base）的文件内容
+    // old = file content in the target branch (base)
     let oldContent = '';
     try {
       const { stdout } = await execAsync(
@@ -126,7 +126,7 @@ async function getBranchFileDiff(cwd: string, base: string, file: string) {
       oldContent = '';
     }
 
-    // new = 当前分支（HEAD）的文件内容
+    // new = file content in the current branch (HEAD)
     let newContent = '';
     try {
       const { stdout } = await execAsync(

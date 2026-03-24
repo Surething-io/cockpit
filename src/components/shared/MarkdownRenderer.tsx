@@ -26,43 +26,43 @@ interface MarkdownRendererProps {
 }
 
 /**
- * 检测文本是否为 Markdown 表格
- * 特征：包含 |---|、|:--|、|--:| 等分隔行
+ * Detect whether text is a Markdown table.
+ * Characteristic: contains separator lines like |---|, |:--|, |--:|, etc.
  */
 function isMarkdownTable(text: string): boolean {
-  // Markdown 表格分隔行：| --- | 或 |:---| 或 |---:| 等
+  // Markdown table separator row: | --- | or |:---| or |---:| etc.
   return /^\|[\s:|-]+\|$/m.test(text);
 }
 
 /**
- * 检测文本是否包含 ASCII 图表
- * 检测特征：
- * 1. Unicode box-drawing 字符（┌┐└┘│─ 等）
- * 2. ASCII 边框模式（+---+ 等）
- * 3. 多行竖线模式（至少 3 行以 | 开头或结尾，但排除 Markdown 表格）
+ * Detect whether text contains ASCII art.
+ * Detection criteria:
+ * 1. Unicode box-drawing characters (┌┐└┘│─ etc.)
+ * 2. ASCII border patterns (+---+ etc.)
+ * 3. Multi-line pipe patterns (at least 3 lines starting or ending with |, excluding Markdown tables)
  */
 function hasAsciiArt(text: string): boolean {
-  // 排除 Markdown 表格
+  // Exclude Markdown tables
   if (isMarkdownTable(text)) {
     return false;
   }
 
-  // Unicode box-drawing 字符
+  // Unicode box-drawing characters
   if (/[┌┐└┘│─├┤┬┴┼╔╗╚╝║═╭╮╯╰▲▼◀▶△▽◁▷]/.test(text)) {
     return true;
   }
 
-  // ASCII 边框模式: +---+ 或 +===+
+  // ASCII border pattern: +---+ or +===+
   if (/\+[-=]{2,}\+/.test(text)) {
     return true;
   }
 
-  // 多行竖线模式：至少 3 行以 | 开头或结尾
+  // Multi-line pipe pattern: at least 3 lines starting or ending with |
   const lines = text.split('\n');
   const pipeLines = lines.filter(line => /^\s*\||\|\s*$/.test(line));
   if (pipeLines.length >= 3) {
-    // 排除表格模式：表格行的 | 数量一致（列数相同）且至少有 2 列（3 个 |）
-    // 例如 | col1 | col2 | 有 3 个 |，ASCII art 如 |  box  | 只有 2 个
+    // Exclude table pattern: table rows have a consistent | count (same column count) with at least 2 columns (3 pipes)
+    // e.g. | col1 | col2 | has 3 |, ASCII art like |  box  | only has 2
     const pipeCounts = pipeLines.map(line => (line.match(/\|/g) || []).length);
     const allSame = pipeCounts.every(c => c === pipeCounts[0]);
     if (allSame && pipeCounts[0] >= 3) {
@@ -75,20 +75,20 @@ function hasAsciiArt(text: string): boolean {
 }
 
 /**
- * 预处理表格行：转义 backtick 内的 | 字符
- * remark-gfm 在拆分表格列时不会跳过 code span 内的 |，
- * 导致 `|` 被当作列分隔符，需要预处理转义为 \|
+ * Pre-process table rows: escape | characters inside backticks.
+ * remark-gfm does not skip | inside code spans when splitting table columns,
+ * causing `|` to be treated as a column separator — pre-process by escaping to \|.
  *
- * GFM 表格解析顺序：先按 | 拆分列（\| 视为转义，不做分隔符），
- * 再对每列内容做 inline 解析（backtick → code span）。
- * 因此将 code span 内的 | 替换为 \|，表格解析阶段消耗 \，
- * inline 阶段 code span 内只剩 |，渲染正确。
+ * GFM table parse order: first split columns by | (\| is treated as escaped, not a separator),
+ * then inline-parse each column's content (backtick → code span).
+ * Replacing | inside code spans with \| makes the table-parse phase consume \,
+ * leaving only | in the code span at inline-parse time, rendering correctly.
  */
 function escapeTablePipes(content: string): string {
   return content.replace(/^(\|.+\|)$/gm, (line) => {
-    // 跳过分隔行（全是 -:|空格）
+    // Skip separator rows (only -, :, |, spaces)
     if (/^\|[\s:|-]+\|$/.test(line)) return line;
-    // 将 backtick 内的 | 替换为 \|（GFM 表格转义管道符）
+    // Replace | inside backticks with \| (GFM table pipe escaping)
     return line.replace(/`([^`]*)`/g, (match, inner) => {
       if (!inner.includes('|')) return match;
       return '`' + inner.replace(/\|/g, '\\|') + '`';
@@ -97,27 +97,27 @@ function escapeTablePipes(content: string): string {
 }
 
 /**
- * 预处理内容：将包含 ASCII 图表的内容整体包裹为代码块
- * 简化策略：如果检测到 ASCII 图表特征，整个内容用 <pre> 渲染
+ * Pre-process content: wrap ASCII-art-containing content in a code block.
+ * Simplified strategy: if ASCII art is detected, render the entire content as <pre>.
  */
 function preprocessAsciiArt(content: string): string {
   if (!hasAsciiArt(content)) {
     return content;
   }
 
-  // 如果内容已经是代码块，不重复包裹
+  // If content is already a code block, don't wrap again
   if (/^```[\s\S]*```$/m.test(content.trim())) {
     return content;
   }
 
-  // 整个内容包裹为代码块
+  // Wrap the entire content in a code block
   return '```text\n' + content.trim() + '\n```';
 }
 
-// 提取 Markdown 组件配置，避免重复定义
+// Extract Markdown component config to avoid redefining on each render
 function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
   return {
-    // 代码块 — node 来自 react-markdown passNode，需要析构掉避免传给 DOM
+    // Code block — node comes from react-markdown passNode, destructure to avoid passing to DOM
     code({ className, children, node, ...props }: ComponentPropsWithoutRef<'code'> & { className?: string; node?: any }) {
       const match = /language-(\w+)/.exec(className || '');
       const codeString = String(children);
@@ -134,18 +134,18 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
       const code = String(children).replace(/\n$/, '');
       const language = match?.[1] || 'text';
 
-      // Mermaid 代码块：非流式时渲染图表，流式中显示代码
+      // Mermaid code block: render diagram when not streaming, show code while streaming
       if (language === 'mermaid' && !isStreaming) {
         return <MermaidBlock code={code} isDark={isDark} />;
       }
 
-      // 从 rehypeSourceLines 注入到 <code> 上的 data-source-start 获取 <pre> 的行范围
-      // （<code> 自身的 node.position 与 <pre> 不一致，不可靠）
-      // ``` 围栏占首尾各一行，实际代码内容从 start+1 开始
+      // Get line range of <pre> from data-source-start injected by rehypeSourceLines onto <code>
+      // (node.position on <code> itself is inconsistent with <pre> and unreliable)
+      // The ``` fences each occupy one line, so actual code starts at start+1
       const preSourceStart = Number((props as any)['data-source-start']) || 0;
       const codeStartLine = preSourceStart ? preSourceStart + 1 : 0;
-      // lineProps 的 lineNumber 参数在 showLineNumbers=false 时始终为 false（库的 bug），
-      // 用闭包计数器自行追踪行号
+      // lineNumber param in lineProps is always false when showLineNumbers=false (library bug),
+      // use a closure counter to track line numbers manually
       let lineCounter = 0;
 
       return (
@@ -169,8 +169,8 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
         </SyntaxHighlighter>
       );
     },
-    // 以下所有自定义组件析构 node（react-markdown passNode）并展开 ...rest
-    // 使得 rehypeSourceLines 注入的 data-source-start/end 属性能传递到 DOM
+    // All custom components below destructure node (react-markdown passNode) and spread ...rest
+    // so that data-source-start/end attributes injected by rehypeSourceLines are forwarded to the DOM
     p: ({ children, node, ...rest }: any) => <p className="mb-3 last:mb-0" {...rest}>{children}</p>,
     h1: ({ children, node, ...rest }: any) => <h1 className="text-xl font-bold mb-3 mt-4 first:mt-0" {...rest}>{children}</h1>,
     h2: ({ children, node, ...rest }: any) => <h2 className="text-lg font-bold mb-2 mt-3 first:mt-0" {...rest}>{children}</h2>,
@@ -196,8 +196,8 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
     ),
     hr: ({ node, ...rest }: any) => <hr className="my-4 border-border" {...rest} />,
     img: ({ src, alt, node, height, width, style, ...props }: any) => {
-      // 有显式尺寸的 HTML <img>（如 <img height="28">）：保留原始尺寸，内联显示
-      // height/width 必须转为 inline style，否则被 Tailwind preflight 的 img { height: auto } 覆盖
+      // HTML <img> with explicit dimensions (e.g. <img height="28">): preserve original size, display inline
+      // height/width must be converted to inline style, otherwise overridden by Tailwind preflight's img { height: auto }
       const hasExplicitSize = height || width || style;
       if (!hasExplicitSize) {
         return <img src={src} alt={alt || ''} className="max-w-full h-auto rounded-lg my-3" {...props} />;
@@ -213,7 +213,7 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
 }
 
 export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser = false, isStreaming = false, rehypePlugins }: MarkdownRendererProps) {
-  // 使用全局 Theme Context，避免每个组件都创建 MutationObserver
+  // Use global Theme Context to avoid each component creating its own MutationObserver
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
 
@@ -222,42 +222,42 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
   const components = useMemo(() => createMarkdownComponents(isDark), [isDark]);
   const streamComponents = useMemo(() => createMarkdownComponents(isDark, true), [isDark]);
 
-  // 流式结束后或历史消息，检测并预处理 ASCII 图表
+  // After streaming or for historical messages, detect and pre-process ASCII art
   const processedContent = useMemo(() => {
-    // 用户消息或流式中不处理
+    // Skip for user messages or while streaming
     if (isUser || isStreaming) {
       return content;
     }
     return escapeTablePipes(preprocessAsciiArt(content));
   }, [content, isUser, isStreaming]);
 
-  // 用户消息使用简化样式
+  // Use simplified style for user messages
   if (isUser) {
     return <div className="whitespace-pre-wrap break-words">{content}</div>;
   }
 
-  // 合并 rehype 插件：基础插件（rehype-raw + rehype-katex）+ 调用方传入的插件
+  // Merge rehype plugins: base plugins (rehype-raw + rehype-katex) + caller-supplied plugins
   const mergedRehypePlugins = useMemo(() => {
     if (!rehypePlugins?.length) return REHYPE_PLUGINS_BASE;
     return [...REHYPE_PLUGINS_BASE, ...rehypePlugins];
   }, [rehypePlugins]);
 
-  // 流式输出中：已完成的行用 Markdown 渲染，最后一行用纯文本（避免频繁重解析）
+  // While streaming: render completed lines as Markdown, last line as plain text (avoid frequent re-parsing)
   if (isStreaming) {
     const lastNewlineIndex = content.lastIndexOf('\n');
 
-    // 没有换行符，全部用纯文本
+    // No newline — render everything as plain text
     if (lastNewlineIndex === -1) {
       return <div className="whitespace-pre-wrap break-words">{content}</div>;
     }
 
-    // 分割为已完成行和当前行
+    // Split into completed lines and current line
     const completedLines = content.slice(0, lastNewlineIndex + 1);
     const currentLine = content.slice(lastNewlineIndex + 1);
 
     return (
       <div className="markdown-body">
-        {/* 已完成的行用 Markdown 渲染 */}
+        {/* Render completed lines as Markdown */}
         <ReactMarkdown
           remarkPlugins={REMARK_PLUGINS}
           rehypePlugins={REHYPE_PLUGINS_BASE}
@@ -265,7 +265,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
         >
           {escapeTablePipes(completedLines)}
         </ReactMarkdown>
-        {/* 当前正在输入的行用纯文本 */}
+        {/* Current line being typed — plain text */}
         {currentLine && (
           <span className="whitespace-pre-wrap">{currentLine}</span>
         )}
@@ -286,7 +286,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
   );
 });
 
-// 复制按钮组件
+// Copy button component
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 

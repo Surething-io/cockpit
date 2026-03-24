@@ -18,19 +18,19 @@ interface GlobalState {
 }
 
 const MAX_SESSIONS = 15;
-const MAX_TEXT_LEN = 50; // title / lastUserMessage 最大字符数
+const MAX_TEXT_LEN = 50; // max character count for title / lastUserMessage
 
-/** 按 Unicode 字符截断，超长加省略号 */
+/** Truncate by Unicode characters, appending an ellipsis if over the limit */
 function truncate(s: string | undefined): string | undefined {
   if (!s) return s;
-  const chars = [...s]; // 展开为 code point 数组，emoji/中文各算 1
+  const chars = [...s]; // expand to code-point array; each emoji/CJK char counts as 1
   return chars.length <= MAX_TEXT_LEN ? s : chars.slice(0, MAX_TEXT_LEN).join('') + '…';
 }
 
 /**
- * 更新全局 session 状态
- * 使用 withFileLock 串行化并发的 read-modify-write，防止多个定时任务
- * 同时触发时因竞态条件导致 sessions 数据丢失。
+ * Update global session state.
+ * Uses withFileLock to serialize concurrent read-modify-write operations,
+ * preventing data loss due to race conditions when multiple tasks fire simultaneously.
  */
 export async function updateGlobalState(
   cwd: string,
@@ -39,7 +39,7 @@ export async function updateGlobalState(
   title?: string,
   lastUserMessage?: string
 ): Promise<void> {
-  // 防御：跳过不存在的路径（避免写入错误解码的 cwd）
+  // Guard: skip non-existent paths (avoids writing with a wrongly decoded cwd)
   if (!existsSync(cwd)) {
     return;
   }
@@ -47,7 +47,7 @@ export async function updateGlobalState(
   return withFileLock(GLOBAL_STATE_FILE, async () => {
     const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
 
-    // 兼容旧格式：isLoading → status
+    // Migrate legacy format: isLoading → status
     for (const s of state.sessions) {
       if (!s.status) {
         const legacy = s as GlobalSession & { isLoading?: boolean };
@@ -56,12 +56,12 @@ export async function updateGlobalState(
       }
     }
 
-    // 查找是否已存在
+    // Check if the session already exists
     const existingIndex = state.sessions.findIndex(
       s => s.cwd === cwd && s.sessionId === sessionId
     );
 
-    // 保留现有字段（如果没有传入新的）
+    // Retain existing fields when no new value is provided
     const existing = existingIndex >= 0 ? state.sessions[existingIndex] : undefined;
 
     const newSession: GlobalSession = {
@@ -79,10 +79,10 @@ export async function updateGlobalState(
       state.sessions.push(newSession);
     }
 
-    // 按 lastActive 降序排序
+    // Sort by lastActive descending
     state.sessions.sort((a, b) => b.lastActive - a.lastActive);
 
-    // 只保留最近 MAX_SESSIONS 个
+    // Keep only the most recent MAX_SESSIONS entries
     state.sessions = state.sessions.slice(0, MAX_SESSIONS);
 
     await writeJsonFile(GLOBAL_STATE_FILE, state);
@@ -90,7 +90,7 @@ export async function updateGlobalState(
 }
 
 /**
- * 从 transcript 文件获取 session 标题
+ * Read the session title from a transcript file.
  */
 export async function getSessionTitle(cwd: string, sessionId: string): Promise<string> {
   const filePath = getClaudeSessionPath(cwd, sessionId);
@@ -115,12 +115,12 @@ export async function getSessionTitle(cwd: string, sessionId: string): Promise<s
       try {
         const entry = JSON.parse(line);
 
-        // 提取 summary
+        // Extract summary
         if (entry.type === 'summary' && entry.summary) {
           summary = entry.summary;
         }
 
-        // 提取 user 消息文本
+        // Extract user message text
         if (entry.type === 'user') {
           const message = entry.message;
           if (message?.content) {
@@ -136,7 +136,7 @@ export async function getSessionTitle(cwd: string, sessionId: string): Promise<s
           }
         }
       } catch {
-        // 忽略解析错误
+        // Ignore parse errors
       }
     }
 
@@ -147,7 +147,7 @@ export async function getSessionTitle(cwd: string, sessionId: string): Promise<s
 }
 
 /**
- * 从 transcript 文件获取最后一条用户消息
+ * Read the last user message from a transcript file.
  */
 export async function getLastUserMessage(cwd: string, sessionId: string): Promise<string | undefined> {
   const filePath = getClaudeSessionPath(cwd, sessionId);
@@ -171,7 +171,7 @@ export async function getLastUserMessage(cwd: string, sessionId: string): Promis
       try {
         const entry = JSON.parse(line);
 
-        // 提取 user 消息文本
+        // Extract user message text
         if (entry.type === 'user') {
           const message = entry.message;
           if (message?.content) {
@@ -182,14 +182,14 @@ export async function getLastUserMessage(cwd: string, sessionId: string): Promis
               for (const block of message.content) {
                 if (block.type === 'text' && block.text) {
                   text = block.text;
-                  break; // 只取第一个文本块
+                  break; // Take only the first text block
                 }
               }
             }
             if (text) {
-              // 过滤命令标签
+              // Strip command tags
               const filtered = filterCommandTags(text);
-              // 检查是否是有效的用户消息
+              // Check if this is a valid user message
               if (filtered && isValidUserMessage(filtered)) {
                 lastUserMessage = filtered;
               }
@@ -197,7 +197,7 @@ export async function getLastUserMessage(cwd: string, sessionId: string): Promis
           }
         }
       } catch {
-        // 忽略解析错误
+        // Ignore parse errors
       }
     }
 
@@ -208,32 +208,32 @@ export async function getLastUserMessage(cwd: string, sessionId: string): Promis
 }
 
 /**
- * 过滤掉消息中的命令和系统标签
+ * Strip command and system tags from a message.
  */
 function filterCommandTags(text: string): string {
-  // 移除 <command-*> 标签及其内容
+  // Remove <command-*> tags and their content
   let filtered = text.replace(/<command-[^>]*>[\s\S]*?<\/command-[^>]*>/g, '');
-  // 移除 <local-command-*> 标签及其内容
+  // Remove <local-command-*> tags and their content
   filtered = filtered.replace(/<local-command-[^>]*>[\s\S]*?<\/local-command-[^>]*>/g, '');
-  // 移除多余空白
+  // Strip extra whitespace
   filtered = filtered.trim();
   return filtered;
 }
 
 /**
- * 检查消息是否是有效的用户消息（非系统消息）
+ * Check whether a message is a valid user message (not a system message).
  */
 function isValidUserMessage(text: string): boolean {
-  // 过滤掉系统上下文消息
+  // Filter out system context messages
   if (text.startsWith('This session is being continued')) return false;
   if (text.startsWith('Caveat: The messages below')) return false;
-  // 过滤空消息
+  // Filter out empty messages
   if (!text.trim()) return false;
   return true;
 }
 
 /**
- * 生成标题
+ * Generate a session title.
  */
 function generateTitle(summary: string, userMessages: string[]): string {
   if (summary) return summary;
@@ -243,22 +243,22 @@ function generateTitle(summary: string, userMessages: string[]): string {
     const filtered = filterCommandTags(msg);
     if (!filtered) continue;
 
-    // 如果是命令（以/开头），保存命令名并继续找下一条消息
+    // If this is a command (starts with /), save the name and look for the next message
     if (filtered.startsWith('/') && !commandName) {
       commandName = filtered;
       continue;
     }
 
-    // 如果之前有命令名，组合显示
+    // If a command name was already found, combine them
     if (commandName) {
       return `${commandName} ${filtered}`;
     }
 
-    // 普通消息直接作为标题
+    // Use a plain message directly as the title
     return filtered;
   }
 
-  // 如果只有命令名没有后续消息，显示命令名
+  // If only a command name was found with no follow-up message, use it as the title
   if (commandName) return commandName;
 
   return 'Untitled Session';

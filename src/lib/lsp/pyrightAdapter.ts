@@ -1,9 +1,9 @@
 // ============================================
 // Pyright Adapter
-// Pyright 使用标准 LSP 协议（JSON-RPC 2.0 over stdio）
+// Pyright uses the standard LSP protocol (JSON-RPC 2.0 over stdio)
 //
-// 协议格式：
-//   请求/响应 → Content-Length: N\r\n\r\n{JSON-RPC 2.0}
+// Protocol format:
+//   request/response → Content-Length: N\r\n\r\n{JSON-RPC 2.0}
 // ============================================
 
 import { spawn, execSync, type ChildProcess } from 'child_process';
@@ -30,13 +30,13 @@ export class PyrightAdapter implements LanguageServerAdapter {
   private openedFiles = new Set<string>();
   private initialized = false;
 
-  /** 检查 pyright-langserver 是否可用 */
+  /** Check whether pyright-langserver is available */
   static isAvailable(): boolean {
     try {
       execSync('which pyright-langserver', { stdio: 'ignore' });
       return true;
     } catch {
-      // 尝试 basedpyright
+      // Try basedpyright
       try {
         execSync('which basedpyright-langserver', { stdio: 'ignore' });
         return true;
@@ -46,7 +46,7 @@ export class PyrightAdapter implements LanguageServerAdapter {
     }
   }
 
-  /** 获取可用的命令名 */
+  /** Get the available command name */
   private static getCommand(): string {
     try {
       execSync('which pyright-langserver', { stdio: 'ignore' });
@@ -56,7 +56,7 @@ export class PyrightAdapter implements LanguageServerAdapter {
     }
   }
 
-  /** 启动 pyright 进程 */
+  /** Spawn the pyright process */
   spawn(): ChildProcess {
     const command = PyrightAdapter.getCommand();
     console.log(`[pyright] spawning: ${command} --stdio`);
@@ -69,7 +69,7 @@ export class PyrightAdapter implements LanguageServerAdapter {
     child.stdout!.setEncoding('utf-8');
     child.stdout!.on('data', (data: string) => this.onData(data));
     child.stderr!.on('data', () => {
-      // pyright stderr 日志，忽略
+      // pyright stderr log; ignore
     });
 
     child.on('error', (err) => {
@@ -86,7 +86,7 @@ export class PyrightAdapter implements LanguageServerAdapter {
     return child;
   }
 
-  /** LSP initialize 握手 */
+  /** LSP initialize handshake */
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
@@ -103,20 +103,20 @@ export class PyrightAdapter implements LanguageServerAdapter {
     });
 
     if (response) {
-      // 发送 initialized 通知
+      // Send the initialized notification
       this.sendLSPNotification('initialized', {});
       this.initialized = true;
       console.log('[pyright] initialized');
     }
   }
 
-  /** 通知 pyright 打开文件 */
+  /** Notify pyright that a file was opened */
   openFile(filePath: string, content: string): void {
     const absPath = resolve(filePath);
     const uri = pathToFileURL(absPath).href;
 
     if (this.openedFiles.has(absPath)) {
-      // 已打开，发 didChange
+      // Already open — send didChange
       this.sendLSPNotification('textDocument/didChange', {
         textDocument: { uri, version: Date.now() },
         contentChanges: [{ text: content }],
@@ -135,7 +135,7 @@ export class PyrightAdapter implements LanguageServerAdapter {
     });
   }
 
-  /** 通知关闭文件 */
+  /** Notify pyright that a file was closed */
   closeFile(filePath: string): void {
     const absPath = resolve(filePath);
     if (!this.openedFiles.has(absPath)) return;
@@ -147,7 +147,7 @@ export class PyrightAdapter implements LanguageServerAdapter {
     });
   }
 
-  /** 跳转定义 */
+  /** Go to definition */
   async definition(filePath: string, line: number, column: number): Promise<Location[]> {
     const absPath = resolve(filePath);
     await this.ensureFileOpen(absPath);
@@ -156,7 +156,7 @@ export class PyrightAdapter implements LanguageServerAdapter {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response: any = await this.sendLSPRequest('textDocument/definition', {
       textDocument: { uri },
-      position: { line: line - 1, character: column - 1 }, // LSP 是 0-based
+      position: { line: line - 1, character: column - 1 }, // LSP is 0-based
     });
 
     if (!response) return [];
@@ -175,7 +175,7 @@ export class PyrightAdapter implements LanguageServerAdapter {
     }));
   }
 
-  /** 悬浮类型信息 */
+  /** Hover type info */
   async hover(filePath: string, line: number, column: number): Promise<HoverInfo | null> {
     const absPath = resolve(filePath);
     await this.ensureFileOpen(absPath);
@@ -209,7 +209,7 @@ export class PyrightAdapter implements LanguageServerAdapter {
     };
   }
 
-  /** 引用查找 */
+  /** Find references */
   async references(filePath: string, line: number, column: number): Promise<Location[]> {
     const absPath = resolve(filePath);
     await this.ensureFileOpen(absPath);
@@ -237,7 +237,7 @@ export class PyrightAdapter implements LanguageServerAdapter {
     }));
   }
 
-  /** 优雅关闭 */
+  /** Graceful shutdown */
   shutdown(): void {
     if (!this.process) return;
     console.log('[pyright] shutting down');
@@ -262,7 +262,7 @@ export class PyrightAdapter implements LanguageServerAdapter {
   }
 
   // ============================================
-  // 私有方法
+  // Private methods
   // ============================================
 
   private async ensureFileOpen(absPath: string): Promise<void> {
@@ -275,7 +275,7 @@ export class PyrightAdapter implements LanguageServerAdapter {
     }
   }
 
-  /** 发送 JSON-RPC 请求（等待响应） */
+  /** Send a JSON-RPC request (waits for a response) */
   private sendLSPRequest(method: string, params: unknown): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (!this.process?.stdin?.writable) {
@@ -305,7 +305,7 @@ export class PyrightAdapter implements LanguageServerAdapter {
     });
   }
 
-  /** 发送 JSON-RPC 通知（不等响应） */
+  /** Send a JSON-RPC notification (no response expected) */
   private sendLSPNotification(method: string, params: unknown): void {
     if (!this.process?.stdin?.writable) return;
 
@@ -319,13 +319,13 @@ export class PyrightAdapter implements LanguageServerAdapter {
     this.process.stdin.write(header + message);
   }
 
-  /** 处理 stdout 数据 */
+  /** Handle stdout data */
   private onData(data: string): void {
     this.buffer += data;
     this.processBuffer();
   }
 
-  /** 解析 Content-Length 协议 */
+  /** Parse Content-Length framing */
   private processBuffer(): void {
     while (true) {
       const headerEnd = this.buffer.indexOf('\r\n\r\n');
@@ -356,7 +356,7 @@ export class PyrightAdapter implements LanguageServerAdapter {
     }
   }
 
-  /** 处理 JSON-RPC 响应 */
+  /** Handle a JSON-RPC response */
   private handleMessage(message: { id?: number; result?: unknown; error?: { message: string } }): void {
     if (message.id !== undefined) {
       const pending = this.pendingRequests.get(message.id);
@@ -371,10 +371,10 @@ export class PyrightAdapter implements LanguageServerAdapter {
         }
       }
     }
-    // 通知消息（无 id）暂不处理
+    // Notification messages (no id) are not handled for now
   }
 
-  /** 拒绝所有 pending 请求 */
+  /** Reject all pending requests */
   private rejectAll(error: Error): void {
     for (const [, pending] of this.pendingRequests) {
       clearTimeout(pending.timer);
@@ -383,7 +383,7 @@ export class PyrightAdapter implements LanguageServerAdapter {
     this.pendingRequests.clear();
   }
 
-  /** 读取文件指定行 */
+  /** Read a specific line from a file */
   private async readLineFromFile(filePath: string, lineNum: number): Promise<string> {
     try {
       const content = await readFile(filePath, 'utf-8');

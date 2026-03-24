@@ -1,10 +1,10 @@
 // ============================================
 // tsserver Adapter
-// tsserver 使用自有协议（非标准 LSP），封装为统一接口
+// tsserver uses its own protocol (not standard LSP), wrapped as a unified interface.
 //
-// 协议格式：
-//   请求 → stdin: JSON + 换行
-//   响应 ← stdout: Content-Length: N\r\n\r\n{JSON}
+// Protocol format:
+//   request → stdin: JSON + newline
+//   response ← stdout: Content-Length: N\r\n\r\n{JSON}
 // ============================================
 
 import { spawn, execSync, type ChildProcess } from 'child_process';
@@ -14,8 +14,8 @@ import { resolve, join } from 'path';
 import type { LanguageServerAdapter, Location, HoverInfo } from './types';
 
 const REQUEST_TIMEOUT = 10_000; // 10s (definition, references)
-const HOVER_TIMEOUT = 3_000;   // 3s (hover 不需要太久，超时就不显示)
-const COLD_START_TIMEOUT = 30_000; // 30s (新启动时等项目加载)
+const HOVER_TIMEOUT = 3_000;   // 3s (hover doesn't need long; skip display on timeout)
+const COLD_START_TIMEOUT = 30_000; // 30s (wait for project to load on cold start)
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
@@ -31,20 +31,20 @@ export class TSServerAdapter implements LanguageServerAdapter {
   private pendingRequests = new Map<number, PendingRequest>();
   private buffer = Buffer.alloc(0);
   private openedFiles = new Set<string>();
-  private coldStart = true; // 新启动，项目尚未加载完成
+  private coldStart = true; // newly started; project not yet fully loaded
 
-  /** 启动 tsserver 进程 */
+  /** Spawn the tsserver process */
   spawn(): ChildProcess {
     const tsserverPath = this.findTsserver();
     console.log(`[tsserver] spawning: node ${tsserverPath}`);
 
     const setTitleScript = resolve(process.cwd(), 'src/lib/lsp/set-title.js');
-    // 用 --require 预加载 set-title.js 设置进程名，不影响 tsserver 主模块加载
+    // Preload set-title.js via --require to set the process name without affecting tsserver's main module loading
     const child = spawn('node', ['--require', setTitleScript, tsserverPath, '--disableAutomaticTypingAcquisition'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        TSS_LOG: '', // 禁用日志文件
+        TSS_LOG: '', // disable log file
       },
     });
 
@@ -55,7 +55,7 @@ export class TSServerAdapter implements LanguageServerAdapter {
       console.log(`[tsserver stderr] ${data.trim()}`);
     });
 
-    // 处理 stdin 写入错误（EPIPE），避免 uncaught exception
+    // Handle stdin write errors (EPIPE) to avoid uncaught exceptions
     child.stdin!.on('error', (err) => {
       console.error('[tsserver] stdin error:', err.message);
     });
@@ -75,11 +75,11 @@ export class TSServerAdapter implements LanguageServerAdapter {
     return child;
   }
 
-  /** 通知 tsserver 打开文件 */
+  /** Notify tsserver that a file was opened */
   openFile(filePath: string, content: string): void {
     const absPath = resolve(filePath);
     if (this.openedFiles.has(absPath)) {
-      // 已打开，发 reload 更新内容
+      // Already open — send reload to update content
       this.sendRequest('reload', { file: absPath, tmpfile: absPath });
       return;
     }
@@ -87,7 +87,7 @@ export class TSServerAdapter implements LanguageServerAdapter {
     this.sendRequest('open', { file: absPath, fileContent: content });
   }
 
-  /** 通知 tsserver 关闭文件 */
+  /** Notify tsserver that a file was closed */
   closeFile(filePath: string): void {
     const absPath = resolve(filePath);
     if (!this.openedFiles.has(absPath)) return;
@@ -95,7 +95,7 @@ export class TSServerAdapter implements LanguageServerAdapter {
     this.sendRequest('close', { file: absPath });
   }
 
-  /** 跳转定义 */
+  /** Go to definition */
   async definition(filePath: string, line: number, column: number): Promise<Location[]> {
     const absPath = resolve(filePath);
     await this.ensureFileOpen(absPath);
@@ -119,7 +119,7 @@ export class TSServerAdapter implements LanguageServerAdapter {
     }));
   }
 
-  /** 悬浮类型信息 */
+  /** Hover type info */
   async hover(filePath: string, line: number, column: number): Promise<HoverInfo | null> {
     const absPath = resolve(filePath);
     await this.ensureFileOpen(absPath);
@@ -146,7 +146,7 @@ export class TSServerAdapter implements LanguageServerAdapter {
     };
   }
 
-  /** 引用查找 */
+  /** Find references */
   async references(filePath: string, line: number, column: number): Promise<Location[]> {
     const absPath = resolve(filePath);
     await this.ensureFileOpen(absPath);
@@ -167,7 +167,7 @@ export class TSServerAdapter implements LanguageServerAdapter {
     }));
   }
 
-  /** 优雅关闭 */
+  /** Graceful shutdown */
   shutdown(): void {
     if (!this.process) return;
     console.log('[tsserver] shutting down');
@@ -180,7 +180,7 @@ export class TSServerAdapter implements LanguageServerAdapter {
       // ignore
     }
 
-    // 给 tsserver 1s 时间优雅退出
+    // Give tsserver 1s to exit gracefully
     const proc = this.process;
     setTimeout(() => {
       if (proc && !proc.killed) {
@@ -192,12 +192,12 @@ export class TSServerAdapter implements LanguageServerAdapter {
   }
 
   // ============================================
-  // 私有方法
+  // Private methods
   // ============================================
 
-  /** 查找 tsserver.js 路径 */
+  /** Locate the tsserver.js path */
   private findTsserver(): string {
-    // 方法 1: 用 require.resolve 解析（适用于 Next.js 打包环境）
+    // Method 1: resolve via require.resolve (works in Next.js bundled environments)
     try {
       const tsPath = require.resolve('typescript/lib/tsserver.js');
       if (existsSync(tsPath)) {
@@ -208,14 +208,14 @@ export class TSServerAdapter implements LanguageServerAdapter {
       // ignore
     }
 
-    // 方法 2: 用 process.cwd() 查找（适用于 dev 环境）
+    // Method 2: search relative to process.cwd() (works in dev environments)
     const cwdPath = join(process.cwd(), 'node_modules/typescript/lib/tsserver.js');
     if (existsSync(cwdPath)) {
       console.log(`[tsserver] found via cwd: ${cwdPath}`);
       return cwdPath;
     }
 
-    // 方法 3: 用 which 查找全局安装的 tsserver
+    // Method 3: use which to find a globally installed tsserver
     try {
       const globalPath = execSync('which tsserver', { encoding: 'utf-8' }).trim();
       if (globalPath) {
@@ -231,18 +231,18 @@ export class TSServerAdapter implements LanguageServerAdapter {
     return 'node_modules/typescript/lib/tsserver.js';
   }
 
-  /** 确保文件已在 tsserver 中打开 */
+  /** Ensure a file is open in tsserver */
   private async ensureFileOpen(absPath: string): Promise<void> {
     if (this.openedFiles.has(absPath)) return;
     try {
       const content = await readFile(absPath, 'utf-8');
       this.openFile(absPath, content);
     } catch {
-      // 文件不可读，忽略
+      // File not readable; ignore
     }
   }
 
-  /** 发送请求（不等响应，如 open/close） */
+  /** Send a request without waiting for a response (e.g. open/close) */
   private sendRequest(command: string, args: Record<string, unknown>): void {
     if (!this.process?.stdin?.writable) return;
 
@@ -261,7 +261,7 @@ export class TSServerAdapter implements LanguageServerAdapter {
     }
   }
 
-  /** 发送请求并等待响应 */
+  /** Send a request and wait for the response */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private sendRequestWithResponse(command: string, args: Record<string, unknown>, timeout = REQUEST_TIMEOUT): Promise<{ body: any; success: boolean }> {
     return new Promise((resolve, reject) => {
@@ -301,26 +301,26 @@ export class TSServerAdapter implements LanguageServerAdapter {
     });
   }
 
-  /** 处理 tsserver stdout 数据（原始字节） */
+  /** Handle tsserver stdout data (raw bytes) */
   private onData(data: Buffer): void {
     this.buffer = Buffer.concat([this.buffer, data]);
     this.processBuffer();
   }
 
-  /** 解析 Content-Length 协议（字节级操作，正确处理非 ASCII） */
+  /** Parse Content-Length framing (byte-level, handles non-ASCII correctly) */
   private processBuffer(): void {
     const SEPARATOR = Buffer.from('\r\n\r\n');
     const CL_PREFIX = Buffer.from('Content-Length:');
 
     while (true) {
-      // 查找 header 结束位置
+      // Find header end position
       const headerEnd = this.buffer.indexOf(SEPARATOR);
       if (headerEnd === -1) break;
 
       const header = this.buffer.subarray(0, headerEnd).toString('utf-8');
       const match = header.match(/Content-Length:\s*(\d+)/i);
       if (!match) {
-        // 不是 Content-Length 格式，跳到下一个
+        // Not Content-Length format; skip to next
         const nextCL = this.buffer.indexOf(CL_PREFIX, headerEnd + 4);
         if (nextCL === -1) {
           this.buffer = Buffer.alloc(0);
@@ -330,11 +330,11 @@ export class TSServerAdapter implements LanguageServerAdapter {
         continue;
       }
 
-      const contentLength = parseInt(match[1], 10); // 字节数
+      const contentLength = parseInt(match[1], 10); // byte count
       const bodyStart = headerEnd + 4;
       const bodyEnd = bodyStart + contentLength;
 
-      if (this.buffer.length < bodyEnd) break; // 字节不够，等待更多数据
+      if (this.buffer.length < bodyEnd) break; // not enough bytes yet; wait for more data
 
       const body = this.buffer.subarray(bodyStart, bodyEnd).toString('utf-8');
       this.buffer = this.buffer.subarray(bodyEnd);
@@ -343,12 +343,12 @@ export class TSServerAdapter implements LanguageServerAdapter {
         const message = JSON.parse(body);
         this.handleMessage(message);
       } catch {
-        // JSON 解析失败，忽略
+        // JSON parse failed; ignore
       }
     }
   }
 
-  /** 处理 tsserver 响应 */
+  /** Handle a tsserver response */
   private handleMessage(message: { type: string; request_seq?: number; command?: string; body?: unknown; success?: boolean }): void {
     if (message.type === 'response' && message.request_seq !== undefined) {
       const pending = this.pendingRequests.get(message.request_seq);
@@ -367,10 +367,10 @@ export class TSServerAdapter implements LanguageServerAdapter {
         }
       }
     }
-    // type === 'event' 的消息（如 projectLoadingFinish）暂不处理
+    // type === 'event' messages (e.g. projectLoadingFinish) are not handled for now
   }
 
-  /** 拒绝所有 pending 请求 */
+  /** Reject all pending requests */
   private rejectAll(error: Error): void {
     for (const [, pending] of this.pendingRequests) {
       clearTimeout(pending.timer);
@@ -379,7 +379,7 @@ export class TSServerAdapter implements LanguageServerAdapter {
     this.pendingRequests.clear();
   }
 
-  /** 读取文件的指定行 */
+  /** Read a specific line from a file */
   private async readLineFromFile(filePath: string, lineNum: number): Promise<string> {
     try {
       const content = await readFile(filePath, 'utf-8');

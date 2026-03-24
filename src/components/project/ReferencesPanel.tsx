@@ -13,8 +13,8 @@ interface ReferencesPanelProps {
 }
 
 /**
- * 对一组 references 的 lineText 做 Shiki 语法高亮，
- * 返回 Map<index, highlightedHTML>
+ * Apply Shiki syntax highlighting to the lineText of a set of references,
+ * returning Map<index, highlightedHTML>
  */
 function useHighlightedLines(references: Location[]) {
   const [htmlMap, setHtmlMap] = useState<Map<number, string>>(new Map());
@@ -68,7 +68,7 @@ function useHighlightedLines(references: Location[]) {
 export function ReferencesPanel({ references, loading, onSelect, onClose }: ReferencesPanelProps) {
   const htmlMap = useHighlightedLines(references);
 
-  // 按文件分组，保留全局 index
+  // Group by file, preserving global index
   const grouped: { file: string; items: { ref: Location; idx: number }[] }[] = [];
   const fileIndexMap = new Map<string, number>();
   for (let i = 0; i < references.length; i++) {

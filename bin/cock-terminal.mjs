@@ -3,12 +3,12 @@
 /**
  * cock terminal <id> <action> [args...]
  *
- * CLI 入口：访问运行中的终端气泡，获取输出、实时跟踪、发送输入。
+ * CLI entry point: access a running terminal bubble, read output, stream in real time, send input.
  */
 
 const args = process.argv.slice(2);
 
-// 从 ~/.cockpit/server.json 读取 prod 端口
+// Read prod port from ~/.cockpit/server.json
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -18,7 +18,7 @@ function readServerPort() {
   } catch { return null; }
 }
 
-// status: { running, command } — 传入时显示当前终端状态
+// status: { running, command } — when passed, display current terminal status
 function printHelp(prefix = '<id>', status = null) {
   console.log(`Interact with a running terminal process — read output, stream logs, and send input.
 
@@ -71,12 +71,12 @@ if (args[0] === 'list') {
 
 const extraArgs = args.slice(2);
 
-// 端口：环境变量 COCKPIT_PORT > ~/.cockpit/server.json > 默认 3457
+// Port: env COCKPIT_PORT > ~/.cockpit/server.json > default 3457
 const port = process.env.COCKPIT_PORT || readServerPort() || 3457;
 const baseUrl = `http://localhost:${port}`;
 
 async function run() {
-  // 只传 id 不传 action → 查状态 + 显示可用命令
+  // Only id provided without action → check status + show available commands
   if (action === '_status') {
     let status = null;
     try {
@@ -169,7 +169,7 @@ async function run() {
     return;
   }
 
-  // follow (WebSocket 实时流)
+  // follow (WebSocket real-time stream)
   if (action === 'follow') {
     const { default: WebSocket } = await import('ws');
     const ws = new WebSocket(`ws://localhost:${port}/ws/terminal-follow?id=${id}`);
@@ -188,7 +188,7 @@ async function run() {
         console.log(`\n[exited: ${msg.code}]`);
         process.exit(msg.code || 0);
       }
-      // ping 忽略
+      // ignore ping
     });
 
     ws.on('close', () => process.exit(0));
@@ -197,13 +197,13 @@ async function run() {
       process.exit(1);
     });
 
-    // Ctrl+C 优雅退出
+    // Graceful exit on Ctrl+C
     process.on('SIGINT', () => {
       ws.close();
       process.exit(0);
     });
 
-    // 保持进程活跃
+    // Keep process alive
     return new Promise(() => {});
   }
 

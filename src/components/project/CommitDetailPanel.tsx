@@ -58,9 +58,9 @@ interface CommitDetailPanelProps {
   onClose: () => void;
   commit: CommitInfo | null;
   cwd: string;
-  embedded?: boolean; // 内嵌模式，无 Modal 包装和标题栏
-  initialFilePath?: string; // 初始选中的文件路径
-  onContentSearch?: (query: string) => void; // 选中文本 → 全项目搜索
+  embedded?: boolean; // Embedded mode, no Modal wrapper or title bar
+  initialFilePath?: string; // Initially selected file path
+  onContentSearch?: (query: string) => void; // Selected text → project-wide search
 }
 
 export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = false, initialFilePath, onContentSearch }: CommitDetailPanelProps) {
@@ -122,14 +122,14 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
         // Initialize expanded paths
         setExpandedPaths(new Set(collectGitTreeDirPaths(tree)));
 
-        // 如果有 initialFilePath，自动选中对应的文件
+        // If initialFilePath is set, auto-select the corresponding file
         if (initialFilePath && fileList.length > 0) {
           const matchedFile = fileList.find(f => f.path === initialFilePath);
           if (matchedFile) {
-            // 延迟执行以确保状态已更新
+            // Delay to ensure state has updated
             setTimeout(() => {
               setSelectedFile(matchedFile);
-              // 加载 diff
+              // Load diff
               fetch(`/api/git/commit-diff?cwd=${encodeURIComponent(cwd)}&hash=${commit.hash}&file=${encodeURIComponent(matchedFile.path)}`)
                 .then(res => res.json())
                 .then(diffData => setFileDiff(diffData))
@@ -181,7 +181,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
 
   if (!isOpen || !commit) return null;
 
-  // 内容部分（共享于 embedded 和 modal 模式）
+  // Content section (shared between embedded and modal modes)
   const content = (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Commit info header */}
@@ -299,7 +299,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
     </div>
   );
 
-  // 内嵌模式：无 Modal 包装和标题栏，但右上角有关闭按钮
+  // Embedded mode: no Modal wrapper or title bar, but has a close button in top-right
   if (embedded) {
     return (
       <div className="bg-card w-full h-full flex flex-col relative">
@@ -318,7 +318,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
     );
   }
 
-  // Modal 模式
+  // Modal mode
   return (
     <div className="fixed inset-0 z-[60] bg-black/50" onClick={onClose}>
       <div

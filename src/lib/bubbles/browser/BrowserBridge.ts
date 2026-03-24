@@ -1,8 +1,8 @@
 /**
- * BrowserBridge - 服务端核心
+ * BrowserBridge - server-side core
  *
- * 管理 browser bubble 的 shortId 注册表和 pending request。
- * CLI → API → WS → BrowserBubble → content script 的中间层。
+ * Manages the shortId registry and pending requests for browser bubbles.
+ * Middleware layer for the CLI → API → WS → BrowserBubble → content script flow.
  */
 
 import { WebSocket } from 'ws';
@@ -21,7 +21,7 @@ interface BrowserEntry {
 /** shortId → BrowserEntry */
 const registry = new Map<string, BrowserEntry>();
 
-/** fullId → shortId（反向索引） */
+/** fullId → shortId (reverse index) */
 const fullIdToShort = new Map<string, string>();
 
 export function registerBrowser(fullId: string, ws: WebSocket): string {
@@ -67,7 +67,7 @@ export function listBrowsers(): Array<{ shortId: string; fullId: string; connect
 }
 
 // ============================================================================
-// Pending Requests（API long-poll 等待 browser 响应）
+// Pending Requests (API long-poll waiting for browser response)
 // ============================================================================
 
 interface PendingRequest {
@@ -79,7 +79,7 @@ interface PendingRequest {
 const pendingRequests = new Map<string, PendingRequest>();
 
 /**
- * 创建一个 pending request，等待 browser 响应
+ * Create a pending request and wait for the browser to respond.
  */
 export function createPendingRequest(reqId: string, timeout: number): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -93,7 +93,7 @@ export function createPendingRequest(reqId: string, timeout: number): Promise<un
 }
 
 /**
- * Browser 响应到达，resolve 对应的 pending request
+ * Browser response arrived; resolve the corresponding pending request.
  */
 export function resolvePendingRequest(reqId: string, ok: boolean, data: unknown, error?: string): void {
   const pending = pendingRequests.get(reqId);
@@ -110,7 +110,7 @@ export function resolvePendingRequest(reqId: string, ok: boolean, data: unknown,
 }
 
 /**
- * 向指定 browser 发送命令
+ * Send a command to the specified browser.
  */
 export function sendCommandToBrowser(
   shortId: string,

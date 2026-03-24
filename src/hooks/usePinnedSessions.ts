@@ -6,7 +6,7 @@ export type { PinnedSession };
 export function usePinnedSessions() {
   const [pinnedSessions, setPinnedSessions] = useState<PinnedSession[]>([]);
 
-  // 加载
+  // Load
   const reload = useCallback(() => {
     fetch('/api/pinned-sessions')
       .then(res => res.json())
@@ -16,7 +16,7 @@ export function usePinnedSessions() {
 
   useEffect(() => { reload(); }, [reload]);
 
-  // 监听跨 iframe 通知
+  // Listen for cross-iframe notifications
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
       if (e.data?.type === 'PINNED_SESSIONS_CHANGED') {
@@ -27,7 +27,7 @@ export function usePinnedSessions() {
     return () => window.removeEventListener('message', handleMessage);
   }, [reload]);
 
-  // 保存 + 通知
+  // Save + notify
   const save = useCallback((sessions: PinnedSession[]) => {
     setPinnedSessions(sessions);
     fetch('/api/pinned-sessions', {
@@ -35,7 +35,7 @@ export function usePinnedSessions() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessions }),
     }).catch(() => {});
-    // 通知父窗口和所有 iframe
+    // Notify parent window and all iframes
     try {
       window.parent.postMessage({ type: 'PINNED_SESSIONS_CHANGED' }, '*');
     } catch { /* ignore */ }

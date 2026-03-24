@@ -2,9 +2,9 @@ import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { ImagePreview } from '@/components/shared/ImagePreview';
 import { ImageInfo } from '@/types/chat';
 
-// 生成示例图片数据（1x1 像素的 PNG）
+// Generate sample image data (1x1 pixel PNG)
 const createMockImage = (id: string, color: string): ImageInfo => {
-  // 使用简单的占位图 URL 作为预览
+  // Use a simple placeholder URL as the preview
   const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
   let preview = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==`;
 

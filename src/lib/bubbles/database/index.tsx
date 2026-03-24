@@ -1,7 +1,7 @@
 import { registerBubble, type BubbleComponentProps, type PluginItemBase } from '../../bubblePlugins';
 import { DatabaseBubble } from './DatabaseBubble';
 
-/** Database 气泡数据 */
+/** Database bubble data */
 export interface DatabasePluginItem extends PluginItemBase {
   connectionString: string;
   displayName: string;

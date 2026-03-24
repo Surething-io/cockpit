@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 
 /**
- * 检测当前页面/iframe 是否可见
- * 用于在 iframe 被隐藏时暂停 WebSocket 等资源密集型操作
+ * Detect whether the current page/iframe is visible.
+ * Used to pause resource-intensive operations (e.g. WebSocket) when the iframe is hidden.
  *
- * 检测方式：
- * 1. document.visibilitychange（浏览器 tab 切换）
- * 2. 父窗口发来的 VISIBILITY 消息（iframe 被 CSS hidden 时）
+ * Detection methods:
+ * 1. document.visibilitychange (browser tab switching)
+ * 2. VISIBILITY message from parent window (iframe hidden via CSS)
  */
 export function usePageVisible(): boolean {
   const [visible, setVisible] = useState(() => {
@@ -15,13 +15,13 @@ export function usePageVisible(): boolean {
   });
 
   useEffect(() => {
-    // 浏览器 tab 可见性变化
+    // Browser tab visibility change
     const handleVisibility = () => {
       setVisible(document.visibilityState === 'visible');
     };
     document.addEventListener('visibilitychange', handleVisibility);
 
-    // 父窗口通知 iframe 可见性变化
+    // Parent window notifies iframe of visibility change
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'IFRAME_VISIBILITY') {
         setVisible(!!event.data.visible);

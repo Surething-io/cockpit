@@ -1,8 +1,8 @@
 /**
- * 气泡插件统一入口
+ * Unified bubble plugin entry point
  *
- * 导入此文件即触发所有插件注册。
- * 新增插件只需在此处加一行 import。
+ * Importing this file triggers registration of all plugins.
+ * To add a new plugin, just add one import line here.
  */
 
 import './browser';

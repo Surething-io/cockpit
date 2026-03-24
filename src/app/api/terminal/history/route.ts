@@ -6,31 +6,31 @@ import { getTerminalHistoryPath, getTerminalOutputPath, getCockpitProjectDir, en
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// 超过此阈值的 output 存到独立文件（4KB）
+// Outputs exceeding this threshold are stored in a separate file (4KB)
 const OUTPUT_FILE_THRESHOLD = 4096;
 
-// 统一历史条目（命令 + 浏览器混存）
-// type 缺失时默认为 'command'（兼容旧数据）
+// Unified history entry (commands + browser mixed storage)
+// Defaults to 'command' when type is missing (backward compatible)
 interface HistoryEntry {
   type?: 'command' | 'browser' | 'database';
   id: string;
   timestamp: string;
-  // command 类型字段
+  // command-type fields
   command?: string;
   output?: string;
-  outputFile?: string; // 长输出存到独立文件时的引用
+  outputFile?: string; // Reference path when long output is stored in a separate file
   exitCode?: number;
   cwd?: string;
   usePty?: boolean;
-  // browser 类型字段
+  // browser-type fields
   url?: string;
   sleeping?: boolean;
-  // database 类型字段
+  // database-type fields
   connectionString?: string;
   displayName?: string;
 }
 
-// GET: 读取命令历史（分页）
+// GET: Read command history (paginated)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
       const content = await fs.readFile(historyPath, 'utf-8');
       const lines = content.trim().split('\n').filter(Boolean);
 
-      // 解析 JSONL
+      // Parse JSONL
       const allEntries: HistoryEntry[] = lines
         .map((line) => {
           try {
@@ -63,12 +63,12 @@ export async function GET(request: NextRequest) {
         })
         .filter(Boolean) as HistoryEntry[];
 
-      // 分页
+      // Paginate
       const start = page * pageSize;
       const end = start + pageSize;
       const entries = allEntries.slice(start, end);
 
-      // 读取独立输出文件的内容
+      // Read the content of separate output files
       for (const entry of entries) {
         if (entry.outputFile) {
           try {
@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
         }
       );
     } catch (error: any) {
-      // 文件不存在，返回空列表
+      // File does not exist, return empty list
       if (error.code === 'ENOENT') {
         return new Response(
           JSON.stringify({
@@ -121,8 +121,8 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// DELETE: 删除命令历史
-// 有 commandId 参数时删除单条；无 commandId 时清空整个 tab 历史
+// DELETE: Delete command history
+// With a commandId param: delete a single entry; without commandId: clear the entire tab history
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -140,7 +140,7 @@ export async function DELETE(request: NextRequest) {
     const historyPath = getTerminalHistoryPath(cwd, tabId);
 
     if (commandId) {
-      // 单条删除
+      // Delete a single entry
       try {
         const content = await fs.readFile(historyPath, 'utf-8');
         const lines = content.trim().split('\n').filter(Boolean);
@@ -150,13 +150,13 @@ export async function DELETE(request: NextRequest) {
           try {
             const entry = JSON.parse(line);
             if (entry.id === commandId) {
-              // 删除关联的输出文件
+              // Delete the associated output file
               if (entry.outputFile) {
                 await fs.unlink(entry.outputFile).catch(() => {});
               }
-              continue; // 跳过该条
+              continue; // Skip this entry
             }
-          } catch { /* 保留无法解析的行 */ }
+          } catch { /* Keep lines that cannot be parsed */ }
           remaining.push(line);
         }
 
@@ -169,7 +169,7 @@ export async function DELETE(request: NextRequest) {
         if (e.code !== 'ENOENT') throw e;
       }
     } else {
-      // 清空整个 tab 历史
+      // Clear the entire tab history
       try {
         const content = await fs.readFile(historyPath, 'utf-8');
         const lines = content.trim().split('\n').filter(Boolean);
@@ -203,7 +203,7 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
-// POST: 保存命令历史条目
+// POST: Save a command history entry
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -219,25 +219,25 @@ export async function POST(request: NextRequest) {
     const historyPath = getTerminalHistoryPath(cwd, tabId);
     await ensureParentDir(historyPath);
 
-    // 长输出存到独立文件
+    // Store long output in a separate file
     const entryToSave = { ...entry };
     if (entry.output && entry.output.length > OUTPUT_FILE_THRESHOLD) {
       const outputPath = getTerminalOutputPath(cwd, entry.id);
       await fs.writeFile(outputPath, entry.output, 'utf-8');
-      entryToSave.output = ''; // JSONL 里不存内容
-      entryToSave.outputFile = outputPath; // 存引用路径
+      entryToSave.output = ''; // Don't store content in JSONL
+      entryToSave.outputFile = outputPath; // Store the reference path
     }
 
-    // 读取现有历史
+    // Read existing history
     let existingLines: string[] = [];
     try {
       const content = await fs.readFile(historyPath, 'utf-8');
       existingLines = content.trim().split('\n').filter(Boolean);
     } catch (e) {
-      // 文件不存在，从空开始
+      // File does not exist, start empty
     }
 
-    // 幂等保护：如果该 commandId 已存在，跳过写入
+    // Idempotency guard: if this commandId already exists, skip writing
     const entryId = entry.id;
     if (entryId) {
       const alreadyExists = existingLines.some((line) => {
@@ -256,7 +256,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 限制最多 100 条时，清理被淘汰条目的输出文件
+    // When capped at 100 entries, clean up output files for evicted entries
     if (existingLines.length >= 100) {
       const removedLines = existingLines.slice(0, existingLines.length - 99);
       for (const line of removedLines) {
@@ -270,10 +270,10 @@ export async function POST(request: NextRequest) {
       existingLines = existingLines.slice(-99);
     }
 
-    // 追加新条目
+    // Append new entry
     existingLines.push(JSON.stringify(entryToSave));
 
-    // 写回文件
+    // Write back to file
     await fs.writeFile(historyPath, existingLines.join('\n') + '\n', 'utf-8');
 
     return new Response(JSON.stringify({ success: true }), {
@@ -289,7 +289,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PATCH: 更新单条历史条目的部分字段（如 sleeping 状态）
+// PATCH: Update partial fields of a single history entry (e.g. sleeping state)
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();

@@ -16,7 +16,7 @@ export function EnvManager({ cwd, tabId, onClose, onSave }: EnvManagerProps) {
   const [newValue, setNewValue] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  // 加载环境变量
+  // Load environment variables
   useEffect(() => {
     loadEnv();
   }, [cwd, tabId]);
@@ -85,7 +85,7 @@ export function EnvManager({ cwd, tabId, onClose, onSave }: EnvManagerProps) {
   return (
     <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-background border border-border rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col m-4">
-        {/* 标题栏 */}
+        {/* Title bar */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div>
             <h2 className="text-lg font-semibold">环境变量管理</h2>
@@ -101,7 +101,7 @@ export function EnvManager({ cwd, tabId, onClose, onSave }: EnvManagerProps) {
           </button>
         </div>
 
-        {/* 内容区域 */}
+        {/* Content area */}
         <div className="flex-1 overflow-y-auto p-4">
           {isLoading ? (
             <div className="flex items-center justify-center h-32 text-muted-foreground">
@@ -109,7 +109,7 @@ export function EnvManager({ cwd, tabId, onClose, onSave }: EnvManagerProps) {
             </div>
           ) : (
             <div className="space-y-3">
-              {/* 现有环境变量 */}
+              {/* Existing environment variables */}
               {Object.entries(env).map(([key, value]) => (
                 <div key={key} className="flex items-start gap-2">
                   <input
@@ -134,7 +134,7 @@ export function EnvManager({ cwd, tabId, onClose, onSave }: EnvManagerProps) {
                 </div>
               ))}
 
-              {/* 添加新变量 */}
+              {/* Add new variable */}
               <div className="flex items-start gap-2 pt-2 border-t border-border">
                 <input
                   type="text"
@@ -180,7 +180,7 @@ export function EnvManager({ cwd, tabId, onClose, onSave }: EnvManagerProps) {
           )}
         </div>
 
-        {/* 底部操作栏 */}
+        {/* Bottom action bar */}
         <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border">
           <button
             onClick={onClose}

@@ -20,7 +20,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const extensionStatus = bridge ? 'installed' as const : 'not-installed' as const;
   const extensionVersion = bridge?.version ?? null;
 
-  // 获取版本号
+  // Fetch app version
   useEffect(() => {
     if (!isOpen) return;
     fetch('/api/version')
@@ -29,7 +29,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       .catch(() => {});
   }, [isOpen]);
 
-  // 获取插件目录路径
+  // Fetch extension directory path
   useEffect(() => {
     if (!isOpen) return;
     fetch('/api/extension/version')
@@ -141,8 +141,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       if (bridge?.id && (window as any).chrome?.runtime?.sendMessage) {
                         (window as any).chrome.runtime.sendMessage(bridge.id, { type: 'reload' });
                         toast('插件重载中...');
-                        // 重载后 content script 会重新注入 window.__cockpitBridge
-                        // useCockpitBridge 会通过 cockpit-bridge-ready 事件自动更新
+                        // After reload, the content script re-injects window.__cockpitBridge
+                        // useCockpitBridge will auto-update via the cockpit-bridge-ready event
                       }
                     }}
                     className="px-3 py-1.5 text-xs border border-border text-foreground rounded-md hover:bg-muted transition-colors"

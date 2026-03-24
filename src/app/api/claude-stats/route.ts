@@ -36,7 +36,7 @@ function emptyUsage(): ModelUsage {
 }
 
 /**
- * 扫描 ~/.claude/projects 下所有 session JSONL，实时统计 token 用量
+ * Scan all session JSONL files under ~/.claude/projects and aggregate token usage in real time.
  */
 async function scanSessions() {
   const modelUsage: Record<string, ModelUsage> = {};

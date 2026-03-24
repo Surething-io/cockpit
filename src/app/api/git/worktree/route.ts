@@ -5,13 +5,13 @@ import { dirname, basename, join } from 'path';
 
 const execAsync = promisify(exec);
 
-// 生成随机可读单词（辅音 + 元音/韵母，2组）
+// Generate a random readable word (consonant + vowel/rhyme, 2 groups)
 function generateRandomWord(): string {
   const consonants = 'bcdfghjklmnprstvwz';
   const vowels = ['a', 'e', 'i', 'o', 'u', 'ai', 'au', 'ea', 'ee', 'ia', 'io', 'oa', 'oo', 'ou', 'ui'];
 
   let word = '';
-  // 生成 2 组（辅音 + 元音/韵母）
+  // Generate 2 groups (consonant + vowel/rhyme)
   for (let i = 0; i < 2; i++) {
     word += consonants[Math.floor(Math.random() * consonants.length)];
     word += vowels[Math.floor(Math.random() * vowels.length)];
@@ -29,7 +29,7 @@ export interface WorktreeInfo {
   isBare: boolean;
 }
 
-// 解析 git worktree list --porcelain 输出
+// Parse git worktree list --porcelain output
 function parseWorktreeList(output: string): WorktreeInfo[] {
   const worktrees: WorktreeInfo[] = [];
   const blocks = output.trim().split('\n\n');
@@ -70,22 +70,22 @@ function parseWorktreeList(output: string): WorktreeInfo[] {
   return worktrees;
 }
 
-// 生成下一个可用的 worktree 路径（格式：{主仓库父目录}/{主仓库目录名}-{随机单词}）
+// Generate the next available worktree path (format: {main repo parent dir}/{main repo name}-{random word})
 async function getNextWorktreePath(cwd: string, worktrees: WorktreeInfo[]): Promise<{ path: string; randomWord: string }> {
-  // 主仓库是 worktree 列表中的第一个
+  // Main repo is the first entry in the worktree list
   const mainRepoPath = worktrees.length > 0 ? worktrees[0].path : cwd;
   const parentDir = dirname(mainRepoPath);
   const projectName = basename(mainRepoPath);
 
-  // 最多尝试 50 次生成不重复的随机单词
+  // Try up to 50 times to generate a non-duplicate random word
   for (let i = 0; i < 50; i++) {
     const randomWord = generateRandomWord();
     const candidatePath = join(parentDir, `${projectName}-${randomWord}`);
     try {
       await execAsync(`test -e "${candidatePath}"`);
-      // 路径存在，继续尝试
+      // Path exists, keep trying
     } catch {
-      // 路径不存在，可以使用
+      // Path does not exist, can be used
       return { path: candidatePath, randomWord };
     }
   }
@@ -93,13 +93,13 @@ async function getNextWorktreePath(cwd: string, worktrees: WorktreeInfo[]): Prom
   throw new Error('No available worktree path (too many attempts)');
 }
 
-// GET: 列出所有 worktree
+// GET: List all worktrees
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const cwd = searchParams.get('cwd') || process.cwd();
 
   try {
-    // 检查是否是 git 仓库
+    // Check if this is a git repository
     try {
       await execAsync('git rev-parse --git-dir', { cwd });
     } catch {
@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
     const { stdout } = await execAsync('git worktree list --porcelain', { cwd });
     const worktrees = parseWorktreeList(stdout);
 
-    // 获取下一个可用路径和随机单词（基于主仓库路径）
+    // Get next available path and random word (based on main repo path)
     let nextPath: string | null = null;
     let nextRandomWord: string | null = null;
     try {
@@ -117,16 +117,16 @@ export async function GET(request: NextRequest) {
       nextPath = result.path;
       nextRandomWord = result.randomWord;
     } catch {
-      // 忽略错误
+      // Ignore error
     }
 
-    // 获取 git user.name
+    // Get git user.name
     let gitUserName = '';
     try {
       const { stdout: userName } = await execAsync('git config user.name', { cwd });
       gitUserName = userName.trim().toLowerCase().replace(/\s+/g, '');
     } catch {
-      // 忽略错误
+      // Ignore error
     }
 
     return NextResponse.json({
@@ -146,7 +146,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: 创建、删除、锁定、解锁 worktree
+// POST: Create, remove, lock, or unlock a worktree
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -158,20 +158,20 @@ export async function POST(request: NextRequest) {
 
     switch (action) {
       case 'add': {
-        // 创建 worktree
+        // Create worktree
         if (!path) {
           return NextResponse.json({ error: 'path is required' }, { status: 400 });
         }
 
         let cmd: string;
         if (newBranch) {
-          // 基于 baseBranch 创建新分支（--no-track 确保不跟踪远程分支）
+          // Create new branch based on baseBranch (--no-track ensures no remote tracking)
           const base = baseBranch || 'origin/main';
           cmd = `git worktree add --no-track -b "${newBranch}" "${path}" "${base}"`;
         } else if (branch) {
-          // 使用已有分支
-          // 如果是远程分支（origin/xxx），strip 前缀用本地名
-          // git worktree add <path> <local-name> 会自动创建 tracking branch
+          // Use existing branch.
+          // If it is a remote branch (origin/xxx), strip the prefix to get the local name.
+          // git worktree add <path> <local-name> will auto-create a tracking branch.
           const localBranch = branch.replace(/^origin\//, '');
           cmd = `git worktree add "${path}" "${localBranch}"`;
         } else {
@@ -183,18 +183,18 @@ export async function POST(request: NextRequest) {
       }
 
       case 'remove': {
-        // 删除 worktree
+        // Remove worktree
         if (!path) {
           return NextResponse.json({ error: 'path is required' }, { status: 400 });
         }
 
-        // --force 允许删除有未提交更改的 worktree
+        // --force allows removing a worktree with uncommitted changes
         await execAsync(`git worktree remove --force "${path}"`, { cwd });
         return NextResponse.json({ success: true });
       }
 
       case 'lock': {
-        // 锁定 worktree
+        // Lock worktree
         if (!path) {
           return NextResponse.json({ error: 'path is required' }, { status: 400 });
         }
@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
       }
 
       case 'unlock': {
-        // 解锁 worktree
+        // Unlock worktree
         if (!path) {
           return NextResponse.json({ error: 'path is required' }, { status: 400 });
         }
@@ -214,14 +214,14 @@ export async function POST(request: NextRequest) {
       }
 
       case 'checkout': {
-        // 在指定 worktree 中切换分支
+        // Switch branch in the specified worktree
         if (!path) {
           return NextResponse.json({ error: 'path is required' }, { status: 400 });
         }
         if (!branch) {
           return NextResponse.json({ error: 'branch is required' }, { status: 400 });
         }
-        // 远程分支 strip origin/ 前缀
+        // Strip origin/ prefix from remote branch
         const localBranch = branch.replace(/^origin\//, '');
         await execAsync(`git checkout "${localBranch}"`, { cwd: path });
         return NextResponse.json({ success: true });

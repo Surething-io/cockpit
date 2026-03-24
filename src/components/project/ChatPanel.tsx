@@ -4,7 +4,7 @@ import { useCallback } from 'react';
 import { Chat } from './Chat';
 
 // ============================================
-// ChatPanel - 简化的 Chat 面板，不包含 header 和 sidebar
+// ChatPanel - Simplified Chat panel without header and sidebar
 // ============================================
 
 interface ChatPanelProps {

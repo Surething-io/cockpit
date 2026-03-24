@@ -5,9 +5,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * 获取笔记文件路径
- * - 有 cwd 参数：项目级笔记 ~/.cockpit/projects/<encoded-cwd>/note.md
- * - 无 cwd 参数：全局笔记 ~/.cockpit/note.md
+ * Resolve the note file path
+ * - With cwd param: project-level note ~/.cockpit/projects/<encoded-cwd>/note.md
+ * - Without cwd param: global note ~/.cockpit/note.md
  */
 function getNotePaths(url: string) {
   const { searchParams } = new URL(url);
@@ -18,7 +18,7 @@ function getNotePaths(url: string) {
   return { filePath: NOTE_FILE, dir: COCKPIT_DIR };
 }
 
-// GET - 读取笔记内容
+// GET - Read note content
 export async function GET(request: Request) {
   try {
     const { filePath, dir } = getNotePaths(request.url);
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
   }
 }
 
-// POST - 保存笔记内容
+// POST - Save note content
 export async function POST(request: Request) {
   try {
     const { filePath, dir } = getNotePaths(request.url);

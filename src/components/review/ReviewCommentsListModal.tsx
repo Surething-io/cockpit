@@ -5,7 +5,7 @@ import { ReviewComment } from '@/lib/review-utils';
 import { Portal } from '@/components/shared/Portal';
 import { toast } from '@/components/shared/Toast';
 
-/** authorId → 最新昵称 */
+/** authorId → latest nickname */
 export type UserNameMap = Record<string, string>;
 
 interface Props {
@@ -27,7 +27,7 @@ function formatTime(ts: number): string {
   });
 }
 
-/** 格式化单条评论为复制文本 */
+/** Format a single comment as copy text */
 function formatSingleComment(
   comment: ReviewComment,
   userNameMap: UserNameMap,
@@ -39,16 +39,16 @@ function formatSingleComment(
   const parts: string[] = [];
   const prefix = index != null ? `[${index + 1}] ` : '';
 
-  // 引用文本
+  // Quoted text
   const anchor = comment.anchor.selectedText.length > 200
     ? comment.anchor.selectedText.slice(0, 197) + '...'
     : comment.anchor.selectedText;
   parts.push(`${prefix}引用: "${anchor}"`);
 
-  // 评论
+  // Comment
   parts.push(`评论 (${resolveAuthor(comment.authorId, comment.author)}): ${comment.content}`);
 
-  // 回复
+  // Replies
   for (const reply of comment.replies) {
     parts.push(`  ↳ ${resolveAuthor(reply.authorId, reply.author)}: ${reply.content}`);
   }
@@ -56,7 +56,7 @@ function formatSingleComment(
   return parts.join('\n');
 }
 
-/** 格式化全部评论为复制文本 */
+/** Format all comments as copy text */
 function formatAllComments(
   comments: ReviewComment[],
   reviewTitle: string,
@@ -128,7 +128,7 @@ export function ReviewCommentsListModal({
     onClose();
   };
 
-  // 分开放：开放的评论 和 已关闭的评论
+  // Separate: open comments and closed comments
   const openComments = sortedComments.filter(c => !c.closed);
   const closedComments = sortedComments.filter(c => c.closed);
 
@@ -185,7 +185,7 @@ export function ReviewCommentsListModal({
             </div>
           ) : (
             <div className="space-y-2">
-              {/* 开放的评论 */}
+              {/* Open comments */}
               {openComments.map((comment, idx) => (
                 <CommentRow
                   key={comment.id}
@@ -198,7 +198,7 @@ export function ReviewCommentsListModal({
                 />
               ))}
 
-              {/* 已关闭的评论 */}
+              {/* Closed comments */}
               {closedComments.length > 0 && (
                 <>
                   <div className="text-[11px] text-muted-foreground/60 pt-2 pb-1 px-1">
@@ -228,7 +228,7 @@ export function ReviewCommentsListModal({
   return <Portal>{modalContent}</Portal>;
 }
 
-/** 单条评论行 */
+/** Single comment row */
 function CommentRow({
   comment,
   index,
@@ -257,14 +257,14 @@ function CommentRow({
       }`}
       onClick={() => onClick(comment.id)}
     >
-      {/* 引用文本 */}
+      {/* Quoted text */}
       <div className="px-3 pt-2.5 pb-1">
         <div className="text-xs bg-yellow-500/10 border-l-2 border-yellow-500 px-2 py-1 rounded-r text-muted-foreground truncate">
           {truncatedAnchor}
         </div>
       </div>
 
-      {/* 评论内容 */}
+      {/* Comment content */}
       <div className="px-3 pt-1.5 pb-2 flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
@@ -284,7 +284,7 @@ function CommentRow({
           <p className="text-sm text-foreground line-clamp-2 pl-6">
             {comment.content}
           </p>
-          {/* 回复摘要 */}
+          {/* Reply summary */}
           {comment.replies.length > 0 && (
             <div className="pl-6 mt-1 space-y-0.5">
               {comment.replies.slice(0, 3).map(reply => (
@@ -303,7 +303,7 @@ function CommentRow({
           )}
         </div>
 
-        {/* 复制按钮 */}
+        {/* Copy button */}
         <button
           onClick={e => {
             e.stopPropagation();

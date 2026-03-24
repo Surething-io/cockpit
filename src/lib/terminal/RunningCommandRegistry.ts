@@ -1,8 +1,8 @@
-// 运行中命令注册表
-// 使用 globalThis 确保 Turbopack 模块隔离下共享同一实例
-// 职责：
-// 1. 跟踪所有运行中的子进程（缓冲 stdout/stderr）
-// 2. 子进程 exit 时写入 JSONL 历史文件
+// Running command registry
+// Uses globalThis to share a single instance across Turbopack module isolation
+// Responsibilities:
+// 1. Track all running child processes (buffer stdout/stderr)
+// 2. Write to the JSONL history file when a child process exits
 
 import { ChildProcess } from 'child_process';
 import type { IPty } from 'node-pty';
@@ -12,7 +12,7 @@ import { registerTerminal, finalizeTerminal, notifyOutputListeners, notifyExitLi
 
 const MAX_OUTPUT_LINES = 5000;
 const OUTPUT_FILE_THRESHOLD = 4096;
-/** outputPartial 最大字节数，防止无换行的大输出（如 base64）堆满内存 */
+/** Max bytes for outputPartial, preventing large lineless output (e.g. base64) from filling memory */
 const MAX_PARTIAL_BYTES = 64 * 1024; // 64KB
 
 export interface RunningCommand {
@@ -23,9 +23,9 @@ export interface RunningCommand {
   tabId: string;
   pid: number;
   process: ChildProcess;
-  /** PTY 进程实例（PTY 模式下设置） */
+  /** PTY process instance (set in PTY mode) */
   ptyProcess?: IPty;
-  /** 是否使用 PTY 模式 */
+  /** Whether PTY mode is enabled */
   usePty?: boolean;
   outputLines: string[];
   outputPartial: string;
@@ -39,7 +39,7 @@ type GlobalWithRegistry = typeof globalThis & {
   [key: symbol]: Map<string, RunningCommand> | string | undefined;
 };
 
-/** 服务启动唯一 ID，用于判断是否发生了重启 */
+/** Unique server startup ID, used to detect restarts */
 function getServerId(): string {
   const g = globalThis as GlobalWithRegistry;
   if (!g[SERVER_ID_KEY]) {
@@ -49,7 +49,7 @@ function getServerId(): string {
   return g[SERVER_ID_KEY] as string;
 }
 
-// 初始化时打印 server id
+// Print server id on initialization
 getServerId();
 
 function getRegistry(): Map<string, RunningCommand> {
@@ -61,8 +61,8 @@ function getRegistry(): Map<string, RunningCommand> {
 }
 
 /**
- * 注册一个运行中的命令
- * 自动挂载 close/error 监听确保 finalizeCommand 一定执行
+ * Register a running command
+ * Automatically attaches close/error listeners to ensure finalizeCommand always runs
  */
 export function registerCommand(cmd: Omit<RunningCommand, 'outputLines' | 'outputPartial'>): void {
   console.log(`[registry] register: id=${cmd.commandId}, cmd="${cmd.command}", pid=${cmd.pid}, pty=${!!cmd.ptyProcess}, server=${getServerId()}`);
@@ -72,14 +72,14 @@ export function registerCommand(cmd: Omit<RunningCommand, 'outputLines' | 'outpu
     outputPartial: '',
   });
 
-  // 注册到 TerminalBridge（CLI 访问用）
+  // Register in TerminalBridge (for CLI access)
   registerTerminal(cmd.tabId, cmd.commandId, cmd.command, cmd.projectCwd);
 
-  // 写占位条目到磁盘（无 output，标记 running）
+  // Write placeholder entry to disk (no output, marked as running)
   writeHistoryPlaceholder(cmd.commandId, cmd.command, cmd.timestamp, cmd.cwd, cmd.projectCwd, cmd.tabId, !!cmd.usePty).catch(() => {});
 
   if (cmd.ptyProcess) {
-    // PTY 模式：单一 data 事件（stdout + stderr 混合，与真实终端一致）
+    // PTY mode: single data event (stdout + stderr merged, matching a real terminal)
     const pty = cmd.ptyProcess;
 
     pty.onData((data: string) => {
@@ -91,7 +91,7 @@ export function registerCommand(cmd: Omit<RunningCommand, 'outputLines' | 'outpu
       try { await finalizeCommand(cmd.commandId, exitCode, ptyPid); } catch (e) { console.error('[registry] finalize error:', e); }
     });
   } else {
-    // Pipe 模式：分离的 stdout/stderr
+    // Pipe mode: separate stdout/stderr streams
     const child = cmd.process;
 
     child.stdout?.on('data', (data: Buffer) => {
@@ -112,7 +112,7 @@ export function registerCommand(cmd: Omit<RunningCommand, 'outputLines' | 'outpu
 }
 
 /**
- * 追加输出到缓冲区（保留最多 MAX_OUTPUT_LINES 行）
+ * Append output to the buffer (keeping at most MAX_OUTPUT_LINES lines)
  */
 export function appendCommandOutput(commandId: string, data: string): void {
   const cmd = getRegistry().get(commandId);
@@ -122,7 +122,7 @@ export function appendCommandOutput(commandId: string, data: string): void {
   const parts = text.split('\n');
   cmd.outputPartial = parts.pop() || '';
 
-  // 防止无换行的超大行（如 base64）堆满内存
+  // Prevent oversized lineless content (e.g. base64) from filling memory
   if (cmd.outputPartial.length > MAX_PARTIAL_BYTES) {
     cmd.outputPartial = cmd.outputPartial.slice(-MAX_PARTIAL_BYTES);
   }
@@ -130,12 +130,12 @@ export function appendCommandOutput(commandId: string, data: string): void {
   if (parts.length > 0) {
     cmd.outputLines.push(...parts);
     if (cmd.outputLines.length > MAX_OUTPUT_LINES) {
-      // splice 原地删除，避免 slice 每次创建新数组对象造成 GC 压力
+      // splice in-place to avoid GC pressure from slice creating a new array each time
       cmd.outputLines.splice(0, cmd.outputLines.length - MAX_OUTPUT_LINES);
     }
   }
 
-  // 通知 follow 监听器
+  // Notify follow listeners
   notifyOutputListeners(commandId, data);
 }
 
@@ -148,7 +148,7 @@ function getBufferedOutput(cmd: RunningCommand): string {
 }
 
 /**
- * 查询某个项目下正在运行的命令
+ * Query running commands for a given project
  */
 export function getRunningCommands(projectCwd: string): Array<{
   commandId: string;
@@ -177,21 +177,21 @@ export function getRunningCommands(projectCwd: string): Array<{
 }
 
 /**
- * 获取单个命令（用于 attach）
+ * Get a single command (used for attach)
  */
 export function getRunningCommand(commandId: string): RunningCommand | undefined {
   return getRegistry().get(commandId);
 }
 
 /**
- * 诊断：注册表总大小
+ * Diagnostics: total registry size
  */
 export function getRegistrySize(): number {
   return getRegistry().size;
 }
 
 /**
- * 诊断：注册表中所有不同的 projectCwd
+ * Diagnostics: all distinct projectCwds in the registry
  */
 export function getAllProjectCwds(): string[] {
   const cwds = new Set<string>();
@@ -202,7 +202,7 @@ export function getAllProjectCwds(): string[] {
 }
 
 /**
- * 命令创建时写占位条目到 JSONL（无 output，标记 running: true）
+ * Write a placeholder entry to JSONL when a command is created (no output, marked running: true)
  */
 async function writeHistoryPlaceholder(
   commandId: string, command: string, timestamp: string,
@@ -221,9 +221,9 @@ async function writeHistoryPlaceholder(
   try {
     const content = await fs.readFile(historyPath, 'utf-8');
     existingLines = content.trim().split('\n').filter(Boolean);
-  } catch { /* 文件不存在 */ }
+  } catch { /* file does not exist */ }
 
-  // 限制最多 100 条
+  // Limit to 100 entries max
   if (existingLines.length >= 100) {
     const removedLines = existingLines.slice(0, existingLines.length - 99);
     for (const line of removedLines) {
@@ -240,18 +240,18 @@ async function writeHistoryPlaceholder(
 }
 
 /**
- * 命令结束时：替换占位条目（写入 output），清理注册表
+ * When a command finishes: replace the placeholder entry (write output) and clean up the registry
  */
 export async function finalizeCommand(commandId: string, exitCode: number, pid?: number): Promise<void> {
   const registry = getRegistry();
   const cmd = registry.get(commandId);
-  if (!cmd) return; // 幂等：已 finalize 过则跳过
-  // rerun 场景：旧进程的 onExit 不应删掉新进程的注册表条目
+  if (!cmd) return; // idempotent: skip if already finalized
+  // rerun scenario: old process onExit must not delete the new process's registry entry
   if (pid !== undefined && cmd.pid !== pid) return;
 
   console.log(`[registry] finalize: id=${commandId}, exitCode=${exitCode}, cmd="${cmd.command}", server=${getServerId()}`);
 
-  // 通知 follow 监听器进程退出
+  // Notify follow listeners that the process has exited
   notifyExitListeners(commandId, exitCode);
   finalizeTerminal(commandId, exitCode);
 
@@ -271,7 +271,7 @@ export async function finalizeCommand(commandId: string, exitCode: number, pid?:
   const historyPath = getTerminalHistoryPath(cmd.projectCwd, cmd.tabId);
   await ensureParentDir(historyPath);
 
-  // 长输出存到独立文件
+  // Store long output in a separate file
   if (output.length > OUTPUT_FILE_THRESHOLD) {
     const outputPath = getTerminalOutputPath(cmd.projectCwd, cmd.commandId);
     await fs.writeFile(outputPath, output, 'utf-8');
@@ -280,16 +280,16 @@ export async function finalizeCommand(commandId: string, exitCode: number, pid?:
     entry.output = output;
   }
 
-  // 读取现有历史，替换占位条目
+  // Read existing history and replace the placeholder entry
   let existingLines: string[] = [];
   try {
     const content = await fs.readFile(historyPath, 'utf-8');
     existingLines = content.trim().split('\n').filter(Boolean);
   } catch {
-    // 文件不存在
+    // file does not exist
   }
 
-  // 找到占位条目并替换；若无则追加
+  // Find and replace the placeholder entry; append if not found
   let replaced = false;
   for (let i = 0; i < existingLines.length; i++) {
     try {

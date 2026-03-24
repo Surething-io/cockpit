@@ -7,7 +7,7 @@ const execAsync = promisify(exec);
 export interface GitFileStatus {
   path: string;
   status: 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked';
-  oldPath?: string; // 用于重命名的情况
+  oldPath?: string; // Used for rename cases
 }
 
 export interface GitStatusResponse {
@@ -16,7 +16,7 @@ export interface GitStatusResponse {
   cwd: string;
 }
 
-// 解析 git status --porcelain=v1 输出
+// Parse git status --porcelain=v1 output
 function parseGitStatus(output: string): { staged: GitFileStatus[]; unstaged: GitFileStatus[] } {
   const staged: GitFileStatus[] = [];
   const unstaged: GitFileStatus[] = [];
@@ -26,16 +26,16 @@ function parseGitStatus(output: string): { staged: GitFileStatus[]; unstaged: Gi
   for (const line of lines) {
     if (line.length < 3) continue;
 
-    const indexStatus = line[0]; // 暂存区状态
-    const workTreeStatus = line[1]; // 工作区状态
+    const indexStatus = line[0]; // Staging area status
+    const workTreeStatus = line[1]; // Working tree status
     let filePath = line.slice(3);
 
-    // 去除引号（git 对包含空格的文件名会加引号）
+    // Strip quotes (git adds quotes to filenames containing spaces)
     if (filePath.startsWith('"') && filePath.endsWith('"')) {
       filePath = filePath.slice(1, -1);
     }
 
-    // 处理重命名情况 (R 状态)
+    // Handle rename case (R status)
     let oldPath: string | undefined;
     if (filePath.includes(' -> ')) {
       const parts = filePath.split(' -> ');
@@ -43,7 +43,7 @@ function parseGitStatus(output: string): { staged: GitFileStatus[]; unstaged: Gi
       filePath = parts[1];
     }
 
-    // 暂存区变更
+    // Staging area changes
     if (indexStatus !== ' ' && indexStatus !== '?') {
       staged.push({
         path: filePath,
@@ -52,15 +52,15 @@ function parseGitStatus(output: string): { staged: GitFileStatus[]; unstaged: Gi
       });
     }
 
-    // 工作区变更
+    // Working tree changes
     if (workTreeStatus !== ' ') {
-      // 过滤掉纯目录（以 / 结尾的路径）
+      // Filter out pure directories (paths ending with /)
       if (filePath.endsWith('/')) {
         continue;
       }
 
       if (workTreeStatus === '?') {
-        // 未跟踪文件
+        // Untracked file
         unstaged.push({
           path: filePath,
           status: 'untracked',
@@ -99,11 +99,11 @@ export async function GET(request: NextRequest) {
   const cwd = searchParams.get('cwd') || process.cwd();
 
   try {
-    // 检查是否是 git 仓库
+    // Check if this is a git repository
     await execAsync('git rev-parse --git-dir', { cwd });
 
-    // 获取 git status (-u 显示所有未跟踪文件，而不只是目录)
-    // -c core.quotePath=false 避免中文文件名被转义为八进制
+    // Get git status (-u shows all untracked files, not just directories)
+    // -c core.quotePath=false prevents Chinese filenames from being escaped as octal
     const { stdout } = await execAsync('git -c core.quotePath=false status --porcelain=v1 -u', { cwd });
     const { staged, unstaged } = parseGitStatus(stdout);
 

@@ -40,7 +40,7 @@ export function getLanguageFromPath(filePath: string): string {
   const fileName = filePath.split('/').pop()?.toLowerCase() || '';
   const ext = fileName.split('.').pop()?.toLowerCase();
 
-  // 特殊文件名匹配（优先于扩展名）
+  // Special filename matching (takes priority over extension)
   if (fileName === '.env' || fileName.startsWith('.env.')) return 'bash';
   if (fileName === 'dockerfile' || fileName.startsWith('dockerfile.')) return 'bash';
   if (fileName === 'makefile') return 'bash';
@@ -81,7 +81,7 @@ export function escapeHtml(str: string): string {
     .replace(/'/g, '&#039;');
 }
 
-/** 将单行 token 数组拼为 HTML 字符串 */
+/** Join a single-line token array into an HTML string */
 export function tokensToHtml(tokens: ThemedToken[]): string {
   return tokens
     .map(t => t.color

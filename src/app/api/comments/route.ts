@@ -7,7 +7,7 @@ export interface CodeComment {
   startLine: number;
   endLine: number;
   content: string;
-  selectedText?: string; // 选中的原文（用于没有真实文件的场景，如 AI 消息气泡）
+  selectedText?: string; // Selected original text (for scenarios without a real file, e.g. AI message bubbles)
   createdAt: number;
   updatedAt?: number;
 }
@@ -16,8 +16,8 @@ interface CommentsData {
   comments: CodeComment[];
 }
 
-// GET - 获取文件评论
-// ?cwd=xxx&filePath=xxx (filePath 可选，不传则返回所有)
+// GET - Retrieve file comments
+// ?cwd=xxx&filePath=xxx (filePath optional; omit to return all)
 export async function GET(request: NextRequest) {
   const cwd = request.nextUrl.searchParams.get('cwd');
   const filePath = request.nextUrl.searchParams.get('filePath');
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     const dataPath = getCommentsFilePath(cwd);
     const data = await readJsonFile<CommentsData>(dataPath, { comments: [] });
 
-    // 如果指定了 filePath，只返回该文件的评论
+    // If filePath is specified, return only comments for that file
     if (filePath) {
       const fileComments = data.comments.filter(c => c.filePath === filePath);
       return NextResponse.json({ comments: fileComments });
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - 添加评论
+// POST - Add comment
 // body: { cwd, filePath, startLine, endLine, content }
 export async function POST(request: NextRequest) {
   try {
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT - 更新评论
+// PUT - Update comment
 // body: { cwd, id, content }
 export async function PUT(request: NextRequest) {
   try {
@@ -117,9 +117,9 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// DELETE - 删除评论
-// ?cwd=xxx&id=xxx 删除单个评论
-// ?cwd=xxx&all=true 清空所有评论
+// DELETE - Delete comment
+// ?cwd=xxx&id=xxx deletes a single comment
+// ?cwd=xxx&all=true clears all comments
 export async function DELETE(request: NextRequest) {
   const cwd = request.nextUrl.searchParams.get('cwd');
   const id = request.nextUrl.searchParams.get('id');
@@ -132,13 +132,13 @@ export async function DELETE(request: NextRequest) {
   try {
     const dataPath = getCommentsFilePath(cwd);
 
-    // 清空所有评论
+    // Clear all comments
     if (all === 'true') {
       await writeJsonFile(dataPath, { comments: [] });
       return NextResponse.json({ success: true });
     }
 
-    // 删除单个评论
+    // Delete single comment
     if (!id) {
       return NextResponse.json({ error: 'id is required' }, { status: 400 });
     }

@@ -13,7 +13,7 @@ export function NicknameModal({ currentName, onConfirm, onSkip }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // 聚焦并全选
+    // Focus and select all
     inputRef.current?.select();
   }, []);
 

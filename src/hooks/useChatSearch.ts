@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 
 interface ChatSearchMatch {
   messageId: string;
-  /** 该 match 在消息内所有 mark 中的索引 */
+  /** Index of this match among all marks within the message */
   markIndex: number;
 }
 
@@ -14,7 +14,7 @@ export function useChatSearch(containerRef: React.RefObject<HTMLDivElement | nul
   const searchInputRef = useRef<HTMLInputElement>(null);
   const markElementsRef = useRef<HTMLElement[]>([]);
 
-  // 清除所有高亮 mark 标签，恢复原始文本节点
+  // Remove all highlight mark elements and restore original text nodes
   const clearHighlights = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -23,13 +23,13 @@ export function useChatSearch(containerRef: React.RefObject<HTMLDivElement | nul
       const parent = mark.parentNode;
       if (parent) {
         parent.replaceChild(document.createTextNode(mark.textContent || ''), mark);
-        parent.normalize(); // 合并相邻文本节点
+        parent.normalize(); // Merge adjacent text nodes
       }
     });
     markElementsRef.current = [];
   }, [containerRef]);
 
-  // 执行搜索：遍历消息 DOM 中的文本节点，用 mark 包裹匹配
+  // Perform search: walk text nodes in the message DOM and wrap matches with mark elements
   const performSearch = useCallback((query: string) => {
     clearHighlights();
 
@@ -43,13 +43,13 @@ export function useChatSearch(containerRef: React.RefObject<HTMLDivElement | nul
     const allMarks: HTMLElement[] = [];
     const queryLower = query.toLowerCase();
 
-    // 遍历每个消息元素
+    // Iterate over each message element
     const messageElements = containerRef.current.querySelectorAll('[data-message-id]');
     messageElements.forEach(msgEl => {
       const messageId = msgEl.getAttribute('data-message-id') || '';
       let markIndex = 0;
 
-      // TreeWalker 遍历文本节点
+      // Walk text nodes with TreeWalker
       const walker = document.createTreeWalker(msgEl, NodeFilter.SHOW_TEXT, null);
       const textNodes: Text[] = [];
       let node: Text | null;
@@ -72,15 +72,15 @@ export function useChatSearch(containerRef: React.RefObject<HTMLDivElement | nul
 
         if (ranges.length === 0) continue;
 
-        // 从后往前替换，避免偏移问题
+        // Replace from back to front to avoid offset issues
         let currentNode: Text = textNode;
         for (let i = ranges.length - 1; i >= 0; i--) {
           const range = ranges[i];
-          // 分割文本节点
+          // Split text node
           const afterNode = currentNode.splitText(range.end);
           const matchNode = currentNode.splitText(range.start);
 
-          // 创建 mark 元素
+          // Create mark element
           const mark = document.createElement('mark');
           mark.className = 'chat-search-match';
           mark.textContent = matchNode.textContent;
@@ -90,13 +90,13 @@ export function useChatSearch(containerRef: React.RefObject<HTMLDivElement | nul
           allMarks.push(mark);
           markIndex++;
 
-          // 继续处理前面的文本（currentNode 已被 splitText 截断）
-          void afterNode; // afterNode 自动跟在后面
+          // Continue processing the preceding text (currentNode was truncated by splitText)
+          void afterNode; // afterNode is automatically positioned right after
         }
       }
     });
 
-    // mark 是从后往前插入的，需要反转以保持 DOM 顺序
+    // Marks were inserted back-to-front; reverse to restore DOM order
     allMatches.reverse();
     allMarks.reverse();
     markElementsRef.current = allMarks;
@@ -104,19 +104,19 @@ export function useChatSearch(containerRef: React.RefObject<HTMLDivElement | nul
     setCurrentMatchIndex(allMatches.length > 0 ? 0 : -1);
   }, [containerRef, clearHighlights]);
 
-  // query 变化时重新搜索
+  // Re-run search when query changes
   useEffect(() => {
     performSearch(searchQuery);
   }, [searchQuery, performSearch]);
 
-  // 更新当前高亮
+  // Update current highlight
   useEffect(() => {
     const marks = markElementsRef.current;
     marks.forEach((mark, i) => {
       mark.className = i === currentMatchIndex ? 'chat-search-current' : 'chat-search-match';
     });
 
-    // 滚动到当前匹配
+    // Scroll to current match
     if (currentMatchIndex >= 0 && currentMatchIndex < marks.length) {
       marks[currentMatchIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
@@ -145,7 +145,7 @@ export function useChatSearch(containerRef: React.RefObject<HTMLDivElement | nul
     setCurrentMatchIndex(0);
   }, [clearHighlights]);
 
-  // 搜索输入框按键处理
+  // Handle key events in the search input
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -160,7 +160,7 @@ export function useChatSearch(containerRef: React.RefObject<HTMLDivElement | nul
     }
   }, [goToNextMatch, goToPrevMatch, closeSearch]);
 
-  // Cmd+F 监听
+  // Listen for Cmd+F
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;

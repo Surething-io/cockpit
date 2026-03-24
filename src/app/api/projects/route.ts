@@ -23,7 +23,7 @@ const DEFAULT_DATA: ProjectsData = {
   collapsed: false,
 };
 
-// GET - 读取项目列表
+// GET - Read project list
 export async function GET() {
   try {
     const data = await readJsonFile<ProjectsData>(PROJECTS_FILE, DEFAULT_DATA);
@@ -40,7 +40,7 @@ export async function GET() {
   }
 }
 
-// POST - 保存项目列表
+// POST - Save project list
 export async function POST(request: Request) {
   try {
     const data = await request.json() as ProjectsData;

@@ -1,9 +1,9 @@
 /**
- * TerminalBridge - CLI 访问终端气泡的注册表
+ * TerminalBridge - Registry for CLI access to terminal bubbles
  *
- * 管理 shortId 映射和输出监听（用于 follow 实时流）。
- * 与 BrowserBridge 平行，但不需要 WS 引用或 pending-request
- * （终端操作是直接的服务端操作）。
+ * Manages shortId mappings and output listeners (for follow live streaming).
+ * Parallel to BrowserBridge, but requires no WS reference or pending-request
+ * (terminal operations are direct server-side operations).
  */
 
 import { toShortId } from '../shortId';
@@ -15,12 +15,12 @@ interface TerminalEntry {
   command: string;
   projectCwd?: string;
   registeredAt: number;
-  /** 进程结束后缓存最终输出（用于 CLI output 命令） */
+  /** Cache final output after process exits (used by CLI output command) */
   finalOutput?: string;
   exitCode?: number;
 }
 
-// 使用 globalThis + Symbol.for 确保 HMR / Turbopack 模块重载下共享同一实例
+// Use globalThis + Symbol.for to share the same instance across HMR / Turbopack module reloads
 const REGISTRY_KEY = Symbol.for('terminal_bridge_registry');
 const REVERSE_KEY = Symbol.for('terminal_bridge_reverse');
 const OUTPUT_LISTENERS_KEY = Symbol.for('terminal_bridge_output_listeners');
@@ -63,7 +63,7 @@ export function registerTerminal(tabId: string, commandId: string, command: stri
 }
 
 /**
- * 进程结束时调用：保留条目，清理监听器（输出从磁盘读取）
+ * Called when process exits: retain entry, clean up listeners (output is read from disk)
  */
 export function finalizeTerminal(commandId: string, exitCode: number): void {
   const shortId = getReverseIndex().get(commandId);
@@ -78,7 +78,7 @@ export function finalizeTerminal(commandId: string, exitCode: number): void {
 }
 
 /**
- * 完全移除条目（气泡被删除时调用）
+ * Completely remove an entry (called when the bubble is deleted)
  */
 export function unregisterTerminal(commandId: string): void {
   const shortId = getReverseIndex().get(commandId);
@@ -122,7 +122,7 @@ export function listTerminals(getRunning?: (commandId: string) => { pid: number 
 }
 
 // ============================================================================
-// 输出监听（用于 follow 实时流）
+// Output listeners (for follow live streaming)
 // ============================================================================
 
 export function addOutputListener(commandId: string, cb: (data: string) => void): () => void {
@@ -135,7 +135,7 @@ export function addOutputListener(commandId: string, cb: (data: string) => void)
   };
 }
 
-/** 被 RunningCommandRegistry.appendCommandOutput 调用 */
+/** Called by RunningCommandRegistry.appendCommandOutput */
 export function notifyOutputListeners(commandId: string, data: string): void {
   const cbs = getOutputListeners().get(commandId);
   if (cbs) {
@@ -144,7 +144,7 @@ export function notifyOutputListeners(commandId: string, data: string): void {
 }
 
 // ============================================================================
-// 退出监听（用于 follow 时通知进程结束）
+// Exit listeners (notify process completion during follow)
 // ============================================================================
 
 export function addExitListener(commandId: string, cb: (code: number) => void): () => void {
@@ -157,7 +157,7 @@ export function addExitListener(commandId: string, cb: (code: number) => void): 
   };
 }
 
-/** 被 RunningCommandRegistry.finalizeCommand 调用（在 delete 之前） */
+/** Called by RunningCommandRegistry.finalizeCommand (before delete) */
 export function notifyExitListeners(commandId: string, exitCode: number): void {
   const cbs = getExitListeners().get(commandId);
   if (cbs) {

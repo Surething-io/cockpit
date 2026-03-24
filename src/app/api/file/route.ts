@@ -13,16 +13,16 @@ export async function GET(request: NextRequest) {
   const raw = searchParams.get('raw') === 'true';
 
   try {
-    // 安全检查：确保路径是绝对路径
+    // Safety check: ensure path is absolute
     const absolutePath = path.resolve(filePath);
 
-    // 检查文件是否存在
+    // Check if file exists
     const stat = await fs.stat(absolutePath);
     if (!stat.isFile()) {
       return NextResponse.json({ error: 'Not a file' }, { status: 400 });
     }
 
-    // 检查文件大小，限制为 10MB
+    // Check file size, limit to 10MB
     const maxSize = 10 * 1024 * 1024;
     if (stat.size > maxSize) {
       return NextResponse.json({
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // raw 模式：直接返回二进制文件（用于图片等）
+    // raw mode: return binary file directly (for images, etc.)
     if (raw) {
       const buffer = await fs.readFile(absolutePath);
       const ext = path.extname(absolutePath).toLowerCase();
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 读取文件内容
+    // Read file content
     const content = await fs.readFile(absolutePath, 'utf-8');
 
     return NextResponse.json({

@@ -14,7 +14,7 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
   const [newCommand, setNewCommand] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  // 加载全局别名
+  // Load global aliases
   useEffect(() => {
     loadAliases();
   }, []);
@@ -80,7 +80,7 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
   return (
     <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-background border border-border rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col m-4">
-        {/* 标题栏 */}
+        {/* Title bar */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div>
             <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -99,7 +99,7 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
           </button>
         </div>
 
-        {/* 内容区域 */}
+        {/* Content area */}
         <div className="flex-1 overflow-y-auto p-4">
           {isLoading ? (
             <div className="flex items-center justify-center h-32 text-muted-foreground">
@@ -107,7 +107,7 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
             </div>
           ) : (
             <div className="space-y-3">
-              {/* 现有别名 */}
+              {/* Existing aliases */}
               {Object.entries(aliases).map(([alias, command]) => (
                 <div key={alias} className="flex items-start gap-2 group">
                   <div className="flex-1 grid grid-cols-2 gap-2">
@@ -139,7 +139,7 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
                 </div>
               ))}
 
-              {/* 添加新别名 */}
+              {/* Add new alias */}
               <div className="flex items-start gap-2 pt-2 border-t border-border">
                 <div className="flex-1 grid grid-cols-2 gap-2">
                   <div className="relative">
@@ -183,7 +183,7 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
                 </button>
               </div>
 
-              {/* 提示信息 */}
+              {/* Usage tips */}
               <div className="mt-4 p-3 bg-accent rounded-lg">
                 <p className="text-sm text-muted-foreground">
                   💡 <strong>使用提示：</strong>输入别名即可执行对应的完整命令
@@ -211,7 +211,7 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
           )}
         </div>
 
-        {/* 底部操作栏 */}
+        {/* Bottom action bar */}
         <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border">
           <button
             onClick={onClose}

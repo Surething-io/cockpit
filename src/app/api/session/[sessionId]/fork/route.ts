@@ -9,13 +9,13 @@ export const runtime = 'nodejs';
 
 interface ForkRequestBody {
   cwd: string;
-  // 可选：从哪条消息开始 fork（通过 uuid），不传则复制全部
+  // Optional: the message uuid to start forking from; if omitted, copy everything
   fromMessageUuid?: string;
 }
 
 /**
- * 判断是否是"真正的用户消息"（不是 tool_result）
- * 真正的用户消息：type=user 且 content 包含 text 类型（不只是 tool_result）
+ * Determine whether a message is a "real user message" (not a tool_result)
+ * A real user message: type=user and content contains a text block (not only tool_result)
  */
 function isRealUserMessage(entry: Record<string, unknown>): boolean {
   if (entry.type !== 'user') return false;
@@ -23,25 +23,25 @@ function isRealUserMessage(entry: Record<string, unknown>): boolean {
   if (!message) return false;
   const content = message.content;
   if (!Array.isArray(content)) return typeof content === 'string';
-  // 检查是否有 text 类型的 content（真正的用户输入）
+  // Check whether there is a text-type content block (genuine user input)
   return content.some(
     (block: Record<string, unknown>) => block.type === 'text'
   );
 }
 
 /**
- * POST: Fork 一个 session，创建新的分支会话
+ * POST: Fork a session, creating a new branched session
  *
- * 工作原理：
- * 1. 读取原始 session 的 JSONL 文件
- * 2. 生成新的 sessionId
- * 3. 替换所有记录中的 sessionId
- * 4. 写入新的 JSONL 文件
+ * How it works:
+ * 1. Read the JSONL file of the original session
+ * 2. Generate a new sessionId
+ * 3. Replace the sessionId in all records
+ * 4. Write the new JSONL file
  *
- * Fork 逻辑（按 turn 截断）：
- * - 找到指定 uuid 所在的消息
- * - 继续复制该 turn 的所有后续消息（assistant 回复、tool_use、tool_result 等）
- * - 直到遇到下一个"真正的用户消息"为止
+ * Fork logic (truncate by turn):
+ * - Find the message with the specified uuid
+ * - Continue copying all subsequent messages in that turn (assistant reply, tool_use, tool_result, etc.)
+ * - Stop when the next "real user message" is encountered
  */
 export async function POST(
   request: NextRequest,
@@ -59,7 +59,7 @@ export async function POST(
       );
     }
 
-    // 获取原始 session 文件路径
+    // Get the original session file path
     const originalPath = getClaudeSessionPath(cwd, originalSessionId);
 
     if (!existsSync(originalPath)) {
@@ -69,10 +69,10 @@ export async function POST(
       );
     }
 
-    // 生成新的 sessionId
+    // Generate a new sessionId
     const newSessionId = randomUUID();
 
-    // 读取并处理 JSONL 文件
+    // Read and process the JSONL file
     const newLines: string[] = [];
     const fileStream = createReadStream(originalPath);
     const rl = createInterface({
@@ -80,10 +80,10 @@ export async function POST(
       crlfDelay: Infinity,
     });
 
-    // 状态机：
-    // - 'collecting': 正常收集消息
-    // - 'found_target': 找到目标消息，继续收集直到下一个真正的用户消息
-    // - 'done': 完成
+    // State machine:
+    // - 'collecting': normally collecting messages
+    // - 'found_target': target message found, continue collecting until the next real user message
+    // - 'done': finished
     let state: 'collecting' | 'found_target' | 'done' = 'collecting';
 
     for await (const line of rl) {
@@ -93,27 +93,27 @@ export async function POST(
       try {
         const entry = JSON.parse(line);
 
-        // 状态处理
+        // State handling
         if (state === 'found_target') {
-          // 如果遇到下一个真正的用户消息，停止
+          // Stop when the next real user message is encountered
           if (isRealUserMessage(entry)) {
             state = 'done';
             break;
           }
         }
 
-        // 检查是否到达目标消息
+        // Check whether the target message has been reached
         if (fromMessageUuid && entry.uuid === fromMessageUuid) {
           state = 'found_target';
         }
 
-        // 替换 sessionId
+        // Replace the sessionId
         entry.sessionId = newSessionId;
 
-        // 将修改后的记录添加到新文件内容
+        // Append the modified record to the new file content
         newLines.push(JSON.stringify(entry));
       } catch {
-        // 如果解析失败，保留原始行（但替换 sessionId 字符串）
+        // If parsing fails, keep the original line (but replace the sessionId string)
         const modifiedLine = line.replace(
           new RegExp(originalSessionId, 'g'),
           newSessionId
@@ -122,7 +122,7 @@ export async function POST(
       }
     }
 
-    // 写入新的 JSONL 文件
+    // Write the new JSONL file
     const newPath = getClaudeSessionPath(cwd, newSessionId);
     await writeFile(newPath, newLines.join('\n') + '\n', 'utf-8');
 

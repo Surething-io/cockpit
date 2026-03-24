@@ -23,7 +23,7 @@ interface CommentsListModalProps {
   onNavigateToComment?: (comment: CodeComment) => void;
 }
 
-// 复制用的评论数据结构
+// Comment data structure for copying
 interface CopyableComment {
   filePath: string;
   startLine: number;
@@ -32,7 +32,7 @@ interface CopyableComment {
   codeContent: string;
 }
 
-// 格式化评论为复制文本
+// Format comments as copy text
 function formatCommentsForCopy(comments: CopyableComment[]): string {
   if (comments.length === 0) return '';
 
@@ -69,8 +69,8 @@ function formatCommentsForCopy(comments: CopyableComment[]): string {
 export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }: CommentsListModalProps) {
   const [comments, setComments] = useState<CodeComment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [copyingId, setCopyingId] = useState<string | null>(null); // 正在复制的评论 ID
-  const [copyingAll, setCopyingAll] = useState(false); // 正在复制全部
+  const [copyingId, setCopyingId] = useState<string | null>(null); // ID of the comment being copied
+  const [copyingAll, setCopyingAll] = useState(false); // Whether copying all comments
 
   // Load all comments for the project
   const loadComments = useCallback(async () => {
@@ -103,7 +103,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
       );
       if (response.ok) {
         setComments(prev => prev.filter(c => c.id !== id));
-        // 触发全局刷新，让文件浏览器中的评论气泡同步更新
+        // Trigger global refresh so comment bubbles in file browser sync
         emitCommentsChange();
       }
     } catch (err) {
@@ -111,17 +111,17 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
     }
   };
 
-  // 复制单条评论
+  // Copy a single comment
   const handleCopySingle = async (comment: CodeComment) => {
     setCopyingId(comment.id);
     try {
       let codeContent = '';
 
       if (comment.selectedText) {
-        // 有 selectedText 的评论（如 AI 消息气泡）直接使用
+        // Comments with selectedText (e.g., AI message bubbles) use it directly
         codeContent = comment.selectedText;
       } else {
-        // 从文件读取代码内容
+        // Read code content from file
         const fileResponse = await fetch(
           `/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(comment.filePath)}`
         );
@@ -151,7 +151,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
     }
   };
 
-  // 复制全部评论
+  // Copy all comments
   const handleCopyAll = async () => {
     if (comments.length === 0) return;
     setCopyingAll(true);

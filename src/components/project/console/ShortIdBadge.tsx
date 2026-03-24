@@ -3,7 +3,7 @@
 import { useState, useCallback, memo } from 'react';
 import { toast } from '../../shared/Toast';
 
-/** dev 端口用 cock-dev，其他用 cock（prod 端口由 ~/.cockpit/server.json 自动识别） */
+/** Use cock-dev on the dev port; use cock for all others (prod port is auto-detected from ~/.cockpit/server.json) */
 function getCockBin(): string {
   const port = typeof window !== 'undefined' ? window.location.port : '3457';
   return port === '3456' ? 'cock-dev' : 'cock';
@@ -11,7 +11,7 @@ function getCockBin(): string {
 
 interface ShortIdBadgeProps {
   shortId: string;
-  /** CLI 子命令类型：terminal / browser */
+  /** CLI subcommand type: terminal / browser */
   type: 'terminal' | 'browser';
   onRegister: () => void | Promise<void>;
   onUnregister: () => void | Promise<void>;
@@ -28,12 +28,12 @@ export const ShortIdBadge = memo(function ShortIdBadge({
   const handleClick = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (registered) {
-      // 取消注册
+      // Unregister
       await onUnregister();
       setRegistered(false);
       toast(`已断开: ${shortId}`);
     } else {
-      // 注册 + 复制帮助命令
+      // Register + copy help command
       await onRegister();
       setRegistered(true);
       const cmd = `${getCockBin()} ${type} ${shortId}`;

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Editor } from '@tiptap/react';
 
 // ============================================
-// 链接输入弹窗组件
+// Link input popup component
 // ============================================
 
 function LinkInput({
@@ -89,7 +89,7 @@ function LinkInput({
 }
 
 // ============================================
-// 工具栏组件
+// Toolbar component
 // ============================================
 
 export function NoteToolbar({ editor }: { editor: Editor | null }) {
@@ -97,7 +97,7 @@ export function NoteToolbar({ editor }: { editor: Editor | null }) {
   const linkBtnRef = useRef<HTMLButtonElement>(null);
   const [, forceUpdate] = useState(0);
 
-  // 监听编辑器 selection/transaction 变化，实时刷新工具栏状态
+  // Listen for editor selection/transaction changes to refresh toolbar state in real time
   useEffect(() => {
     if (!editor) return;
     const handler = () => forceUpdate((n) => n + 1);
@@ -109,7 +109,7 @@ export function NoteToolbar({ editor }: { editor: Editor | null }) {
     };
   }, [editor]);
 
-  // 监听来自 slash 命令的链接插入事件
+  // Listen for link-insert events from slash commands
   useEffect(() => {
     const handler = () => setShowLinkInput(true);
     window.addEventListener('tiptap-insert-link', handler);
@@ -131,14 +131,14 @@ export function NoteToolbar({ editor }: { editor: Editor | null }) {
 
   return (
     <div className="flex items-center gap-0.5 px-4 py-1.5 border-b border-border flex-shrink-0 flex-wrap">
-      {/* 标题 */}
+      {/* Headings */}
       <button className={btnClass(editor.isActive('heading', { level: 1 }))} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} title="标题 1">H1</button>
       <button className={btnClass(editor.isActive('heading', { level: 2 }))} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title="标题 2">H2</button>
       <button className={btnClass(editor.isActive('heading', { level: 3 }))} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} title="标题 3">H3</button>
 
       <div className={sepClass} />
 
-      {/* 行内格式 */}
+      {/* Inline formatting */}
       <button className={btnClass(editor.isActive('bold'))} onClick={() => editor.chain().focus().toggleBold().run()} title="粗体">
         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M15.6 10.79c.97-.67 1.65-1.77 1.65-2.79 0-2.26-1.75-4-4-4H7v14h7.04c2.09 0 3.71-1.7 3.71-3.79 0-1.52-.86-2.82-2.15-3.42zM10 6.5h3c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-3v-3zm3.5 9H10v-3h3.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5z"/></svg>
       </button>
@@ -154,7 +154,7 @@ export function NoteToolbar({ editor }: { editor: Editor | null }) {
 
       <div className={sepClass} />
 
-      {/* 链接 */}
+      {/* Link */}
       <div className="relative">
         <button
           ref={linkBtnRef}
@@ -175,7 +175,7 @@ export function NoteToolbar({ editor }: { editor: Editor | null }) {
 
       <div className={sepClass} />
 
-      {/* 列表 */}
+      {/* Lists */}
       <button className={btnClass(editor.isActive('bulletList'))} onClick={() => editor.chain().focus().toggleBulletList().run()} title="无序列表">
         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-6c-.83 0-1.5.67-1.5 1.5S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-1.5.68-1.5 1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-6h14v-2H7v2zm0-8v2h14V5H7z"/></svg>
       </button>
@@ -188,7 +188,7 @@ export function NoteToolbar({ editor }: { editor: Editor | null }) {
 
       <div className={sepClass} />
 
-      {/* 块级 */}
+      {/* Block elements */}
       <button className={btnClass(editor.isActive('blockquote'))} onClick={() => editor.chain().focus().toggleBlockquote().run()} title="引用">
         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"/></svg>
       </button>
@@ -202,7 +202,7 @@ export function NoteToolbar({ editor }: { editor: Editor | null }) {
         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M4 11h16v2H4z"/></svg>
       </button>
 
-      {/* 上下文：表格操作按钮 */}
+      {/* Contextual: table operation buttons */}
       {isInTable && (
         <>
           <div className={sepClass} />
@@ -261,7 +261,7 @@ export function NoteToolbar({ editor }: { editor: Editor | null }) {
         </>
       )}
 
-      {/* 上下文：代码块删除按钮 */}
+      {/* Contextual: code block delete button */}
       {editor.isActive('codeBlock') && (
         <>
           <div className={sepClass} />

@@ -52,12 +52,12 @@ export function ConsoleInputBar({
 
   const { projectCommands, globalCommands, expandCustomCommand, loadQuickCommands } = useQuickCommands(cwd);
 
-  // 聚焦输入框
+  // Focus input field
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // 输入变化时过滤 / 自定义命令（项目级在前，全局在后）
+  // Filter on input change / custom commands (project-level first, then global)
   useEffect(() => {
     if (inputValue.startsWith('/')) {
       const keyword = inputValue.slice(1).toLowerCase();
@@ -76,7 +76,7 @@ export function ConsoleInputBar({
     }
   }, [inputValue, projectCommands, globalCommands]);
 
-  // 滚动选中项到可视区域
+  // Scroll selected item into view
   useEffect(() => {
     if (showSlashCommands && slashListRef.current) {
       const item = slashListRef.current.children[slashSelectedIndex] as HTMLElement;
@@ -179,7 +179,7 @@ export function ConsoleInputBar({
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.nativeEvent.isComposing) return;
 
-    // / 命令候选列表键盘导航
+    // / command candidate list keyboard navigation
     if (showSlashCommands && filteredSlashCommands.length > 0) {
       if (e.key === 'ArrowUp') {
         e.preventDefault();
@@ -247,7 +247,7 @@ export function ConsoleInputBar({
   return (
     <div className="border-t border-border p-4">
       <form onSubmit={handleSubmit} className="relative flex gap-2 items-center">
-        {/* 快捷命令按钮 */}
+        {/* Quick command button */}
         <div className="relative">
           <button
             type="button"
@@ -274,7 +274,7 @@ export function ConsoleInputBar({
           />
         </div>
 
-        {/* 项目笔记按钮 */}
+        {/* Project notes button */}
         {onOpenNote && (
           <button
             type="button"
@@ -336,7 +336,7 @@ export function ConsoleInputBar({
           className="flex-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring font-mono"
         />
 
-        {/* / 自定义命令候选列表 */}
+        {/* / custom command candidate list */}
         {showSlashCommands && filteredSlashCommands.length > 0 && (
           <div
             ref={slashListRef}

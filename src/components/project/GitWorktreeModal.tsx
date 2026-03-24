@@ -3,13 +3,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from '../shared/Toast';
 
-// 生成随机可读单词（辅音 + 元音/韵母，2组）
+// Generate a random readable word (consonant + vowel/rime, 2 pairs)
 function generateRandomWord(): string {
   const consonants = 'bcdfghjklmnprstvwz';
   const vowels = ['a', 'e', 'i', 'o', 'u', 'ai', 'au', 'ea', 'ee', 'ia', 'io', 'oa', 'oo', 'ou', 'ui'];
 
   let word = '';
-  // 生成 2 组（辅音 + 元音/韵母）
+  // Generate 2 pairs (consonant + vowel/rime)
   for (let i = 0; i < 2; i++) {
     word += consonants[Math.floor(Math.random() * consonants.length)];
     word += vowels[Math.floor(Math.random() * vowels.length)];
@@ -59,21 +59,21 @@ export function GitWorktreeModal({
   const [loading, setLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
-  // 删除确认状态
+  // Delete confirmation state
   const [deleteTarget, setDeleteTarget] = useState<WorktreeInfo | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Git user name（用于自动生成分支名）
+  // Git user name (used for auto-generating branch names)
   const [gitUserName, setGitUserName] = useState<string>('');
 
-  // 分支选择器状态
+  // Branch picker state
   const [showBranchPicker, setShowBranchPicker] = useState(false);
   const [branches, setBranches] = useState<string[]>([]);
   const [branchSearch, setBranchSearch] = useState('');
   const [branchesLoading, setBranchesLoading] = useState(false);
 
 
-  // 加载 worktree 列表
+  // Load worktree list
   const loadWorktrees = useCallback(async () => {
     setLoading(true);
     try {
@@ -95,24 +95,24 @@ export function GitWorktreeModal({
     }
   }, [cwd]);
 
-  // 获取默认源分支（优先级：origin/main → origin/master → main → master → 第一个）
+  // Get the default base branch (priority: origin/main → origin/master → main → master → first available)
   const getDefaultBaseBranch = useCallback((data: BranchesResponse): string => {
     const { local, remote } = data;
 
-    // 优先级顺序
+    // Priority order
     if (remote.includes('origin/main')) return 'origin/main';
     if (remote.includes('origin/master')) return 'origin/master';
     if (local.includes('main')) return 'main';
     if (local.includes('master')) return 'master';
 
-    // 如果都没有，返回第一个远程分支或本地分支
+    // Fall back to the first remote or local branch
     if (remote.length > 0) return remote[0];
     if (local.length > 0) return local[0];
 
     return 'main';
   }, []);
 
-  // 打开时加载数据
+  // Load data when opened
   useEffect(() => {
     if (isOpen) {
       loadWorktrees();
@@ -120,11 +120,11 @@ export function GitWorktreeModal({
     }
   }, [isOpen, loadWorktrees]);
 
-  // 快速创建 worktree（直接使用自动生成的分支名）
+  // Quick-create a worktree using the auto-generated branch name
   const handleQuickCreate = async () => {
     if (!nextPath) return;
 
-    // 先获取分支列表以确定默认源分支
+    // Fetch branch list first to determine the default base branch
     let defaultBase = 'origin/main';
     try {
       const response = await fetch(`/api/git/branches?cwd=${encodeURIComponent(cwd)}`);
@@ -133,10 +133,10 @@ export function GitWorktreeModal({
         defaultBase = getDefaultBaseBranch(data);
       }
     } catch {
-      // 忽略错误，使用默认值
+      // Ignore error, use default value
     }
 
-    // 使用 API 返回的随机单词（目录名和分支名使用同一个）
+    // Use the random word returned by the API (shared for both directory name and branch name)
     const randomWord = nextRandomWord || generateRandomWord();
     const branchName = gitUserName ? `${gitUserName}/${randomWord}` : randomWord;
 
@@ -169,7 +169,7 @@ export function GitWorktreeModal({
     }
   };
 
-  // 打开分支选择器
+  // Open the branch picker
   const handleOpenBranchPicker = async () => {
     setBranchesLoading(true);
     setBranchSearch('');
@@ -178,9 +178,9 @@ export function GitWorktreeModal({
       const response = await fetch(`/api/git/branches?cwd=${encodeURIComponent(cwd)}`);
       if (response.ok) {
         const data: BranchesResponse = await response.json();
-        // 已被 worktree 占用的分支
+        // Branches already used by a worktree
         const usedBranches = new Set(worktrees.map(w => w.branch).filter(Boolean));
-        // 合并本地+远程，排除已占用的
+        // Merge local + remote, excluding already-used branches
         const allBranches = [
           ...data.local.filter(b => !usedBranches.has(b)),
           ...data.remote.filter(b => !usedBranches.has(b) && !data.local.includes(b.replace(/^origin\//, ''))),
@@ -194,7 +194,7 @@ export function GitWorktreeModal({
     }
   };
 
-  // 使用已有分支创建 worktree
+  // Create a worktree from an existing branch
   const handleCreateFromBranch = async (branch: string) => {
     if (!nextPath) return;
     setShowBranchPicker(false);
@@ -225,7 +225,7 @@ export function GitWorktreeModal({
     }
   };
 
-  // 删除 worktree
+  // Delete worktree
   const handleDelete = async () => {
     if (!deleteTarget) return;
 
@@ -257,7 +257,7 @@ export function GitWorktreeModal({
     }
   };
 
-  // 锁定/解锁 worktree
+  // Lock/unlock worktree
   const handleToggleLock = async (worktree: WorktreeInfo) => {
     const action = worktree.isLocked ? 'unlock' : 'lock';
     try {
@@ -284,9 +284,9 @@ export function GitWorktreeModal({
     }
   };
 
-  // 点击 worktree 切换 - 通知父级 Workspace 打开/切换项目
+  // Click worktree to switch — notify parent Workspace to open/switch project
   const handleClickWorktree = (worktree: WorktreeInfo) => {
-    if (worktree.path === cwd) return; // 当前已在该 worktree
+    if (worktree.path === cwd) return; // Already in this worktree
 
     window.parent.postMessage({
       type: 'OPEN_PROJECT',
@@ -344,24 +344,24 @@ export function GitWorktreeModal({
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 min-w-0">
-                        {/* 状态指示器 */}
+                        {/* Status indicator */}
                         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isCurrent ? 'bg-brand' : 'bg-muted-foreground/30'}`} />
-                        {/* 分支名 */}
+                        {/* Branch name */}
                         <span className="font-medium text-foreground truncate">
                           {worktree.branch || (worktree.isDetached ? 'detached' : 'unknown')}
                         </span>
-                        {/* 锁定标记 */}
+                        {/* Locked indicator */}
                         {worktree.isLocked && (
                           <span className="text-amber-11" title="已锁定">🔒</span>
                         )}
-                        {/* 当前标记 */}
+                        {/* Current indicator */}
                         {isCurrent && (
                           <span className="text-xs text-brand">(当前)</span>
                         )}
                       </div>
-                      {/* 操作按钮 */}
+                      {/* Action buttons */}
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {/* 锁定/解锁（仅非当前） */}
+                        {/* Lock/unlock (non-current only) */}
                         {!isCurrent && (
                           <>
                             <button
@@ -382,7 +382,7 @@ export function GitWorktreeModal({
                                 </svg>
                               )}
                             </button>
-                            {/* 删除 */}
+                            {/* Delete */}
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -399,11 +399,11 @@ export function GitWorktreeModal({
                         )}
                       </div>
                     </div>
-                    {/* 路径 */}
+                    {/* Path */}
                     <div className="mt-1 text-xs text-muted-foreground truncate pl-4">
                       {worktree.path}
                     </div>
-                    {/* Detached 提示 */}
+                    {/* Detached warning */}
                     {worktree.isDetached && (
                       <div className="mt-1 text-xs text-amber-11 pl-4">
                         (detached HEAD)
@@ -416,7 +416,7 @@ export function GitWorktreeModal({
           )}
         </div>
 
-        {/* 分支选择器 */}
+        {/* Branch picker */}
         {showBranchPicker && (
           <div className="border-t border-border px-4 py-3 flex-shrink-0">
             <div className="flex items-center gap-2 mb-2">
@@ -496,7 +496,7 @@ export function GitWorktreeModal({
           </div>
         </div>
 
-        {/* 删除确认弹窗 */}
+        {/* Delete confirmation dialog */}
         {deleteTarget && (
           <div
             className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 rounded-lg"

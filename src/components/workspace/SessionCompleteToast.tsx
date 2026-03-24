@@ -10,13 +10,13 @@ import { createPortal } from 'react-dom';
 export interface SessionToastItem {
   id: string;
   projectName: string;
-  message?: string;  // lastUserMessage 预览
+  message?: string;  // lastUserMessage preview
   cwd: string;
   sessionId: string;
 }
 
 // ============================================
-// 全局 toast 队列（独立于 React 组件树）
+// Global toast queue (independent of the React component tree)
 // ============================================
 
 type Listener = () => void;
@@ -50,7 +50,7 @@ function useSessionToasts() {
 }
 
 // ============================================
-// Toast 容器（左下角，独立于右下角的普通 toast）
+// Toast container (bottom-left, independent of the bottom-right normal toast)
 // ============================================
 
 export function SessionCompleteToastContainer({
@@ -78,7 +78,7 @@ export function SessionCompleteToastContainer({
 }
 
 // ============================================
-// 单个 Toast 卡片
+// Individual toast card
 // ============================================
 
 function SessionToastCard({
@@ -98,7 +98,7 @@ function SessionToastCard({
     setTimeout(() => onRemove(item.id), 300);
   }, [item.id, onRemove]);
 
-  // 5 秒自动消失
+  // Auto-dismiss after 5 seconds
   useEffect(() => {
     timerRef.current = setTimeout(dismiss, 5000);
     return () => clearTimeout(timerRef.current);
@@ -110,7 +110,7 @@ function SessionToastCard({
     onRemove(item.id);
   }, [item, onNavigate, onRemove]);
 
-  // hover 时暂停自动消失
+  // Pause auto-dismiss on hover
   const handleMouseEnter = useCallback(() => {
     clearTimeout(timerRef.current);
   }, []);
@@ -132,13 +132,13 @@ function SessionToastCard({
       onMouseLeave={handleMouseLeave}
     >
       <div className="flex items-center gap-2">
-        {/* 完成图标 */}
+        {/* Completion icon */}
         <svg className="w-4 h-4 text-green-9 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
         <span className="text-sm font-medium text-foreground truncate">{item.projectName}</span>
         <span className="text-xs text-green-11 flex-shrink-0">完成</span>
-        {/* 关闭按钮 */}
+        {/* Close button */}
         <button
           onClick={(e) => { e.stopPropagation(); dismiss(); }}
           className="ml-auto p-0.5 text-muted-foreground hover:text-foreground rounded transition-colors"

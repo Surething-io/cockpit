@@ -9,16 +9,16 @@ interface BrowserCmd {
   params: Record<string, unknown>;
 }
 
-// Client-side shortId 计算（与服务端共享同一算法）
+// Client-side shortId calculation (shares the same algorithm as the server)
 import { toShortId } from '@/lib/shortId';
 
 /**
- * BrowserBubble 用的 WS bridge hook
+ * WebSocket bridge hook used by BrowserBubble
  *
- * - shortId 始终可用（客户端 CRC32 计算）
- * - WS 按需建立：connect() 返回 Promise，连接成功后 resolve
- * - 重复 connect() 不重复建连（已连接时立即 resolve）
- * - disconnect() 断开 WS
+ * - shortId is always available (client-side CRC32 calculation)
+ * - WS is established on demand: connect() returns a Promise that resolves on open
+ * - Repeated connect() calls do not create duplicate connections (resolves immediately if already connected)
+ * - disconnect() closes the WS
  */
 export function useBrowserBridge(
   fullId: string,
@@ -32,17 +32,17 @@ export function useBrowserBridge(
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldConnectRef = useRef(false);
 
-  // 用 ref 追踪最新值，避免 effect 因这些变化而重建 WS
+  // Use refs to track the latest values so that WS is not recreated on every change
   const iframeReadyRef = useRef(iframeReady);
   iframeReadyRef.current = iframeReady;
 
-  // connect() 的 pending resolvers
+  // Pending resolvers for connect()
   const connectResolversRef = useRef<Array<() => void>>([]);
 
-  // 处理从 iframe content script 返回的消息
+  // Handle messages returned from the iframe content script
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
-      // cmd-result: 命令执行结果 → 转发回 WS
+      // cmd-result: command execution result → forward back to WS
       if (e.data?.type === 'cockpit:cmd-result') {
         const { reqId, ok, data, error } = e.data;
         const ws = wsRef.current;
@@ -55,26 +55,26 @@ export function useBrowserBridge(
         return;
       }
 
-      // prepare-screenshot: 截图前确保 iframe 可见，返回 bounds
+      // prepare-screenshot: ensure the iframe is visible before taking a screenshot, return bounds
       if (e.data?.type === 'cockpit:prepare-screenshot') {
         const iframe = iframeRef.current;
         if (!iframe?.contentWindow) return;
 
-        // 1) 通知 TabManager 切到 console view + 显示截图提示
-        //    通知 Workspace 保存当前项目 + 切到本项目
+        // 1) Notify TabManager to switch to console view + show screenshot hint
+        //    Notify Workspace to save the current project and switch to this project
         const cwd = new URLSearchParams(window.location.search).get('cwd') || '';
         window.dispatchEvent(new CustomEvent('cockpit-screenshot-state', { detail: { active: true } }));
         window.parent.postMessage({ type: 'SCREENSHOT_PREPARE', cwd }, '*');
 
-        // 2) 等待渲染完成（3 帧 + 150ms）
+        // 2) Wait for rendering to complete (3 frames + 150ms)
         requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => {
           setTimeout(() => {
             const rect = iframe.getBoundingClientRect();
             const dpr = window.devicePixelRatio || 1;
 
-            // rect 是相对于 project iframe viewport 的坐标，
-            // 但 captureVisibleTab 截取的是整个浏览器 tab，
-            // 需要累加所有父级 iframe 的偏移量得到绝对坐标
+            // rect is relative to the project iframe viewport,
+            // but captureVisibleTab captures the entire browser tab,
+            // so accumulate offsets from all ancestor iframes to get absolute coordinates
             let absX = rect.x;
             let absY = rect.y;
             try {
@@ -89,7 +89,7 @@ export function useBrowserBridge(
                 cur = cur.parent;
               }
             } catch {
-              // cross-origin 时停止遍历，使用已累加的偏移
+              // Stop traversal on cross-origin; use the already-accumulated offset
             }
 
             iframe.contentWindow?.postMessage({
@@ -108,7 +108,7 @@ export function useBrowserBridge(
         return;
       }
 
-      // screenshot-done: 截图完成，恢复界面
+      // screenshot-done: screenshot complete, restore UI
       if (e.data?.type === 'cockpit:screenshot-done') {
         window.dispatchEvent(new CustomEvent('cockpit-screenshot-state', { detail: { active: false } }));
         window.parent.postMessage({ type: 'SCREENSHOT_DONE' }, '*');
@@ -120,7 +120,7 @@ export function useBrowserBridge(
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  // 将命令通过 postMessage 发送给 iframe
+  // Send a command to the iframe via postMessage
   const sendToIframe = useCallback((cmd: BrowserCmd) => {
     const iframe = iframeRef.current;
     if (!iframe?.contentWindow) {
@@ -142,7 +142,7 @@ export function useBrowserBridge(
     }, '*');
   }, [iframeRef]);
 
-  // WS 连接：仅依赖 connected 和 fullId，不因 iframeReady 变化而重建
+  // WS connection: depends only on connected and fullId, not rebuilt when iframeReady changes
   useEffect(() => {
     if (!connected) return;
 
@@ -157,11 +157,11 @@ export function useBrowserBridge(
       wsRef.current = ws;
 
       ws.onopen = () => {
-        // resolve 所有等待的 connect() promise
+        // Resolve all pending connect() promises
         for (const resolve of connectResolversRef.current) resolve();
         connectResolversRef.current = [];
 
-        // flush pending commands
+        // Flush pending commands
         if (pendingCmdsRef.current.length > 0) {
           for (const cmd of pendingCmdsRef.current) sendToIframe(cmd);
           pendingCmdsRef.current = [];
@@ -206,7 +206,7 @@ export function useBrowserBridge(
     };
   }, [connected, fullId, iframeRef, sendToIframe]);
 
-  // iframe ready 后 flush pending commands
+  // Flush pending commands after iframe is ready
   useEffect(() => {
     if (iframeReady && pendingCmdsRef.current.length > 0) {
       for (const cmd of pendingCmdsRef.current) sendToIframe(cmd);
@@ -214,7 +214,7 @@ export function useBrowserBridge(
     }
   }, [iframeReady, sendToIframe]);
 
-  /** 建立连接。已连接时立即 resolve，否则等 WS open */
+  /** Establish connection. Resolves immediately if already connected, otherwise waits for WS open */
   const connect = useCallback((): Promise<void> => {
     if (connected && wsRef.current?.readyState === WebSocket.OPEN) {
       return Promise.resolve();
@@ -225,7 +225,7 @@ export function useBrowserBridge(
     });
   }, [connected]);
 
-  /** 断开连接 */
+  /** Disconnect */
   const disconnect = useCallback(() => {
     setConnected(false);
   }, []);

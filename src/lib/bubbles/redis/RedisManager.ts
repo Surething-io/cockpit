@@ -13,9 +13,9 @@ class RedisManager {
   async getClient(id: string, connectionString: string): Promise<Redis> {
     const managed = this.clients.get(id);
     if (managed && managed.connectionString === connectionString) {
-      // 验证连接仍然有效
+      // Verify the connection is still alive
       if (managed.client.status === 'ready') return managed.client;
-      // 连接已断开，清理后重建
+      // Connection dropped — clean up and reconnect
       await managed.client.quit().catch(() => {});
     } else if (managed) {
       await managed.client.quit().catch(() => {});

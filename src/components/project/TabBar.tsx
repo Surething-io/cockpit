@@ -5,7 +5,7 @@ import { TabInfo } from './useTabState';
 import { Tooltip } from '../shared/Tooltip';
 
 // ============================================
-// Tab 圆圈编号图标组件
+// Tab circle-number icon component
 // ============================================
 
 function TabNumberIcon({ number, isActive }: { number: number; isActive: boolean }) {
@@ -34,7 +34,7 @@ function TabNumberIcon({ number, isActive }: { number: number; isActive: boolean
 }
 
 // ============================================
-// TabBar
+// TabBar component
 // ============================================
 
 interface TabBarProps {
@@ -90,18 +90,18 @@ export function TabBar({
               }`}
               onClick={() => onSwitchTab(tab.id)}
             >
-              {/* 圆圈编号 + 状态角标（右上角） */}
+              {/* Circle number + status badge (top-right) */}
               <div className="relative flex-shrink-0">
                 <TabNumberIcon number={index + 1} isActive={tab.id === activeTabId} />
-                {/* Loading 黄点闪烁 - 右上角 */}
+                {/* Loading pulse dot - top-right */}
                 {tab.isLoading && (
                   <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-orange-9 animate-pulse" />
                 )}
-                {/* 未读红点角标 - 右上角（loading 时不显示，避免重叠） */}
+                {/* Unread red dot badge - top-right (hidden while loading to avoid overlap) */}
                 {!tab.isLoading && unreadTabs.has(tab.id) && tab.id !== activeTabId && (
                   <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500" />
                 )}
-                {/* 图钉角标 - 右上角（不与 loading/unread 重叠时显示） */}
+                {/* Pin badge - top-right (shown when not overlapping loading/unread) */}
                 {onTogglePin && isPinned?.(tab.id) && !tab.isLoading && !(unreadTabs.has(tab.id) && tab.id !== activeTabId) && (
                   <button
                     onClick={(e) => {
@@ -116,7 +116,7 @@ export function TabBar({
                     </svg>
                   </button>
                 )}
-                {/* 未 pin 时 hover 显示图钉 - 右上角 */}
+                {/* Show pin icon on hover when not pinned - top-right */}
                 {onTogglePin && !isPinned?.(tab.id) && !tab.isLoading && !(unreadTabs.has(tab.id) && tab.id !== activeTabId) && (
                   <button
                     onClick={(e) => {
@@ -150,7 +150,7 @@ export function TabBar({
             </div>
           </Tooltip>
         ))}
-        {/* 新建标签按钮 */}
+        {/* New tab button */}
         <button
           onClick={onNewTab}
           className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"

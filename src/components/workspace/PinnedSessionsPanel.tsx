@@ -26,11 +26,11 @@ export function PinnedSessionsPanel({
   const [editValue, setEditValue] = useState('');
   const editInputRef = useRef<HTMLInputElement>(null);
 
-  // 拖动排序状态
+  // Drag-to-reorder state
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
-  // 点击外部关闭
+  // Close on outside click
   useEffect(() => {
     if (!isOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
@@ -51,7 +51,7 @@ export function PinnedSessionsPanel({
     };
   }, [isOpen]);
 
-  // 编辑模式自动聚焦
+  // Auto-focus in edit mode
   useEffect(() => {
     if (editingId) {
       editInputRef.current?.focus();
@@ -62,7 +62,7 @@ export function PinnedSessionsPanel({
   const getProjectName = (cwd: string) => cwd.split('/').pop() || cwd;
 
   const handleSessionClick = useCallback((session: PinnedSession) => {
-    if (editingId) return; // 编辑中不跳转
+    if (editingId) return; // Do not navigate while editing
     onSwitchProject(session.cwd, session.sessionId);
     setIsOpen(false);
   }, [onSwitchProject, editingId]);
@@ -80,7 +80,7 @@ export function PinnedSessionsPanel({
     setEditingId(null);
   }, [editingId, editValue, onUpdateTitle]);
 
-  // 拖动排序
+  // Drag-to-reorder
   const handleDragStart = useCallback((index: number) => {
     setDragIndex(index);
   }, []);
@@ -118,12 +118,12 @@ export function PinnedSessionsPanel({
         }`}
         title="常用会话"
       >
-        {/* 五角星图标 */}
+        {/* Star icon */}
         <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
         </svg>
         {!collapsed && <span className="text-sm flex-1 text-left">常用会话</span>}
-        {/* 折叠态时显示数量 badge */}
+        {/* Show count badge in collapsed state */}
         {collapsed && pinnedSessions.length > 0 && (
           <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 text-muted-foreground text-xs font-medium rounded-full flex items-center justify-center bg-accent">
             {pinnedSessions.length}
@@ -131,7 +131,7 @@ export function PinnedSessionsPanel({
         )}
       </button>
 
-      {/* 下拉面板 */}
+      {/* Dropdown panel */}
       {isOpen && (
         <div className="absolute left-full bottom-0 ml-2 w-80 max-h-[450px] bg-popover border border-border rounded-lg shadow-lg z-50 flex flex-col">
           <div className="px-3 py-2 border-b border-border bg-muted/50 flex-shrink-0 rounded-t-lg">
@@ -158,7 +158,7 @@ export function PinnedSessionsPanel({
                     dragOverIndex === index ? 'border-t-2 border-brand' : ''
                   }`}
                 >
-                  {/* 拖动手柄 */}
+                  {/* Drag handle */}
                   <span className="mt-1.5 text-muted-foreground/30 flex-shrink-0 cursor-grab">
                     <svg className="w-3 h-3" viewBox="0 0 10 16" fill="currentColor">
                       <circle cx="3" cy="2" r="1.5"/><circle cx="7" cy="2" r="1.5"/>
@@ -193,10 +193,10 @@ export function PinnedSessionsPanel({
                       </div>
                     )}
                   </div>
-                  {/* hover 操作按钮 */}
+                  {/* Hover action buttons */}
                   {editingId !== session.sessionId && (
                     <div className="flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
-                      {/* 编辑 */}
+                      {/* Edit */}
                       <button
                         onClick={(e) => startEdit(session, e)}
                         className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
@@ -206,7 +206,7 @@ export function PinnedSessionsPanel({
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                         </svg>
                       </button>
-                      {/* 删除 */}
+                      {/* Delete */}
                       <button
                         onClick={(e) => { e.stopPropagation(); onUnpin(session.sessionId); }}
                         className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-destructive"

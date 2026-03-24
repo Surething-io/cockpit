@@ -10,25 +10,25 @@ interface ReviewInfo {
 }
 
 interface ShareReviewToggleProps {
-  /** 文件内容（用于创建/更新 review） */
+  /** File content (used to create/update review) */
   content: string;
-  /** 相对路径 sourceFile（用于匹配 review） */
+  /** Relative path sourceFile (used to match review) */
   sourceFile: string;
 }
 
 /**
- * 分享评审 Switch 组件
- * - 查询当前文件是否已有 review
- * - Switch ON → 创建/更新 review，复制链接
- * - Switch OFF → 关闭 review (active: false)
- * - 显示更新时间 + 跳转查看链接
+ * Share review toggle switch component.
+ * - Queries whether the current file already has a review
+ * - Switch ON → create/update review, copy link
+ * - Switch OFF → deactivate review (active: false)
+ * - Show updated time + link to view
  */
 export function ShareReviewToggle({ content, sourceFile }: ShareReviewToggleProps) {
   const [reviewInfo, setReviewInfo] = useState<ReviewInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
 
-  // 查询当前文件对应的 review 状态
+  // Query review status for the current file
   useEffect(() => {
     if (!sourceFile) { setLoading(false); return; }
     let cancelled = false;
@@ -47,7 +47,7 @@ export function ShareReviewToggle({ content, sourceFile }: ShareReviewToggleProp
 
   const isSharing = reviewInfo?.active === true;
 
-  // 开启分享：创建/更新 review
+  // Enable sharing: create/update review
   const enableShare = useCallback(async () => {
     setToggling(true);
     try {
@@ -62,7 +62,7 @@ export function ShareReviewToggle({ content, sourceFile }: ShareReviewToggleProp
       const review = data.review;
       setReviewInfo({ id: review.id, active: true, updatedAt: review.updatedAt || review.createdAt });
 
-      // 复制分享链接
+      // Copy share link
       try {
         const infoRes = await fetch('/api/review/share-info');
         const info = await infoRes.json();
@@ -80,7 +80,7 @@ export function ShareReviewToggle({ content, sourceFile }: ShareReviewToggleProp
     }
   }, [content, sourceFile]);
 
-  // 关闭分享
+  // Disable sharing
   const disableShare = useCallback(async () => {
     if (!reviewInfo) return;
     setToggling(true);
@@ -146,7 +146,7 @@ export function ShareReviewToggle({ content, sourceFile }: ShareReviewToggleProp
         {isSharing ? '分享中' : '未分享'}
       </span>
 
-      {/* 更新时间 + 跳转 */}
+      {/* Update time + link */}
       {reviewInfo && reviewInfo.updatedAt && (
         <>
           <span className="text-[10px] text-muted-foreground">

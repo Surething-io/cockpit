@@ -12,7 +12,7 @@ interface AutocompleteRequest {
   cursorPosition: number;
 }
 
-// 获取常见命令列表
+// List of common commands
 const COMMON_COMMANDS = [
   'ls', 'cd', 'pwd', 'cat', 'echo', 'mkdir', 'rm', 'cp', 'mv', 'touch',
   'git', 'npm', 'node', 'python', 'python3', 'pip', 'cargo', 'go',
@@ -31,18 +31,18 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 分析输入，找到需要补全的部分
+    // Analyze input to find the part that needs completion
     const beforeCursor = input.substring(0, cursorPosition);
     const words = beforeCursor.split(/\s+/);
     const lastWord = words[words.length - 1] || '';
 
     let suggestions: string[] = [];
 
-    // 如果是第一个词，补全命令
+    // If it's the first word, complete a command
     if (words.length === 1 && !beforeCursor.includes(' ')) {
       suggestions = COMMON_COMMANDS.filter((cmd) => cmd.startsWith(lastWord));
     } else {
-      // 否则补全路径
+      // Otherwise complete a path
       suggestions = await getPathSuggestions(cwd, lastWord);
     }
 
@@ -67,10 +67,10 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// 获取路径补全建议
+// Get path completion suggestions
 async function getPathSuggestions(cwd: string, partialPath: string): Promise<string[]> {
   try {
-    // 解析路径
+    // Resolve the path
     const isAbsolute = partialPath.startsWith('/');
     const basePath = isAbsolute
       ? path.dirname(partialPath === '/' ? '/' : partialPath)
@@ -80,18 +80,18 @@ async function getPathSuggestions(cwd: string, partialPath: string): Promise<str
 
     const prefix = path.basename(partialPath);
 
-    // 读取目录
+    // Read the directory
     const entries = await fs.readdir(basePath, { withFileTypes: true });
 
-    // 过滤并格式化建议
+    // Filter and format suggestions
     const suggestions = entries
       .filter((entry) => entry.name.startsWith(prefix) && !entry.name.startsWith('.'))
       .map((entry) => {
         const name = entry.name;
-        // 如果是目录，添加斜杠
+        // Append a slash for directories
         return entry.isDirectory() ? `${name}/` : name;
       })
-      .slice(0, 20); // 限制数量
+      .slice(0, 20); // Limit count
 
     return suggestions;
   } catch (error) {

@@ -3,8 +3,8 @@
 import { useRef, useEffect, useState, ReactNode } from 'react';
 
 interface SwipeablePagesProps {
-  children: ReactNode[]; // 支持 2 个或 3 个子元素
-  currentPage: number; // 0, 1, 或 2
+  children: ReactNode[]; // Supports 2 or 3 child elements
+  currentPage: number; // 0, 1, or 2
   onPageChange: (page: number) => void;
 }
 
@@ -13,57 +13,57 @@ export function SwipeablePages({ children, currentPage, onPageChange }: Swipeabl
   const innerRef = useRef<HTMLDivElement>(null);
   const wheelTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTransitioningRef = useRef(false);
-  // 用 ref 存储实时偏移量，避免闭包问题
+  // Store live offset in a ref to avoid closure issues
   const dragOffsetRef = useRef(0);
 
-  // 页面数量
+  // Number of pages
   const pageCount = children.length;
   const maxPage = pageCount - 1;
 
-  // 实时偏移量（像素），用于触发重渲染
+  // Live offset in pixels, used to trigger re-renders
   const [dragOffset, setDragOffset] = useState(0);
-  // 是否正在拖动
+  // Whether a drag is in progress
   const [isDragging, setIsDragging] = useState(false);
 
-  // 放大系数：触摸板滑动距离放大
+  // Scale factor: amplify trackpad swipe distance
   const SCALE_FACTOR = 3;
-  // 松手判定超时（ms）
+  // Release detection timeout (ms)
   const RELEASE_TIMEOUT = 100;
-  // 切换阈值：超过页面宽度的 15% 就切换
+  // Switch threshold: switch if offset exceeds 15% of page width
   const SWITCH_THRESHOLD = 0.15;
-  // 动画时长（ms）
+  // Animation duration (ms)
   const TRANSITION_DURATION = 100;
 
-  // 当 currentPage 变化时，重置 dragOffset
+  // Reset dragOffset when currentPage changes
   useEffect(() => {
     dragOffsetRef.current = 0;
     setDragOffset(0);
   }, [currentPage]);
 
-  // 处理触摸板双指横向滑动（wheel 事件）
+  // Handle trackpad two-finger horizontal swipe (wheel event)
   useEffect(() => {
     const container = containerRef.current;
     const inner = innerRef.current;
     if (!container || !inner) return;
 
     const handleWheel = (e: WheelEvent) => {
-      // 只处理横向滚动（触摸板双指左右滑动）
+      // Only handle horizontal scrolling (trackpad two-finger left/right swipe)
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 2) {
         e.preventDefault();
         e.stopPropagation();
 
-        // 如果正在过渡动画中，忽略
+        // Ignore if a transition animation is in progress
         if (isTransitioningRef.current) return;
 
-        // 计算容器宽度（单页宽度）
+        // Compute container width (single page width)
         const pageWidth = container.clientWidth;
 
-        // 计算新的偏移量（放大系数）
+        // Compute new offset (with scale factor)
         let newOffset = dragOffsetRef.current - e.deltaX * SCALE_FACTOR;
 
-        // 边界检测（硬边界，不允许超出）
-        // 左边界：不能超过第一页（当 currentPage=0 时，不能往右滑）
-        // 右边界：不能超过最后一页（当 currentPage=maxPage 时，不能往左滑）
+        // Hard boundary check — no overscrolling allowed
+        // Left boundary: cannot go past the first page (when currentPage=0, no right swipe)
+        // Right boundary: cannot go past the last page (when currentPage=maxPage, no left swipe)
         const canGoLeft = currentPage > 0;
         const canGoRight = currentPage < maxPage;
 
@@ -74,26 +74,26 @@ export function SwipeablePages({ children, currentPage, onPageChange }: Swipeabl
           newOffset = 0;
         }
 
-        // 限制最大偏移量为一个页面宽度
+        // Clamp offset to one page width
         newOffset = Math.max(-pageWidth, Math.min(pageWidth, newOffset));
 
-        // 更新 ref 和 state
+        // Update ref and state
         dragOffsetRef.current = newOffset;
         setDragOffset(newOffset);
         setIsDragging(true);
 
-        // 清除之前的超时
+        // Clear previous timeout
         if (wheelTimeoutRef.current) {
           clearTimeout(wheelTimeoutRef.current);
         }
 
-        // 设置超时来检测松手
+        // Set timeout to detect release
         wheelTimeoutRef.current = setTimeout(() => {
-          // 松手，决定是切换还是回弹
+          // Released — decide whether to switch pages or snap back
           const finalOffset = dragOffsetRef.current;
           const threshold = pageWidth * SWITCH_THRESHOLD;
 
-          // 先结束拖动状态，启用 transition
+          // End dragging state first to enable transition
           setIsDragging(false);
           isTransitioningRef.current = true;
 
@@ -101,16 +101,16 @@ export function SwipeablePages({ children, currentPage, onPageChange }: Swipeabl
           let newPage = currentPage;
 
           if (finalOffset < -threshold && currentPage < maxPage) {
-            // 向左滑超过阈值，切换到下一页
+            // Swiped left past threshold — go to next page
             willSwitch = true;
             newPage = currentPage + 1;
           } else if (finalOffset > threshold && currentPage > 0) {
-            // 向右滑超过阈值，切换到上一页
+            // Swiped right past threshold — go to previous page
             willSwitch = true;
             newPage = currentPage - 1;
           }
 
-          // 重置 dragOffset
+          // Reset dragOffset
           dragOffsetRef.current = 0;
           setDragOffset(0);
 
@@ -118,7 +118,7 @@ export function SwipeablePages({ children, currentPage, onPageChange }: Swipeabl
             onPageChange(newPage);
           }
 
-          // 过渡动画结束后解锁
+          // Unlock after transition animation completes
           setTimeout(() => {
             isTransitioningRef.current = false;
           }, TRANSITION_DURATION);
@@ -130,7 +130,7 @@ export function SwipeablePages({ children, currentPage, onPageChange }: Swipeabl
     return () => container.removeEventListener('wheel', handleWheel, { capture: true });
   }, [currentPage, maxPage, onPageChange]);
 
-  // 防止浏览器自动滚动
+  // Prevent the browser from auto-scrolling
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -145,24 +145,24 @@ export function SwipeablePages({ children, currentPage, onPageChange }: Swipeabl
     return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // 计算最终的 transform
+  // Compute the final transform
   const getTransform = () => {
     const pageWidth = containerRef.current?.clientWidth || 0;
-    // 基础位置（百分比）：每页占 100/pageCount %
+    // Base position (percentage): each page occupies 100/pageCount %
     const pagePercent = 100 / pageCount;
     const basePercent = -currentPage * pagePercent;
 
     if (pageWidth > 0 && dragOffset !== 0) {
-      // 将像素偏移转换为百分比（相对于 pageCount * 100% 宽度的容器）
+      // Convert pixel offset to percentage (relative to the pageCount * 100% wide container)
       const offsetPercent = (dragOffset / (pageWidth * pageCount)) * 100;
       return `translateX(${basePercent + offsetPercent}%)`;
     }
     return `translateX(${basePercent}%)`;
   };
 
-  // 计算容器宽度百分比
+  // Compute container width as a percentage
   const containerWidth = `${pageCount * 100}%`;
-  // 计算每页宽度
+  // Compute per-page width class
   const pageWidthClass = pageCount === 2 ? 'w-1/2' : pageCount === 3 ? 'w-1/3' : 'w-1/2';
 
   return (

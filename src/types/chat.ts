@@ -1,4 +1,4 @@
-// 消息类型定义
+// Message type definitions
 
 export type MessageRole = 'user' | 'assistant';
 
@@ -10,18 +10,18 @@ export interface ToolCallInfo {
   isLoading?: boolean;
 }
 
-// 支持的图片 MIME 类型
+// Supported image MIME types
 export type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
 
-// 图片信息（前端状态管理用）
+// Image info (for frontend state management)
 export interface ImageInfo {
-  id: string;           // 唯一标识
-  data: string;         // base64 数据（不含前缀）
-  preview: string;      // 完整的 data URL（用于预览）
-  media_type: ImageMediaType;  // 图片 MIME 类型
+  id: string;           // Unique identifier
+  data: string;         // base64 data (without prefix)
+  preview: string;      // Full data URL (for preview)
+  media_type: ImageMediaType;  // Image MIME type
 }
 
-// 消息中的图片（用于历史记录和 API）
+// Images in messages (for history and API)
 export interface MessageImage {
   type: 'base64';
   media_type: ImageMediaType;
@@ -32,10 +32,10 @@ export interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
-  images?: MessageImage[];  // 消息中的图片
+  images?: MessageImage[];  // Images in the message
   toolCalls?: ToolCallInfo[];
   isStreaming?: boolean;
-  timestamp?: string;  // 消息创建时间（ISO 格式）
+  timestamp?: string;  // Message creation time (ISO format)
 }
 
 export interface ChatSession {
@@ -43,7 +43,7 @@ export interface ChatSession {
   messages: ChatMessage[];
 }
 
-// Token 使用信息
+// Token usage info
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;

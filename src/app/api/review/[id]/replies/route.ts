@@ -5,7 +5,7 @@ import { ReviewData, generateReplyId } from '@/lib/review-utils';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-// POST - 添加回复
+// POST - Add a reply
 // body: { commentId, author, authorId, content }
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// PATCH - 编辑回复
+// PATCH - Edit a reply
 // body: { commentId, replyId, content }
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
@@ -98,7 +98,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// DELETE - 删除回复
+// DELETE - Delete a reply
 // ?commentId=xxx&replyId=xxx
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   const { id } = await params;

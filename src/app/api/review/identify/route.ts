@@ -8,7 +8,7 @@ const USERS_FILE = join(REVIEW_DIR, '_users.json');
 type UsersMap = Record<string, { name: string; confirmedAt: number }>;
 
 /**
- * 获取本机第一个非内部 IPv4 网卡的 MAC 地址
+ * Get the MAC address of the first non-internal IPv4 network interface on the local machine
  */
 function getLocalMac(): string | null {
   const interfaces = networkInterfaces();
@@ -23,19 +23,19 @@ function getLocalMac(): string | null {
 }
 
 /**
- * 从请求中解析客户端 IP，返回 MAC-based authorId
+ * Parse the client IP from the request and return a MAC-based authorId
  */
 function resolveAuthorId(request: NextRequest): string | null {
   const forwarded = request.headers.get('x-forwarded-for');
   const ip = forwarded?.split(',')[0].trim() || request.headers.get('x-real-ip') || '';
 
-  // localhost → 用本机网卡 MAC
+  // localhost → use the local machine's NIC MAC
   if (!ip || ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || ip === 'localhost') {
     const localMac = getLocalMac();
     return localMac ? macToAuthorId(localMac) : null;
   }
 
-  // 去掉 IPv4-mapped IPv6 前缀: ::ffff:10.0.0.2 → 10.0.0.2
+  // Strip IPv4-mapped IPv6 prefix: ::ffff:10.0.0.2 → 10.0.0.2
   const cleanIp = ip.replace(/^::ffff:/, '');
   const mac = getMacByIp(cleanIp);
   return mac ? macToAuthorId(mac) : null;
@@ -43,9 +43,9 @@ function resolveAuthorId(request: NextRequest): string | null {
 
 /**
  * GET /api/review/identify
- * 返回 { authorId, name }
- * - authorId: MAC hash（null 表示无法识别）
- * - name: 已绑定的昵称（null 表示未绑定，前端需弹窗输入）
+ * Returns { authorId, name }
+ * - authorId: MAC hash (null means unidentifiable)
+ * - name: bound nickname (null means not yet bound; frontend should prompt for input)
  */
 export async function GET(request: NextRequest) {
   const authorId = resolveAuthorId(request);
@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/review/identify
- * 绑定昵称到当前设备的 MAC authorId
+ * Bind a nickname to the current device's MAC authorId
  * body: { name }
  */
 export async function POST(request: NextRequest) {

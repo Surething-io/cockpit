@@ -20,19 +20,19 @@ export async function POST(req: NextRequest) {
         }
         break;
       case 'list':
-        // 不支持直接修改，通过 CLI
+        // Direct modification not supported; use CLI
         break;
       case 'set':
-        // 不支持直接修改，通过 CLI
+        // Direct modification not supported; use CLI
         break;
       case 'zset':
-        // 不支持直接修改，通过 CLI
+        // Direct modification not supported; use CLI
         break;
       default:
         await client.set(key, value);
     }
 
-    // 设置 TTL（如果提供）
+    // Set TTL if provided
     if (ttl !== undefined && ttl > 0) {
       await client.expire(key, ttl);
     }

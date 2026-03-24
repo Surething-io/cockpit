@@ -12,7 +12,7 @@ export interface FileContent {
   content?: string;
   message?: string;
   size?: number;
-  mtime?: number; // 文件最后修改时间 (ms)，用于保存冲突检测
+  mtime?: number; // File last modified time (ms), used for save conflict detection
   isSymlink?: boolean;
   symlinkTarget?: string;
 }
@@ -86,7 +86,7 @@ export interface FileDiff {
 // Tab type
 export type TabType = 'tree' | 'search' | 'recent' | 'status' | 'history';
 
-// 搜索结果类型
+// Search result types
 export interface SearchMatch {
   lineNumber: number;
   content: string;

@@ -38,12 +38,12 @@ interface CreateTaskParams {
 
 const NOTIFY_TYPE = 'SCHEDULED_TASKS_CHANGED';
 
-/** 通知父窗口和所有 iframe（跨组件刷新） */
+/** Notify the parent window and all iframes (cross-component refresh) */
 function notifyChanged() {
   try {
     window.parent.postMessage({ type: NOTIFY_TYPE }, '*');
   } catch { /* ignore */ }
-  // 也通知自身窗口内的 iframe
+  // Also notify iframes within the current window
   const iframes = document.querySelectorAll('iframe');
   iframes.forEach(iframe => {
     try {
@@ -66,10 +66,10 @@ export function useScheduledTasks() {
       .catch(() => {});
   }, []);
 
-  // 初始加载
+  // Initial load
   useEffect(() => { reload(); }, [reload]);
 
-  // 监听跨 iframe 通知
+  // Listen for cross-iframe notifications
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
       if (e.data?.type === NOTIFY_TYPE) {

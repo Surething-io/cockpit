@@ -14,12 +14,12 @@ interface HoverTooltipProps {
   onSearch?: (keyword: string) => void;
 }
 
-/** 去掉 tsserver 返回的 "(kind) " 前缀 */
+/** Strip the "(kind) " prefix returned by tsserver */
 function stripKindPrefix(s: string): string {
   return s.replace(/^\([^)]+\)\s*/, '');
 }
 
-/** 简易语法高亮 */
+/** Simple syntax highlight */
 function highlightTypeSignature(code: string): React.ReactNode[] {
   const KEYWORDS = /\b(const|let|var|function|class|interface|type|enum|import|export|async|await|return|new|typeof|keyof|extends|implements|readonly|static|public|private|protected|abstract|declare|namespace|module|void|never|undefined|null|true|false|any|unknown|string|number|boolean|bigint|symbol|object)\b/g;
   const parts: React.ReactNode[] = [];
@@ -54,7 +54,7 @@ function highlightTypeSignature(code: string): React.ReactNode[] {
   return parts;
 }
 
-/** 从 displayString 提取 token 名（函数名/变量名） */
+/** Extract token name (function/variable name) from displayString */
 function extractTokenName(displayString: string): string {
   const clean = stripKindPrefix(displayString);
   // "function foo(..." → "foo"
@@ -62,10 +62,10 @@ function extractTokenName(displayString: string): string {
   // "class Foo ..." → "Foo"
   const match = clean.match(/^(?:function|const|let|var|class|interface|type|enum|async function)\s+([a-zA-Z_$][\w$]*)/);
   if (match) return match[1];
-  // "(method) Foo.bar(...)" or "(property) Foo.bar" 等带前缀的
+  // "(method) Foo.bar(...)" or "(property) Foo.bar" etc. with prefix
   const methodMatch = displayString.match(/\([^)]+\)\s+(?:[\w$]+\.)*([a-zA-Z_$][\w$]*)/);
   if (methodMatch) return methodMatch[1];
-  // fallback: 第一个标识符
+  // fallback: first identifier
   const idMatch = clean.match(/([a-zA-Z_$][\w$]*)/);
   return idMatch ? idMatch[1] : clean.split(/[(\s:]/)[0];
 }
@@ -73,7 +73,7 @@ function extractTokenName(displayString: string): string {
 export const HoverTooltip = forwardRef<HTMLDivElement, HoverTooltipProps>(function HoverTooltip({ displayString, documentation, x, y, container, onMouseEnter, onMouseLeave, onFindReferences, onSearch }, forwardedRef) {
   const ref = useRef<HTMLDivElement>(null);
 
-  // 合并 ref：内部用 ref，外部通过 forwardedRef 拿到同一个 DOM
+  // Merge refs: use ref internally, expose same DOM node via forwardedRef
   useImperativeHandle(forwardedRef, () => ref.current!, []);
   const containerRect = container.getBoundingClientRect();
   const relX = x - containerRect.left;

@@ -29,7 +29,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
   const [showNicknameModal, setShowNicknameModal] = useState(false);
   const [showCommentsListModal, setShowCommentsListModal] = useState(false);
 
-  // 拉取用户映射表
+  // Fetch user name map
   const fetchUserMap = useCallback(async () => {
     try {
       const res = await fetch('/api/review/users');
@@ -44,17 +44,17 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
     } catch { /* ignore */ }
   }, []);
 
-  // 初始加载映射表
+  // Load user map on mount
   useEffect(() => { fetchUserMap(); }, [fetchUserMap]);
 
-  // 昵称未确认时弹 Modal（等 identity 加载完成后）
+  // Show nickname modal when name is not confirmed (after identity loads)
   useEffect(() => {
     if (!identity.loading && identity.authorId && !identity.nameConfirmed) {
       setShowNicknameModal(true);
     }
   }, [identity.loading, identity.authorId, identity.nameConfirmed]);
 
-  // 判断管理员模式
+  // Determine admin mode
   useEffect(() => {
     setIsAdmin(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   }, []);
@@ -71,7 +71,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
   const scrollToCommentRef = useRef<(commentId: string) => void>(undefined);
   const scrollToHighlightRef = useRef<(commentId: string) => void>(undefined);
 
-  // SPA 切换评审（保留旧内容，等新数据到了再替换，避免闪烁）
+  // SPA review switch (keep old content until new data arrives to avoid flicker)
   const handleSelectReview = useCallback((id: string) => {
     if (id === currentId) return;
     setCurrentId(id);
@@ -107,7 +107,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
     fetchReview();
   }, [fetchReview]);
 
-  // Polling for multi-user refresh (every 10s) + 顺带刷新用户映射表
+  // Polling for multi-user refresh (every 10s) + also refresh user name map
   useEffect(() => {
     const interval = setInterval(() => {
       fetchReview();
@@ -301,7 +301,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
     scrollToCommentRef.current?.(target.id);
   }, [review, activeCommentId]);
 
-  // 内容区域渲染
+  // Render main content area
   const renderContent = () => {
     if (loading) {
       return (
@@ -363,7 +363,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
-      {/* 昵称设置 Modal */}
+      {/* Nickname setup modal */}
       {showNicknameModal && (
         <NicknameModal
           currentName={identity.name}
@@ -376,7 +376,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
         />
       )}
 
-      {/* 评论列表 Modal */}
+      {/* Comments list modal */}
       {review && (
         <ReviewCommentsListModal
           isOpen={showCommentsListModal}
@@ -455,7 +455,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
       {/* Main content */}
       <div className="flex-1 flex justify-center overflow-hidden">
         <div className="w-full max-w-[1800px] flex overflow-hidden">
-          {/* Left sidebar - review list (始终挂载，不随状态卸载，宽度由组件自身控制) */}
+          {/* Left sidebar - review list (always mounted, width controlled by the component itself) */}
           <ReviewListPanel
             currentReviewId={currentId}
             onSelect={handleSelectReview}

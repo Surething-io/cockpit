@@ -7,7 +7,7 @@ interface TokenStatsModalProps {
   onClose: () => void;
 }
 
-// Claude API 官方定价 ($/MTok) — 2026.03
+// Claude API official pricing ($/MTok) — 2026.03
 const MODEL_PRICING: Record<string, { label: string; input: number; output: number; cacheRead: number; cacheWrite: number; color: string }> = {
   'claude-opus-4-6':            { label: 'Opus 4.6',   input: 5,  output: 25, cacheRead: 0.50, cacheWrite: 6.25, color: '#f97316' },
   'claude-opus-4-5-20251101':   { label: 'Opus 4.5',   input: 5,  output: 25, cacheRead: 0.50, cacheWrite: 6.25, color: '#fb923c' },
@@ -95,9 +95,9 @@ interface StatsData {
 
 type TimeRange = 'day' | 'week' | 'month';
 
-// ─── 聚合工具 ───
+// ─── Aggregation utilities ───
 
-/** 按周聚合，返回 { label: 'MM-DD', ... } */
+/** Aggregate by week, returns { label: 'MM-DD', ... } */
 function aggregateByWeek(dailyActivity: DailyActivity[], dailyModelTokens: DailyModelTokens[]) {
   const weekMap = new Map<string, { label: string; messages: number; sessions: number; tools: number; tokensByModel: Record<string, number> }>();
 
@@ -154,7 +154,7 @@ function aggregateByMonth(dailyActivity: DailyActivity[], dailyModelTokens: Dail
   return Array.from(monthMap.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
-// ─── Canvas 柱状图 ───
+// ─── Canvas bar chart ───
 
 interface BarChartData {
   labels: string[];
@@ -194,11 +194,11 @@ function BarChart({ data, height = 200, formatValue = fmtTokens }: { data: BarCh
     const chartW = width - paddingLeft - paddingRight;
     const chartH = height - paddingTop - paddingBottom;
 
-    // 计算每组的合计最大值（stacked）
+    // Compute total max per group (stacked)
     const groupTotals = labels.map((_, i) => datasets.reduce((s, ds) => s + ds.data[i], 0));
     const maxVal = Math.max(1, ...groupTotals);
 
-    // Y 轴刻度
+    // Y-axis ticks
     const niceMax = getNiceMax(maxVal);
     const tickCount = 4;
     ctx.fillStyle = getComputedStyle(canvas).getPropertyValue('color') || '#888';
@@ -246,7 +246,7 @@ function BarChart({ data, height = 200, formatValue = fmtTokens }: { data: BarCh
       ctx.font = '9px ui-monospace, monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      // 当 label 过多时每隔几个显示一个
+      // Show every Nth label when there are too many
       const step = labels.length > 20 ? Math.ceil(labels.length / 15) : 1;
       if (i % step === 0) {
         ctx.fillText(label, x + barW / 2, paddingTop + chartH + 6);
@@ -329,7 +329,7 @@ function getCssVar(el: HTMLElement, name: string): string {
   return getComputedStyle(el).getPropertyValue(name).trim();
 }
 
-// ─── 小时活动热力条 ───
+// ─── Hourly activity heatmap bar ───
 
 function HourHeatmap({ hourCounts }: { hourCounts: Record<string, number> }) {
   const max = Math.max(1, ...Object.values(hourCounts));
@@ -362,7 +362,7 @@ function HourHeatmap({ hourCounts }: { hourCounts: Record<string, number> }) {
   );
 }
 
-// ─── 主组件 ───
+// ─── Main component ───
 
 export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
   const [stats, setStats] = useState<StatsData | null>(null);
@@ -380,7 +380,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
       .finally(() => setLoading(false));
   }, [isOpen]);
 
-  // 模型费用表
+  // Model cost breakdown table
   const modelRows = useMemo(() => {
     if (!stats?.modelUsage) return [];
     return Object.entries(stats.modelUsage)
@@ -398,10 +398,10 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
 
   const totalCost = useMemo(() => modelRows.reduce((s, r) => s + r.cost, 0), [modelRows]);
 
-  // 所有出现过的 model ids（按费用排序）
+  // All encountered model IDs (sorted by cost)
   const allModelIds = useMemo(() => modelRows.map(r => r.id), [modelRows]);
 
-  // 每个模型的平均 $/token（基于总 usage 比例）
+  // Average $/token per model (based on total usage ratio)
   const costPerToken = useMemo(() => {
     const map: Record<string, number> = {};
     for (const r of modelRows) {
@@ -410,13 +410,13 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
     return map;
   }, [modelRows]);
 
-  // 活动趋势 + token 趋势（按 timeRange 聚合）
+  // Activity trend and token trend (aggregated by timeRange)
   const { activityChart, tokenChart, costChart } = useMemo(() => {
     const daily = stats?.dailyActivity || [];
     const dailyTokens = stats?.dailyModelTokens || [];
 
     if (timeRange === 'day') {
-      // 日视图 — 最近 60 天
+      // Day view — last 60 days
       const slicedActivity = daily.slice(-60);
       const slicedTokens = dailyTokens.slice(-60);
       const labels = slicedActivity.map(d => d.date.slice(5)); // MM-DD
@@ -519,7 +519,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
     return { activityChart, tokenChart, costChart };
   }, [stats, timeRange, allModelIds, costPerToken]);
 
-  // ESC 关闭
+  // ESC to close
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -543,7 +543,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
         <div className="flex items-center justify-between px-6 py-3 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-medium text-foreground">Claude Code Token 统计</h2>
-            {/* 时间维度切换 */}
+            {/* Time range toggle */}
             <div className="flex bg-muted rounded-md p-0.5">
               {rangeButtons.map(b => (
                 <button
@@ -575,7 +575,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
             <div className="text-center text-muted-foreground py-12">未找到 ~/.claude/stats-cache.json</div>
           ) : (
             <>
-              {/* A: 总览卡片 */}
+              {/* A: Overview cards */}
               <div className="grid grid-cols-5 gap-3">
                 <StatCard label="总会话" value={String(stats.totalSessions ?? 0)} />
                 <StatCard label="总消息" value={fmtTokens(stats.totalMessages ?? 0)} />
@@ -590,7 +590,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
                 />
               </div>
 
-              {/* B: 活动趋势图 */}
+              {/* B: Activity trend chart */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-xs font-medium text-muted-foreground">活动趋势</h3>
@@ -610,7 +610,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
                 </div>
               </div>
 
-              {/* C: Token 用量 / 费用图（按模型堆叠） */}
+              {/* C: Token usage / cost chart (stacked by model) */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -652,7 +652,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
                 </div>
               </div>
 
-              {/* D: 模型费用明细表 */}
+              {/* D: Model cost breakdown table */}
               <div>
                 <h3 className="text-xs font-medium text-muted-foreground mb-2">模型费用明细</h3>
                 <div className="border border-border rounded-lg overflow-hidden">
@@ -701,7 +701,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
                 </div>
               </div>
 
-              {/* E: 活跃时段热力条 */}
+              {/* E: Active hour heatmap bar */}
               {stats.hourCounts && Object.keys(stats.hourCounts).length > 0 && (
                 <div className="border border-border rounded-lg p-3 bg-muted/20">
                   <HourHeatmap hourCounts={stats.hourCounts} />

@@ -36,49 +36,49 @@ export async function GET(request: NextRequest) {
     let isDeleted = false;
 
     if (type === 'staged') {
-      // 暂存区: HEAD vs 暂存区
-      // 获取 HEAD 版本
+      // Staging area: HEAD vs staging area
+      // Get HEAD version
       try {
         const { stdout: headContent } = await execAsync(`git show HEAD:"${file}"`, { cwd, maxBuffer: 10 * 1024 * 1024 });
         oldContent = headContent;
       } catch {
-        // 文件是新增的，HEAD 中不存在
+        // File is newly added, does not exist in HEAD
         isNew = true;
         oldContent = '';
       }
 
-      // 获取暂存区版本
+      // Get staging area version
       try {
         const { stdout: stagedContent } = await execAsync(`git show :"${file}"`, { cwd, maxBuffer: 10 * 1024 * 1024 });
         newContent = stagedContent;
       } catch {
-        // 文件被删除
+        // File was deleted
         isDeleted = true;
         newContent = '';
       }
     } else {
-      // 工作区: 暂存区 vs 工作区 (若暂存区无则 HEAD vs 工作区)
-      // 先尝试获取暂存区版本
+      // Working tree: staging area vs working tree (or HEAD vs working tree if nothing staged)
+      // Try to get staging area version first
       try {
         const { stdout: stagedContent } = await execAsync(`git show :"${file}"`, { cwd, maxBuffer: 10 * 1024 * 1024 });
         oldContent = stagedContent;
       } catch {
-        // 暂存区没有，尝试获取 HEAD 版本
+        // Nothing in staging area, try HEAD version
         try {
           const { stdout: headContent } = await execAsync(`git show HEAD:"${file}"`, { cwd, maxBuffer: 10 * 1024 * 1024 });
           oldContent = headContent;
         } catch {
-          // 都没有，说明是新文件
+          // Neither exists, this is a new file
           isNew = true;
           oldContent = '';
         }
       }
 
-      // 获取工作区版本（当前文件内容）
+      // Get working tree version (current file content)
       try {
         newContent = await fs.readFile(absolutePath, 'utf-8');
       } catch {
-        // 文件被删除
+        // File was deleted
         isDeleted = true;
         newContent = '';
       }

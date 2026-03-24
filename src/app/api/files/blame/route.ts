@@ -4,10 +4,10 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-/** git blame / log 最长允许运行时间，防止大仓库卡死事件循环 */
+/** Maximum allowed runtime for git blame/log to prevent large repos from blocking the event loop */
 const GIT_TIMEOUT_MS = 15000;
 
-/** 最多同时运行的 git blame 进程数，防止多文件并发打开时子进程堆积 */
+/** Maximum number of concurrent git blame processes to prevent subprocess buildup when multiple files are opened */
 const MAX_CONCURRENT = 3;
 let activeCount = 0;
 const waitQueue: Array<() => void> = [];
@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
   await acquireSlot();
   try {
     // Use git blame with porcelain format for easy parsing
-    // -c core.quotePath=false 避免中文文件名被转义为八进制
+    // -c core.quotePath=false prevents Chinese filenames from being escaped as octal
     const { stdout } = await execAsync(
       `git -c core.quotePath=false blame --porcelain "${path}"`,
       { cwd, maxBuffer: 10 * 1024 * 1024, timeout: GIT_TIMEOUT_MS }
@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get full commit messages for all unique commits
-    // 过滤全零 hash（未提交的修改），git log 无法处理
+    // Filter out all-zero hash (uncommitted changes) — git log cannot handle it
     const ZERO_HASH = '0000000000000000000000000000000000000000';
     const uncommittedInfo = commitInfoMap.get(ZERO_HASH);
     if (uncommittedInfo) {

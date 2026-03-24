@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   try {
     const { prompt, sessionId, images, cwd } = await request.json();
 
-    // 允许仅发送图片（无文本）
+    // Allow sending images only (no text)
     const hasContent = (prompt && typeof prompt === 'string') || (images && images.length > 0);
     if (!hasContent) {
       return new Response(JSON.stringify({ error: 'Missing prompt or images' }), {
@@ -34,10 +34,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 构建消息内容
+    // Build message content
     const content: ContentBlock[] = [];
 
-    // 添加图片（图片在文本前面，这样 Claude 先看到图片）
+    // Add images first (so Claude sees images before text)
     if (images && Array.isArray(images)) {
       for (const img of images as ImageData[]) {
         content.push({
@@ -51,16 +51,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 添加文本
+    // Add text
     if (prompt && typeof prompt === 'string') {
       content.push({ type: 'text', text: prompt });
     }
 
-    // 创建流式响应
+    // Create streaming response
     const encoder = new TextEncoder();
     let isClosed = false;
 
-    // 创建 AbortController 用于取消 query
+    // Create AbortController for cancelling query
     const queryAbortController = new AbortController();
 
     const stream = new ReadableStream({
@@ -86,28 +86,28 @@ export async function POST(request: NextRequest) {
           }
         };
 
-        // 用于跟踪实际的 sessionId（可能从流中获取）
+        // Track the actual sessionId (may be obtained from the stream)
         let actualSessionId = sessionId;
 
-        // 立即标记为 loading，同时传入用户消息（避免 transcript 尚未写入时读到旧消息）
+        // Immediately mark as loading, also pass user message (avoid reading stale messages before transcript is written)
         const userMessage = typeof prompt === 'string' ? prompt : undefined;
         if (cwd && sessionId) {
           updateGlobalState(cwd, sessionId, 'loading', undefined, userMessage).catch(() => {});
         }
 
         try {
-          // 根据是否有图片决定使用哪种方式调用 SDK
+          // Choose SDK call method based on whether images are present
           const hasImages = images && images.length > 0;
 
-          // 通用 options
+          // Common options
           const options = {
-            // 如果有 sessionId，则恢复会话
+            // Resume session if sessionId is provided
             ...(sessionId && { resume: sessionId }),
-            // 如果有 cwd，设置工作目录
+            // Set working directory if cwd is provided
             ...(cwd && { cwd }),
-            // 加载用户和项目级别的设置
+            // Load user and project level settings
             settingSources: ['user', 'project', 'local'],
-            // 允许的工具 - 包括所有 MCP 工具
+            // Allowed tools - includes all MCP tools
             allowedTools: [
               'Read',
               'Write',
@@ -117,25 +117,25 @@ export async function POST(request: NextRequest) {
               'Grep',
               'WebFetch',
               'WebSearch',
-              'Task',      // 子代理执行复杂任务
-              'TodoWrite', // 任务管理
-              'mcp__*',    // 允许所有 MCP 工具
+              'Task',      // Sub-agent for complex tasks
+              'TodoWrite', // Task management
+              'mcp__*',    // Allow all MCP tools
             ],
-            // 权限模式：跳过所有权限检查
+            // Permission mode: skip all permission checks
             permissionMode: 'bypassPermissions' as const,
-            // 允许跳过权限检查（必须与 bypassPermissions 一起使用）
+            // Allow skipping permission checks (must be used with bypassPermissions)
             allowDangerouslySkipPermissions: true,
-            // 启用流式文本块
+            // Enable streaming text blocks
             includePartialMessages: true,
-            // 启用 1M token 上下文窗口（beta）- 解决 "Prompt is too long" 问题
+            // Enable 1M token context window (beta) - resolves "Prompt is too long"
             // betas: ['context-1m-2025-08-07'],
-            // 传入 abortController，用于取消 query
+            // Pass abortController for cancelling query
             abortController: queryAbortController,
           };
 
           let response;
           if (hasImages) {
-            // 使用 AsyncIterable 方式传递包含图片的消息
+            // Use AsyncIterable to pass messages containing images
             const messages = (async function* () {
               yield {
                 type: 'user' as const,
@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
               options,
             });
           } else {
-            // 纯文本消息
+            // Plain text message
             response = query({
               prompt: prompt as string,
               options,
@@ -161,43 +161,43 @@ export async function POST(request: NextRequest) {
           }
 
           for await (const message of response) {
-            // 检查是否已被取消
+            // Check if already cancelled
             if (isClosed) {
               break;
             }
 
-            // 捕获 sessionId（从 system init 事件）并更新全局状态
+            // Capture sessionId (from system init event) and update global state
             const msg = message as { type?: string; subtype?: string; session_id?: string };
             if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
               actualSessionId = msg.session_id;
-              // 统一在这里标记开始加载（新会话和恢复会话都走这里）
+              // Mark loading start here for both new and resumed sessions
               if (cwd) {
                 updateGlobalState(cwd, actualSessionId, 'loading', undefined, userMessage).catch(() => {});
               }
             }
 
-            // 发送 SSE 格式的数据
+            // Send SSE-formatted data
             const data = `data: ${JSON.stringify(message)}\n\n`;
             safeEnqueue(data);
           }
 
-          // 更新全局状态：结束加载（获取标题）
+          // Update global state: end loading (fetch title)
           if (cwd && actualSessionId) {
             const title = await getSessionTitle(cwd, actualSessionId);
             await updateGlobalState(cwd, actualSessionId, 'unread', title);
           }
 
-          // 发送结束标记
+          // Send end marker
           safeEnqueue('data: [DONE]\n\n');
           safeClose();
         } catch (error) {
-          // 更新全局状态：结束加载（出错或取消）
+          // Update global state: end loading (on error or cancel)
           if (cwd && actualSessionId) {
             const title = await getSessionTitle(cwd, actualSessionId);
             await updateGlobalState(cwd, actualSessionId, 'unread', title);
           }
 
-          // 如果是取消导致的错误，静默处理
+          // If error was caused by cancellation, handle silently
           if (queryAbortController.signal.aborted) {
             console.log('Query aborted by user');
             safeClose();
@@ -210,10 +210,10 @@ export async function POST(request: NextRequest) {
       },
       async cancel() {
         isClosed = true;
-        // 取消 query 执行
+        // Cancel query execution
         queryAbortController.abort();
-        // 更新全局状态：结束加载（用户取消）
-        const actualSessionId = sessionId; // cancel 时使用传入的 sessionId
+        // Update global state: end loading (user cancelled)
+        const actualSessionId = sessionId; // Use the passed-in sessionId on cancel
         if (cwd && actualSessionId) {
           const title = await getSessionTitle(cwd, actualSessionId);
           await updateGlobalState(cwd, actualSessionId, 'unread', title);

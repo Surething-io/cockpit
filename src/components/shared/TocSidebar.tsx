@@ -4,17 +4,17 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Tooltip } from './Tooltip';
 
 // ============================================
-// TocSidebar — Markdown 目录导航侧边栏（可复用）
-// 从 markdown 源码提取 h1~h6，scroll spy 高亮当前章节，可折叠
+// TocSidebar — Reusable Markdown table of contents sidebar
+// Extracts h1~h6 from markdown source, scroll spy highlights current section, collapsible
 // ============================================
 
 export interface TocItem {
   level: number;      // 1-6
-  text: string;       // 标题文本
-  sourceLine: number; // 源码行号（1-based）
+  text: string;       // Heading text
+  sourceLine: number; // Source line number (1-based)
 }
 
-/** 从 markdown 源码中提取标题列表 */
+/** Extract heading list from markdown source */
 export function extractToc(content: string): TocItem[] {
   const items: TocItem[] = [];
   const lines = content.split('\n');
@@ -38,16 +38,16 @@ export function extractToc(content: string): TocItem[] {
   return items;
 }
 
-// heading 选择器：通过 data-source-start 属性定位
+// Heading selector: locate by data-source-start attribute
 const HEADING_SELECTOR = (line: number) =>
   `h1[data-source-start="${line}"], h2[data-source-start="${line}"], h3[data-source-start="${line}"], h4[data-source-start="${line}"], h5[data-source-start="${line}"], h6[data-source-start="${line}"]`;
 
 interface TocSidebarProps {
-  /** markdown 源码，用于提取标题 */
+  /** Markdown source used to extract headings */
   content: string;
-  /** 渲染后内容的滚动容器 ref（用于 scroll spy + scrollIntoView） */
+  /** Scroll container ref of the rendered content (for scroll spy + scrollIntoView) */
   containerRef: React.RefObject<HTMLElement | null>;
-  /** 侧边栏宽度 class，默认 w-80 */
+  /** Sidebar width class, defaults to w-80 */
   width?: string;
 }
 
@@ -56,7 +56,7 @@ export function TocSidebar({ content, containerRef, width = 'w-80' }: TocSidebar
   const [collapsed, setCollapsed] = useState(false);
   const [activeHeadingLine, setActiveHeadingLine] = useState<number | null>(null);
 
-  // 点击 TOC 项 → 滚动到对应标题
+  // Click TOC item → scroll to corresponding heading
   const handleTocClick = useCallback((sourceLine: number) => {
     const container = containerRef.current;
     if (!container) return;
@@ -105,7 +105,7 @@ export function TocSidebar({ content, containerRef, width = 'w-80' }: TocSidebar
 
   return (
     <div className={`border-r border-border flex-shrink-0 flex flex-col transition-[width] duration-200 ${collapsed ? 'w-8' : width}`}>
-      {/* Header + 折叠按钮 */}
+      {/* Header + collapse button */}
       <div className="flex items-center justify-between px-2 py-1.5 border-b border-border flex-shrink-0">
         {!collapsed && <span className="text-xs font-medium text-muted-foreground">目录</span>}
         <button
@@ -122,7 +122,7 @@ export function TocSidebar({ content, containerRef, width = 'w-80' }: TocSidebar
           </svg>
         </button>
       </div>
-      {/* TOC 列表 */}
+      {/* TOC list */}
       {!collapsed && (
         <nav className="flex-1 overflow-y-auto py-1">
           {tocItems.map((item, i) => (

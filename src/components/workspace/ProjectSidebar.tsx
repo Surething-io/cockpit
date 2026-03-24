@@ -30,7 +30,7 @@ interface ProjectSidebarProps {
   onAddProject: (cwd: string) => void;
 }
 
-// 从 cwd 提取项目名称
+// Extract project name from cwd
 function getProjectName(cwd: string): string {
   const parts = cwd.split('/').filter(Boolean);
   return parts[parts.length - 1] || cwd;
@@ -67,7 +67,7 @@ export function ProjectSidebar({
     try {
       const parsed = msg as { type: string; data?: { sessions: GlobalSession[] } };
 
-      // 定时任务触发通知
+      // Scheduled task trigger notification
       if (parsed.type === 'task-fired') {
         reloadScheduledRef.current();
         return;
@@ -77,7 +77,7 @@ export function ProjectSidebar({
       if (!data) return;
       setSessions(data.sessions || []);
     } catch {
-      // 忽略解析错误
+      // Ignore parse errors
     }
   }, []);
 
@@ -86,7 +86,7 @@ export function ProjectSidebar({
     onMessage: handleGlobalStateMessage,
   });
 
-  // 直接从 session.status 推导红点状态（单一数据源：state.json）
+  // Derive dot state directly from session.status (single source of truth: state.json)
   const loadingCwds = new Set(
     sessions.filter(s => s.status === 'loading').map(s => s.cwd)
   );
@@ -94,12 +94,12 @@ export function ProjectSidebar({
     sessions.filter(s => s.status === 'unread').map(s => s.cwd)
   );
 
-  // 拖拽开始
+  // Drag start
   const handleDragStart = useCallback((index: number) => {
     setDragIndex(index);
   }, []);
 
-  // 拖拽经过
+  // Drag over
   const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
     e.preventDefault();
     if (dragIndex !== null && dragIndex !== index) {
@@ -107,7 +107,7 @@ export function ProjectSidebar({
     }
   }, [dragIndex]);
 
-  // 拖拽结束
+  // Drop
   const handleDrop = useCallback((targetIndex: number) => {
     if (dragIndex !== null && dragIndex !== targetIndex) {
       const newProjects = [...projects];
@@ -119,7 +119,7 @@ export function ProjectSidebar({
     setDragOverIndex(null);
   }, [dragIndex, projects, onReorderProjects]);
 
-  // 拖拽离开
+  // Drag end
   const handleDragEnd = useCallback(() => {
     setDragIndex(null);
     setDragOverIndex(null);
@@ -131,7 +131,7 @@ export function ProjectSidebar({
         collapsed ? 'w-12' : 'w-56'
       }`}
     >
-      {/* 打开项目按钮 + 折叠按钮 */}
+      {/* Open project button + collapse button */}
       <div
         className="p-2 border-b border-border relative"
         onMouseEnter={() => setIsHovered(true)}
@@ -152,10 +152,10 @@ export function ProjectSidebar({
           </svg>
           {!collapsed && <span className="text-sm">打开项目</span>}
         </button>
-        {/* 折叠按钮 */}
+        {/* Collapse button */}
         {isHovered && (
           collapsed ? (
-            // 折叠状态：覆盖整个按钮区域
+            // Collapsed state: overlay the entire button area
             <button
               className="absolute inset-0 m-2 flex items-center justify-center px-2 py-2 rounded-lg bg-accent text-foreground transition-colors z-10"
               onClick={onToggleCollapse}
@@ -189,7 +189,7 @@ export function ProjectSidebar({
         )}
       </div>
 
-      {/* 项目列表 */}
+      {/* Project list */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         {projects.map((project, index) => (
           <div
@@ -219,16 +219,16 @@ export function ProjectSidebar({
         ))}
       </div>
 
-      {/* 底部按钮区域 */}
+      {/* Bottom button area */}
       <div className="p-2 border-t border-border space-y-1">
-        {/* 最近会话 */}
+        {/* Recent sessions */}
         <GlobalSessionMonitor
           currentCwd={currentCwd}
           onSwitchProject={onSwitchProject}
           collapsed={collapsed}
           sessions={sessions}
         />
-        {/* 常用会话 */}
+        {/* Pinned sessions */}
         <PinnedSessionsPanel
           collapsed={collapsed}
           pinnedSessions={pinnedSessions}
@@ -237,7 +237,7 @@ export function ProjectSidebar({
           onUpdateTitle={updateTitle}
           onReorder={reorder}
         />
-        {/* 定时任务 */}
+        {/* Scheduled tasks */}
         <ScheduledTasksPanel
           collapsed={collapsed}
           tasks={scheduledTasks}
@@ -251,7 +251,7 @@ export function ProjectSidebar({
           onUpdateTask={updateScheduledTask}
           onReorder={reorderTasks}
         />
-        {/* 笔记 */}
+        {/* Notes */}
         <button
           className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
             collapsed ? 'justify-center' : ''
@@ -264,7 +264,7 @@ export function ProjectSidebar({
           </svg>
           {!collapsed && <span className="text-sm">笔记</span>}
         </button>
-        {/* 设置按钮 */}
+        {/* Settings button */}
         <button
           className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
             collapsed ? 'justify-center' : ''

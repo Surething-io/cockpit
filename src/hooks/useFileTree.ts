@@ -20,19 +20,19 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
   const [searchTreeExpandedPaths, setSearchTreeExpandedPaths] = useState<Set<string> | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchExactMatch, setSearchDirExact] = useState(false);
-  // 新建文件状态
+  // New file creation state
   const [creatingItem, setCreatingItem] = useState<{ type: 'file'; parentPath: string } | null>(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [isLoadingContent, setIsLoadingContent] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  // 是否需要滚动到选中文件（仅外部触发选择时为 true，用户在目录树中点击选择时为 false）
+  // Whether to scroll to the selected file (true only when triggered externally; false when user clicks in the tree)
   const [shouldScrollToSelected, setShouldScrollToSelected] = useState(false);
-  // 跳转到的目标行号（搜索结果点击时使用）
+  // Target line number to jump to (used when clicking a search result)
   const [targetLineNumber, setTargetLineNumber] = useState<number | null>(null);
-  // 滚动对齐方式：'start'=还原位置（首行对齐），'center'=搜索/LSP跳转（居中高亮）
+  // Scroll alignment: 'start' = restore position (align to first line), 'center' = search/LSP jump (center highlight)
   const [targetScrollAlign, setTargetScrollAlign] = useState<'center' | 'start'>('center');
-  // 还原光标位置（从最近访问切换回来时）
+  // Restore cursor position (when switching back from recent files)
   const [initialCursorLine, setInitialCursorLine] = useState<number | null>(null);
   const [initialCursorCol, setInitialCursorCol] = useState<number | null>(null);
 
@@ -43,10 +43,10 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
   const [blameError, setBlameError] = useState<string | null>(null);
   const [blameSelectedCommit, setBlameSelectedCommit] = useState<CommitInfo | null>(null);
 
-  // Markdown 预览 Modal
+  // Markdown preview modal
   const [showMarkdownPreview, setShowMarkdownPreview] = useState(false);
 
-  // 编辑 Modal
+  // Edit modal
   const [showEditor, setShowEditor] = useState(false);
 
   // ========== Memoized Values ==========
@@ -69,7 +69,7 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     return computeMatchedPaths(files, searchQuery, searchExactMatch);
   }, [files, fileIndex, searchQuery, searchExactMatch]);
 
-  // 搜索态展开状态：从 matchedPaths 直接计算，每次搜索词变化都重新生成
+  // Search-mode expanded state: computed directly from matchedPaths, regenerated on every query change
   useEffect(() => {
     if (!matchedPaths || matchedPaths.size === 0) {
       setSearchTreeExpandedPaths(null);
@@ -97,7 +97,7 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     setSearchTreeExpandedPaths(expanded);
   }, [matchedPaths, files, fileIndex]);
 
-  // 搜索态用独立的展开状态，非搜索态用用户手动管理的状态
+  // Use separate expanded state in search mode; use user-managed state in non-search mode
   const effectiveExpandedPaths = searchTreeExpandedPaths ?? expandedPaths;
 
   // ========== File Browser Functions ==========
@@ -163,7 +163,7 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
       if (data.children) {
         setFiles(prev => {
           if (!dirPath) {
-            // 根目录：替换顶层节点，保留已加载子目录的 children
+            // Root directory: replace top-level nodes while preserving children of already-loaded subdirectories
             const prevMap = new Map(prev.map(n => [n.path, n]));
             return (data.children as FileNode[]).map(newNode => {
               const existing = prevMap.get(newNode.path);
@@ -234,9 +234,9 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     }
   }, [cwd]);
 
-  /** 更新最近访问条目的光标/滚动位置（不改变顺序） */
+  /** Update the cursor/scroll position of a recent file entry (without changing order) */
   const updateRecentFilePosition = useCallback((filePath: string, scrollLine: number, cursorLine: number, cursorCol: number) => {
-    // 乐观更新本地 state
+    // Optimistically update local state
     setRecentFiles(prev => prev.map(f =>
       f.path === filePath ? { ...f, scrollLine, cursorLine, cursorCol } : f
     ));
@@ -249,7 +249,7 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     }).catch(() => {});
   }, [cwd]);
 
-  /** 查找文件在最近访问中的位置信息 */
+  /** Find a file's saved position in the recent files list */
   const getRecentFilePosition = useCallback((filePath: string) => {
     return recentFiles.find(f => f.path === filePath);
   }, [recentFiles]);
@@ -287,7 +287,7 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
       const data = await res.json();
       setFileContent(data);
       addToRecentFiles(filePath);
-      // 自动加载 blame（用于 inline blame 注释，不阻塞文件内容展示）
+      // Auto-load blame (used for inline blame annotations, does not block file content rendering)
       loadBlame(filePath);
     } catch (err) {
       console.error('Error loading file content:', err);
@@ -312,12 +312,12 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     if (!path) return;
     setSelectedPath(path);
     setTargetLineNumber(lineNumber ?? null);
-    // 如果没有指定行号，尝试从最近访问中还原位置
+    // If no line number is specified, try to restore position from recent files
     if (lineNumber == null) {
       const pos = recentFiles.find(f => f.path === path);
       if (pos?.scrollLine) {
         setTargetLineNumber(pos.scrollLine);
-        setTargetScrollAlign('start');         // 还原位置：首行对齐
+        setTargetScrollAlign('start');         // Restore position: align to first line
         setInitialCursorLine(pos.cursorLine ?? null);
         setInitialCursorCol(pos.cursorCol ?? null);
       } else {
@@ -326,7 +326,7 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
         setInitialCursorCol(null);
       }
     } else {
-      setTargetScrollAlign('center');          // 搜索/LSP跳转：居中高亮
+      setTargetScrollAlign('center');          // Search/LSP jump: center highlight
       setInitialCursorLine(null);
       setInitialCursorCol(null);
     }
@@ -358,7 +358,7 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
 
   const handleToggle = useCallback((path: string) => {
     if (searchTreeExpandedPaths) {
-      // 搜索态：修改临时展开状态，不持久化
+      // Search mode: modify temporary expanded state, do not persist
       setSearchTreeExpandedPaths(prev => {
         const next = new Set(prev);
         if (next.has(path)) {
@@ -369,7 +369,7 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
         return next;
       });
     } else {
-      // 非搜索态：修改用户展开状态，持久化
+      // Non-search mode: modify user expanded state and persist
       const isExpanding = !expandedPaths.has(path);
       setExpandedPaths(prev => {
         const next = new Set(prev);

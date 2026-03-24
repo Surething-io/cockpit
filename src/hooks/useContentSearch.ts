@@ -28,7 +28,7 @@ export function useContentSearch({ cwd, onSearchComplete }: UseContentSearchOpti
       setSearchStats(null);
       return;
     }
-    // 最少 2 个字符才触发搜索，防止单字符搜索产生海量结果
+    // Require at least 2 characters to trigger search, preventing massive results from single-character queries
     if (trimmed.length < 2) {
       setSearchError('搜索内容至少需要 2 个字符');
       return;
@@ -61,7 +61,7 @@ export function useContentSearch({ cwd, onSearchComplete }: UseContentSearchOpti
         truncated: data.truncated,
       });
 
-      // 默认展开所有搜索结果
+      // Expand all search results by default
       const expandedPaths = new Set(data.results.map(r => r.path));
       setSearchExpandedPaths(expandedPaths);
 

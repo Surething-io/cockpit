@@ -15,12 +15,12 @@ import { useChatStream } from './useChatStream';
 import { useChatHistory } from './useChatHistory';
 
 interface ChatProps {
-  tabId?: string; // Tab ID，用于注册到 ChatContext
+  tabId?: string; // Tab ID, used to register with ChatContext
   initialCwd?: string;
   initialSessionId?: string;
   hideHeader?: boolean;
   hideSidebar?: boolean;
-  isActive?: boolean; // Tab 是否激活（用于处理隐藏 Tab 的滚动问题）
+  isActive?: boolean; // Whether the tab is active (used to handle scroll issues for hidden tabs)
   onLoadingChange?: (isLoading: boolean) => void;
   onSessionIdChange?: (sessionId: string) => void;
   onTitleChange?: (title: string) => void;
@@ -38,8 +38,8 @@ interface ChatProps {
     activeTo?: string;
     cron?: string;
   }) => void;
-  onOpenSession?: (sessionId: string, title?: string) => void; // 打开新的 session（用于 Fork）
-  onContentSearch?: (query: string) => void; // 选中文本 → 全项目搜索
+  onOpenSession?: (sessionId: string, title?: string) => void; // Open a new session (used for Fork)
+  onContentSearch?: (query: string) => void; // Selected text → project-wide search
 }
 
 export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch }: ChatProps) {
@@ -56,7 +56,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
   const messageListRef = useRef<MessageListHandle>(null);
   const handleSendRef = useRef<((message: string) => void) | null>(null);
 
-  // 获取 session 标题
+  // Fetch session title
   const fetchSessionTitle = useCallback(async (sid: string) => {
     if (!initialCwd) return;
     try {
@@ -89,7 +89,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     onFetchTitle: fetchSessionTitle,
   });
 
-  // ! 前缀或 cock/cock-dev 开头：第一行是命令，后续行是用户补充说明，支持图片
+  // ! prefix or cock/cock-dev prefix: first line is command, subsequent lines are user notes, supports images
   const wrappedHandleSend = useCallback(async (content: string, images?: ImageInfo[]) => {
     const firstLine = content.split('\n')[0];
     const isBangCmd = firstLine.startsWith('!') && firstLine.length > 1;
@@ -135,8 +135,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     onTokenUsage: setHistoryTokenUsage,
   });
 
-  // 切到前台时增量拉取消息（覆盖定时任务等外部写入场景）
-  // 带 limit 只拉最近 N 轮 + fingerprint 检查 + 时间节流（useChatHistory 内部）
+  // Incrementally fetch messages when becoming active (handles external writes like scheduled tasks)
+  // With limit to fetch only the last N rounds + fingerprint check + time throttle (inside useChatHistory)
   const prevActiveRef = useRef(isActive);
   useEffect(() => {
     if (isActive && !prevActiveRef.current && sessionId && initialCwd && !isLoading) {
@@ -145,24 +145,24 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     prevActiveRef.current = isActive;
   }, [isActive, sessionId, initialCwd, isLoading, loadHistoryByCwdAndSessionId]);
 
-  // 合并 token usage：stream 优先，否则用 history 的
+  // Merge token usage: stream takes priority, fallback to history
   const tokenUsage = streamTokenUsage || historyTokenUsage;
 
-  // 当 sessionId 变化时通知父组件
+  // Notify parent when sessionId changes
   useEffect(() => {
     if (sessionId) {
       onSessionIdChange?.(sessionId);
     }
   }, [sessionId, onSessionIdChange]);
 
-  // 当 isLoading 变化时通知父组件
+  // Notify parent when isLoading changes
   const prevIsLoadingRef = useRef(false);
   useEffect(() => {
     onLoadingChange?.(isLoading);
 
-    // 当会话完成时（从 loading 变为 非 loading），通知父级 Workspace 弹 toast
+    // When session completes (loading → not loading), notify parent Workspace to show toast
     if (prevIsLoadingRef.current && !isLoading && initialCwd && sessionId) {
-      // 提取最后一条用户消息作为 toast 预览
+      // Extract the last user message as toast preview
       let lastUserMessage: string | undefined;
       for (let i = messages.length - 1; i >= 0; i--) {
         if (messages[i].role === 'user' && messages[i].content) {
@@ -180,15 +180,15 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     prevIsLoadingRef.current = isLoading;
   }, [isLoading, onLoadingChange, initialCwd]);
 
-  // 同步 loading 状态到 ChatContext：只有 active tab 才同步
-  // 切换 tab 时 isActive 变化也会触发，确保新 active tab 的状态覆盖旧值
+  // Sync loading state to ChatContext: only sync for the active tab
+  // isActive change on tab switch also triggers this, ensuring the new active tab overrides the old value
   useEffect(() => {
     if (isActive) {
       chatContext?.setIsLoading(isLoading);
     }
   }, [isLoading, isActive, chatContext]);
 
-  // 注册到 ChatContext（用于从 CodeViewer 发送消息）
+  // Register with ChatContext (used to send messages from CodeViewer)
   useEffect(() => {
     if (!tabId || !chatContext) return;
 
@@ -201,19 +201,19 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     };
   }, [tabId, chatContext]);
 
-  // 当 Tab 激活时，通知 ChatContext
+  // Notify ChatContext when tab becomes active
   useEffect(() => {
     if (tabId && isActive && chatContext) {
       chatContext.setActiveTab(tabId);
     }
   }, [tabId, isActive, chatContext]);
 
-  // 更新 handleSendRef，供 ChatContext 调用
+  // Update handleSendRef for ChatContext to call
   useEffect(() => {
     handleSendRef.current = wrappedHandleSend;
   }, [wrappedHandleSend]);
 
-  // ESC 键监听：鼠标悬停在聊天区域时按 ESC 停止生成
+  // ESC key listener: stop generation when mouse hovers over chat area and ESC is pressed
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isHovered && isLoading) {
@@ -225,7 +225,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isHovered, isLoading, handleStop]);
 
-  // 处理侧边栏点击 session - 通知父级 Workspace 打开
+  // Handle sidebar session click - notify parent Workspace to open
   const handleSelectSession = useCallback((sid: string, _title?: string) => {
     if (initialCwd) {
       window.parent.postMessage({
@@ -236,7 +236,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     }
   }, [initialCwd]);
 
-  // 从指定消息点分叉会话
+  // Fork session from a specified message point
   const handleFork = useCallback(async (messageId: string) => {
     if (!initialCwd || !sessionId) return;
 
@@ -269,7 +269,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     }
   }, [initialCwd, sessionId, onOpenSession]);
 
-  // 稳定 ChatInput 的回调 props，配合 React.memo 避免不必要的重渲染
+  // Stabilize ChatInput callback props, combined with React.memo to avoid unnecessary re-renders
   const handleShowComments = useCallback(() => {
     setIsCommentsListOpen(true);
   }, []);
@@ -299,7 +299,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        {/* Header - 可选隐藏 */}
+        {/* Header - optionally hidden */}
         {!hideHeader && (
           <ChatHeader
             cwd={initialCwd}
@@ -347,7 +347,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
         />
       </div>
 
-      {/* Session Browser Modal - 仅在不隐藏 header 时显示 */}
+      {/* Session Browser Modal - only shown when header is not hidden */}
       {!hideHeader && (
         <SessionBrowser
           isOpen={isSessionBrowserOpen}
@@ -355,7 +355,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
         />
       )}
 
-      {/* Project Sessions Modal - 仅在不隐藏 header 时显示 */}
+      {/* Project Sessions Modal - only shown when header is not hidden */}
       {!hideHeader && initialCwd && (
         <ProjectSessionsModal
           isOpen={isProjectSessionsOpen}

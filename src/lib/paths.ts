@@ -18,8 +18,8 @@ export const REVIEW_DIR = join(COCKPIT_DIR, 'review');
 export const REVIEW_SIGNAL_FILE = join(REVIEW_DIR, '_signal');
 
 /**
- * 写入信号文件，通知 ReviewWatcher 有评论变更
- * 同步写入，确保 fs.watch 能捕获到变更
+ * Write to the signal file to notify ReviewWatcher of a comment change.
+ * Synchronous write ensures fs.watch can detect the change.
  */
 export function notifyReviewChange(): void {
   try {

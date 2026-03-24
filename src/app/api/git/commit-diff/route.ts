@@ -4,7 +4,7 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-// 去除 git 对包含空格的文件名加的引号
+// Strip quotes that git adds to filenames containing spaces
 function unquotePath(path: string): string {
   if (path.startsWith('"') && path.endsWith('"')) {
     return path.slice(1, -1);
@@ -34,12 +34,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // 如果指定了文件，返回该文件的 diff 内容
+    // If a file is specified, return its diff content
     if (file) {
       return await getFileDiff(cwd, hash, file);
     }
 
-    // 否则返回变更文件列表
+    // Otherwise return the list of changed files
     return await getChangedFiles(cwd, hash);
   } catch (error) {
     console.error('Error getting commit diff:', error);
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
 }
 
 async function getChangedFiles(cwd: string, hash: string) {
-  // 检查是否为 merge commit（有多个父提交）
+  // Check if this is a merge commit (has multiple parent commits)
   const { stdout: parentCount } = await execAsync(
     `git rev-list --parents -n 1 ${hash}`,
     { cwd }
@@ -59,15 +59,15 @@ async function getChangedFiles(cwd: string, hash: string) {
   const parents = parentCount.trim().split(' ').slice(1);
   const isMergeCommit = parents.length > 1;
 
-  // 获取变更文件列表及状态
-  // 对于 merge commit，使用 git diff 与第一个父提交比较
-  // 对于普通 commit，使用 git show
+  // Get list of changed files and their status.
+  // For merge commits, use git diff against the first parent commit.
+  // For regular commits, use git show.
   let nameStatusCmd: string;
   let numstatCmd: string;
 
-  // -c core.quotePath=false 避免中文文件名被转义为八进制
+  // -c core.quotePath=false prevents Chinese filenames from being escaped as octal
   if (isMergeCommit) {
-    // 对于 merge commit，显示与第一个父提交的差异
+    // For merge commits, show diff against the first parent commit
     nameStatusCmd = `git -c core.quotePath=false diff ${hash}^1 ${hash} --name-status`;
     numstatCmd = `git -c core.quotePath=false diff ${hash}^1 ${hash} --numstat`;
   } else {
@@ -85,20 +85,20 @@ async function getChangedFiles(cwd: string, hash: string) {
     { cwd, maxBuffer: 10 * 1024 * 1024 }
   );
 
-  // 解析 numstat (additions, deletions, filename)
+  // Parse numstat (additions, deletions, filename)
   const statsMap = new Map<string, { additions: number; deletions: number }>();
   numstat.split('\n').filter(Boolean).forEach(line => {
     const parts = line.split('\t');
     if (parts.length >= 3) {
       const additions = parts[0] === '-' ? 0 : parseInt(parts[0], 10);
       const deletions = parts[1] === '-' ? 0 : parseInt(parts[1], 10);
-      let filename = parts.slice(2).join('\t'); // 处理文件名中可能有 tab 的情况
+      let filename = parts.slice(2).join('\t'); // Handle filenames that may contain tabs
       filename = unquotePath(filename);
       statsMap.set(filename, { additions, deletions });
     }
   });
 
-  // 解析 name-status
+  // Parse name-status
   const files: FileChange[] = [];
   nameStatus.split('\n').filter(Boolean).forEach(line => {
     const parts = line.split('\t');
@@ -110,7 +110,7 @@ async function getChangedFiles(cwd: string, hash: string) {
     let oldPath: string | undefined;
 
     if (statusCode.startsWith('R')) {
-      // 重命名: R100\told_name\tnew_name
+      // Rename: R100\told_name\tnew_name
       status = 'renamed';
       oldPath = unquotePath(parts[1]);
       path = unquotePath(parts[2]);
@@ -146,7 +146,7 @@ async function getChangedFiles(cwd: string, hash: string) {
 
 async function getFileDiff(cwd: string, hash: string, file: string) {
   try {
-    // 获取该提交的第一个父提交（对于 merge commit 也适用）
+    // Get the first parent commit of this commit (also works for merge commits)
     const { stdout: parentHash } = await execAsync(
       `git rev-parse ${hash}^1`,
       { cwd }
@@ -154,7 +154,7 @@ async function getFileDiff(cwd: string, hash: string, file: string) {
 
     const parent = parentHash.trim();
 
-    // 获取旧文件内容（从父提交）
+    // Get old file content (from parent commit)
     let oldContent = '';
     if (parent) {
       try {
@@ -164,12 +164,12 @@ async function getFileDiff(cwd: string, hash: string, file: string) {
         );
         oldContent = stdout;
       } catch {
-        // 文件在父提交中不存在（新增文件）
+        // File does not exist in parent commit (new file)
         oldContent = '';
       }
     }
 
-    // 获取新文件内容（从当前提交）
+    // Get new file content (from current commit)
     let newContent = '';
     try {
       const { stdout } = await execAsync(
@@ -178,7 +178,7 @@ async function getFileDiff(cwd: string, hash: string, file: string) {
       );
       newContent = stdout;
     } catch {
-      // 文件在当前提交中不存在（删除文件）
+      // File does not exist in current commit (deleted file)
       newContent = '';
     }
 

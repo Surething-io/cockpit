@@ -13,8 +13,8 @@ interface FileNode {
 }
 
 /**
- * readdir 单层目录，返回 FileNode[]（子目录默认 children: undefined）
- * 跳过 .git，检测 symlink，排序（目录优先 + 字母序）
+ * readdir a single directory layer, returning FileNode[] (subdirectories default to children: undefined).
+ * Skips .git, detects symlinks, sorts (directories first + alphabetical).
  */
 async function readdirWithMeta(cwd: string, relativePath: string): Promise<FileNode[]> {
   const absPath = relativePath ? join(cwd, relativePath) : cwd;
@@ -22,7 +22,7 @@ async function readdirWithMeta(cwd: string, relativePath: string): Promise<FileN
   try {
     entries = await readdir(absPath, { withFileTypes: true });
   } catch {
-    return []; // 目录不存在或无权限
+    return []; // Directory does not exist or no permission
   }
 
   const nodes: FileNode[] = [];
@@ -63,7 +63,7 @@ async function readdirWithMeta(cwd: string, relativePath: string): Promise<FileN
 }
 
 /**
- * 解析 symlink target（批量并行）
+ * Resolve symlink targets (batch parallel).
  */
 async function resolveSymlinkTargets(nodes: FileNode[], cwd: string): Promise<void> {
   const promises: Promise<void>[] = [];
@@ -81,14 +81,14 @@ async function resolveSymlinkTargets(nodes: FileNode[], cwd: string): Promise<vo
 }
 
 /**
- * 根据 expandedPaths 构建局部树：
- * - 根目录 + 各展开目录做 readdir
- * - 未展开目录 children: undefined（懒加载占位）
+ * Build partial tree from expandedPaths:
+ * - readdir root directory + each expanded directory
+ * - Unexpanded directories keep children: undefined (lazy-load placeholder)
  */
 async function buildPartialTree(cwd: string, expandedPaths: string[]): Promise<FileNode[]> {
   const expandedSet = new Set(expandedPaths);
 
-  // 过滤出有效的展开路径：父链也必须在展开集中（否则不可见）
+  // Filter to valid expanded paths: parent chain must also be in expanded set (otherwise invisible)
   const validExpanded = expandedPaths.filter(p => {
     const parts = p.split('/');
     for (let i = 1; i < parts.length; i++) {
@@ -97,26 +97,26 @@ async function buildPartialTree(cwd: string, expandedPaths: string[]): Promise<F
     return true;
   });
 
-  // 并行 readdir 根目录 + 所有展开目录
+  // Parallel readdir of root + all expanded directories
   const dirsToLoad = ['', ...validExpanded];
   const results = await Promise.all(
     dirsToLoad.map(p => readdirWithMeta(cwd, p).then(nodes => ({ path: p, nodes })))
   );
 
-  // 建立 path → children 映射
+  // Build path → children mapping
   const childrenMap = new Map<string, FileNode[]>();
   for (const { path, nodes } of results) {
     childrenMap.set(path, nodes);
   }
 
-  // 递归组装树：给展开目录填充 children
+  // Recursively assemble tree: fill children for expanded directories
   const assignChildren = (nodes: FileNode[]) => {
     for (const node of nodes) {
       if (node.isDirectory && childrenMap.has(node.path)) {
         node.children = childrenMap.get(node.path)!;
         assignChildren(node.children);
       }
-      // 未展开目录：children 保持 undefined
+      // Unexpanded directory: keep children as undefined
     }
   };
 
@@ -128,27 +128,27 @@ async function buildPartialTree(cwd: string, expandedPaths: string[]): Promise<F
 
 /**
  * GET /api/files/init?cwd=...
- * 返回 { files, expandedPaths, cwd }
+ * Returns { files, expandedPaths, cwd }
  */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const cwd = searchParams.get('cwd') || process.cwd();
 
   try {
-    // 验证 cwd 存在且是目录
+    // Validate that cwd exists and is a directory
     const stats = await stat(cwd);
     if (!stats.isDirectory()) {
       return NextResponse.json({ error: 'Path is not a directory' }, { status: 400 });
     }
 
-    // 读取持久化的展开路径
+    // Read persisted expanded paths
     const expandedPathsFile = getExpandedPathsPath(cwd);
     const expandedPaths = await readJsonFile<string[]>(expandedPathsFile, []);
 
-    // 构建局部树
+    // Build partial tree
     const files = await buildPartialTree(cwd, expandedPaths);
 
-    // 解析 symlink targets
+    // Resolve symlink targets
     await resolveSymlinkTargets(files, cwd);
 
     return NextResponse.json({ files, expandedPaths, cwd });

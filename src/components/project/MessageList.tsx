@@ -9,6 +9,7 @@ import { AddCommentInput, SendToAIInput } from './CodeInputCards';
 import { useChatContextOptional } from './ChatContext';
 import { useComments } from '@/hooks/useComments';
 import { fetchAllCommentsWithCode, buildAIMessage, clearAllComments, CHAT_COMMENT_FILE, type CodeReference } from '@/hooks/useAllComments';
+import { useTranslation } from 'react-i18next';
 
 interface MessageListProps {
   messages: ChatMessage[];
@@ -32,15 +33,33 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   { messages, isLoading, cwd, sessionId, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch },
   ref
 ) {
+  const { t } = useTranslation();
   const bottomRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
+  const [outerEl, setOuterEl] = useState<HTMLDivElement | null>(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const [showTopButton, setShowTopButton] = useState(false);
   const [showBottomButton, setShowBottomButton] = useState(false);
 
-  const chatSearch = useChatSearch(outerRef);
+  // Sync outerRef to state so we can read it during render without violating ref rules
+  useEffect(() => {
+    setOuterEl(outerRef.current);
+  }, []);
+
+  const {
+    isSearchVisible,
+    searchQuery,
+    setSearchQuery,
+    matches,
+    currentMatchIndex,
+    goToNextMatch,
+    goToPrevMatch,
+    closeSearch,
+    searchInputRef,
+    handleSearchKeyDown,
+  } = useChatSearch(outerRef);
   const chatCtx = useChatContextOptional();
 
   // --- Selection toolbar & persistent comments ---
@@ -308,31 +327,31 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   return (
     <div ref={outerRef} className="relative flex-1 overflow-hidden flex flex-col outline-none" tabIndex={-1} onMouseUp={handleSelectionMouseUp} onMouseDown={handleSelectionMouseDown}>
       {/* Search bar */}
-      {chatSearch.isSearchVisible && (
+      {isSearchVisible && (
         <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-secondary border-b border-border">
           <input
-            ref={chatSearch.searchInputRef}
+            ref={searchInputRef}
             type="text"
-            value={chatSearch.searchQuery}
-            onChange={e => chatSearch.setSearchQuery(e.target.value)}
-            onKeyDown={chatSearch.handleSearchKeyDown}
-            placeholder="搜索聊天内容..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            placeholder={t('codeViewer.searchChat')}
             className="flex-1 max-w-xs px-2 py-1 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
           <span className="text-xs text-muted-foreground">
-            {chatSearch.matches.length > 0 ? `${chatSearch.currentMatchIndex + 1}/${chatSearch.matches.length}` : '无匹配'}
+            {matches.length > 0 ? `${currentMatchIndex + 1}/${matches.length}` : t('common.noMatch')}
           </span>
-          <button onClick={chatSearch.goToPrevMatch} disabled={chatSearch.matches.length === 0} className="p-1 rounded hover:bg-accent disabled:opacity-50" title="上一个 (Shift+Enter)">
+          <button onClick={goToPrevMatch} disabled={matches.length === 0} className="p-1 rounded hover:bg-accent disabled:opacity-50" title={t('codeViewer.prevShiftEnter')}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
             </svg>
           </button>
-          <button onClick={chatSearch.goToNextMatch} disabled={chatSearch.matches.length === 0} className="p-1 rounded hover:bg-accent disabled:opacity-50" title="下一个 (Enter)">
+          <button onClick={goToNextMatch} disabled={matches.length === 0} className="p-1 rounded hover:bg-accent disabled:opacity-50" title={t('codeViewer.nextEnter')}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
-          <button onClick={chatSearch.closeSearch} className="p-1 rounded hover:bg-accent" title="关闭 (Esc)">
+          <button onClick={closeSearch} className="p-1 rounded hover:bg-accent" title={t('codeViewer.closeEsc')}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -348,7 +367,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
           <div className="flex items-center justify-center h-full text-slate-9">
             <div className="text-center">
               <div className="text-4xl mb-4">💬</div>
-              <div>开始对话吧</div>
+              <div>{t('chat.startConversation')}</div>
             </div>
           </div>
         ) : (
@@ -360,14 +379,14 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                 {isLoadingMore ? (
                   <div className="flex items-center gap-2 text-muted-foreground text-sm">
                     <span className="inline-block w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-                    <span>加载更多...</span>
+                    <span>{t('chat.loadMoreHistory')}</span>
                   </div>
                 ) : (
                   <button
                     onClick={onLoadMore}
                     className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    ↑ 向上滚动加载更多历史
+                    {t('chat.scrollUpForMore')}
                   </button>
                 )}
               </div>
@@ -387,7 +406,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                 <div className="bg-accent rounded-2xl rounded-bl-md px-4 py-3">
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <span className="inline-block w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-                    <span className="text-sm">Claude 正在思考...</span>
+                    <span className="text-sm">{t('chat.claudeThinking')}</span>
                   </div>
                 </div>
               </div>
@@ -402,7 +421,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         <button
           onClick={scrollToTop}
           className="absolute top-2 left-1/2 -translate-x-1/2 p-2 bg-card text-muted-foreground hover:text-foreground shadow-md rounded-full transition-all hover:shadow-lg active:scale-95"
-          title="跳转到开始"
+          title={t('chat.jumpToStart')}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
@@ -415,7 +434,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         <button
           onClick={scrollToBottom}
           className="absolute bottom-2 left-1/2 -translate-x-1/2 p-2 bg-card text-muted-foreground hover:text-foreground shadow-md rounded-full transition-all hover:shadow-lg active:scale-95"
-          title="跳转到最新"
+          title={t('chat.jumpToLatest')}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -424,11 +443,11 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       )}
 
       {/* Selection toolbar */}
-      {outerRef.current && (
+      {outerEl && (
         <ToolbarRenderer
           floatingToolbarRef={floatingToolbarRef}
           bumpRef={bumpToolbarRef}
-          container={outerRef.current}
+          container={outerEl}
           onAddComment={handleAddComment}
           onSendToAI={handleSendToAI}
           onSearch={onContentSearch ? handleSearch : undefined}
@@ -437,26 +456,26 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       )}
 
       {/* Add comment card */}
-      {commentInput && outerRef.current && (
+      {commentInput && outerEl && (
         <AddCommentInput
           x={commentInput.x}
           y={commentInput.y}
           range={{ start: 0, end: 0 }}
           codeContent={commentInput.text}
-          container={outerRef.current}
+          container={outerEl}
           onSubmit={handleCommentSubmit}
           onClose={() => setCommentInput(null)}
         />
       )}
 
       {/* Send to AI card */}
-      {sendAIInput && outerRef.current && (
+      {sendAIInput && outerEl && (
         <SendToAIInput
           x={sendAIInput.x}
           y={sendAIInput.y}
           range={{ start: 0, end: 0 }}
           codeContent={sendAIInput.text}
-          container={outerRef.current}
+          container={outerEl}
           onSubmit={handleSendAISubmit}
           onClose={() => setSendAIInput(null)}
           isChatLoading={chatCtx?.isLoading}

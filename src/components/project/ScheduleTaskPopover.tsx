@@ -1,26 +1,37 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '@/lib/i18n';
 import { modKey } from '@/lib/platform';
 
 // Convert cron expression to human-readable description
 function describeCron(expr: string): string | null {
+  const t = i18n.t;
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) return null;
   const [min, hour, dom, month, dow] = parts;
 
-  const dowNames: Record<string, string> = { '0': '日', '1': '一', '2': '二', '3': '三', '4': '四', '5': '五', '6': '六' };
-  const monthNames: Record<string, string> = { '1': '1月', '2': '2月', '3': '3月', '4': '4月', '5': '5月', '6': '6月', '7': '7月', '8': '8月', '9': '9月', '10': '10月', '11': '11月', '12': '12月' };
+  const dowNames: Record<string, string> = {
+    '0': t('cron.dowSun'), '1': t('cron.dowMon'), '2': t('cron.dowTue'),
+    '3': t('cron.dowWed'), '4': t('cron.dowThu'), '5': t('cron.dowFri'), '6': t('cron.dowSat')
+  };
+  const monthNames: Record<string, string> = {
+    '1': `1${t('cron.monthPrefix')}`, '2': `2${t('cron.monthPrefix')}`, '3': `3${t('cron.monthPrefix')}`,
+    '4': `4${t('cron.monthPrefix')}`, '5': `5${t('cron.monthPrefix')}`, '6': `6${t('cron.monthPrefix')}`,
+    '7': `7${t('cron.monthPrefix')}`, '8': `8${t('cron.monthPrefix')}`, '9': `9${t('cron.monthPrefix')}`,
+    '10': `10${t('cron.monthPrefix')}`, '11': `11${t('cron.monthPrefix')}`, '12': `12${t('cron.monthPrefix')}`
+  };
 
   try {
     // Time part
     let timeStr = '';
     if (min.includes('/') || hour.includes('/')) {
       if (hour === '*' && min.includes('/')) {
-        return `每 ${min.split('/')[1]} 分钟`;
+        return t('cron.everyNMinutes', { n: min.split('/')[1] });
       }
       if (min === '0' && hour.includes('/')) {
-        return `每 ${hour.split('/')[1]} 小时整点`;
+        return t('cron.everyNHours', { n: hour.split('/')[1] });
       }
       return null; // Complex patterns are not handled
     }
@@ -29,11 +40,11 @@ function describeCron(expr: string): string | null {
     if (isNaN(h) && hour !== '*') return null;
     if (isNaN(m) && min !== '*') return null;
     if (hour === '*' && min === '*') {
-      timeStr = '每分钟';
+      timeStr = t('cron.everyMinute');
     } else if (hour === '*') {
-      timeStr = `每小时第 ${m} 分`;
+      timeStr = t('cron.everyHourAtMin', { m });
     } else if (min === '*') {
-      timeStr = `${h} 点每分钟`;
+      timeStr = t('cron.hourlyEveryMin', { h });
     } else {
       timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     }
@@ -43,42 +54,42 @@ function describeCron(expr: string): string | null {
 
     // Month
     if (month !== '*') {
-      const months = month.split(',').map(m => monthNames[m] || `${m}月`);
-      parts2.push(months.join('、'));
+      const months = month.split(',').map(m => monthNames[m] || `${m}${t('cron.monthPrefix')}`);
+      parts2.push(months.join(', '));
     }
 
     // Day of month
     if (dom !== '*') {
       if (dom.includes('-')) {
         const [a, b] = dom.split('-');
-        parts2.push(`${a}号到${b}号`);
+        parts2.push(t('cron.dayRange', { a, b }));
       } else if (dom.includes(',')) {
-        parts2.push(dom.split(',').map(d => `${d}号`).join('、'));
+        parts2.push(dom.split(',').map(d => `${d}${t('cron.dayOfMonth')}`).join(', '));
       } else {
-        parts2.push(`${dom}号`);
+        parts2.push(`${dom}${t('cron.dayOfMonth')}`);
       }
     }
 
     // Day of week
     if (dow !== '*') {
       if (dow === '1-5') {
-        parts2.push('工作日');
+        parts2.push(t('cron.weekdays'));
       } else if (dow === '0,6' || dow === '6,0') {
-        parts2.push('周末');
+        parts2.push(t('cron.weekends'));
       } else {
         const days = dow.split(',').map(d => {
           if (d.includes('-')) {
             const [a, b] = d.split('-');
-            return `周${dowNames[a] || a}到周${dowNames[b] || b}`;
+            return t('cron.weekdayRange', { a: dowNames[a] || a, b: dowNames[b] || b });
           }
-          return `周${dowNames[d] || d}`;
+          return `${t('cron.weekdayPrefix')}${dowNames[d] || d}`;
         });
-        parts2.push(days.join('、'));
+        parts2.push(days.join(', '));
       }
     }
 
     if (parts2.length === 0 && dom === '*' && month === '*' && dow === '*') {
-      return `每天 ${timeStr}`;
+      return t('cron.daily', { time: timeStr });
     }
 
     return `${parts2.join(' ')} ${timeStr}`;
@@ -114,31 +125,32 @@ interface ScheduleTaskPopoverProps {
   onUpdate?: (id: string, params: TaskParams) => void;
 }
 
-// Quick presets
+// Quick presets - labels are i18n keys, resolved at render time
 const PRESETS = {
   once: [
-    { label: '5 分钟后', value: 5 },
-    { label: '15 分钟后', value: 15 },
-    { label: '30 分钟后', value: 30 },
-    { label: '1 小时后', value: 60 },
+    { labelKey: 'scheduledTasks.5minLater', value: 5 },
+    { labelKey: 'scheduledTasks.15minLater', value: 15 },
+    { labelKey: 'scheduledTasks.30minLater', value: 30 },
+    { labelKey: 'scheduledTasks.1hourLater', value: 60 },
   ],
   interval: [
-    { label: '每 15 分钟', value: 15 },
-    { label: '每 30 分钟', value: 30 },
-    { label: '每 1 小时', value: 60 },
-    { label: '每 2 小时', value: 120 },
+    { labelKey: 'scheduledTasks.every15min', value: 15 },
+    { labelKey: 'scheduledTasks.every30min', value: 30 },
+    { labelKey: 'scheduledTasks.every1hour', value: 60 },
+    { labelKey: 'scheduledTasks.every2hours', value: 120 },
   ],
   cron: [
-    { label: '每天 09:00', value: '0 9 * * *' },
-    { label: '每天 18:00', value: '0 18 * * *' },
-    { label: '每周一 09:00', value: '0 9 * * 1' },
-    { label: '每月 1 号 09:00', value: '0 9 1 * *' },
+    { labelKey: 'scheduledTasks.daily9am', value: '0 9 * * *' },
+    { labelKey: 'scheduledTasks.daily6pm', value: '0 18 * * *' },
+    { labelKey: 'scheduledTasks.weeklyMon9am', value: '0 9 * * 1' },
+    { labelKey: 'scheduledTasks.monthly1st9am', value: '0 9 1 * *' },
   ],
 };
 
 type TaskType = 'once' | 'interval' | 'cron';
 
 export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: ScheduleTaskPopoverProps) {
+  const { t } = useTranslation();
   const isEdit = !!editTask;
   const [type, setType] = useState<TaskType>(editTask?.type || 'once');
   const [message, setMessage] = useState(editTask?.message || '');
@@ -230,18 +242,18 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
       onKeyDown={handleKeyDown}
     >
       <div className="px-3 py-2 border-b border-border bg-muted/50 rounded-t-lg">
-        <span className="text-sm font-medium">{isEdit ? '编辑定时任务' : '创建定时任务'}</span>
+        <span className="text-sm font-medium">{isEdit ? t('scheduledTasks.editTask') : t('scheduledTasks.createTask')}</span>
       </div>
 
       <div className="p-3 space-y-3">
         {/* Message content */}
         <div>
-          <label className="text-xs text-muted-foreground mb-1 block">发送消息</label>
+          <label className="text-xs text-muted-foreground mb-1 block">{t('scheduledTasks.sendMessage')}</label>
           <textarea
             ref={messageRef}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="输入要发送的消息..."
+            placeholder={t('scheduledTasks.messagePlaceholder')}
             rows={2}
             className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
           />
@@ -249,19 +261,19 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
 
         {/* Type selection */}
         <div>
-          <label className="text-xs text-muted-foreground mb-1 block">类型</label>
+          <label className="text-xs text-muted-foreground mb-1 block">{t('scheduledTasks.type')}</label>
           <div className="flex gap-1">
-            {(['once', 'interval', 'cron'] as const).map((t) => (
+            {(['once', 'interval', 'cron'] as const).map((tp) => (
               <button
-                key={t}
-                onClick={() => { setType(t); setSelectedPreset(null); setCustomMinutes(''); setCustomCron(''); }}
+                key={tp}
+                onClick={() => { setType(tp); setSelectedPreset(null); setCustomMinutes(''); setCustomCron(''); }}
                 className={`flex-1 px-2 py-1 text-xs rounded transition-colors ${
-                  type === t
+                  type === tp
                     ? 'bg-brand text-white'
                     : 'bg-muted text-muted-foreground hover:text-foreground'
                 }`}
               >
-                {t === 'once' ? '一次性' : t === 'interval' ? '周期' : 'Cron'}
+                {tp === 'once' ? t('scheduledTasks.once') : tp === 'interval' ? t('scheduledTasks.interval') : 'Cron'}
               </button>
             ))}
           </div>
@@ -269,11 +281,11 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
 
         {/* Quick presets */}
         <div>
-          <label className="text-xs text-muted-foreground mb-1 block">快捷选择</label>
+          <label className="text-xs text-muted-foreground mb-1 block">{t('scheduledTasks.quickSelect')}</label>
           <div className="grid grid-cols-2 gap-1">
             {PRESETS[type].map((preset) => (
               <button
-                key={preset.label}
+                key={preset.labelKey}
                 onClick={() => {
                   setSelectedPreset(preset.value);
                   if (type === 'cron') {
@@ -288,7 +300,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
                     : 'border-border text-muted-foreground hover:text-foreground hover:border-foreground/30'
                 }`}
               >
-                {preset.label}
+                {t(preset.labelKey)}
               </button>
             ))}
           </div>
@@ -297,7 +309,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
         {/* Custom input */}
         <div>
           <label className="text-xs text-muted-foreground mb-1 block">
-            {type === 'cron' ? '自定义 Cron 表达式' : '自定义分钟数'}
+            {type === 'cron' ? t('scheduledTasks.customCron') : t('scheduledTasks.customMinutes')}
           </label>
           {type === 'cron' ? (
             <>
@@ -305,12 +317,12 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
                 type="text"
                 value={customCron}
                 onChange={(e) => { setCustomCron(e.target.value); setSelectedPreset(null); }}
-                placeholder="例: 0 9 * * 1-5 (工作日9点)"
+                placeholder={t('scheduledTasks.cronPlaceholder')}
                 className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
               />
               {customCron.trim() && (
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {describeCron(customCron.trim()) || <span className="text-destructive">格式：分 时 日 月 星期（如 0 9 * * 1-5）</span>}
+                  {describeCron(customCron.trim()) || <span className="text-destructive">{t('scheduledTasks.cronFormat')}</span>}
                 </div>
               )}
             </>
@@ -319,7 +331,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
               type="number"
               value={customMinutes}
               onChange={(e) => { setCustomMinutes(e.target.value); setSelectedPreset(null); }}
-              placeholder="分钟数"
+              placeholder={t('scheduledTasks.minutesPlaceholder')}
               min={1}
               className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             />
@@ -336,7 +348,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
                 onChange={(e) => setUseTimeRange(e.target.checked)}
                 className="rounded border-border"
               />
-              限制执行时段
+              {t('scheduledTasks.limitTimeRange')}
             </label>
             {useTimeRange && (
               <div className="flex items-center gap-2 mt-1">
@@ -346,7 +358,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
                   onChange={(e) => setActiveFrom(e.target.value)}
                   className="flex-1 px-2 py-1 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                 />
-                <span className="text-xs text-muted-foreground">至</span>
+                <span className="text-xs text-muted-foreground">{t('scheduledTasks.to')}</span>
                 <input
                   type="time"
                   value={activeTo}
@@ -364,7 +376,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
           disabled={!isValid()}
           className="w-full py-1.5 text-sm font-medium rounded bg-brand text-white hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {isEdit ? `保存 (${modKey()}↩)` : `创建 (${modKey()}↩)`}
+          {isEdit ? t('scheduledTasks.saveBtn', { modKey: modKey() }) : t('scheduledTasks.createBtn', { modKey: modKey() })}
         </button>
       </div>
     </div>

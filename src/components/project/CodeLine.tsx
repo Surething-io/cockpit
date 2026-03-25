@@ -1,26 +1,29 @@
 'use client';
 
 import React, { memo, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '@/lib/i18n';
 import { createPortal } from 'react-dom';
 import type { CodeComment } from '@/hooks/useComments';
 import type { BlameLine } from './fileBrowser/types';
 
 /** Format relative time */
 function formatRelativeTime(unixTimestamp: number): string {
+  const t = i18n.t;
   const now = Date.now();
   const diff = now - unixTimestamp * 1000;
   const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return '刚刚';
+  if (seconds < 60) return t('common.justNow');
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}分钟前`;
+  if (minutes < 60) return t('common.minutesAgo', { count: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}小时前`;
+  if (hours < 24) return t('common.hoursAgo', { count: hours });
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}天前`;
+  if (days < 30) return t('common.daysAgo', { count: days });
   const months = Math.floor(days / 30);
-  if (months < 12) return `${months}个月前`;
+  if (months < 12) return t('common.monthsAgo', { count: months });
   const years = Math.floor(months / 12);
-  return `${years}年前`;
+  return t('common.yearsAgo', { count: years });
 }
 
 // ============================================
@@ -28,6 +31,7 @@ function formatRelativeTime(unixTimestamp: number): string {
 // ============================================
 
 function InlineBlameAnnotation({ blame, onClick }: { blame: BlameLine; onClick?: (blame: BlameLine) => void }) {
+  const { t } = useTranslation();
   const spanRef = useRef<HTMLSpanElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
   // Track all state with refs, zero useState → showing/hiding tooltip triggers no re-render
@@ -37,9 +41,9 @@ function InlineBlameAnnotation({ blame, onClick }: { blame: BlameLine; onClick?:
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clickCtxRef = useRef<{ down: (e: MouseEvent) => void; up: (e: MouseEvent) => void } | null>(null);
   const blameRef = useRef(blame);
-  blameRef.current = blame;
+  useEffect(() => { blameRef.current = blame; }, [blame]);
   const onClickRef = useRef(onClick);
-  onClickRef.current = onClick;
+  useEffect(() => { onClickRef.current = onClick; }, [onClick]);
 
   const positionTip = useCallback(() => {
     const tip = tipRef.current;
@@ -178,7 +182,7 @@ function InlineBlameAnnotation({ blame, onClick }: { blame: BlameLine; onClick?:
           </div>
           <div className="font-medium">{firstLine}</div>
           {body && <div className="mt-1 text-muted-foreground">{body}</div>}
-          <div className="mt-2 text-[11px] text-brand border-t border-border pt-2 cursor-pointer hover:underline" onClick={handleTipClick}>点击查看详情</div>
+          <div className="mt-2 text-[11px] text-brand border-t border-border pt-2 cursor-pointer hover:underline" onClick={handleTipClick}>{t('codeViewer.clickToViewDetails')}</div>
         </div>,
         document.body,
       )}
@@ -358,6 +362,7 @@ export const CodeLine = memo(function CodeLine({
   isCursorLine,
   cursorCol,
 }: CodeLineProps) {
+  const { t } = useTranslation();
   // Inline vi block cursor into highlighted HTML (correctly handles CJK and other multi-width characters)
   const finalHtml = useMemo(() => {
     if (!isCursorLine || cursorCol == null) return highlightedHtml;
@@ -437,7 +442,7 @@ export const CodeLine = memo(function CodeLine({
               onMouseEnter={handleBlameEnter}
               onMouseLeave={onBlameMouseLeave}
               onClick={handleBlameClick}
-              title="点击查看 commit 详情"
+              title={t('codeViewer.clickToViewCommit')}
             >
               {showBlameInfo ? (
                 <>
@@ -458,7 +463,7 @@ export const CodeLine = memo(function CodeLine({
               <button
                 onClick={(e) => onCommentBubbleClick(firstComment, e)}
                 className="w-4 h-4 flex items-center justify-center rounded hover:bg-accent text-amber-9"
-                title={`${lineCommentsCount} 条评论`}
+                title={t('codeViewer.nComments', { count: lineCommentsCount })}
               >
                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />

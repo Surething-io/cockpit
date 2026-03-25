@@ -11,6 +11,7 @@ import { InteractiveMarkdownPreview } from './InteractiveMarkdownPreview';
 import { MenuContainerProvider } from './FileContextMenu';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { toast } from '../shared/Toast';
+import { useTranslation } from 'react-i18next';
 
 interface ImageModalProps {
   image: MessageImage;
@@ -18,6 +19,7 @@ interface ImageModalProps {
 }
 
 function ImageModal({ image, onClose }: ImageModalProps) {
+  const { t } = useTranslation();
 
   const modalContent = (
     <div
@@ -37,7 +39,7 @@ function ImageModal({ image, onClose }: ImageModalProps) {
       {/* Image */}
       <img
         src={`data:${image.media_type};base64,${image.data}`}
-        alt="图片预览"
+        alt={t('chat.imagePreview')}
         className="max-w-[90vw] max-h-[90vh] object-contain"
         onClick={(e) => e.stopPropagation()}
       />
@@ -85,6 +87,7 @@ const TOOL_CALLS_COLLAPSE_THRESHOLD = 1;
 
 // Use memo optimization — only re-render when message or cwd changes
 export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork }: MessageBubbleProps) {
+  const { t } = useTranslation();
   const [previewImage, setPreviewImage] = useState<MessageImage | null>(null);
   const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
   const [showDiffViewer, setShowDiffViewer] = useState(false);
@@ -136,12 +139,12 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
 
   // Fetch content when an md file is selected
   useEffect(() => {
-    if (!mdPreviewFile) { setMdFileContent(null); return; }
+    if (!mdPreviewFile) { queueMicrotask(() => setMdFileContent(null)); return; }
     let cancelled = false;
     fetch(`/api/file?path=${encodeURIComponent(mdPreviewFile)}`)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(d => { if (!cancelled) setMdFileContent(d.content); })
-      .catch(() => { if (!cancelled) { toast('读取文件失败', 'error'); setMdPreviewFile(null); } });
+      .catch(() => { if (!cancelled) { toast(t('toast.readFileFailed'), 'error'); setMdPreviewFile(null); } });
     return () => { cancelled = true; };
   }, [mdPreviewFile]);
 
@@ -150,7 +153,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   const handleCopy = () => {
     if (message.content) {
       navigator.clipboard.writeText(message.content);
-      toast('已复制消息');
+      toast(t('toast.copiedMessage'));
     }
   };
 
@@ -192,7 +195,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
               <button
                 onClick={handleCopy}
                 className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
-                title="复制消息"
+                title={t('chat.copyMessage')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -203,7 +206,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
               <button
                 onClick={handleFork}
                 className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
-                title="从此处分叉会话"
+                title={t('chat.forkSession')}
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                   {/* Git fork icon */}
@@ -235,7 +238,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                 >
                   <img
                     src={`data:${image.media_type};base64,${image.data}`}
-                    alt={`图片 ${index + 1}`}
+                    alt={t('chat.imageN', { index: index + 1 })}
                     className="w-full h-full object-cover"
                   />
                 </div>
@@ -335,17 +338,17 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                     >
                       <span className="text-lg">🔧</span>
                       <span className="font-medium text-foreground">
-                        {toolCallsCount} 个工具调用
+                        {t('chat.toolCalls', { count: toolCallsCount })}
                       </span>
                       <span className="ml-auto text-muted-foreground text-sm">
-                        {toolCallsExpanded ? '▲ 收起' : '▼ 展开'}
+                        {toolCallsExpanded ? t('chat.collapse') : t('chat.expand')}
                       </span>
                     </button>
                     {askQuestionCalls.length > 0 && (
                       <button
                         onClick={() => setShowAskQuestionViewer(true)}
                         className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border-l border-border"
-                        title="查看提问"
+                        title={t('chat.viewQuestions')}
                       >
                         <MessageCircleQuestion className="w-4 h-4" />
                       </button>
@@ -354,7 +357,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                       <button
                         onClick={() => setShowDiffViewer(true)}
                         className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border-l border-border"
-                        title="查看所有文件变更"
+                        title={t('chat.viewAllFileChanges')}
                       >
                         <FileDiff className="w-4 h-4" />
                       </button>
@@ -384,7 +387,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
               <button
                 onClick={handleCopy}
                 className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
-                title="复制消息"
+                title={t('chat.copyMessage')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -395,7 +398,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
               <button
                 onClick={handleFork}
                 className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
-                title="从此处分叉会话"
+                title={t('chat.forkSession')}
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="18" r="3" />

@@ -13,6 +13,7 @@ import { useChatContextOptional } from './ChatContext';
 import { ChatHeader, TokenUsageBar } from './ChatHeader';
 import { useChatStream } from './useChatStream';
 import { useChatHistory } from './useChatHistory';
+import { useTranslation } from 'react-i18next';
 
 interface ChatProps {
   tabId?: string; // Tab ID, used to register with ChatContext
@@ -43,6 +44,7 @@ interface ChatProps {
 }
 
 export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch }: ChatProps) {
+  const { t } = useTranslation();
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -109,16 +111,16 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
         const data = await res.json();
         const output = [data.stdout, data.stderr].filter(Boolean).join('\n') || '(no output)';
         const exitInfo = data.exitCode ? ` (exit code: ${data.exitCode})` : '';
-        let message = `执行了 \`${command}\`${exitInfo}，输出：\n\`\`\`\n${output}\n\`\`\``;
+        let message = t('chat.executedCommand', { command, exitInfo, output });
         if (userNote) message += `\n\n${userNote}`;
         handleSend(message, images);
       } catch (err) {
-        handleSend(`执行 \`${command}\` 失败：${err}`, images);
+        handleSend(t('chat.executedCommandFailed', { command, error: err }), images);
       }
       return;
     }
     handleSend(content, images);
-  }, [handleSend, initialCwd]);
+  }, [handleSend, initialCwd, t]);
 
   // History hook
   const {
@@ -313,7 +315,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
         {/* Messages */}
         {isLoadingHistory ? (
           <div className="flex-1 flex items-center justify-center">
-            <span className="text-muted-foreground">加载历史消息...</span>
+            <span className="text-muted-foreground">{t('sessions.loadingHistory')}</span>
           </div>
         ) : (
           <MessageList

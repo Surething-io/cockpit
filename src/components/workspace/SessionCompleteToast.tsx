@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 
 // ============================================
@@ -90,6 +91,7 @@ function SessionToastCard({
   onNavigate: (cwd: string, sessionId: string) => void;
   onRemove: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const [leaving, setLeaving] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -137,7 +139,7 @@ function SessionToastCard({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
         <span className="text-sm font-medium text-foreground truncate">{item.projectName}</span>
-        <span className="text-xs text-green-11 flex-shrink-0">完成</span>
+        <span className="text-xs text-green-11 flex-shrink-0">{t('common.done')}</span>
         {/* Close button */}
         <button
           onClick={(e) => { e.stopPropagation(); dismiss(); }}

@@ -5,6 +5,7 @@ import { ImageInfo } from '@/types/chat';
 import { ImagePreview } from '../shared/ImagePreview';
 import { toast } from '../shared/Toast';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
+import { useTranslation } from 'react-i18next';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -34,6 +35,7 @@ interface ChatInputProps {
 }
 
 export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowComments, onShowUserMessages, onOpenNote, onCreateScheduledTask }: ChatInputProps) {
+  const { t } = useTranslation();
   const [input, setInput] = useState('');
   const [images, setImages] = useState<ImageInfo[]>([]);
   const [commands, setCommands] = useState<CommandInfo[]>([]);
@@ -94,8 +96,8 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
   const prevInputRef = useRef(input);
   useLayoutEffect(() => {
     if (prevInputRef.current !== input) {
-      setSelectedIndex(0);
-      if (commandsDismissed) setCommandsDismissed(false);
+      queueMicrotask(() => setSelectedIndex(0));
+      if (commandsDismissed) queueMicrotask(() => setCommandsDismissed(false));
       prevInputRef.current = input;
     }
   }, [input, commandsDismissed]);
@@ -188,7 +190,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
 
         // Check file size
         if (file.size > MAX_IMAGE_SIZE) {
-          alert(`图片大小超过限制（最大 5MB），当前大小: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+          alert(t('chat.imageSizeLimit', { size: (file.size / 1024 / 1024).toFixed(2) }));
           continue;
         }
 
@@ -212,7 +214,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
         reader.readAsDataURL(file);
       }
     }
-  }, []);
+  }, [t]);
 
   const handleRemoveImage = useCallback((id: string) => {
     setImages((prev) => prev.filter((img) => img.id !== id));
@@ -221,11 +223,11 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
   const getSourceLabel = (source: CommandInfo['source']) => {
     switch (source) {
       case 'builtin':
-        return '内置';
+        return t('common.builtin');
       case 'global':
-        return '全局';
+        return t('common.global');
       case 'project':
-        return '项目';
+        return t('common.project');
     }
   };
 
@@ -287,18 +289,18 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
                 body: JSON.stringify({ cwd, files: ['.'] }),
               });
               if (response.ok) {
-                toast('已暂存所有文件', 'success');
+                toast(t('toast.stagedAllFiles'), 'success');
                 window.dispatchEvent(new CustomEvent('git-status-changed'));
               } else {
-                toast('暂存失败', 'error');
+                toast(t('toast.stageFailed'), 'error');
               }
             } catch (err) {
               console.error('Error staging files:', err);
-              toast('暂存失败', 'error');
+              toast(t('toast.stageFailed'), 'error');
             }
           }}
           className="p-2 text-green-11 hover:text-green-10 hover:bg-green-9/10 active:bg-green-9/20 active:scale-95 rounded-lg transition-all"
-          title="暂存所有文件 (git add -A)"
+          title={t('chat.stageAll')}
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -310,7 +312,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
           <button
             onClick={onShowGitStatus}
             className="p-2 text-brand hover:text-teal-10 hover:bg-brand/10 active:bg-brand/20 active:scale-95 rounded-lg transition-all"
-            title="查看 Git 变更"
+            title={t('chat.viewGitChanges')}
           >
             {/* Git branch icon */}
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -327,7 +329,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
           <button
             onClick={onShowComments}
             className="p-2 text-amber-11 hover:text-amber-10 hover:bg-amber-9/10 active:bg-amber-9/20 active:scale-95 rounded-lg transition-all"
-            title="查看所有评论"
+            title={t('chat.viewAllComments')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
@@ -340,7 +342,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
           <button
             onClick={onShowUserMessages}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
-            title="用户消息列表"
+            title={t('chat.userMessages')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -353,7 +355,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
           <button
             onClick={onOpenNote}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
-            title="项目笔记"
+            title={t('chat.projectNotes')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -371,7 +373,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
                   ? 'text-brand bg-brand/10'
                   : 'text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95'
               }`}
-              title="定时任务"
+              title={t('chat.scheduledTasks')}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <circle cx="12" cy="12" r="10" strokeWidth={2} />
@@ -393,7 +395,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShow
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder={disabled ? "生成中... 可继续输入" : "输入消息，Enter 发送 (Shift+Enter 换行，可粘贴图片，/ 显示命令)"}
+          placeholder={disabled ? t('chat.placeholderDisabled') : t('chat.placeholder')}
           rows={1}
           className="flex-1 resize-none px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-card text-foreground placeholder-slate-9"
         />

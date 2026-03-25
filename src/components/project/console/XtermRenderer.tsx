@@ -47,8 +47,8 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
   const writtenLenRef = useRef(0);
   const onInputRef = useRef(onInput);
   const onResizeRef = useRef(onResize);
-  onInputRef.current = onInput;
-  onResizeRef.current = onResize;
+  useEffect(() => { onInputRef.current = onInput; }, [onInput]);
+  useEffect(() => { onResizeRef.current = onResize; }, [onResize]);
 
   // Expose search interface
   useImperativeHandle(ref, () => ({

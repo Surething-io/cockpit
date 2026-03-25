@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useImperativeHandle, forwardRef, memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { useMenuContainer } from './FileContextMenu';
 import { AddCommentInput, SendToAIInput } from './CodeInputCards';
@@ -125,6 +126,8 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   onInitialCursorSet,
   onContentSearch,
 }, ref) {
+  const { t } = useTranslation();
+
   // ========== Edit mode state ==========
   const editContentRef = useRef(content); // ref: no re-render, only read during save/highlight
   const isDirtyRef = useRef(false);
@@ -708,11 +711,11 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
       isDirtyRef.current = false;
       setIsDirty(false);
       setConflictState({ show: false });
-      toast('已保存', 'success');
+      toast(t('toast.savedSuccess'), 'success');
       onSaved?.();
     } catch (error) {
       console.error('Error saving file:', error);
-      toast('保存失败', 'error');
+      toast(t('toast.saveFailed'), 'error');
     } finally {
       setIsSaving(false);
     }
@@ -759,7 +762,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
 
   const handleEditorClose = useCallback(async () => {
     if (isDirty) {
-      const ok = await confirm('有未保存的修改，确定关闭？', { danger: true, confirmText: '放弃修改', cancelText: '继续编辑' });
+      const ok = await confirm(t('codeViewer.unsavedConfirm'), { danger: true, confirmText: t('codeViewer.discardChanges'), cancelText: t('codeViewer.continueEditing') });
       if (!ok) return;
     }
     onEditorClose?.(getCurrentLine());
@@ -811,7 +814,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
         if (viModeEnabled) {
           if (isDirtyRef.current) {
             // Unsaved changes, show confirmation dialog
-            confirm('有未保存的修改，确定退出编辑模式？', { danger: true, confirmText: '放弃修改', cancelText: '继续编辑' })
+            confirm(t('codeViewer.unsavedExitConfirm'), { danger: true, confirmText: t('codeViewer.discardChanges'), cancelText: t('codeViewer.continueEditing') })
               .then(ok => { if (ok) viExitInsert(); });
           } else {
             viExitInsert();
@@ -892,13 +895,13 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
           <svg className="w-5 h-5 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
           </svg>
-          <span className="text-sm text-foreground flex-1">文件已被外部修改，保存将覆盖外部更改</span>
+          <span className="text-sm text-foreground flex-1">{t('codeViewer.fileModifiedExternally')}</span>
           <div className="flex items-center gap-2">
             <button onClick={handleRevertToDisk} className="px-3 py-1 text-sm rounded border border-border hover:bg-accent transition-colors">
-              使用磁盘版本
+              {t('codeViewer.useDiskVersion')}
             </button>
             <button onClick={handleForceOverwrite} className="px-3 py-1 text-sm rounded bg-amber-500 text-white hover:bg-amber-600 transition-colors">
-              强制覆盖
+              {t('codeViewer.forceOverwrite')}
             </button>
           </div>
         </div>
@@ -913,7 +916,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
-            placeholder="搜索..."
+            placeholder={t('codeViewer.searchPlaceholder')}
             className="flex-1 max-w-xs px-2 py-1 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
           <button
@@ -923,7 +926,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
                 ? 'bg-brand text-white border-brand'
                 : 'border-border text-muted-foreground hover:bg-accent'
             }`}
-            title="区分大小写"
+            title={t('codeViewer.caseSensitive')}
           >
             Aa
           </button>
@@ -934,24 +937,24 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
                 ? 'bg-brand text-white border-brand'
                 : 'border-border text-muted-foreground hover:bg-accent'
             }`}
-            title="全字匹配"
+            title={t('codeViewer.wholeWordMatch')}
           >
             [ab]
           </button>
           <span className="text-xs text-muted-foreground">
-            {matches.length > 0 ? `${currentMatchIndex + 1}/${matches.length}` : '无匹配'}
+            {matches.length > 0 ? `${currentMatchIndex + 1}/${matches.length}` : t('common.noMatch')}
           </span>
-          <button onClick={goToPrevMatch} disabled={matches.length === 0} className="p-1 rounded hover:bg-accent disabled:opacity-50" title="上一个">
+          <button onClick={goToPrevMatch} disabled={matches.length === 0} className="p-1 rounded hover:bg-accent disabled:opacity-50" title={t('common.previous')}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
             </svg>
           </button>
-          <button onClick={goToNextMatch} disabled={matches.length === 0} className="p-1 rounded hover:bg-accent disabled:opacity-50" title="下一个">
+          <button onClick={goToNextMatch} disabled={matches.length === 0} className="p-1 rounded hover:bg-accent disabled:opacity-50" title={t('common.next')}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
-          <button onClick={() => { setIsSearchVisible(false); setSearchQuery(''); }} className="p-1 rounded hover:bg-accent" title="关闭">
+          <button onClick={() => { setIsSearchVisible(false); setSearchQuery(''); }} className="p-1 rounded hover:bg-accent" title={t('common.close')}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -1234,7 +1237,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
                 {formatRelativeTime(blameTooltip.line.time)}
                 {' · '}
                 {new Date(blameTooltip.line.time * 1000).toLocaleString()}
-                <span className="ml-2 text-brand">Click to view details</span>
+                <span className="ml-2 text-brand">{t('codeViewer.clickToViewDetails')}</span>
               </div>
             </div>
           )}

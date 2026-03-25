@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface SessionInfo {
   path: string;
@@ -29,6 +30,7 @@ interface EmptyStateProps {
 }
 
 export function EmptyState({ onSelectSession }: EmptyStateProps) {
+  const { t } = useTranslation();
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [projectStates, setProjectStates] = useState<Record<string, ProjectState>>({});
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
@@ -150,12 +152,12 @@ export function EmptyState({ onSelectSession }: EmptyStateProps) {
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border">
         <h2 className="text-lg font-medium text-foreground">
-          选择一个项目开始
+          {t('workspace.selectProject')}
         </h2>
         <input
           ref={searchInputRef}
           type="text"
-          placeholder="搜索项目路径..."
+          placeholder={t('workspace.searchProjectPath')}
           value={searchKeyword}
           onChange={(e) => setSearchKeyword(e.target.value)}
           className="px-3 py-1.5 text-sm border border-border rounded-lg bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
@@ -171,7 +173,7 @@ export function EmptyState({ onSelectSession }: EmptyStateProps) {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              <span>加载项目中...</span>
+              <span>{t('workspace.loadingProjects')}</span>
             </div>
           </div>
         )}
@@ -184,7 +186,7 @@ export function EmptyState({ onSelectSession }: EmptyStateProps) {
 
         {!isLoadingProjects && !error && projects.length === 0 && (
           <div className="flex items-center justify-center h-64">
-            <div className="text-sm text-muted-foreground">未找到项目</div>
+            <div className="text-sm text-muted-foreground">{t('workspace.projectNotFound')}</div>
           </div>
         )}
 
@@ -218,7 +220,7 @@ export function EmptyState({ onSelectSession }: EmptyStateProps) {
                         <div className="text-xs text-muted-foreground truncate">{project.fullPath}</div>
                       </div>
                       <span className="text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded">
-                        {project.sessionCount} 会话
+                        {t('workspace.sessions', { count: project.sessionCount })}
                       </span>
                     </button>
 
@@ -231,7 +233,7 @@ export function EmptyState({ onSelectSession }: EmptyStateProps) {
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                             </svg>
-                            <span>加载会话...</span>
+                            <span>{t('workspace.loadingSessions')}</span>
                           </div>
                         )}
 
@@ -240,7 +242,7 @@ export function EmptyState({ onSelectSession }: EmptyStateProps) {
                         )}
 
                         {!state.isLoading && !state.error && state.sessions.length === 0 && (
-                          <div className="p-3 text-xs text-muted-foreground">无会话记录</div>
+                          <div className="p-3 text-xs text-muted-foreground">{t('workspace.noSessions')}</div>
                         )}
 
                         {!state.isLoading && !state.error && state.sessions.map((session) => (

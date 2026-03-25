@@ -29,6 +29,7 @@ import { useGitStatus } from '../../hooks/useGitStatus';
 import { useGitHistory } from '../../hooks/useGitHistory';
 import { useLSPDefinition, useLSPHover, useLSPReferences, useLSPWarmup } from '../../hooks/useLSP';
 import { useNavigationHistory } from '../../hooks/useNavigationHistory';
+import { useTranslation } from 'react-i18next';
 import { useJsonSearch, JsonSearchBar } from '../../hooks/useJsonSearch';
 import { getLanguageForFile } from '@/lib/lsp/types';
 import { HoverTooltip } from './HoverTooltip';
@@ -37,6 +38,7 @@ import { SearchResultsPanel } from './SearchResultsPanel';
 import type { Location } from '@/lib/lsp/types';
 
 export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchTrigger, initialSearchQuery, searchQueryTrigger }: FileBrowserModalProps) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const menuContainerRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
@@ -107,9 +109,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
           prev?.type === 'text' ? { ...prev, mtime: data.mtime } : prev
         );
       }
-      toast('已保存', 'success');
+      toast(t('toast.savedSuccess'), 'success');
     } catch {
-      toast('保存失败', 'error');
+      toast(t('toast.saveFailed'), 'error');
     }
   }, [cwd, fileTree]);
 
@@ -365,9 +367,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cwd, path }),
       });
-      toast(`已复制: ${fileName}`, 'success');
+      toast(t('toast.copiedName', { name: fileName }), 'success');
     } catch {
-      toast('复制失败', 'error');
+      toast(t('toast.copyFailed'), 'error');
     }
   }, [cwd]);
 
@@ -377,7 +379,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       const clipRes = await fetch('/api/files/clipboard');
       const clipData = await clipRes.json();
       if (!clipData.path) {
-        toast('没有可粘贴的文件', 'info');
+        toast(t('toast.noFileToPaste'), 'info');
         return;
       }
 
@@ -388,14 +390,14 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       });
       const data = await res.json();
       if (res.ok) {
-        toast(`已粘贴: ${data.newName}`, 'success');
+        toast(t('toast.pastedFile', { name: data.newName }), 'success');
         fileTree.loadDirectory(targetDir);
         fileTree.loadFileIndex();
       } else {
-        toast(data.error || '粘贴失败', 'error');
+        toast(data.error || t('toast.pasteFailed'), 'error');
       }
     } catch {
-      toast('粘贴失败', 'error');
+      toast(t('toast.pasteFailed'), 'error');
     }
   }, [cwd, fileTree]);
 
@@ -717,7 +719,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
                 }`}
               >
-                目录树
+                {t('fileBrowser.directoryTree')}
               </button>
               <button
                 onClick={() => handleTabChange('search')}
@@ -727,7 +729,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
                 }`}
               >
-                搜索
+                {t('fileBrowser.searchTab')}
               </button>
               <button
                 onClick={() => handleTabChange('recent')}
@@ -737,7 +739,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
                 }`}
               >
-                最近
+                {t('fileBrowser.recentTab')}
               </button>
               <button
                 onClick={() => handleTabChange('status')}
@@ -747,7 +749,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
                 }`}
               >
-                变更
+                {t('fileBrowser.changesTab')}
               </button>
               <button
                 onClick={() => handleTabChange('history')}
@@ -757,7 +759,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     : 'text-muted-foreground hover:text-foreground dark:hover:text-foreground'
                 }`}
               >
-                历史
+                {t('fileBrowser.historyTab')}
               </button>
             </div>
 
@@ -770,14 +772,14 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     type="text"
                     value={fileTree.searchQuery}
                     onChange={e => fileTree.setSearchQuery(e.target.value)}
-                    placeholder="搜索文件..."
+                    placeholder={t('fileBrowser.searchFiles')}
                     className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                   {fileTree.searchQuery && (
                     <button
                       onClick={() => fileTree.setSearchQuery('')}
                       className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-9 hover:text-foreground rounded-sm transition-colors"
-                      title="清除"
+                      title={t('fileBrowser.clear')}
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -793,7 +795,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       ? 'border-brand text-brand bg-brand/10'
                       : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-accent'
                   }`}
-                  title={fileTree.searchExactMatch ? '全词匹配（已开启）' : '全词匹配（已关闭）'}
+                  title={fileTree.searchExactMatch ? t('fileBrowser.exactMatchOn') : t('fileBrowser.exactMatchOff')}
                 >
                   ab
                 </button>
@@ -803,7 +805,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   <button
                     onClick={() => fileTree.loadFiles()}
                     className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-                    title="刷新目录树"
+                    title={t('fileBrowser.refreshTree')}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -813,7 +815,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   <button
                     onClick={() => fileTree.searchTreeExpandedPaths ? fileTree.setSearchTreeExpandedPaths(new Set()) : fileTree.setExpandedPaths(new Set())}
                     className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-                    title="折叠所有目录"
+                    title={t('fileBrowser.collapseAll')}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
@@ -837,14 +839,14 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           contentSearch.performContentSearch(contentSearch.contentSearchQuery);
                         }
                       }}
-                      placeholder="搜索文件内容..."
+                      placeholder={t('fileBrowser.searchFileContent')}
                       className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                     {contentSearch.contentSearchQuery && (
                       <button
                         onClick={() => contentSearch.setContentSearchQuery('')}
                         className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-9 hover:text-foreground rounded-sm transition-colors"
-                        title="清除"
+                        title={t('fileBrowser.clear')}
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -857,7 +859,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     disabled={contentSearch.isSearching || !contentSearch.contentSearchQuery.trim()}
                     className="px-3 py-1.5 text-sm bg-brand text-white rounded hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {contentSearch.isSearching ? '...' : '搜索'}
+                    {contentSearch.isSearching ? '...' : t('common.search')}
                   </button>
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs">
@@ -868,7 +870,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       onChange={e => contentSearch.setSearchOptions(prev => ({ ...prev, caseSensitive: e.target.checked }))}
                       className="w-3 h-3"
                     />
-                    <span className="text-muted-foreground">区分大小写</span>
+                    <span className="text-muted-foreground">{t('fileBrowser.caseSensitive')}</span>
                   </label>
                   <label className="flex items-center gap-1 cursor-pointer">
                     <input
@@ -877,7 +879,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       onChange={e => contentSearch.setSearchOptions(prev => ({ ...prev, wholeWord: e.target.checked }))}
                       className="w-3 h-3"
                     />
-                    <span className="text-muted-foreground">完整词</span>
+                    <span className="text-muted-foreground">{t('fileBrowser.wholeWord')}</span>
                   </label>
                   <label className="flex items-center gap-1 cursor-pointer">
                     <input
@@ -886,13 +888,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       onChange={e => contentSearch.setSearchOptions(prev => ({ ...prev, regex: e.target.checked }))}
                       className="w-3 h-3"
                     />
-                    <span className="text-muted-foreground">正则</span>
+                    <span className="text-muted-foreground">{t('fileBrowser.regex')}</span>
                   </label>
                   <input
                     type="text"
                     value={contentSearch.searchOptions.fileType}
                     onChange={e => contentSearch.setSearchOptions(prev => ({ ...prev, fileType: e.target.value }))}
-                    placeholder="文件类型 (ts,tsx)"
+                    placeholder={t('fileBrowser.fileTypes')}
                     className="w-24 px-2 py-0.5 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9"
                   />
                 </div>
@@ -923,9 +925,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         ? 'bg-brand text-white'
                         : 'text-muted-foreground hover:text-foreground hover:bg-accent border border-border'
                     }`}
-                    title={gitHistory.compareMode ? '关闭分支对比' : '与选定分支对比'}
+                    title={gitHistory.compareMode ? t('fileBrowser.compareModeOff') : t('fileBrowser.compareModeOn')}
                   >
-                    对比
+                    {t('fileBrowser.compareMode')}
                   </button>
                 </div>
               </div>
@@ -939,13 +941,12 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                 {fileTree.creatingItem && (
                   <div className="px-2 py-1.5 border-b border-border bg-secondary flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">
-                      新建文件
-                      {fileTree.creatingItem.parentPath && ` (在 ${fileTree.creatingItem.parentPath}/)`}
+                      {fileTree.creatingItem.parentPath ? t('fileBrowser.createFileIn', { path: fileTree.creatingItem.parentPath }) : t('fileBrowser.createFile')}
                     </span>
                     <input
                       type="text"
                       autoFocus
-                      placeholder="文件名..."
+                      placeholder={t('fileBrowser.fileName')}
                       className="flex-1 px-2 py-1 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                       onCompositionStart={() => { composingRef.current = true; }}
                       onCompositionEnd={() => { composingRef.current = false; }}
@@ -967,7 +968,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               }),
                             });
                             if (res.ok) {
-                              toast(`已创建文件: ${name}`, 'success');
+                              toast(t('toast.createdFile', { name }), 'success');
                               fileTree.setCreatingItem(null);
                               fileTree.loadDirectory(parentPath);
                               fileTree.loadFileIndex();
@@ -977,10 +978,10 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               handleSelectFileWithSave(fullPath);
                             } else {
                               const data = await res.json();
-                              toast(data.error || '创建失败', 'error');
+                              toast(data.error || t('toast.createFailed'), 'error');
                             }
                           } catch (err) {
-                            toast('创建失败', 'error');
+                            toast(t('toast.createFailed'), 'error');
                           }
                         } else if (e.key === 'Escape') {
                           fileTree.setCreatingItem(null);
@@ -991,7 +992,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   </div>
                 )}
                 {fileTree.isLoadingFiles ? (
-                  <div className="p-4 text-center text-muted-foreground text-sm">加载中...</div>
+                  <div className="p-4 text-center text-muted-foreground text-sm">{t('common.loading')}</div>
                 ) : fileTree.fileError ? (
                   <div className="p-4 text-center text-red-11 text-sm">{fileTree.fileError}</div>
                 ) : (
@@ -1029,15 +1030,15 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   <div className="p-4 text-center text-red-11 text-sm">{contentSearch.searchError}</div>
                 ) : contentSearch.contentSearchResults.length === 0 ? (
                   <div className="p-4 text-center text-muted-foreground text-sm">
-                    {contentSearch.contentSearchQuery ? '无匹配结果' : '输入关键词搜索文件内容'}
+                    {contentSearch.contentSearchQuery ? t('fileBrowser.noContentSearchResults') : t('fileBrowser.enterKeywordToSearch')}
                   </div>
                 ) : (
                   <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
                     {/* Search statistics */}
                     {contentSearch.searchStats && (
                       <div className="px-3 py-1.5 text-xs text-muted-foreground bg-secondary border-b border-border flex-shrink-0">
-                        {contentSearch.searchStats.totalFiles} 个文件，{contentSearch.searchStats.totalMatches} 处匹配
-                        {contentSearch.searchStats.truncated && <span className="text-amber-11 ml-1">(结果已截断)</span>}
+                        {t('fileBrowser.nFilesNMatches', { files: contentSearch.searchStats.totalFiles, matches: contentSearch.searchStats.totalMatches })}
+                        {contentSearch.searchStats.truncated && <span className="text-amber-11 ml-1">({t('fileBrowser.resultsTruncated')})</span>}
                       </div>
                     )}
                     {/* Search result directory tree — built from search result paths */}
@@ -1063,7 +1064,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'recent' ? '' : 'hidden'}`}>
                 {fileTree.recentFiles.length === 0 ? (
                   <div className="p-4 text-center text-muted-foreground text-sm">
-                    暂无最近浏览的文件
+                    {t('fileBrowser.noRecentFiles')}
                   </div>
                 ) : (
                   <FileTree
@@ -1094,12 +1095,12 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       <div className="flex items-center justify-between px-3 py-2 bg-secondary">
                         <div className="flex items-center gap-1.5">
                           <span className="text-sm font-medium text-muted-foreground">
-                            暂存区 ({gitStatus.status?.staged.length || 0})
+                            {t('fileBrowser.stagingArea', { count: gitStatus.status?.staged.length || 0 })}
                           </span>
                           <button
                             onClick={() => gitStatus.fetchStatus()}
                             className="p-0.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-                            title="刷新变更列表"
+                            title={t('fileBrowser.refreshChanges')}
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -1111,7 +1112,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             onClick={gitStatus.handleUnstageAll}
                             className="text-sm text-amber-11 hover:text-amber-10 hover:underline"
                           >
-                            全部取消
+                            {t('fileBrowser.unstageAll')}
                           </button>
                         )}
                       </div>
@@ -1122,7 +1123,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         onSelect={(node) => node.file && gitStatus.handleStatusFileSelect(node.file as GitFileStatus, 'staged')}
                         onToggle={gitStatus.handleStatusToggle}
                         cwd={cwd}
-                        emptyMessage="无暂存的文件"
+                        emptyMessage={t('fileBrowser.noStagedFiles')}
                         className="py-1"
                         renderActions={(node) => {
                           if (node.isDirectory) {
@@ -1135,7 +1136,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                   gitStatus.handleUnstageFiles(files.map(f => f.path));
                                 }}
                                 className="opacity-0 group-hover:opacity-100 p-0.5 text-amber-11 hover:text-amber-10 hover:bg-amber-9/10 dark:hover:bg-amber-9/20 rounded transition-all"
-                                title={`取消暂存 ${files.length} 个文件`}
+                                title={t('fileBrowser.unstageNFiles', { count: files.length })}
                               >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
@@ -1150,7 +1151,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                 gitStatus.handleUnstage(node.path);
                               }}
                               className="opacity-0 group-hover:opacity-100 p-0.5 text-amber-11 hover:text-amber-10 hover:bg-amber-9/10 dark:hover:bg-amber-9/20 rounded transition-all"
-                              title="取消暂存"
+                              title={t('fileBrowser.unstageFile')}
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
@@ -1165,7 +1166,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     <div>
                       <div className="flex items-center justify-between px-3 py-2 bg-secondary">
                         <span className="text-sm font-medium text-muted-foreground">
-                          工作区 ({gitStatus.status?.unstaged.length || 0})
+                          {t('fileBrowser.workspace', { count: gitStatus.status?.unstaged.length || 0 })}
                         </span>
                         {(gitStatus.status?.unstaged.length || 0) > 0 && (
                           <div className="flex items-center gap-2">
@@ -1173,13 +1174,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               onClick={gitStatus.handleDiscardAll}
                               className="text-sm text-red-11 hover:text-red-10 hover:underline"
                             >
-                              放弃所有
+                              {t('fileBrowser.discardAll')}
                             </button>
                             <button
                               onClick={gitStatus.handleStageAll}
                               className="text-sm text-green-11 hover:text-green-10 hover:underline"
                             >
-                              全部暂存
+                              {t('fileBrowser.stageAll')}
                             </button>
                           </div>
                         )}
@@ -1191,7 +1192,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         onSelect={(node) => node.file && gitStatus.handleStatusFileSelect(node.file as GitFileStatus, 'unstaged')}
                         onToggle={gitStatus.handleStatusToggle}
                         cwd={cwd}
-                        emptyMessage="无未暂存的变更"
+                        emptyMessage={t('fileBrowser.noUnstagedChanges')}
                         className="py-1"
                         renderActions={(node) => {
                           if (node.isDirectory) {
@@ -1206,7 +1207,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                     gitStatus.handleDiscardFiles(fileObjects);
                                   }}
                                   className="opacity-0 group-hover:opacity-100 p-0.5 text-red-11 hover:text-red-10 hover:bg-red-9/10 dark:hover:bg-red-9/20 rounded transition-all"
-                                  title={`放弃 ${files.length} 个文件的变更`}
+                                  title={t('fileBrowser.discardNFiles', { count: files.length })}
                                 >
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
@@ -1218,7 +1219,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                     gitStatus.handleStageFiles(files.map(f => f.path));
                                   }}
                                   className="opacity-0 group-hover:opacity-100 p-0.5 text-green-11 hover:text-green-10 hover:bg-green-9/10 dark:hover:bg-green-9/20 rounded transition-all"
-                                  title={`暂存 ${files.length} 个文件`}
+                                  title={t('fileBrowser.stageNFiles', { count: files.length })}
                                 >
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1236,7 +1237,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                   gitStatus.handleDiscardFile(node.file as GitFileStatus);
                                 }}
                                 className="opacity-0 group-hover:opacity-100 p-0.5 text-red-11 hover:text-red-10 hover:bg-red-9/10 dark:hover:bg-red-9/20 rounded transition-all"
-                                title="放弃变更"
+                                title={t('fileBrowser.discardChanges')}
                               >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
@@ -1248,7 +1249,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                   gitStatus.handleStage(node.path);
                                 }}
                                 className="opacity-0 group-hover:opacity-100 p-0.5 text-green-11 hover:text-green-10 hover:bg-green-9/10 dark:hover:bg-green-9/20 rounded transition-all"
-                                title="暂存文件"
+                                title={t('fileBrowser.stageFile')}
                               >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1279,14 +1280,14 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   /* Compare mode: show file changes list on the left (replaces commit list) */
                   <div className="flex-1 overflow-y-auto">
                     {gitHistory.isLoadingCompareFiles ? (
-                      <div className="p-4 text-center text-muted-foreground text-sm">加载对比文件中...</div>
+                      <div className="p-4 text-center text-muted-foreground text-sm">{t('fileBrowser.loadingDiff')}</div>
                     ) : gitHistory.compareFiles.length === 0 ? (
-                      <div className="p-4 text-center text-muted-foreground text-sm">无差异文件</div>
+                      <div className="p-4 text-center text-muted-foreground text-sm">{t('fileBrowser.noDiffFiles')}</div>
                     ) : (
                       <>
                         <div className="px-3 py-2 border-b border-border">
                           <span className="text-xs text-muted-foreground">
-                            {gitHistory.compareFiles.length} 个文件变更（vs {gitHistory.selectedBranch}）
+                            {t('fileBrowser.nFilesChanged', { count: gitHistory.compareFiles.length, branch: gitHistory.selectedBranch })}
                           </span>
                         </div>
                         <GitFileTree
@@ -1312,9 +1313,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     onScroll={gitHistory.handleCommitListScroll}
                   >
                     {gitHistory.isLoadingCommits ? (
-                      <div className="p-4 text-center text-muted-foreground text-sm">加载提交记录中...</div>
+                      <div className="p-4 text-center text-muted-foreground text-sm">{t('fileBrowser.loadingCommits')}</div>
                     ) : gitHistory.commits.length === 0 ? (
-                      <div className="p-4 text-center text-muted-foreground text-sm">无提交记录</div>
+                      <div className="p-4 text-center text-muted-foreground text-sm">{t('fileBrowser.noCommits')}</div>
                     ) : (
                       <>
                         {gitHistory.commits.map(commit => (
@@ -1342,7 +1343,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         )}
                         {!gitHistory.hasMoreCommits && gitHistory.commits.length > 0 && (
                           <div className="p-3 text-center text-xs text-slate-9">
-                            已加载全部 {gitHistory.commits.length} 条记录
+                            {t('fileBrowser.allLoaded', { count: gitHistory.commits.length })}
                           </div>
                         )}
                       </>
@@ -1382,10 +1383,10 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         onClick={(e) => {
                           e.stopPropagation();
                           navigator.clipboard.writeText(`${cwd}/${fileTree.selectedPath}`);
-                          toast('已复制路径');
+                          toast(t('common.copiedPath'));
                         }}
                         className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
-                        title="复制绝对路径"
+                        title={t('common.copyAbsPath')}
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -1398,7 +1399,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           locateInTree(fileTree.selectedPath!);
                         }}
                         className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
-                        title="在目录树中定位"
+                        title={t('fileBrowser.locateInTree')}
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <circle cx="12" cy="12" r="10" strokeWidth={2} />
@@ -1412,7 +1413,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         <>
                           {/* Edit mode: save + close */}
                           {editorState.isDirty && (
-                            <span className="text-xs text-amber-11">未保存</span>
+                            <span className="text-xs text-amber-11">{t('fileBrowser.unsaved')}</span>
                           )}
                           <button
                             onClick={() => editorHandleRef.current?.save()}
@@ -1426,15 +1427,15 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             {editorState.isSaving ? (
                               <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
                             ) : (
-                              '保存'
+                              t('common.save')
                             )}
                           </button>
                           <button
                             onClick={() => editorHandleRef.current?.close()}
                             className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
-                            title="关闭编辑 (ESC)"
+                            title={t('fileBrowser.closeEdit')}
                           >
-                            关闭
+                            {t('fileBrowser.closeBtn')}
                           </button>
                         </>
                       ) : (
@@ -1444,12 +1445,12 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             <button
                               onClick={() => {
                                 navigator.clipboard.writeText(fileTree.fileContent!.content!);
-                                toast('已复制文件内容');
+                                toast(t('toast.copiedFileContent'));
                               }}
                               className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
-                              title="复制文件内容"
+                              title={t('fileBrowser.copyFileContent')}
                             >
-                              复制
+                              {t('common.copy')}
                             </button>
                           )}
                           {fileTree.selectedPath?.endsWith('.json') && fileTree.fileContent?.type === 'text' && (
@@ -1460,18 +1461,18 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                   ? 'bg-brand text-white'
                                   : 'text-muted-foreground hover:bg-accent'
                               }`}
-                              title="切换 JSON 可读模式"
+                              title={t('fileBrowser.toggleJsonReadable')}
                             >
-                              可读
+                              {t('common.readable')}
                             </button>
                           )}
                           {fileTree.fileContent?.type === 'text' && isMarkdownFile(fileTree.selectedPath) && (
                               <button
                                 onClick={() => fileTree.setShowMarkdownPreview(true)}
                                 className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
-                                title="预览 Markdown 渲染效果"
+                                title={t('fileBrowser.previewMarkdown')}
                               >
-                                预览
+                                {t('common.preview')}
                               </button>
                           )}
                           {fileTree.fileContent?.type === 'text' && (
@@ -1483,7 +1484,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                   ? 'bg-brand text-white'
                                   : 'text-muted-foreground hover:bg-accent'
                               } disabled:opacity-50`}
-                              title="查看每行代码的修改记录"
+                              title={t('fileBrowser.viewBlame')}
                             >
                               {fileTree.isLoadingBlame ? (
                                 <span className="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
@@ -1496,9 +1497,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             <button
                               onClick={() => fileTree.setShowEditor(true)}
                               className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
-                              title="编辑文件"
+                              title={t('fileBrowser.editFile')}
                             >
-                              编辑
+                              {t('common.edit')}
                             </button>
                           )}
                         </>
@@ -1520,7 +1521,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                 onClick={() => fileTree.setShowBlame(false)}
                                 className="mt-2 text-brand hover:underline text-sm"
                               >
-                                返回预览
+                                {t('fileBrowser.backToPreview')}
                               </button>
                             </div>
                           </div>
@@ -1604,13 +1605,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             <svg className="w-16 h-16 mx-auto text-slate-7 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
-                            <p>{fileTree.fileContent.message || '无法预览此文件'}</p>
+                            <p>{fileTree.fileContent.message || t('fileBrowser.cannotPreview')}</p>
                           </div>
                         </div>
                       )
                     ) : (
                       <div className="h-full flex items-center justify-center text-muted-foreground">
-                        选择文件以预览
+                        {t('fileBrowser.selectFileToPreview')}
                       </div>
                     )}
                   </div>
@@ -1621,7 +1622,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     <svg className="w-16 h-16 mx-auto text-slate-7 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                     </svg>
-                    <p>选择文件以预览</p>
+                    <p>{t('fileBrowser.selectFileToPreview')}</p>
                   </div>
                 </div>
               )
@@ -1639,10 +1640,10 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       onClick={(e) => {
                         e.stopPropagation();
                         navigator.clipboard.writeText(`${cwd}/${gitStatus.statusSelectedFile!.file.path}`);
-                        toast('已复制路径');
+                        toast(t('common.copiedPath'));
                       }}
                       className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
-                      title="复制绝对路径"
+                      title={t('common.copyAbsPath')}
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -1655,7 +1656,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         locateInTree(gitStatus.statusSelectedFile!.file.path);
                       }}
                       className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
-                      title="在目录树中定位"
+                      title={t('fileBrowser.locateInTree')}
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <circle cx="12" cy="12" r="10" strokeWidth={2} />
@@ -1668,7 +1669,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         ? 'bg-green-9/15 text-green-11 dark:bg-green-9/25'
                         : 'bg-amber-9/15 text-amber-11 dark:bg-amber-9/25'
                     }`}>
-                      {gitStatus.statusSelectedFile.type === 'staged' ? '已暂存' : '未暂存'}
+                      {gitStatus.statusSelectedFile.type === 'staged' ? t('fileBrowser.staged') : t('fileBrowser.unstaged')}
                     </span>
                     <div className="flex-1" />
                   </div>
@@ -1697,7 +1698,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               ? () => setJsonPreview({ content: gitStatus.statusDiff!.newContent, filePath: gitStatus.statusDiff!.filePath })
                               : undefined
                         }
-                        previewLabel={gitStatus.statusSelectedFile!.file.path.endsWith('.json') ? '可读' : '预览'}
+                        previewLabel={gitStatus.statusSelectedFile!.file.path.endsWith('.json') ? t('common.readable') : t('common.preview')}
                         onContentSearch={(query) => {
                           setActiveTab('search');
                           contentSearch.setContentSearchQuery(query);
@@ -1752,7 +1753,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-slate-9">
-                  <span>选择文件查看差异</span>
+                  <span>{t('fileBrowser.selectFileToViewDiff')}</span>
                 </div>
               )
             )}
@@ -1763,7 +1764,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                 /* Compare mode: right panel shows diff only */
                 gitHistory.isLoadingCompareDiff ? (
                   <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-                    加载差异中...
+                    {t('fileBrowser.loadingDiffContent')}
                   </div>
                 ) : gitHistory.compareFileDiff ? (
                   <DiffView
@@ -1779,7 +1780,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                         ? () => setJsonPreview({ content: gitHistory.compareFileDiff!.newContent, filePath: gitHistory.compareFileDiff!.filePath })
                         : undefined
                     }
-                    previewLabel="可读"
+                    previewLabel={t('common.readable')}
                     onContentSearch={(query) => {
                       setActiveTab('search');
                       contentSearch.setContentSearchQuery(query);
@@ -1788,7 +1789,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   />
                 ) : (
                   <div className="flex-1 flex items-center justify-center text-slate-9">
-                    <span>{gitHistory.compareFiles.length > 0 ? '选择文件查看差异' : '点击「对比」加载分支差异'}</span>
+                    <span>{gitHistory.compareFiles.length > 0 ? t('fileBrowser.selectFileToViewDiff') : t('fileBrowser.clickCompareToLoad')}</span>
                   </div>
                 )
               ) : gitHistory.selectedCommit ? (
@@ -1806,7 +1807,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                 />
               ) : (
                 <div className="flex-1 flex items-center justify-center text-slate-9">
-                  <span>选择提交查看详情</span>
+                  <span>{t('fileBrowser.selectCommitToView')}</span>
                 </div>
               )
             )}
@@ -1891,16 +1892,18 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       {deleteConfirm && createPortal(
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50" onClick={() => setDeleteConfirm(null)}>
           <div className="bg-card border border-border rounded-lg shadow-xl p-4 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-medium text-foreground mb-2">确认删除</h3>
+            <h3 className="text-sm font-medium text-foreground mb-2">{t('fileBrowser.confirmDelete')}</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              确定要将 <span className="font-mono text-foreground">{deleteConfirm.name}</span> 移动到回收站吗？
+              {t('fileBrowser.confirmDeleteMessage', { name: deleteConfirm.name }).split(/<\/?file>/g).map((part, i) =>
+                i === 1 ? <span key={i} className="font-mono text-foreground">{part}</span> : part
+              )}
             </p>
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setDeleteConfirm(null)}
                 className="px-3 py-1.5 text-sm rounded border border-border hover:bg-accent transition-colors"
               >
-                取消
+                {t('common.cancel')}
               </button>
               <button
                 onClick={async () => {
@@ -1913,7 +1916,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       body: JSON.stringify({ cwd, path }),
                     });
                     if (res.ok) {
-                      toast(`已移动到回收站: ${name}`, 'success');
+                      toast(t('toast.movedToTrash', { name }), 'success');
                       const parentDir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
                       fileTree.loadDirectory(parentDir);
                       fileTree.loadFileIndex();
@@ -1922,13 +1925,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       }
                     } else {
                       const data = await res.json();
-                      toast(data.error || '删除失败', 'error');
+                      toast(data.error || t('toast.deleteFailed'), 'error');
                     }
-                  } catch { toast('删除失败', 'error'); }
+                  } catch { toast(t('toast.deleteFailed'), 'error'); }
                 }}
                 className="px-3 py-1.5 text-sm rounded bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
               >
-                删除
+                {t('common.delete')}
               </button>
             </div>
           </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Portal } from './Portal';
 import { ImageInfo } from '@/types/chat';
 
@@ -12,6 +13,7 @@ interface ImagePreviewProps {
 
 // Image preview modal - rendered into body via Portal to avoid fixed positioning issues inside transform containers
 function ImageModal({ image, onClose }: { image: ImageInfo; onClose: () => void }) {
+  const { t } = useTranslation();
 
   const modalContent = (
     <div
@@ -21,14 +23,14 @@ function ImageModal({ image, onClose }: { image: ImageInfo; onClose: () => void 
       <div className="relative max-w-[90vw] max-h-[90vh]">
         <img
           src={image.preview}
-          alt="预览图片"
+          alt={t('imagePreview.previewImage')}
           className="max-w-full max-h-[90vh] object-contain rounded-lg"
           onClick={(e) => e.stopPropagation()}
         />
         <button
           onClick={onClose}
           className="absolute -top-3 -right-3 w-8 h-8 bg-card text-foreground hover:text-foreground rounded-full shadow-lg flex items-center justify-center transition-colors"
-          title="关闭"
+          title={t('common.close')}
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -42,6 +44,7 @@ function ImageModal({ image, onClose }: { image: ImageInfo; onClose: () => void 
 }
 
 export function ImagePreview({ images, onRemove, disabled }: ImagePreviewProps) {
+  const { t } = useTranslation();
   const [previewImage, setPreviewImage] = useState<ImageInfo | null>(null);
 
   if (images.length === 0) {
@@ -59,7 +62,7 @@ export function ImagePreview({ images, onRemove, disabled }: ImagePreviewProps) 
           >
             <img
               src={image.preview}
-              alt="预览图片"
+              alt={t('imagePreview.previewImage')}
               className="w-full h-full object-cover hover:opacity-90 transition-opacity"
             />
             {!disabled && (
@@ -69,7 +72,7 @@ export function ImagePreview({ images, onRemove, disabled }: ImagePreviewProps) 
                   onRemove(image.id);
                 }}
                 className="absolute top-0 right-0 w-5 h-5 bg-black/60 hover:bg-black/80 text-white text-xs flex items-center justify-center rounded-bl-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                title="删除图片"
+                title={t('imagePreview.deleteImage')}
               >
                 ✕
               </button>

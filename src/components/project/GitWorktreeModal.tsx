@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from '../shared/Toast';
 
 // Generate a random readable word (consonant + vowel/rime, 2 pairs)
@@ -53,6 +54,7 @@ export function GitWorktreeModal({
   onClose,
   cwd,
 }: GitWorktreeModalProps) {
+  const { t } = useTranslation();
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([]);
   const [nextPath, setNextPath] = useState<string | null>(null);
   const [nextRandomWord, setNextRandomWord] = useState<string | null>(null);
@@ -89,7 +91,7 @@ export function GitWorktreeModal({
       }
     } catch (error) {
       console.error('Failed to load worktrees:', error);
-      toast('加载 worktree 列表失败', 'error');
+      toast(t('toast.worktreeLoadFailed'), 'error');
     } finally {
       setLoading(false);
     }
@@ -155,15 +157,15 @@ export function GitWorktreeModal({
       });
 
       if (response.ok) {
-        toast(`Worktree 创建成功: ${branchName}`, 'success');
+        toast(t('toast.worktreeCreateSuccess', { name: branchName }), 'success');
         loadWorktrees();
       } else {
         const data = await response.json();
-        toast(data.error || '创建失败', 'error');
+        toast(data.error || t('toast.worktreeCreateFailed'), 'error');
       }
     } catch (error) {
       console.error('Failed to create worktree:', error);
-      toast('创建 worktree 失败', 'error');
+      toast(t('toast.worktreeCreateFailed'), 'error');
     } finally {
       setIsCreating(false);
     }
@@ -188,7 +190,7 @@ export function GitWorktreeModal({
         setBranches(allBranches);
       }
     } catch {
-      toast('加载分支列表失败', 'error');
+      toast(t('toast.loadBranchFailed'), 'error');
     } finally {
       setBranchesLoading(false);
     }
@@ -211,15 +213,15 @@ export function GitWorktreeModal({
         }),
       });
       if (response.ok) {
-        toast(`Worktree 创建成功: ${branch}`, 'success');
+        toast(t('toast.worktreeCreateSuccess', { name: branch }), 'success');
         loadWorktrees();
       } else {
         const data = await response.json();
-        toast(data.error || '创建失败', 'error');
+        toast(data.error || t('toast.worktreeCreateFailed'), 'error');
       }
     } catch (error) {
       console.error('Failed to create worktree:', error);
-      toast('创建 worktree 失败', 'error');
+      toast(t('toast.worktreeCreateFailed'), 'error');
     } finally {
       setIsCreating(false);
     }
@@ -242,16 +244,16 @@ export function GitWorktreeModal({
       });
 
       if (response.ok) {
-        toast('Worktree 已删除', 'success');
+        toast(t('toast.worktreeDeleted'), 'success');
         setDeleteTarget(null);
         loadWorktrees();
       } else {
         const data = await response.json();
-        toast(data.error || '删除失败', 'error');
+        toast(data.error || t('toast.worktreeDeleteFailed'), 'error');
       }
     } catch (error) {
       console.error('Failed to delete worktree:', error);
-      toast('删除 worktree 失败', 'error');
+      toast(t('toast.worktreeDeleteFailed'), 'error');
     } finally {
       setIsDeleting(false);
     }
@@ -272,15 +274,15 @@ export function GitWorktreeModal({
       });
 
       if (response.ok) {
-        toast(worktree.isLocked ? '已解锁' : '已锁定', 'success');
+        toast(worktree.isLocked ? t('toast.worktreeUnlocked') : t('toast.worktreeLocked'), 'success');
         loadWorktrees();
       } else {
         const data = await response.json();
-        toast(data.error || '操作失败', 'error');
+        toast(data.error || t('toast.operationFailed'), 'error');
       }
     } catch (error) {
       console.error('Failed to toggle lock:', error);
-      toast('操作失败', 'error');
+      toast(t('toast.operationFailed'), 'error');
     }
   };
 
@@ -314,7 +316,7 @@ export function GitWorktreeModal({
           <button
             onClick={onClose}
             className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-            title="关闭"
+            title={t('common.close')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -352,11 +354,11 @@ export function GitWorktreeModal({
                         </span>
                         {/* Locked indicator */}
                         {worktree.isLocked && (
-                          <span className="text-amber-11" title="已锁定">🔒</span>
+                          <span className="text-amber-11" title={t('git.worktree.locked')}>🔒</span>
                         )}
                         {/* Current indicator */}
                         {isCurrent && (
-                          <span className="text-xs text-brand">(当前)</span>
+                          <span className="text-xs text-brand">({t('common.current')})</span>
                         )}
                       </div>
                       {/* Action buttons */}
@@ -370,7 +372,7 @@ export function GitWorktreeModal({
                                 handleToggleLock(worktree);
                               }}
                               className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded transition-colors"
-                              title={worktree.isLocked ? '解锁' : '锁定'}
+                              title={worktree.isLocked ? t('git.worktree.unlock') : t('git.worktree.lock')}
                             >
                               {worktree.isLocked ? (
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -389,7 +391,7 @@ export function GitWorktreeModal({
                                 setDeleteTarget(worktree);
                               }}
                               className="p-1.5 text-muted-foreground hover:text-red-11 hover:bg-secondary rounded transition-colors"
-                              title="删除"
+                              title={t('common.delete')}
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -423,7 +425,7 @@ export function GitWorktreeModal({
               <input
                 value={branchSearch}
                 onChange={(e) => setBranchSearch(e.target.value)}
-                placeholder="搜索分支..."
+                placeholder={t('git.worktree.searchBranch')}
                 className="flex-1 bg-secondary text-sm text-foreground rounded px-2.5 py-1.5 outline-none placeholder:text-muted-foreground"
                 autoFocus
                 autoComplete="off"
@@ -433,16 +435,16 @@ export function GitWorktreeModal({
                 onClick={() => setShowBranchPicker(false)}
                 className="text-xs text-muted-foreground hover:text-foreground px-2 py-1.5"
               >
-                取消
+                {t('common.cancel')}
               </button>
             </div>
             <div className="max-h-[200px] overflow-y-auto space-y-0.5">
               {branchesLoading ? (
-                <div className="text-xs text-muted-foreground text-center py-4">加载中...</div>
+                <div className="text-xs text-muted-foreground text-center py-4">{t('common.loading')}</div>
               ) : (() => {
                 const filtered = branches.filter(b => b.toLowerCase().includes(branchSearch.toLowerCase()));
                 return filtered.length === 0 ? (
-                  <div className="text-xs text-muted-foreground text-center py-4">无可用分支</div>
+                  <div className="text-xs text-muted-foreground text-center py-4">{t('git.worktree.noBranches')}</div>
                 ) : (
                   filtered.map((branch) => (
                     <button
@@ -464,7 +466,7 @@ export function GitWorktreeModal({
         {/* Footer */}
         <div className="px-4 py-3 border-t border-border flex items-center justify-between flex-shrink-0">
           <div className="text-xs text-muted-foreground">
-            {worktrees.length} 个 worktree
+            {t('git.worktree.count', { count: worktrees.length })}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -476,7 +478,7 @@ export function GitWorktreeModal({
                   : 'bg-secondary text-muted-foreground cursor-not-allowed'
               }`}
             >
-              选择分支
+              {t('git.worktree.selectBranch')}
             </button>
             <button
               onClick={handleQuickCreate}
@@ -490,7 +492,7 @@ export function GitWorktreeModal({
               {isCreating ? (
                 <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
               ) : (
-                '+ 添加 Worktree'
+                t('git.worktree.addWorktree')
               )}
             </button>
           </div>
@@ -506,15 +508,15 @@ export function GitWorktreeModal({
               className="bg-card rounded-lg shadow-xl w-[360px] p-4"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="text-sm font-medium text-foreground mb-3">确认删除</div>
+              <div className="text-sm font-medium text-foreground mb-3">{t('git.worktree.confirmDelete')}</div>
               <div className="text-sm text-muted-foreground mb-4">
-                <p className="mb-2">确定要删除 worktree 吗？</p>
+                <p className="mb-2">{t('git.worktree.confirmDeleteMsg')}</p>
                 <p className="text-xs">
-                  <span className="text-muted-foreground">路径：</span>
+                  <span className="text-muted-foreground">{t('git.worktree.path')}</span>
                   <span className="text-foreground">{deleteTarget.path}</span>
                 </p>
                 <p className="text-xs">
-                  <span className="text-muted-foreground">分支：</span>
+                  <span className="text-muted-foreground">{t('git.worktree.branch')}</span>
                   <span className="text-foreground">{deleteTarget.branch || 'detached'}</span>
                 </p>
               </div>
@@ -523,7 +525,7 @@ export function GitWorktreeModal({
                   onClick={() => setDeleteTarget(null)}
                   className="px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={handleDelete}
@@ -533,7 +535,7 @@ export function GitWorktreeModal({
                   {isDeleting ? (
                     <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                   ) : (
-                    '删除'
+                    t('common.delete')
                   )}
                 </button>
               </div>

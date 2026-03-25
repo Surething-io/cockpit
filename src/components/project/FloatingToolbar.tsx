@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, memo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 // ============================================
 // Floating Toolbar (portal version with container-relative positioning)
@@ -18,6 +19,7 @@ interface FloatingToolbarProps {
 }
 
 export function FloatingToolbar({ x, y, visible, container, onAddComment, onSendToAI, onSearch, isChatLoading }: FloatingToolbarProps) {
+  const { t } = useTranslation();
   const containerRect = container.getBoundingClientRect();
   const relX = x - containerRect.left;
   const relY = y - containerRect.top;
@@ -40,22 +42,22 @@ export function FloatingToolbar({ x, y, visible, container, onAddComment, onSend
         className="px-3 py-1.5 text-xs font-medium border border-brand text-brand rounded-md hover:bg-brand/10 transition-colors"
         onClick={onAddComment}
       >
-        添加评论
+        {t('floatingToolbar.addComment')}
       </button>
       <button
         className="px-3 py-1.5 text-xs font-medium border border-brand text-brand rounded-md hover:bg-brand/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         onClick={onSendToAI}
         disabled={isChatLoading}
-        title={isChatLoading ? 'AI 正在响应中...' : '发送到 AI'}
+        title={isChatLoading ? t('comments.aiResponding') : t('floatingToolbar.sendToAI')}
       >
-        发送 AI
+        {t('floatingToolbar.sendToAI')}
       </button>
       {onSearch && (
         <button
           className="px-3 py-1.5 text-xs font-medium border border-brand text-brand rounded-md hover:bg-brand/10 transition-colors"
           onClick={onSearch}
         >
-          搜索
+          {t('floatingToolbar.search')}
         </button>
       )}
     </div>

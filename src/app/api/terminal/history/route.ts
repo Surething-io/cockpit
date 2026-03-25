@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
           try {
             entry.output = await fs.readFile(entry.outputFile, 'utf-8');
           } catch {
-            entry.output = '[输出文件已删除]';
+            entry.output = '[Output file deleted]';
           }
           delete entry.outputFile;
         }
@@ -93,9 +93,9 @@ export async function GET(request: NextRequest) {
           headers: { 'Content-Type': 'application/json' },
         }
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       // File does not exist, return empty list
-      if (error.code === 'ENOENT') {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         return new Response(
           JSON.stringify({
             entries: [],
@@ -165,8 +165,8 @@ export async function DELETE(request: NextRequest) {
         } else {
           await fs.unlink(historyPath).catch(() => {});
         }
-      } catch (e: any) {
-        if (e.code !== 'ENOENT') throw e;
+      } catch (e: unknown) {
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
       }
     } else {
       // Clear the entire tab history
@@ -185,8 +185,8 @@ export async function DELETE(request: NextRequest) {
 
       try {
         await fs.unlink(historyPath);
-      } catch (e: any) {
-        if (e.code !== 'ENOENT') throw e;
+      } catch (e: unknown) {
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
       }
     }
 
@@ -328,8 +328,8 @@ export async function PATCH(request: NextRequest) {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
-    } catch (e: any) {
-      if (e.code === 'ENOENT') {
+    } catch (e: unknown) {
+      if (e instanceof Error && 'code' in e && (e as NodeJS.ErrnoException).code === 'ENOENT') {
         return new Response(JSON.stringify({ success: true, updated: false }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },

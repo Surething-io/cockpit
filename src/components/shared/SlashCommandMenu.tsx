@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Editor } from '@tiptap/react';
-import { slashCommands, type SlashCommand } from './slashCommands';
+import { getSlashCommands, type SlashCommand } from './slashCommands';
 
 // ============================================
 // Slash command menu component
@@ -19,7 +19,7 @@ export function SlashCommandMenu({ editor, query, position, onClose }: SlashComm
   const [selectedIndex, setSelectedIndex] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const filtered = slashCommands.filter(
+  const filtered = getSlashCommands().filter(
     (cmd) =>
       cmd.label.toLowerCase().includes(query.toLowerCase()) ||
       cmd.description.toLowerCase().includes(query.toLowerCase())
@@ -27,7 +27,7 @@ export function SlashCommandMenu({ editor, query, position, onClose }: SlashComm
 
   // Reset selected index
   useEffect(() => {
-    setSelectedIndex(0);
+    queueMicrotask(() => setSelectedIndex(0));
   }, [query]);
 
   const executeCommand = (cmd: SlashCommand) => {

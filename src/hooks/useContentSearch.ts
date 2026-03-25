@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import type { SearchResult, SearchResponse } from '../components/project/fileBrowser/types';
+import i18n from '@/lib/i18n';
 
 interface UseContentSearchOptions {
   cwd: string;
@@ -30,7 +31,7 @@ export function useContentSearch({ cwd, onSearchComplete }: UseContentSearchOpti
     }
     // Require at least 2 characters to trigger search, preventing massive results from single-character queries
     if (trimmed.length < 2) {
-      setSearchError('搜索内容至少需要 2 个字符');
+      setSearchError(i18n.t('fileBrowser.searchMinChars'));
       return;
     }
 

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Tooltip } from './Tooltip';
 
 // ============================================
@@ -52,6 +53,7 @@ interface TocSidebarProps {
 }
 
 export function TocSidebar({ content, containerRef, width = 'w-80' }: TocSidebarProps) {
+  const { t } = useTranslation();
   const tocItems = useMemo(() => extractToc(content), [content]);
   const [collapsed, setCollapsed] = useState(false);
   const [activeHeadingLine, setActiveHeadingLine] = useState<number | null>(null);
@@ -107,11 +109,11 @@ export function TocSidebar({ content, containerRef, width = 'w-80' }: TocSidebar
     <div className={`border-r border-border flex-shrink-0 flex flex-col transition-[width] duration-200 ${collapsed ? 'w-8' : width}`}>
       {/* Header + collapse button */}
       <div className="flex items-center justify-between px-2 py-1.5 border-b border-border flex-shrink-0">
-        {!collapsed && <span className="text-xs font-medium text-muted-foreground">目录</span>}
+        {!collapsed && <span className="text-xs font-medium text-muted-foreground">{t('editor.toc')}</span>}
         <button
           onClick={() => setCollapsed(v => !v)}
           className="p-0.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-          title={collapsed ? '展开目录' : '收起目录'}
+          title={collapsed ? t('editor.expandToc') : t('editor.collapseToc')}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             {collapsed ? (

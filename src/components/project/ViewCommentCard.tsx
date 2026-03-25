@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { CodeComment } from '@/hooks/useComments';
 
 // ============================================
@@ -26,6 +27,7 @@ export function ViewCommentCard({
   onUpdateComment,
   onDeleteComment,
 }: ViewCommentCardProps) {
+  const { t } = useTranslation();
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(comment.content);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -44,7 +46,7 @@ export function ViewCommentCard({
       if (relX < 16) relX = 16;
       if (relY + cardRect.height > containerRect.height - 16) relY = relY - cardRect.height - 8;
       if (relY < 16) relY = 16;
-      setPosition({ x: relX, y: relY });
+      queueMicrotask(() => setPosition({ x: relX, y: relY }));
     }
   }, [x, y, container]);
 
@@ -102,13 +104,13 @@ export function ViewCommentCard({
                 onClick={() => { setIsEditing(false); setEditContent(comment.content); }}
                 className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
               >
-                取消
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleSave}
                 className="px-2 py-1 text-xs bg-brand text-white rounded hover:bg-brand/90"
               >
-                保存
+                {t('common.save')}
               </button>
             </div>
           </div>
@@ -117,13 +119,13 @@ export function ViewCommentCard({
             <p className="text-sm text-foreground whitespace-pre-wrap">{comment.content}</p>
             <div className="mt-2 flex items-center justify-between">
               <span className="text-xs text-muted-foreground">
-                行 {comment.startLine}-{comment.endLine}
+                {t('comments.lineRange', { start: comment.startLine, end: comment.endLine })}
               </span>
               <div className="flex gap-1">
                 <button
                   onClick={() => setIsEditing(true)}
                   className="p-1 rounded hover:bg-accent text-muted-foreground"
-                  title="编辑"
+                  title={t('common.edit')}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -132,7 +134,7 @@ export function ViewCommentCard({
                 <button
                   onClick={handleDelete}
                   className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-red-9"
-                  title="删除"
+                  title={t('common.delete')}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />

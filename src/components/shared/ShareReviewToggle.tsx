@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from './Toast';
 
 interface ReviewInfo {
@@ -24,6 +25,7 @@ interface ShareReviewToggleProps {
  * - Show updated time + link to view
  */
 export function ShareReviewToggle({ content, sourceFile }: ShareReviewToggleProps) {
+  const { t } = useTranslation();
   const [reviewInfo, setReviewInfo] = useState<ReviewInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
@@ -72,9 +74,9 @@ export function ShareReviewToggle({ content, sourceFile }: ShareReviewToggleProp
         await navigator.clipboard.writeText(shareUrl);
       } catch { /* ignore */ }
 
-      toast(review.existing ? '评审已更新，链接已复制' : '评审已创建，链接已复制', 'success');
+      toast(review.existing ? t('toast.reviewUpdated') : t('toast.reviewCreated'), 'success');
     } catch {
-      toast('创建评审失败', 'error');
+      toast(t('toast.reviewCreateFailed'), 'error');
     } finally {
       setToggling(false);
     }
@@ -92,9 +94,9 @@ export function ShareReviewToggle({ content, sourceFile }: ShareReviewToggleProp
       });
       if (!res.ok) throw new Error('Failed');
       setReviewInfo(prev => prev ? { ...prev, active: false } : null);
-      toast('已关闭分享', 'success');
+      toast(t('toast.sharingClosed'), 'success');
     } catch {
-      toast('关闭分享失败', 'error');
+      toast(t('toast.sharingCloseFailed'), 'error');
     } finally {
       setToggling(false);
     }
@@ -134,7 +136,7 @@ export function ShareReviewToggle({ content, sourceFile }: ShareReviewToggleProp
         className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
           toggling ? 'opacity-50 cursor-wait' : 'cursor-pointer'
         } ${isSharing ? 'bg-green-500' : 'bg-muted-foreground/30'}`}
-        title={isSharing ? '关闭分享' : '开启分享评审'}
+        title={isSharing ? t('review.closeSharing') : t('review.enableSharing')}
       >
         <span
           className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${
@@ -143,7 +145,7 @@ export function ShareReviewToggle({ content, sourceFile }: ShareReviewToggleProp
         />
       </button>
       <span className={`text-[11px] ${isSharing ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
-        {isSharing ? '分享中' : '未分享'}
+        {isSharing ? t('review.sharing') : t('review.notShared')}
       </span>
 
       {/* Update time + link */}
@@ -156,7 +158,7 @@ export function ShareReviewToggle({ content, sourceFile }: ShareReviewToggleProp
             onClick={handleOpenReview}
             className="text-[11px] text-brand hover:underline"
           >
-            查看
+            {t('review.view')}
           </button>
         </>
       )}

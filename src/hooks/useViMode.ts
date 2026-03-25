@@ -77,12 +77,12 @@ export function useViMode({
 
   // Keep lines ref in sync for callbacks
   const linesRef = useRef(lines);
-  linesRef.current = lines;
+  useEffect(() => { linesRef.current = lines; });
 
   // Clamp cursor when lines change
   useEffect(() => {
     if (lines.length === 0) return;
-    setCursorLine(prev => Math.min(prev, lines.length - 1));
+    queueMicrotask(() => setCursorLine(prev => Math.min(prev, lines.length - 1)));
   }, [lines.length]);
 
   // Clamp cursorCol to current line length
@@ -98,9 +98,11 @@ export function useViMode({
     const diff = Math.abs(lines.length - prevLinesLengthRef.current);
     prevLinesLengthRef.current = lines.length;
     if (diff > 10) {
-      setCursorLine(-1);
-      setCursorCol(0);
-      setIsDirty(false);
+      queueMicrotask(() => {
+        setCursorLine(-1);
+        setCursorCol(0);
+        setIsDirty(false);
+      });
       undoStackRef.current = [];
       redoStackRef.current = [];
       yankBufferRef.current = [];

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Plus, Trash2, Terminal } from 'lucide-react';
 
 interface AliasManagerProps {
@@ -9,6 +10,7 @@ interface AliasManagerProps {
 }
 
 export function AliasManager({ onClose, onSave }: AliasManagerProps) {
+  const { t } = useTranslation();
   const [aliases, setAliases] = useState<Record<string, string>>({});
   const [newAlias, setNewAlias] = useState('');
   const [newCommand, setNewCommand] = useState('');
@@ -85,10 +87,10 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
           <div>
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <Terminal className="w-5 h-5" />
-              命令别名管理
+              {t('aliasManager.title')}
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              为常用命令设置快捷别名（全局生效）
+              {t('aliasManager.description')}
             </p>
           </div>
           <button
@@ -103,7 +105,7 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
         <div className="flex-1 overflow-y-auto p-4">
           {isLoading ? (
             <div className="flex items-center justify-center h-32 text-muted-foreground">
-              加载中...
+              {t('common.loading')}
             </div>
           ) : (
             <div className="space-y-3">
@@ -126,7 +128,7 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
                       type="text"
                       value={command}
                       onChange={(e) => handleUpdate(alias, e.target.value)}
-                      placeholder="完整命令"
+                      placeholder={t('aliasManager.fullCommandPlaceholder')}
                       className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
                     />
                   </div>
@@ -150,7 +152,7 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
                       type="text"
                       value={newAlias}
                       onChange={(e) => setNewAlias(e.target.value)}
-                      placeholder="别名（如 ll）"
+                      placeholder={t('aliasManager.aliasPlaceholder')}
                       className="w-full pl-7 pr-3 py-2 rounded-lg border border-input bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
@@ -164,7 +166,7 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
                     type="text"
                     value={newCommand}
                     onChange={(e) => setNewCommand(e.target.value)}
-                    placeholder="完整命令（如 ls -la）"
+                    placeholder={t('aliasManager.commandPlaceholder')}
                     className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
@@ -186,7 +188,7 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
               {/* Usage tips */}
               <div className="mt-4 p-3 bg-accent rounded-lg">
                 <p className="text-sm text-muted-foreground">
-                  💡 <strong>使用提示：</strong>输入别名即可执行对应的完整命令
+                  <strong>{t('aliasManager.usage')}</strong>{t('aliasManager.usageDesc')}
                 </p>
                 <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                   <div className="flex items-center gap-2">
@@ -204,7 +206,7 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
 
               {Object.keys(aliases).length === 0 && (
                 <div className="text-center py-8 text-muted-foreground text-sm">
-                  还没有命令别名，添加一个试试
+                  {t('aliasManager.noAliases')}
                 </div>
               )}
             </div>
@@ -217,13 +219,13 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
             onClick={onClose}
             className="px-4 py-2 rounded-lg text-sm hover:bg-accent transition-colors"
           >
-            取消
+            {t('common.cancel')}
           </button>
           <button
             onClick={handleSave}
             className="px-4 py-2 rounded-lg text-sm bg-brand text-brand-foreground hover:bg-brand/90 transition-colors"
           >
-            保存
+            {t('common.save')}
           </button>
         </div>
       </div>

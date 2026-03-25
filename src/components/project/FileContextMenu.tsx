@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, ReactNode, createContext, useContext } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { toast } from '../shared/Toast';
 
@@ -40,6 +41,7 @@ export function FileContextMenu({
   onCreateFile, onDelete, onRefresh,
   onCopyFile, onPaste,
 }: FileContextMenuProps) {
+  const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const menuContainer = useContext(MenuContainerContext);
 
@@ -105,22 +107,22 @@ export function FileContextMenu({
   const copyToClipboard = useCallback(async (text: string, label: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      toast(`已复制${label}`, 'success');
+      toast(t('toast.copiedName', { name: label }), 'success');
     } catch {
-      toast('复制失败', 'error');
+      toast(t('toast.copyFailed'), 'error');
     }
     onClose();
-  }, [onClose]);
+  }, [onClose, t]);
 
   // Target directory for create/operations
   const targetDir = isDirectory ? path : relativeDirPath;
 
   const copyMenuItems = [
-    { label: '复制相对路径', value: path },
-    { label: '复制绝对路径', value: absolutePath },
-    { label: '复制相对文件夹路径', value: actualRelativeDirPath || '.' },
-    { label: '复制绝对文件夹路径', value: actualAbsoluteDirPath },
-    { label: isDirectory ? '复制文件夹名' : '复制文件名', value: fileName },
+    { label: t('fileContextMenu.copyRelativePath'), value: path },
+    { label: t('fileContextMenu.copyAbsolutePath'), value: absolutePath },
+    { label: t('fileContextMenu.copyRelativeDirPath'), value: actualRelativeDirPath || '.' },
+    { label: t('fileContextMenu.copyAbsoluteDirPath'), value: actualAbsoluteDirPath },
+    { label: isDirectory ? t('fileContextMenu.copyFolderName') : t('fileContextMenu.copyFileName'), value: fileName },
   ];
 
   const menuElement = (
@@ -135,7 +137,7 @@ export function FileContextMenu({
           className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
           onClick={() => { onClose(); onCreateFile(targetDir); }}
         >
-          新建文件
+          {t('fileContextMenu.createFile')}
         </button>
       )}
       {onCopyFile && (
@@ -143,7 +145,7 @@ export function FileContextMenu({
           className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
           onClick={() => { onClose(); onCopyFile(path); }}
         >
-          复制{isDirectory ? '文件夹' : '文件'}
+          {isDirectory ? t('fileContextMenu.copyFolder') : t('fileContextMenu.copyFile')}
         </button>
       )}
       {onPaste && (
@@ -151,7 +153,7 @@ export function FileContextMenu({
           className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
           onClick={() => { onClose(); onPaste(targetDir); }}
         >
-          粘贴到此处
+          {t('fileContextMenu.pasteHere')}
         </button>
       )}
       {onDelete && (
@@ -159,7 +161,7 @@ export function FileContextMenu({
           className="block w-full px-3 py-1.5 text-left text-sm text-destructive hover:bg-accent transition-colors"
           onClick={() => { onClose(); onDelete(path, isDirectory, fileName); }}
         >
-          删除{isDirectory ? '文件夹' : '文件'}
+          {isDirectory ? t('fileContextMenu.deleteFolder') : t('fileContextMenu.deleteFile')}
         </button>
       )}
 
@@ -173,7 +175,7 @@ export function FileContextMenu({
         <button
           key={index}
           className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
-          onClick={() => copyToClipboard(item.value, item.label.replace('复制', ''))}
+          onClick={() => copyToClipboard(item.value, item.label)}
         >
           {item.label}
         </button>

@@ -26,24 +26,14 @@ export function generateReplyId(): string {
 // Random Display Name
 // ============================================
 
-const adjectives = [
-  '快乐', '勇敢', '安静', '明亮', '温柔',
-  '灵巧', '自由', '清澈', '飞翔', '悠闲',
-  '活泼', '聪慧', '淡定', '机敏', '从容',
-  '坚定', '爽朗', '和煦', '奔放', '沉稳',
-];
-
-const animals = [
-  '熊猫', '海豚', '白鹤', '雪豹', '云雀',
-  '松鼠', '飞鱼', '梅花鹿', '青鸟', '银狐',
-  '猫头鹰', '蜻蜓', '萤火虫', '海龟', '蝴蝶',
-  '金丝猴', '丹顶鹤', '羚羊', '燕子', '企鹅',
-];
+import i18n from '@/lib/i18n';
 
 export function randomDisplayName(): string {
+  const adjectives = i18n.t('reviewUtils.adjectives', { returnObjects: true }) as string[];
+  const nouns = i18n.t('reviewUtils.nouns', { returnObjects: true }) as string[];
   const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
-  const animal = animals[Math.floor(Math.random() * animals.length)];
-  return `${adj}${animal}`;
+  const noun = nouns[Math.floor(Math.random() * nouns.length)];
+  return `${adj}${noun}`;
 }
 
 // ============================================

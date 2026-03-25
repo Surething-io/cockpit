@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useComments, type CodeComment } from '@/hooks/useComments';
 import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, type CodeReference } from '@/hooks/useAllComments';
@@ -90,7 +91,9 @@ const ToolbarRenderer = memo(ToolbarRendererInner);
 // Main DiffView Component (Split View)
 // ============================================
 
-export function DiffView({ oldContent, newContent, filePath, isNew = false, isDeleted = false, cwd, enableComments = false, onPreview, previewLabel = '预览', onContentSearch }: DiffViewProps) {
+export function DiffView({ oldContent, newContent, filePath, isNew = false, isDeleted = false, cwd, enableComments = false, onPreview, previewLabel, onContentSearch }: DiffViewProps) {
+  const { t } = useTranslation();
+  const resolvedPreviewLabel = previewLabel ?? t('common.preview');
   const diffLines = useMemo(() => computeLineDiff(oldContent, newContent), [oldContent, newContent]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const leftPanelRef = useRef<HTMLDivElement>(null);
@@ -473,15 +476,15 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
                 onClick={onPreview}
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >
-                {previewLabel}
+                {resolvedPreviewLabel}
               </button>
             )}
             {!isDeleted && newContent && (
               <button
-                onClick={() => { navigator.clipboard.writeText(newContent); toast('已复制全文'); }}
+                onClick={() => { navigator.clipboard.writeText(newContent); toast(t('diffViewer.copiedAll')); }}
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >
-                复制
+                {t('common.copy')}
               </button>
             )}
           </div>
@@ -570,7 +573,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
                           <button
                             onClick={(e) => handleCommentBubbleClick(firstComment, e)}
                             className="w-4 h-4 flex items-center justify-center rounded hover:bg-accent text-amber-9"
-                            title={`${lineComments?.length} 条评论`}
+                            title={t('codeViewer.nComments', { count: lineComments?.length })}
                           >
                             <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                               <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />

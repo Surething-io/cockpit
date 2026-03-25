@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface TokenStatsModalProps {
   isOpen: boolean;
@@ -332,18 +333,19 @@ function getCssVar(el: HTMLElement, name: string): string {
 // ─── Hourly activity heatmap bar ───
 
 function HourHeatmap({ hourCounts }: { hourCounts: Record<string, number> }) {
+  const { t } = useTranslation();
   const max = Math.max(1, ...Object.values(hourCounts));
   const hours = Array.from({ length: 24 }, (_, i) => i);
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-muted-foreground mb-2">活跃时段分布</h3>
+      <h3 className="text-xs font-medium text-muted-foreground mb-2">{t('tokenStats.activeHours')}</h3>
       <div className="flex gap-[2px] items-end h-16">
         {hours.map(h => {
           const count = hourCounts[String(h)] || 0;
           const ratio = count / max;
           return (
-            <div key={h} className="flex-1 flex flex-col items-center gap-0.5" title={`${h}:00 — ${count} 次会话`}>
+            <div key={h} className="flex-1 flex flex-col items-center gap-0.5" title={t('tokenStats.hourSessions', { h, count })}>
               <div
                 className="w-full rounded-sm transition-all"
                 style={{
@@ -365,6 +367,7 @@ function HourHeatmap({ hourCounts }: { hourCounts: Record<string, number> }) {
 // ─── Main component ───
 
 export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<TimeRange>('day');
@@ -372,12 +375,12 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
 
   useEffect(() => {
     if (!isOpen) return;
-    setLoading(true);
+    queueMicrotask(() => setLoading(true));
     fetch('/api/claude-stats')
       .then(r => r.json())
-      .then(data => { if (!data.error) setStats(data); })
+      .then(data => { if (!data.error) queueMicrotask(() => setStats(data)); })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => queueMicrotask(() => setLoading(false)));
   }, [isOpen]);
 
   // Model cost breakdown table
@@ -424,8 +427,8 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
       const activityChart: BarChartData = {
         labels,
         datasets: [
-          { label: '消息', data: slicedActivity.map(d => d.messageCount), color: '#3b82f6' },
-          { label: '工具调用', data: slicedActivity.map(d => d.toolCallCount), color: '#22c55e' },
+          { label: t('tokenStats.messages'), data: slicedActivity.map(d => d.messageCount), color: '#3b82f6' },
+          { label: t('tokenStats.toolCalls'), data: slicedActivity.map(d => d.toolCallCount), color: '#22c55e' },
         ],
       };
 
@@ -460,8 +463,8 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
       const activityChart: BarChartData = {
         labels,
         datasets: [
-          { label: '消息', data: weeks.map(w => w.messages), color: '#3b82f6' },
-          { label: '工具调用', data: weeks.map(w => w.tools), color: '#22c55e' },
+          { label: t('tokenStats.messages'), data: weeks.map(w => w.messages), color: '#3b82f6' },
+          { label: t('tokenStats.toolCalls'), data: weeks.map(w => w.tools), color: '#22c55e' },
         ],
       };
 
@@ -493,8 +496,8 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
     const activityChart: BarChartData = {
       labels,
       datasets: [
-        { label: '消息', data: months.map(m => m.messages), color: '#3b82f6' },
-        { label: '工具调用', data: months.map(m => m.tools), color: '#22c55e' },
+        { label: t('tokenStats.messages'), data: months.map(m => m.messages), color: '#3b82f6' },
+        { label: t('tokenStats.toolCalls'), data: months.map(m => m.tools), color: '#22c55e' },
       ],
     };
 
@@ -517,7 +520,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
     };
 
     return { activityChart, tokenChart, costChart };
-  }, [stats, timeRange, allModelIds, costPerToken]);
+  }, [stats, timeRange, allModelIds, costPerToken, t]);
 
   // ESC to close
   useEffect(() => {
@@ -530,9 +533,9 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
   if (!isOpen) return null;
 
   const rangeButtons: { key: TimeRange; label: string }[] = [
-    { key: 'day', label: '日' },
-    { key: 'week', label: '周' },
-    { key: 'month', label: '月' },
+    { key: 'day', label: t('tokenStats.day') },
+    { key: 'week', label: t('tokenStats.week') },
+    { key: 'month', label: t('tokenStats.month') },
   ];
 
   return (
@@ -542,7 +545,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-3">
-            <h2 className="text-sm font-medium text-foreground">Claude Code Token 统计</h2>
+            <h2 className="text-sm font-medium text-foreground">{t('tokenStats.title')}</h2>
             {/* Time range toggle */}
             <div className="flex bg-muted rounded-md p-0.5">
               {rangeButtons.map(b => (
@@ -570,22 +573,22 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
           {loading ? (
-            <div className="text-center text-muted-foreground py-12">加载中...</div>
+            <div className="text-center text-muted-foreground py-12">{t('common.loading')}</div>
           ) : !stats ? (
-            <div className="text-center text-muted-foreground py-12">未找到 ~/.claude/stats-cache.json</div>
+            <div className="text-center text-muted-foreground py-12">{t('tokenStats.notFound')}</div>
           ) : (
             <>
               {/* A: Overview cards */}
               <div className="grid grid-cols-5 gap-3">
-                <StatCard label="总会话" value={String(stats.totalSessions ?? 0)} />
-                <StatCard label="总消息" value={fmtTokens(stats.totalMessages ?? 0)} />
-                <StatCard label="等效 API 费用" value={fmtCost(totalCost)} highlight />
+                <StatCard label={t('tokenStats.totalSessions')} value={String(stats.totalSessions ?? 0)} />
+                <StatCard label={t('tokenStats.totalMessages')} value={fmtTokens(stats.totalMessages ?? 0)} />
+                <StatCard label={t('tokenStats.equivalentApiCost')} value={fmtCost(totalCost)} highlight />
                 <StatCard
-                  label="最长会话"
+                  label={t('tokenStats.longestSession')}
                   value={stats.longestSession ? formatDuration(stats.longestSession.duration) : '-'}
                 />
                 <StatCard
-                  label="首次使用"
+                  label={t('tokenStats.firstUse')}
                   value={stats.firstSessionDate ? stats.firstSessionDate.slice(0, 10) : '-'}
                 />
               </div>
@@ -593,15 +596,15 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
               {/* B: Activity trend chart */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-medium text-muted-foreground">活动趋势</h3>
+                  <h3 className="text-xs font-medium text-muted-foreground">{t('tokenStats.activityTrend')}</h3>
                   <div className="flex items-center gap-3 text-[10px]">
                     <span className="flex items-center gap-1">
                       <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#3b82f6' }} />
-                      消息
+                      {t('tokenStats.messages')}
                     </span>
                     <span className="flex items-center gap-1">
                       <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#22c55e' }} />
-                      工具调用
+                      {t('tokenStats.toolCalls')}
                     </span>
                   </div>
                 </div>
@@ -614,7 +617,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-xs font-medium text-muted-foreground">按模型</h3>
+                    <h3 className="text-xs font-medium text-muted-foreground">{t('tokenStats.byModel')}</h3>
                     <div className="flex bg-muted rounded-md p-0.5">
                       <button
                         className={`px-2.5 py-0.5 text-[11px] rounded transition-colors ${
@@ -623,7 +626,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
                             : 'text-muted-foreground hover:text-foreground'
                         }`}
                         onClick={() => setTokenChartMode('tokens')}
-                      >Token 用量</button>
+                      >{t('tokenStats.tokenUsage')}</button>
                       <button
                         className={`px-2.5 py-0.5 text-[11px] rounded transition-colors ${
                           tokenChartMode === 'cost'
@@ -631,7 +634,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
                             : 'text-muted-foreground hover:text-foreground'
                         }`}
                         onClick={() => setTokenChartMode('cost')}
-                      >等效费用</button>
+                      >{t('tokenStats.equivalentCost')}</button>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 text-[10px] flex-wrap">
@@ -654,18 +657,18 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
 
               {/* D: Model cost breakdown table */}
               <div>
-                <h3 className="text-xs font-medium text-muted-foreground mb-2">模型费用明细</h3>
+                <h3 className="text-xs font-medium text-muted-foreground mb-2">{t('tokenStats.modelCostDetail')}</h3>
                 <div className="border border-border rounded-lg overflow-hidden">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="bg-muted/50 text-muted-foreground">
-                        <th className="text-left px-3 py-2 font-medium">模型</th>
+                        <th className="text-left px-3 py-2 font-medium">{t('tokenStats.model')}</th>
                         <th className="text-right px-3 py-2 font-medium">Input</th>
                         <th className="text-right px-3 py-2 font-medium">Output</th>
                         <th className="text-right px-3 py-2 font-medium">Cache Read</th>
                         <th className="text-right px-3 py-2 font-medium">Cache Write</th>
-                        <th className="text-right px-3 py-2 font-medium">占比</th>
-                        <th className="text-right px-3 py-2 font-medium">等效费用</th>
+                        <th className="text-right px-3 py-2 font-medium">{t('tokenStats.share')}</th>
+                        <th className="text-right px-3 py-2 font-medium">{t('tokenStats.equivalentCost')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -688,7 +691,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
                         </tr>
                       ))}
                       <tr className="border-t-2 border-border bg-muted/30">
-                        <td className="px-3 py-2 font-medium text-foreground">合计</td>
+                        <td className="px-3 py-2 font-medium text-foreground">{t('tokenStats.total')}</td>
                         <td className="px-3 py-2 text-right text-muted-foreground">{fmtTokens(modelRows.reduce((s, r) => s + r.usage.inputTokens, 0))}</td>
                         <td className="px-3 py-2 text-right text-muted-foreground">{fmtTokens(modelRows.reduce((s, r) => s + r.usage.outputTokens, 0))}</td>
                         <td className="px-3 py-2 text-right text-muted-foreground">{fmtTokens(modelRows.reduce((s, r) => s + r.usage.cacheReadInputTokens, 0))}</td>

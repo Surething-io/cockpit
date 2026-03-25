@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import type { Location } from '@/lib/lsp/types';
 import { type BundledLanguage, getHighlighter, getLanguageFromPath, tokensToHtml } from '@/lib/codeHighlighter';
@@ -31,7 +32,7 @@ function useHighlightedLines(references: Location[]) {
   }, []);
 
   useEffect(() => {
-    if (references.length === 0) { setHtmlMap(new Map()); return; }
+    if (references.length === 0) { queueMicrotask(() => setHtmlMap(new Map())); return; }
     const version = ++versionRef.current;
     const theme = isDark ? 'github-dark' : 'github-light';
 
@@ -66,6 +67,7 @@ function useHighlightedLines(references: Location[]) {
 }
 
 export function ReferencesPanel({ references, loading, onSelect, onClose }: ReferencesPanelProps) {
+  const { t } = useTranslation();
   const htmlMap = useHighlightedLines(references);
 
   // Group by file, preserving global index
@@ -87,7 +89,7 @@ export function ReferencesPanel({ references, loading, onSelect, onClose }: Refe
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-card/50 border-b border-border flex-shrink-0">
         <span className="text-xs font-medium text-foreground">
-          引用 {!loading && `(${references.length})`}
+          {t('references.title')} {!loading && `(${references.length})`}
         </span>
         <button
           onClick={onClose}
@@ -100,9 +102,9 @@ export function ReferencesPanel({ references, loading, onSelect, onClose }: Refe
       {/* Content */}
       <div className="flex-1 overflow-auto">
         {loading ? (
-          <div className="px-3 py-2 text-xs text-muted-foreground">搜索中...</div>
+          <div className="px-3 py-2 text-xs text-muted-foreground">{t('references.searching')}</div>
         ) : references.length === 0 ? (
-          <div className="px-3 py-2 text-xs text-muted-foreground">未找到引用</div>
+          <div className="px-3 py-2 text-xs text-muted-foreground">{t('references.notFound')}</div>
         ) : (
           grouped.map(({ file, items }) => (
             <div key={file}>

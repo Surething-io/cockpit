@@ -59,7 +59,7 @@ export function Tooltip({ content, children, delay = 300, className = '' }: Tool
       }
 
       if (newLeft !== position.left || newTop !== position.top) {
-        setPosition({ top: newTop, left: newLeft });
+        queueMicrotask(() => setPosition({ top: newTop, left: newLeft }));
       }
     }
   }, [isVisible, position.left, position.top]);

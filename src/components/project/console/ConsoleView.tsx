@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { CommandBubble } from './CommandBubble';
 import { EnvManager } from './EnvManager';
 import { AliasManager } from '../AliasManager';
@@ -21,7 +22,16 @@ interface ConsoleViewProps {
 const TOOLBAR_HEIGHT = 41;
 
 export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote }: ConsoleViewProps) {
+  const { t } = useTranslation();
   const state = useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange });
+  const {
+    consoleItems, scrollRef: stateScrollRef, selectedCommandId, setSelectedCommandId,
+    interruptCommand, sendStdin, deleteCommand, rerunCommand, ptySizeRef, resizePty,
+    executeCommand: stateExecuteCommand, addPluginItem, closePluginItem,
+    sleepingBubbles, handleBubbleSleep, handleBubbleWake,
+    scrollToBottom, currentCwd, commandHistoryRef, setCustomEnv, setAliases,
+    saveBubbleOrder, hasMoreHistory, loadHistory, currentPage, isLoadingHistory,
+  } = state;
 
   const [maximizedId, setMaximizedId] = useState<string | null>(null);
   const [consoleHeight, setConsoleHeight] = useState(0);
@@ -39,21 +49,21 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
   const dragItemIdRef = useRef<string | null>(null);
   const dragOverItemIdRef = useRef<string | null>(null);
   const consoleItemsRef = useRef<ConsoleItem[]>([]);
-  consoleItemsRef.current = state.consoleItems;
+  useEffect(() => { consoleItemsRef.current = consoleItems; }, [consoleItems]);
 
   // ========== Scroll detection ==========
 
   const checkIfAtBottom = useCallback(() => {
-    const container = state.scrollRef.current;
+    const container = stateScrollRef.current;
     if (!container) return true;
     return container.scrollHeight - container.scrollTop - container.clientHeight < 50;
-  }, [state.scrollRef]);
+  }, [stateScrollRef]);
 
   const checkIfAtTop = useCallback(() => {
-    const container = state.scrollRef.current;
+    const container = stateScrollRef.current;
     if (!container) return true;
     return container.scrollTop < 50;
-  }, [state.scrollRef]);
+  }, [stateScrollRef]);
 
   const handleScroll = useCallback(() => {
     setShowTopButton(!checkIfAtTop());
@@ -92,7 +102,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
     }
   };
 
-  useEffect(() => { loadSettings(); }, []);
+  useEffect(() => { queueMicrotask(() => loadSettings()); }, []);
 
   // ========== Drag-to-reorder ==========
 
@@ -151,8 +161,8 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
     const newIds = [...currentIds];
     newIds[fromIndex] = toId;
     newIds[toIndex] = fromId;
-    state.saveBubbleOrder(newIds);
-  }, [state.saveBubbleOrder]);
+    saveBubbleOrder(newIds);
+  }, [saveBubbleOrder]);
 
   // ========== Maximize/minimize ==========
 
@@ -164,18 +174,18 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'm' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        if (state.selectedCommandId) {
-          toggleMaximize(state.selectedCommandId);
+        if (selectedCommandId) {
+          toggleMaximize(selectedCommandId);
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state.selectedCommandId, toggleMaximize]);
+  }, [selectedCommandId, toggleMaximize]);
 
   // Track visible area height
   useEffect(() => {
-    const el = state.scrollRef.current;
+    const el = stateScrollRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
       setScrollAreaHeight(entry.contentRect.height);
@@ -183,11 +193,12 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
     ro.observe(el);
     setScrollAreaHeight(el.clientHeight);
     return () => ro.disconnect();
-  }, [state.scrollRef]);
+  }, [stateScrollRef]);
 
   // Maximize step 1: measure visible height
+  const scrollRef = stateScrollRef;
   useEffect(() => {
-    const el = state.scrollRef.current;
+    const el = scrollRef.current;
     if (!el) return;
     if (maximizedId) {
       setConsoleHeight(el.clientHeight);
@@ -196,11 +207,11 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
       setConsoleHeight(0);
     }
     return () => { if (el) el.style.overflow = ''; };
-  }, [maximizedId, state.scrollRef]);
+  }, [maximizedId, scrollRef]);
 
   // Maximize step 2: scroll to target + lock
   useEffect(() => {
-    const el = state.scrollRef.current;
+    const el = scrollRef.current;
     if (!el || !maximizedId || !consoleHeight) return;
     const rafId = requestAnimationFrame(() => {
       const bubbleEl = el.querySelector(`[data-bubble-id="${maximizedId}"]`) as HTMLElement | null;
@@ -210,19 +221,20 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
       el.style.overflow = 'hidden';
     });
     return () => cancelAnimationFrame(rafId);
-  }, [maximizedId, consoleHeight, state.scrollRef]);
+  }, [maximizedId, consoleHeight, scrollRef]);
 
   // Listen for terminal command execution events from ChatInput
+  const executeCommand = stateExecuteCommand;
   useEffect(() => {
     const handler = (e: Event) => {
       const command = (e as CustomEvent).detail?.command;
       if (command) {
-        state.executeCommand(command);
+        executeCommand(command);
       }
     };
     window.addEventListener('execute-terminal-command', handler);
     return () => window.removeEventListener('execute-terminal-command', handler);
-  }, [state.executeCommand]);
+  }, [executeCommand]);
 
   // Bubble 50% layout
   const bubbleContentHeight = scrollAreaHeight > 0
@@ -232,27 +244,27 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
   return (
     <div ref={terminalRootRef} className="h-full flex flex-col bg-background relative">
       {/* Command history area */}
-      <div ref={state.scrollRef} onScroll={handleScroll} className={`flex-1 overflow-y-auto ${maximizedId ? '' : 'py-4 px-4'}`}>
-        {state.consoleItems.length === 0 ? (
+      <div ref={stateScrollRef} onScroll={handleScroll} className={`flex-1 overflow-y-auto ${maximizedId ? '' : 'py-4 px-4'}`}>
+        {consoleItems.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-            输入命令或网址开始使用
+            {t('console.enterCommandOrUrl')}
           </div>
         ) : (
           <>
             <div ref={topRef} />
-            {state.hasMoreHistory && (
+            {hasMoreHistory && (
               <div className="flex justify-center mb-4">
                 <button
-                  onClick={() => state.loadHistory(state.currentPage + 1)}
-                  disabled={state.isLoadingHistory}
+                  onClick={() => loadHistory(currentPage + 1)}
+                  disabled={isLoadingHistory}
                   className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors disabled:opacity-50"
                 >
-                  {state.isLoadingHistory ? '加载中...' : '加载更多历史'}
+                  {isLoadingHistory ? t('console.loadingMore') : t('console.loadMoreHistory')}
                 </button>
               </div>
             )}
             <div className={maximizedId ? 'flex flex-col gap-3' : gridLayout ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-3'}>
-            {state.consoleItems.map((item) => {
+            {consoleItems.map((item) => {
               const dragProps = {
                 draggable: true,
                 onDragStart: (e: React.DragEvent) => handleDragStart(e, item.data.id),
@@ -275,18 +287,18 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
                       output={cmd.output}
                       exitCode={cmd.exitCode}
                       isRunning={cmd.isRunning}
-                      selected={state.selectedCommandId === cmd.id}
-                      onSelect={() => { state.setSelectedCommandId(cmd.id); }}
-                      onInterrupt={cmd.isRunning ? () => state.interruptCommand(cmd.id) : undefined}
-                      onStdin={cmd.isRunning ? (data: string) => state.sendStdin(cmd.id, data) : undefined}
+                      selected={selectedCommandId === cmd.id}
+                      onSelect={() => { setSelectedCommandId(cmd.id); }}
+                      onInterrupt={cmd.isRunning ? () => interruptCommand(cmd.id) : undefined}
+                      onStdin={cmd.isRunning ? (data: string) => sendStdin(cmd.id, data) : undefined}
                       onDelete={() => {
                         if (cmd.isRunning && cmd.pid) interruptCmd(cmd.pid);
-                        state.deleteCommand(cmd.id);
+                        deleteCommand(cmd.id);
                       }}
-                      onRerun={() => state.rerunCommand(cmd.id)}
+                      onRerun={() => rerunCommand(cmd.id)}
                       timestamp={cmd.timestamp}
                       usePty={cmd.usePty}
-                      onPtyResize={(cols, rows) => { state.ptySizeRef.current.set(cmd.id, { cols, rows }); state.resizePty(cmd.id, cols, rows); }}
+                      onPtyResize={(cols, rows) => { ptySizeRef.current.set(cmd.id, { cols, rows }); resizePty(cmd.id, cols, rows); }}
                       onToggleMaximize={() => toggleMaximize(cmd.id)}
                       maximized={maximizedId === cmd.id}
                       expandedHeight={consoleHeight}
@@ -306,20 +318,20 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
                 <div key={pluginData.id} data-bubble-id={pluginData.id} className="rounded-lg transition-shadow" {...dragProps}>
                   <Comp
                     item={pluginData}
-                    selected={state.selectedCommandId === pluginData.id}
+                    selected={selectedCommandId === pluginData.id}
                     maximized={maximizedId === pluginData.id}
                     expandedHeight={consoleHeight}
                     bubbleContentHeight={bubbleContentHeight}
                     timestamp={pluginData.timestamp}
-                    onSelect={() => { state.setSelectedCommandId(pluginData.id); }}
-                    onClose={() => state.closePluginItem(pluginData.id)}
+                    onSelect={() => { setSelectedCommandId(pluginData.id); }}
+                    onClose={() => closePluginItem(pluginData.id)}
                     onToggleMaximize={() => toggleMaximize(pluginData.id)}
                     onTitleMouseDown={handleTitleMouseDown}
                     extra={{
-                      addBrowserItem: (url: string, afterId: string) => state.addPluginItem('browser', url, afterId),
-                      initialSleeping: state.sleepingBubbles.has(pluginData.id),
-                      onSleep: state.handleBubbleSleep,
-                      onWake: state.handleBubbleWake,
+                      addBrowserItem: (url: string, afterId: string) => addPluginItem('browser', url, afterId),
+                      initialSleeping: sleepingBubbles.has(pluginData.id),
+                      onSleep: handleBubbleSleep,
+                      onWake: handleBubbleWake,
                     }}
                   />
                 </div>
@@ -332,26 +344,26 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
       </div>
 
       {/* Jump buttons */}
-      {!maximizedId && state.consoleItems.length > 0 && (
+      {!maximizedId && consoleItems.length > 0 && (
         <ConsoleScrollButtons
           showTop={showTopButton}
           showBottom={showBottomButton}
           onScrollTop={scrollToTop}
-          onScrollBottom={state.scrollToBottom}
+          onScrollBottom={scrollToBottom}
         />
       )}
 
       {/* Bottom input area */}
       <ConsoleInputBar
         cwd={cwd}
-        currentCwd={state.currentCwd}
-        commandHistoryRef={state.commandHistoryRef}
+        currentCwd={currentCwd}
+        commandHistoryRef={commandHistoryRef}
         gridLayout={gridLayout}
         onGridLayoutChange={(grid) => { setGridLayout(grid); saveSettings({ gridLayout: grid }); }}
-        onExecute={state.executeCommand}
-        onAddPluginItem={state.addPluginItem}
+        onExecute={stateExecuteCommand}
+        onAddPluginItem={addPluginItem}
         onShowEnvManager={() => setShowEnvManager(true)}
-        onOpenZsh={() => state.executeCommand('zsh')}
+        onOpenZsh={() => stateExecuteCommand('zsh')}
         onOpenNote={onOpenNote}
       />
 
@@ -360,14 +372,14 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
           cwd={cwd}
           tabId={tabId}
           onClose={() => setShowEnvManager(false)}
-          onSave={(newEnv) => state.setCustomEnv(newEnv)}
+          onSave={(newEnv) => setCustomEnv(newEnv)}
         />
       )}
 
       {showAliasManager && (
         <AliasManager
           onClose={() => setShowAliasManager(false)}
-          onSave={(newAliases) => state.setAliases(newAliases)}
+          onSave={(newAliases) => setAliases(newAliases)}
         />
       )}
     </div>

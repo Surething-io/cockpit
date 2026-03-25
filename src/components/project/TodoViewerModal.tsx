@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Portal } from '../shared/Portal';
 import { X, Circle, Loader, CheckCircle2 } from 'lucide-react';
 import type { ToolCallInfo } from '@/types/chat';
@@ -28,6 +29,7 @@ function StatusIcon({ status }: { status: TodoItem['status'] }) {
 }
 
 export function TodoViewerModal({ toolCall, onClose }: TodoViewerModalProps) {
+  const { t } = useTranslation();
   const todos = (toolCall.input?.todos as TodoItem[]) || [];
 
   // ESC to close
@@ -54,9 +56,9 @@ export function TodoViewerModal({ toolCall, onClose }: TodoViewerModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex items-center gap-3">
-            <h3 className="text-sm font-medium text-foreground">任务列表</h3>
+            <h3 className="text-sm font-medium text-foreground">{t('todoViewer.title')}</h3>
             <span className="text-xs text-muted-foreground">
-              {completed} / {total} 完成
+              {t('todoViewer.progress', { completed, total })}
             </span>
           </div>
           <button

@@ -88,7 +88,7 @@ function getOrCreateConnection(url: string): SharedConnection {
  */
 export function useWebSocket({ url, onMessage, enabled = true }: UseWebSocketOptions): void {
   const onMessageRef = useRef(onMessage);
-  onMessageRef.current = onMessage;
+  useEffect(() => { onMessageRef.current = onMessage; });
 
   useEffect(() => {
     if (!enabled) return;

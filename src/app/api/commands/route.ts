@@ -13,13 +13,13 @@ interface CommandInfo {
 
 // Built-in commands
 const BUILTIN_COMMANDS: CommandInfo[] = [
-  { name: '/qa', description: '进入需求澄清讨论模式', source: 'builtin' },
-  { name: '/commit', description: '提交代码变更', source: 'builtin' },
-  { name: '/review', description: '代码审查', source: 'builtin' },
-  { name: '/test', description: '运行测试', source: 'builtin' },
-  { name: '/fix', description: '修复问题', source: 'builtin' },
-  { name: '/explain', description: '解释代码', source: 'builtin' },
-  { name: '/refactor', description: '重构代码', source: 'builtin' },
+  { name: '/qa', description: 'Enter requirements clarification mode', source: 'builtin' },
+  { name: '/commit', description: 'Commit code changes', source: 'builtin' },
+  { name: '/review', description: 'Code review', source: 'builtin' },
+  { name: '/test', description: 'Run tests', source: 'builtin' },
+  { name: '/fix', description: 'Fix issues', source: 'builtin' },
+  { name: '/explain', description: 'Explain code', source: 'builtin' },
+  { name: '/refactor', description: 'Refactor code', source: 'builtin' },
 ];
 
 // Read description from file (first non-empty, non-heading line)

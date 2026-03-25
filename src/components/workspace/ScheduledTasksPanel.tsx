@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ScheduledTask } from '@/hooks/useScheduledTasks';
 import { ScheduleTaskPopover } from '@/components/project/ScheduleTaskPopover';
 
@@ -22,24 +23,24 @@ function getProjectName(cwd: string): string {
   return cwd.split('/').pop() || cwd;
 }
 
-function formatNextFire(ts: number): string {
+function formatNextFire(ts: number, t: (key: string, opts?: Record<string, unknown>) => string): string {
   if (!ts) return '-';
   const diff = ts - Date.now();
-  if (diff <= 0) return '即将触发';
-  if (diff < 60000) return `${Math.ceil(diff / 1000)}秒后`;
-  if (diff < 3600000) return `${Math.ceil(diff / 60000)}分钟后`;
+  if (diff <= 0) return t('scheduledTasks.aboutToTrigger');
+  if (diff < 60000) return t('scheduledTasks.secondsLater', { count: Math.ceil(diff / 1000) });
+  if (diff < 3600000) return t('scheduledTasks.minutesLater', { count: Math.ceil(diff / 60000) });
   if (diff < 86400000) {
     const h = Math.floor(diff / 3600000);
     const m = Math.ceil((diff % 3600000) / 60000);
-    return `${h}小时${m > 0 ? m + '分' : ''}后`;
+    return m > 0 ? t('scheduledTasks.hoursMinutesLater', { h, m }) : t('scheduledTasks.hoursLater', { h });
   }
   return new Date(ts).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function formatType(task: ScheduledTask): string {
-  if (task.type === 'once') return `一次性 (${task.delayMinutes}分钟)`;
+function formatType(task: ScheduledTask, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  if (task.type === 'once') return t('scheduledTasks.onceType', { minutes: task.delayMinutes });
   if (task.type === 'interval') {
-    const base = `每${task.intervalMinutes}分钟`;
+    const base = t('scheduledTasks.everyNMinutes', { minutes: task.intervalMinutes });
     if (task.activeFrom && task.activeTo) return `${base} (${task.activeFrom}-${task.activeTo})`;
     return base;
   }
@@ -55,10 +56,10 @@ function getStatusColor(task: ScheduledTask): string {
   return 'bg-green-500';
 }
 
-function getStatusText(task: ScheduledTask): string {
-  if (task.completed) return '已完成';
-  if (task.paused) return '已暂停';
-  return '运行中';
+function getStatusText(task: ScheduledTask, t: (key: string) => string): string {
+  if (task.completed) return t('scheduledTasks.completed');
+  if (task.paused) return t('scheduledTasks.paused');
+  return t('common.running');
 }
 
 export function ScheduledTasksPanel({
@@ -74,6 +75,7 @@ export function ScheduledTasksPanel({
   onUpdateTask,
   onReorder,
 }: ScheduledTasksPanelProps) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -147,14 +149,14 @@ export function ScheduledTasksPanel({
         className={`relative flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
           collapsed ? 'w-full justify-center' : 'w-full'
         }`}
-        title="定时任务"
+        title={t('scheduledTasks.title')}
       >
         {/* Clock icon */}
         <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <circle cx="12" cy="12" r="10" strokeWidth={2} />
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2" />
         </svg>
-        {!collapsed && <span className="text-sm flex-1 text-left">定时任务</span>}
+        {!collapsed && <span className="text-sm flex-1 text-left">{t('scheduledTasks.title')}</span>}
         {/* Red dot / count badge */}
         {unreadCount > 0 ? (
           <span className={`min-w-[18px] h-[18px] px-1 text-white text-xs font-medium rounded-full flex items-center justify-center bg-red-500 ${
@@ -173,15 +175,15 @@ export function ScheduledTasksPanel({
       {isOpen && (
         <div className="absolute left-full bottom-0 ml-2 w-96 max-h-[500px] bg-popover border border-border rounded-lg shadow-lg z-50 flex flex-col">
           <div className="px-3 py-2 border-b border-border bg-muted/50 flex-shrink-0 rounded-t-lg flex items-center justify-between">
-            <span className="text-sm font-medium">定时任务</span>
+            <span className="text-sm font-medium">{t('scheduledTasks.title')}</span>
             {activeTasks.length > 0 && (
-              <span className="text-xs text-muted-foreground">{runningCount} 个活跃{activeTasks.length - runningCount > 0 ? ` · ${activeTasks.length - runningCount} 个暂停` : ''}</span>
+              <span className="text-xs text-muted-foreground">{t('scheduledTasks.activeCount', { running: runningCount })}{activeTasks.length - runningCount > 0 ? ` · ${t('scheduledTasks.pausedCount', { paused: activeTasks.length - runningCount })}` : ''}</span>
             )}
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto">
             {tasks.length === 0 ? (
               <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                暂无定时任务，在聊天输入栏点击时钟按钮创建
+                {t('scheduledTasks.noScheduledTasks')}
               </div>
             ) : (
               <>
@@ -212,19 +214,19 @@ export function ScheduledTasksPanel({
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground font-mono">{getProjectName(task.cwd)}</span>
                           <span className="text-xs text-muted-foreground">·</span>
-                          <span className="text-xs text-muted-foreground">{getStatusText(task)}</span>
+                          <span className="text-xs text-muted-foreground">{getStatusText(task, t)}</span>
                         </div>
                         <div className="text-sm text-foreground truncate mt-0.5" title={task.message}>
                           {task.message}
                         </div>
                         <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                          <span>{formatType(task)}</span>
+                          <span>{formatType(task, t)}</span>
                           <span>·</span>
-                          <span>{task.paused ? '已暂停' : formatNextFire(task.nextFireTime)}</span>
+                          <span>{task.paused ? t('scheduledTasks.paused') : formatNextFire(task.nextFireTime, t)}</span>
                           {task.lastFiredAt && (
                             <>
                               <span>·</span>
-                              <span>上次: {task.lastResult === 'success' ? '✓' : '✗'}</span>
+                              <span>{t('scheduledTasks.lastResult')}: {task.lastResult === 'success' ? '✓' : '✗'}</span>
                             </>
                           )}
                         </div>
@@ -235,7 +237,7 @@ export function ScheduledTasksPanel({
                         <button
                           onClick={(e) => { e.stopPropagation(); onTrigger(task.id); }}
                           className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-brand"
-                          title="立即运行"
+                          title={t('scheduledTasks.runNow')}
                         >
                           <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                             <path d="M8 5v14l11-7z" />
@@ -245,7 +247,7 @@ export function ScheduledTasksPanel({
                         <button
                           onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
                           className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                          title="编辑"
+                          title={t('common.edit')}
                         >
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -256,7 +258,7 @@ export function ScheduledTasksPanel({
                           <button
                             onClick={(e) => { e.stopPropagation(); onResume(task.id); }}
                             className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-green-500"
-                            title="恢复"
+                            title={t('scheduledTasks.resume')}
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
@@ -266,7 +268,7 @@ export function ScheduledTasksPanel({
                           <button
                             onClick={(e) => { e.stopPropagation(); onPause(task.id); }}
                             className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-yellow-500"
-                            title="暂停"
+                            title={t('scheduledTasks.pause')}
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6" />
@@ -277,7 +279,7 @@ export function ScheduledTasksPanel({
                         <button
                           onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
                           className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-destructive"
-                          title="删除"
+                          title={t('common.delete')}
                         >
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -292,7 +294,7 @@ export function ScheduledTasksPanel({
                 {completedTasks.length > 0 && (
                   <>
                     <div className="px-3 py-1.5 text-xs text-muted-foreground bg-muted/30 border-b border-border/50">
-                      已完成 ({completedTasks.length})
+                      {t('scheduledTasks.completedCount', { count: completedTasks.length })}
                     </div>
                     {completedTasks.map((task) => (
                       <div
@@ -308,14 +310,14 @@ export function ScheduledTasksPanel({
                           <div className="flex-1 min-w-0">
                             <div className="text-sm text-foreground truncate">{task.message}</div>
                             <div className="text-xs text-muted-foreground mt-0.5">
-                              {formatType(task)} · {task.lastResult === 'success' ? '成功' : '失败'}
+                              {formatType(task, t)} · {task.lastResult === 'success' ? t('scheduledTasks.success') : t('scheduledTasks.failure')}
                             </div>
                           </div>
                           <div className="flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
                               onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
                               className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-destructive"
-                              title="删除"
+                              title={t('common.delete')}
                             >
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

@@ -24,6 +24,8 @@ export function SwipeablePages({ children, currentPage, onPageChange }: Swipeabl
   const [dragOffset, setDragOffset] = useState(0);
   // Whether a drag is in progress
   const [isDragging, setIsDragging] = useState(false);
+  // Track container width in state so we don't read refs during render
+  const [pageWidth, setPageWidth] = useState(0);
 
   // Scale factor: amplify trackpad swipe distance
   const SCALE_FACTOR = 3;
@@ -37,7 +39,7 @@ export function SwipeablePages({ children, currentPage, onPageChange }: Swipeabl
   // Reset dragOffset when currentPage changes
   useEffect(() => {
     dragOffsetRef.current = 0;
-    setDragOffset(0);
+    queueMicrotask(() => setDragOffset(0));
   }, [currentPage]);
 
   // Handle trackpad two-finger horizontal swipe (wheel event)
@@ -145,9 +147,22 @@ export function SwipeablePages({ children, currentPage, onPageChange }: Swipeabl
     return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Compute the final transform
+  // Track container width via ResizeObserver so we avoid reading refs during render
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setPageWidth(entry.contentRect.width);
+      }
+    });
+    setPageWidth(container.clientWidth);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
+
+  // Compute the final transform (uses pageWidth state, not ref)
   const getTransform = () => {
-    const pageWidth = containerRef.current?.clientWidth || 0;
     // Base position (percentage): each page occupies 100/pageCount %
     const pagePercent = 100 / pageCount;
     const basePercent = -currentPage * pagePercent;

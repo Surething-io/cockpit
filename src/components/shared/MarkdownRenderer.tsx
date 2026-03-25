@@ -11,6 +11,9 @@ import 'remark-github-blockquote-alert/alert.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { memo, useState, useMemo, ComponentPropsWithoutRef } from 'react';
+import type { PluggableList } from 'unified';
+import type { ExtraProps } from 'react-markdown';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from './ThemeProvider';
 import { MermaidBlock } from './MermaidBlock';
 
@@ -22,7 +25,7 @@ interface MarkdownRendererProps {
   content: string;
   isUser?: boolean;
   isStreaming?: boolean;
-  rehypePlugins?: any[];
+  rehypePlugins?: PluggableList;
 }
 
 /**
@@ -118,7 +121,7 @@ function preprocessAsciiArt(content: string): string {
 function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
   return {
     // Code block — node comes from react-markdown passNode, destructure to avoid passing to DOM
-    code({ className, children, node, ...props }: ComponentPropsWithoutRef<'code'> & { className?: string; node?: any }) {
+    code({ className, children, node: _node, ...props }: ComponentPropsWithoutRef<'code'> & ExtraProps & { className?: string }) {
       const match = /language-(\w+)/.exec(className || '');
       const codeString = String(children);
       const isInline = !match && !className && !codeString.includes('\n');
@@ -142,7 +145,7 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
       // Get line range of <pre> from data-source-start injected by rehypeSourceLines onto <code>
       // (node.position on <code> itself is inconsistent with <pre> and unreliable)
       // The ``` fences each occupy one line, so actual code starts at start+1
-      const preSourceStart = Number((props as any)['data-source-start']) || 0;
+      const preSourceStart = Number((props as Record<string, unknown>)['data-source-start']) || 0;
       const codeStartLine = preSourceStart ? preSourceStart + 1 : 0;
       // lineNumber param in lineProps is always false when showLineNumbers=false (library bug),
       // use a closure counter to track line numbers manually
@@ -162,7 +165,7 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
               'data-source-start': sourceLine,
               'data-source-end': sourceLine,
               style: { display: 'block' },
-            } as any;
+            } as React.HTMLProps<HTMLElement>;
           }}
         >
           {code}
@@ -171,31 +174,31 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
     },
     // All custom components below destructure node (react-markdown passNode) and spread ...rest
     // so that data-source-start/end attributes injected by rehypeSourceLines are forwarded to the DOM
-    p: ({ children, node, ...rest }: any) => <p className="mb-3 last:mb-0" {...rest}>{children}</p>,
-    h1: ({ children, node, ...rest }: any) => <h1 className="text-xl font-bold mb-3 mt-4 first:mt-0" {...rest}>{children}</h1>,
-    h2: ({ children, node, ...rest }: any) => <h2 className="text-lg font-bold mb-2 mt-3 first:mt-0" {...rest}>{children}</h2>,
-    h3: ({ children, node, ...rest }: any) => <h3 className="text-base font-bold mb-2 mt-3 first:mt-0" {...rest}>{children}</h3>,
-    ul: ({ children, node, ...rest }: any) => <ul className="list-disc list-inside mb-3 space-y-1" {...rest}>{children}</ul>,
-    ol: ({ children, node, ...rest }: any) => <ol className="list-decimal list-inside mb-3 space-y-1" {...rest}>{children}</ol>,
-    li: ({ children, node, ...rest }: any) => <li className="leading-relaxed" {...rest}>{children}</li>,
-    blockquote: ({ children, node, ...rest }: any) => (
+    p: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'p'> & ExtraProps) => <p className="mb-3 last:mb-0" {...rest}>{children}</p>,
+    h1: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'h1'> & ExtraProps) => <h1 className="text-xl font-bold mb-3 mt-4 first:mt-0" {...rest}>{children}</h1>,
+    h2: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'h2'> & ExtraProps) => <h2 className="text-lg font-bold mb-2 mt-3 first:mt-0" {...rest}>{children}</h2>,
+    h3: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'h3'> & ExtraProps) => <h3 className="text-base font-bold mb-2 mt-3 first:mt-0" {...rest}>{children}</h3>,
+    ul: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'ul'> & ExtraProps) => <ul className="list-disc list-inside mb-3 space-y-1" {...rest}>{children}</ul>,
+    ol: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'ol'> & ExtraProps) => <ol className="list-decimal list-inside mb-3 space-y-1" {...rest}>{children}</ol>,
+    li: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'li'> & ExtraProps) => <li className="leading-relaxed" {...rest}>{children}</li>,
+    blockquote: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'blockquote'> & ExtraProps) => (
       <blockquote className="border-l-4 border-border pl-4 my-3 italic text-muted-foreground" {...rest}>{children}</blockquote>
     ),
-    a: ({ href, children, node, ...rest }: any) => (
+    a: ({ href, children, node: _node, ...rest }: ComponentPropsWithoutRef<'a'> & ExtraProps) => (
       <a href={href} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline" {...rest}>{children}</a>
     ),
-    table: ({ children, node, ...rest }: any) => (
+    table: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'table'> & ExtraProps) => (
       <div className="overflow-x-auto my-3" {...rest}><table className="min-w-full border border-border">{children}</table></div>
     ),
-    thead: ({ children, node, ...rest }: any) => <thead className="bg-accent" {...rest}>{children}</thead>,
-    th: ({ children, node, ...rest }: any) => (
+    thead: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'thead'> & ExtraProps) => <thead className="bg-accent" {...rest}>{children}</thead>,
+    th: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'th'> & ExtraProps) => (
       <th className="px-4 py-2 text-left font-semibold border-b border-border" {...rest}>{children}</th>
     ),
-    td: ({ children, node, ...rest }: any) => (
+    td: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'td'> & ExtraProps) => (
       <td className="px-4 py-2 border-b border-border" {...rest}>{children}</td>
     ),
-    hr: ({ node, ...rest }: any) => <hr className="my-4 border-border" {...rest} />,
-    img: ({ src, alt, node, height, width, style, ...props }: any) => {
+    hr: ({ node: _node, ...rest }: ComponentPropsWithoutRef<'hr'> & ExtraProps) => <hr className="my-4 border-border" {...rest} />,
+    img: ({ src, alt, node: _node, height, width, style, ...props }: ComponentPropsWithoutRef<'img'> & ExtraProps) => {
       // HTML <img> with explicit dimensions (e.g. <img height="28">): preserve original size, display inline
       // height/width must be converted to inline style, otherwise overridden by Tailwind preflight's img { height: auto }
       const hasExplicitSize = height || width || style;
@@ -206,9 +209,9 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
       const mergedStyle = { ...style, height: px(height) ?? style?.height, width: px(width) ?? style?.width };
       return <img src={src} alt={alt || ''} style={mergedStyle} className="inline-block align-middle" {...props} />;
     },
-    strong: ({ children, node, ...rest }: any) => <strong className="font-bold" {...rest}>{children}</strong>,
-    em: ({ children, node, ...rest }: any) => <em className="italic" {...rest}>{children}</em>,
-    del: ({ children, node, ...rest }: any) => <del className="line-through" {...rest}>{children}</del>,
+    strong: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'strong'> & ExtraProps) => <strong className="font-bold" {...rest}>{children}</strong>,
+    em: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'em'> & ExtraProps) => <em className="italic" {...rest}>{children}</em>,
+    del: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'del'> & ExtraProps) => <del className="line-through" {...rest}>{children}</del>,
   };
 }
 
@@ -231,16 +234,16 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
     return escapeTablePipes(preprocessAsciiArt(content));
   }, [content, isUser, isStreaming]);
 
-  // Use simplified style for user messages
-  if (isUser) {
-    return <div className="whitespace-pre-wrap break-words">{content}</div>;
-  }
-
   // Merge rehype plugins: base plugins (rehype-raw + rehype-katex) + caller-supplied plugins
   const mergedRehypePlugins = useMemo(() => {
     if (!rehypePlugins?.length) return REHYPE_PLUGINS_BASE;
     return [...REHYPE_PLUGINS_BASE, ...rehypePlugins];
   }, [rehypePlugins]);
+
+  // Use simplified style for user messages
+  if (isUser) {
+    return <div className="whitespace-pre-wrap break-words">{content}</div>;
+  }
 
   // While streaming: render completed lines as Markdown, last line as plain text (avoid frequent re-parsing)
   if (isStreaming) {
@@ -288,6 +291,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
 
 // Copy button component
 function CopyButton({ text }: { text: string }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -305,7 +309,7 @@ function CopyButton({ text }: { text: string }) {
       onClick={handleCopy}
       className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors"
     >
-      {copied ? '✓ 已复制' : '复制'}
+      {copied ? t('markdown.copied') : t('markdown.copy')}
     </button>
   );
 }

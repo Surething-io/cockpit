@@ -42,7 +42,7 @@ function isPtyCommand(command: string): boolean {
  * Safe truncation: keep the last maxLen characters from the tail, then skip any ANSI sequences or surrogate pairs truncated at the cut point
  */
 function safeTruncate(str: string, maxLen: number): string {
-  let s = str.slice(-maxLen);
+  const s = str.slice(-maxLen);
   let skip = 0;
 
   if (s.length > 0) {
@@ -190,7 +190,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     setIsLoadingHistory(true);
     try {
       const response = await fetch(
-        `/api/terminal/history?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}&page=${page}&pageSize=20`
+        `/api/terminal/history?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}&page=${page}&pageSize=100`
       );
       if (response.ok) {
         const data = await response.json();

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface ProjectItemProps {
   index: number;
@@ -53,6 +54,7 @@ export function ProjectItem({
   onRemove,
   onOpenNote,
 }: ProjectItemProps) {
+  const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
 
   return (
@@ -103,7 +105,7 @@ export function ProjectItem({
                 e.stopPropagation();
                 onOpenNote();
               }}
-              title="项目笔记"
+              title={t('workspace.projectNotes')}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -117,7 +119,7 @@ export function ProjectItem({
               e.stopPropagation();
               onRemove();
             }}
-            title="关闭项目"
+            title={t('workspace.closeProject')}
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

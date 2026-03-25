@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, X, Play } from 'lucide-react';
 import { Tooltip } from '@/components/shared/Tooltip';
 import type { CustomCommand } from '@/app/api/services/config/route';
@@ -16,6 +17,7 @@ interface QuickCommandsPopoverProps {
 
 /** Inline add-command row */
 function AddCommandRow({ onAdd, onCancel }: { onAdd: (name: string, command: string) => void; onCancel: () => void }) {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [command, setCommand] = useState('');
 
@@ -25,7 +27,7 @@ function AddCommandRow({ onAdd, onCancel }: { onAdd: (name: string, command: str
         type="text"
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="名称"
+        placeholder={t('console.namePlaceholder')}
         className="w-24 flex-shrink-0 px-2 py-1 text-xs rounded border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
         autoFocus
         onKeyDown={(e) => {
@@ -36,7 +38,7 @@ function AddCommandRow({ onAdd, onCancel }: { onAdd: (name: string, command: str
         type="text"
         value={command}
         onChange={(e) => setCommand(e.target.value)}
-        placeholder="命令"
+        placeholder={t('console.commandPlaceholder')}
         className="flex-1 min-w-0 px-2 py-1 text-xs font-mono rounded border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
@@ -74,6 +76,7 @@ function CommandSection({
   onDelete: (index: number) => void;
   onExecute: (command: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="p-2">
       <div className="flex items-center justify-between mb-1">
@@ -93,7 +96,7 @@ function CommandSection({
         />
       )}
       {commands.length === 0 && !isAdding && (
-        <div className="text-xs text-muted-foreground px-1 py-1">暂无自定义命令</div>
+        <div className="text-xs text-muted-foreground px-1 py-1">{t('console.noCustomCommands')}</div>
       )}
       {commands.map((cmd, i) => (
         <Tooltip key={i} content={cmd.command}>
@@ -121,6 +124,7 @@ function CommandSection({
 }
 
 export function QuickCommandsPopover({ cwd, show, onClose, onExecute, onAddPluginItem }: QuickCommandsPopoverProps) {
+  const { t } = useTranslation();
   const [globalCommands, setGlobalCommands] = useState<CustomCommand[]>([]);
   const [projectCommands, setProjectCommands] = useState<CustomCommand[]>([]);
   const [addingSection, setAddingSection] = useState<'global' | 'project' | null>(null);
@@ -147,7 +151,7 @@ export function QuickCommandsPopover({ cwd, show, onClose, onExecute, onAddPlugi
 
   // Load on open
   useEffect(() => {
-    if (show) loadCommands();
+    if (show) queueMicrotask(() => loadCommands());
   }, [show, loadCommands]);
 
   // Close on outside click
@@ -204,7 +208,7 @@ export function QuickCommandsPopover({ cwd, show, onClose, onExecute, onAddPlugi
   return (
     <div ref={ref} className="absolute bottom-full left-0 mb-2 w-72 bg-popover border border-border rounded-lg shadow-lg z-50 max-h-[70vh] overflow-y-auto">
       <CommandSection
-        label="全局命令"
+        label={t('console.globalCommands')}
         commands={globalCommands}
         isAdding={addingSection === 'global'}
         onStartAdd={() => setAddingSection('global')}
@@ -218,7 +222,7 @@ export function QuickCommandsPopover({ cwd, show, onClose, onExecute, onAddPlugi
       />
       <div className="border-t border-border" />
       <CommandSection
-        label="项目命令"
+        label={t('console.projectCommands')}
         commands={projectCommands}
         isAdding={addingSection === 'project'}
         onStartAdd={() => setAddingSection('project')}
@@ -257,7 +261,7 @@ export function useQuickCommands(cwd: string) {
   }, [cwd]);
 
   useEffect(() => {
-    loadQuickCommands();
+    queueMicrotask(() => loadQuickCommands());
   }, [loadQuickCommands]);
 
   // Combined list: project first, then global

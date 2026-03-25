@@ -3,6 +3,7 @@
 import React from 'react';
 import { TabInfo } from './useTabState';
 import { Tooltip } from '../shared/Tooltip';
+import { useTranslation } from 'react-i18next';
 
 // ============================================
 // Tab circle-number icon component
@@ -70,6 +71,7 @@ export function TabBar({
   onDrop,
   onDragEnd,
 }: TabBarProps) {
+  const { t } = useTranslation();
   return (
     <div className="border-b border-border bg-card shrink-0">
       <div className="flex items-center px-2 gap-1 overflow-x-auto">
@@ -109,7 +111,7 @@ export function TabBar({
                       onTogglePin(tab.id);
                     }}
                     className="absolute -top-1 -right-1 w-3.5 h-3.5 flex items-center justify-center rounded-full bg-card text-amber-500 hover:text-destructive transition-colors"
-                    title="取消固定"
+                    title={t('tabBar.unpin')}
                   >
                     <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M16 4h-2V2h-4v2H8c-.55 0-1 .45-1 1v4l-2 3v2h5.97v7l1 1 1-1v-7H19v-2l-2-3V5c0-.55-.45-1-1-1z" />
@@ -124,7 +126,7 @@ export function TabBar({
                       onTogglePin(tab.id);
                     }}
                     className="absolute -top-1 -right-1 w-3.5 h-3.5 flex items-center justify-center rounded-full bg-card text-muted-foreground opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:!text-brand transition-all"
-                    title="固定到常用会话"
+                    title={t('tabBar.pin')}
                   >
                     <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
                       <path d="M16 4h-2V2h-4v2H8c-.55 0-1 .45-1 1v4l-2 3v2h5.97v7l1 1 1-1v-7H19v-2l-2-3V5c0-.55-.45-1-1-1z" />
@@ -140,7 +142,7 @@ export function TabBar({
                     onCloseTab(tab.id);
                   }}
                   className="ml-1 p-0.5 rounded hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="关闭标签"
+                  title={t('tabBar.closeTab')}
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -154,7 +156,7 @@ export function TabBar({
         <button
           onClick={onNewTab}
           className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-          title="新建标签"
+          title={t('tabBar.newTab')}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

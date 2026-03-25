@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Branch } from './types';
 
 interface BranchSelectorProps {
@@ -16,6 +17,7 @@ export function BranchSelector({
   onSelect,
   isLoading,
 }: BranchSelectorProps) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -61,9 +63,9 @@ export function BranchSelector({
           <svg className="w-4 h-4 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
-          {selectedBranch || '选择分支...'}
+          {selectedBranch || t('git.selectBranch')}
           {branches?.current === selectedBranch && (
-            <span className="text-xs text-green-11">(当前)</span>
+            <span className="text-xs text-green-11">({t('git.currentBranch')})</span>
           )}
         </span>
         <svg className={`w-4 h-4 text-slate-9 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -79,7 +81,7 @@ export function BranchSelector({
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="搜索分支..."
+              placeholder={t('git.searchBranch')}
               className="w-full px-2 py-1 text-sm border border-border rounded bg-secondary text-foreground placeholder-slate-9"
             />
           </div>
@@ -87,7 +89,7 @@ export function BranchSelector({
             {filteredLocal.length > 0 && (
               <div>
                 <div className="px-3 py-1 text-xs font-medium text-muted-foreground bg-secondary sticky top-0">
-                  本地分支
+                  {t('git.localBranches')}
                 </div>
                 {filteredLocal.map(branch => (
                   <div
@@ -101,7 +103,7 @@ export function BranchSelector({
                   >
                     <span className="truncate flex-1">{branch}</span>
                     {branch === branches?.current && (
-                      <span className="text-xs text-green-11 flex-shrink-0">当前</span>
+                      <span className="text-xs text-green-11 flex-shrink-0">{t('git.currentBranch')}</span>
                     )}
                     {branch === selectedBranch && (
                       <svg className="w-4 h-4 text-brand flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -115,7 +117,7 @@ export function BranchSelector({
             {filteredRemote.length > 0 && (
               <div>
                 <div className="px-3 py-1 text-xs font-medium text-muted-foreground bg-secondary sticky top-0">
-                  远程分支
+                  {t('git.remoteBranches')}
                 </div>
                 {filteredRemote.map(branch => (
                   <div
@@ -139,7 +141,7 @@ export function BranchSelector({
             )}
             {filteredLocal.length === 0 && filteredRemote.length === 0 && (
               <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                未找到分支
+                {t('git.noMatchingBranches')}
               </div>
             )}
           </div>

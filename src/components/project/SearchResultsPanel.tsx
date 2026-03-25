@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import type { SearchResult } from './fileBrowser/types';
 import { type BundledLanguage, getHighlighter, getLanguageFromPath, tokensToHtml } from '@/lib/codeHighlighter';
@@ -28,7 +29,7 @@ function useHighlightedSearchLines(results: SearchResult[]) {
   }, []);
 
   useEffect(() => {
-    if (results.length === 0) { setHtmlMap(new Map()); return; }
+    if (results.length === 0) { queueMicrotask(() => setHtmlMap(new Map())); return; }
     const version = ++versionRef.current;
     const theme = isDark ? 'github-dark' : 'github-light';
 
@@ -58,6 +59,7 @@ function useHighlightedSearchLines(results: SearchResult[]) {
 }
 
 export function SearchResultsPanel({ results, loading, totalMatches, onSelect, onClose }: SearchResultsPanelProps) {
+  const { t } = useTranslation();
   const htmlMap = useHighlightedSearchLines(results);
 
   return (
@@ -65,7 +67,7 @@ export function SearchResultsPanel({ results, loading, totalMatches, onSelect, o
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-card/50 border-b border-border flex-shrink-0">
         <span className="text-xs font-medium text-foreground">
-          搜索结果 {!loading && `(${totalMatches} 处匹配)`}
+          {t('searchResults.title')} {!loading && t('searchResults.nMatches', { count: totalMatches })}
         </span>
         <button
           onClick={onClose}
@@ -78,9 +80,9 @@ export function SearchResultsPanel({ results, loading, totalMatches, onSelect, o
       {/* Content */}
       <div className="flex-1 overflow-auto">
         {loading ? (
-          <div className="px-3 py-2 text-xs text-muted-foreground">搜索中...</div>
+          <div className="px-3 py-2 text-xs text-muted-foreground">{t('searchResults.searching')}</div>
         ) : results.length === 0 ? (
-          <div className="px-3 py-2 text-xs text-muted-foreground">无匹配结果</div>
+          <div className="px-3 py-2 text-xs text-muted-foreground">{t('searchResults.noResults')}</div>
         ) : (
           results.map((result) => (
             <div key={result.path}>

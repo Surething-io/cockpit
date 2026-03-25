@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
             conflict: true,
             currentMtime,
             expectedMtime,
-            message: '文件已被外部修改',
+            message: 'File was modified externally',
           }, { status: 409 });
         }
       } catch {

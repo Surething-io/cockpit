@@ -7,6 +7,7 @@
 
 import './browser';
 import './database';
+import './mysql';
 import './redis';
 
 export { matchInput, getPlugin, getAllPlugins, generatePluginItemId } from '../bubblePlugins';

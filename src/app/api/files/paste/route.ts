@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     const targetAbsDir = resolve(join(basePath, targetDir));
 
     if (!targetAbsDir.startsWith(basePath)) {
-      return NextResponse.json({ error: '不允许操作此路径' }, { status: 403 });
+      return NextResponse.json({ error: 'Operation not allowed on this path' }, { status: 403 });
     }
 
     const srcAbsPath = resolve(sourceAbsPath);
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     // Verify target directory exists
     const targetStat = await stat(targetAbsDir);
     if (!targetStat.isDirectory()) {
-      return NextResponse.json({ error: '目标不是文件夹' }, { status: 400 });
+      return NextResponse.json({ error: 'Target is not a folder' }, { status: 400 });
     }
 
     // Generate non-conflicting filename

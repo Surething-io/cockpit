@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from '@/components/shared/Toast';
 import { BUBBLE_CONTENT_HEIGHT } from '@/components/project/console/CommandBubble';
 import { useBrowserBridge } from '@/hooks/useBrowserBridge';
@@ -147,6 +148,7 @@ export function BrowserBubble({
   onSleep,
   onWake,
 }: BrowserBubbleProps) {
+  const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentUrl, setCurrentUrl] = useState(url);
@@ -341,7 +343,7 @@ export function BrowserBubble({
   }, [id, onNewTab]);
   const handleIframeError = useCallback(() => {
     setIsLoading(false);
-    setLoadError('页面加载失败');
+    setLoadError(t('browser.pageLoadFailed'));
   }, []);
 
   // Refresh: wake from sleep, otherwise reset iframe src
@@ -435,14 +437,14 @@ export function BrowserBubble({
               />
             )}
             <span className="text-xs text-muted-foreground truncate font-mono">
-              {currentUrl || '空白页'}
+              {currentUrl || t('browser.blankPage')}
             </span>
             {/* Copy URL */}
             {currentUrl && (
               <button
-                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(currentUrl); toast('已复制网址'); }}
+                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(currentUrl); toast(t('toast.copiedUrl')); }}
                 className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                title="复制网址"
+                title={t('browser.copyUrl')}
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -456,7 +458,7 @@ export function BrowserBubble({
             <button
               onClick={doRefresh}
               className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-              title="刷新"
+              title={t('common.refresh')}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -465,7 +467,7 @@ export function BrowserBubble({
             <button
               onClick={handleOpenExternal}
               className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-              title="在新窗口打开"
+              title={t('browser.openInNewWindow')}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -474,7 +476,7 @@ export function BrowserBubble({
             <button
               onClick={onToggleMaximize}
               className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-              title={`退出最大化 (${modKey()}M)`}
+              title={t('browser.exitMaximize', { modKey: modKey() })}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3" />
@@ -510,14 +512,14 @@ export function BrowserBubble({
               />
             )}
             <span className="font-mono text-foreground truncate">
-              {currentUrl || '空白页'}
+              {currentUrl || t('browser.blankPage')}
             </span>
             {/* Copy URL */}
             {currentUrl && (
               <button
-                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(currentUrl); toast('已复制网址'); }}
+                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(currentUrl); toast(t('toast.copiedUrl')); }}
                 className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                title="复制网址"
+                title={t('browser.copyUrl')}
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -532,7 +534,7 @@ export function BrowserBubble({
             <button
               onClick={(e) => { e.stopPropagation(); handleOpenExternal(); }}
               className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-              title="在新窗口打开"
+              title={t('browser.openInNewWindow')}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -542,7 +544,7 @@ export function BrowserBubble({
             <button
               onClick={(e) => { e.stopPropagation(); doRefresh(); }}
               className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-              title="刷新"
+              title={t('common.refresh')}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -552,7 +554,7 @@ export function BrowserBubble({
             <button
               onClick={(e) => { e.stopPropagation(); onClose(); }}
               className="p-0.5 rounded text-destructive hover:text-destructive/80 transition-colors flex-shrink-0"
-              title="关闭"
+              title={t('common.close')}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -581,7 +583,7 @@ export function BrowserBubble({
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  点击唤醒
+                  {t('browser.clickToWake')}
                 </div>
               </div>
             </div>
@@ -596,7 +598,7 @@ export function BrowserBubble({
                   onClick={(e) => { e.stopPropagation(); doRefresh(); }}
                   className="mt-2 px-3 py-1 text-xs bg-secondary text-foreground rounded hover:bg-accent transition-colors"
                 >
-                  重试
+                  {t('common.retry')}
                 </button>
               </div>
             ) : (
@@ -633,7 +635,7 @@ export function BrowserBubble({
               <svg className="w-10 h-10 mb-2 text-slate-300 dark:text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
               </svg>
-              <p className="text-xs">空白页</p>
+              <p className="text-xs">{t('browser.blankPage')}</p>
             </div>
           )}
         </div>
@@ -642,7 +644,7 @@ export function BrowserBubble({
         {!maximized && url && (
           <div className="border-t border-border px-4 py-2 flex items-center gap-2 text-xs text-muted-foreground">
             <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${isSleeping ? 'bg-yellow-500' : isLoading ? 'bg-brand animate-pulse' : loadError ? 'bg-red-500' : 'bg-green-500'}`} />
-            <span className="truncate">{isSleeping ? '已休眠' : isLoading ? '加载中...' : loadError ? '加载失败' : host}</span>
+            <span className="truncate">{isSleeping ? t('browser.sleeping') : isLoading ? t('browser.loadingPage') : loadError ? t('browser.loadFailed') : host}</span>
             <span className="flex-1" />
             {timestamp && <span className="text-[11px] flex-shrink-0">{formatTime(timestamp)}</span>}
           </div>

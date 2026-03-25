@@ -67,11 +67,12 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   // Initialize theme
   useEffect(() => {
     const stored = localStorage.getItem('theme') as Theme | null;
-    const initialTheme = stored || 'system';
-    setThemeState(initialTheme);
-
-    const resolved = initialTheme === 'system' ? getSystemTheme() : initialTheme;
-    applyTheme(resolved);
+    const initialTheme = stored || 'dark';
+    queueMicrotask(() => {
+      setThemeState(initialTheme);
+      const resolved = initialTheme === 'system' ? getSystemTheme() : initialTheme;
+      applyTheme(resolved);
+    });
   }, [getSystemTheme, applyTheme]);
 
   // Listen for system theme changes

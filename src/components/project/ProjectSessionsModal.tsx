@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface SessionInfo {
   path: string;
@@ -18,6 +19,7 @@ interface ProjectSessionsModalProps {
 }
 
 export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: ProjectSessionsModalProps) {
+  const { t } = useTranslation();
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -125,7 +127,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-medium text-foreground">
-              会话列表
+              {t('sessions.sessionList')}
             </h2>
             <p className="text-xs text-muted-foreground truncate" title={cwd}>
               {cwd}
@@ -135,7 +137,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="搜索会话..."
+              placeholder={t('sessions.searchSessions')}
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
               className="px-2 py-1 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
@@ -160,7 +162,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                <span>加载会话中...</span>
+                <span>{t('sessions.loadingSessions')}</span>
               </div>
             </div>
           )}
@@ -174,7 +176,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
           {!isLoading && !error && filteredSessions.length === 0 && (
             <div className="flex items-center justify-center h-full">
               <div className="text-xs text-muted-foreground">
-                {searchKeyword ? '未找到匹配的会话' : '暂无会话'}
+                {searchKeyword ? t('sessions.noMatchingSessions') : t('sessions.noSessionsYet')}
               </div>
             </div>
           )}

@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { BUBBLE_CONTENT_HEIGHT } from '@/components/project/console/CommandBubble';
 import { useToast } from '@/components/shared/Toast';
 import { modKey } from '@/lib/platform';
+import { useTranslation } from 'react-i18next';
 
 // ============================================================================
 // Types
@@ -290,6 +291,7 @@ export function DatabaseBubble({
   timestamp,
   onTitleMouseDown,
 }: DatabaseBubbleProps) {
+  const { t } = useTranslation();
   const { showToast } = useToast();
 
   // Connection state
@@ -535,7 +537,7 @@ export function DatabaseBubble({
     setSelectedRows(new Set());
     setConfirmingDelete(false);
     loadTableData(selectedTable, dataPage, filters, sort);
-    if (failCount > 0) alert(`${failCount} 行删除失败`);
+    if (failCount > 0) alert(t('database.deleteRowsFailed', { count: failCount }));
   }, [selectedRows, dataResult, selectedTable, primaryKeys, columns, id, connectionString, activeSchema, loadTableData, dataPage, filters, sort]);
 
   // ---- Export / Copy ----
@@ -660,10 +662,10 @@ export function DatabaseBubble({
             <span className="inline-block w-3 h-3 border border-brand border-t-transparent rounded-full animate-spin flex-shrink-0" />
           )}
           {status === 'error' && (
-            <span className="text-[10px] text-destructive flex-shrink-0">连接失败</span>
+            <span className="text-[10px] text-destructive flex-shrink-0">{t('database.connectionFailed')}</span>
           )}
           {status === 'connected' && (
-            <span className="text-[10px] text-emerald-500 flex-shrink-0">已连接</span>
+            <span className="text-[10px] text-emerald-500 flex-shrink-0">{t('database.connected')}</span>
           )}
           <span className="flex-1" />
           {timestamp && (
@@ -672,7 +674,7 @@ export function DatabaseBubble({
           <button
             onClick={(e) => { e.stopPropagation(); onToggleMaximize(); }}
             className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-            title={maximized ? `退出最大化 (${modKey()}M)` : `最大化 (${modKey()}M)`}
+            title={maximized ? t('browser.exitMaximize', { modKey: modKey() }) : t('browser.maximize', { modKey: modKey() })}
           >
             {maximized ? (
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -687,7 +689,7 @@ export function DatabaseBubble({
           <button
             onClick={(e) => { e.stopPropagation(); onClose(); }}
             className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-            title="关闭"
+            title={t('common.close')}
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -700,7 +702,7 @@ export function DatabaseBubble({
           {status === 'connecting' && (
             <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
               <span className="inline-block w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin mr-2" />
-              连接中...
+              {t('database.connecting')}
             </div>
           )}
           {status === 'error' && (
@@ -710,7 +712,7 @@ export function DatabaseBubble({
                 onClick={connect}
                 className="px-3 py-1.5 text-xs bg-brand text-white rounded-md hover:bg-brand/90 transition-colors"
               >
-                重试
+                {t('common.retry')}
               </button>
             </div>
           )}
@@ -734,7 +736,7 @@ export function DatabaseBubble({
                   <button
                     onClick={loadTables}
                     className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent active:bg-accent/50 transition-colors"
-                    title="刷新表列表"
+                    title={t('database.refreshTableList')}
                   >
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M1 1v5h5" /><path d="M15 15v-5h-5" />
@@ -754,7 +756,7 @@ export function DatabaseBubble({
                           : 'text-muted-foreground hover:text-foreground'
                       }`}
                     >
-                      {{ table: 'T 表', view: 'V 视图' }[f]}
+                      {{ table: t('database.filterTable'), view: t('database.filterView') }[f]}
                     </button>
                   ))}
                 </div>
@@ -774,7 +776,7 @@ export function DatabaseBubble({
                     </div>
                   ))}
                   {tables.length === 0 && (
-                    <div className="p-2 text-muted-foreground text-center">无表</div>
+                    <div className="p-2 text-muted-foreground text-center">{t('database.noTables')}</div>
                   )}
                 </div>
               </div>
@@ -793,7 +795,7 @@ export function DatabaseBubble({
                           : 'text-muted-foreground hover:text-foreground'
                       }`}
                     >
-                      {{ structure: '结构', data: '数据', sql: 'SQL' }[tab]}
+                      {{ structure: t('database.tabStructure'), data: t('database.tabData'), sql: 'SQL' }[tab]}
                     </button>
                   ))}
                   {/* Toolbar actions */}
@@ -803,12 +805,12 @@ export function DatabaseBubble({
                       {Object.values(filters).some(f => f.enabled) && (
                         <>
                           <span className="text-[10px] text-brand">
-                            筛选: {Object.values(filters).filter(f => f.enabled).length}列
+                            {t('database.filterActive', { count: Object.values(filters).filter(f => f.enabled).length })}
                           </span>
                           <button
                             onClick={handleClearAllFilters}
                             className="px-1 py-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                            title="清除所有筛选"
+                            title={t('database.clearAllFilters')}
                           >
                             ✕
                           </button>
@@ -820,39 +822,39 @@ export function DatabaseBubble({
                           onClick={() => setConfirmingDelete(true)}
                           className="px-1.5 py-0.5 text-[10px] text-destructive hover:text-destructive/80 bg-destructive/10 rounded transition-colors"
                         >
-                          删除 {selectedRows.size} 行
+                          {t('database.deleteNRows', { count: selectedRows.size })}
                         </button>
                       )}
                       {confirmingDelete && (
                         <>
-                          <span className="text-[10px] text-destructive">确认删除?</span>
+                          <span className="text-[10px] text-destructive">{t('database.confirmDeleteRows')}</span>
                           <button
                             onClick={deleteSelectedRows}
                             className="px-1.5 py-0.5 text-[10px] text-white bg-destructive rounded transition-colors hover:bg-destructive/80"
                           >
-                            确认
+                            {t('common.confirm')}
                           </button>
                           <button
                             onClick={() => setConfirmingDelete(false)}
                             className="px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground bg-muted rounded transition-colors"
                           >
-                            取消
+                            {t('common.cancel')}
                           </button>
                         </>
                       )}
                       <button
                         onClick={() => handleExport('csv')}
                         className="px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground bg-muted rounded transition-colors"
-                        title={selectedRows.size > 0 ? '复制选中行为 CSV' : '导出全表 CSV'}
+                        title={selectedRows.size > 0 ? t('database.copyCsvSelected') : t('database.copyCsvAll')}
                       >
-                        {selectedRows.size > 0 ? '复制 CSV' : 'CSV'}
+                        {selectedRows.size > 0 ? t('database.copyCSV') : t('database.CSV')}
                       </button>
                       <button
                         onClick={() => handleExport('json')}
                         className="px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground bg-muted rounded transition-colors"
-                        title={selectedRows.size > 0 ? '复制选中行为 JSON' : '导出全表 JSON'}
+                        title={selectedRows.size > 0 ? t('database.copyJsonSelected') : t('database.copyJsonAll')}
                       >
-                        {selectedRows.size > 0 ? '复制 JSON' : 'JSON'}
+                        {selectedRows.size > 0 ? t('database.copyJSON') : t('database.JSON')}
                       </button>
                     </div>
                   )}
@@ -862,7 +864,7 @@ export function DatabaseBubble({
                 <div className="flex-1 overflow-auto">
                   {!selectedTable && activeTab !== 'sql' ? (
                     <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-                      选择左侧表格
+                      {t('database.selectTable')}
                     </div>
                   ) : activeTab === 'structure' ? (
                     <StructureView columns={columns} primaryKeys={primaryKeys} foreignKeys={foreignKeys} indexes={indexes} />
@@ -902,7 +904,7 @@ export function DatabaseBubble({
                       onNewRowChange={(col, val) => setNewRowValues(prev => ({ ...prev, [col]: val }))}
                       onSaveNewRow={saveNewRow}
                       onCancelAdd={() => { setIsAddingRow(false); setNewRowValues({}); }}
-                      onCellCopy={(text) => { navigator.clipboard.writeText(text); showToast('已复制'); }}
+                      onCellCopy={(text) => { navigator.clipboard.writeText(text); showToast(t('common.copied')); }}
                     />
                   ) : (
                     <SqlView
@@ -914,7 +916,7 @@ export function DatabaseBubble({
                       error={sqlError}
                       loading={sqlLoading}
                       sqlRef={sqlRef}
-                      onCellCopy={(text) => { navigator.clipboard.writeText(text); showToast('已复制'); }}
+                      onCellCopy={(text) => { navigator.clipboard.writeText(text); showToast(t('common.copied')); }}
                     />
                   )}
                 </div>
@@ -927,7 +929,7 @@ export function DatabaseBubble({
           {!maximized && (
             <div className="border-t border-border px-4 py-1.5 flex items-center gap-2 text-xs text-muted-foreground">
               <span className={`inline-block w-2 h-2 rounded-full ${status === 'connected' ? 'bg-green-500' : status === 'error' ? 'bg-red-500' : 'bg-yellow-500 animate-pulse'}`} />
-              <span>{{ connecting: '连接中', connected: '已连接', error: '连接失败' }[status]}</span>
+              <span>{{ connecting: t('common.connecting'), connected: t('common.connected'), error: t('common.connectionFailed') }[status]}</span>
               {status === 'connected' && selectedTable && (
                 <span className="text-muted-foreground/70">{selectedTable}</span>
               )}
@@ -950,28 +952,29 @@ function StructureView({ columns, primaryKeys, foreignKeys, indexes }: {
   foreignKeys: ForeignKeyInfo[];
   indexes: IndexInfo[];
 }) {
+  const { t } = useTranslation();
   if (columns.length === 0) {
-    return <div className="p-4 text-sm text-muted-foreground">选择表以查看结构</div>;
+    return <div className="p-4 text-sm text-muted-foreground">{t('database.selectTableToView')}</div>;
   }
   return (
     <div className="p-2 space-y-3">
       {/* Columns */}
       <div>
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wide px-1 mb-1">列</div>
+        <div className="text-[10px] text-muted-foreground uppercase tracking-wide px-1 mb-1">{t('database.columns')}</div>
         <table className="w-full text-xs">
           <thead>
             <tr className="text-left text-muted-foreground border-b border-border">
-              <th className="px-1.5 py-1 font-medium">名称</th>
-              <th className="px-1.5 py-1 font-medium">类型</th>
-              <th className="px-1.5 py-1 font-medium">可空</th>
-              <th className="px-1.5 py-1 font-medium">默认值</th>
+              <th className="px-1.5 py-1 font-medium">{t('database.colName')}</th>
+              <th className="px-1.5 py-1 font-medium">{t('database.colType')}</th>
+              <th className="px-1.5 py-1 font-medium">{t('database.colNullable')}</th>
+              <th className="px-1.5 py-1 font-medium">{t('database.colDefault')}</th>
             </tr>
           </thead>
           <tbody>
             {columns.map(col => (
               <tr key={col.name} className="border-b border-border/50 hover:bg-accent/50">
                 <td className="px-1.5 py-1 font-mono">
-                  {col.isPrimaryKey && <span className="text-amber-500 mr-1" title="主键">🔑</span>}
+                  {col.isPrimaryKey && <span className="text-amber-500 mr-1" title={t('database.primaryKey')}>🔑</span>}
                   {col.name}
                 </td>
                 <td className="px-1.5 py-1 text-muted-foreground font-mono">
@@ -988,7 +991,7 @@ function StructureView({ columns, primaryKeys, foreignKeys, indexes }: {
       {/* Foreign Keys */}
       {foreignKeys.length > 0 && (
         <div>
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide px-1 mb-1">外键</div>
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide px-1 mb-1">{t('database.foreignKeys')}</div>
           <div className="space-y-0.5">
             {foreignKeys.map((fk, i) => (
               <div key={i} className="text-xs font-mono px-1.5 text-muted-foreground">
@@ -1002,7 +1005,7 @@ function StructureView({ columns, primaryKeys, foreignKeys, indexes }: {
       {/* Indexes */}
       {indexes.length > 0 && (
         <div>
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide px-1 mb-1">索引</div>
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide px-1 mb-1">{t('database.indexes')}</div>
           <div className="space-y-0.5">
             {indexes.map(idx => (
               <div key={idx.name} className="text-xs font-mono px-1.5 text-muted-foreground truncate" title={idx.definition}>
@@ -1029,6 +1032,7 @@ function FilterDropdown({ filter, onApply, onClear, onToggle, onClose, colName, 
   colName: string;
   anchorRect: { left: number; bottom: number };
 }) {
+  const { t } = useTranslation();
   const [op, setOp] = useState<FilterOp>(filter?.op || '=');
   const [value, setValue] = useState(filter?.value || '');
   const panelRef = useRef<HTMLDivElement>(null);
@@ -1079,7 +1083,7 @@ function FilterDropdown({ filter, onApply, onClear, onToggle, onClose, colName, 
               onChange={(e) => onToggle(e.target.checked)}
               className="w-3 h-3 accent-brand"
             />
-            启用
+            {t('database.enable')}
           </label>
           <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[120px]">{colName}</span>
         </div>
@@ -1101,7 +1105,7 @@ function FilterDropdown({ filter, onApply, onClear, onToggle, onClose, colName, 
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={op === 'IN' ? '逗号分隔多值' : op === 'LIKE' ? '%pattern%' : '值'}
+          placeholder={op === 'IN' ? t('database.commaValues') : op === 'LIKE' ? t('database.likePattern') : t('database.valuePlaceholder')}
           className="w-full text-xs bg-background border border-input rounded px-1.5 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-ring"
           autoFocus
         />
@@ -1113,14 +1117,14 @@ function FilterDropdown({ filter, onApply, onClear, onToggle, onClose, colName, 
           disabled={needsValue && !value.trim()}
           className="flex-1 px-2 py-1 text-[10px] bg-brand text-white rounded hover:bg-brand/90 disabled:opacity-40 transition-colors"
         >
-          应用
+          {t('database.apply')}
         </button>
         {filter && (
           <button
             onClick={onClear}
             className="flex-1 px-2 py-1 text-[10px] text-muted-foreground bg-muted rounded hover:text-foreground transition-colors"
           >
-            清除
+            {t('database.clearFilter')}
           </button>
         )}
       </div>
@@ -1168,6 +1172,7 @@ function DataView({
   onCancelAdd: () => void;
   onCellCopy: (text: string) => void;
 }) {
+  const { t } = useTranslation();
   const [filterDropdownCol, setFilterDropdownCol] = useState<string | null>(null);
   const [filterAnchorRect, setFilterAnchorRect] = useState({ left: 0, bottom: 0 });
 
@@ -1185,7 +1190,7 @@ function DataView({
   }, [filterDropdownCol, editingRowIdx, isAddingRow, onCancelEdit, onCancelAdd]);
 
   if (!result && !loading) {
-    return <div className="p-4 text-sm text-muted-foreground">选择表以查看数据</div>;
+    return <div className="p-4 text-sm text-muted-foreground">{t('database.selectTableForData')}</div>;
   }
 
   const fields = result?.fields || [];
@@ -1295,8 +1300,8 @@ function DataView({
               <tr className="bg-emerald-500/5">
                 <td className="px-1 py-0.5 border-b border-border text-center">
                   <div className="flex gap-0.5 justify-center">
-                    <button onClick={onSaveNewRow} className="text-[10px] text-emerald-500 hover:text-emerald-400" title="保存">✓</button>
-                    <button onClick={onCancelAdd} className="text-[10px] text-muted-foreground hover:text-foreground" title="取消">✕</button>
+                    <button onClick={onSaveNewRow} className="text-[10px] text-emerald-500 hover:text-emerald-400" title={t('common.save')}>✓</button>
+                    <button onClick={onCancelAdd} className="text-[10px] text-muted-foreground hover:text-foreground" title={t('common.cancel')}>✕</button>
                   </div>
                 </td>
                 {fields.map(f => (
@@ -1320,8 +1325,8 @@ function DataView({
                 <td className="px-1 py-0.5 border-b border-border/50 text-center">
                   {editingRowIdx === idx ? (
                     <div className="flex gap-0.5 justify-center">
-                      <button onClick={onSaveEdit} className="text-[10px] text-emerald-500 hover:text-emerald-400" title="保存">✓</button>
-                      <button onClick={onCancelEdit} className="text-[10px] text-muted-foreground hover:text-foreground" title="取消">✕</button>
+                      <button onClick={onSaveEdit} className="text-[10px] text-emerald-500 hover:text-emerald-400" title={t('common.save')}>✓</button>
+                      <button onClick={onCancelEdit} className="text-[10px] text-muted-foreground hover:text-foreground" title={t('common.cancel')}>✕</button>
                     </div>
                   ) : (
                     <input
@@ -1358,7 +1363,7 @@ function DataView({
           </tbody>
         </table>
         {rows.length === 0 && !loading && (
-          <div className="p-4 text-xs text-muted-foreground text-center">无数据</div>
+          <div className="p-4 text-xs text-muted-foreground text-center">{t('common.noData')}</div>
         )}
       </div>
 
@@ -1370,9 +1375,9 @@ function DataView({
             disabled={isAddingRow}
             className="px-1.5 py-0.5 text-[10px] text-emerald-500 hover:text-emerald-400 disabled:opacity-30"
           >
-            + 新增行
+            {t('database.addRow')}
           </button>
-          <span>{totalRows} 行</span>
+          <span>{t('database.totalRows', { count: totalRows })}</span>
           {result?.duration !== undefined && <span>{result.duration}ms</span>}
         </div>
         <div className="flex items-center gap-1">
@@ -1414,6 +1419,7 @@ function SqlView({
   sqlRef: React.RefObject<HTMLTextAreaElement | null>;
   onCellCopy: (text: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col h-full">
       {/* SQL Editor */}
@@ -1423,7 +1429,7 @@ function SqlView({
           value={sqlInput}
           onChange={(e) => onSqlChange(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={`输入 SQL... (${modKey()}Enter 执行)`}
+          placeholder={t('database.sqlPlaceholder', { modKey: modKey() })}
           className="w-full h-20 px-2 py-1.5 text-xs font-mono bg-background border border-input rounded resize-y focus:outline-none focus:ring-1 focus:ring-ring"
           spellCheck={false}
         />
@@ -1433,15 +1439,15 @@ function SqlView({
             disabled={loading || !sqlInput.trim()}
             className="px-2 py-1 text-xs bg-brand text-white rounded hover:bg-brand/90 disabled:opacity-50 transition-colors"
           >
-            {loading ? '执行中...' : '▶ 执行'}
+            {loading ? t('database.executing') : t('database.execute')}
           </button>
           {result?.duration !== undefined && (
             <span className="text-[10px] text-muted-foreground">
               {result.command && !result.fields
-                ? `${result.command} — ${result.rowCount} 行受影响 (${result.duration}ms)`
-                : `${result.rows?.length ?? 0} 行 (${result.duration}ms)`
+                ? t('database.rowsAffected', { command: result.command, count: result.rowCount, duration: result.duration })
+                : t('database.queryRows', { count: result.rows?.length ?? 0, duration: result.duration })
               }
-              {result.truncated && ' [结果已截断至1000行]'}
+              {result.truncated && ` ${t('database.resultTruncated')}`}
             </span>
           )}
         </div>

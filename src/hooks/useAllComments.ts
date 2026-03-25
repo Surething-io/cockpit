@@ -1,4 +1,5 @@
 import type { CodeComment } from '@/app/api/comments/route';
+import i18n from '@/lib/i18n';
 
 // ============================================
 // Comment change event system
@@ -137,14 +138,14 @@ export function buildAIMessage(references: CodeReference[], question: string): s
 
   // File comments: keep existing format
   if (fileRefs.length > 0) {
-    parts.push('代码引用:', '');
+    parts.push(`${i18n.t('comments.codeRef')}`, '');
     fileRefs.forEach((ref, index) => {
       parts.push(`[${index + 1}] ${ref.filePath}:${ref.startLine}-${ref.endLine}`);
       parts.push('```');
       parts.push(ref.codeContent);
       parts.push('```');
       if (ref.note) {
-        parts.push(`备注: ${ref.note}`);
+        parts.push(i18n.t('comments.note', { content: ref.note }));
       }
       parts.push('');
     });
@@ -160,7 +161,7 @@ export function buildAIMessage(references: CodeReference[], question: string): s
     parts.push('');
   }
 
-  parts.push(`问题: ${question}`);
+  parts.push(i18n.t('comments.question', { question }));
 
   return parts.join('\n');
 }

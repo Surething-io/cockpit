@@ -34,7 +34,7 @@ export function useBrowserBridge(
 
   // Use refs to track the latest values so that WS is not recreated on every change
   const iframeReadyRef = useRef(iframeReady);
-  iframeReadyRef.current = iframeReady;
+  useEffect(() => { iframeReadyRef.current = iframeReady; });
 
   // Pending resolvers for connect()
   const connectResolversRef = useRef<Array<() => void>>([]);

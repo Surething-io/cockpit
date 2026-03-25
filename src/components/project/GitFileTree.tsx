@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FileContextMenu, useFileContextMenu } from './FileContextMenu';
 import { FileIcon } from '../shared/FileIcon';
 
@@ -171,15 +172,17 @@ export function GitFileTree({
   cwd,
   showChanges = false,
   renderActions,
-  emptyMessage = '无文件',
+  emptyMessage,
   className,
 }: GitFileTreeProps) {
+  const { t } = useTranslation();
+  const resolvedEmptyMessage = emptyMessage ?? t('gitFileTree.noFiles');
   const { contextMenu, showContextMenu, hideContextMenu } = useFileContextMenu();
 
   if (files.length === 0) {
     return (
       <div className="px-3 py-2 text-xs text-slate-9">
-        {emptyMessage}
+        {resolvedEmptyMessage}
       </div>
     );
   }

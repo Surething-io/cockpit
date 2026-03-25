@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Portal } from '../shared/Portal';
 import { ChatMessage } from '@/types/chat';
 
@@ -50,7 +51,7 @@ function truncateContent(content: string, maxLength: number = 50): string {
 }
 
 export function UserMessagesModal({ isOpen, onClose, messages, onSelectMessage }: UserMessagesModalProps) {
-
+  const { t } = useTranslation();
 
   // ESC key to close
   useEffect(() => {
@@ -87,7 +88,7 @@ export function UserMessagesModal({ isOpen, onClose, messages, onSelectMessage }
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-          <h3 className="text-sm font-medium text-foreground">用户消息列表</h3>
+          <h3 className="text-sm font-medium text-foreground">{t('userMessages.title')}</h3>
           <button
             onClick={onClose}
             className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
@@ -102,7 +103,7 @@ export function UserMessagesModal({ isOpen, onClose, messages, onSelectMessage }
         <div className="flex-1 overflow-y-auto">
           {userMessages.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-muted-foreground">
-              暂无用户消息
+              {t('userMessages.noMessages')}
             </div>
           ) : (
             <div className="divide-y divide-border">

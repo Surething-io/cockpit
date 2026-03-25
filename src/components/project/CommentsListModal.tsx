@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '@/lib/i18n';
 import { clearAllComments, emitCommentsChange, fetchAllCommentsWithCode, CHAT_COMMENT_FILE } from '@/hooks/useAllComments';
 import { Portal } from '../shared/Portal';
 import { toast } from '../shared/Toast';
@@ -36,7 +38,7 @@ interface CopyableComment {
 function formatCommentsForCopy(comments: CopyableComment[]): string {
   if (comments.length === 0) return '';
 
-  const parts: string[] = ['代码引用:', ''];
+  const parts: string[] = [i18n.t('comments.codeRef'), ''];
 
   const chatComments = comments.filter(c => c.filePath === CHAT_COMMENT_FILE);
   const fileComments = comments.filter(c => c.filePath !== CHAT_COMMENT_FILE);
@@ -48,7 +50,7 @@ function formatCommentsForCopy(comments: CopyableComment[]): string {
       parts.push(comment.codeContent);
       parts.push('```');
       if (comment.content) {
-        parts.push(`备注: ${comment.content}`);
+        parts.push(i18n.t('comments.note', { content: comment.content }));
       }
       parts.push('');
     });
@@ -67,6 +69,7 @@ function formatCommentsForCopy(comments: CopyableComment[]): string {
 }
 
 export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }: CommentsListModalProps) {
+  const { t } = useTranslation();
   const [comments, setComments] = useState<CodeComment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [copyingId, setCopyingId] = useState<string | null>(null); // ID of the comment being copied
@@ -143,7 +146,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
 
       const text = formatCommentsForCopy([copyable]);
       await navigator.clipboard.writeText(text);
-      toast('已复制评论');
+      toast(t('toast.copiedComment'));
     } catch (err) {
       console.error('Failed to copy comment:', err);
     } finally {
@@ -159,7 +162,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
       const commentsWithCode = await fetchAllCommentsWithCode(cwd);
       const text = formatCommentsForCopy(commentsWithCode);
       await navigator.clipboard.writeText(text);
-      toast('已复制全部评论');
+      toast(t('toast.copiedAllComments'));
     } catch (err) {
       console.error('Failed to copy all comments:', err);
     } finally {
@@ -201,13 +204,13 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-foreground">所有评论</h2>
+            <h2 className="text-lg font-semibold text-foreground">{t('comments.allComments')}</h2>
             {comments.length > 0 && (
               <button
                 onClick={handleCopyAll}
                 disabled={copyingAll}
                 className="p-1 rounded hover:bg-accent text-muted-foreground disabled:opacity-50"
-                title="复制全部评论"
+                title={t('comments.copyAllComments')}
               >
                 {copyingAll ? (
                   <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -233,14 +236,14 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
         <div className="flex-1 overflow-y-auto p-4">
           {isLoading ? (
             <div className="flex items-center justify-center py-12 text-muted-foreground">
-              加载中...
+              {t('common.loading')}
             </div>
           ) : comments.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <svg className="w-12 h-12 mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
               </svg>
-              <span>暂无评论</span>
+              <span>{t('comments.noComments')}</span>
             </div>
           ) : (
             <div className="space-y-4">
@@ -249,10 +252,10 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
                   {/* File header */}
                   <div className="px-3 py-2 bg-secondary border-b border-border">
                     <span className="text-sm font-medium text-foreground font-mono">
-                      {filePath === CHAT_COMMENT_FILE ? 'AI 回复' : filePath}
+                      {filePath === CHAT_COMMENT_FILE ? t('comments.aiReply') : filePath}
                     </span>
                     <span className="ml-2 text-xs text-muted-foreground">
-                      ({fileComments.length} 条评论)
+                      ({t('comments.nComments', { count: fileComments.length })})
                     </span>
                   </div>
                   {/* Comments */}
@@ -269,12 +272,12 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
                               {(comment.startLine > 0 || comment.endLine > 0) ? (
                                 <>
                                   <span className="text-xs text-brand font-mono">
-                                    行 {comment.startLine === comment.endLine
+                                    {t('common.line')} {comment.startLine === comment.endLine
                                       ? comment.startLine
                                       : `${comment.startLine}-${comment.endLine}`}
                                   </span>
                                   <span className="text-xs text-muted-foreground">
-                                    ({comment.endLine - comment.startLine + 1} 行)
+                                    ({t('comments.linesCount', { count: comment.endLine - comment.startLine + 1 })})
                                   </span>
                                 </>
                               ) : comment.selectedText ? (
@@ -287,7 +290,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
                               </span>
                             </div>
                             <p className="text-sm text-foreground line-clamp-2">
-                              {comment.content || <span className="text-muted-foreground italic">（无内容）</span>}
+                              {comment.content || <span className="text-muted-foreground italic">{t('comments.noContent')}</span>}
                             </p>
                           </div>
                           <button
@@ -297,7 +300,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
                             }}
                             disabled={copyingId === comment.id}
                             className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-accent text-muted-foreground transition-opacity disabled:opacity-50"
-                            title="复制"
+                            title={t('common.copy')}
                           >
                             {copyingId === comment.id ? (
                               <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -313,7 +316,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
                               handleDelete(comment.id);
                             }}
                             className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-accent text-muted-foreground hover:text-red-9 transition-opacity"
-                            title="删除"
+                            title={t('common.delete')}
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -332,7 +335,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
         {/* Footer */}
         <div className="px-4 py-3 border-t border-border bg-secondary flex items-center justify-between">
           <span className="text-sm text-muted-foreground">
-            共 {comments.length} 条评论
+            {t('comments.totalComments', { count: comments.length })}
           </span>
           <button
             onClick={async () => {
@@ -345,7 +348,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
             disabled={comments.length === 0}
             className="px-3 py-1.5 text-sm bg-red-9 text-white rounded hover:bg-red-10 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            清空所有
+            {t('comments.clearAll')}
           </button>
         </div>
       </div>

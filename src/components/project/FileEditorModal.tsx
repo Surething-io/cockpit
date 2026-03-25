@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast, confirm } from '../shared/Toast';
 
 export interface FileEditorHandle {
@@ -33,6 +34,7 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
   onSaved,
   onStateChange,
 }, ref) {
+  const { t } = useTranslation();
   const [content, setContent] = useState(initialContent);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -156,11 +158,11 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
       }
       setIsDirty(false);
       setConflictState({ show: false });
-      toast('已保存', 'success');
+      toast(t('toast.savedSuccess'), 'success');
       onSaved?.();
     } catch (error) {
       console.error('Error saving file:', error);
-      toast('保存失败', 'error');
+      toast(t('toast.saveFailed'), 'error');
     } finally {
       setIsSaving(false);
     }
@@ -199,7 +201,7 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
 
   const handleClose = useCallback(async () => {
     if (isDirty) {
-      const ok = await confirm('有未保存的修改，确定关闭？', { danger: true, confirmText: '放弃修改', cancelText: '继续编辑' });
+      const ok = await confirm(t('fileEditor.unsavedConfirm'), { danger: true, confirmText: t('fileEditor.discardChanges'), cancelText: t('fileEditor.continueEditing') });
       if (!ok) return;
     }
     onClose(getCurrentLine());
@@ -240,20 +242,20 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
           </svg>
           <span className="text-sm text-foreground flex-1">
-            文件已被外部修改，保存将覆盖外部更改
+            {t('fileEditor.externallyModified')}
           </span>
           <div className="flex items-center gap-2">
             <button
               onClick={handleRevertToDisk}
               className="px-3 py-1 text-sm rounded border border-border hover:bg-accent transition-colors"
             >
-              使用磁盘版本
+              {t('fileEditor.useDiskVersion')}
             </button>
             <button
               onClick={handleForceOverwrite}
               className="px-3 py-1 text-sm rounded bg-amber-500 text-white hover:bg-amber-600 transition-colors"
             >
-              强制覆盖
+              {t('fileEditor.forceOverwrite')}
             </button>
           </div>
         </div>

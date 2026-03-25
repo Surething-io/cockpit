@@ -1,6 +1,6 @@
 {
   "name": "@surething/cockpit",
-  "version": "1.0.173",
+  "version": "1.0.174",
   "description": "The Cockpit That Drives AI",
   "author": "Robert",
   "license": "MIT",
@@ -33,11 +33,12 @@
     "dist",
     ".next-prod",
     "next.config.ts",
-    "LICENSE"
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
     "dev": "COCKPIT_ENV=dev node --import tsx server.mjs",
-    "prepublishOnly": "npm run build && npm run build:server",
+    "prepublishOnly": "npm run build && npm run build:server && rm -rf .next-prod/cache",
     "build": "next build --webpack",
     "build:server": "tsup --config tsup.server.ts",
     "setup": "npm run build && npm run build:server && npm link",

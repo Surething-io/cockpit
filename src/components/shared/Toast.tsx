@@ -186,7 +186,6 @@ export function confirm(message: string, options?: {
 // Simple standalone toast function (no Provider needed)
 // ============================================
 let toastContainer: HTMLDivElement | null = null;
-const toastRoot: ReturnType<typeof import('react-dom/client').createRoot> | null = null;
 
 function getToastContainer() {
   if (!toastContainer) {

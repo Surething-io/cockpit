@@ -150,7 +150,6 @@ function InlineBlameAnnotation({ blame, onClick }: { blame: BlameLine; onClick?:
   // Clean up on component unmount
   useEffect(() => () => hideTip(), [hideTip]);
 
-  const dateStr = new Date(blame.time * 1000).toLocaleString();
   const firstLine = blame.message.split('\n')[0] || '';
   const body = blame.message.split('\n').slice(1).join('\n').trim();
 

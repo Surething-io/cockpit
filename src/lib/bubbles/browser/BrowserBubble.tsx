@@ -229,7 +229,7 @@ export function BrowserBubble({
     if (initialSleeping) {
       setReadyUrl(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // Wake up

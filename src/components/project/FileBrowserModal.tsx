@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { CommitDetailPanel, type CommitInfo } from './CommitDetailPanel';
+import { CommitDetailPanel } from './CommitDetailPanel';
 import { DiffView } from './DiffView';
 import { toast } from '../shared/Toast';
 import { FileTree, type GitStatusMap, type GitStatusCode } from './FileTree';
@@ -12,7 +12,6 @@ import { CodeViewer } from './CodeViewer';
 import { isMarkdownFile, formatAsHumanReadable } from './toolCallUtils';
 import { buildTreeFromPaths, collectAllDirPaths } from './fileBrowser/utils';
 import { InteractiveMarkdownPreview } from './InteractiveMarkdownPreview';
-import { FileIcon } from '../shared/FileIcon';
 import { type FileEditorHandle } from './FileEditorModal';
 import { QuickFileOpen } from './QuickFileOpen';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -323,7 +322,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       contentSearch.setContentSearchQuery(initialSearchQuery);
       contentSearch.performContentSearch(initialSearchQuery);
     }
-  }, [searchQueryTrigger]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchQueryTrigger]);  
 
   // ========== Tab Switch Handler ==========
   const handleTabChange = useCallback((tab: TabType) => {
@@ -517,7 +516,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     fileTree.loadRecentFiles();
     gitStatus.fetchStatus();
     gitHistory.loadBranches();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // Listen for external git operations (e.g., ChatInput's stage button) to trigger a refresh
@@ -538,7 +537,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       gitHistory.loadBranches();
     }
     prevVisibleRef.current = pageVisible;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [pageVisible]);
 
   // Load commits when branch changes
@@ -565,23 +564,6 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       }
     }
   }, [activeTab, fileTree.recentFiles, fileTree.selectedPath, handleSelectFileWithSave, fileTree]);
-
-  // ========== Refresh Handler ==========
-  const handleRefresh = useCallback(() => {
-    if (activeTab === 'tree' || activeTab === 'recent') {
-      fileTree.loadFiles();
-      fileTree.loadRecentFiles();
-    } else if (activeTab === 'status') {
-      gitStatus.fetchStatus();
-    } else if (activeTab === 'history') {
-      gitHistory.loadBranches();
-      if (gitHistory.selectedBranch) {
-        gitHistory.loadCommits(gitHistory.selectedBranch);
-      }
-    }
-  }, [activeTab, fileTree, gitStatus, gitHistory]);
-
-  const isRefreshLoading = fileTree.isLoadingFiles || gitStatus.statusLoading || gitHistory.isLoadingBranches || gitHistory.isLoadingCommits;
 
   // ========== Auto-sync via SSE file watching ==========
   // Use ref to store the latest values, avoiding SSE callbacks depending on frequently changing state
@@ -676,7 +658,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       console.error('File watch handler error:', err);
     }
   // fileTree/gitStatus/gitHistory are stable object references returned by hooks and do not change frequently
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [cwd]);
 
   useWebSocket({
@@ -985,7 +967,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               const data = await res.json();
                               toast(data.error || t('toast.createFailed'), 'error');
                             }
-                          } catch (err) {
+                          } catch (_err) {
                             toast(t('toast.createFailed'), 'error');
                           }
                         } else if (e.key === 'Escape') {

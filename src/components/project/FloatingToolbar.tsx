@@ -94,7 +94,7 @@ function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddCom
     bumpRef.current = () => forceRender(v => v + 1);
   }, [bumpRef]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- version is only used to trigger re-reading the ref
+   
   const toolbar = useMemo(() => floatingToolbarRef.current, [version]);
 
   return (

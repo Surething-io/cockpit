@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Portal } from '../shared/Portal';
 import { X, ChevronRight, ChevronDown, FileText } from 'lucide-react';
@@ -262,9 +262,6 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
   }, [onClose]);
 
   if (changes.length === 0) return null;
-
-  // Extract filename for title
-  const selectedFileName = selected ? selected.filePath.split('/').pop() : '';
 
   const modalContent = (
     <div

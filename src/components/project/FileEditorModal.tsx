@@ -74,7 +74,7 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
       }
       ta.setSelectionRange(charPos, charPos);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []);
 
   /** Get the actual line height (measured and cached on first call) */

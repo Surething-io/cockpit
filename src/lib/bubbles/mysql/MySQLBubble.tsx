@@ -951,7 +951,7 @@ export function MySQLBubble({
 // StructureView — table structure display
 // ============================================================================
 
-function StructureView({ columns, primaryKeys, foreignKeys, indexes }: {
+function StructureView({ columns, primaryKeys: _primaryKeys, foreignKeys, indexes }: {
   columns: ColumnInfo[];
   primaryKeys: string[];
   foreignKeys: ForeignKeyInfo[];

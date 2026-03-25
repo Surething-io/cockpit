@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useImperativeHandle, forwardRef, memo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { useMenuContainer } from './FileContextMenu';
 import { AddCommentInput, SendToAIInput } from './CodeInputCards';
 import { useLineHighlight } from '@/hooks/useLineHighlight';
 import { type BundledLanguage, getHighlighter, getLanguageFromPath, escapeHtml, tokensToHtml } from '@/lib/codeHighlighter';
-import { FloatingToolbar, ToolbarRenderer } from './FloatingToolbar';
+import { ToolbarRenderer } from './FloatingToolbar';
 import { ViewCommentCard } from './ViewCommentCard';
 import { CodeLine, AUTHOR_COLORS } from './CodeLine';
 import { useCodeViewerLogic, resolveCharOffset, type CodeViewerProps } from './useCodeViewerLogic';
@@ -288,7 +288,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
       vi.setCursorCol(initialCursorCol - 1);
     }
     onInitialCursorSet?.();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [viModeEnabled, editable, initialCursorLine, initialCursorCol, filePath]);
 
   // Vi Normal mode keyboard listener (on container element)
@@ -313,7 +313,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     // Use capture phase to intercept before other handlers
     container.addEventListener('keydown', handler, true);
     return () => container.removeEventListener('keydown', handler, true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [viModeEnabled, editable, vi.handleKeyDown]);
 
   // Auto-focus container for vi-mode key capture (when not in insert/command/search mode)
@@ -330,7 +330,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
         container.focus();
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [viModeEnabled, editable, vi.state.mode, content]);
 
   // Click on code area → set cursorLine + cursorCol + re-focus container for vi key capture
@@ -375,7 +375,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   }, [viModeEnabled, editable, vi.setCursorLine, vi.setCursorCol, lines]);
 
   // Double-click on code area → select word + highlight matches (no scroll)
-  const viDblClickHandler = useCallback((e: React.MouseEvent) => {
+  const viDblClickHandler = useCallback((_e: React.MouseEvent) => {
     if (!viModeEnabled || editable) return;
     // Browser double-click auto-selects the word; read selection text directly
     requestAnimationFrame(() => {
@@ -527,7 +527,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
       const scrollTop = (scrollLine - 1) * 20; // LINE_HEIGHT = 20px
       if (editScrollRef.current) editScrollRef.current.scrollTop = scrollTop;
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [editable]);
 
   // Notify parent of dirty/saving state

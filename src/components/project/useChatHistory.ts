@@ -249,7 +249,7 @@ export function useChatHistory(
     if (cwd && initialSessionId) {
       loadHistoryByCwdAndSessionId(cwd, initialSessionId, false, TURNS_PER_PAGE);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []); // Run only on component mount
 
   return {

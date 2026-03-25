@@ -10,10 +10,9 @@ import 'katex/dist/katex.min.css';
 import 'remark-github-blockquote-alert/alert.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { memo, useState, useMemo, ComponentPropsWithoutRef } from 'react';
+import { memo, useMemo, ComponentPropsWithoutRef } from 'react';
 import type { PluggableList } from 'unified';
 import type { ExtraProps } from 'react-markdown';
-import { useTranslation } from 'react-i18next';
 import { useTheme } from './ThemeProvider';
 import { MermaidBlock } from './MermaidBlock';
 
@@ -297,28 +296,3 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
     </div>
   );
 });
-
-// Copy button component
-function CopyButton({ text }: { text: string }) {
-  const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      console.error('Failed to copy');
-    }
-  };
-
-  return (
-    <button
-      onClick={handleCopy}
-      className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors"
-    >
-      {copied ? t('markdown.copied') : t('markdown.copy')}
-    </button>
-  );
-}

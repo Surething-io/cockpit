@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import * as fs from 'fs/promises';
-import * as path from 'path';
+
 import { getTerminalEnvPath, ensureParentDir } from '@/lib/paths';
 
 export const runtime = 'nodejs';
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
-    } catch (error) {
+    } catch {
       // File does not exist, return empty object
       return new Response(JSON.stringify({ env: {} }), {
         status: 200,

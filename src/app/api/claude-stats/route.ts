@@ -89,8 +89,6 @@ async function scanSessions() {
       }
     }
 
-    // Also scan subagents dir if exists
-    const subagentsPath = join(projPath, 'subagents');
     // We skip subagents — they are internal and would double-count tokens
   }
 

@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
 import fs from 'fs/promises';
-import path from 'path';
-import { getTerminalHistoryPath, getTerminalOutputPath, getCockpitProjectDir, ensureParentDir } from '@/lib/paths';
+import { getTerminalHistoryPath, getTerminalOutputPath, ensureParentDir } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -57,7 +56,7 @@ export async function GET(request: NextRequest) {
         .map((line) => {
           try {
             return JSON.parse(line);
-          } catch (e) {
+          } catch {
             return null;
           }
         })
@@ -233,7 +232,7 @@ export async function POST(request: NextRequest) {
     try {
       const content = await fs.readFile(historyPath, 'utf-8');
       existingLines = content.trim().split('\n').filter(Boolean);
-    } catch (e) {
+    } catch {
       // File does not exist, start empty
     }
 

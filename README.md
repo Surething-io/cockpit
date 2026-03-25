@@ -53,14 +53,22 @@ A unified development cockpit built on **Claude Code (Agent SDK)** — chat, cod
 - Chrome extension (Manifest V3) for browser automation bridge
 - CLI tools: `cock browser` / `cock terminal` for headless automation
 
-## Quick Start
+## Install
 
 ```bash
-npm install
-npm run setup       # Build + npm link (registers `cock` command)
+npm install -g @surething/cockpit
 cock                # Start server → http://localhost:3457
 cock -h             # Show help
 cock -v             # Show version
+```
+
+### From Source
+
+```bash
+git clone https://github.com/Surething-io/cockpit.git
+cd cockpit
+npm install
+npm run setup       # Build + npm link (registers `cock` command)
 ```
 
 ## CLI

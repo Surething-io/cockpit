@@ -59,14 +59,22 @@
 - Chrome 插件 (Manifest V3) 浏览器自动化桥接
 - CLI 工具：`cock browser` / `cock terminal` 无头自动化
 
-## 快速开始
+## 安装
 
 ```bash
-npm install
-npm run setup       # 构建 + npm link（注册 cock 命令）
+npm install -g @surething/cockpit
 cock                # 启动服务 → http://localhost:3457
 cock -h             # 查看帮助
 cock -v             # 查看版本
+```
+
+### 从源码安装
+
+```bash
+git clone https://github.com/Surething-io/cockpit.git
+cd cockpit
+npm install
+npm run setup       # 构建 + npm link（注册 cock 命令）
 ```
 
 ## CLI

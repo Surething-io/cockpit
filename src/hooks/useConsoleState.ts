@@ -594,6 +594,10 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     if (!plugin) return;
 
     const fields = plugin.parse(input);
+    // Inject cwd for plugins that need it (e.g. jupyter notebook)
+    if ('cwd' in fields && !fields.cwd) {
+      fields.cwd = currentCwd;
+    }
     const item: PluginItemBase = {
       id: generatePluginItemId(plugin.idPrefix),
       _type: type,

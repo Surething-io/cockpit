@@ -65,8 +65,7 @@ export function ImagePreview({ images, onRemove, disabled }: ImagePreviewProps) 
               alt={t('imagePreview.previewImage')}
               className="w-full h-full object-cover hover:opacity-90 transition-opacity"
             />
-            {!disabled && (
-              <button
+            <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onRemove(image.id);
@@ -76,7 +75,6 @@ export function ImagePreview({ images, onRemove, disabled }: ImagePreviewProps) 
               >
                 ✕
               </button>
-            )}
           </div>
         ))}
       </div>

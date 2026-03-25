@@ -36,9 +36,11 @@ import { HoverTooltip } from './HoverTooltip';
 import { ReferencesPanel } from './ReferencesPanel';
 import { SearchResultsPanel } from './SearchResultsPanel';
 import type { Location } from '@/lib/lsp/types';
+import { useSwipeContext } from './SwipeableViewContainer';
 
 export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchTrigger, initialSearchQuery, searchQueryTrigger }: FileBrowserModalProps) {
   const { t } = useTranslation();
+  const { activeView } = useSwipeContext();
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const menuContainerRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
@@ -405,9 +407,12 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const lastEscTimeRef = useRef<number>(0);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle shortcuts when Explorer panel is active (except ESC which always works)
+      const isExplorerActive = activeView === 'explorer';
+
       // Ctrl+- → Go Back / Ctrl+Shift+- → Go Forward
       // Use e.code to detect the physical key, avoiding Shift turning '-' into '_'
-      if (e.ctrlKey && !e.metaKey && e.code === 'Minus') {
+      if (isExplorerActive && e.ctrlKey && !e.metaKey && e.code === 'Minus') {
         e.preventDefault();
         if (e.shiftKey) {
           handleNavForward();
@@ -418,14 +423,14 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       }
 
       // Cmd+P / Ctrl+P → Quick file open
-      if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
+      if (isExplorerActive && (e.metaKey || e.ctrlKey) && e.key === 'p') {
         e.preventDefault();
         setShowQuickOpen(prev => !prev);
         return;
       }
 
       // Cmd+C → copy selected file to system clipboard (only in tree/recent tab and not inside an input)
-      if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !e.shiftKey) {
+      if (isExplorerActive && (e.metaKey || e.ctrlKey) && e.key === 'c' && !e.shiftKey) {
         const tag = (e.target as HTMLElement)?.tagName;
         const sel = window.getSelection()?.toString();
         if ((activeTab === 'tree' || activeTab === 'recent') && fileTree.selectedPath && !sel && tag !== 'INPUT' && tag !== 'TEXTAREA') {
@@ -436,7 +441,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       }
 
       // Cmd+V → paste into the directory of the selected file
-      if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
+      if (isExplorerActive && (e.metaKey || e.ctrlKey) && e.key === 'v') {
         const tag = (e.target as HTMLElement)?.tagName;
         if ((activeTab === 'tree' || activeTab === 'recent') && tag !== 'INPUT' && tag !== 'TEXTAREA') {
           e.preventDefault();
@@ -446,7 +451,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       }
 
       // Cmd+F in JSON readable mode → open JSON search
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+      if (isExplorerActive && (e.metaKey || e.ctrlKey) && e.key === 'f') {
         if (jsonPreview) {
           e.preventDefault();
           jsonPreviewSearch.open();
@@ -459,7 +464,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         }
       }
 
-      if (e.key === 'Escape') {
+      if (isExplorerActive && e.key === 'Escape') {
         // Close quick open first
         if (showQuickOpen) {
           setShowQuickOpen(false);
@@ -503,7 +508,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, fileTree.showBlame, fileTree.blameSelectedCommit, fileTree, showQuickOpen, lspReferences.visible, lspReferences.closeReferences, showSearchPanel, handleNavBack, handleNavForward, jsonReadable, jsonSearch, jsonPreview, jsonPreviewSearch, activeTab, handleCopyFile, handlePaste]);
+  }, [onClose, fileTree.showBlame, fileTree.blameSelectedCommit, fileTree, showQuickOpen, lspReferences.visible, lspReferences.closeReferences, showSearchPanel, handleNavBack, handleNavForward, jsonReadable, jsonSearch, jsonPreview, jsonPreviewSearch, activeTab, handleCopyFile, handlePaste, activeView]);
 
   // ========== Initial Data Load (once on mount) ==========
   useEffect(() => {

@@ -1,26 +1,10 @@
-node_modules
-.pnp
-.pnp.*
-.yarn/*
-coverage
-/out
-/build
-.DS_Store
-*.pem
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-.env*
-.vercel
-*.tsbuildinfo
-next-env.d.ts
-*storybook.log
-storybook-static
+# src dev-only
+src/stories
+
+# chrome extension dev artifacts
 chrome-extension/_metadata/
 
-# dev files
-.git
-.github
-docs
-src/stories
+# misc
+.DS_Store
+*.tsbuildinfo
+.env*

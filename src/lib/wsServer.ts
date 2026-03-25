@@ -7,12 +7,12 @@ import { dirname } from 'path';
 import { spawn, execSync } from 'child_process';
 import * as nodePty from 'node-pty';
 import { fileWatcher, reviewWatcher, type FileEvent } from './fileWatcher';
-import { GLOBAL_STATE_FILE, readJsonFile, getTerminalHistoryPath, getTerminalOutputPath } from './paths';
+import { GLOBAL_STATE_FILE, readJsonFile, getTerminalHistoryPath } from './paths';
 import { readFile } from 'fs/promises';
 import { getLastUserMessage } from './global-state';
 import { registerCommand, finalizeCommand, getRunningCommands, getRunningCommand, getRegistrySize, getAllProjectCwds } from './terminal/RunningCommandRegistry';
 import { registerBrowser, unregisterBrowser, resolvePendingRequest, getBrowserByShortId, createPendingRequest, sendCommandToBrowser, listBrowsers } from './bubbles/browser/BrowserBridge';
-import { getTerminalByShortId, listTerminals, addOutputListener, addExitListener, registerTerminal, unregisterTerminal, getTerminalShortId } from './terminal/TerminalBridge';
+import { getTerminalByShortId, listTerminals, addOutputListener, addExitListener, registerTerminal, unregisterTerminal } from './terminal/TerminalBridge';
 import { randomUUID } from 'crypto';
 import { isWindows, getDefaultShell, getDefaultPath } from './platform';
 

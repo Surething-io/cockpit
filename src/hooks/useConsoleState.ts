@@ -114,7 +114,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
   // Notify parent component of the current directory on initialization
   useEffect(() => {
     onCwdChange?.(cwd);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // ========== RAF-throttled output ==========

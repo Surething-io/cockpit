@@ -43,7 +43,7 @@ function ImageModal({ image, onClose }: { image: ImageInfo; onClose: () => void 
   return <Portal>{modalContent}</Portal>;
 }
 
-export function ImagePreview({ images, onRemove, disabled }: ImagePreviewProps) {
+export function ImagePreview({ images, onRemove, disabled: _disabled }: ImagePreviewProps) {
   const { t } = useTranslation();
   const [previewImage, setPreviewImage] = useState<ImageInfo | null>(null);
 

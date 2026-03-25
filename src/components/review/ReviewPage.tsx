@@ -257,22 +257,6 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
     }
   }, [currentId]);
 
-  // Toggle active
-  const handleToggleActive = useCallback(async () => {
-    if (!review) return;
-    try {
-      const res = await fetch(`/api/review/${currentId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ active: !review.active }),
-      });
-      if (res.ok) {
-        await fetchReview();
-      }
-    } catch {
-      toast(t('toast.operationFailed'), 'error');
-    }
-  }, [review, currentId, fetchReview, t]);
 
   // Click comment in right panel -> scroll to highlight in left panel
   const handleCommentClick = useCallback((commentId: string) => {

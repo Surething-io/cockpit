@@ -38,7 +38,7 @@ interface FileContextMenuProps {
 
 export function FileContextMenu({
   x, y, path, cwd, isDirectory, onClose,
-  onCreateFile, onDelete, onRefresh,
+  onCreateFile, onDelete, onRefresh: _onRefresh,
   onCopyFile, onPaste,
 }: FileContextMenuProps) {
   const { t } = useTranslation();

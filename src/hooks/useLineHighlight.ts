@@ -76,7 +76,7 @@ export function useLineHighlight(lines: string[], filePath: string): string[] {
 
     highlight();
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [linesKey, filePath, isDark]);
 
   return highlightedLines;

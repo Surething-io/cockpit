@@ -68,7 +68,7 @@ const FULLSCREEN_BAR_HEIGHT = 41;
 /** Bubble content area fixed height (px), ensures exactly 2 full bubbles fit vertically */
 export const BUBBLE_CONTENT_HEIGHT = 360;
 
-// eslint-disable-next-line no-control-regex
+ 
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 const stripAnsi = (s: string) => s.replace(ANSI_RE, '');
 
@@ -266,7 +266,7 @@ export const CommandBubble = memo(function CommandBubble({
   };
 
   const handleCopy = () => {
-    // eslint-disable-next-line no-control-regex
+     
     const plain = output.replace(/\x1b\[[0-9;]*m/g, '');
     navigator.clipboard.writeText(plain);
     toast(t('toast.copiedOutput'));

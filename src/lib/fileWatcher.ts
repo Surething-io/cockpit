@@ -1,5 +1,5 @@
 import { watch, readFileSync, statSync, existsSync, mkdirSync, writeFileSync, type FSWatcher } from 'fs';
-import { join, resolve, dirname } from 'path';
+import { join, resolve } from 'path';
 import { REVIEW_SIGNAL_FILE, REVIEW_DIR } from './paths';
 
 export interface FileEvent {

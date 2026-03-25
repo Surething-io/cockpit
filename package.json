@@ -1,12 +1,45 @@
 {
   "name": "cockpit",
   "version": "1.0.169",
+  "description": "The Cockpit That Drives AI",
+  "author": "Robert",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Surething-io/cockpit.git"
+  },
+  "homepage": "https://github.com/Surething-io/cockpit#readme",
+  "bugs": {
+    "url": "https://github.com/Surething-io/cockpit/issues"
+  },
+  "keywords": [
+    "ai",
+    "cockpit",
+    "cli",
+    "agent"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "bin": {
     "cock": "./bin/cock.mjs",
     "cock-dev": "./bin/cock-dev.mjs"
   },
+  "files": [
+    "bin",
+    "chrome-extension",
+    "public",
+    "server.mjs",
+    "src",
+    ".next",
+    "next.config.ts",
+    "postcss.config.mjs",
+    "tsconfig.json",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "COCKPIT_ENV=dev node --import tsx server.mjs",
+    "prepublishOnly": "npm run build",
     "build": "next build --webpack",
     "setup": "npm run build && npm link",
     "lint": "eslint",

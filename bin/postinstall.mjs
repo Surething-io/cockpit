@@ -28,13 +28,23 @@ const isNpmInstall = !existsSync(join(projectRoot, 'src'));
 if (isNpmInstall) {
   try {
     const src = join(projectRoot, 'chrome-extension');
-    const dest = join(homedir(), '.cockpit', 'chrome-extension');
+    const cockpitDir = join(homedir(), '.cockpit');
+    const dest = join(cockpitDir, 'chrome-extension');
     accessSync(src);
-    mkdirSync(join(homedir(), '.cockpit'), { recursive: true });
+    mkdirSync(cockpitDir, { recursive: true });
     cpSync(src, dest, { recursive: true, force: true });
-    // macOS: 清除 com.apple.provenance 等扩展属性
-    if (process.platform === 'darwin') {
-      try { execSync(`xattr -cr "${dest}"`); } catch {}
+
+    if (process.platform !== 'win32') {
+      // sudo 安装时文件 owner 是 root，Chrome 无法写入 _metadata/
+      // 用 SUDO_USER 还原为真实用户
+      const realUser = process.env.SUDO_USER;
+      if (realUser) {
+        try { execSync(`chown -R "${realUser}" "${cockpitDir}"`); } catch {}
+      }
+      // macOS: 清除 com.apple.provenance 等扩展属性
+      if (process.platform === 'darwin') {
+        try { execSync(`xattr -cr "${dest}"`); } catch {}
+      }
     }
   } catch {}
 }

@@ -30,8 +30,8 @@ const handle = app.getRequestHandler();
 
 app.prepare().then(async () => {
   const upgradeHandler = app.getUpgradeHandler();
-  const { handleUpgrade, broadcastToGlobalState, handleBrowserApi, handleTerminalApi } = await import('./src/lib/wsServer.ts');
-  const { scheduledTaskManager } = await import('./src/lib/scheduledTasks.ts');
+  const { handleUpgrade, broadcastToGlobalState, handleBrowserApi, handleTerminalApi } = await import(dev ? './src/lib/wsServer.ts' : './dist/wsServer.mjs');
+  const { scheduledTaskManager } = await import(dev ? './src/lib/scheduledTasks.ts' : './dist/scheduledTasks.mjs');
 
   // 初始化定时任务管理器
   scheduledTaskManager.setOnTaskFired((task) => {

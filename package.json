@@ -1,6 +1,6 @@
 {
   "name": "@surething/cockpit",
-  "version": "1.0.172",
+  "version": "1.0.173",
   "description": "The Cockpit That Drives AI",
   "author": "Robert",
   "license": "MIT",
@@ -30,16 +30,17 @@
     "chrome-extension",
     "public",
     "server.mjs",
-    "src",
+    "dist",
     ".next-prod",
     "next.config.ts",
     "LICENSE"
   ],
   "scripts": {
     "dev": "COCKPIT_ENV=dev node --import tsx server.mjs",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "npm run build && npm run build:server",
     "build": "next build --webpack",
-    "setup": "npm run build && npm link",
+    "build:server": "tsup --config tsup.server.ts",
+    "setup": "npm run build && npm run build:server && npm link",
     "lint": "eslint",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
@@ -87,7 +88,6 @@
     "remark-math": "^6.0.0",
     "shiki": "^3.21.0",
     "tiptap-markdown": "^0.9.0",
-    "tsx": "^4.21.0",
     "unist-util-visit": "^5.1.0",
     "ws": "^8.19.0"
   },
@@ -112,6 +112,8 @@
     "sharp": "^0.34.5",
     "storybook": "^10.2.1",
     "tailwindcss": "^4",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
     "typescript": "5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.18"

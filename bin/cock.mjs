@@ -94,4 +94,6 @@ if (!isDev && !existsSync(resolve(PROJECT_ROOT, '.next-prod', 'BUILD_ID'))) {
 }
 
 console.log('Starting Cockpit...');
-spawnSync('node', ['--import', 'tsx', 'server.mjs'], { cwd: PROJECT_ROOT, stdio: 'inherit' });
+// dev: tsx for on-the-fly TS compilation; prod: pre-compiled dist/
+const args = isDev ? ['--import', 'tsx', 'server.mjs'] : ['server.mjs'];
+spawnSync('node', args, { cwd: PROJECT_ROOT, stdio: 'inherit' });

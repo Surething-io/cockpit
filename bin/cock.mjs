@@ -19,6 +19,7 @@ Commands:
   (default)                    Start Cockpit server (port 3457)
   browser <id> <action>        Control browser bubbles
   terminal <id> <action>       Control terminal bubbles
+  update                       Update to latest version
 
 Options:
   --port <port>                Set server port (default: 3457)
@@ -69,6 +70,17 @@ if (process.argv[2] === 'terminal') {
   const mod = await import('./cock-terminal.mjs');
   await mod.done;
   process.exit(0);
+}
+
+if (process.argv[2] === 'update') {
+  console.log('Updating @surething/cockpit...');
+  const result = spawnSync('npm', ['install', '-g', '@surething/cockpit@latest'], { stdio: 'inherit' });
+  if (result.status === 0) {
+    const { readFileSync } = await import('fs');
+    const pkg = JSON.parse(readFileSync(resolve(PROJECT_ROOT, 'package.json'), 'utf8'));
+    console.log(`\nUpdated to v${pkg.version}`);
+  }
+  process.exit(result.status ?? 1);
 }
 
 // Start (foreground, Ctrl+C to stop)

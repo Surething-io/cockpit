@@ -24,7 +24,8 @@ jobs:
 
       - run: npm run build
 
-      - run: npm publish --provenance --access public
+      # --provenance requires public repo; add it back after the repo goes public
+      - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.COCKPIT_NPM_TOKEN }}
 

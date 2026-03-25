@@ -38,7 +38,7 @@ export class TSServerAdapter implements LanguageServerAdapter {
     const tsserverPath = this.findTsserver();
     console.log(`[tsserver] spawning: node ${tsserverPath}`);
 
-    const setTitleScript = resolve(process.cwd(), 'src/lib/lsp/set-title.js');
+    const setTitleScript = resolve(process.cwd(), 'bin/set-title.js');
     // Preload set-title.js via --require to set the process name without affecting tsserver's main module loading
     const child = spawn('node', ['--require', setTitleScript, tsserverPath, '--disableAutomaticTypingAcquisition'], {
       stdio: ['pipe', 'pipe', 'pipe'],

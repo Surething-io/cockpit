@@ -91,13 +91,12 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     onFetchTitle: fetchSessionTitle,
   });
 
-  // ! prefix or cock/cock-dev prefix: first line is command, subsequent lines are user notes, supports images
+  // ! prefix: first line is command, subsequent lines are user notes, supports images
   const wrappedHandleSend = useCallback(async (content: string, images?: ImageInfo[]) => {
     const firstLine = content.split('\n')[0];
     const isBangCmd = firstLine.startsWith('!') && firstLine.length > 1;
-    const isCockCmd = firstLine.startsWith('cock ') || firstLine.startsWith('cock-dev ');
-    if (isBangCmd || isCockCmd) {
-      const command = isBangCmd ? firstLine.slice(1).trim() : firstLine;
+    if (isBangCmd) {
+      const command = firstLine.slice(1).trim();
       if (!command) { handleSend(content, images); return; }
 
       const userNote = content.split('\n').slice(1).join('\n').trim();

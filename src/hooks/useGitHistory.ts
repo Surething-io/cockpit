@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { buildGitFileTree, collectGitTreeDirPaths, type GitFileNode } from '../components/project/GitFileTree';
 import type { Branch, Commit, FileChange, FileDiff } from '../components/project/fileBrowser/types';
 import { COMMITS_PER_PAGE } from '../components/project/fileBrowser/utils';
+import i18n from '@/lib/i18n';
 
 interface UseGitHistoryOptions {
   cwd: string;
@@ -47,20 +48,20 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
       .then(res => res.json())
       .then(data => {
         if (data.error) {
-          setHistoryError(data.error === 'Failed to get branches' ? '当前目录不是 Git 仓库' : data.error);
+          setHistoryError(data.error === 'Failed to get branches' ? i18n.t('git.notGitRepo') : data.error);
           setBranches(null);
         } else if (data.local && data.current) {
           setBranches(data);
           setSelectedBranch(data.current);
           if (data.upstream) setUpstreamBranch(data.upstream);
         } else {
-          setHistoryError('无法获取分支信息');
+          setHistoryError(i18n.t('git.cannotGetBranches'));
           setBranches(null);
         }
       })
       .catch(err => {
         console.error(err);
-        setHistoryError('获取分支信息失败');
+        setHistoryError(i18n.t('git.getBranchesFailed'));
         setBranches(null);
       })
       .finally(() => setIsLoadingBranches(false));

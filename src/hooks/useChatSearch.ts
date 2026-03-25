@@ -73,7 +73,7 @@ export function useChatSearch(containerRef: React.RefObject<HTMLDivElement | nul
         if (ranges.length === 0) continue;
 
         // Replace from back to front to avoid offset issues
-        let currentNode: Text = textNode;
+        const currentNode: Text = textNode;
         for (let i = ranges.length - 1; i >= 0; i--) {
           const range = ranges[i];
           // Split text node
@@ -106,7 +106,7 @@ export function useChatSearch(containerRef: React.RefObject<HTMLDivElement | nul
 
   // Re-run search when query changes
   useEffect(() => {
-    performSearch(searchQuery);
+    queueMicrotask(() => performSearch(searchQuery));
   }, [searchQuery, performSearch]);
 
   // Update current highlight

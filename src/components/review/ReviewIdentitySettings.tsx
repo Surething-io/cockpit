@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface IdentityProps {
   authorId: string;
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export function ReviewIdentitySettings({ identity }: Props) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [editName, setEditName] = useState('');
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -44,7 +46,7 @@ export function ReviewIdentitySettings({ identity }: Props) {
       <button
         onClick={() => { if (!open) setEditName(identity.name); setOpen(!open); }}
         className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors flex items-center gap-1"
-        title="身份设置"
+        title={t('review.identitySettings')}
       >
         <span className="w-5 h-5 rounded-full bg-brand/20 text-brand flex items-center justify-center text-[10px] font-bold">
           {identity.name.charAt(0)}
@@ -54,7 +56,7 @@ export function ReviewIdentitySettings({ identity }: Props) {
 
       {open && (
         <div className="absolute right-0 top-full mt-1 w-56 bg-card border border-border rounded-lg shadow-lg p-3 z-50">
-          <div className="text-xs text-muted-foreground mb-2">评审昵称</div>
+          <div className="text-xs text-muted-foreground mb-2">{t('review.reviewNickname')}</div>
           <input
             type="text"
             value={editName}
@@ -71,20 +73,20 @@ export function ReviewIdentitySettings({ identity }: Props) {
               }}
               className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
             >
-              随机
+              {t('review.random')}
             </button>
             <div className="flex-1" />
             <button
               onClick={() => setOpen(false)}
               className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
             >
-              取消
+              {t('common.cancel')}
             </button>
             <button
               onClick={handleSave}
               className="px-2 py-1 text-xs rounded bg-brand text-white hover:bg-brand/90 transition-colors"
             >
-              保存
+              {t('common.save')}
             </button>
           </div>
         </div>

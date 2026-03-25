@@ -1,4 +1,5 @@
 import React from 'react';
+import i18n from '@/lib/i18n';
 
 // ============================================
 // JSON utility functions
@@ -60,12 +61,12 @@ function CollapsibleEntry({ label, labelColor, value, indent }: {
   label: string; labelColor: string; value: unknown; indent: number;
 }) {
   const [collapsed, setCollapsed] = React.useState(false);
+  const [downPos, setDownPos] = React.useState({ x: 0, y: 0 });
   const canFold = isMultilineValue(value);
-  const downPos = React.useRef({ x: 0, y: 0 });
-  const onDown = (e: React.MouseEvent) => { downPos.current = { x: e.clientX, y: e.clientY }; };
+  const onDown = (e: React.MouseEvent) => { setDownPos({ x: e.clientX, y: e.clientY }); };
   const onClick = (e: React.MouseEvent) => {
-    const dx = e.clientX - downPos.current.x;
-    const dy = e.clientY - downPos.current.y;
+    const dx = e.clientX - downPos.x;
+    const dy = e.clientY - downPos.y;
     if (dx * dx + dy * dy > 25) return; // Drag-select does not trigger
     e.stopPropagation();
     setCollapsed(v => !v);
@@ -79,7 +80,7 @@ function CollapsibleEntry({ label, labelColor, value, indent }: {
       s(labelColor, label),
       s(C_PUNCT, ': '),
       s(C_STR, firstLine),
-      s(C_FOLD, ` ... (${lineCount} 行)`)
+      s(C_FOLD, ` ${i18n.t('toolCall.foldedLines', { count: lineCount })}`)
     );
   }
 

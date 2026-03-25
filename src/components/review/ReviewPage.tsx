@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ReviewMarkdownPanel } from './ReviewMarkdownPanel';
 import { ReviewCommentPanel } from './ReviewCommentPanel';
 import { ReviewIdentitySettings } from './ReviewIdentitySettings';
@@ -17,6 +18,7 @@ interface ReviewPageProps {
 }
 
 export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
+  const { t } = useTranslation();
   const [currentId, setCurrentId] = useState(initialReviewId);
   const [review, setReview] = useState<ReviewData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -86,9 +88,9 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
       const res = await fetch(`/api/review/${currentId}`);
       if (!res.ok) {
         if (res.status === 404) {
-          setError('评审不存在或已被删除');
+          setError(t('review.reviewNotExist'));
         } else {
-          setError('加载失败');
+          setError(t('review.loadFailed'));
         }
         return;
       }
@@ -96,7 +98,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
       setReview(data.review);
       setError(null);
     } catch {
-      setError('网络错误');
+      setError(t('review.networkError'));
     } finally {
       setLoading(false);
     }
@@ -137,7 +139,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
         await fetchReview();
       }
     } catch {
-      toast('添加评论失败', 'error');
+      toast(t('toast.addCommentFailed'), 'error');
     }
   }, [currentId, identity, fetchReview]);
 
@@ -151,7 +153,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
         await fetchReview();
       }
     } catch {
-      toast('删除评论失败', 'error');
+      toast(t('toast.deleteCommentFailed'), 'error');
     }
   }, [currentId, fetchReview]);
 
@@ -167,7 +169,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
         await fetchReview();
       }
     } catch {
-      toast('编辑评论失败', 'error');
+      toast(t('toast.editCommentFailed'), 'error');
     }
   }, [currentId, fetchReview]);
 
@@ -183,9 +185,9 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
         await fetchReview();
       }
     } catch {
-      toast('操作失败', 'error');
+      toast(t('toast.operationFailed'), 'error');
     }
-  }, [currentId, fetchReview]);
+  }, [currentId, fetchReview, t]);
 
   // Add reply
   const handleAddReply = useCallback(async (commentId: string, content: string) => {
@@ -205,7 +207,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
         await fetchReview();
       }
     } catch {
-      toast('添加回复失败', 'error');
+      toast(t('toast.addReplyFailed'), 'error');
     }
   }, [currentId, identity, fetchReview]);
 
@@ -220,7 +222,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
         await fetchReview();
       }
     } catch {
-      toast('删除回复失败', 'error');
+      toast(t('toast.deleteReplyFailed'), 'error');
     }
   }, [currentId, fetchReview]);
 
@@ -236,7 +238,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
         await fetchReview();
       }
     } catch {
-      toast('编辑回复失败', 'error');
+      toast(t('toast.editReplyFailed'), 'error');
     }
   }, [currentId, fetchReview]);
 
@@ -249,9 +251,9 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
         ? `${info.shareBase}/review/${currentId}`
         : window.location.href;
       await navigator.clipboard.writeText(shareUrl);
-      toast('链接已复制', 'success');
+      toast(t('toast.linkCopied'), 'success');
     } catch {
-      toast('复制失败', 'error');
+      toast(t('toast.copyFailed'), 'error');
     }
   }, [currentId]);
 
@@ -268,9 +270,9 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
         await fetchReview();
       }
     } catch {
-      toast('操作失败', 'error');
+      toast(t('toast.operationFailed'), 'error');
     }
-  }, [review, currentId, fetchReview]);
+  }, [review, currentId, fetchReview, t]);
 
   // Click comment in right panel -> scroll to highlight in left panel
   const handleCommentClick = useCallback((commentId: string) => {
@@ -306,7 +308,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
     if (loading) {
       return (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-muted-foreground">加载中...</div>
+          <div className="text-muted-foreground">{t('common.loading')}</div>
         </div>
       );
     }
@@ -315,8 +317,8 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
       return (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <div className="text-xl mb-2">{error || '评审不存在'}</div>
-            <div className="text-sm text-muted-foreground">请检查链接是否正确</div>
+            <div className="text-xl mb-2">{error || t('review.reviewNotFound')}</div>
+            <div className="text-sm text-muted-foreground">{t('review.checkLink')}</div>
           </div>
         </div>
       );
@@ -398,7 +400,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
         <div className="w-full max-w-[1800px] px-4 flex items-center gap-3">
           <h1 className="text-sm font-semibold truncate">{review.title}</h1>
           <span className="text-[11px] text-muted-foreground flex-shrink-0">
-            更新于 {new Date(review.updatedAt || review.createdAt).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+            {t('review.updatedAt', { date: new Date(review.updatedAt || review.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) })}
           </span>
           <span className="flex-1" />
 
@@ -409,7 +411,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
                 ? 'bg-green-500/15 text-green-600 dark:text-green-400'
                 : 'bg-muted text-muted-foreground'
             }`}>
-              {review.active ? '开放中' : '已关闭'}
+              {review.active ? t('review.active') : t('review.closed')}
             </span>
           )}
 
@@ -417,12 +419,12 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
           <button
             onClick={() => setShowCommentsListModal(true)}
             className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors text-muted-foreground flex items-center gap-1"
-            title="查看全部评论"
+            title={t('review.viewAllComments')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
             </svg>
-            查看评论
+            {t('review.viewCommentBtn')}
           </button>
 
           {/* Copy link */}
@@ -430,14 +432,14 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
             onClick={handleCopyLink}
             className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
           >
-            复制链接
+            {t('review.copyLink')}
           </button>
 
           {/* Theme toggle */}
           <button
             onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
             className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-            title={resolvedTheme === 'dark' ? '切换亮色' : '切换暗色'}
+            title={resolvedTheme === 'dark' ? t('settings.switchLight') : t('settings.switchDark')}
           >
             {resolvedTheme === 'dark' ? (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>

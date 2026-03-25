@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface HoverTooltipProps {
   displayString: string;
@@ -71,6 +72,7 @@ function extractTokenName(displayString: string): string {
 }
 
 export const HoverTooltip = forwardRef<HTMLDivElement, HoverTooltipProps>(function HoverTooltip({ displayString, documentation, x, y, container, onMouseEnter, onMouseLeave, onFindReferences, onSearch }, forwardedRef) {
+  const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
 
   // Merge refs: use ref internally, expose same DOM node via forwardedRef
@@ -133,7 +135,7 @@ export const HoverTooltip = forwardRef<HTMLDivElement, HoverTooltipProps>(functi
                 onClick={onFindReferences}
                 className="text-[11px] text-brand hover:underline cursor-pointer"
               >
-                查找引用
+                {t('hoverTooltip.findReferences')}
               </button>
             )}
             {onSearch && (
@@ -141,7 +143,7 @@ export const HoverTooltip = forwardRef<HTMLDivElement, HoverTooltipProps>(functi
                 onClick={() => onSearch(extractTokenName(displayString))}
                 className="text-[11px] text-brand hover:underline cursor-pointer"
               >
-                搜索
+                {t('hoverTooltip.search')}
               </button>
             )}
           </div>

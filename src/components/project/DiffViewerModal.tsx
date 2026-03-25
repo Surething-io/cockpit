@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Portal } from '../shared/Portal';
 import { X, ChevronRight, ChevronDown, FileText } from 'lucide-react';
 import { DiffView, DiffUnifiedView } from './DiffView';
@@ -200,6 +201,7 @@ function TreeNodeItem({
 // ============================================
 
 export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProps) {
+  const { t } = useTranslation();
   const changes = useMemo(() => extractFileChanges(toolCalls, cwd), [toolCalls, cwd]);
   const tree = useMemo(() => collapseTree(buildTree(changes)), [changes]);
 
@@ -277,7 +279,7 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-medium text-foreground">
-              文件变更 ({changes.length} 处)
+              {t('diffViewer.fileChanges', { count: changes.length })}
             </h3>
           </div>
           <div className="flex items-center gap-3">
@@ -346,7 +348,7 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
               )
             ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                选择左侧文件查看变更
+                {t('diffViewer.selectFileToView')}
               </div>
             )}
           </div>

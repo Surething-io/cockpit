@@ -1,9 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ReviewComment } from '@/lib/review-utils';
 import { Portal } from '@/components/shared/Portal';
 import { toast } from '@/components/shared/Toast';
+import i18n from '@/lib/i18n';
 
 /** authorId → latest nickname */
 export type UserNameMap = Record<string, string>;
@@ -43,14 +45,14 @@ function formatSingleComment(
   const anchor = comment.anchor.selectedText.length > 200
     ? comment.anchor.selectedText.slice(0, 197) + '...'
     : comment.anchor.selectedText;
-  parts.push(`${prefix}引用: "${anchor}"`);
+  parts.push(`${prefix}${i18n.t('review.quoteRef', { text: anchor })}`);
 
   // Comment
-  parts.push(`评论 (${resolveAuthor(comment.authorId, comment.author)}): ${comment.content}`);
+  parts.push(i18n.t('review.commentAuthor', { author: resolveAuthor(comment.authorId, comment.author), content: comment.content }));
 
   // Replies
   for (const reply of comment.replies) {
-    parts.push(`  ↳ ${resolveAuthor(reply.authorId, reply.author)}: ${reply.content}`);
+    parts.push(i18n.t('review.replyAuthor', { author: resolveAuthor(reply.authorId, reply.author), content: reply.content }));
   }
 
   return parts.join('\n');
@@ -65,14 +67,14 @@ function formatAllComments(
   if (comments.length === 0) return '';
 
   const sorted = [...comments].sort((a, b) => a.anchor.startOffset - b.anchor.startOffset);
-  const parts: string[] = [`评审评论汇总 — ${reviewTitle}`, ''];
+  const parts: string[] = [i18n.t('review.reviewSummary', { title: reviewTitle }), ''];
 
   sorted.forEach((comment, index) => {
     parts.push(formatSingleComment(comment, userNameMap, index));
     parts.push('');
   });
 
-  parts.push(`共 ${comments.length} 条评论`);
+  parts.push(i18n.t('review.totalNComments', { count: comments.length }));
   return parts.join('\n').trim();
 }
 
@@ -84,6 +86,7 @@ export function ReviewCommentsListModal({
   userNameMap,
   onCommentClick,
 }: Props) {
+  const { t } = useTranslation();
   const [copyingId, setCopyingId] = useState<string | null>(null);
   const [copyingAll, setCopyingAll] = useState(false);
 
@@ -101,9 +104,9 @@ export function ReviewCommentsListModal({
     try {
       const text = formatSingleComment(comment, userNameMap);
       await navigator.clipboard.writeText(text);
-      toast('已复制评论');
+      toast(t('toast.copiedComment'));
     } catch {
-      toast('复制失败', 'error');
+      toast(t('toast.copyFailed'), 'error');
     } finally {
       setCopyingId(null);
     }
@@ -115,9 +118,9 @@ export function ReviewCommentsListModal({
     try {
       const text = formatAllComments(comments, reviewTitle, userNameMap);
       await navigator.clipboard.writeText(text);
-      toast('已复制全部评论');
+      toast(t('toast.copiedAllComments'));
     } catch {
-      toast('复制失败', 'error');
+      toast(t('toast.copyFailed'), 'error');
     } finally {
       setCopyingAll(false);
     }
@@ -144,17 +147,17 @@ export function ReviewCommentsListModal({
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-foreground">全部评论</h2>
+            <h2 className="text-sm font-semibold text-foreground">{t('review.allCommentsTitle')}</h2>
             <span className="text-xs text-muted-foreground">
-              {comments.length} 条
-              {closedComments.length > 0 && `（${closedComments.length} 条已关闭）`}
+              {t('review.commentsCountBrief', { count: comments.length })}
+              {closedComments.length > 0 && ` (${t('review.closedCount', { count: closedComments.length })})`}
             </span>
             {comments.length > 0 && (
               <button
                 onClick={handleCopyAll}
                 disabled={copyingAll}
                 className="p-1 rounded hover:bg-accent text-muted-foreground disabled:opacity-50"
-                title="复制全部评论"
+                title={t('review.copyAllComments')}
               >
                 {copyingAll ? (
                   <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -181,7 +184,7 @@ export function ReviewCommentsListModal({
           {comments.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <div className="text-2xl mb-2">💬</div>
-              <span className="text-sm">暂无评论</span>
+              <span className="text-sm">{t('review.noComments')}</span>
             </div>
           ) : (
             <div className="space-y-2">
@@ -202,7 +205,7 @@ export function ReviewCommentsListModal({
               {closedComments.length > 0 && (
                 <>
                   <div className="text-[11px] text-muted-foreground/60 pt-2 pb-1 px-1">
-                    已关闭 ({closedComments.length})
+                    {t('review.closedComments', { count: closedComments.length })}
                   </div>
                   {closedComments.map((comment, idx) => (
                     <CommentRow
@@ -278,7 +281,7 @@ function CommentRow({
               {formatTime(comment.createdAt)}
             </span>
             {closed && (
-              <span className="text-[10px] text-muted-foreground/60">已关闭</span>
+              <span className="text-[10px] text-muted-foreground/60">{i18n.t('review.closedLabel')}</span>
             )}
           </div>
           <p className="text-sm text-foreground line-clamp-2 pl-6">
@@ -296,7 +299,7 @@ function CommentRow({
               ))}
               {comment.replies.length > 3 && (
                 <div className="text-[10px] text-muted-foreground/60">
-                  +{comment.replies.length - 3} 条回复
+                  {i18n.t('review.moreReplies', { count: comment.replies.length - 3 })}
                 </div>
               )}
             </div>
@@ -311,7 +314,7 @@ function CommentRow({
           }}
           disabled={copyingId === comment.id}
           className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-accent text-muted-foreground transition-opacity disabled:opacity-50 flex-shrink-0 mt-0.5"
-          title="复制评论"
+          title={i18n.t('review.copyComment')}
         >
           {copyingId === comment.id ? (
             <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />

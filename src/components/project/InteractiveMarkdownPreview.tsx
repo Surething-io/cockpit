@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { useMenuContainer } from './FileContextMenu';
 import { ToolbarRenderer, type ToolbarData } from './FloatingToolbar';
@@ -68,6 +69,7 @@ export function InteractiveMarkdownPreview({
   // Derive sourceFile (relative path)
   const sourceFile = sourceFileProp
     || (cwd && filePath.startsWith(cwd) ? filePath.slice(cwd.endsWith('/') ? cwd.length : cwd.length + 1) : filePath);
+  const { t } = useTranslation();
   // === Refs ===
   const containerRef = useRef<HTMLDivElement>(null);
   const floatingToolbarRef = useRef<ToolbarData | null>(null);
@@ -87,7 +89,7 @@ export function InteractiveMarkdownPreview({
   // === Source lines for extracting original content ===
   const sourceLines = useMemo(() => content.split('\n'), [content]);
 
-  useEffect(() => { setIsMounted(true); }, []);
+  useEffect(() => { queueMicrotask(() => setIsMounted(true)); }, []);
 
   // ============================================
   // Selection detection → FloatingToolbar
@@ -278,7 +280,7 @@ export function InteractiveMarkdownPreview({
 
   useEffect(() => {
     if (commentGroups.length === 0 || !containerRef.current) {
-      setCommentPositions([]);
+      queueMicrotask(() => setCommentPositions([]));
       return;
     }
     // Wait briefly for MarkdownRenderer to finish rendering
@@ -352,7 +354,7 @@ export function InteractiveMarkdownPreview({
           <button
             onClick={onClose}
             className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-            title="关闭"
+            title={t('common.close')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useLayoutEffect, memo, useState, lazy, Suspense, useCallback } from 'react';
 import { Copy, Clipboard, X, RotateCw, ChevronUp, ChevronDown, Search } from 'lucide-react';
 import { toast } from '../../shared/Toast';
+import { useTranslation } from 'react-i18next';
 import { AnsiUp } from 'ansi_up';
 import type { XtermSearchHandle } from './XtermRenderer';
 import { toShortId } from '@/lib/shortId';
@@ -176,6 +177,7 @@ export const CommandBubble = memo(function CommandBubble({
   bubbleContentHeight,
   onTitleMouseDown,
 }: CommandBubbleProps) {
+  const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
   const shouldAutoScroll = useRef(true);
@@ -202,10 +204,12 @@ export const CommandBubble = memo(function CommandBubble({
   const ansiUpRef = useRef<AnsiUp | null>(null);
   const parsedLenRef = useRef(0);
 
-  if (!ansiUpRef.current) {
-    ansiUpRef.current = new AnsiUp();
-    ansiUpRef.current.use_classes = true;
-  }
+  useEffect(() => {
+    if (!ansiUpRef.current) {
+      ansiUpRef.current = new AnsiUp();
+      ansiUpRef.current.use_classes = true;
+    }
+  }, []);
 
   useLayoutEffect(() => {
     const pre = preRef.current;
@@ -265,7 +269,7 @@ export const CommandBubble = memo(function CommandBubble({
     // eslint-disable-next-line no-control-regex
     const plain = output.replace(/\x1b\[[0-9;]*m/g, '');
     navigator.clipboard.writeText(plain);
-    toast('已复制输出');
+    toast(t('toast.copiedOutput'));
   };
 
   // ESC to exit fullscreen
@@ -381,7 +385,7 @@ export const CommandBubble = memo(function CommandBubble({
               {isRunning && (
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                  运行中
+                  {t('console.runningText')}
                 </span>
               )}
               {isRunning && onInterrupt && (
@@ -395,7 +399,7 @@ export const CommandBubble = memo(function CommandBubble({
               <button
                 onClick={() => onToggleMaximize?.()}
                 className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title={`还原 (${modKey()}M / ESC)`}
+                title={t('console.restoreTooltip', { modKey: modKey() })}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -433,21 +437,21 @@ export const CommandBubble = memo(function CommandBubble({
               )}
               <span className="font-mono text-foreground truncate">{command}</span>
               <button
-                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(command); toast('已复制命令'); }}
+                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(command); toast(t('toast.copiedCmd')); }}
                 className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                title="复制命令"
+                title={t('console.copyCommand')}
               >
                 <Copy className="w-3.5 h-3.5" />
               </button>
               <span className="flex-1" />
               {isOverflowing && !isRunning && (
-                <span className="text-muted-foreground flex-shrink-0">共 {lineCount} 行</span>
+                <span className="text-muted-foreground flex-shrink-0">{t('console.totalLines', { count: lineCount })}</span>
               )}
               {output && (
                 <button
                   onClick={(e) => { e.stopPropagation(); handleCopy(); }}
                   className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                  title="复制输出"
+                  title={t('console.copyOutput')}
                 >
                   <Clipboard className="w-3.5 h-3.5" />
                 </button>
@@ -456,7 +460,7 @@ export const CommandBubble = memo(function CommandBubble({
                 <button
                   onClick={(e) => { e.stopPropagation(); onRerun(); }}
                   className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                  title="重新运行"
+                  title={t('console.rerun')}
                 >
                   <RotateCw className="w-3.5 h-3.5" />
                 </button>
@@ -465,7 +469,7 @@ export const CommandBubble = memo(function CommandBubble({
                 <button
                   onClick={(e) => { e.stopPropagation(); onDelete(); }}
                   className="p-0.5 rounded text-destructive hover:text-destructive/80 transition-colors flex-shrink-0"
-                  title="删除记录"
+                  title={t('console.deleteRecord')}
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -496,7 +500,7 @@ export const CommandBubble = memo(function CommandBubble({
                     else doSearchNext(searchQuery);
                   }
                 }}
-                placeholder="搜索..."
+                placeholder={t('console.searchPlaceholder')}
                 className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
                 autoComplete="off"
                 spellCheck="false"
@@ -508,13 +512,13 @@ export const CommandBubble = memo(function CommandBubble({
                     onClick={() => setPipeSearchMode('search')}
                     className={`px-1.5 py-0.5 rounded transition-colors ${pipeSearchMode === 'search' ? 'bg-brand/20 text-brand' : 'text-muted-foreground hover:text-foreground'}`}
                   >
-                    搜索
+                    {t('console.searchMode')}
                   </button>
                   <button
                     onClick={() => setPipeSearchMode('filter')}
                     className={`px-1.5 py-0.5 rounded transition-colors ${pipeSearchMode === 'filter' ? 'bg-brand/20 text-brand' : 'text-muted-foreground hover:text-foreground'}`}
                   >
-                    过滤
+                    {t('console.filterMode')}
                   </button>
                 </div>
               )}
@@ -522,14 +526,14 @@ export const CommandBubble = memo(function CommandBubble({
                 <button
                   onClick={() => doSearchPrev(searchQuery)}
                   className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                  title="上一个 (Shift+Enter)"
+                  title={t('console.prevShiftEnter')}
                 >
                   <ChevronUp className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => doSearchNext(searchQuery)}
                   className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                  title="下一个 (Enter)"
+                  title={t('console.nextEnter')}
                 >
                   <ChevronDown className="w-3.5 h-3.5" />
                 </button>
@@ -546,7 +550,7 @@ export const CommandBubble = memo(function CommandBubble({
           {/* Output content */}
           {usePty ? (
             <div style={{ height: contentHeight, overflow: 'hidden' }}>
-              <Suspense fallback={<div className="px-4 py-2 text-xs text-muted-foreground" style={{ height: contentHeight }}>加载终端...</div>}>
+              <Suspense fallback={<div className="px-4 py-2 text-xs text-muted-foreground" style={{ height: contentHeight }}>{t('console.loadingTerminal')}</div>}>
                 <XtermRenderer ref={xtermSearchRef} output={output} isRunning={isRunning} onInput={onStdin} onResize={onPtyResize} maximized={maximized} height={contentHeight} />
               </Suspense>
             </div>
@@ -576,7 +580,7 @@ export const CommandBubble = memo(function CommandBubble({
             <div className="border-t border-border px-4 py-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
               <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse flex-shrink-0" />
               {usePty ? (
-                <span className="text-xs text-muted-foreground flex-1">点击终端区域输入</span>
+                <span className="text-xs text-muted-foreground flex-1">{t('console.clickToInput')}</span>
               ) : onStdin ? (
                 <input
                   ref={stdinRef}
@@ -602,13 +606,13 @@ export const CommandBubble = memo(function CommandBubble({
                       onStdin('\t');
                     }
                   }}
-                  placeholder="stdin 输入..."
+                  placeholder={t('console.stdinPlaceholder')}
                   className="flex-1 min-w-0 bg-transparent text-xs font-mono text-foreground outline-none placeholder:text-muted-foreground"
                   autoComplete="off"
                   spellCheck="false"
                 />
               ) : (
-                <span className="text-xs text-muted-foreground">运行中...</span>
+                <span className="text-xs text-muted-foreground">{t('console.runningText')}</span>
               )}
               {onInterrupt && (
                 <button
@@ -626,7 +630,7 @@ export const CommandBubble = memo(function CommandBubble({
           {!isRunning && exitCode !== undefined && !maximized && (
             <div className="border-t border-border px-4 py-2 flex items-center gap-2 text-xs text-muted-foreground">
               <span className={`inline-block w-2 h-2 rounded-full ${exitCode === 0 ? 'bg-green-500' : 'bg-red-500'}`} />
-              <span>退出代码: {exitCode}</span>
+              <span>{t('console.exitCode', { code: exitCode })}</span>
               <span className="flex-1" />
               {timeStr && <span className="text-[11px] flex-shrink-0">{timeStr}</span>}
             </div>

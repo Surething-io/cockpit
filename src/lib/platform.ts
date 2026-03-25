@@ -31,7 +31,7 @@ export function getDefaultPath(): string {
 export function isMacClient(): boolean {
   if (typeof navigator === 'undefined') return false;
   return /Mac|iPhone|iPad/.test(navigator.platform || '')
-    || ((navigator as any).userAgentData?.platform === 'macOS');
+    || ((navigator as unknown as { userAgentData?: { platform?: string } }).userAgentData?.platform === 'macOS');
 }
 
 /** Modifier key label: macOS → '⌘', others → 'Ctrl+' */

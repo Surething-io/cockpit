@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ProjectSidebar, ProjectInfo } from './ProjectSidebar';
 import { EmptyState } from './EmptyState';
 import { SessionBrowser } from '../shared/SessionBrowser';
@@ -21,6 +22,7 @@ interface WorkspaceProps {
 }
 
 export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
+  const { t } = useTranslation();
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [collapsed, setCollapsed] = useState(false);
@@ -393,7 +395,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          <span>加载中...</span>
+          <span>{t('workspace.loadingText')}</span>
         </div>
       </div>
     );

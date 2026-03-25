@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import type { FileNode } from './fileBrowser/types';
 import { FileIcon } from '../shared/FileIcon';
@@ -149,6 +150,7 @@ function HighlightedPath({ path, matchedIndices }: { path: string; matchedIndice
 // ============================================
 
 export function QuickFileOpen({ files, fileIndex, recentFiles, onSelectFile, onClose }: QuickFileOpenProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -260,7 +262,7 @@ export function QuickFileOpen({ files, fileIndex, recentFiles, onSelectFile, onC
             value={query}
             onChange={(e) => handleQueryChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="输入文件名快速打开..."
+            placeholder={t('quickFileOpen.placeholder')}
             className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
             autoComplete="off"
             autoCorrect="off"
@@ -273,7 +275,7 @@ export function QuickFileOpen({ files, fileIndex, recentFiles, onSelectFile, onC
         <div ref={listRef} className="flex-1 overflow-y-auto py-1">
           {results.length === 0 ? (
             <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-              没有匹配的文件
+              {t('quickFileOpen.noMatch')}
             </div>
           ) : (
             results.map((result, index) => (
@@ -291,7 +293,7 @@ export function QuickFileOpen({ files, fileIndex, recentFiles, onSelectFile, onC
                 <HighlightedPath path={result.path} matchedIndices={result.matchedIndices} />
                 {!query.trim() && recentFiles.includes(result.path) && (
                   <span className="ml-auto text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-secondary flex-shrink-0">
-                    最近
+                    {t('quickFileOpen.recent')}
                   </span>
                 )}
               </div>
@@ -302,13 +304,13 @@ export function QuickFileOpen({ files, fileIndex, recentFiles, onSelectFile, onC
         {/* Footer */}
         <div className="px-3 py-1.5 border-t border-border flex items-center gap-3 text-[10px] text-muted-foreground">
           <span className="flex items-center gap-1">
-            <kbd className="px-1 py-0.5 rounded border border-border bg-secondary">↑↓</kbd> 选择
+            <kbd className="px-1 py-0.5 rounded border border-border bg-secondary">↑↓</kbd> {t('quickFileOpen.selectHint')}
           </span>
           <span className="flex items-center gap-1">
-            <kbd className="px-1 py-0.5 rounded border border-border bg-secondary">Enter</kbd> 打开
+            <kbd className="px-1 py-0.5 rounded border border-border bg-secondary">Enter</kbd> {t('quickFileOpen.openHint')}
           </span>
           <span className="flex items-center gap-1">
-            <kbd className="px-1 py-0.5 rounded border border-border bg-secondary">Esc</kbd> 关闭
+            <kbd className="px-1 py-0.5 rounded border border-border bg-secondary">Esc</kbd> {t('quickFileOpen.closeHint')}
           </span>
         </div>
       </div>

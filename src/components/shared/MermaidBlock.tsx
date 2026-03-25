@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useTheme } from './ThemeProvider';
+import { useTranslation } from 'react-i18next';
 
 // Mermaid lazy-load + singleton
 let mermaidInstance: typeof import('mermaid').default | null = null;
@@ -31,6 +32,7 @@ interface MermaidBlockProps {
 }
 
 export function MermaidBlock({ code, isDark }: MermaidBlockProps) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<'diagram' | 'code'>('diagram');
   const [svgHtml, setSvgHtml] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,10 +75,10 @@ export function MermaidBlock({ code, isDark }: MermaidBlockProps) {
         {/* Tab bar */}
         <div className="flex items-center justify-end gap-1 px-3 py-1.5 border-b border-border">
           <TabButton active={tab === 'diagram'} onClick={() => setTab('diagram')}>
-            <span className="text-xs">📊</span> 图表
+            <span className="text-xs">📊</span> {t('mermaid.chart')}
           </TabButton>
           <TabButton active={tab === 'code'} onClick={() => setTab('code')}>
-            <span className="text-xs opacity-70">&lt;/&gt;</span> 代码
+            <span className="text-xs opacity-70">&lt;/&gt;</span> {t('mermaid.code')}
           </TabButton>
         </div>
 
@@ -87,7 +89,7 @@ export function MermaidBlock({ code, isDark }: MermaidBlockProps) {
               <div className="flex items-start gap-2 p-3 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
                 <span className="flex-shrink-0 mt-0.5">⚠️</span>
                 <div>
-                  <div className="font-medium mb-1">Mermaid 渲染失败</div>
+                  <div className="font-medium mb-1">{t('mermaid.renderFailed')}</div>
                   <pre className="text-xs opacity-80 whitespace-pre-wrap break-all">{error}</pre>
                 </div>
               </div>
@@ -95,12 +97,12 @@ export function MermaidBlock({ code, isDark }: MermaidBlockProps) {
               <div
                 className="mermaid-preview cursor-pointer hover:opacity-90 transition-opacity [&>svg]:max-w-full [&>svg]:max-h-[300px] [&>svg]:mx-auto"
                 onClick={() => setModalOpen(true)}
-                title="点击放大查看"
+                title={t('mermaid.clickToEnlarge')}
                 dangerouslySetInnerHTML={{ __html: svgHtml }}
               />
             ) : (
               <div className="flex items-center justify-center py-6 text-muted-foreground text-sm">
-                渲染中...
+                {t('mermaid.rendering')}
               </div>
             )}
           </div>
@@ -159,6 +161,7 @@ function MermaidModal({ svgHtml, onClose }: {
   svgHtml: string;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   // ESC to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -177,11 +180,11 @@ function MermaidModal({ svgHtml, onClose }: {
       <div className="relative bg-card rounded-lg shadow-xl w-[96vw] h-[94vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border flex-shrink-0">
-          <h3 className="text-sm font-medium text-foreground">Mermaid 图表</h3>
+          <h3 className="text-sm font-medium text-foreground">{t('mermaid.mermaidChart')}</h3>
           <button
             onClick={onClose}
             className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-            title="关闭 (ESC)"
+            title={t('mermaid.closeEsc')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

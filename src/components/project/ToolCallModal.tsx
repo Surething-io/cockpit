@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ToolCallInfo } from '@/types/chat';
 import { PreviewModal } from './PreviewModal';
 import { toast } from '../shared/Toast';
@@ -30,6 +31,7 @@ interface ToolCallProps {
 }
 
 export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [previewContent, setPreviewContent] = useState<{ title: string; content: string; toolName: string } | null>(null);
 
@@ -74,7 +76,7 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
   const displayPath = displayInfo ? (skipRelativePath ? displayInfo : getRelativePath(displayInfo)) : null;
 
   const openPreview = (type: 'input' | 'result') => {
-    const suffix = type === 'input' ? '输入参数' : '结果';
+    const suffix = type === 'input' ? t('toolCall.inputParams') : t('toolCall.resultLabel');
     const content = type === 'input'
       ? JSON.stringify(toolCall.input, null, 2)
       : (typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2));
@@ -110,7 +112,7 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
                 e.stopPropagation();
                 if (displayInfo) {
                   navigator.clipboard.writeText(displayInfo);
-                  toast('已复制路径');
+                  toast(t('common.copiedPath'));
                 }
               }}
               onKeyDown={(e) => {
@@ -118,12 +120,12 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
                   e.stopPropagation();
                   if (displayInfo) {
                     navigator.clipboard.writeText(displayInfo);
-                    toast('已复制路径');
+                    toast(t('common.copiedPath'));
                   }
                 }
               }}
               className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0 cursor-pointer"
-              title="复制绝对路径"
+              title={t('common.copyAbsPath')}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -141,9 +143,9 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
                 onClick={(e) => { e.stopPropagation(); openPreview('input'); }}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openPreview('input'); } }}
                 className="text-xs text-brand hover:text-teal-10 cursor-pointer"
-                title="查看输入参数"
+                title={t('toolCall.inputParamsTitle')}
               >
-                输入
+                {t('toolCall.input')}
               </span>
               {toolCall.result && (
                 <span
@@ -152,9 +154,9 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
                   onClick={(e) => { e.stopPropagation(); openPreview('result'); }}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openPreview('result'); } }}
                   className="text-xs text-brand hover:text-teal-10 cursor-pointer"
-                  title="查看结果"
+                  title={t('toolCall.resultTitle')}
                 >
-                  结果
+                  {t('toolCall.result')}
                 </span>
               )}
             </>
@@ -173,7 +175,7 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
         <div className="border-t border-border">
           <div className="px-3 py-2">
             <div className="mb-1">
-              <span className="text-xs text-muted-foreground">输入参数:</span>
+              <span className="text-xs text-muted-foreground">{t('toolCall.inputParams')}:</span>
             </div>
             <pre className="text-xs bg-secondary p-2 rounded overflow-x-auto max-h-24 overflow-y-auto text-foreground">
               {JSON.stringify(toolCall.input, null, 2)}
@@ -183,7 +185,7 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
           {toolCall.result && (
             <div className="px-3 py-2 border-t border-border">
               <div className="mb-1">
-                <span className="text-xs text-muted-foreground">结果:</span>
+                <span className="text-xs text-muted-foreground">{t('toolCall.resultLabel')}:</span>
               </div>
               <pre className="text-xs bg-secondary p-2 rounded overflow-x-auto max-h-24 overflow-y-auto text-foreground">
                 {typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2)}

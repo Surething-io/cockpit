@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '@/lib/i18n';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -28,6 +30,7 @@ interface NoteModalProps {
 }
 
 export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModalProps) {
+  const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -78,7 +81,7 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
         heading: { levels: [1, 2, 3] },
       }),
       Placeholder.configure({
-        placeholder: '写点什么... 输入 / 打开快捷命令',
+        placeholder: () => i18n.t('editor.placeholder'),
       }),
       Table.configure({ resizable: true }),
       TableRow,
@@ -250,9 +253,9 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-medium text-foreground">{projectName ? `${projectName} - 笔记` : '笔记'}</h2>
+            <h2 className="text-sm font-medium text-foreground">{projectName ? t('editor.noteTitle', { name: projectName }) : t('editor.noteUntitled')}</h2>
             {isSaving && (
-              <span className="text-xs text-muted-foreground">保存中...</span>
+              <span className="text-xs text-muted-foreground">{t('editor.saving')}</span>
             )}
           </div>
           <button
@@ -272,7 +275,7 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center py-12 text-muted-foreground">
-              <span>加载中...</span>
+              <span>{t('common.loading')}</span>
             </div>
           ) : (
             <EditorContent editor={editor} />

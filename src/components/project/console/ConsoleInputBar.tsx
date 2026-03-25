@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Zap, Variable, LayoutGrid, List } from 'lucide-react';
 import { QuickCommandsPopover, useQuickCommands } from './QuickCommandsPopover';
 import { matchInput } from '@/hooks/useConsoleState';
@@ -35,6 +36,7 @@ export function ConsoleInputBar({
   onOpenZsh,
   onOpenNote,
 }: ConsoleInputBarProps) {
+  const { t } = useTranslation();
   const [inputValue, setInputValue] = useState('');
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [temporaryInput, setTemporaryInput] = useState('');
@@ -68,11 +70,13 @@ export function ConsoleInputBar({
         .filter(c => c.name.toLowerCase().startsWith(keyword))
         .map(c => ({ ...c, scope: 'global' as const }));
       const filtered = [...taggedProject, ...taggedGlobal];
-      setFilteredSlashCommands(filtered);
-      setShowSlashCommands(filtered.length > 0);
-      setSlashSelectedIndex(0);
+      queueMicrotask(() => {
+        setFilteredSlashCommands(filtered);
+        setShowSlashCommands(filtered.length > 0);
+        setSlashSelectedIndex(0);
+      });
     } else {
-      setShowSlashCommands(false);
+      queueMicrotask(() => setShowSlashCommands(false));
     }
   }, [inputValue, projectCommands, globalCommands]);
 
@@ -260,7 +264,7 @@ export function ConsoleInputBar({
                 ? 'text-brand bg-brand/10'
                 : 'text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95'
             }`}
-            title="快捷命令"
+            title={t('console.quickCommands')}
           >
             <Zap className="w-4 h-4" />
           </button>
@@ -280,7 +284,7 @@ export function ConsoleInputBar({
             type="button"
             onClick={onOpenNote}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
-            title="项目笔记"
+            title={t('chat.projectNotes')}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -292,7 +296,7 @@ export function ConsoleInputBar({
           type="button"
           onClick={() => onGridLayoutChange(!gridLayout)}
           className={`p-2 rounded-lg transition-all ${gridLayout ? 'text-brand bg-brand/10' : 'text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95'}`}
-          title={gridLayout ? '单列布局' : '双列布局'}
+          title={gridLayout ? t('console.singleColumn') : t('console.dualColumn')}
         >
           {gridLayout ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
         </button>
@@ -300,7 +304,7 @@ export function ConsoleInputBar({
           type="button"
           onClick={onShowEnvManager}
           className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
-          title="环境变量"
+          title={t('console.envVars')}
         >
           <Variable className="w-4 h-4" />
         </button>
@@ -309,7 +313,7 @@ export function ConsoleInputBar({
           type="button"
           onClick={onOpenZsh}
           className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
-          title="启动 zsh 交互终端"
+          title={t('console.launchZsh')}
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <polyline points="4 17 10 11 4 5" />
@@ -332,7 +336,7 @@ export function ConsoleInputBar({
           onKeyDown={handleKeyDown}
           onCompositionStart={() => { isComposingRef.current = true; }}
           onCompositionEnd={() => { isComposingRef.current = false; }}
-          placeholder="输入命令或网址并按 Enter... (↑↓ 历史, Tab 补全)"
+          placeholder={t('console.inputPlaceholder')}
           className="flex-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring font-mono"
         />
 
@@ -352,7 +356,7 @@ export function ConsoleInputBar({
               >
                 <span className="font-mono font-medium text-foreground">/{cmd.name}</span>
                 <span className="flex-1 text-muted-foreground truncate">{cmd.command}</span>
-                <span className="text-[10px] text-muted-foreground/60 flex-shrink-0">{cmd.scope === 'project' ? '项目' : '全局'}</span>
+                <span className="text-[10px] text-muted-foreground/60 flex-shrink-0">{cmd.scope === 'project' ? t('console.scopeProject') : t('console.scopeGlobal')}</span>
               </div>
             ))}
           </div>
@@ -375,7 +379,7 @@ export function ConsoleInputBar({
               ))}
             </div>
             <div className="border-t border-border px-3 py-1 text-xs text-muted-foreground">
-              Tab 切换 · Esc 关闭
+              {t('console.tabSwitchEscClose')}
             </div>
           </div>
         )}

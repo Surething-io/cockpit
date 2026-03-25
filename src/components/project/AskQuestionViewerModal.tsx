@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Portal } from '../shared/Portal';
 import { X, CircleDot, CheckSquare, Square, Copy, PenLine } from 'lucide-react';
 import { toast } from '../shared/Toast';
@@ -49,6 +50,7 @@ function questionKey(tcIdx: number, qIdx: number): string {
 }
 
 export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewerModalProps) {
+  const { t } = useTranslation();
   // Answer selection per question: key = "tcIdx-qIdx", value = selected label or custom text
   const [selections, setSelections] = useState<Record<string, string>>({});
   // Custom input expanded state
@@ -75,7 +77,7 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
         }
       });
     });
-    setSelections(initial);
+    queueMicrotask(() => setSelections(initial));
   }, [toolCalls]);
 
   // ESC to close
@@ -135,13 +137,13 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
         if (hasChecked && !checked[key]) return;
         const answer = selections[key];
         parts.push(`Q: ${q.question}`);
-        parts.push(`A: ${answer || '(未选择)'}`);
+        parts.push(`A: ${answer || t('askQuestion.notSelected')}`);
         parts.push('');
       });
     });
     navigator.clipboard.writeText(parts.join('\n').trim());
-    toast(hasChecked ? `已复制 ${checkedCount} 个问答` : '已复制所有问答');
-  }, [toolCalls, selections, checked, checkedCount]);
+    toast(hasChecked ? t('toast.copiedQA', { count: checkedCount }) : t('toast.copiedAllQA'));
+  }, [toolCalls, selections, checked, checkedCount, t]);
 
   const modalContent = (
     <div
@@ -155,17 +157,17 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-3">
-            <h3 className="text-sm font-medium text-foreground">提问</h3>
+            <h3 className="text-sm font-medium text-foreground">{t('askQuestion.title')}</h3>
             <span className="text-xs text-muted-foreground">
-              {totalQuestions} 个问题
-              {checkedCount > 0 && ` · 已勾选 ${checkedCount}`}
+              {t('askQuestion.nQuestions', { count: totalQuestions })}
+              {checkedCount > 0 && ` · ${t('askQuestion.checkedN', { count: checkedCount })}`}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handleCopy}
               className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-              title={checkedCount > 0 ? `复制勾选的 ${checkedCount} 个问答` : '复制所有问答'}
+              title={checkedCount > 0 ? t('askQuestion.copyChecked', { count: checkedCount }) : t('askQuestion.copyAll')}
             >
               <Copy className="w-4 h-4" />
             </button>
@@ -195,7 +197,7 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
                     <button
                       onClick={() => handleToggleCheck(key)}
                       className="mt-0.5 flex-shrink-0 p-0.5 rounded hover:bg-accent transition-colors"
-                      title="勾选以复制"
+                      title={t('askQuestion.checkToCopy')}
                     >
                       {isChecked
                         ? <CheckSquare className="w-4 h-4 text-brand" />
@@ -255,7 +257,7 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
                       </div>
                       <div className="flex items-center gap-1.5">
                         <PenLine className="w-3.5 h-3.5 text-muted-foreground" />
-                        <span className="text-sm text-muted-foreground">自定义</span>
+                        <span className="text-sm text-muted-foreground">{t('askQuestion.custom')}</span>
                       </div>
                     </button>
 
@@ -267,7 +269,7 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
                           autoFocus
                           value={customTexts[key] || ''}
                           onChange={(e) => handleCustomTextChange(key, e.target.value)}
-                          placeholder="输入自定义回答..."
+                          placeholder={t('askQuestion.customPlaceholder')}
                           className="w-full px-3 py-1.5 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-brand text-foreground placeholder:text-muted-foreground"
                         />
                       </div>

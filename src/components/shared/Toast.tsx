@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, createContext, useContext, ReactNode } from 'react';
+import i18n from '@/lib/i18n';
 
 interface Toast {
   id: string;
@@ -115,7 +116,7 @@ export function confirm(message: string, options?: {
   cancelText?: string;
   danger?: boolean;
 }): Promise<boolean> {
-  const { title = '提示', confirmText = '确定', cancelText = '取消', danger = false } = options || {};
+  const { title = i18n.t('confirm.title'), confirmText = i18n.t('confirm.ok'), cancelText = i18n.t('confirm.cancel'), danger = false } = options || {};
 
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -185,7 +186,7 @@ export function confirm(message: string, options?: {
 // Simple standalone toast function (no Provider needed)
 // ============================================
 let toastContainer: HTMLDivElement | null = null;
-let toastRoot: ReturnType<typeof import('react-dom/client').createRoot> | null = null;
+const toastRoot: ReturnType<typeof import('react-dom/client').createRoot> | null = null;
 
 function getToastContainer() {
   if (!toastContainer) {

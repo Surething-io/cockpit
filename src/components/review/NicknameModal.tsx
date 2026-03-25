@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface Props {
   currentName: string;
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function NicknameModal({ currentName, onConfirm, onSkip }: Props) {
+  const { t } = useTranslation();
   const [name, setName] = useState(currentName);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -27,9 +29,9 @@ export function NicknameModal({ currentName, onConfirm, onSkip }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-card border border-border rounded-xl shadow-2xl w-80 p-5">
-        <h2 className="text-base font-semibold mb-1">设置你的昵称</h2>
+        <h2 className="text-base font-semibold mb-1">{t('review.setNickname')}</h2>
         <p className="text-xs text-muted-foreground mb-4">
-          其他评审人将看到这个名字
+          {t('review.nicknameHint')}
         </p>
 
         <input
@@ -41,7 +43,7 @@ export function NicknameModal({ currentName, onConfirm, onSkip }: Props) {
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleConfirm();
             if (e.key === 'Escape') onSkip();
           }}
-          placeholder="输入昵称"
+          placeholder={t('review.nicknamePlaceholder')}
           maxLength={20}
           className="w-full px-3 py-2 text-sm bg-secondary border border-border rounded-lg focus:outline-none focus:border-brand"
           autoFocus
@@ -52,14 +54,14 @@ export function NicknameModal({ currentName, onConfirm, onSkip }: Props) {
             onClick={onSkip}
             className="px-3 py-1.5 text-xs rounded-lg hover:bg-accent transition-colors text-muted-foreground"
           >
-            下次再说
+            {t('review.skipForNow')}
           </button>
           <button
             onClick={handleConfirm}
             disabled={!name.trim()}
             className="px-4 py-1.5 text-xs rounded-lg bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-40"
           >
-            保存
+            {t('common.save')}
           </button>
         </div>
       </div>

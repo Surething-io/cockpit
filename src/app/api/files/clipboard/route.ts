@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     const fullPath = resolve(join(basePath, filePath));
 
     if (!fullPath.startsWith(basePath + sep)) {
-      return NextResponse.json({ error: '不允许操作此路径' }, { status: 403 });
+      return NextResponse.json({ error: 'Operation not allowed on this path' }, { status: 403 });
     }
 
     await stat(fullPath);

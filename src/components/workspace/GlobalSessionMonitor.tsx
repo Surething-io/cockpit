@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export interface GlobalSession {
   cwd: string;
@@ -19,7 +20,9 @@ interface GlobalSessionMonitorProps {
 }
 
 export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, sessions }: GlobalSessionMonitorProps) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
+  const [now, setNow] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click (including clicking into an iframe)
@@ -55,15 +58,15 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
   const unreadCount = sessions.filter(s => s.status === 'unread').length;
 
   // Format timestamp
-  const formatTime = (timestamp: number) => {
-    const diff = Date.now() - timestamp;
+  const formatTime = useCallback((timestamp: number) => {
+    const diff = now - timestamp;
     const minutes = Math.floor(diff / 60000);
-    if (minutes < 1) return '刚刚';
-    if (minutes < 60) return `${minutes}分钟前`;
+    if (minutes < 1) return t('common.justNow');
+    if (minutes < 60) return t('common.minutesAgo', { count: minutes });
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}小时前`;
-    return `${Math.floor(hours / 24)}天前`;
-  };
+    if (hours < 24) return t('common.hoursAgo', { count: hours });
+    return t('common.daysAgo', { count: Math.floor(hours / 24) });
+  }, [t, now]);
 
   // Get project name
   const getProjectName = (cwd: string) => cwd.split('/').pop() || cwd;
@@ -71,17 +74,17 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
   return (
     <div className="relative" ref={dropdownRef}>
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => { setNow(Date.now()); setIsOpen(!isOpen); }}
         className={`relative flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
           collapsed ? 'w-full justify-center' : 'w-full'
         }`}
-        title="最近会话"
+        title={t('sessions.recentSessions')}
       >
         {/* Lightning icon indicates active state */}
         <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
-        {!collapsed && <span className="text-sm flex-1 text-left">最近会话</span>}
+        {!collapsed && <span className="text-sm flex-1 text-left">{t('sessions.recentSessions')}</span>}
         {/* Badge: loading orange pulse + unread red static, displayed independently */}
         {loadingCount > 0 && (
           <span className={`min-w-[18px] h-[18px] px-1 text-white text-xs font-medium rounded-full flex items-center justify-center bg-orange-9 animate-pulse ${
@@ -103,18 +106,18 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
       {isOpen && (
         <div className="absolute left-full bottom-0 ml-2 w-80 h-[450px] bg-popover border border-border rounded-lg shadow-lg z-50 flex flex-col">
           <div className="px-3 py-2 border-b border-border bg-muted/50 flex-shrink-0 rounded-t-lg">
-            <span className="text-sm font-medium">最近会话</span>
+            <span className="text-sm font-medium">{t('sessions.recentSessions')}</span>
             {loadingCount > 0 && (
-              <span className="ml-2 text-xs text-orange-11">({loadingCount} 运行中)</span>
+              <span className="ml-2 text-xs text-orange-11">({t('sessions.runningCount', { count: loadingCount })})</span>
             )}
             {unreadCount > 0 && (
-              <span className="ml-2 text-xs text-red-500">({unreadCount} 未读)</span>
+              <span className="ml-2 text-xs text-red-500">({t('sessions.unreadCount', { count: unreadCount })})</span>
             )}
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto">
             {sessions.length === 0 ? (
               <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                暂无会话记录
+                {t('sessions.noSessions')}
               </div>
             ) : (
               sessions.map((session, index) => (
@@ -139,10 +142,10 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
                         {getProjectName(session.cwd)}
                       </span>
                       {session.status === 'loading' && (
-                        <span className="text-xs text-orange-11 flex-shrink-0">运行中</span>
+                        <span className="text-xs text-orange-11 flex-shrink-0">{t('sessions.running')}</span>
                       )}
                       {session.status === 'unread' && (
-                        <span className="text-xs text-red-500 flex-shrink-0">完成</span>
+                        <span className="text-xs text-red-500 flex-shrink-0">{t('sessions.done')}</span>
                       )}
                       <span className="text-xs text-muted-foreground flex-shrink-0">
                         {formatTime(session.lastActive)}

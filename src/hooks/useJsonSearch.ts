@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import i18n from '@/lib/i18n';
 
 /**
  * Content search hook for JSON readable mode.
@@ -120,6 +121,14 @@ export function useJsonSearch(preRef: React.RefObject<HTMLPreElement | null>) {
     }
   }, [preRef, query, caseSensitive]);
 
+  // Helper to scroll element to center on target rect
+  const scrollToRect = useCallback((container: Element, targetRect: DOMRect) => {
+    const cRect = container.getBoundingClientRect();
+    if (targetRect.top < cRect.top || targetRect.bottom > cRect.bottom) {
+      container.scrollTop += targetRect.top - cRect.top - cRect.height / 2 + targetRect.height / 2;
+    }
+  }, []);
+
   // ---- Update current match highlight + scroll ----
   const updateCurrentHighlight = useCallback((index: number) => {
     CSS.highlights?.delete('json-search-current');
@@ -129,19 +138,15 @@ export function useJsonSearch(preRef: React.RefObject<HTMLPreElement | null>) {
 
     // Scroll to the current match
     const rect = range.getBoundingClientRect();
-    const container = preRef.current?.parentElement;
-    if (container) {
-      const cRect = container.getBoundingClientRect();
-      if (rect.top < cRect.top || rect.bottom > cRect.bottom) {
-        // Scroll the match to the center of the container
-        container.scrollTop += rect.top - cRect.top - cRect.height / 2 + rect.height / 2;
-      }
+    const el = preRef.current?.parentElement;
+    if (el) {
+      scrollToRect(el, rect);
     }
-  }, [preRef]);
+  }, [preRef, scrollToRect]);
 
   // Re-run search when query or caseSensitive changes
   useEffect(() => {
-    runSearch();
+    queueMicrotask(() => runSearch());
   }, [runSearch]);
 
   // Update current match highlight when currentIndex changes
@@ -229,32 +234,32 @@ export function JsonSearchBar({ search }: { search: ReturnType<typeof useJsonSea
       value: search.query,
       onChange: (e: React.ChangeEvent<HTMLInputElement>) => search.setQuery(e.target.value),
       onKeyDown: search.handleKeyDown,
-      placeholder: '搜索...',
+      placeholder: i18n.t('codeViewer.searchPlaceholder'),
       className: 'flex-1 max-w-xs px-2 py-1 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring',
     }),
     React.createElement('button', {
       onClick: () => search.setCaseSensitive((v: boolean) => !v),
       className: `px-2 py-1 text-xs font-mono rounded border transition-colors ${search.caseSensitive ? 'bg-brand text-white border-brand' : 'border-border text-muted-foreground hover:bg-accent'}`,
-      title: '区分大小写',
+      title: i18n.t('codeViewer.caseSensitive'),
     }, 'Aa'),
     React.createElement('span', { className: 'text-xs text-muted-foreground' },
-      search.matchCount > 0 ? `${search.currentIndex + 1}/${search.matchCount}` : '无匹配',
+      search.matchCount > 0 ? `${search.currentIndex + 1}/${search.matchCount}` : i18n.t('common.noMatch'),
     ),
     React.createElement('button', {
       onClick: search.goToPrev, disabled: search.matchCount === 0,
-      className: 'p-1 rounded hover:bg-accent disabled:opacity-50', title: '上一个',
+      className: 'p-1 rounded hover:bg-accent disabled:opacity-50', title: i18n.t('common.previous'),
     }, React.createElement('svg', { className: 'w-4 h-4', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' },
       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 15l7-7 7 7' }),
     )),
     React.createElement('button', {
       onClick: search.goToNext, disabled: search.matchCount === 0,
-      className: 'p-1 rounded hover:bg-accent disabled:opacity-50', title: '下一个',
+      className: 'p-1 rounded hover:bg-accent disabled:opacity-50', title: i18n.t('common.next'),
     }, React.createElement('svg', { className: 'w-4 h-4', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' },
       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' }),
     )),
     React.createElement('button', {
       onClick: search.close,
-      className: 'p-1 rounded hover:bg-accent', title: '关闭',
+      className: 'p-1 rounded hover:bg-accent', title: i18n.t('common.close'),
     }, React.createElement('svg', { className: 'w-4 h-4', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' },
       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' }),
     )),

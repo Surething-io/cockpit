@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
 
     // Safety check: path must be inside cwd and cannot be cwd itself
     if (!fullPath.startsWith(basePath + sep)) {
-      return NextResponse.json({ error: '不允许删除此路径' }, { status: 403 });
+      return NextResponse.json({ error: 'Delete not allowed on this path' }, { status: 403 });
     }
 
     // Verify file/directory exists

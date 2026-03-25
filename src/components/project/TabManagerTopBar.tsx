@@ -5,6 +5,7 @@ import { TabInfo } from './useTabState';
 import { ViewSwitcherBar } from './SwipeableViewContainer';
 import { ReviewDropdown } from './ReviewDropdown';
 import { toast } from '../shared/Toast';
+import { useTranslation } from 'react-i18next';
 
 // ============================================
 // TopBar
@@ -30,6 +31,7 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
   currentBranch: string | null;
   onSwitched: () => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [branches, setBranches] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -51,7 +53,7 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
         setBranches(all);
       }
     } catch {
-      toast('加载分支列表失败', 'error');
+      toast(t('toast.loadBranchFailed'), 'error');
     } finally {
       setLoading(false);
     }
@@ -101,15 +103,15 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
       });
       if (response.ok) {
         const localBranch = branch.replace(/^origin\//, '');
-        toast(`已切换到 ${localBranch}`, 'success');
+        toast(t('toast.switchedToBranch', { branch: localBranch }), 'success');
         handleClose();
         onSwitched();
       } else {
         const data = await response.json();
-        toast(data.error || '切换分支失败', 'error');
+        toast(data.error || t('toast.switchBranchFailed'), 'error');
       }
     } catch {
-      toast('切换分支失败', 'error');
+      toast(t('toast.switchBranchFailed'), 'error');
     } finally {
       setSwitching(false);
     }
@@ -124,7 +126,7 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
       <button
         onClick={open ? handleClose : handleOpen}
         className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-        title="切换分支"
+        title={t('git.switchBranch')}
       >
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
@@ -140,7 +142,7 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="搜索分支..."
+              placeholder={t('git.searchBranch')}
               className="w-full px-2.5 py-1.5 text-sm bg-muted rounded border-none outline-none placeholder:text-muted-foreground"
               onKeyDown={e => {
                 if (e.key === 'Escape') handleClose();
@@ -151,10 +153,10 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
           {/* Branch list */}
           <div className="max-h-60 overflow-y-auto p-1">
             {loading ? (
-              <div className="text-xs text-muted-foreground text-center py-4">加载中...</div>
+              <div className="text-xs text-muted-foreground text-center py-4">{t('common.loading')}</div>
             ) : filtered.length === 0 ? (
               <div className="text-xs text-muted-foreground text-center py-4">
-                {search ? '无匹配分支' : '无可切换分支'}
+                {search ? t('git.noMatchingBranches') : t('git.noBranches')}
               </div>
             ) : (
               filtered.map(branch => (
@@ -191,6 +193,7 @@ export function TabManagerTopBar({
   onOpenAliasManager,
   onBranchSwitched,
 }: TabManagerTopBarProps) {
+  const { t } = useTranslation();
   return (
     <div className="border-b border-border bg-card shrink-0">
       <div className="flex items-center justify-between px-4 py-2 relative">
@@ -201,10 +204,10 @@ export function TabManagerTopBar({
               src="/icons/icon-72x72.png"
               alt="Cockpit"
               className="w-6 h-6 cursor-pointer"
-              title="复制页面地址"
+              title={t('tabManagerTopBar.copyPageUrl')}
               onClick={() => {
                 navigator.clipboard.writeText(window.location.href).then(() => {
-                  toast('已复制页面地址', 'success');
+                  toast(t('toast.copiedPageUrl'), 'success');
                 });
               }}
             />
@@ -219,10 +222,10 @@ export function TabManagerTopBar({
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(initialCwd);
-                    toast('已复制目录路径');
+                    toast(t('toast.copiedDirPath'));
                   }}
                   className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-                  title="复制目录路径"
+                  title={t('tabManagerTopBar.copyDirPath')}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -270,7 +273,7 @@ export function TabManagerTopBar({
           <button
             onClick={() => window.location.reload()}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-            title="刷新当前项目"
+            title={t('tabManagerTopBar.refreshProject')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -281,7 +284,7 @@ export function TabManagerTopBar({
             <button
               onClick={onOpenProjectSessions}
               className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-              title="项目会话"
+              title={t('sessions.projectSessions')}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -304,7 +307,7 @@ export function TabManagerTopBar({
               }
             }}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-            title="在 VS Code 中打开"
+            title={t('tabManagerTopBar.openInVSCode')}
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
               <path d="M17.583 2.213L12 7.393 6.417 2.213 1 6.17v11.66l5.417 3.957L12 16.607l5.583 5.18L23 17.83V6.17l-5.417-3.957zM6.417 17.83L3 15.33V8.67l3.417-2.5v11.66zm11.166 0V6.17L21 8.67v6.66l-3.417 2.5z" />
@@ -326,7 +329,7 @@ export function TabManagerTopBar({
               }
             }}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-            title="在 Cursor 中打开"
+            title={t('tabManagerTopBar.openInCursor')}
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
               <path d="M4.5 2L20.5 12L4.5 22V2Z" />
@@ -338,11 +341,11 @@ export function TabManagerTopBar({
               onClick={() => {
                 const command = `claude -r ${activeTab.sessionId}`;
                 navigator.clipboard.writeText(command).then(() => {
-                  toast('已复制: ' + command, 'success');
+                  toast(t('toast.copiedCommand', { command }), 'success');
                 });
               }}
               className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-              title={`复制命令: claude -r ${activeTab.sessionId}`}
+              title={t('chat.copyCommandTooltip', { sessionId: activeTab.sessionId })}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -353,7 +356,7 @@ export function TabManagerTopBar({
           <button
             onClick={onOpenAliasManager}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-            title="命令别名（全局）"
+            title={t('tabManagerTopBar.aliasesGlobal')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12h-6m-4 0a8 8 0 1116 0 8 8 0 01-16 0zm4 0h.01" />
@@ -363,7 +366,7 @@ export function TabManagerTopBar({
           <button
             onClick={() => window.parent.postMessage({ type: 'OPEN_TOKEN_STATS' }, '*')}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-            title="Token 统计"
+            title={t('tabManagerTopBar.tokenStats')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -373,7 +376,7 @@ export function TabManagerTopBar({
           <button
             onClick={() => window.open('https://surething.io?from=cockpit', '_blank')}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-            title="打开 Surething"
+            title={t('tabManagerTopBar.openSurething')}
           >
             <img src="https://surething.io/logo.png?from=cockpit" alt="Surething" className="w-5 h-5 rounded-sm" />
           </button>

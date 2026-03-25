@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface SessionInfo {
   path: string;
@@ -32,6 +33,7 @@ interface SessionBrowserProps {
 }
 
 export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject }: SessionBrowserProps) {
+  const { t } = useTranslation();
   const [isPickingFolder, setIsPickingFolder] = useState(false);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [projectStates, setProjectStates] = useState<Record<string, ProjectState>>({});
@@ -210,13 +212,13 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h2 className="text-sm font-medium text-foreground">
-            项目列表
+            {t('sessions.projectList')}
           </h2>
           <div className="flex items-center gap-3">
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="搜索项目路径..."
+              placeholder={t('workspace.searchProjectPath')}
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
               className="px-2 py-1 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
@@ -226,12 +228,12 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
                 onClick={handlePickFolder}
                 disabled={isPickingFolder}
                 className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-                title="打开文件夹"
+                title={t('sessions.openFolder')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m3-3H9m-4 7h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
-                {isPickingFolder ? '选择中...' : '打开文件夹'}
+                {isPickingFolder ? t('sessions.selectingFolder') : t('sessions.openFolder')}
               </button>
             )}
             <button
@@ -254,7 +256,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                <span>加载项目中...</span>
+                <span>{t('workspace.loadingProjects')}</span>
               </div>
             </div>
           )}
@@ -267,7 +269,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
 
           {!isLoadingProjects && !error && projects.length === 0 && (
             <div className="flex items-center justify-center h-full">
-              <div className="text-xs text-muted-foreground">未找到项目</div>
+              <div className="text-xs text-muted-foreground">{t('workspace.projectNotFound')}</div>
             </div>
           )}
 
@@ -318,7 +320,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                         </svg>
-                        <span>加载会话中...</span>
+                        <span>{t('sessions.loadingSessions')}</span>
                       </div>
                     )}
 

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { DiffView } from './DiffView';
 import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, type GitFileNode } from './GitFileTree';
 import { formatAsHumanReadable } from './toolCallUtils';
@@ -64,6 +65,7 @@ interface CommitDetailPanelProps {
 }
 
 export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = false, initialFilePath, onContentSearch }: CommitDetailPanelProps) {
+  const { t } = useTranslation();
   const [files, setFiles] = useState<FileChange[]>([]);
   const [fileTree, setFileTree] = useState<GitFileNode<unknown>[]>([]);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
@@ -105,11 +107,13 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
   useEffect(() => {
     if (!isOpen || !commit) return;
 
-    setFiles([]);
-    setFileTree([]);
-    setSelectedFile(null);
-    setFileDiff(null);
-    setIsLoadingFiles(true);
+    queueMicrotask(() => {
+      setFiles([]);
+      setFileTree([]);
+      setSelectedFile(null);
+      setFileDiff(null);
+      setIsLoadingFiles(true);
+    });
 
     fetch(`/api/git/commit-diff?cwd=${encodeURIComponent(cwd)}&hash=${commit.hash}`)
       .then(res => res.json())
@@ -196,26 +200,26 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
         )}
         <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-1">
-            <span className="text-slate-9">哈希:</span>
+            <span className="text-slate-9">{t('commitDetail.hash')}</span>
             <span className="font-mono bg-accent px-1.5 py-0.5 rounded">
               {commit.hash}
             </span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-slate-9">作者:</span>
+            <span className="text-slate-9">{t('commitDetail.author')}</span>
             <span>{commit.author}</span>
             <span className="text-slate-9">&lt;{commit.authorEmail}&gt;</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-slate-9">日期:</span>
+            <span className="text-slate-9">{t('commitDetail.date')}</span>
             <span>{displayDate}</span>
             {commit.relativeDate && (
               <span className="text-slate-9">({commit.relativeDate})</span>
             )}
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-slate-9">文件:</span>
-            <span>{files.length} 个变更</span>
+            <span className="text-slate-9">{t('commitDetail.files')}</span>
+            <span>{t('commitDetail.nChanges', { count: files.length })}</span>
           </div>
         </div>
       </div>
@@ -225,7 +229,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
         {/* File tree */}
         <div className="w-72 flex-shrink-0 border-r border-border overflow-y-auto overflow-x-hidden">
           {isLoadingFiles ? (
-            <div className="p-4 text-center text-muted-foreground text-sm">加载文件中...</div>
+            <div className="p-4 text-center text-muted-foreground text-sm">{t('commitDetail.loadingFiles')}</div>
           ) : (
             <GitFileTree
               files={fileTree}
@@ -235,7 +239,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
               onToggle={handleToggle}
               cwd={cwd}
               showChanges={true}
-              emptyMessage="无文件变更"
+              emptyMessage={t('commitDetail.noFileChanges')}
               className="py-1"
             />
           )}
@@ -244,7 +248,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
         {/* Diff view */}
         <div className="flex-1 overflow-hidden">
           {isLoadingDiff ? (
-            <div className="h-full flex items-center justify-center text-muted-foreground text-sm">加载差异中...</div>
+            <div className="h-full flex items-center justify-center text-muted-foreground text-sm">{t('commitDetail.loadingDiff')}</div>
           ) : fileDiff ? (
             <DiffView
               oldContent={fileDiff.oldContent}
@@ -259,12 +263,12 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
                   ? () => setJsonPreview({ content: fileDiff.newContent, filePath: fileDiff.filePath })
                   : undefined
               }
-              previewLabel="可读"
+              previewLabel={t('common.readable')}
               onContentSearch={onContentSearch}
             />
           ) : (
             <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-              选择文件查看差异
+              {t('commitDetail.selectFileToView')}
             </div>
           )}
         </div>
@@ -306,7 +310,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
         <button
           onClick={onClose}
           className="absolute top-2 right-2 z-10 p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"
-          title="关闭"
+          title={t('common.close')}
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -327,7 +331,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h3 className="text-sm font-medium text-foreground">提交详情</h3>
+          <h3 className="text-sm font-medium text-foreground">{t('commitDetail.title')}</h3>
           <button
             onClick={onClose}
             className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"

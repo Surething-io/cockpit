@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 // ============================================
 // Shared Types
@@ -26,6 +27,7 @@ export interface AddCommentInputProps {
 }
 
 export function AddCommentInput({ x, y, range, codeContent, container, onSubmit, onClose }: AddCommentInputProps) {
+  const { t } = useTranslation();
   const [content, setContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -49,7 +51,7 @@ export function AddCommentInput({ x, y, range, codeContent, container, onSubmit,
       if (relX < 16) relX = 16;
       if (relY + cardRect.height > containerRect.height - 16) relY = relY - cardRect.height - 8;
       if (relY < 16) relY = 16;
-      setPosition({ x: relX, y: relY });
+      queueMicrotask(() => setPosition({ x: relX, y: relY }));
     }
   }, [x, y, container]);
 
@@ -84,9 +86,9 @@ export function AddCommentInput({ x, y, range, codeContent, container, onSubmit,
     >
       <div className="px-3 py-2 bg-amber-9/10 border-b border-border">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-amber-11">添加评论</span>
+          <span className="text-xs font-medium text-amber-11">{t('comments.addComment')}</span>
           {(range.start > 0 || range.end > 0) && (
-            <span className="text-xs text-muted-foreground">行 {range.start}-{range.end}</span>
+            <span className="text-xs text-muted-foreground">{t('comments.lineRange', { start: range.start, end: range.end })}</span>
           )}
         </div>
       </div>
@@ -104,7 +106,7 @@ export function AddCommentInput({ x, y, range, codeContent, container, onSubmit,
           ref={textareaRef}
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="输入评论..."
+          placeholder={t('comments.inputPlaceholder')}
           className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card resize-none focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
           rows={2}
           disabled={isSubmitting}
@@ -119,7 +121,7 @@ export function AddCommentInput({ x, y, range, codeContent, container, onSubmit,
           }}
         />
         <div className="mt-1 text-xs text-muted-foreground">
-          {isSubmitting ? '提交中...' : 'Enter 提交 · Shift+Enter 换行'}
+          {isSubmitting ? t('comments.submitting') : t('comments.enterSubmit')}
         </div>
       </div>
     </div>
@@ -153,6 +155,7 @@ export function SendToAIInput({
   onClose,
   isChatLoading
 }: SendToAIInputProps) {
+  const { t } = useTranslation();
   const [content, setContent] = useState('');
   const cardRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -171,7 +174,7 @@ export function SendToAIInput({
       if (relX < 16) relX = 16;
       if (relY + cardRect.height > containerRect.height - 16) relY = relY - cardRect.height - 8;
       if (relY < 16) relY = 16;
-      setPosition({ x: relX, y: relY });
+      queueMicrotask(() => setPosition({ x: relX, y: relY }));
     }
   }, [x, y, container]);
 
@@ -209,9 +212,9 @@ export function SendToAIInput({
     >
       <div className="px-3 py-2 bg-brand/10 border-b border-border">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-brand">提问 AI</span>
+          <span className="text-xs font-medium text-brand">{t('comments.askAI')}</span>
           {(range.start > 0 || range.end > 0) && (
-            <span className="text-xs text-muted-foreground">行 {range.start}-{range.end}</span>
+            <span className="text-xs text-muted-foreground">{t('comments.lineRange', { start: range.start, end: range.end })}</span>
           )}
         </div>
         {filePath && <div className="mt-1 text-xs text-muted-foreground truncate">{filePath}</div>}
@@ -230,7 +233,7 @@ export function SendToAIInput({
           ref={textareaRef}
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="输入你的问题..."
+          placeholder={t('comments.inputQuestion')}
           className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card resize-none focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
           rows={2}
           disabled={isChatLoading}
@@ -245,7 +248,7 @@ export function SendToAIInput({
           }}
         />
         <div className="mt-1 text-xs text-muted-foreground">
-          {isChatLoading ? '正在生成中，请稍候...' : 'Enter 发送 · Shift+Enter 换行'}
+          {isChatLoading ? t('comments.aiGenerating') : t('comments.enterSend')}
         </div>
       </div>
     </div>

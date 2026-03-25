@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
     // Safety check
     if (!fullPath.startsWith(basePath + '/')) {
-      return NextResponse.json({ error: '不允许操作此路径' }, { status: 403 });
+      return NextResponse.json({ error: 'Operation not allowed on this path' }, { status: 403 });
     }
 
     // Generate destination filename: file.ts → file-copy.ts, file-copy.ts → file-copy-2.ts

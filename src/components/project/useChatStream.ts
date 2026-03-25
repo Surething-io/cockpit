@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { ChatMessage, ToolCallInfo, ImageInfo, MessageImage, TokenUsage } from '@/types/chat';
+import i18n from '@/lib/i18n';
 
 // ============================================
 // Types
@@ -260,12 +261,12 @@ export function useChatStream(
         });
 
         if (!response.ok) {
-          throw new Error('请求失败');
+          throw new Error(i18n.t('chat.requestFailed'));
         }
 
         const reader = response.body?.getReader();
         if (!reader) {
-          throw new Error('无法读取响应流');
+          throw new Error(i18n.t('chat.cannotReadStream'));
         }
 
         const decoder = new TextDecoder();
@@ -302,7 +303,7 @@ export function useChatStream(
           setMessages((prev) =>
             prev.map((msg) =>
               msg.id === assistantMessageId
-                ? { ...msg, content: '发生错误，请重试', isStreaming: false }
+                ? { ...msg, content: i18n.t('chat.errorRetry'), isStreaming: false }
                 : msg
             )
           );

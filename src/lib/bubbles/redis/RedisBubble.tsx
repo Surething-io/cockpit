@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { BUBBLE_CONTENT_HEIGHT } from '@/components/project/console/CommandBubble';
 import { useToast } from '@/components/shared/Toast';
 import { modKey } from '@/lib/platform';
+import { useTranslation } from 'react-i18next';
 
 // ============================================================================
 // Types
@@ -48,9 +49,9 @@ function formatTime(ts?: string): string {
   return `${month}-${day} ${hours}:${minutes}`;
 }
 
-function formatTTL(ttl: number): string {
-  if (ttl === -1) return '永不过期';
-  if (ttl === -2) return '已过期';
+function formatTTL(ttl: number, t: (key: string) => string): string {
+  if (ttl === -1) return t('redis.neverExpires');
+  if (ttl === -2) return t('redis.expired');
   if (ttl < 60) return `${ttl}s`;
   if (ttl < 3600) return `${Math.floor(ttl / 60)}m${ttl % 60 > 0 ? ` ${ttl % 60}s` : ''}`;
   const h = Math.floor(ttl / 3600);
@@ -187,6 +188,7 @@ export function RedisBubble({
   timestamp,
   onTitleMouseDown,
 }: RedisBubbleProps) {
+  const { t } = useTranslation();
   const { showToast } = useToast();
 
   // Connection state
@@ -275,7 +277,7 @@ export function RedisBubble({
       setKeyValue(data);
     } catch (e: unknown) {
       setKeyValue(null);
-      showToast(e instanceof Error ? e.message : '加载失败');
+      showToast(e instanceof Error ? e.message : t('redis.loadFailed'));
     }
     setKeyLoading(false);
   }, [id, connectionString, showToast]);
@@ -291,7 +293,7 @@ export function RedisBubble({
       // Refresh key list
       loadKeys(keyPattern, '0', false);
     } catch (e: unknown) {
-      showToast(e instanceof Error ? e.message : '删除失败');
+      showToast(e instanceof Error ? e.message : t('redis.deleteFailed'));
     }
   }, [selectedKey, id, connectionString, keyPattern, loadKeys, showToast]);
 
@@ -302,9 +304,9 @@ export function RedisBubble({
       await apiPost('/api/redis/set', { id, connectionString, key: selectedKey, value: editingValue, type: 'string' });
       setEditingValue(null);
       selectKey(selectedKey); // refresh
-      showToast('已保存');
+      showToast(t('common.saved'));
     } catch (e: unknown) {
-      showToast(e instanceof Error ? e.message : '保存失败');
+      showToast(e instanceof Error ? e.message : t('redis.saveFailed'));
     }
   }, [selectedKey, editingValue, id, connectionString, selectKey, showToast]);
 
@@ -385,7 +387,7 @@ export function RedisBubble({
             <span className="inline-block w-3 h-3 border border-brand border-t-transparent rounded-full animate-spin flex-shrink-0" />
           )}
           {status === 'error' && (
-            <span className="text-[10px] text-destructive flex-shrink-0">连接失败</span>
+            <span className="text-[10px] text-destructive flex-shrink-0">{t('common.connectionFailed')}</span>
           )}
           {status === 'connected' && serverInfo && (
             <span className="text-[10px] text-red-500 flex-shrink-0">
@@ -399,7 +401,7 @@ export function RedisBubble({
           <button
             onClick={(e) => { e.stopPropagation(); onToggleMaximize(); }}
             className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-            title={maximized ? `退出最大化 (${modKey()}M)` : `最大化 (${modKey()}M)`}
+            title={maximized ? t('browser.exitMaximize', { modKey: modKey() }) : t('browser.maximize', { modKey: modKey() })}
           >
             {maximized ? (
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -414,7 +416,7 @@ export function RedisBubble({
           <button
             onClick={(e) => { e.stopPropagation(); onClose(); }}
             className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-            title="关闭"
+            title={t('common.close')}
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -427,7 +429,7 @@ export function RedisBubble({
           {status === 'connecting' && (
             <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
               <span className="inline-block w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin mr-2" />
-              连接中...
+              {t('common.connecting')}...
             </div>
           )}
           {status === 'error' && (
@@ -437,7 +439,7 @@ export function RedisBubble({
                 onClick={connect}
                 className="px-3 py-1.5 text-xs bg-brand text-white rounded-md hover:bg-brand/90 transition-colors"
               >
-                重试
+                {t('common.retry')}
               </button>
             </div>
           )}
@@ -452,13 +454,13 @@ export function RedisBubble({
                     value={keyPattern}
                     onChange={(e) => setKeyPattern(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
-                    placeholder="SCAN 模式..."
+                    placeholder={t('redis.scanPlaceholder')}
                     className="flex-1 min-w-0 text-xs bg-background border border-input rounded px-1.5 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-ring"
                   />
                   <button
                     onClick={handleSearch}
                     className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent active:bg-accent/50 transition-colors"
-                    title="搜索 (SCAN)"
+                    title={t('redis.scanSearch')}
                   >
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="6.5" cy="6.5" r="4.5" /><path d="M10 10l4 4" />
@@ -467,7 +469,7 @@ export function RedisBubble({
                   <button
                     onClick={() => loadKeys(keyPattern, '0', false)}
                     className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent active:bg-accent/50 transition-colors"
-                    title="刷新"
+                    title={t('common.refresh')}
                   >
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M1 1v5h5" /><path d="M15 15v-5h-5" />
@@ -491,7 +493,7 @@ export function RedisBubble({
                     </div>
                   ))}
                   {keys.length === 0 && !keysLoading && (
-                    <div className="p-2 text-muted-foreground text-center">无 key</div>
+                    <div className="p-2 text-muted-foreground text-center">{t('redis.noKeys')}</div>
                   )}
                   {keysLoading && (
                     <div className="p-2 flex items-center justify-center">
@@ -503,7 +505,7 @@ export function RedisBubble({
                       onClick={() => loadKeys(keyPattern, scanCursor, true)}
                       className="w-full py-1.5 text-[10px] text-brand hover:text-brand/80 transition-colors"
                     >
-                      加载更多...
+                      {t('redis.loadMore')}
                     </button>
                   )}
                 </div>
@@ -528,7 +530,7 @@ export function RedisBubble({
                           : 'text-muted-foreground hover:text-foreground'
                       }`}
                     >
-                      {{ data: '数据', info: '信息', cli: 'CLI' }[tab]}
+                      {{ data: t('redis.tabData'), info: t('redis.tabInfo'), cli: 'CLI' }[tab]}
                     </button>
                   ))}
                   {/* Key actions */}
@@ -536,7 +538,7 @@ export function RedisBubble({
                     <div className="ml-auto flex items-center gap-1 pr-2">
                       {keyValue && (
                         <span className="text-[10px] text-muted-foreground">
-                          TTL: {formatTTL(keyValue.ttl)}
+                          TTL: {formatTTL(keyValue.ttl, t)}
                           {keyValue.size !== null ? ` · ${formatBytes(keyValue.size)}` : ''}
                         </span>
                       )}
@@ -545,22 +547,22 @@ export function RedisBubble({
                           onClick={() => setConfirmingDelete(true)}
                           className="px-1.5 py-0.5 text-[10px] text-destructive hover:text-destructive/80 bg-destructive/10 rounded transition-colors"
                         >
-                          删除
+                          {t('common.delete')}
                         </button>
                       ) : (
                         <>
-                          <span className="text-[10px] text-destructive">确认?</span>
+                          <span className="text-[10px] text-destructive">{t('common.confirm')}?</span>
                           <button
                             onClick={deleteKey}
                             className="px-1.5 py-0.5 text-[10px] text-white bg-destructive rounded transition-colors hover:bg-destructive/80"
                           >
-                            确认
+                            {t('common.confirm')}
                           </button>
                           <button
                             onClick={() => setConfirmingDelete(false)}
                             className="px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground bg-muted rounded transition-colors"
                           >
-                            取消
+                            {t('common.cancel')}
                           </button>
                         </>
                       )}
@@ -580,7 +582,7 @@ export function RedisBubble({
                       onEditChange={setEditingValue}
                       onSaveEdit={saveStringValue}
                       onCancelEdit={() => setEditingValue(null)}
-                      onCellCopy={(text) => { navigator.clipboard.writeText(text); showToast('已复制'); }}
+                      onCellCopy={(text) => { navigator.clipboard.writeText(text); showToast(t('common.copied')); }}
                     />
                   ) : activeTab === 'info' ? (
                     <InfoTabContent infoText={infoText} onRefresh={loadInfo} />
@@ -624,8 +626,9 @@ function DataTabContent({
   onCancelEdit: () => void;
   onCellCopy: (text: string) => void;
 }) {
+  const { t } = useTranslation();
   if (!selectedKey) {
-    return <div className="flex items-center justify-center h-full text-sm text-muted-foreground">选择左侧 Key</div>;
+    return <div className="flex items-center justify-center h-full text-sm text-muted-foreground">{t('redis.selectKey')}</div>;
   }
   if (keyLoading) {
     return (
@@ -635,7 +638,7 @@ function DataTabContent({
     );
   }
   if (!keyValue) {
-    return <div className="flex items-center justify-center h-full text-sm text-muted-foreground">Key 不存在</div>;
+    return <div className="flex items-center justify-center h-full text-sm text-muted-foreground">{t('redis.keyNotExist')}</div>;
   }
 
   const { type, value } = keyValue;
@@ -655,12 +658,12 @@ function DataTabContent({
               onClick={() => onStartEdit(strVal)}
               className="px-2 py-0.5 text-[10px] text-brand hover:text-brand/80 bg-brand/10 rounded transition-colors"
             >
-              编辑
+              {t('common.edit')}
             </button>
           ) : (
             <div className="flex gap-1">
-              <button onClick={onSaveEdit} className="px-2 py-0.5 text-[10px] text-white bg-brand rounded hover:bg-brand/90">保存</button>
-              <button onClick={onCancelEdit} className="px-2 py-0.5 text-[10px] text-muted-foreground bg-muted rounded hover:text-foreground">取消</button>
+              <button onClick={onSaveEdit} className="px-2 py-0.5 text-[10px] text-white bg-brand rounded hover:bg-brand/90">{t('common.save')}</button>
+              <button onClick={onCancelEdit} className="px-2 py-0.5 text-[10px] text-muted-foreground bg-muted rounded hover:text-foreground">{t('common.cancel')}</button>
             </div>
           )}
         </div>
@@ -735,7 +738,7 @@ function DataTabContent({
         <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border">
           <TypeBadge type="list" />
           <span className="text-xs font-mono text-muted-foreground truncate">{selectedKey}</span>
-          <span className="text-[10px] text-muted-foreground ml-auto">{total} items{items.length < total ? ` (显示 ${items.length})` : ''}</span>
+          <span className="text-[10px] text-muted-foreground ml-auto">{t('redis.nItems', { total })}{items.length < total ? ` (${t('redis.showingN', { count: items.length })})` : ''}</span>
         </div>
         <div className="flex-1 overflow-auto">
           <table className="w-full text-xs border-collapse">
@@ -774,7 +777,7 @@ function DataTabContent({
         <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border">
           <TypeBadge type="set" />
           <span className="text-xs font-mono text-muted-foreground truncate">{selectedKey}</span>
-          <span className="text-[10px] text-muted-foreground ml-auto">{total} members{items.length < total ? ` (显示 ${items.length})` : ''}</span>
+          <span className="text-[10px] text-muted-foreground ml-auto">{t('redis.nMembers', { total })}{items.length < total ? ` (${t('redis.showingN', { count: items.length })})` : ''}</span>
         </div>
         <div className="flex-1 overflow-auto">
           <table className="w-full text-xs border-collapse">
@@ -811,7 +814,7 @@ function DataTabContent({
         <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border">
           <TypeBadge type="zset" />
           <span className="text-xs font-mono text-muted-foreground truncate">{selectedKey}</span>
-          <span className="text-[10px] text-muted-foreground ml-auto">{total} members{items.length < total ? ` (显示 ${items.length})` : ''}</span>
+          <span className="text-[10px] text-muted-foreground ml-auto">{t('redis.nMembers', { total })}{items.length < total ? ` (${t('redis.showingN', { count: items.length })})` : ''}</span>
         </div>
         <div className="flex-1 overflow-auto">
           <table className="w-full text-xs border-collapse">
@@ -852,7 +855,7 @@ function DataTabContent({
         <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border">
           <TypeBadge type="stream" />
           <span className="text-xs font-mono text-muted-foreground truncate">{selectedKey}</span>
-          <span className="text-[10px] text-muted-foreground ml-auto">{total} entries{entries.length < total ? ` (显示 ${entries.length})` : ''}</span>
+          <span className="text-[10px] text-muted-foreground ml-auto">{t('redis.nEntries', { total })}{entries.length < total ? ` (${t('redis.showingN', { count: entries.length })})` : ''}</span>
         </div>
         <div className="flex-1 overflow-auto">
           <table className="w-full text-xs border-collapse">
@@ -888,7 +891,7 @@ function DataTabContent({
   // Unknown type
   return (
     <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-      不支持的类型: {type}
+      {t('redis.unsupportedType', { type })}
     </div>
   );
 }
@@ -898,6 +901,7 @@ function DataTabContent({
 // ============================================================================
 
 function InfoTabContent({ infoText, onRefresh }: { infoText: string; onRefresh: () => void }) {
+  const { t } = useTranslation();
   if (!infoText) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -928,7 +932,7 @@ function InfoTabContent({ infoText, onRefresh }: { infoText: string; onRefresh: 
           onClick={onRefresh}
           className="px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground bg-muted rounded transition-colors"
         >
-          刷新
+          {t('common.refresh')}
         </button>
       </div>
       {sections.map((section) => (
@@ -963,12 +967,13 @@ function CliTabContent({
   endRef: React.RefObject<HTMLDivElement | null>;
   inputRef: React.RefObject<HTMLInputElement | null>;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col h-full">
       {/* History */}
       <div className="flex-1 overflow-auto p-2 font-mono text-xs space-y-2" onClick={() => inputRef.current?.focus()}>
         {history.length === 0 && (
-          <div className="text-muted-foreground text-center py-4">输入 Redis 命令，如 PING, GET key, KEYS *</div>
+          <div className="text-muted-foreground text-center py-4">{t('redis.cliHint')}</div>
         )}
         {history.map((entry, i) => (
           <div key={i}>
@@ -994,7 +999,7 @@ function CliTabContent({
           value={cliInput}
           onChange={(e) => onInputChange(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !loading) onExecute(); }}
-          placeholder="输入命令..."
+          placeholder={t('redis.cliPlaceholder')}
           className="flex-1 min-w-0 text-xs font-mono bg-transparent border-0 focus:outline-none"
           autoComplete="off"
           spellCheck={false}

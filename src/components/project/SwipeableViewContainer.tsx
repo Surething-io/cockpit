@@ -79,7 +79,7 @@ export function SwipeableViewContainer({ activeView, onViewChange, children }: S
   // Reset dragOffset when activeView changes
   useEffect(() => {
     dragOffsetRef.current = 0;
-    setDragOffsetPx(0);
+    queueMicrotask(() => setDragOffsetPx(0));
   }, [activeView]);
 
   // Listen to wheel events at the document level
@@ -173,7 +173,7 @@ export function SwipeableViewContainer({ activeView, onViewChange, children }: S
   // Use state to ensure SSR and client consistency
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
-    setMounted(true);
+    queueMicrotask(() => setMounted(true));
   }, []);
 
   const getUnderlineOffset = () => {
@@ -315,7 +315,7 @@ export function ViewSwitcherBar() {
 
   // Update underline position
   useEffect(() => {
-    setUnderlineStyle(calculateUnderlineStyle());
+    queueMicrotask(() => setUnderlineStyle(calculateUnderlineStyle()));
   }, [currentIndex, dragOffset]);
 
   // Listen to window resize

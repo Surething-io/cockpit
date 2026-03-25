@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, forwardRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ReviewComment } from '@/lib/review-utils';
 import type { UserNameMap } from './ReviewCommentsListModal';
 
@@ -21,17 +22,19 @@ interface Props {
   onEditReply: (replyId: string, content: string) => void;
 }
 
+import i18n from '@/lib/i18n';
+
 function formatTime(ts: number): string {
   const d = new Date(ts);
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return '刚刚';
-  if (diffMin < 60) return `${diffMin}分钟前`;
+  if (diffMin < 1) return i18n.t('common.justNow');
+  if (diffMin < 60) return i18n.t('common.minutesAgo', { count: diffMin });
   const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return `${diffHour}小时前`;
+  if (diffHour < 24) return i18n.t('common.hoursAgo', { count: diffHour });
   const diffDay = Math.floor(diffHour / 24);
-  if (diffDay < 7) return `${diffDay}天前`;
+  if (diffDay < 7) return i18n.t('common.daysAgo', { count: diffDay });
   return d.toLocaleDateString();
 }
 
@@ -39,6 +42,7 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
   { comment, isActive, isOwnComment, isAdmin, currentAuthorId, canInteract, userNameMap, onClick, onDelete, onEdit, onToggleClosed, onAddReply, onDeleteReply, onEditReply },
   ref
 ) {
+  const { t } = useTranslation();
   // Prefer latest nickname from the map, fallback to author in comment snapshot
   const resolveAuthor = (authorId: string, fallback: string) => userNameMap[authorId] || fallback;
   const [replyContent, setReplyContent] = useState('');
@@ -109,23 +113,23 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
           {resolveAuthor(comment.authorId, comment.author).charAt(0)}
         </span>
         <span className="text-xs text-muted-foreground truncate flex-1">{truncatedAnchor}</span>
-        <span className="text-[10px] text-muted-foreground/50 flex-shrink-0">已关闭</span>
+        <span className="text-[10px] text-muted-foreground/50 flex-shrink-0">{t('review.closedLabel')}</span>
         {canToggleClosed && (
           <button
             onClick={e => { e.stopPropagation(); onToggleClosed(false); }}
             className="text-[10px] text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-            title="重新开放"
+            title={t('review.reopenReview')}
           >
-            重开
+            {t('review.reopen')}
           </button>
         )}
         {(isOwnComment && canInteract || isAdmin) && (
           <button
             onClick={e => { e.stopPropagation(); onDelete(); }}
             className="text-[10px] text-muted-foreground hover:text-red-500 transition-colors flex-shrink-0"
-            title="删除评论"
+            title={t('review.deleteComment')}
           >
-            删除
+            {t('common.delete')}
           </button>
         )}
       </div>
@@ -163,27 +167,27 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
               <button
                 onClick={e => { e.stopPropagation(); onToggleClosed(true); }}
                 className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                title="关闭评论"
+                title={t('review.closeComment')}
               >
-                关闭
+                {t('review.closeComment')}
               </button>
             )}
             {isOwnComment && canInteract && (
               <button
                 onClick={e => { e.stopPropagation(); handleStartEditComment(); }}
                 className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                title="编辑评论"
+                title={t('review.editComment')}
               >
-                编辑
+                {t('common.edit')}
               </button>
             )}
             {(isOwnComment && canInteract || isAdmin) && (
               <button
                 onClick={e => { e.stopPropagation(); onDelete(); }}
                 className="text-[10px] text-muted-foreground hover:text-red-500 transition-colors"
-                title="删除评论"
+                title={t('review.deleteComment')}
               >
-                删除
+                {t('common.delete')}
               </button>
             )}
           </div>
@@ -213,21 +217,21 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
                 onClick={() => setEditingComment(false)}
                 className="px-2 py-0.5 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
               >
-                取消
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleSubmitEditComment}
                 disabled={!editCommentContent.trim()}
                 className="px-2 py-0.5 text-xs rounded bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-40"
               >
-                保存
+                {t('common.save')}
               </button>
             </div>
           </div>
         ) : (
           <div className="text-sm whitespace-pre-wrap">
             {comment.content}
-            {comment.edited && <span className="text-[10px] text-muted-foreground ml-1">(已编辑)</span>}
+            {comment.edited && <span className="text-[10px] text-muted-foreground ml-1">{t('review.edited')}</span>}
           </div>
         )}
       </div>
@@ -250,17 +254,17 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
                       <button
                         onClick={e => { e.stopPropagation(); handleStartEditReply(reply.id, reply.content); }}
                         className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                        title="编辑回复"
+                        title={t('review.editReply')}
                       >
-                        编辑
+                        {t('common.edit')}
                       </button>
                     )}
                     <button
                       onClick={e => { e.stopPropagation(); onDeleteReply(reply.id); }}
                       className="text-[10px] text-muted-foreground hover:text-red-500 transition-colors"
-                      title="删除回复"
+                      title={t('review.deleteReply')}
                     >
-                      删除
+                      {t('common.delete')}
                     </button>
                   </div>
                 )}
@@ -286,21 +290,21 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
                       onClick={() => setEditingReplyId(null)}
                       className="px-2 py-0.5 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
                     >
-                      取消
+                      {t('common.cancel')}
                     </button>
                     <button
                       onClick={handleSubmitEditReply}
                       disabled={!editReplyContent.trim()}
                       className="px-2 py-0.5 text-xs rounded bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-40"
                     >
-                      保存
+                      {t('common.save')}
                     </button>
                   </div>
                 </div>
               ) : (
                 <div className="text-sm mt-0.5 pl-6 whitespace-pre-wrap">
                   {reply.content}
-                  {reply.edited && <span className="text-[10px] text-muted-foreground ml-1">(已编辑)</span>}
+                  {reply.edited && <span className="text-[10px] text-muted-foreground ml-1">{t('review.edited')}</span>}
                 </div>
               )}
             </div>
@@ -316,7 +320,7 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
               onClick={e => { e.stopPropagation(); setShowReplyInput(true); }}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
-              回复
+              {t('review.reply')}
             </button>
           )
         ) : (
@@ -331,7 +335,7 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
                 }
                 if (e.key === 'Escape') setShowReplyInput(false);
               }}
-              placeholder="添加回复..."
+              placeholder={t('review.replyPlaceholder')}
               className="w-full px-2 py-1 text-sm bg-secondary border border-border rounded resize-none focus:outline-none focus:border-brand"
               rows={2}
               autoFocus
@@ -341,14 +345,14 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
                 onClick={() => setShowReplyInput(false)}
                 className="px-2 py-0.5 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
               >
-                取消
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleSubmitReply}
                 disabled={!replyContent.trim()}
                 className="px-2 py-0.5 text-xs rounded bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-40"
               >
-                回复
+                {t('review.reply')}
               </button>
             </div>
           </div>

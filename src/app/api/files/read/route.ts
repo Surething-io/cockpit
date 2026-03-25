@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
         }
         return NextResponse.json({
           type: 'error',
-          message: '图片文件过大，无法预览',
+          message: 'Image too large to preview',
           size: fileSize,
         });
       }
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
     if (BINARY_EXTENSIONS.has(ext)) {
       return NextResponse.json({
         type: 'binary',
-        message: '无法预览二进制文件',
+        message: 'Cannot preview binary file',
         size: fileSize,
       });
     }
@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
     if (fileSize > MAX_FILE_SIZE) {
       return NextResponse.json({
         type: 'error',
-        message: '文件过大，无法预览（超过 10MB）',
+        message: 'File too large to preview (over 10MB)',
         size: fileSize,
       });
     }
@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
     if (isBinaryContent(content)) {
       return NextResponse.json({
         type: 'binary',
-        message: '无法预览二进制文件',
+        message: 'Cannot preview binary file',
         size: fileSize,
       });
     }

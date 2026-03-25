@@ -32,10 +32,10 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   // Mark whether currently initializing (avoid triggering save during initialization)
   const isInitializingRef = useRef(true);
   const activeViewRef = useRef(activeView);
-  activeViewRef.current = activeView;
+  useEffect(() => { activeViewRef.current = activeView; }, [activeView]);
   const pageVisible = usePageVisible();
   const pageVisibleRef = useRef(pageVisible);
-  pageVisibleRef.current = pageVisible;
+  useEffect(() => { pageVisibleRef.current = pageVisible; }, [pageVisible]);
 
   // Initialize tabs (first create a temporary tab, later overwritten by server data)
   const [tabs, setTabs] = useState<TabInfo[]>(() => [{
@@ -50,7 +50,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
 
   // Ref for tabs (avoid stale closures in callbacks)
   const tabsRef = useRef(tabs);
-  tabsRef.current = tabs;
+  useEffect(() => { tabsRef.current = tabs; }, [tabs]);
 
   // Update session status in state.json (notify Workspace layer)
   const updateSessionStatus = useCallback((sessionId: string, status: string) => {
@@ -94,7 +94,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
             }));
 
             // Activation priority: URL sessionId > session.json activeSessionId > first
-            let activeSessionToUse = initialSessionId || savedActiveSessionId;
+            const activeSessionToUse = initialSessionId || savedActiveSessionId;
             let activeIndex = activeSessionToUse ? allSessions.indexOf(activeSessionToUse) : -1;
             if (activeIndex < 0) activeIndex = 0;
 

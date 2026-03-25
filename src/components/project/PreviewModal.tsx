@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Portal } from '../shared/Portal';
 import { DiffView, DiffUnifiedView } from './DiffView';
 import { CodeViewer } from './CodeViewer';
@@ -151,6 +152,7 @@ interface PreviewModalProps {
 }
 
 export function PreviewModal({ title, content, toolName, onClose }: PreviewModalProps) {
+  const { t } = useTranslation();
   const isJson = isValidJson(content);
   const editInput = isEditInput(content);
   const filePath = getFilePath(content);
@@ -237,10 +239,10 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(filePath);
-                  toast('已复制路径');
+                  toast(t('common.copiedPath'));
                 }}
                 className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title="复制绝对路径"
+                title={t('common.copyAbsPath')}
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -261,7 +263,7 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
                           ? 'bg-card text-foreground shadow-sm'
                           : 'text-muted-foreground hover:text-foreground'
                       }`}
-                      title="并列对比"
+                      title={t('diffViewer.sideBySide')}
                     >
                       Split
                     </button>
@@ -272,7 +274,7 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
                           ? 'bg-card text-foreground shadow-sm'
                           : 'text-muted-foreground hover:text-foreground'
                       }`}
-                      title="统一对比"
+                      title={t('diffViewer.unified')}
                     >
                       Unified
                     </button>
@@ -286,7 +288,7 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
                         ? 'bg-card text-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
-                    title="预览文件"
+                    title={t('diffViewer.previewFile')}
                   >
                     File
                   </button>
@@ -299,7 +301,7 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  可读
+                  {t('common.readable')}
                 </button>
                 <button
                   onClick={() => setViewMode('json')}

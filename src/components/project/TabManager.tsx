@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { FileBrowserModal } from './FileBrowserModal';
 import { GitWorktreeModal } from './GitWorktreeModal';
@@ -22,6 +23,7 @@ interface TabManagerProps {
 }
 
 export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
+  const { t } = useTranslation();
   // activeView must be declared before useTabState, as useTabState needs it to determine unread state
   const [activeView, setActiveView] = useState<ViewType>('agent');
 
@@ -145,7 +147,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     }
   }, [initialCwd]);
 
-  useEffect(() => { loadGitInfo(); }, [loadGitInfo]);
+  useEffect(() => { queueMicrotask(() => loadGitInfo()); }, [loadGitInfo]);
 
   // Listen for git change events and update branch name in real time
   const handleWatchMessage = useCallback((msg: unknown) => {
@@ -225,9 +227,10 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   }, [handleViewChange]);
 
   // Open note
-  const handleOpenNote = initialCwd ? useCallback(() => {
+  const handleOpenNote = useCallback(() => {
+    if (!initialCwd) return;
     window.parent.postMessage({ type: 'OPEN_NOTE', cwd: initialCwd }, '*');
-  }, [initialCwd]) : undefined;
+  }, [initialCwd]);
 
   return (
     <ChatProvider>
@@ -251,7 +254,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         {screenshotActive && (
           <div className="flex items-center justify-center gap-2 py-1 bg-brand/15 text-brand text-xs font-medium border-b border-brand/20">
             <span className="animate-pulse">●</span>
-            截图中...
+            {t('console.screenshotting')}
           </div>
         )}
 

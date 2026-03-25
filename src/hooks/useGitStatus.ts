@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { buildGitFileTree, collectGitTreeDirPaths, type GitFileNode } from '../components/project/GitFileTree';
 import { toast } from '../components/shared/Toast';
 import type { GitFileStatus, GitStatusResponse, GitDiffResponse } from '../components/project/fileBrowser/types';
+import i18n from '@/lib/i18n';
 
 interface UseGitStatusOptions {
   cwd: string;
@@ -79,10 +80,10 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
         throw new Error('Failed to stage file');
       }
       await fetchStatus();
-      toast('已暂存', 'success');
+      toast(i18n.t('toast.staged'), 'success');
     } catch (err) {
       console.error('Error staging file:', err);
-      toast('暂存失败', 'error');
+      toast(i18n.t('toast.stageFailed'), 'error');
     }
   }, [cwd, fetchStatus]);
 
@@ -97,10 +98,10 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
         throw new Error('Failed to unstage file');
       }
       await fetchStatus();
-      toast('已取消暂存', 'success');
+      toast(i18n.t('toast.unstaged'), 'success');
     } catch (err) {
       console.error('Error unstaging file:', err);
-      toast('取消暂存失败', 'error');
+      toast(i18n.t('toast.unstageFailed'), 'error');
     }
   }, [cwd, fetchStatus]);
 
@@ -117,10 +118,10 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
         throw new Error('Failed to stage files');
       }
       await fetchStatus();
-      toast(`已暂存 ${paths.length} 个文件`, 'success');
+      toast(i18n.t('toast.stagedNFiles', { count: paths.length }), 'success');
     } catch (err) {
       console.error('Error staging files:', err);
-      toast('暂存失败', 'error');
+      toast(i18n.t('toast.stageFailed'), 'error');
     }
   }, [cwd, fetchStatus]);
 
@@ -137,10 +138,10 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
         throw new Error('Failed to unstage files');
       }
       await fetchStatus();
-      toast(`已取消暂存 ${paths.length} 个文件`, 'success');
+      toast(i18n.t('toast.unstagedNFiles', { count: paths.length }), 'success');
     } catch (err) {
       console.error('Error unstaging files:', err);
-      toast('取消暂存失败', 'error');
+      toast(i18n.t('toast.unstageFailed'), 'error');
     }
   }, [cwd, fetchStatus]);
 
@@ -176,10 +177,10 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
       }
 
       await fetchStatus();
-      toast(`已放弃 ${files.length} 个文件的变更`, 'success');
+      toast(i18n.t('toast.discardedNFiles', { count: files.length }), 'success');
     } catch (err) {
       console.error('Error discarding files:', err);
-      toast('放弃变更失败', 'error');
+      toast(i18n.t('toast.discardFailed'), 'error');
     }
   }, [cwd, fetchStatus]);
 
@@ -195,10 +196,10 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
         throw new Error('Failed to stage all files');
       }
       await fetchStatus();
-      toast(`已暂存 ${status.unstaged.length} 个文件`, 'success');
+      toast(i18n.t('toast.stagedNFiles', { count: status.unstaged.length }), 'success');
     } catch (err) {
       console.error('Error staging all files:', err);
-      toast('暂存失败', 'error');
+      toast(i18n.t('toast.stageFailed'), 'error');
     }
   }, [cwd, status, fetchStatus]);
 
@@ -214,10 +215,10 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
         throw new Error('Failed to unstage all files');
       }
       await fetchStatus();
-      toast(`已取消暂存 ${status.staged.length} 个文件`, 'success');
+      toast(i18n.t('toast.unstagedNFiles', { count: status.staged.length }), 'success');
     } catch (err) {
       console.error('Error unstaging all files:', err);
-      toast('取消暂存失败', 'error');
+      toast(i18n.t('toast.unstageFailed'), 'error');
     }
   }, [cwd, status, fetchStatus]);
 
@@ -234,17 +235,17 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
         throw new Error('Failed to discard file');
       }
       await fetchStatus();
-      toast(isUntracked ? '已删除文件' : '已放弃变更', 'success');
+      toast(isUntracked ? i18n.t('toast.deletedFile') : i18n.t('toast.discardedChanges'), 'success');
     } catch (err) {
       console.error('Error discarding file:', err);
-      toast('放弃变更失败', 'error');
+      toast(i18n.t('toast.discardFailed'), 'error');
     }
   }, [cwd, fetchStatus]);
 
   // Discard all working tree changes
   const handleDiscardAll = useCallback(async () => {
     if (!status?.unstaged.length) return;
-    if (!confirm(`确定要放弃工作区的 ${status.unstaged.length} 个文件的变更吗？此操作不可恢复。`)) return;
+    if (!confirm(i18n.t('git.discardAllConfirm', { count: status.unstaged.length }))) return;
 
     try {
       // Separate untracked and tracked files
@@ -270,10 +271,10 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
       }
 
       await fetchStatus();
-      toast(`已放弃 ${status.unstaged.length} 个文件的变更`, 'success');
+      toast(i18n.t('toast.discardedNFiles', { count: status.unstaged.length }), 'success');
     } catch (err) {
       console.error('Error discarding all:', err);
-      toast('放弃变更失败', 'error');
+      toast(i18n.t('toast.discardFailed'), 'error');
     }
   }, [cwd, status, fetchStatus]);
 

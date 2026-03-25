@@ -30,11 +30,8 @@
     "chrome-extension",
     "public",
     "server.mjs",
-    "src",
-    ".next",
+    ".next-prod",
     "next.config.ts",
-    "postcss.config.mjs",
-    "tsconfig.json",
     "LICENSE"
   ],
   "scripts": {

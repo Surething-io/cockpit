@@ -100,6 +100,15 @@ function escapeTablePipes(content: string): string {
 }
 
 /**
+ * Escape dollar signs that represent currency, not math delimiters.
+ * Pattern: $ immediately followed by a digit (e.g. $500, $1,000, $500亿).
+ * Replaces $ → \$ so remark-math won't treat it as inline math.
+ */
+function escapeCurrencyDollars(content: string): string {
+  return content.replace(/\$(\d)/g, '\\$$1');
+}
+
+/**
  * Pre-process content: wrap ASCII-art-containing content in a code block.
  * Simplified strategy: if ASCII art is detected, render the entire content as <pre>.
  */
@@ -231,7 +240,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
     if (isUser || isStreaming) {
       return content;
     }
-    return escapeTablePipes(preprocessAsciiArt(content));
+    return escapeCurrencyDollars(escapeTablePipes(preprocessAsciiArt(content)));
   }, [content, isUser, isStreaming]);
 
   // Merge rehype plugins: base plugins (rehype-raw + rehype-katex) + caller-supplied plugins
@@ -266,7 +275,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
           rehypePlugins={REHYPE_PLUGINS_BASE}
           components={streamComponents}
         >
-          {escapeTablePipes(completedLines)}
+          {escapeCurrencyDollars(escapeTablePipes(completedLines))}
         </ReactMarkdown>
         {/* Current line being typed — plain text */}
         {currentLine && (

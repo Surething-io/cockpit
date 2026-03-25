@@ -325,7 +325,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   }, [messages.length, isActive]);
 
   return (
-    <div ref={outerRef} className="relative flex-1 overflow-hidden flex flex-col outline-none" tabIndex={-1} onMouseUp={handleSelectionMouseUp} onMouseDown={handleSelectionMouseDown}>
+    <div ref={outerRef} className="relative flex-1 min-h-0 overflow-hidden flex flex-col outline-none" tabIndex={-1} onMouseUp={handleSelectionMouseUp} onMouseDown={handleSelectionMouseDown}>
       {/* Search bar */}
       {isSearchVisible && (
         <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-secondary border-b border-border">
@@ -361,7 +361,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-4"
+        className="relative flex-1 min-h-0 overflow-y-auto p-4"
       >
         {messages.length === 0 && !isLoading ? (
           <div className="flex items-center justify-center h-full text-slate-9">

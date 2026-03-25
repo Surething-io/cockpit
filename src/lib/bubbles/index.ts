@@ -7,6 +7,7 @@
 
 import './browser';
 import './database';
+import './jupyter';
 import './mysql';
 import './redis';
 

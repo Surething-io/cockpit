@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { buildGitFileTree, collectGitTreeDirPaths, type GitFileNode } from '../components/project/GitFileTree';
-import { toast } from '../components/shared/Toast';
+import { toast, confirm } from '../components/shared/Toast';
 import type { GitFileStatus, GitStatusResponse, GitDiffResponse } from '../components/project/fileBrowser/types';
 import i18n from '@/lib/i18n';
 
@@ -245,7 +245,7 @@ export function useGitStatus({ cwd, addToRecentFiles }: UseGitStatusOptions) {
   // Discard all working tree changes
   const handleDiscardAll = useCallback(async () => {
     if (!status?.unstaged.length) return;
-    if (!confirm(i18n.t('git.discardAllConfirm', { count: status.unstaged.length }))) return;
+    if (!await confirm(i18n.t('git.discardAllConfirm', { count: status.unstaged.length }), { danger: true })) return;
 
     try {
       // Separate untracked and tracked files

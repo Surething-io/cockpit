@@ -61,6 +61,8 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     handleBrowser(ws, query.fullId as string);
   } else if (pathname === '/ws/terminal-follow') {
     handleTerminalFollow(ws, query.id as string);
+  } else if (pathname === '/ws/jupyter') {
+    handleJupyter(ws, query.bubbleId as string, query.cwd as string);
   }
 });
 
@@ -71,7 +73,7 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
 export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean {
   const { pathname } = parse(req.url || '', true);
 
-  if (pathname === '/ws/watch' || pathname === '/ws/global-state' || pathname === '/ws/terminal' || pathname === '/ws/browser' || pathname === '/ws/terminal-follow') {
+  if (pathname === '/ws/watch' || pathname === '/ws/global-state' || pathname === '/ws/terminal' || pathname === '/ws/browser' || pathname === '/ws/terminal-follow' || pathname === '/ws/jupyter') {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws, req);
     });
@@ -838,5 +840,94 @@ function handleBrowser(ws: WebSocket, fullId: string): void {
   ws.on('close', () => {
     clearInterval(heartbeat);
     unregisterBrowser(fullId);
+  });
+}
+
+// ========== Jupyter Kernel WebSocket ==========
+
+/**
+ * /ws/jupyter?bubbleId=...&cwd=... — Jupyter kernel communication
+ *
+ * Client → Server messages:
+ *   { type: 'execute', msg_id, code }
+ *   { type: 'interrupt' }
+ *
+ * Server → Client messages:
+ *   { type: 'output', msg_id, msg_type, content }
+ *   { type: 'status', execution_state }
+ *   { type: 'kernel_error', message }
+ *   { type: 'kernel_died', exit_code }
+ *   { type: 'ready' }
+ */
+async function handleJupyter(ws: WebSocket, bubbleId: string, cwd: string): Promise<void> {
+  if (!bubbleId || !cwd) {
+    ws.close(4400, 'Missing bubbleId or cwd parameter');
+    return;
+  }
+
+  let closed = false;
+  const send = (msg: Record<string, unknown>) => {
+    if (!closed && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(msg));
+    }
+  };
+
+  const heartbeat = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'ping' }));
+    }
+  }, HEARTBEAT_INTERVAL);
+
+  // Lazy import to avoid loading kernel manager on every WS connection
+  const { kernelManager } = await import('./kernels/JupyterKernelManager');
+
+  // Start or connect to existing kernel
+  try {
+    const instance = await kernelManager.getOrCreate(bubbleId, cwd);
+    if (instance.errorMessage) {
+      send({ type: 'kernel_error', message: instance.errorMessage });
+    } else {
+      send({ type: 'ready' });
+    }
+  } catch (err) {
+    send({ type: 'kernel_error', message: (err as Error).message });
+  }
+
+  // Subscribe to kernel outputs
+  const unsubscribe = kernelManager.addOutputListener(bubbleId, (msg) => {
+    if (msg.msg_type === 'kernel_error') {
+      send({ type: 'kernel_error', message: msg.content.message as string });
+    } else if (msg.msg_type === 'kernel_died') {
+      send({ type: 'kernel_died', exit_code: msg.content.exit_code });
+    } else if (msg.msg_type === 'status') {
+      send({ type: 'status', execution_state: (msg.content as Record<string, unknown>).execution_state });
+    } else {
+      send({ type: 'output', msg_id: msg.msg_id, msg_type: msg.msg_type, content: msg.content });
+    }
+  });
+
+  ws.on('message', async (raw) => {
+    let msg: Record<string, unknown>;
+    try { msg = JSON.parse(raw.toString()); } catch { return; }
+
+    const type = msg.type as string;
+
+    if (type === 'execute') {
+      const { msg_id, code } = msg as { msg_id: string; code: string };
+      try {
+        await kernelManager.execute(bubbleId, code, msg_id, cwd);
+      } catch (err) {
+        send({ type: 'kernel_error', message: (err as Error).message });
+      }
+    } else if (type === 'interrupt') {
+      await kernelManager.interrupt(bubbleId);
+    }
+  });
+
+  ws.on('close', () => {
+    closed = true;
+    clearInterval(heartbeat);
+    unsubscribe();
+    // Note: kernel keeps running — reconnection possible
   });
 }

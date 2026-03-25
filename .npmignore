@@ -1,5 +1,11 @@
+# Next.js build cache (800MB+ webpack cache, not needed at runtime)
+.next-prod/cache
+
 # src dev-only
 src/stories
+src/app
+src/components
+src/hooks
 
 # chrome extension dev artifacts
 chrome-extension/_metadata/

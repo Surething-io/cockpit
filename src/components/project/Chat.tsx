@@ -227,17 +227,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isHovered, isLoading, handleStop]);
 
-  // Handle sidebar session click - notify parent Workspace to open
-  const handleSelectSession = useCallback((sid: string, _title?: string) => {
-    if (initialCwd) {
-      window.parent.postMessage({
-        type: 'OPEN_PROJECT',
-        cwd: initialCwd,
-        sessionId: sid,
-      }, '*');
-    }
-  }, [initialCwd]);
-
   // Fork session from a specified message point
   const handleFork = useCallback(async (messageId: string) => {
     if (!initialCwd || !sessionId) return;

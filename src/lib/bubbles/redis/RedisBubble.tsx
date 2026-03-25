@@ -256,7 +256,7 @@ export function RedisBubble({
     if (status === 'connected') {
       loadKeys(keyPattern, '0', false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [status]);
 
   // ---- Search keys ----

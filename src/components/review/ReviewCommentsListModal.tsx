@@ -234,7 +234,7 @@ export function ReviewCommentsListModal({
 /** Single comment row */
 function CommentRow({
   comment,
-  index,
+  index: _index,
   resolveAuthor,
   copyingId,
   onCopy,

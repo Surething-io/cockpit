@@ -50,7 +50,7 @@ export function ProjectSidebar({
   onOpenSettings,
   onOpenNote,
   onSwitchProject,
-  onAddProject,
+  onAddProject: _onAddProject,
 }: ProjectSidebarProps) {
   const { t } = useTranslation();
   const { pinnedSessions, unpinSession, updateTitle, reorder } = usePinnedSessions();

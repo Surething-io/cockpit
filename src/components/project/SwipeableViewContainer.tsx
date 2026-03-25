@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useState, ReactNode, createContext, useContext, useMemo } from 'react';
+import { useRef, useEffect, useState, ReactNode, createContext, useContext } from 'react';
 
 export type ViewType = 'agent' | 'explorer' | 'console';
 
@@ -67,7 +67,6 @@ export function SwipeableViewContainer({ activeView, onViewChange, children }: S
   const [isDragging, setIsDragging] = useState(false);
 
   const currentIndex = VIEWS.indexOf(activeView);
-  const pageCount = VIEWS.length;
   const maxPage = VIEWS.length - 1;
 
   // Parameters

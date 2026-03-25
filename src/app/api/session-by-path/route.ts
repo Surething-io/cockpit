@@ -149,12 +149,6 @@ function filterCommandTags(text: string): string {
   return filtered.trim();
 }
 
-// Truncate a message to the specified length
-function truncateMessage(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  return text.slice(0, maxLength) + '...';
-}
-
 // Generate a title (no truncation, preserve full content)
 function generateTitle(summary: string, userMessages: string[]): string {
   if (summary) return summary;

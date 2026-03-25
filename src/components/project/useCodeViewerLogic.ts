@@ -6,7 +6,7 @@ import { useComments, type CodeComment } from '@/hooks/useComments';
 import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, type CodeReference } from '@/hooks/useAllComments';
 import { useChatContextOptional } from './ChatContext';
 import { useLineHighlight } from '@/hooks/useLineHighlight';
-import { escapeHtml, findMatches, type SearchMatch } from '@/lib/codeHighlighter';
+import { escapeHtml, findMatches } from '@/lib/codeHighlighter';
 import type { BlameLine } from './fileBrowser/types';
 import type { CommitInfo } from './CommitDetailPanel';
 
@@ -291,7 +291,7 @@ export function useCodeViewerLogic({
     // Initialize
     onScroll();
     return () => el.removeEventListener('scroll', onScroll);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [visibleLineRef, rowData]);
 
   // Track Cmd key for LSP Cmd+Click visual feedback
@@ -361,7 +361,7 @@ export function useCodeViewerLogic({
         virtualizer.scrollToIndex(rowIndex, { align: 'center' });
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [currentMatchIndex, matches, virtualizer, rowData, matchScrollTrigger]);
 
   const goToNextMatch = useCallback(() => {

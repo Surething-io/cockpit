@@ -87,7 +87,7 @@ function FilePreview({ filePath }: FilePreviewProps) {
     const rawUrl = `/api/file?path=${encodeURIComponent(filePath)}&raw=true`;
     return (
       <div className="flex items-center justify-center h-full overflow-auto">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
+        { }
         <img
           src={rawUrl}
           alt={filePath.split('/').pop() || 'image'}

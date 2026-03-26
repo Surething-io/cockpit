@@ -258,7 +258,8 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
 
           {/* Inline Todo display */}
           {lastTodoWrite && (() => {
-            const todos = (lastTodoWrite.input?.todos as Array<{ content: string; status: string; activeForm?: string }>) || [];
+            const rawTodos = lastTodoWrite.input?.todos;
+            const todos = (Array.isArray(rawTodos) ? rawTodos : []) as Array<{ content: string; status: string; activeForm?: string }>;
             const completed = todos.filter(t => t.status === 'completed').length;
             const total = todos.length;
             return (

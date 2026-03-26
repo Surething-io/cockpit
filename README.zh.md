@@ -6,6 +6,8 @@
 
 **One seat. One AI. Everything under control.**
 
+https://github.com/user-attachments/assets/18f1a5dc-64f3-4ff6-b9fc-9cd08181fbb8
+
 基于 **Claude Code (Agent SDK)** 构建的一站式开发座舱 — 对话、代码、终端、浏览器、数据库全部集成在一个界面中。能跑 Claude Code 就能用，零配置、零云端依赖。
 
 **20× AI 算力，20× 你的效率。** 多项目 AI 会话并发执行，红点徽标和通知系统让你不错过任何完成的任务，局域网协作评审系统让团队无缝配合 — 在驾驶舱中完成所有工作，专注心流。

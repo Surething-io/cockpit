@@ -6,6 +6,8 @@
 
 **One seat. One AI. Everything under control.**
 
+https://github.com/user-attachments/assets/18f1a5dc-64f3-4ff6-b9fc-9cd08181fbb8
+
 A unified development cockpit built on **Claude Code (Agent SDK)** — chat, code, terminal, browser, database all in one interface. If you can run Claude Code, Cockpit works out of the box — zero config, zero cloud dependency.
 
 **20× AI power, 20× your productivity.** Run multiple AI sessions in parallel across projects, stay in flow with notifications and red-dot badges, collaborate through shared code reviews — all from within the cockpit.

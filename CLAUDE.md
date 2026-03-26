@@ -58,6 +58,21 @@ cock             # Start production server (port 3457)
 cock -v          # Show version
 ```
 
+## npm Publish
+
+Publishing is done via GitHub Actions — **never publish locally with `npm publish`**.
+
+```bash
+npm version patch          # Bump version (patch/minor/major)
+git push origin main       # Push commit
+git push origin v<version> # Push tag → triggers CI publish
+```
+
+The `v*` tag push triggers `.github/workflows/publish.yml` which:
+1. Builds the project
+2. Publishes to npm (`@surething/cockpit`) with provenance
+3. Creates a GitHub Release with auto-generated notes
+
 ## Project Characteristics
 
 - **Purely local application**: All API request latency is under 10ms

@@ -59,13 +59,21 @@
 - Chrome 插件 (Manifest V3) 浏览器自动化桥接
 - CLI 工具：`cock browser` / `cock terminal` 无头自动化
 
+## 前置依赖
+
+- **Node.js ≥ 20** — [nodejs.org](https://nodejs.org/)
+- **Claude Code** — [docs.anthropic.com](https://docs.anthropic.com/en/docs/claude-code)（Cockpit 底层使用 Claude Code Agent SDK）
+- **Git** — 用于 Git 相关功能（blame、diff、分支切换等）
+- **Chrome** —（可选）浏览器气泡自动化，需安装 `~/.cockpit/chrome-extension` 中的扩展
+
 ## 安装
 
 ```bash
 npm install -g @surething/cockpit
 cock                # 启动服务 → http://localhost:3457
+cock .              # 打开当前目录为项目
+cock ~/my-project   # 打开指定目录
 cock -h             # 查看帮助
-cock -v             # 查看版本
 ```
 
 ### 从源码安装

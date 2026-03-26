@@ -53,13 +53,21 @@ A unified development cockpit built on **Claude Code (Agent SDK)** — chat, cod
 - Chrome extension (Manifest V3) for browser automation bridge
 - CLI tools: `cock browser` / `cock terminal` for headless automation
 
+## Prerequisites
+
+- **Node.js ≥ 20** — [nodejs.org](https://nodejs.org/)
+- **Claude Code** — [docs.anthropic.com](https://docs.anthropic.com/en/docs/claude-code) (Cockpit uses Claude Code Agent SDK under the hood)
+- **Git** — for git features (blame, diff, branch switching, etc.)
+- **Chrome** — (optional) for Browser Bubble automation, install the bundled extension from `~/.cockpit/chrome-extension`
+
 ## Install
 
 ```bash
 npm install -g @surething/cockpit
 cock                # Start server → http://localhost:3457
+cock .              # Open current directory as project
+cock ~/my-project   # Open specified directory
 cock -h             # Show help
-cock -v             # Show version
 ```
 
 ### From Source

@@ -13,19 +13,21 @@ if (process.argv[2] === '--help' || process.argv[2] === '-h' || process.argv[2] 
   const pkg = JSON.parse(readFileSync(resolve(PROJECT_ROOT, 'package.json'), 'utf8'));
   console.log(`Cockpit v${pkg.version} - One seat. One AI. Everything under control.
 
-Usage: cock [command]
+Usage: cock [path] [options]
 
 Commands:
-  (default)                    Start Cockpit server (port 3457)
-  browser <id> <action>        Control browser bubbles
-  terminal <id> <action>       Control terminal bubbles
-  update                       Update to latest version
+  cock                           Start server, open last project
+  cock .                         Start server, open current directory
+  cock <path>                    Start server, open specified directory
+  browser <id> <action>          Control browser bubbles
+  terminal <id> <action>         Control terminal bubbles
+  update                         Update to latest version
 
 Options:
-  --port <port>                Set server port (default: 3457)
-  --no-open                    Don't open browser after start
-  -v, --version                Show version
-  -h, --help                   Show this help`);
+  --port <port>                  Set server port (default: 3457)
+  --no-open                      Don't open browser after start
+  -v, --version                  Show version
+  -h, --help                     Show this help`);
   process.exit(0);
 }
 
@@ -58,8 +60,7 @@ if (!process.env.COCKPIT_PORT) {
 
 // Subcommand routing
 if (process.argv[2] === 'browser') {
-  // cock browser <id> <action> [args...] → delegate to cock-browser.mjs
-  process.argv.splice(2, 1); // Remove 'browser' so cock-browser.mjs parses from argv[2]
+  process.argv.splice(2, 1);
   const mod = await import('./cock-browser.mjs');
   await mod.done;
   process.exit(0);
@@ -83,17 +84,72 @@ if (process.argv[2] === 'update') {
   process.exit(result.status ?? 1);
 }
 
-// Start (foreground, Ctrl+C to stop)
+// ============================================
+// Resolve project directory (if provided)
+// ============================================
+const { existsSync, mkdirSync } = await import('fs');
+const { homedir } = await import('os');
+
+const knownCommands = new Set(['browser', 'terminal', 'update', 'help']);
+const arg = process.argv[2];
+let projectDir = null;
+
+// 第一个参数不是 flag 且不是已知子命令 → 视为目录路径
+if (arg && !arg.startsWith('-') && !knownCommands.has(arg)) {
+  // 展开 ~ 为 home 目录
+  const raw = arg.startsWith('~') ? arg.replace(/^~/, homedir()) : arg;
+  projectDir = resolve(raw);
+  // 目录不存在则创建
+  if (!existsSync(projectDir)) {
+    mkdirSync(projectDir, { recursive: true });
+    console.log(`Created ${projectDir}`);
+  }
+}
+
+// ============================================
+// Check if server is already running
+// ============================================
+const port = process.env.PORT || process.env.COCKPIT_PORT || '3457';
+
+async function isServerRunning() {
+  try {
+    const res = await fetch(`http://localhost:${port}/api/version`, { signal: AbortSignal.timeout(1000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+const { exec } = await import('child_process');
+const running = await isServerRunning();
+
+if (running) {
+  // 服务已运行 → 打开浏览器，立即退出
+  const base = `http://localhost:${port}`;
+  const url = projectDir ? `${base}/?cwd=${encodeURIComponent(projectDir)}` : base;
+  if (!process.env.COCKPIT_NO_OPEN) {
+    const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+    exec(`${cmd} ${url}`);
+  }
+  console.log(`Cockpit is already running → ${url}`);
+  process.exit(0);
+}
+
+// ============================================
+// Start server (foreground, Ctrl+C to stop)
+// ============================================
 const isDev = process.env.COCKPIT_ENV === 'dev';
-const { existsSync } = await import('fs');
-// prod mode requires a pre-built artifact; dev mode is compiled on-the-fly by Next.js
 if (!isDev && !existsSync(resolve(PROJECT_ROOT, '.next-prod', 'BUILD_ID'))) {
   console.error('No production build found.\n');
   console.error('Run: npm run build');
   process.exit(1);
 }
 
+// 传递项目目录给 server.mjs，让它打开正确的 URL
+if (projectDir) {
+  process.env.COCKPIT_OPEN_PROJECT = projectDir;
+}
+
 console.log('Starting Cockpit...');
-// dev: tsx for on-the-fly TS compilation; prod: pre-compiled dist/
 const args = isDev ? ['--import', 'tsx', 'server.mjs'] : ['server.mjs'];
 spawnSync('node', args, { cwd: PROJECT_ROOT, stdio: 'inherit' });

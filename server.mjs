@@ -71,8 +71,10 @@ app.prepare().then(async () => {
 
     // prod 模式自动打开浏览器（--no-open 禁用）
     if (!dev && !process.env.COCKPIT_NO_OPEN) {
+      const openProject = process.env.COCKPIT_OPEN_PROJECT;
+      const openUrl = openProject ? `${url}/?cwd=${encodeURIComponent(openProject)}` : url;
       const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
-      exec(`${cmd} ${url}`);
+      exec(`${cmd} ${openUrl}`);
     }
   });
 

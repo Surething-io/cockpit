@@ -1,73 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { stat, readdir } from 'fs/promises';
-import { join, relative } from 'path';
-import { exec } from 'child_process';
+import { stat } from 'fs/promises';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { join } from 'path';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
-/**
- * Get all file paths via git (tracked + untracked + ignored).
- * Returns a deduplicated flat path array, or null if not a git repository.
- */
-async function getGitAllPaths(cwd: string): Promise<string[] | null> {
+const RG_PATH = join(process.cwd(), 'node_modules', '@vscode', 'ripgrep', 'bin', 'rg');
+
+const RG_OPTIONS = { maxBuffer: 10 * 1024 * 1024, timeout: 10000 };
+
+async function rgFiles(cwd: string, args: string[]): Promise<string[]> {
   try {
-    // Run three git commands in parallel: tracked, untracked, ignored
-    const [trackedResult, untrackedResult, ignoredResult] = await Promise.all([
-      execAsync(
-        'git -c core.quotePath=false ls-files',
-        { cwd, maxBuffer: 10 * 1024 * 1024 }
-      ),
-      execAsync(
-        'git -c core.quotePath=false ls-files --others --exclude-standard',
-        { cwd, maxBuffer: 10 * 1024 * 1024 }
-      ),
-      execAsync(
-        'git -c core.quotePath=false ls-files --others --ignored --exclude-standard',
-        { cwd, maxBuffer: 10 * 1024 * 1024 }
-      ).catch(() => ({ stdout: '' })), // ignored may fail (no .gitignore, etc.)
-    ]);
-
-    const paths = new Set<string>();
-
-    for (const result of [trackedResult, untrackedResult, ignoredResult]) {
-      const stdout = typeof result === 'object' && 'stdout' in result ? result.stdout : '';
-      for (const line of stdout.split('\n')) {
-        const p = line.trim();
-        if (p) paths.add(p);
+    const { stdout } = await execFileAsync(RG_PATH, args, { cwd, ...RG_OPTIONS });
+    return stdout.split('\n').filter(Boolean);
+  } catch (err) {
+    if (err && typeof err === 'object' && 'code' in err) {
+      // exit 1 = no files found
+      if (err.code === 1) return [];
+      // exit 2 = errors (e.g. broken symlink) but may still have partial results
+      if (err.code === 2 && 'stdout' in err && typeof err.stdout === 'string' && err.stdout) {
+        return err.stdout.split('\n').filter(Boolean);
       }
     }
-
-    return Array.from(paths).sort();
-  } catch {
-    return null; // Not a git repository
+    throw err;
   }
-}
-
-/**
- * Recursively collect all file paths (fallback for non-git repositories).
- */
-async function collectAllPaths(dirPath: string, basePath: string): Promise<string[]> {
-  const paths: string[] = [];
-  try {
-    const entries = await readdir(dirPath, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.name === '.git' || entry.name === 'node_modules') continue;
-      const fullPath = join(dirPath, entry.name);
-      const relPath = relative(basePath, fullPath);
-      if (entry.isDirectory()) {
-        paths.push(...await collectAllPaths(fullPath, basePath));
-      } else {
-        paths.push(relPath);
-      }
-    }
-  } catch { /* ignore */ }
-  return paths;
 }
 
 /**
  * GET /api/files/index?cwd=...
  * Returns { paths: string[] } — flat path array (files only)
+ *
+ * Two ripgrep passes, merged and deduplicated:
+ * 1. rg --files --hidden --glob '!.git'        → all files respecting .gitignore
+ * 2. rg --files --no-ignore --glob '.env*'      → .env* files even if gitignored
  */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -79,15 +45,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Path is not a directory' }, { status: 400 });
     }
 
-    // Try git approach first
-    const gitPaths = await getGitAllPaths(cwd);
-    if (gitPaths !== null) {
-      return NextResponse.json({ paths: gitPaths });
-    }
+    // Run two searches in parallel
+    const [mainFiles, envFiles] = await Promise.all([
+      // Main: respects .gitignore, includes hidden files
+      rgFiles(cwd, ['--files', '--hidden', '--follow', '--glob', '!.git']),
+      // Supplement: .env* files that may be gitignored
+      rgFiles(cwd, ['--files', '--no-ignore', '--hidden', '--follow', '--glob', '.env*', '--glob', '!.git', '--glob', '!node_modules']),
+    ]);
 
-    // Non-git repository fallback: recursive readdir
-    const paths = await collectAllPaths(cwd, cwd);
-    paths.sort();
+    // Deduplicate and sort
+    const paths = [...new Set([...mainFiles, ...envFiles])].sort();
     return NextResponse.json({ paths });
   } catch (error) {
     console.error('Error building file index:', error);

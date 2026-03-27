@@ -39,9 +39,10 @@ export async function GET(request: NextRequest) {
 
   try {
     const opts: SearchOptions = { caseSensitive, wholeWord, regex, fileType };
-    const { stdout } = await searchWithRg(RG_PATH, cwd, query, opts);
 
-    // Parse output (uniform format: path:lineNumber:content)
+    const { stdout } = await searchWithRg(RG_PATH, cwd, query, opts, []);
+
+    // Parse output (format: path:lineNumber:content)
     const lines = stdout.split('\n').filter(Boolean);
     const resultsMap = new Map<string, SearchMatch[]>();
     let totalLines = 0;
@@ -105,6 +106,7 @@ async function searchWithRg(
   cwd: string,
   query: string,
   opts: SearchOptions,
+  extraArgs: string[],
 ): Promise<{ stdout: string }> {
   const args: string[] = [
     '--no-heading',         // Print full path on every line
@@ -113,9 +115,11 @@ async function searchWithRg(
     '--max-columns', '500', // Limit line width, skip very long lines
     '--max-count', String(MAX_MATCHES_PER_FILE), // Max matches per file
     '--max-filesize', '1M', // Skip large files
+    '--hidden',             // Include hidden files (.env.local, etc.)
+    '--follow',             // Follow symlinks
+    '--glob', '!.git',      // Exclude .git directory
+    ...extraArgs,
   ];
-
-  // rg respects .gitignore, skips binary files, and skips hidden files by default
 
   if (!opts.caseSensitive) args.push('-i');
   if (opts.wholeWord) args.push('-w');
@@ -138,11 +142,14 @@ async function searchWithRg(
       timeout: 10000,
     });
   } catch (err: unknown) {
-    // rg exit code 1 = no match (not an error)
-    if (err && typeof err === 'object' && 'code' in err && err.code === 1) {
-      return { stdout: '' };
+    if (err && typeof err === 'object' && 'code' in err) {
+      // exit 1 = no matches found
+      if (err.code === 1) return { stdout: '' };
+      // exit 2 = errors (e.g. broken symlink) but may still have partial results
+      if (err.code === 2 && 'stdout' in err && typeof err.stdout === 'string' && err.stdout) {
+        return { stdout: err.stdout };
+      }
     }
     throw err;
   }
 }
-

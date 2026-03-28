@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \\
   git bash curl procps build-essential python3 \\
   && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @surething/cockpit
+RUN npm install -g @surething/cockpit@latest
 
 RUN git clone --depth 1 https://github.com/Surething-io/cockpit.git /home/user/demo-project
 
@@ -19,6 +19,7 @@ WORKDIR /home/user/demo-project
   .setStartCmd('cock /home/user/demo-project --no-open', waitForPort(3457));
 
 const buildInfo = await Template.build(template, 'cockpit-demo', {
+  skipCache: true,
   onBuildLogs: defaultBuildLogger(),
 });
 

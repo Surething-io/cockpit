@@ -1,7 +1,2 @@
 {
-  "functions": {
-    "api/try.js": {
-      "maxDuration": 60
-    }
-  }
 }

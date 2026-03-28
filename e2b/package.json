@@ -1,7 +1,11 @@
 {
   "name": "cockpit-demo",
   "private": true,
-  "dependencies": {
-    "e2b": "^1.0.0"
+  "type": "module",
+  "scripts": {
+    "build-template": "node template.mjs"
+  },
+  "devDependencies": {
+    "e2b": "^2.18.0"
   }
 }

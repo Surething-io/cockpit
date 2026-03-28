@@ -58,7 +58,9 @@ app.prepare().then(async () => {
     }
   });
 
-  server.listen(port, '127.0.0.1', () => {
+  // COCKPIT_HOST: 默认 127.0.0.1（本地），云沙盒等场景设为 0.0.0.0
+  const host = process.env.COCKPIT_HOST || '127.0.0.1';
+  server.listen(port, host, () => {
     const url = `http://localhost:${port}`;
     console.log(`> Ready on ${url}`);
 

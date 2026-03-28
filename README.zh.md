@@ -61,6 +61,12 @@ https://github.com/user-attachments/assets/18f1a5dc-64f3-4ff6-b9fc-9cd08181fbb8
 - Chrome 插件 (Manifest V3) 浏览器自动化桥接
 - CLI 工具：`cock browser` / `cock terminal` 无头自动化
 
+## 在线体验
+
+无需安装 — 在浏览器中直接体验 Cockpit（5 分钟沙盒，无 AI 对话）：
+
+[![在线体验](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E4%BD%93%E9%AA%8C-Cockpit%20Demo-blue?style=for-the-badge)](https://cockpit-demo.vercel.app/api/try)
+
 ## 前置依赖
 
 - **Node.js ≥ 20** — [nodejs.org](https://nodejs.org/)

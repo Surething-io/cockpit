@@ -1,0 +1,7 @@
+{
+  "name": "cockpit-demo",
+  "private": true,
+  "dependencies": {
+    "e2b": "^1.0.0"
+  }
+}

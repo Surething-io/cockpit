@@ -55,6 +55,12 @@ A unified development cockpit built on **Claude Code (Agent SDK)** — chat, cod
 - Chrome extension (Manifest V3) for browser automation bridge
 - CLI tools: `cock browser` / `cock terminal` for headless automation
 
+## Try Online
+
+No install needed — try Cockpit in your browser (5-minute sandbox, no AI chat):
+
+[![Try Online](https://img.shields.io/badge/Try%20Online-Cockpit%20Demo-blue?style=for-the-badge)](https://cockpit-demo.vercel.app/api/try)
+
 ## Prerequisites
 
 - **Node.js ≥ 20** — [nodejs.org](https://nodejs.org/)

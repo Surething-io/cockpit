@@ -1,0 +1,3 @@
+# E2B sandbox template for Cockpit demo
+template_name = "cockpit-demo"
+dockerfile = "e2b.Dockerfile"

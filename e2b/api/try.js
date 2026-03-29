@@ -2,6 +2,12 @@ const COOLDOWN_MS = 5 * 60 * 1000;
 const E2B_API = 'https://api.e2b.dev';
 
 export default async function handler(req, res) {
+  // Block bots/crawlers that waste E2B credits
+  const ua = (req.headers['user-agent'] || '').toLowerCase();
+  if (!ua || /axios|curl|wget|python|bot|crawler|spider|scraper/.test(ua)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
   // Simple cooldown: cookie-based
   const lastTry = parseInt(req.cookies?.cockpit_demo || '0', 10);
   const now = Date.now();

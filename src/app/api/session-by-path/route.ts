@@ -199,6 +199,19 @@ async function parseTranscriptFile(
     try {
       const obj = JSON.parse(line) as TranscriptMessage & { summary?: string; isMeta?: boolean };
       if (obj.type === 'user' || obj.type === 'assistant') {
+        // Deduplicate: skip user messages with identical content within 1s of the previous one
+        // (SDK resume + prompt may write duplicate user entries)
+        if (obj.type === 'user' && rawMessages.length > 0) {
+          const prev = rawMessages[rawMessages.length - 1];
+          if (
+            prev.type === 'user' &&
+            prev.timestamp && obj.timestamp &&
+            Math.abs(new Date(obj.timestamp).getTime() - new Date(prev.timestamp).getTime()) < 1000 &&
+            JSON.stringify(prev.message?.content) === JSON.stringify(obj.message?.content)
+          ) {
+            continue; // skip duplicate
+          }
+        }
         rawMessages.push(obj);
 
         // Collect the usage of the last assistant message

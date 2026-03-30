@@ -168,37 +168,49 @@ export async function POST(request: NextRequest) {
           for (let attempt = 0; attempt <= MAX_COMPACTION_RETRIES; attempt++) {
             let lastStopReason = '';
 
-            for await (const message of currentResponse) {
-              if (isClosed) break;
+            try {
+              for await (const message of currentResponse) {
+                if (isClosed) break;
 
-              // Capture sessionId (from system init event) and update global state
-              const msg = message as { type?: string; subtype?: string; session_id?: string; message?: { stop_reason?: string } };
-              if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
-                actualSessionId = msg.session_id;
-                if (cwd) {
-                  updateGlobalState(cwd, actualSessionId, 'loading', undefined, userMessage).catch(() => {});
+                // Capture sessionId (from system init event) and update global state
+                const msg = message as { type?: string; subtype?: string; session_id?: string; message?: { stop_reason?: string } };
+                if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
+                  actualSessionId = msg.session_id;
+                  if (cwd) {
+                    updateGlobalState(cwd, actualSessionId, 'loading', undefined, userMessage).catch(() => {});
+                  }
                 }
-              }
 
-              // Track stop_reason to detect real completion vs compaction
-              if (msg.type === 'assistant' && msg.message?.stop_reason) {
-                lastStopReason = msg.message.stop_reason;
-              }
+                // Track stop_reason to detect real completion vs compaction
+                if (msg.type === 'assistant' && msg.message?.stop_reason) {
+                  lastStopReason = msg.message.stop_reason;
+                }
 
-              // Send SSE-formatted data
-              const data = `data: ${JSON.stringify(message)}\n\n`;
-              safeEnqueue(data);
+                // Send SSE-formatted data
+                const data = `data: ${JSON.stringify(message)}\n\n`;
+                safeEnqueue(data);
+              }
+            } catch (streamError) {
+              // If user cancelled (abort), stop immediately — do not retry
+              if (isClosed || queryAbortController.signal.aborted) break;
+              throw streamError;
             }
 
             // end_turn or user cancelled → done
-            if (lastStopReason === 'end_turn' || isClosed) break;
+            if (lastStopReason === 'end_turn' || isClosed || queryAbortController.signal.aborted) break;
 
             // Stream ended without end_turn → likely compaction, re-query to continue
+            // Create a fresh AbortController for the retry (old one may be exhausted)
+            const retryAbortController = new AbortController();
+            // Forward cancel signal from the original controller
+            queryAbortController.signal.addEventListener('abort', () => retryAbortController.abort(), { once: true });
+
             console.log(`[Chat] Stream ended without end_turn (stop=${lastStopReason}), resuming (attempt ${attempt + 1}/${MAX_COMPACTION_RETRIES})`);
             currentResponse = query({
               prompt: 'continue',
               options: {
                 ...options,
+                abortController: retryAbortController,
                 resume: actualSessionId || sessionId,
               },
             });

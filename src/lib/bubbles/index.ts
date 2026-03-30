@@ -10,6 +10,7 @@ import './database';
 import './jupyter';
 import './mysql';
 import './redis';
+import './neo4j';
 
 export { matchInput, getPlugin, getAllPlugins, generatePluginItemId } from '../bubblePlugins';
 export type { PluginItemBase, BubbleComponentProps, BubblePlugin } from '../bubblePlugins';

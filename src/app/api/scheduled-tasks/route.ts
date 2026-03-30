@@ -94,6 +94,9 @@ export async function PATCH(request: NextRequest) {
     } else if (action === 'markRead') {
       await scheduledTaskManager.markRead(id);
       return NextResponse.json({ success: true });
+    } else if (action === 'markReadBySessionId' && fields?.sessionId) {
+      await scheduledTaskManager.markReadBySessionId(fields.sessionId);
+      return NextResponse.json({ success: true });
     } else if (action === 'markAllRead') {
       await scheduledTaskManager.markAllRead();
       return NextResponse.json({ success: true });
@@ -118,7 +121,7 @@ export async function PATCH(request: NextRequest) {
       task = await scheduledTaskManager.updateTask(id, fields);
     }
 
-    if (!task && action !== 'markRead' && action !== 'markAllRead') {
+    if (!task && action !== 'markRead' && action !== 'markAllRead' && action !== 'markReadBySessionId') {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
     }
 

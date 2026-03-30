@@ -115,14 +115,32 @@ async function sendChatMessage(task: ScheduledTask): Promise<boolean> {
     // Mark as loading
     await updateGlobalState(task.cwd, task.sessionId, 'loading', undefined, task.message).catch(() => {});
 
-    const response = query({
-      prompt: task.message,
-      options,
-    });
+    // SDK may perform context compaction mid-stream, which ends the async iterable
+    // without a final end_turn. Detect this and re-query with resume to continue.
+    const MAX_COMPACTION_RETRIES = 5;
 
-    // Consume the full stream (wait for completion)
-    for await (const _message of response) {
-      // Only consume the stream; no processing needed
+    for (let attempt = 0; attempt <= MAX_COMPACTION_RETRIES; attempt++) {
+      let lastStopReason = '';
+
+      const response = query({
+        // First attempt: send the actual message
+        // Retry after compaction: send 'continue' to resume
+        prompt: attempt === 0 ? task.message : 'continue',
+        options,
+      });
+
+      for await (const message of response) {
+        const msg = message as { type?: string; message?: { stop_reason?: string } };
+        if (msg.type === 'assistant' && msg.message?.stop_reason) {
+          lastStopReason = msg.message.stop_reason;
+        }
+      }
+
+      // end_turn = task truly finished
+      if (lastStopReason === 'end_turn') break;
+
+      // Stream ended without end_turn → likely compaction, re-query to continue
+      console.log(`[ScheduledTask] Stream ended without end_turn (stop=${lastStopReason}), resuming (attempt ${attempt + 1}/${MAX_COMPACTION_RETRIES})`);
     }
 
     // Mark as done
@@ -387,6 +405,23 @@ class ScheduledTaskManager {
    */
   async markRead(id: string): Promise<void> {
     await this.updateTask(id, { unread: false });
+  }
+
+  /**
+   * Mark tasks as read by sessionId (called when user views a tab).
+   */
+  async markReadBySessionId(sessionId: string): Promise<void> {
+    await this.ensureInit();
+    const port = this.getPort();
+    const allTasks = await readJsonFile<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
+    let changed = false;
+    for (const task of allTasks) {
+      if (task.port === port && task.sessionId === sessionId && task.unread) {
+        task.unread = false;
+        changed = true;
+      }
+    }
+    if (changed) await writeJsonFile(SCHEDULED_TASKS_FILE, allTasks);
   }
 
   /**

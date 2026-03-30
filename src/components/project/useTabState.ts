@@ -249,7 +249,15 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         next.delete(activeTabId);
         // Sync write state.json
         const tab = tabsRef.current.find(t => t.id === activeTabId);
-        if (tab?.sessionId) updateSessionStatus(tab.sessionId, 'normal');
+        if (tab?.sessionId) {
+          updateSessionStatus(tab.sessionId, 'normal');
+          // Clear scheduled task unread for this session
+          fetch('/api/scheduled-tasks', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'markReadBySessionId', fields: { sessionId: tab.sessionId } }),
+          }).catch(() => {});
+        }
         return next;
       });
     }
@@ -264,7 +272,15 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       next.delete(tabId);
       // Sync write to state.json
       const tab = tabsRef.current.find(t => t.id === tabId);
-      if (tab?.sessionId) updateSessionStatus(tab.sessionId, 'normal');
+      if (tab?.sessionId) {
+        updateSessionStatus(tab.sessionId, 'normal');
+        // Clear scheduled task unread for this session
+        fetch('/api/scheduled-tasks', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'markReadBySessionId', fields: { sessionId: tab.sessionId } }),
+        }).catch(() => {});
+      }
       return next;
     });
   }, [updateSessionStatus]);

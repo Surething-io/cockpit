@@ -160,25 +160,48 @@ export async function POST(request: NextRequest) {
             });
           }
 
-          for await (const message of response) {
-            // Check if already cancelled
-            if (isClosed) {
-              break;
-            }
+          // SDK may perform context compaction mid-stream, ending the async iterable
+          // without end_turn. Detect this and re-query to continue streaming.
+          const MAX_COMPACTION_RETRIES = 5;
+          let currentResponse = response;
 
-            // Capture sessionId (from system init event) and update global state
-            const msg = message as { type?: string; subtype?: string; session_id?: string };
-            if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
-              actualSessionId = msg.session_id;
-              // Mark loading start here for both new and resumed sessions
-              if (cwd) {
-                updateGlobalState(cwd, actualSessionId, 'loading', undefined, userMessage).catch(() => {});
+          for (let attempt = 0; attempt <= MAX_COMPACTION_RETRIES; attempt++) {
+            let lastStopReason = '';
+
+            for await (const message of currentResponse) {
+              if (isClosed) break;
+
+              // Capture sessionId (from system init event) and update global state
+              const msg = message as { type?: string; subtype?: string; session_id?: string; message?: { stop_reason?: string } };
+              if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
+                actualSessionId = msg.session_id;
+                if (cwd) {
+                  updateGlobalState(cwd, actualSessionId, 'loading', undefined, userMessage).catch(() => {});
+                }
               }
+
+              // Track stop_reason to detect real completion vs compaction
+              if (msg.type === 'assistant' && msg.message?.stop_reason) {
+                lastStopReason = msg.message.stop_reason;
+              }
+
+              // Send SSE-formatted data
+              const data = `data: ${JSON.stringify(message)}\n\n`;
+              safeEnqueue(data);
             }
 
-            // Send SSE-formatted data
-            const data = `data: ${JSON.stringify(message)}\n\n`;
-            safeEnqueue(data);
+            // end_turn or user cancelled → done
+            if (lastStopReason === 'end_turn' || isClosed) break;
+
+            // Stream ended without end_turn → likely compaction, re-query to continue
+            console.log(`[Chat] Stream ended without end_turn (stop=${lastStopReason}), resuming (attempt ${attempt + 1}/${MAX_COMPACTION_RETRIES})`);
+            currentResponse = query({
+              prompt: 'continue',
+              options: {
+                ...options,
+                resume: actualSessionId || sessionId,
+              },
+            });
           }
 
           // Update global state: end loading (fetch title)

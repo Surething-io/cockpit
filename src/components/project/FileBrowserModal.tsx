@@ -442,7 +442,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       // Cmd+V → paste into the directory of the selected file
       if (isExplorerActive && (e.metaKey || e.ctrlKey) && e.key === 'v') {
         const tag = (e.target as HTMLElement)?.tagName;
-        if ((activeTab === 'tree' || activeTab === 'recent') && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        if ((activeTab === 'tree' || activeTab === 'recent') && tag !== 'INPUT' && tag !== 'TEXTAREA' && !(e.target as HTMLElement)?.isContentEditable) {
           e.preventDefault();
           handlePaste(getTargetDirPath(fileTree.selectedPath, fileTree.files));
           return;

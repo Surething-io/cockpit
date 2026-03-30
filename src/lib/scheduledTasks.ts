@@ -109,7 +109,6 @@ async function sendChatMessage(task: ScheduledTask): Promise<boolean> {
       ],
       permissionMode: 'bypassPermissions' as const,
       allowDangerouslySkipPermissions: true,
-      betas: ['context-1m-2025-08-07' as const],
     };
 
     // Mark as loading

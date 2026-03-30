@@ -130,9 +130,9 @@ async function sendChatMessage(task: ScheduledTask): Promise<boolean> {
       });
 
       for await (const message of response) {
-        const msg = message as { type?: string; message?: { stop_reason?: string } };
-        if (msg.type === 'assistant' && msg.message?.stop_reason) {
-          lastStopReason = msg.message.stop_reason;
+        const msg = message as Record<string, unknown>;
+        if (msg.type === 'result' && msg.stop_reason) {
+          lastStopReason = msg.stop_reason as string;
         }
       }
 

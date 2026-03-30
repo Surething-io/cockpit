@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
 
           // SDK may perform context compaction mid-stream, ending the async iterable
           // without end_turn. Detect this and re-query to continue streaming.
-          const MAX_COMPACTION_RETRIES = 5;
+          const MAX_COMPACTION_RETRIES = 1;
           let currentResponse = response;
 
           for (let attempt = 0; attempt <= MAX_COMPACTION_RETRIES; attempt++) {
@@ -182,8 +182,10 @@ export async function POST(request: NextRequest) {
                 }
 
                 // Track stop_reason to detect real completion vs compaction
-                if (msg.type === 'assistant' && msg.message?.stop_reason) {
-                  lastStopReason = msg.message.stop_reason;
+                // stop_reason lives on 'result' messages (top-level), not on 'assistant'
+                const anyMsg = message as Record<string, unknown>;
+                if (anyMsg.type === 'result' && anyMsg.stop_reason) {
+                  lastStopReason = anyMsg.stop_reason as string;
                 }
 
                 // Send SSE-formatted data

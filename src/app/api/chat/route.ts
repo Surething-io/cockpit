@@ -166,14 +166,14 @@ export async function POST(request: NextRequest) {
           let currentResponse = response;
 
           for (let attempt = 0; attempt <= MAX_COMPACTION_RETRIES; attempt++) {
-            let lastStopReason = '';
+            let receivedResult = false;
 
             try {
               for await (const message of currentResponse) {
                 if (isClosed) break;
 
                 // Capture sessionId (from system init event) and update global state
-                const msg = message as { type?: string; subtype?: string; session_id?: string; message?: { stop_reason?: string } };
+                const msg = message as { type?: string; subtype?: string; session_id?: string };
                 if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
                   actualSessionId = msg.session_id;
                   if (cwd) {
@@ -181,11 +181,10 @@ export async function POST(request: NextRequest) {
                   }
                 }
 
-                // Track stop_reason to detect real completion vs compaction
-                // stop_reason lives on 'result' messages (top-level), not on 'assistant'
-                const anyMsg = message as Record<string, unknown>;
-                if (anyMsg.type === 'result' && anyMsg.stop_reason) {
-                  lastStopReason = anyMsg.stop_reason as string;
+                // Detect completion: result message means query finished normally
+                // (stop_reason can be 'end_turn', 'tool_use', or null — all mean done)
+                if (msg.type === 'result') {
+                  receivedResult = true;
                 }
 
                 // Send SSE-formatted data
@@ -198,8 +197,8 @@ export async function POST(request: NextRequest) {
               throw streamError;
             }
 
-            // end_turn or user cancelled → done
-            if (lastStopReason === 'end_turn' || isClosed || queryAbortController.signal.aborted) break;
+            // Got result or user cancelled → done
+            if (receivedResult || isClosed || queryAbortController.signal.aborted) break;
 
             // Stream ended without end_turn → likely compaction, re-query to continue
             // Create a fresh AbortController for the retry (old one may be exhausted)
@@ -207,7 +206,7 @@ export async function POST(request: NextRequest) {
             // Forward cancel signal from the original controller
             queryAbortController.signal.addEventListener('abort', () => retryAbortController.abort(), { once: true });
 
-            console.log(`[Chat] Stream ended without end_turn (stop=${lastStopReason}), resuming (attempt ${attempt + 1}/${MAX_COMPACTION_RETRIES})`);
+            console.log(`[Chat] Stream ended without result message, resuming (attempt ${attempt + 1}/${MAX_COMPACTION_RETRIES})`);
             currentResponse = query({
               prompt: 'continue',
               options: {

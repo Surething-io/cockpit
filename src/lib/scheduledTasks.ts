@@ -117,10 +117,10 @@ async function sendChatMessage(task: ScheduledTask): Promise<boolean> {
 
     // SDK may perform context compaction mid-stream, which ends the async iterable
     // without a final end_turn. Detect this and re-query with resume to continue.
-    const MAX_COMPACTION_RETRIES = 5;
+    const MAX_COMPACTION_RETRIES = 1;
 
     for (let attempt = 0; attempt <= MAX_COMPACTION_RETRIES; attempt++) {
-      let lastStopReason = '';
+      let receivedResult = false;
 
       const response = query({
         // First attempt: send the actual message
@@ -130,17 +130,17 @@ async function sendChatMessage(task: ScheduledTask): Promise<boolean> {
       });
 
       for await (const message of response) {
-        const msg = message as Record<string, unknown>;
-        if (msg.type === 'result' && msg.stop_reason) {
-          lastStopReason = msg.stop_reason as string;
+        const msg = message as { type?: string };
+        if (msg.type === 'result') {
+          receivedResult = true;
         }
       }
 
-      // end_turn = task truly finished
-      if (lastStopReason === 'end_turn') break;
+      // Got result = task truly finished
+      if (receivedResult) break;
 
-      // Stream ended without end_turn → likely compaction, re-query to continue
-      console.log(`[ScheduledTask] Stream ended without end_turn (stop=${lastStopReason}), resuming (attempt ${attempt + 1}/${MAX_COMPACTION_RETRIES})`);
+      // Stream ended without result → likely compaction, re-query to continue
+      console.log(`[ScheduledTask] Stream ended without result, resuming (attempt ${attempt + 1}/${MAX_COMPACTION_RETRIES})`);
     }
 
     // Mark as done

@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+
 import { TabInfo } from './useTabState';
 import { Tooltip } from '../shared/Tooltip';
 import { useTranslation } from 'react-i18next';
@@ -43,7 +44,7 @@ function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewOllamaTab }:
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [pos, setPos] = useState({ top: 0, right: 0 });
 
   useEffect(() => {
     if (!open) return;
@@ -59,27 +60,14 @@ function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewOllamaTab }:
 
   const toggle = () => {
     if (!open && btnRef.current) {
-      // Walk up to find the nearest ancestor with a CSS transform (the swipeable panel).
-      // getBoundingClientRect() returns viewport coords, but `position: fixed` inside
-      // a transformed ancestor is relative to that ancestor, not the viewport.
-      // Compute the offset between the transform container and the viewport.
-      let offsetX = 0, offsetY = 0;
-      let el: HTMLElement | null = btnRef.current.parentElement;
-      while (el) {
-        const transform = getComputedStyle(el).transform;
-        if (transform && transform !== 'none') {
-          const elRect = el.getBoundingClientRect();
-          // The transform container's own rect tells us the shift
-          offsetX = elRect.left - el.offsetLeft;
-          offsetY = elRect.top - el.offsetTop;
-          break;
-        }
-        el = el.parentElement;
-      }
       const rect = btnRef.current.getBoundingClientRect();
-      setPos({ top: rect.bottom + 4 - offsetY, left: rect.left - offsetX });
+      // Position: below button, right-aligned (opens to the left)
+      setPos({
+        top: rect.bottom + 4,
+        right: window.innerWidth - rect.right,
+      });
     }
-    setOpen((v) => !v);
+    setOpen(v => !v);
   };
 
   const pick = (engine: 'claude' | 'codex' | 'kimi' | 'ollama') => {
@@ -89,45 +77,6 @@ function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewOllamaTab }:
     else if (engine === 'ollama') onNewOllamaTab?.();
     else onNewTab();
   };
-
-  // Portal the menu to document.body so it escapes all overflow:hidden ancestors
-  const menu = open ? createPortal(
-    <div
-      ref={menuRef}
-      className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-lg py-1 min-w-[140px]"
-      style={{ top: pos.top, left: pos.left }}
-    >
-      <button
-        onClick={() => pick('claude')}
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors"
-      >
-        <span className="w-2 h-2 rounded-full bg-brand flex-shrink-0" />
-        Claude Code
-      </button>
-      <button
-        onClick={() => pick('codex')}
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors"
-      >
-        <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
-        OpenAI Codex
-      </button>
-      <button
-        onClick={() => pick('kimi')}
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors"
-      >
-        <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
-        Kimi
-      </button>
-      <button
-        onClick={() => pick('ollama')}
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors"
-      >
-        <span className="w-2 h-2 rounded-full bg-violet-500 flex-shrink-0" />
-        Ollama
-      </button>
-    </div>,
-    document.body
-  ) : null;
 
   return (
     <>
@@ -141,7 +90,43 @@ function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewOllamaTab }:
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
       </button>
-      {menu}
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-lg py-1 min-w-[140px]"
+          style={{ top: pos.top, right: pos.right }}
+        >
+          <button
+            onClick={() => pick('claude')}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors whitespace-nowrap"
+          >
+            <span className="w-2 h-2 rounded-full bg-brand flex-shrink-0" />
+            Claude Code
+          </button>
+          <button
+            onClick={() => pick('codex')}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors whitespace-nowrap"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
+            OpenAI Codex
+          </button>
+          <button
+            onClick={() => pick('kimi')}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors whitespace-nowrap"
+          >
+            <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
+            Kimi
+          </button>
+          <button
+            onClick={() => pick('ollama')}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors whitespace-nowrap"
+          >
+            <span className="w-2 h-2 rounded-full bg-violet-500 flex-shrink-0" />
+            Ollama
+          </button>
+        </div>,
+        document.body
+      )}
     </>
   );
 }

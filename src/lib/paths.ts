@@ -1,7 +1,8 @@
 import { homedir } from 'os';
 import { join } from 'path';
 import { mkdir, readFile, writeFile } from 'fs/promises';
-import { existsSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
+import { execSync } from 'child_process';
 
 // ============================================
 // Directory Constants
@@ -200,7 +201,6 @@ export function findCodexSessionPath(threadId: string): string | null {
   // Walk year/month/day directories looking for a file ending with the thread_id
   const suffix = `-${threadId}.jsonl`;
   try {
-    const { execSync } = require('child_process');
     const result = execSync(
       `find ${JSON.stringify(codexSessionsDir)} -name "*${threadId}.jsonl" -type f 2>/dev/null`,
       { encoding: 'utf8', timeout: 3000 }
@@ -221,7 +221,6 @@ export function findKimiSessionPath(sessionId: string): string | null {
   const sessionsDir = join(HOME_DIR, '.kimi', 'sessions');
   if (!existsSync(sessionsDir)) return null;
   try {
-    const { readdirSync } = require('fs');
     for (const hash of readdirSync(sessionsDir)) {
       const candidate = join(sessionsDir, hash, sessionId, 'context.jsonl');
       if (existsSync(candidate)) return candidate;

@@ -12,8 +12,6 @@ import { registerTerminal, finalizeTerminal, notifyOutputListeners, notifyExitLi
 
 const MAX_OUTPUT_LINES = 5000;
 const OUTPUT_FILE_THRESHOLD = 4096;
-/** Max bytes for outputPartial, preventing large lineless output (e.g. base64) from filling memory */
-const MAX_PARTIAL_BYTES = 64 * 1024; // 64KB
 
 export interface RunningCommand {
   commandId: string;
@@ -112,7 +110,7 @@ export function registerCommand(cmd: Omit<RunningCommand, 'outputLines' | 'outpu
 }
 
 /**
- * Append output to the buffer (keeping at most MAX_OUTPUT_LINES lines)
+ * Append output to the buffer
  */
 export function appendCommandOutput(commandId: string, data: string): void {
   const cmd = getRegistry().get(commandId);
@@ -122,16 +120,17 @@ export function appendCommandOutput(commandId: string, data: string): void {
   const parts = text.split('\n');
   cmd.outputPartial = parts.pop() || '';
 
-  // Prevent oversized lineless content (e.g. base64) from filling memory
-  if (cmd.outputPartial.length > MAX_PARTIAL_BYTES) {
-    cmd.outputPartial = cmd.outputPartial.slice(-MAX_PARTIAL_BYTES);
-  }
+  // No truncation on outputPartial — normal CLI output always has newlines,
+  // and the rare lineless cases (base64, progress bars) are too small to matter.
 
   if (parts.length > 0) {
     cmd.outputLines.push(...parts);
     if (cmd.outputLines.length > MAX_OUTPUT_LINES) {
-      // splice in-place to avoid GC pressure from slice creating a new array each time
       cmd.outputLines.splice(0, cmd.outputLines.length - MAX_OUTPUT_LINES);
+      // Reset terminal styling state — truncated head lines may contain unclosed color sequences
+      if (cmd.outputLines.length > 0) {
+        cmd.outputLines[0] = '\x1b[0m' + cmd.outputLines[0];
+      }
     }
   }
 

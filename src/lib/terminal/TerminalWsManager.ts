@@ -78,6 +78,11 @@ function connect() {
 
   myWs.onopen = () => {
     retryCount = 0;
+    // Re-attach all running commands to the new WS connection
+    // (needed after sleep/wake or network interruptions)
+    for (const commandId of commandCallbacks.keys()) {
+      myWs.send(JSON.stringify({ type: 'attach', commandId }));
+    }
   };
 
   myWs.onmessage = handleMessage;

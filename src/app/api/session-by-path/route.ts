@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import * as fs from 'fs';
 import * as readline from 'readline';
-import { getClaudeSessionPath } from '@/lib/paths';
+import { getClaudeSessionPath, findCodexSessionPath, findKimiSessionPath } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -90,15 +90,27 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Build the full session file path
-    const sessionPath = getClaudeSessionPath(cwd, sessionId);
+    // Build the full session file path — try Claude first, then Codex, then Kimi
+    let sessionPath = getClaudeSessionPath(cwd, sessionId);
+    let engine: 'claude' | 'codex' | 'kimi' = 'claude';
 
-    // Check if the file exists
     if (!fs.existsSync(sessionPath)) {
-      return new Response(JSON.stringify({ error: 'Session not found', messages: [] }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const codexPath = findCodexSessionPath(sessionId);
+      if (codexPath) {
+        sessionPath = codexPath;
+        engine = 'codex';
+      } else {
+        const kimiPath = findKimiSessionPath(sessionId);
+        if (kimiPath) {
+          sessionPath = kimiPath;
+          engine = 'kimi';
+        } else {
+          return new Response(JSON.stringify({ error: 'Session not found', messages: [] }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+      }
     }
 
     // Get the file fingerprint
@@ -113,7 +125,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Read and parse the JSONL file (with pagination support)
-    const { messages, title, usage, totalTurns, hasMore } = await parseTranscriptFile(sessionPath, limit, beforeTurnIndex);
+    const parseResult = engine === 'codex'
+      ? await parseCodexTranscriptFile(sessionPath)
+      : engine === 'kimi'
+        ? await parseKimiTranscriptFile(sessionPath)
+        : await parseTranscriptFile(sessionPath, limit, beforeTurnIndex);
+
+    const { messages, title, usage } = parseResult;
+    const totalTurns = 'totalTurns' in parseResult ? parseResult.totalTurns : 0;
+    const hasMore = 'hasMore' in parseResult ? parseResult.hasMore : false;
 
     return new Response(JSON.stringify({ messages, sessionId, title, usage, totalTurns, hasMore, fingerprint }), {
       status: 200,
@@ -403,4 +423,204 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
   }
 
   return chatMessages;
+}
+
+// ============================================
+// Codex session transcript parser
+// ============================================
+
+interface CodexPayload {
+  type?: string;
+  role?: string;
+  name?: string;
+  arguments?: string;
+  call_id?: string;
+  output?: string;
+  content?: Array<{ type?: string; text?: string }>;
+}
+
+async function parseCodexTranscriptFile(
+  filePath: string
+): Promise<{ messages: ChatMessage[]; title: string; usage?: TokenUsage }> {
+  const fileStream = fs.createReadStream(filePath);
+  const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+
+  const messages: ChatMessage[] = [];
+  let currentAssistant: ChatMessage | null = null;
+  let title = 'Untitled Session';
+  let lastUsage: TokenUsage | undefined;
+  let msgCounter = 0;
+
+  const flushAssistant = () => {
+    if (currentAssistant) {
+      messages.push(currentAssistant);
+      currentAssistant = null;
+    }
+  };
+
+  const ensureAssistant = (timestamp?: string): ChatMessage => {
+    if (!currentAssistant) {
+      currentAssistant = {
+        id: `codex-assistant-${msgCounter++}`,
+        role: 'assistant',
+        content: '',
+        toolCalls: [],
+        timestamp,
+      };
+    }
+    return currentAssistant;
+  };
+
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    let entry: { timestamp?: string; type?: string; payload?: CodexPayload };
+    try {
+      entry = JSON.parse(line);
+    } catch { continue; }
+
+    const { type, payload, timestamp } = entry;
+    if (!payload) continue;
+
+    if (type === 'response_item') {
+      // User message
+      if (payload.type === 'message' && payload.role === 'user') {
+        const text = payload.content
+          ?.filter(c => c.type === 'input_text' && c.text)
+          .map(c => c.text!)
+          .join('') || '';
+        // Skip system/developer messages (permissions, AGENTS.md, env context)
+        if (!text || text.startsWith('<') || text.startsWith('#')) continue;
+
+        flushAssistant();
+        messages.push({
+          id: `codex-user-${msgCounter++}`,
+          role: 'user',
+          content: text,
+          timestamp,
+        });
+        // First real user message becomes the title
+        if (title === 'Untitled Session') {
+          title = text.slice(0, 80);
+        }
+      }
+
+      // Assistant text message
+      if (payload.type === 'message' && payload.role === 'assistant') {
+        const text = payload.content
+          ?.filter(c => c.type === 'output_text' && c.text)
+          .map(c => c.text!)
+          .join('') || '';
+        if (text) {
+          const assistant = ensureAssistant(timestamp);
+          assistant.content = (assistant.content || '') + text;
+        }
+      }
+
+      // Reasoning
+      if (payload.type === 'reasoning') {
+        // Skip reasoning for now (could render as collapsed block later)
+      }
+
+      // Tool call (function_call)
+      if (payload.type === 'function_call' && payload.name) {
+        const assistant = ensureAssistant(timestamp);
+        let input: Record<string, unknown> = {};
+        try { input = JSON.parse(payload.arguments || '{}'); } catch { /* */ }
+        assistant.toolCalls = assistant.toolCalls || [];
+        assistant.toolCalls.push({
+          id: payload.call_id || `tool-${msgCounter++}`,
+          name: payload.name === 'shell_command' ? 'Bash' : payload.name,
+          input,
+          isLoading: false,
+        });
+      }
+
+      // Tool result (function_call_output)
+      if (payload.type === 'function_call_output' && payload.call_id) {
+        const assistant = ensureAssistant(timestamp);
+        const tc = assistant.toolCalls?.find(t => t.id === payload.call_id);
+        if (tc) {
+          tc.result = payload.output || '';
+          tc.isLoading = false;
+        }
+      }
+    }
+
+    // Usage from response_completed or event_msg
+    if (type === 'response_completed') {
+      const usage = (payload as Record<string, unknown>).usage as TokenUsage | undefined;
+      if (usage) lastUsage = usage;
+      flushAssistant();
+    }
+  }
+
+  flushAssistant();
+
+  return { messages, title, usage: lastUsage };
+}
+
+// ============================================
+// Kimi session transcript parser (context.jsonl)
+// ============================================
+// Format: each line is {"role":"user"|"assistant"|"_system_prompt"|"_checkpoint", "content":[...], ...}
+
+async function parseKimiTranscriptFile(
+  filePath: string
+): Promise<{ messages: ChatMessage[]; title: string; usage?: TokenUsage }> {
+  const fileStream = fs.createReadStream(filePath);
+  const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+
+  const messages: ChatMessage[] = [];
+  let title = 'Untitled Session';
+  let msgCounter = 0;
+
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    let entry: { role?: string; content?: string | Array<{ type?: string; text?: string; think?: string }>; id?: number };
+    try { entry = JSON.parse(line); } catch { continue; }
+
+    // Skip system prompts and checkpoints
+    if (!entry.role || entry.role.startsWith('_')) continue;
+
+    if (entry.role === 'user') {
+      // content can be a string or an array of blocks
+      const text = typeof entry.content === 'string'
+        ? entry.content
+        : Array.isArray(entry.content)
+          ? entry.content.filter(c => (c.type === 'input_text' || c.type === 'text') && c.text).map(c => c.text!).join('')
+          : '';
+      // Skip system-injected messages
+      if (!text || text.startsWith('<system') || text.startsWith('<environment') || text.startsWith('# AGENTS.md') || text.startsWith('<permissions')) continue;
+      messages.push({
+        id: `kimi-user-${msgCounter++}`,
+        role: 'user',
+        content: text,
+      });
+      if (title === 'Untitled Session') {
+        title = text.slice(0, 80);
+      }
+    }
+
+    if (entry.role === 'assistant') {
+      let text = '';
+      if (typeof entry.content === 'string') {
+        text = entry.content;
+      } else if (Array.isArray(entry.content)) {
+        for (const block of entry.content) {
+          if (block.type === 'text' && block.text) {
+            text += block.text;
+          }
+        }
+      }
+      if (text) {
+        messages.push({
+          id: `kimi-assistant-${msgCounter++}`,
+          role: 'assistant',
+          content: text,
+        });
+      }
+    }
+  }
+
+  return { messages, title };
 }

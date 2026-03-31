@@ -14,11 +14,16 @@ import { ChatHeader, TokenUsageBar } from './ChatHeader';
 import { useChatStream } from './useChatStream';
 import { useChatHistory } from './useChatHistory';
 import { useTranslation } from 'react-i18next';
+import type { ChatEngine } from './useTabState';
+import { OllamaModelPicker } from './OllamaModelPicker';
 
 interface ChatProps {
   tabId?: string; // Tab ID, used to register with ChatContext
   initialCwd?: string;
   initialSessionId?: string;
+  engine?: ChatEngine;
+  ollamaModel?: string;
+  onOllamaModelChange?: (model: string) => void;
   hideHeader?: boolean;
   hideSidebar?: boolean;
   isActive?: boolean; // Whether the tab is active (used to handle scroll issues for hidden tabs)
@@ -43,7 +48,7 @@ interface ChatProps {
   onContentSearch?: (query: string) => void; // Selected text → project-wide search
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel, onOllamaModelChange, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch }: ChatProps) {
   const { t } = useTranslation();
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -87,6 +92,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
   } = useChatStream(messages, setMessages, {
     sessionId,
     cwd: initialCwd,
+    engine,
+    ollamaModel,
     onSessionId: setSessionId,
     onFetchTitle: fetchSessionTitle,
   });
@@ -300,6 +307,13 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
           />
         )}
 
+        {/* Ollama model picker */}
+        {engine === 'ollama' && onOllamaModelChange && (
+          <div className="flex items-center px-3 py-1.5 border-b border-border bg-card/50">
+            <OllamaModelPicker currentModel={ollamaModel} onModelChange={onOllamaModelChange} />
+          </div>
+        )}
+
         {/* Messages */}
         {isLoadingHistory ? (
           <div className="flex-1 flex items-center justify-center">
@@ -312,6 +326,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
             isLoading={isLoading}
             cwd={initialCwd}
             sessionId={sessionId}
+            engine={engine}
             hasMoreHistory={hasMoreHistory}
             isLoadingMore={isLoadingMore}
             onLoadMore={loadMoreHistory}
@@ -329,6 +344,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, hideHeader, hideSide
           onSend={wrappedHandleSend}
           disabled={isLoading}
           cwd={initialCwd}
+          engine={engine}
           onShowGitStatus={onShowGitStatus}
           onShowComments={initialCwd ? handleShowComments : undefined}
           onShowUserMessages={handleShowUserMessages}

@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { ChatMessage, ToolCallInfo, ImageInfo, MessageImage, TokenUsage } from '@/types/chat';
+import type { ChatEngine } from './useTabState';
 import i18n from '@/lib/i18n';
 
 // ============================================
@@ -11,6 +12,8 @@ import i18n from '@/lib/i18n';
 interface UseChatStreamOptions {
   sessionId: string | null;
   cwd?: string;
+  engine?: ChatEngine;
+  ollamaModel?: string;
   onSessionId: (sid: string) => void;
   onFetchTitle: (sid: string) => void;
 }
@@ -30,7 +33,7 @@ interface UseChatStreamReturn {
 export function useChatStream(
   messages: ChatMessage[],
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  { sessionId, cwd, onSessionId, onFetchTitle }: UseChatStreamOptions
+  { sessionId, cwd, engine, ollamaModel, onSessionId, onFetchTitle }: UseChatStreamOptions
 ): UseChatStreamReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
@@ -104,8 +107,23 @@ export function useChatStream(
 
     // Handle text content (complete message)
     if (eventType === 'assistant') {
-      const message = event.message as { content?: Array<{ text?: string; name?: string; id?: string; input?: Record<string, unknown> }> } | undefined;
+      const message = event.message as { content?: Array<{ type?: string; text?: string; name?: string; id?: string; input?: Record<string, unknown> }> } | undefined;
       if (message?.content) {
+        // Extract text blocks (Codex sends complete text via assistant messages, not stream_event)
+        const textParts = message.content
+          .filter(block => block.type === 'text' && block.text)
+          .map(block => block.text!);
+        if (textParts.length > 0) {
+          const newText = textParts.join('');
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === messageId
+                ? { ...msg, content: (msg.content || '') + newText }
+                : msg
+            )
+          );
+        }
+
         for (const block of message.content) {
           // Handle tool call
           if ('name' in block && block.name) {
@@ -248,7 +266,13 @@ export function useChatStream(
       abortControllerRef.current = new AbortController();
 
       try {
-        const response = await fetch('/api/chat', {
+        // Ollama requires a model to be selected
+        if (engine === 'ollama' && !ollamaModel) {
+          throw new Error('Please select an Ollama model first (click the model picker above)');
+        }
+
+        const apiUrl = engine === 'codex' ? '/api/chat/codex' : engine === 'kimi' ? '/api/chat/kimi' : engine === 'ollama' ? '/api/chat/ollama' : '/api/chat';
+        const response = await fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -256,6 +280,7 @@ export function useChatStream(
             sessionId: sessionIdRef.current,
             images: messageImages,
             cwd,
+            ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
           }),
           signal: abortControllerRef.current.signal,
         });
@@ -300,10 +325,11 @@ export function useChatStream(
           // Keep already-generated content, only end streaming state
         } else {
           console.error('Chat error:', error);
+          const errorMsg = error instanceof Error ? error.message : i18n.t('chat.errorRetry');
           setMessages((prev) =>
             prev.map((msg) =>
               msg.id === assistantMessageId
-                ? { ...msg, content: i18n.t('chat.errorRetry'), isStreaming: false }
+                ? { ...msg, content: errorMsg, isStreaming: false }
                 : msg
             )
           );
@@ -320,7 +346,7 @@ export function useChatStream(
         );
       }
     },
-    [cwd, setMessages, handleStreamEvent]
+    [cwd, engine, ollamaModel, setMessages, handleStreamEvent]
   );
 
   return {

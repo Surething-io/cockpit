@@ -7,12 +7,16 @@ import { usePageVisible } from '@/hooks/usePageVisible';
 // Types
 // ============================================
 
+export type ChatEngine = 'claude' | 'codex' | 'kimi' | 'ollama';
+
 export interface TabInfo {
   id: string;
   cwd?: string;
   sessionId?: string;
   title: string;
   isLoading?: boolean;
+  engine?: ChatEngine;
+  ollamaModel?: string;
 }
 
 // ============================================
@@ -78,6 +82,8 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
           const data = await response.json();
           const savedSessions: string[] = data.sessions || [];
           const savedActiveSessionId: string | undefined = data.activeSessionId;
+          const savedEngines: Record<string, string> = data.engines || {};
+          const savedOllamaModels: Record<string, string> = data.ollamaModels || {};
 
           // Merge URL sessionId with sessions in session.json (deduplicate)
           let allSessions = [...savedSessions];
@@ -91,6 +97,8 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
               cwd: initialCwd,
               sessionId,
               title: `Session ${sessionId.slice(0, 6)}...`,
+              engine: (savedEngines[sessionId] as ChatEngine) || undefined,
+              ollamaModel: savedOllamaModels[sessionId] || undefined,
             }));
 
             // Activation priority: URL sessionId > session.json activeSessionId > first
@@ -129,10 +137,22 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     const activeTab = tabs.find(t => t.id === activeTabId);
     const activeSessionId = activeTab?.sessionId;
 
+    // Build engine map for tabs that have a non-default engine
+    const engines: Record<string, string> = {};
+    const ollamaModels: Record<string, string> = {};
+    for (const tab of tabs) {
+      if (tab.sessionId && tab.engine) {
+        engines[tab.sessionId] = tab.engine;
+      }
+      if (tab.sessionId && tab.ollamaModel) {
+        ollamaModels[tab.sessionId] = tab.ollamaModel;
+      }
+    }
+
     fetch('/api/project-state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cwd: initialCwd, sessions: sessionIds, activeSessionId }),
+      body: JSON.stringify({ cwd: initialCwd, sessions: sessionIds, activeSessionId, engines, ollamaModels }),
     }).catch(error => {
       console.error('Failed to save sessions:', error);
     });
@@ -153,12 +173,14 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   }, [activeTabId, tabs, initialCwd]);
 
   // Add new tab (insert to the right of current tab)
-  const addTab = useCallback((cwd?: string, sessionId?: string, title?: string) => {
+  const addTab = useCallback((cwd?: string, sessionId?: string, title?: string, engine?: ChatEngine, ollamaModel?: string) => {
     const newTab: TabInfo = {
       id: `tab-${Date.now()}`,
       cwd,
       sessionId,
       title: title || (sessionId ? `Session ${sessionId.slice(0, 6)}...` : 'New Chat'),
+      engine,
+      ollamaModel,
     };
     setTabs((prev) => {
       const currentIndex = prev.findIndex((t) => t.id === activeTabId);
@@ -206,6 +228,30 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   const handleNewTab = useCallback(() => {
     addTab(initialCwd);
   }, [initialCwd, addTab]);
+
+  // Create new Codex tab
+  const handleNewCodexTab = useCallback(() => {
+    addTab(initialCwd, undefined, 'New Codex Chat', 'codex');
+  }, [initialCwd, addTab]);
+
+  // Create new Kimi tab
+  const handleNewKimiTab = useCallback(() => {
+    addTab(initialCwd, undefined, 'New Kimi Chat', 'kimi');
+  }, [initialCwd, addTab]);
+
+  // Create new Ollama tab
+  const handleNewOllamaTab = useCallback((model?: string) => {
+    addTab(initialCwd, undefined, model ? `New Ollama (${model})` : 'New Ollama Chat', 'ollama', model);
+  }, [initialCwd, addTab]);
+
+  // Update Ollama model for a tab
+  const updateTabOllamaModel = useCallback((tabId: string, model: string) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, ollamaModel: model } : tab
+      )
+    );
+  }, []);
 
   // Open new session (for Fork, always creates a new tab)
   const handleOpenSession = useCallback((sid: string, title?: string) => {
@@ -332,8 +378,12 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     switchTab,
     handleSelectSession,
     handleNewTab,
+    handleNewCodexTab,
+    handleNewKimiTab,
+    handleNewOllamaTab,
     handleOpenSession,
     updateTabState,
+    updateTabOllamaModel,
 
     // Drag operations
     handleTabDragStart,

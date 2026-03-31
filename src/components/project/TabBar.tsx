@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { TabInfo } from './useTabState';
 import { Tooltip } from '../shared/Tooltip';
 import { useTranslation } from 'react-i18next';
@@ -35,6 +36,117 @@ function TabNumberIcon({ number, isActive }: { number: number; isActive: boolean
 }
 
 // ============================================
+// NewTabButton with engine picker popover
+// ============================================
+
+function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewOllamaTab }: { onNewTab: () => void; onNewCodexTab?: () => void; onNewKimiTab?: () => void; onNewOllamaTab?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) &&
+          btnRef.current && !btnRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      // Walk up to find the nearest ancestor with a CSS transform (the swipeable panel).
+      // getBoundingClientRect() returns viewport coords, but `position: fixed` inside
+      // a transformed ancestor is relative to that ancestor, not the viewport.
+      // Compute the offset between the transform container and the viewport.
+      let offsetX = 0, offsetY = 0;
+      let el: HTMLElement | null = btnRef.current.parentElement;
+      while (el) {
+        const transform = getComputedStyle(el).transform;
+        if (transform && transform !== 'none') {
+          const elRect = el.getBoundingClientRect();
+          // The transform container's own rect tells us the shift
+          offsetX = elRect.left - el.offsetLeft;
+          offsetY = elRect.top - el.offsetTop;
+          break;
+        }
+        el = el.parentElement;
+      }
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4 - offsetY, left: rect.left - offsetX });
+    }
+    setOpen((v) => !v);
+  };
+
+  const pick = (engine: 'claude' | 'codex' | 'kimi' | 'ollama') => {
+    setOpen(false);
+    if (engine === 'codex') onNewCodexTab?.();
+    else if (engine === 'kimi') onNewKimiTab?.();
+    else if (engine === 'ollama') onNewOllamaTab?.();
+    else onNewTab();
+  };
+
+  // Portal the menu to document.body so it escapes all overflow:hidden ancestors
+  const menu = open ? createPortal(
+    <div
+      ref={menuRef}
+      className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-lg py-1 min-w-[140px]"
+      style={{ top: pos.top, left: pos.left }}
+    >
+      <button
+        onClick={() => pick('claude')}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors"
+      >
+        <span className="w-2 h-2 rounded-full bg-brand flex-shrink-0" />
+        Claude Code
+      </button>
+      <button
+        onClick={() => pick('codex')}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors"
+      >
+        <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
+        OpenAI Codex
+      </button>
+      <button
+        onClick={() => pick('kimi')}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors"
+      >
+        <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
+        Kimi
+      </button>
+      <button
+        onClick={() => pick('ollama')}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors"
+      >
+        <span className="w-2 h-2 rounded-full bg-violet-500 flex-shrink-0" />
+        Ollama
+      </button>
+    </div>,
+    document.body
+  ) : null;
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={toggle}
+        className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+        title="New tab"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+        </svg>
+      </button>
+      {menu}
+    </>
+  );
+}
+
+// ============================================
 // TabBar component
 // ============================================
 
@@ -49,6 +161,9 @@ interface TabBarProps {
   onSwitchTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onNewTab: () => void;
+  onNewCodexTab?: () => void;
+  onNewKimiTab?: () => void;
+  onNewOllamaTab?: () => void;
   onDragStart: (index: number) => void;
   onDragOver: (e: React.DragEvent, index: number) => void;
   onDrop: (index: number) => void;
@@ -66,6 +181,9 @@ export function TabBar({
   onSwitchTab,
   onCloseTab,
   onNewTab,
+  onNewCodexTab,
+  onNewKimiTab,
+  onNewOllamaTab,
   onDragStart,
   onDragOver,
   onDrop,
@@ -135,6 +253,15 @@ export function TabBar({
                 )}
               </div>
               <span className="max-w-32 truncate">{tab.title}</span>
+              {tab.engine === 'codex' && (
+                <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-emerald-500/15 text-emerald-400 font-medium leading-relaxed">CX</span>
+              )}
+              {tab.engine === 'kimi' && (
+                <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-blue-500/15 text-blue-400 font-medium leading-relaxed">KM</span>
+              )}
+              {tab.engine === 'ollama' && (
+                <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-violet-500/15 text-violet-400 font-medium leading-relaxed">OL</span>
+              )}
               {tabs.length > 1 && (
                 <button
                   onClick={(e) => {
@@ -152,16 +279,8 @@ export function TabBar({
             </div>
           </Tooltip>
         ))}
-        {/* New tab button */}
-        <button
-          onClick={onNewTab}
-          className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-          title={t('tabBar.newTab')}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
+        {/* New tab button with engine picker */}
+        <NewTabButton onNewTab={onNewTab} onNewCodexTab={onNewCodexTab} onNewKimiTab={onNewKimiTab} onNewOllamaTab={onNewOllamaTab} />
       </div>
     </div>
   );

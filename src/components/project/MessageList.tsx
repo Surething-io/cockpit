@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react';
 import { ChatMessage } from '@/types/chat';
+import type { ChatEngine } from './useTabState';
 import { MessageBubble } from './MessageBubble';
 import { useChatSearch } from '@/hooks/useChatSearch';
 import { ToolbarRenderer, ToolbarData } from './FloatingToolbar';
@@ -16,6 +17,7 @@ interface MessageListProps {
   isLoading?: boolean;
   cwd?: string;
   sessionId?: string | null;
+  engine?: ChatEngine;
   hasMoreHistory?: boolean;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
@@ -30,7 +32,7 @@ export interface MessageListHandle {
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
-  { messages, isLoading, cwd, sessionId, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch },
+  { messages, isLoading, cwd, sessionId, engine, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch },
   ref
 ) {
   const { t } = useTranslation();
@@ -406,7 +408,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                 <div className="bg-accent rounded-2xl rounded-bl-md px-4 py-3">
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <span className="inline-block w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-                    <span className="text-sm">{t('chat.claudeThinking')}</span>
+                    <span className="text-sm">{engine === 'codex' ? 'Codex is thinking...' : engine === 'kimi' ? 'Kimi is thinking...' : engine === 'ollama' ? 'Ollama is thinking...' : t('chat.claudeThinking')}</span>
                   </div>
                 </div>
               </div>

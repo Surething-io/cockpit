@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 import { Chat } from './Chat';
+import type { ChatEngine } from './useTabState';
 
 // ============================================
 // ChatPanel - Simplified Chat panel without header and sidebar
@@ -11,6 +12,9 @@ interface ChatPanelProps {
   tabId: string;
   cwd?: string;
   sessionId?: string;
+  engine?: ChatEngine;
+  ollamaModel?: string;
+  onOllamaModelChange?: (tabId: string, model: string) => void;
   isActive?: boolean;
   onStateChange: (tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string }) => void;
   onShowGitStatus?: () => void;
@@ -31,7 +35,7 @@ interface ChatPanelProps {
   onContentSearch?: (query: string) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, isActive, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllamaModelChange, isActive, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -44,11 +48,18 @@ export function ChatPanel({ tabId, cwd, sessionId, isActive, onStateChange, onSh
     onStateChange(tabId, { title });
   }, [tabId, onStateChange]);
 
+  const handleOllamaModelChange = useCallback((model: string) => {
+    onOllamaModelChange?.(tabId, model);
+  }, [tabId, onOllamaModelChange]);
+
   return (
     <Chat
       tabId={tabId}
       initialCwd={cwd}
       initialSessionId={sessionId}
+      engine={engine}
+      ollamaModel={ollamaModel}
+      onOllamaModelChange={handleOllamaModelChange}
       hideHeader
       hideSidebar
       isActive={isActive}

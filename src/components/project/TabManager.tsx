@@ -39,8 +39,12 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     switchTab,
     handleSelectSession,
     handleNewTab,
+    handleNewCodexTab,
+    handleNewKimiTab,
+    handleNewOllamaTab,
     handleOpenSession,
     updateTabState,
+    updateTabOllamaModel,
     handleTabDragStart,
     handleTabDragOver,
     handleTabDrop,
@@ -274,6 +278,9 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                 onSwitchTab={switchTab}
                 onCloseTab={closeTab}
                 onNewTab={handleNewTab}
+                onNewCodexTab={handleNewCodexTab}
+                onNewKimiTab={handleNewKimiTab}
+                onNewOllamaTab={handleNewOllamaTab}
                 onDragStart={handleTabDragStart}
                 onDragOver={handleTabDragOver}
                 onDrop={handleTabDrop}
@@ -289,6 +296,9 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                       tabId={tab.id}
                       cwd={tab.cwd}
                       sessionId={tab.sessionId}
+                      engine={tab.engine}
+                      ollamaModel={tab.ollamaModel}
+                      onOllamaModelChange={updateTabOllamaModel}
                       isActive={tab.id === activeTabId && activeView === 'agent'}
                       onStateChange={updateTabState}
                       onShowGitStatus={handleShowGitStatus}
@@ -333,6 +343,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               onSwitchTab={switchTab}
               onCloseTab={closeTab}
               onNewTab={handleNewTab}
+              onNewCodexTab={handleNewCodexTab}
+                onNewKimiTab={handleNewKimiTab}
               onDragStart={handleTabDragStart}
               onDragOver={handleTabDragOver}
               onDrop={handleTabDrop}
@@ -348,6 +360,9 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                     tabId={tab.id}
                     cwd={tab.cwd}
                     sessionId={tab.sessionId}
+                    engine={tab.engine}
+                    ollamaModel={tab.ollamaModel}
+                    onOllamaModelChange={updateTabOllamaModel}
                     isActive={tab.id === activeTabId}
                     onStateChange={updateTabState}
                     onCreateScheduledTask={createScheduledTask}

@@ -188,6 +188,48 @@ export function getClaudeSessionPath(cwd: string, sessionId: string): string {
   return join(getClaudeProjectDir(cwd), `${sessionId}.jsonl`);
 }
 
+/**
+ * Find a Codex session file by thread_id.
+ * Codex stores sessions at ~/.codex/sessions/YYYY/MM/DD/rollout-<timestamp>-<thread_id>.jsonl
+ * We glob for the thread_id suffix since we don't know the exact date/timestamp.
+ */
+export function findCodexSessionPath(threadId: string): string | null {
+  const codexSessionsDir = join(HOME_DIR, '.codex', 'sessions');
+  if (!existsSync(codexSessionsDir)) return null;
+
+  // Walk year/month/day directories looking for a file ending with the thread_id
+  const suffix = `-${threadId}.jsonl`;
+  try {
+    const { execSync } = require('child_process');
+    const result = execSync(
+      `find ${JSON.stringify(codexSessionsDir)} -name "*${threadId}.jsonl" -type f 2>/dev/null`,
+      { encoding: 'utf8', timeout: 3000 }
+    ).trim();
+    if (result) {
+      // Return first match
+      return result.split('\n')[0];
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+/**
+ * Find a Kimi session context.jsonl by session UUID.
+ * Kimi stores sessions at ~/.kimi/sessions/<cwd-hash>/<session-uuid>/context.jsonl
+ */
+export function findKimiSessionPath(sessionId: string): string | null {
+  const sessionsDir = join(HOME_DIR, '.kimi', 'sessions');
+  if (!existsSync(sessionsDir)) return null;
+  try {
+    const { readdirSync } = require('fs');
+    for (const hash of readdirSync(sessionsDir)) {
+      const candidate = join(sessionsDir, hash, sessionId, 'context.jsonl');
+      if (existsSync(candidate)) return candidate;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
 // ============================================
 // File Utilities
 // ============================================

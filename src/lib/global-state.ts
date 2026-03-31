@@ -11,6 +11,7 @@ interface GlobalSession {
   status: SessionStatus;
   title?: string;
   lastUserMessage?: string;
+  engine?: 'claude' | 'codex' | 'ollama';
 }
 
 interface GlobalState {

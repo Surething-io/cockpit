@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback, useMemo, memo } from 'react';
 import { ImageInfo } from '@/types/chat';
+import type { ChatEngine } from './useTabState';
 import { ImagePreview } from '../shared/ImagePreview';
 import { toast } from '../shared/Toast';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
@@ -19,6 +20,7 @@ interface ChatInputProps {
   onSend: (message: string, images?: ImageInfo[]) => void;
   disabled?: boolean;
   cwd?: string;
+  engine?: ChatEngine;
   onShowGitStatus?: () => void;
   onShowComments?: () => void;
   onShowUserMessages?: () => void;
@@ -34,7 +36,7 @@ interface ChatInputProps {
   }) => void;
 }
 
-export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, onShowGitStatus, onShowComments, onShowUserMessages, onOpenNote, onCreateScheduledTask }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine, onShowGitStatus, onShowComments, onShowUserMessages, onOpenNote, onCreateScheduledTask }: ChatInputProps) {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
   const [images, setImages] = useState<ImageInfo[]>([]);

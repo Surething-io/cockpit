@@ -612,12 +612,64 @@ async function parseKimiTranscriptFile(
           }
         }
       }
-      if (text) {
+
+      // Extract tool calls
+      const newToolCalls: NonNullable<ChatMessage['toolCalls']> = [];
+      const entryToolCalls = (entry as Record<string, unknown>).tool_calls as Array<{ id?: string; function?: { name?: string; arguments?: string } }> | undefined;
+      if (entryToolCalls && Array.isArray(entryToolCalls)) {
+        for (const tc of entryToolCalls) {
+          if (tc.function?.name) {
+            let input: Record<string, unknown> = {};
+            try { input = JSON.parse(tc.function.arguments || '{}'); } catch { /* */ }
+            newToolCalls.push({
+              id: tc.id || `tool-${msgCounter++}`,
+              name: tc.function.name === 'Shell' ? 'Bash' : tc.function.name,
+              input,
+              isLoading: false,
+            });
+          }
+        }
+      }
+
+      // Merge into the last assistant message if it's part of a tool call chain
+      // (consecutive assistant messages without a user message in between)
+      const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+      if (lastMsg && lastMsg.role === 'assistant' && lastMsg.toolCalls && lastMsg.toolCalls.length > 0) {
+        // Append tool calls and text to existing bubble
+        if (newToolCalls.length > 0) {
+          lastMsg.toolCalls.push(...newToolCalls);
+        }
+        if (text) {
+          lastMsg.content = (lastMsg.content || '') + text;
+        }
+      } else if (text || newToolCalls.length > 0) {
+        // New assistant bubble
         messages.push({
           id: `kimi-assistant-${msgCounter++}`,
           role: 'assistant',
           content: text,
+          ...(newToolCalls.length > 0 ? { toolCalls: newToolCalls } : {}),
         });
+      }
+    }
+
+    if (entry.role === 'tool') {
+      // Match tool result to the last assistant message's tool call
+      const toolCallId = (entry as Record<string, unknown>).tool_call_id as string | undefined;
+      if (toolCallId && messages.length > 0) {
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg.role === 'assistant' && lastMsg.toolCalls) {
+          const tc = lastMsg.toolCalls.find(t => t.id === toolCallId);
+          if (tc) {
+            let result = '';
+            if (typeof entry.content === 'string') {
+              result = entry.content;
+            } else if (Array.isArray(entry.content)) {
+              result = entry.content.filter(c => c.type === 'text' && c.text).map(c => c.text!).join('\n');
+            }
+            tc.result = result;
+          }
+        }
       }
     }
   }

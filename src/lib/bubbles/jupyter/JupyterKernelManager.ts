@@ -9,6 +9,8 @@
 
 import { spawn, type ChildProcess } from 'child_process';
 import { join } from 'path';
+import { homedir } from 'os';
+import { existsSync } from 'fs';
 import { createInterface, type Interface } from 'readline';
 
 // ============================================
@@ -69,6 +71,29 @@ class JupyterKernelManager {
   }
 
   /**
+   * Resolve jupyter_bridge.py path.
+   * Production: ~/.cockpit/kernels/jupyter_bridge.py (copied by postinstall)
+   * Dev: COCKPIT_ROOT/kernels/jupyter_bridge.py or legacy src path
+   */
+  private resolveBridgePath(): string {
+    const installedPath = join(homedir(), '.cockpit', 'kernels', 'jupyter_bridge.py');
+    if (existsSync(installedPath)) {
+      return installedPath;
+    }
+
+    const root = process.env.COCKPIT_ROOT;
+    if (root) {
+      const devPath = join(root, 'kernels', 'jupyter_bridge.py');
+      if (existsSync(devPath)) {
+        return devPath;
+      }
+    }
+
+    // Fallback for extreme compatibility
+    return join(__dirname, 'jupyter_bridge.py');
+  }
+
+  /**
    * Get or create a kernel for a bubble
    */
   async getOrCreate(bubbleId: string, cwd: string): Promise<KernelInstance> {
@@ -80,7 +105,7 @@ class JupyterKernelManager {
     }
 
     const python = this.findPython();
-    const bridgePath = join(__dirname, 'jupyter_bridge.py');
+    const bridgePath = this.resolveBridgePath();
 
     const bridge = spawn(python, ['-u', bridgePath], {
       cwd,

@@ -47,4 +47,24 @@ if (isNpmInstall) {
       }
     }
   } catch {}
+
+  // jupyter_bridge.py → ~/.cockpit/kernels/jupyter_bridge.py
+  try {
+    const kernelSrc = join(projectRoot, 'kernels', 'jupyter_bridge.py');
+    const cockpitDir = join(homedir(), '.cockpit');
+    const kernelDestDir = join(cockpitDir, 'kernels');
+    accessSync(kernelSrc);
+    mkdirSync(kernelDestDir, { recursive: true });
+    cpSync(kernelSrc, join(kernelDestDir, 'jupyter_bridge.py'), { force: true });
+
+    if (process.platform !== 'win32') {
+      const realUser = process.env.SUDO_USER;
+      if (realUser) {
+        try { execSync(`chown -R "${realUser}" "${cockpitDir}"`); } catch {}
+      }
+      if (process.platform === 'darwin') {
+        try { execSync(`xattr -cr "${kernelDestDir}"`); } catch {}
+      }
+    }
+  } catch {}
 }

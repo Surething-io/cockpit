@@ -2,8 +2,12 @@ import { createServer } from 'http';
 import { exec } from 'child_process';
 import { networkInterfaces, homedir } from 'os';
 import { writeFileSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import next from 'next';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+process.env.COCKPIT_ROOT = __dirname;
 
 const dev = process.env.COCKPIT_ENV === 'dev';
 const port = parseInt(process.env.PORT || (dev ? '3456' : '3457'), 10);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { kernelManager } from '@/lib/kernels/JupyterKernelManager';
+import { kernelManager } from '@/lib/bubbles/jupyter/JupyterKernelManager';
 
 export async function POST(req: NextRequest) {
   try {

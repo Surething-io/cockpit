@@ -879,7 +879,7 @@ async function handleJupyter(ws: WebSocket, bubbleId: string, cwd: string): Prom
   }, HEARTBEAT_INTERVAL);
 
   // Lazy import to avoid loading kernel manager on every WS connection
-  const { kernelManager } = await import('./kernels/JupyterKernelManager');
+  const { kernelManager } = await import('./bubbles/jupyter/JupyterKernelManager');
 
   // Start or connect to existing kernel
   try {

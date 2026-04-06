@@ -271,7 +271,7 @@ export const CellRenderer = memo(function CellRenderer({
       onClick={onSelect}
     >
       {/* Cell toolbar — visible on hover or when active */}
-      <div className={`absolute -top-3 right-2 flex items-center gap-0.5 text-[10px] z-10 bg-surface-secondary rounded px-1 py-0.5 border border-border/50 transition-opacity ${
+      <div className={`absolute -top-3 left-2 flex items-center gap-0.5 text-[10px] z-10 bg-surface-secondary rounded px-1 py-0.5 border border-border/50 transition-opacity ${
         isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
       }`}>
         <button onClick={onRun} className="px-1 hover:text-brand" title="Run (Shift+Enter)">

@@ -280,6 +280,7 @@ export function useChatStream(
             sessionId: sessionIdRef.current,
             images: messageImages,
             cwd,
+            language: i18n.language,
             ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
           }),
           signal: abortControllerRef.current.signal,

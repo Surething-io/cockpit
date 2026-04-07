@@ -50,7 +50,7 @@
     "postinstall": "node bin/postinstall.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.34",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.92",
     "@tanstack/react-virtual": "^3.13.18",
     "@tiptap/extension-link": "^3.19.0",
     "@tiptap/extension-placeholder": "^3.19.0",

@@ -5,6 +5,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { NextRequest } from 'next/server';
 import { updateGlobalState } from '@/lib/global-state';
+import { resolveCommandPrompt } from '@/lib/chat/slashCommands';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -80,7 +81,9 @@ function findNewKimiSessionId(before: Set<string>): string | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, sessionId, cwd } = await request.json();
+    const { prompt: rawPrompt, sessionId, cwd, language } = await request.json();
+
+    const prompt = typeof rawPrompt === 'string' ? resolveCommandPrompt(rawPrompt, language) : rawPrompt;
 
     if (!prompt || typeof prompt !== 'string') {
       return new Response(JSON.stringify({ error: 'Missing prompt' }), {

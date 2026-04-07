@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import { createInterface } from 'readline';
 import { NextRequest } from 'next/server';
 import { updateGlobalState } from '@/lib/global-state';
+import { resolveCommandPrompt } from '@/lib/chat/slashCommands';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,7 +18,9 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, sessionId, cwd, model } = await request.json();
+    const { prompt: rawPrompt, sessionId, cwd, model, language } = await request.json();
+
+    const prompt = typeof rawPrompt === 'string' ? resolveCommandPrompt(rawPrompt, language) : rawPrompt;
 
     if (!model) {
       return new Response(JSON.stringify({ error: 'Missing model. Select an Ollama model first.' }), {

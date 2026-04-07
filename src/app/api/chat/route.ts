@@ -1,30 +1,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { NextRequest } from 'next/server';
 import { updateGlobalState, getSessionTitle } from '@/lib/global-state';
-
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
-const COMMAND_CONTENT: Record<string, string> = {
-  qa: `进入需求澄清讨论模式
-尝试理解用户的需求并给出你对需求的理解，有不明确的点需要向我确认，避免理解不一致而导致无效的代码修改
-遵循 KISS 原则
-输出理解，不改代码`,
-  fx: `进入bug证据链分析模式，只分析不修改代码，给出详细推理过程`,
-};
-
-function resolveCommandPrompt(prompt: string): string {
-  const trimmed = prompt.trimStart();
-  const match = trimmed.match(/^\/([a-zA-Z]+)(?:\s+|$)/);
-  if (!match) return prompt;
-
-  const cmd = match[1];
-  const content = COMMAND_CONTENT[cmd];
-  if (!content) return prompt;
-
-  const rest = trimmed.slice(match[0].length).trimStart();
-  return rest ? `${content}\n\n${rest}` : content;
-}
+import { resolveCommandPrompt } from '@/lib/chat/slashCommands';
 
 interface ImageData {
   type: 'base64';
@@ -44,10 +21,10 @@ interface ContentBlock {
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt: rawPrompt, sessionId, images, cwd } = await request.json();
+    const { prompt: rawPrompt, sessionId, images, cwd, language } = await request.json();
 
-    // Resolve built-in slash commands (/qa, /fx, etc.)
-    const prompt = typeof rawPrompt === 'string' ? resolveCommandPrompt(rawPrompt) : rawPrompt;
+    // Resolve built-in slash commands (/qa, /fx, etc.) based on language
+    const prompt = typeof rawPrompt === 'string' ? resolveCommandPrompt(rawPrompt, language) : rawPrompt;
 
     // Allow sending images only (no text)
     const hasContent = (prompt && typeof prompt === 'string') || (images && images.length > 0);

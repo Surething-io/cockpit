@@ -1,9 +1,41 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { NextRequest } from 'next/server';
 import { updateGlobalState, getSessionTitle } from '@/lib/global-state';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// Cache for built-in slash commands
+const commandCache = new Map<string, string>();
+
+function getCommandContent(name: string): string | undefined {
+  if (commandCache.has(name)) {
+    return commandCache.get(name);
+  }
+  try {
+    const content = readFileSync(join(homedir(), '.claude', 'commands', `${name}.md`), 'utf-8');
+    commandCache.set(name, content);
+    return content;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveCommandPrompt(prompt: string): string {
+  const trimmed = prompt.trimStart();
+  const match = trimmed.match(/^\/([a-zA-Z]+)(?:\s+|$)/);
+  if (!match) return prompt;
+
+  const cmd = match[1];
+  const content = getCommandContent(cmd);
+  if (!content) return prompt;
+
+  const rest = trimmed.slice(match[0].length).trimStart();
+  return rest ? `${content}\n\n${rest}` : content;
+}
 
 interface ImageData {
   type: 'base64';
@@ -23,7 +55,10 @@ interface ContentBlock {
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, sessionId, images, cwd } = await request.json();
+    const { prompt: rawPrompt, sessionId, images, cwd } = await request.json();
+
+    // Resolve built-in slash commands (/qa, /fx, etc.)
+    const prompt = typeof rawPrompt === 'string' ? resolveCommandPrompt(rawPrompt) : rawPrompt;
 
     // Allow sending images only (no text)
     const hasContent = (prompt && typeof prompt === 'string') || (images && images.length > 0);

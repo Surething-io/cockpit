@@ -1,28 +1,17 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { NextRequest } from 'next/server';
 import { updateGlobalState, getSessionTitle } from '@/lib/global-state';
-import { readFileSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Cache for built-in slash commands
-const commandCache = new Map<string, string>();
-
-function getCommandContent(name: string): string | undefined {
-  if (commandCache.has(name)) {
-    return commandCache.get(name);
-  }
-  try {
-    const content = readFileSync(join(homedir(), '.claude', 'commands', `${name}.md`), 'utf-8');
-    commandCache.set(name, content);
-    return content;
-  } catch {
-    return undefined;
-  }
-}
+const COMMAND_CONTENT: Record<string, string> = {
+  qa: `进入需求澄清讨论模式
+尝试理解用户的需求并给出你对需求的理解，有不明确的点需要向我确认，避免理解不一致而导致无效的代码修改
+遵循 KISS 原则
+输出理解，不改代码`,
+  fx: `进入bug证据链分析模式，只分析不修改代码，给出详细推理过程`,
+};
 
 function resolveCommandPrompt(prompt: string): string {
   const trimmed = prompt.trimStart();
@@ -30,7 +19,7 @@ function resolveCommandPrompt(prompt: string): string {
   if (!match) return prompt;
 
   const cmd = match[1];
-  const content = getCommandContent(cmd);
+  const content = COMMAND_CONTENT[cmd];
   if (!content) return prompt;
 
   const rest = trimmed.slice(match[0].length).trimStart();

@@ -5,15 +5,19 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 
-/** Search interface exposed to parent component */
+/** Interface exposed to parent component (search + direct write) */
 export interface XtermSearchHandle {
   findNext: (query: string) => boolean;
   findPrevious: (query: string) => boolean;
   clearSearch: () => void;
+  /** Write data directly to xterm (bypass output prop) */
+  write: (data: string) => void;
+  /** Reset terminal (clear screen + buffer) */
+  reset: () => void;
 }
 
 interface XtermRendererProps {
-  /** Accumulated raw PTY output (including ANSI control sequences) */
+  /** Accumulated raw PTY output (including ANSI control sequences). Ignored when directWrite is true. */
   output: string;
   /** Whether currently running */
   isRunning: boolean;
@@ -25,6 +29,8 @@ interface XtermRendererProps {
   maximized?: boolean;
   /** Fixed height when not maximized (px) */
   height?: number;
+  /** When true, parent writes data via ref.write() — output prop is ignored. xterm scrollback manages memory. */
+  directWrite?: boolean;
 }
 
 /**
@@ -39,6 +45,7 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
   onResize,
   maximized,
   height,
+  directWrite,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -50,7 +57,7 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
   useEffect(() => { onInputRef.current = onInput; }, [onInput]);
   useEffect(() => { onResizeRef.current = onResize; }, [onResize]);
 
-  // Expose search interface
+  // Expose search + write interface
   useImperativeHandle(ref, () => ({
     findNext: (query: string) => {
       return searchAddonRef.current?.findNext(query, { caseSensitive: false, decorations: {
@@ -74,6 +81,12 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
     },
     clearSearch: () => {
       searchAddonRef.current?.clearDecorations();
+    },
+    write: (data: string) => {
+      termRef.current?.write(data);
+    },
+    reset: () => {
+      termRef.current?.reset();
     },
   }), []);
 
@@ -150,8 +163,10 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
     };
   }, []);
 
-  // Write new data incrementally
+  // Write new data incrementally (only in output-prop mode; skipped in directWrite mode)
   useEffect(() => {
+    if (directWrite) return; // In directWrite mode, parent calls ref.write() directly
+
     const term = termRef.current;
     if (!term) return;
 
@@ -174,7 +189,7 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
     if (didReset && onInputRef.current) {
       requestAnimationFrame(() => term.focus());
     }
-  }, [output]);
+  }, [output, directWrite]);
 
   // Focus terminal when running state changes
   useEffect(() => {

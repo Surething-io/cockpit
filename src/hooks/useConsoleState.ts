@@ -104,6 +104,10 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
   const commandPtyRef = useRef<Set<string>>(new Set());
   const commandHistoryRef = useRef<string[]>([]);
   const ptySizeRef = useRef<Map<string, { cols: number; rows: number }>>(new Map());
+  // PTY direct-write subscribers: commandId → Set of callbacks (write directly to xterm, bypass React state)
+  const ptyWritersRef = useRef<Map<string, Set<(data: string) => void>>>(new Map());
+  // Early buffer for PTY data arriving before xterm mounts
+  const ptyEarlyBufferRef = useRef<Map<string, string[]>>(new Map());
   const executeCommandRef = useRef<((command: string) => void) | null>(null);
   const addPluginItemRef = useRef<((type: string, input: string, afterId?: string) => void) | null>(null);
   const consoleItemsRef = useRef<ConsoleItem[]>([]);
@@ -137,16 +141,32 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     rafIdRef.current = null;
   }, []);
 
-  const MAX_PTY_BYTES = 5 * 1024 * 1024;
   const MAX_PIPE_BYTES = 2 * 1024 * 1024;
   const appendOutput = useCallback((commandId: string, data: string) => {
+    const isPty = commandPtyRef.current.has(commandId);
+
+    // PTY mode: write directly to xterm subscribers, skip React state accumulation.
+    // xterm.js scrollback buffer manages memory (no safeTruncate needed).
+    if (isPty) {
+      const writers = ptyWritersRef.current.get(commandId);
+      if (writers && writers.size > 0) {
+        for (const w of writers) w(data);
+      } else {
+        // xterm not mounted yet — buffer for later flush
+        if (!ptyEarlyBufferRef.current.has(commandId)) {
+          ptyEarlyBufferRef.current.set(commandId, []);
+        }
+        ptyEarlyBufferRef.current.get(commandId)!.push(data);
+      }
+      return;
+    }
+
+    // Pipe mode: accumulate string as before
     const currentOutput = commandOutputRef.current.get(commandId) || '';
     const newOutput = currentOutput + data;
-    const isPty = commandPtyRef.current.has(commandId);
-    const maxBytes = isPty ? MAX_PTY_BYTES : MAX_PIPE_BYTES;
 
-    if (newOutput.length > maxBytes) {
-      const truncated = safeTruncate(newOutput, maxBytes);
+    if (newOutput.length > MAX_PIPE_BYTES) {
+      const truncated = safeTruncate(newOutput, MAX_PIPE_BYTES);
       commandOutputRef.current.set(commandId, truncated);
       pendingOutputRef.current.set(commandId, truncated);
     } else {
@@ -159,10 +179,54 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     }
   }, [flushPendingOutput]);
 
-  const cleanupOutputRefs = useCallback((commandId: string) => {
+  const cleanupOutputRefs = useCallback((commandId: string, keepPtySubscribers = false) => {
     commandOutputRef.current.delete(commandId);
     commandPtyRef.current.delete(commandId);
     pendingOutputRef.current.delete(commandId);
+    ptyEarlyBufferRef.current.delete(commandId);
+    if (!keepPtySubscribers) {
+      ptyWritersRef.current.delete(commandId);
+      ptyResettersRef.current.delete(commandId);
+    }
+  }, []);
+
+  /**
+   * Subscribe to PTY output for direct xterm writes.
+   * Returns unsubscribe function. On subscribe, flushes any early-buffered data.
+   */
+  const subscribePtyOutput = useCallback((commandId: string, writer: (data: string) => void) => {
+    if (!ptyWritersRef.current.has(commandId)) {
+      ptyWritersRef.current.set(commandId, new Set());
+    }
+    ptyWritersRef.current.get(commandId)!.add(writer);
+
+    // Flush early buffer (data arrived before xterm mounted)
+    const earlyBuf = ptyEarlyBufferRef.current.get(commandId);
+    if (earlyBuf && earlyBuf.length > 0) {
+      for (const chunk of earlyBuf) writer(chunk);
+      ptyEarlyBufferRef.current.delete(commandId);
+    }
+
+    return () => {
+      ptyWritersRef.current.get(commandId)?.delete(writer);
+    };
+  }, []);
+
+  /**
+   * Reset PTY xterm for a command (used on rerun).
+   * Calls reset on all subscribed writers' parent xterm instances aren't directly accessible,
+   * so we use a separate reset callback registry.
+   */
+  const ptyResettersRef = useRef<Map<string, Set<() => void>>>(new Map());
+
+  const subscribePtyReset = useCallback((commandId: string, resetter: () => void) => {
+    if (!ptyResettersRef.current.has(commandId)) {
+      ptyResettersRef.current.set(commandId, new Set());
+    }
+    ptyResettersRef.current.get(commandId)!.add(resetter);
+    return () => {
+      ptyResettersRef.current.get(commandId)?.delete(resetter);
+    };
   }, []);
 
   const flushAndGetOutput = useCallback((commandId: string) => {
@@ -499,19 +563,30 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
       actualCommand = aliases[firstWord] + (parts.length > 1 ? ' ' + parts.slice(1).join(' ') : '');
     }
 
-    cleanupOutputRefs(commandId);
+    const cmdUsePty = cmd.usePty || false;
+
+    // For PTY: reset xterm and keep subscribers alive (component stays mounted)
+    if (cmdUsePty) {
+      const resetters = ptyResettersRef.current.get(commandId);
+      if (resetters) for (const r of resetters) r();
+    }
+
+    cleanupOutputRefs(commandId, cmdUsePty);
     const initialOutput = actualCommand !== cmd.command ? `→ ${actualCommand}\n` : '';
-    commandOutputRef.current.set(commandId, initialOutput);
+    if (!cmdUsePty) {
+      commandOutputRef.current.set(commandId, initialOutput);
+    }
+    // Restore PTY tracking (cleanupOutputRefs cleared it)
+    if (cmdUsePty) commandPtyRef.current.add(commandId);
 
     setCommands((prev) =>
       prev.map((c) =>
         c.id === commandId
-          ? { ...c, output: initialOutput, exitCode: undefined, isRunning: true, pid: undefined }
+          ? { ...c, output: cmdUsePty ? '' : initialOutput, exitCode: undefined, isRunning: true, pid: undefined }
           : c
       )
     );
 
-    const cmdUsePty = cmd.usePty || false;
     const ptySize = ptySizeRef.current.get(commandId);
     try {
       await execCmd({
@@ -849,5 +924,9 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     // For stdin/resize passthrough
     sendStdin,
     resizePty,
+
+    // PTY direct-write subscription (bypass React state, write to xterm directly)
+    subscribePtyOutput,
+    subscribePtyReset,
   };
 }

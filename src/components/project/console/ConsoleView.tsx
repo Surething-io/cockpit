@@ -31,6 +31,8 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
     sleepingBubbles, handleBubbleSleep, handleBubbleWake,
     scrollToBottom, currentCwd, commandHistoryRef, setCustomEnv, setAliases,
     saveBubbleOrder, hasMoreHistory, loadHistory, currentPage, isLoadingHistory,
+    subscribePtyOutput,
+    subscribePtyReset,
   } = state;
 
   const [maximizedId, setMaximizedId] = useState<string | null>(null);
@@ -298,6 +300,8 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
                       onRerun={() => rerunCommand(cmd.id)}
                       timestamp={cmd.timestamp}
                       usePty={cmd.usePty}
+                      subscribePtyOutput={cmd.usePty ? subscribePtyOutput : undefined}
+                      subscribePtyReset={cmd.usePty ? subscribePtyReset : undefined}
                       onPtyResize={(cols, rows) => { ptySizeRef.current.set(cmd.id, { cols, rows }); resizePty(cmd.id, cols, rows); }}
                       onToggleMaximize={() => toggleMaximize(cmd.id)}
                       maximized={maximizedId === cmd.id}

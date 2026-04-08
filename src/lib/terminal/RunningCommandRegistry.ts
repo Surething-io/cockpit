@@ -78,10 +78,12 @@ export function registerCommand(cmd: Omit<RunningCommand, 'outputLines' | 'outpu
 
   if (cmd.ptyProcess) {
     // PTY mode: single data event (stdout + stderr merged, matching a real terminal)
+    // Skip line-based buffering — PTY output contains cursor control sequences
+    // that are meaningless when replayed line-by-line. Just notify listeners.
     const pty = cmd.ptyProcess;
 
     pty.onData((data: string) => {
-      appendCommandOutput(cmd.commandId, data);
+      notifyOutputListeners(cmd.commandId, data);
     });
 
     const ptyPid = cmd.pid;

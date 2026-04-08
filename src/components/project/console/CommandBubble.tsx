@@ -28,6 +28,10 @@ interface CommandBubbleProps {
   onRerun?: () => void;
   timestamp?: string;
   usePty?: boolean;
+  /** Subscribe to PTY output for direct xterm writes (bypass React state) */
+  subscribePtyOutput?: (commandId: string, writer: (data: string) => void) => () => void;
+  /** Subscribe to PTY reset signal (rerun clears xterm) */
+  subscribePtyReset?: (commandId: string, resetter: () => void) => () => void;
   onPtyResize?: (cols: number, rows: number) => void;
   onToggleMaximize?: () => void;
   maximized?: boolean;
@@ -170,6 +174,8 @@ export const CommandBubble = memo(function CommandBubble({
   onRerun,
   timestamp,
   usePty,
+  subscribePtyOutput,
+  subscribePtyReset,
   onPtyResize,
   onToggleMaximize,
   maximized,
@@ -190,6 +196,53 @@ export const CommandBubble = memo(function CommandBubble({
 
   const xtermSearchRef = useRef<XtermSearchHandle>(null); // xterm search interface
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // PTY direct-write: subscribe to output stream and forward to xterm
+  // Uses a polling approach to wait for lazy-loaded XtermRenderer to mount
+  useEffect(() => {
+    if (!subscribePtyOutput || !commandId) return;
+    // Wait for xtermSearchRef to be available (lazy loaded)
+    const trySubscribe = () => {
+      if (xtermSearchRef.current) {
+        const writer = xtermSearchRef.current.write;
+        return subscribePtyOutput(commandId, writer);
+      }
+      return null;
+    };
+    let unsub = trySubscribe();
+    if (unsub) return unsub;
+    // Retry until xterm mounts (Suspense/lazy)
+    const timer = setInterval(() => {
+      unsub = trySubscribe();
+      if (unsub) clearInterval(timer);
+    }, 50);
+    return () => {
+      clearInterval(timer);
+      unsub?.();
+    };
+  }, [subscribePtyOutput, commandId]);
+
+  // PTY reset: subscribe to reset signal (rerun clears xterm)
+  useEffect(() => {
+    if (!subscribePtyReset || !commandId) return;
+    const trySubscribe = () => {
+      if (xtermSearchRef.current) {
+        const resetter = xtermSearchRef.current.reset;
+        return subscribePtyReset(commandId, resetter);
+      }
+      return null;
+    };
+    let unsub = trySubscribe();
+    if (unsub) return unsub;
+    const timer = setInterval(() => {
+      unsub = trySubscribe();
+      if (unsub) clearInterval(timer);
+    }, 50);
+    return () => {
+      clearInterval(timer);
+      unsub?.();
+    };
+  }, [subscribePtyReset, commandId]);
 
   // Search state (shared by PTY and Pipe)
   const [searchVisible, setSearchVisible] = useState(false);
@@ -551,7 +604,7 @@ export const CommandBubble = memo(function CommandBubble({
           {usePty ? (
             <div style={{ height: contentHeight, overflow: 'hidden' }}>
               <Suspense fallback={<div className="px-4 py-2 text-xs text-muted-foreground" style={{ height: contentHeight }}>{t('console.loadingTerminal')}</div>}>
-                <XtermRenderer ref={xtermSearchRef} output={output} isRunning={isRunning} onInput={onStdin} onResize={onPtyResize} maximized={maximized} height={contentHeight} />
+                <XtermRenderer ref={xtermSearchRef} output={output} isRunning={isRunning} onInput={onStdin} onResize={onPtyResize} maximized={maximized} height={contentHeight} directWrite={!!subscribePtyOutput} />
               </Suspense>
             </div>
           ) : (

@@ -110,18 +110,21 @@ export function useChatStream(
       const message = event.message as { content?: Array<{ type?: string; text?: string; name?: string; id?: string; input?: Record<string, unknown> }> } | undefined;
       if (message?.content) {
         // Extract text blocks (Codex sends complete text via assistant messages, not stream_event)
-        const textParts = message.content
-          .filter(block => block.type === 'text' && block.text)
-          .map(block => block.text!);
-        if (textParts.length > 0) {
-          const newText = textParts.join('');
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === messageId
-                ? { ...msg, content: (msg.content || '') + newText }
-                : msg
-            )
-          );
+        // For Claude engine, text is already handled by stream_event deltas — skip to avoid duplication
+        if (engine === 'codex') {
+          const textParts = message.content
+            .filter(block => block.type === 'text' && block.text)
+            .map(block => block.text!);
+          if (textParts.length > 0) {
+            const newText = textParts.join('');
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === messageId
+                  ? { ...msg, content: (msg.content || '') + newText }
+                  : msg
+              )
+            );
+          }
         }
 
         for (const block of message.content) {
@@ -229,7 +232,7 @@ export function useChatStream(
         )
       );
     }
-  }, [setMessages, flushStreamBuffer, onSessionId, onFetchTitle, cwd]);
+  }, [setMessages, flushStreamBuffer, onSessionId, onFetchTitle, cwd, engine]);
 
   // Send message
   const handleSend = useCallback(

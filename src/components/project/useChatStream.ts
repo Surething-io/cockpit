@@ -111,7 +111,7 @@ export function useChatStream(
       if (message?.content) {
         // Extract text blocks (Codex sends complete text via assistant messages, not stream_event)
         // For Claude engine, text is already handled by stream_event deltas — skip to avoid duplication
-        if (engine === 'codex') {
+        if (engine === 'codex' || engine === 'kimi') {
           const textParts = message.content
             .filter(block => block.type === 'text' && block.text)
             .map(block => block.text!);

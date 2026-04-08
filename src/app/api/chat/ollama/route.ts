@@ -1,177 +1,167 @@
-import { spawn } from 'child_process';
-import { createInterface } from 'readline';
+import { streamText, stepCountIs } from 'ai';
 import { NextRequest } from 'next/server';
+import type { ModelMessage } from '@ai-sdk/provider-utils';
 import { updateGlobalState } from '@/lib/global-state';
 import { resolveCommandPrompt } from '@/lib/chat/slashCommands';
+import { createOllamaModel } from './model';
+import { readSessionMessages, writeSessionMessages } from './session';
+import { createTools } from './tools';
+import { consumeStream, emitAssistantMessage, emitResultMessage } from './stream';
+import type { AgentContext, ChatRequestBody } from './types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/**
- * Ollama chat route — spawns `claude` CLI directly with env vars
- * matching what `ollama launch claude --model <model>` sets.
- *
- * Uses CLI spawn instead of SDK query() because the SDK's bundled cli.js
- * (v0.2.47) doesn't support ANTHROPIC_DEFAULT_*_MODEL env vars that are
- * needed for Ollama compatibility. The system `claude` CLI does.
- */
+const DEFAULT_MODEL = 'qwen3.5:35b-a3b-coding-nvfp4';
+
+function buildSystemPrompt(todos: AgentContext['todos']): string {
+  let prompt = `You are a vibe coding agent. Your goal is to help the user build and modify software by any means necessary.
+
+You have access to the local filesystem and shell. Use your tools freely.
+
+Guidelines:
+- Read files before you edit them.
+- Use the Edit tool with exact oldString/newString matches.
+- Use Bash to run commands, install dependencies, or verify changes.
+- Use Glob and Grep to explore the codebase.
+- Track your progress with TodoWrite when tasks have multiple steps.
+- Prefer small, working increments over big refactors.
+- If something is unclear, ask the user before making irreversible changes.
+
+When you finish, briefly summarize what you did.`;
+
+  if (todos.length > 0) {
+    prompt += `\n\nCurrent todos:\n${todos.map(t => `- [${t.status}] ${t.content}`).join('\n')}`;
+  }
+
+  return prompt;
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt: rawPrompt, sessionId, cwd, model, language } = await request.json();
+    const body = (await request.json()) as ChatRequestBody;
+    const { prompt: rawPrompt, sessionId, cwd, model, language } = body;
 
     const prompt = typeof rawPrompt === 'string' ? resolveCommandPrompt(rawPrompt, language) : rawPrompt;
-
-    if (!model) {
-      return new Response(JSON.stringify({ error: 'Missing model. Select an Ollama model first.' }), {
-        status: 400, headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
     if (!prompt || typeof prompt !== 'string') {
       return new Response(JSON.stringify({ error: 'Missing prompt' }), {
-        status: 400, headers: { 'Content-Type': 'application/json' },
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
       });
     }
+
+    const actualCwd = cwd || process.cwd();
+    const actualSessionId = sessionId || `ollama-${Date.now()}`;
+    const actualModel = model || DEFAULT_MODEL;
+
+    const context: AgentContext = {
+      cwd: actualCwd,
+      todos: [],
+    };
+
+    let messages = readSessionMessages(actualCwd, actualSessionId);
+    const userMessage: ModelMessage = { role: 'user', content: prompt };
+    messages = [...messages, userMessage];
+
+    const abortController = new AbortController();
+    request.signal.addEventListener('abort', () => abortController.abort());
+
+    const ollamaModel = createOllamaModel(actualModel);
+    const tools = createTools(context);
+
+    const result = streamText({
+      model: ollamaModel,
+      system: buildSystemPrompt(context.todos),
+      messages,
+      tools,
+      stopWhen: stepCountIs(64),
+      temperature: 0.2,
+      abortSignal: abortController.signal,
+    });
 
     const encoder = new TextEncoder();
     let isClosed = false;
-    let actualSessionId = sessionId || '';
-    const userMessage = prompt.slice(0, 50);
-    let childProcess: ReturnType<typeof spawn> | null = null;
 
     const stream = new ReadableStream({
       async start(controller) {
         const safeEnqueue = (data: string) => {
           if (!isClosed) {
-            try { controller.enqueue(encoder.encode(data)); } catch { isClosed = true; }
+            try {
+              controller.enqueue(encoder.encode(data));
+            } catch {
+              isClosed = true;
+            }
           }
         };
+
         const safeClose = () => {
           if (!isClosed) {
             isClosed = true;
-            try { controller.close(); } catch { /* ignore */ }
+            try {
+              controller.close();
+            } catch {
+              /* ignore */
+            }
           }
         };
 
-        try {
-          // Build claude CLI args — print mode with streaming JSON
-          const args: string[] = [
-            '-p',
-            '--output-format', 'stream-json',
-            '--verbose',
-            '--model', model,
-            '--permission-mode', 'bypassPermissions',
-          ];
+        safeEnqueue(
+          `data: ${JSON.stringify({
+            type: 'system',
+            subtype: 'init',
+            session_id: actualSessionId,
+          })}\n\n`
+        );
 
-          // Resume existing session
-          if (sessionId) {
-            args.push('--resume', sessionId);
+        if (actualCwd) {
+          updateGlobalState(actualCwd, actualSessionId, 'loading', undefined, prompt.slice(0, 50)).catch(() => {});
+        }
+
+        try {
+          const { text, toolCalls } = await consumeStream(
+            result.fullStream as AsyncIterable<import('ai').TextStreamPart<Record<string, never>>>,
+            safeEnqueue,
+            actualSessionId
+          );
+
+          const response = await result.response;
+          const usage = await result.usage;
+
+          if (toolCalls.length > 0) {
+            emitAssistantMessage(text, toolCalls, safeEnqueue);
           }
 
-          // Env vars matching `ollama launch claude --model <model>`
-          const env: Record<string, string> = {
-            ...process.env as Record<string, string>,
-            ANTHROPIC_BASE_URL: 'http://127.0.0.1:11434',
-            ANTHROPIC_API_KEY: 'sk-ant-ollama',
-            ANTHROPIC_AUTH_TOKEN: 'ollama',
-            ANTHROPIC_DEFAULT_SONNET_MODEL: model,
-            ANTHROPIC_DEFAULT_OPUS_MODEL: model,
-            ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
-            CLAUDE_CODE_SUBAGENT_MODEL: model,
-            CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
-            CLAUDECODE: '1',
-          };
+          emitResultMessage(usage.inputTokens || 0, usage.outputTokens || 0, safeEnqueue);
 
-          childProcess = spawn('claude', args, {
-            stdio: ['pipe', 'pipe', 'pipe'],
-            cwd: cwd || undefined,
-            env: env as NodeJS.ProcessEnv,
-          });
+          if (!abortController.signal.aborted) {
+            writeSessionMessages(actualCwd, actualSessionId, response.messages);
+          }
 
-          // Send prompt via stdin, then close
-          childProcess!.stdin?.write(prompt);
-          childProcess!.stdin?.end();
+          if (actualCwd) {
+            updateGlobalState(actualCwd, actualSessionId, 'unread', undefined).catch(() => {});
+          }
 
-          let emittedInit = false;
-
-          const rl = createInterface({ input: childProcess.stdout! });
-
-          rl.on('line', (line) => {
-            if (isClosed) return;
-
-            let event: Record<string, unknown>;
-            try {
-              event = JSON.parse(line);
-            } catch {
-              return;
-            }
-
-            const eventType = event.type as string;
-
-            // Capture session_id from init
-            if (eventType === 'system' && event.subtype === 'init' && event.session_id) {
-              actualSessionId = event.session_id as string;
-              emittedInit = true;
-              if (cwd) {
-                updateGlobalState(cwd, actualSessionId, 'loading', undefined, userMessage).catch(() => {});
-              }
-            }
-
-            // Synthesize init if needed
-            if (!emittedInit && !actualSessionId && (eventType === 'assistant' || eventType === 'stream_event')) {
-              actualSessionId = `ollama-${Date.now()}`;
-              emittedInit = true;
-              safeEnqueue(`data: ${JSON.stringify({
-                type: 'system', subtype: 'init', session_id: actualSessionId,
-              })}\n\n`);
-              if (cwd) {
-                updateGlobalState(cwd, actualSessionId, 'loading', undefined, userMessage).catch(() => {});
-              }
-            }
-
-            // Forward all events as-is
-            safeEnqueue(`data: ${JSON.stringify(event)}\n\n`);
-          });
-
-          // Handle process exit
-          childProcess.on('close', async (code) => {
-            if (cwd && actualSessionId) {
-              await updateGlobalState(cwd, actualSessionId, 'unread', undefined).catch(() => {});
-            }
-
-            if (code !== 0 && stderrBuf.trim()) {
-              // Emit error to frontend
-              safeEnqueue(`data: ${JSON.stringify({
-                type: 'error', error: stderrBuf.trim().slice(0, 500),
-              })}\n\n`);
-            }
-
-            safeEnqueue('data: [DONE]\n\n');
-            safeClose();
-          });
-
-          // Capture stderr
-          let stderrBuf = '';
-          childProcess.stderr?.on('data', (chunk: Buffer) => {
-            stderrBuf += chunk.toString();
-          });
-
-          childProcess.on('error', (err) => {
-            console.error('[Ollama] spawn error:', err.message);
-            safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
-            safeClose();
-          });
+          safeEnqueue('data: [DONE]\n\n');
+          safeClose();
         } catch (error) {
-          safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: String(error) })}\n\n`);
+          if (abortController.signal.aborted) {
+            safeClose();
+            return;
+          }
+
+          console.error('[Ollama] stream error:', error);
+          safeEnqueue(
+            `data: ${JSON.stringify({
+              type: 'error',
+              error: String(error),
+            })}\n\n`
+          );
           safeClose();
         }
       },
       cancel() {
         isClosed = true;
-        if (childProcess) {
-          childProcess.kill('SIGTERM');
-        }
+        abortController.abort();
       },
     });
 
@@ -184,7 +174,8 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     return new Response(JSON.stringify({ error: String(error) }), {
-      status: 500, headers: { 'Content-Type': 'application/json' },
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
     });
   }
 }

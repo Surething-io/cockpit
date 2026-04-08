@@ -50,6 +50,7 @@
     "postinstall": "node bin/postinstall.mjs"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.52",
     "@anthropic-ai/claude-agent-sdk": "^0.2.92",
     "@tanstack/react-virtual": "^3.13.18",
     "@tiptap/extension-link": "^3.19.0",
@@ -69,6 +70,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/xterm": "^6.0.0",
+    "ai": "^6.0.154",
     "ansi_up": "^6.0.6",
     "i18next": "^25.10.9",
     "ioredis": "^5.10.0",

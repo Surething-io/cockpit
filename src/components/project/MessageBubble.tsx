@@ -134,6 +134,26 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     }
     return result;
   }, [message.toolCalls]);
+
+  // Extract and parse thoughts from tool call inputs
+  const thoughts = useMemo(() => {
+    if (!message.toolCalls) return [];
+    const result: Array<{ previous: string; current: string; expect: string; raw: string; toolName: string }> = [];
+    for (const tc of message.toolCalls) {
+      const thought = tc.input?.thought;
+      if (thought && typeof thought === 'string') {
+        // Parse "PREVIOUS: ... → THIS: ... → EXPECT: ..." format
+        const match = thought.match(/PREVIOUS:\s*(.*?)\s*→\s*THIS:\s*(.*?)\s*→\s*EXPECT:\s*(.*)/i);
+        if (match) {
+          result.push({ previous: match[1].trim(), current: match[2].trim(), expect: match[3].trim(), raw: thought, toolName: tc.name });
+        } else {
+          result.push({ previous: '', current: thought, expect: '', raw: thought, toolName: tc.name });
+        }
+      }
+    }
+    return result;
+  }, [message.toolCalls]);
+
   const [mdPreviewFile, setMdPreviewFile] = useState<string | null>(null);
   const [mdFileContent, setMdFileContent] = useState<string | null>(null);
 
@@ -322,6 +342,34 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                     </span>
                   </button>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Thoughts — extracted from tool call inputs, displayed as table */}
+          {thoughts.length > 0 && (
+            <div className={`${message.content || hasImages || lastTodoWrite || mdFiles.length > 0 ? 'mt-2' : ''}`}>
+              <div className="border border-border rounded-lg overflow-hidden bg-secondary/50">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border text-muted-foreground">
+                      <th className="px-2 py-1.5 text-left font-medium w-[60px]">Tool</th>
+                      <th className="px-2 py-1.5 text-left font-medium">Previous</th>
+                      <th className="px-2 py-1.5 text-left font-medium">Action</th>
+                      <th className="px-2 py-1.5 text-left font-medium">Expect</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {thoughts.map((t, i) => (
+                      <tr key={i} className={i < thoughts.length - 1 ? 'border-b border-border/50' : ''}>
+                        <td className="px-2 py-1 text-muted-foreground font-mono">{t.toolName}</td>
+                        <td className="px-2 py-1 text-muted-foreground">{t.previous || '—'}</td>
+                        <td className="px-2 py-1 text-foreground">{t.current}</td>
+                        <td className="px-2 py-1 text-muted-foreground">{t.expect || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

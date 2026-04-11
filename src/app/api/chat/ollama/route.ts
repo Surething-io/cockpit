@@ -4,35 +4,67 @@ import type { ModelMessage } from '@ai-sdk/provider-utils';
 import { updateGlobalState } from '@/lib/global-state';
 import { resolveCommandPrompt } from '@/lib/chat/slashCommands';
 import { createOllamaModel } from './model';
-import { readSessionMessages, writeSessionMessages } from './session';
+import { appendAssistantMessage, appendToolResult, appendUserText, readSessionMessages } from './session';
 import { createTools } from './tools';
-import { consumeStream, emitAssistantMessage, emitResultMessage } from './stream';
+import { consumeStream, emitResultMessage } from './stream';
 import type { AgentContext, ChatRequestBody } from './types';
+import { randomUUID } from 'crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const DEFAULT_MODEL = 'qwen3.5:35b-a3b-coding-nvfp4';
 
-function buildSystemPrompt(todos: AgentContext['todos']): string {
-  let prompt = `You are a vibe coding agent. Your goal is to help the user build and modify software by any means necessary.
 
-You have access to the local filesystem and shell. Use your tools freely.
+function buildSystemPrompt(cwd: string): string {
+  let prompt = `You are a coding agent. You help the user build and modify software using the provided tools.
 
-Guidelines:
-- Read files before you edit them.
-- Use the Edit tool with exact oldString/newString matches.
-- Use Bash to run commands, install dependencies, or verify changes.
-- Use Glob and Grep to explore the codebase.
-- Track your progress with TodoWrite when tasks have multiple steps.
-- Prefer small, working increments over big refactors.
-- If something is unclear, ask the user before making irreversible changes.
+CWD: ${cwd}
 
-When you finish, briefly summarize what you did.`;
+## Workflow
 
-  if (todos.length > 0) {
-    prompt += `\n\nCurrent todos:\n${todos.map(t => `- [${t.status}] ${t.content}`).join('\n')}`;
-  }
+1. Plan: call TodoWrite FIRST to break down the task into steps (all pending, first one in_progress).
+2. Act: execute steps one by one. After completing each step, call TodoWrite to update progress (mark completed, set next in_progress).
+3. Check: after each tool call, assess — did it succeed? Is the overall task done? If not, continue to the next step.
+4. Respond: you MUST always end with a text response to the user. Summarize what was done, what was found, or what remains.
+
+IMPORTANT: never stop in the middle of a task silently. If you cannot continue (error, missing info, blocked), respond to the user explaining why and what is needed.
+
+NEVER repeat a tool call with the same or similar arguments. When a search finds nothing, follow this escalation:
+1. Simplify the pattern (shorter keyword, remove qualifiers, use a single core term)
+2. Broaden the path (search parent directory, or omit path to search entire CWD)
+3. Switch tool (Grep → Glob for filenames, Grep → Bash with find, or Read a likely file directly)
+4. Give up after 3 failed attempts on the same topic — tell the user what you tried and ask for guidance.
+
+## Tools
+
+- Read: read a file by line range.
+- Edit: exact string replacement in an existing file (prefer over Write).
+- Write: create new files or full rewrites only.
+- Bash: run shell commands.
+- Grep: ripgrep search. ALWAYS use Grep (never rg/grep via Bash).
+- Glob: fast file listing by glob pattern.
+- TodoWrite: plan tasks and track progress. ALWAYS call this first.
+
+Every tool has a "thought" parameter — ALWAYS fill it using this format:
+"PREVIOUS: [what the last tool returned and whether it achieved the goal] → THIS: [what I am doing now and why] → EXPECT: [what result I expect]"
+Example: "PREVIOUS: Grep found 3 matches in cache.go → THIS: Read cache.go to see full implementation → EXPECT: understand the caching logic"
+If this is the first tool call, write "PREVIOUS: n/a" for the first part.
+
+## Rules
+
+Tool usage:
+- Read before modify: do NOT edit a file you haven't Read.
+- Absolute paths only: resolve relative paths against CWD.
+
+Accuracy:
+- Verify before retracting: when the user questions you, use tools to verify first, then respond based on evidence. Do NOT blindly agree you were wrong.
+- Honesty over confidence: only state what is backed by tool output. If unsure, say so and state what info is needed or propose a verification plan. Never fabricate data.
+
+## Output
+
+- Be concise. Lead with the action or answer.
+- Only elaborate on decisions, blockers, or milestones.`;
 
   return prompt;
 }
@@ -51,7 +83,7 @@ export async function POST(request: NextRequest) {
     }
 
     const actualCwd = cwd || process.cwd();
-    const actualSessionId = sessionId || `ollama-${Date.now()}`;
+    const actualSessionId = sessionId || randomUUID();
     const actualModel = model || DEFAULT_MODEL;
 
     const context: AgentContext = {
@@ -59,9 +91,13 @@ export async function POST(request: NextRequest) {
       todos: [],
     };
 
-    let messages = readSessionMessages(actualCwd, actualSessionId);
+    const existingMessages = readSessionMessages(actualCwd, actualSessionId);
     const userMessage: ModelMessage = { role: 'user', content: prompt };
-    messages = [...messages, userMessage];
+    const messages = [...existingMessages, userMessage];
+
+    const userUuid = randomUUID();
+    const userTimestamp = new Date().toISOString();
+    appendUserText(actualCwd, actualSessionId, prompt, { uuid: userUuid, timestamp: userTimestamp });
 
     const abortController = new AbortController();
     request.signal.addEventListener('abort', () => abortController.abort());
@@ -71,11 +107,11 @@ export async function POST(request: NextRequest) {
 
     const result = streamText({
       model: ollamaModel,
-      system: buildSystemPrompt(context.todos),
+      system: buildSystemPrompt(actualCwd),
       messages,
       tools,
-      stopWhen: stepCountIs(64),
-      temperature: 0.2,
+      stopWhen: stepCountIs(256),
+      temperature: 0,
       abortSignal: abortController.signal,
     });
 
@@ -117,24 +153,107 @@ export async function POST(request: NextRequest) {
           updateGlobalState(actualCwd, actualSessionId, 'loading', undefined, prompt.slice(0, 50)).catch(() => {});
         }
 
+        const pendingToolCalls = new Map<string, { name: string; input: Record<string, unknown> }>();
+
+        const flushPendingToolCallsAsErrors = (reason: string) => {
+          if (pendingToolCalls.size === 0) return;
+
+          for (const [toolUseId] of pendingToolCalls) {
+            try {
+              appendToolResult(actualCwd, actualSessionId, toolUseId, reason, {
+                uuid: randomUUID(),
+                timestamp: new Date().toISOString(),
+                is_error: true,
+              });
+            } catch {
+              // ignore session write errors
+            }
+
+            try {
+              safeEnqueue(
+                `data: ${JSON.stringify({
+                  type: 'user',
+                  message: {
+                    content: [
+                      {
+                        type: 'tool_result',
+                        tool_use_id: toolUseId,
+                        content: reason,
+                        is_error: true,
+                      },
+                    ],
+                  },
+                })}\n\n`
+              );
+            } catch {
+              // ignore enqueue errors
+            }
+          }
+
+          pendingToolCalls.clear();
+        };
+
         try {
-          const { text, toolCalls } = await consumeStream(
+          const { text } = await consumeStream(
             result.fullStream as AsyncIterable<import('ai').TextStreamPart<Record<string, never>>>,
             safeEnqueue,
-            actualSessionId
+            actualSessionId,
+            {
+              onToolCall: (toolUseId, toolName, input) => {
+                try {
+                  pendingToolCalls.set(toolUseId, { name: toolName, input });
+                  appendAssistantMessage(
+                    actualCwd,
+                    actualSessionId,
+                    [{ type: 'tool_use', id: toolUseId, name: toolName, input }],
+                    { uuid: randomUUID(), timestamp: new Date().toISOString() }
+                  );
+                } catch {
+                  // ignore session write errors
+                }
+              },
+              onToolResult: (toolUseId, content) => {
+                try {
+                  pendingToolCalls.delete(toolUseId);
+                  appendToolResult(actualCwd, actualSessionId, toolUseId, content, {
+                    uuid: randomUUID(),
+                    timestamp: new Date().toISOString(),
+                    is_error: false,
+                  });
+                } catch {
+                  // ignore session write errors
+                }
+              },
+              onTextFlush: (flushedText) => {
+                try {
+                  appendAssistantMessage(
+                    actualCwd,
+                    actualSessionId,
+                    [{ type: 'text', text: flushedText }],
+                    { uuid: randomUUID(), timestamp: new Date().toISOString() }
+                  );
+                } catch {
+                  // ignore session write errors
+                }
+              },
+            }
           );
 
-          const response = await result.response;
           const usage = await result.usage;
-
-          if (toolCalls.length > 0) {
-            emitAssistantMessage(text, toolCalls, safeEnqueue);
-          }
 
           emitResultMessage(usage.inputTokens || 0, usage.outputTokens || 0, safeEnqueue);
 
           if (!abortController.signal.aborted) {
-            writeSessionMessages(actualCwd, actualSessionId, response.messages);
+            appendAssistantMessage(actualCwd, actualSessionId, text ? [{ type: 'text', text }] : [], {
+              uuid: randomUUID(),
+              timestamp: new Date().toISOString(),
+              usage: {
+                input_tokens: usage.inputTokens || 0,
+                output_tokens: usage.outputTokens || 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+              },
+            });
           }
 
           if (actualCwd) {
@@ -145,9 +264,12 @@ export async function POST(request: NextRequest) {
           safeClose();
         } catch (error) {
           if (abortController.signal.aborted) {
+            flushPendingToolCallsAsErrors('Tool call cancelled (request aborted).');
             safeClose();
             return;
           }
+
+          flushPendingToolCallsAsErrors('Tool call failed (stream error).');
 
           console.error('[Ollama] stream error:', error);
           safeEnqueue(

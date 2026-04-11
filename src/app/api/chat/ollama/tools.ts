@@ -1,21 +1,40 @@
 import { tool, zodSchema } from 'ai';
 import { z } from 'zod';
 import { readFileSync, writeFileSync } from 'fs';
-// @ts-expect-error globSync is available in Node 22 but @types/node@20 lacks typings
-import { globSync } from 'fs';
-import { resolve } from 'path';
-import { execSync } from 'child_process';
+import { isAbsolute, join } from 'path';
+import { execFileSync, execSync } from 'child_process';
+import fg from 'fast-glob';
 import type { AgentContext } from './types';
 
+// Shared thought field — forces the model to reflect and reason before every tool call.
+const thoughtField = z.string().describe('PREVIOUS result assessment → THIS action reason → EXPECTED outcome');
+
+// Appended to every tool description so the model sees the format requirement in the main description text.
+const THOUGHT_HINT = ' The "thought" param MUST follow this format: "PREVIOUS: [last result] → THIS: [action + why] → EXPECT: [expected result]".';
+
 export function createTools(context: AgentContext) {
+  const RG_PATH = join(process.cwd(), 'node_modules', '@vscode', 'ripgrep', 'bin', 'rg');
+
   return {
     Read: tool({
-      description: 'Read the contents of a file at the given path.',
-      inputSchema: zodSchema(z.object({ path: z.string() })),
-      execute: async ({ path }: { path: string }) => {
+      description:
+        'Read a file. Params: { thought, file_path (absolute), offset (1-based line), limit (lines) }. Returns the selected lines as text.' + THOUGHT_HINT,
+      inputSchema: zodSchema(
+        z.object({
+          thought: thoughtField,
+          file_path: z.string(),
+          offset: z.number().int().min(1).default(1),
+          limit: z.number().int().min(1).max(4000).default(600),
+        })
+      ),
+      execute: async ({ file_path, offset, limit }: { thought: string; file_path: string; offset: number; limit: number }) => {
         try {
-          const content = readFileSync(resolve(context.cwd, path), 'utf-8');
-          return content;
+          if (!isAbsolute(file_path)) return 'Error: file_path must be an absolute path.';
+          const content = readFileSync(file_path, 'utf-8');
+          const lines = content.split('\n');
+          const start = Math.max(0, offset - 1);
+          const end = Math.min(lines.length, start + limit);
+          return lines.slice(start, end).join('\n');
         } catch (err) {
           return `Error reading file: ${(err as Error).message}`;
         }
@@ -23,12 +42,16 @@ export function createTools(context: AgentContext) {
     }),
 
     Write: tool({
-      description: 'Write content to a file at the given path. Creates or overwrites.',
-      inputSchema: zodSchema(z.object({ path: z.string(), content: z.string() })),
-      execute: async ({ path, content }: { path: string; content: string }) => {
+      description:
+        'Write a file to disk. Params: { thought, file_path (absolute), content }. Creates or overwrites. ' +
+        'Prefer Edit for modifying existing files; use Write for new files or full rewrites. ' +
+        'Do NOT create documentation (*.md/README) unless explicitly requested.' + THOUGHT_HINT,
+      inputSchema: zodSchema(z.object({ thought: thoughtField, file_path: z.string(), content: z.string() })),
+      execute: async ({ file_path, content }: { thought: string; file_path: string; content: string }) => {
         try {
-          writeFileSync(resolve(context.cwd, path), content, 'utf-8');
-          return `File written: ${path}`;
+          if (!isAbsolute(file_path)) return 'Error: file_path must be an absolute path.';
+          writeFileSync(file_path, content, 'utf-8');
+          return `File written: ${file_path}`;
         } catch (err) {
           return `Error writing file: ${(err as Error).message}`;
         }
@@ -36,18 +59,39 @@ export function createTools(context: AgentContext) {
     }),
 
     Edit: tool({
-      description: 'Make an exact edit to a file. oldString must match exactly.',
-      inputSchema: zodSchema(z.object({ path: z.string(), oldString: z.string(), newString: z.string() })),
-      execute: async ({ path, oldString, newString }: { path: string; oldString: string; newString: string }) => {
+      description:
+        'Edit a file by exact string replacement. Params: { thought, replace_all, file_path (absolute), old_string, new_string }. ' +
+        'If replace_all is false, replaces the first occurrence. old_string must match exactly.' + THOUGHT_HINT,
+      inputSchema: zodSchema(
+        z.object({
+          thought: thoughtField,
+          replace_all: z.boolean().default(false),
+          file_path: z.string(),
+          old_string: z.string(),
+          new_string: z.string(),
+        })
+      ),
+      execute: async ({
+        replace_all,
+        file_path,
+        old_string,
+        new_string,
+      }: {
+        thought: string;
+        replace_all: boolean;
+        file_path: string;
+        old_string: string;
+        new_string: string;
+      }) => {
         try {
-          const fullPath = resolve(context.cwd, path);
-          const content = readFileSync(fullPath, 'utf-8');
-          if (!content.includes(oldString)) {
-            return `Error: oldString not found in ${path}. The file may have changed.`;
+          if (!isAbsolute(file_path)) return 'Error: file_path must be an absolute path.';
+          const content = readFileSync(file_path, 'utf-8');
+          if (!content.includes(old_string)) {
+            return `Error: old_string not found in ${file_path}. The file may have changed.`;
           }
-          const updated = content.replace(oldString, newString);
-          writeFileSync(fullPath, updated, 'utf-8');
-          return `File edited: ${path}`;
+          const updated = replace_all ? content.split(old_string).join(new_string) : content.replace(old_string, new_string);
+          writeFileSync(file_path, updated, 'utf-8');
+          return `File edited: ${file_path}`;
         } catch (err) {
           return `Error editing file: ${(err as Error).message}`;
         }
@@ -55,32 +99,48 @@ export function createTools(context: AgentContext) {
     }),
 
     Bash: tool({
-      description: 'Run a bash command in the workspace root. Timeout is 300 seconds.',
-      inputSchema: zodSchema(z.object({ command: z.string() })),
-      execute: async ({ command }: { command: string }) => {
+      description:
+        'Run a shell command. Params: { thought, command, description?, timeout? (ms) }. Returns stdout/stderr (truncated).' + THOUGHT_HINT,
+      inputSchema: zodSchema(
+        z.object({
+          thought: thoughtField,
+          command: z.string(),
+          description: z.string().optional(),
+          timeout: z.number().int().min(1).max(600000).optional(),
+        })
+      ),
+      execute: async ({ command, timeout }: { thought: string; command: string; description?: string; timeout?: number }) => {
         try {
           const output = execSync(command, {
             cwd: context.cwd,
             encoding: 'utf-8',
-            timeout: 300000,
+            timeout: timeout ?? 60000,
             env: { ...process.env, FORCE_COLOR: '0', CI: '1' },
           });
-          return output.slice(0, 8000);
+          return output.slice(0, 16000);
         } catch (err) {
           const message = (err as Error).message;
           const stderr = (err as { stderr?: Buffer }).stderr?.toString() || '';
-          return `Error: ${message}\n${stderr}`.slice(0, 8000);
+          return `Error: ${message}\n${stderr}`.slice(0, 16000);
         }
       },
     }),
 
     Glob: tool({
-      description: 'Find files matching a glob pattern. Returns up to 50 matches.',
-      inputSchema: zodSchema(z.object({ pattern: z.string() })),
-      execute: async ({ pattern }: { pattern: string }) => {
+      description:
+        'Find files matching a glob pattern (fast-glob style). Params: { thought, pattern }. Runs relative to cwd and returns up to 100 paths (newline-delimited). Supports **, {}, [], *, ?.' + THOUGHT_HINT,
+      inputSchema: zodSchema(z.object({ thought: thoughtField, pattern: z.string() })),
+      execute: async ({ pattern }: { thought: string; pattern: string }) => {
         try {
-          const matches = globSync(pattern, { cwd: context.cwd, absolute: false }) as string[];
-          return matches.slice(0, 50).join('\n') || '(no matches)';
+          const matches = await fg(pattern, {
+            cwd: context.cwd,
+            onlyFiles: true,
+            unique: true,
+            dot: true,
+            followSymbolicLinks: true,
+            ignore: ['**/node_modules/**', '**/.git/**'],
+          });
+          return matches.slice(0, 100).join('\n') || '(no matches)';
         } catch (err) {
           return `Error: ${(err as Error).message}`;
         }
@@ -88,19 +148,70 @@ export function createTools(context: AgentContext) {
     }),
 
     Grep: tool({
-      description: 'Search for a regex pattern using ripgrep. Returns up to 50 matches. If path omitted, searches workspace.',
-      inputSchema: zodSchema(z.object({ pattern: z.string(), path: z.string().optional() })),
-      execute: async ({ pattern, path }: { pattern: string; path?: string }) => {
+      description:
+        'Search for a pattern using ripgrep. Params: { thought, pattern, path (absolute, optional), ignore_case (default true), output_mode, "-n" }. ' +
+        'ALWAYS use Grep for searching (never run rg/grep via Bash). ' +
+        'output_mode: "content" returns matching lines; "files_with_matches" returns file paths; "count" returns counts.' + THOUGHT_HINT,
+      inputSchema: zodSchema(
+        z.object({
+          thought: thoughtField,
+          pattern: z.string(),
+          path: z.string().optional(),
+          ignore_case: z.boolean().default(true),
+          output_mode: z.enum(['content', 'files_with_matches', 'count']).default('content'),
+          '-n': z.boolean().optional(),
+        })
+      ),
+      execute: async ({
+        pattern,
+        path,
+        ignore_case,
+        output_mode,
+        '-n': showLineNumbers,
+      }: {
+        thought: string;
+        pattern: string;
+        path?: string;
+        ignore_case: boolean;
+        output_mode: 'content' | 'files_with_matches' | 'count';
+        '-n'?: boolean;
+      }) => {
         try {
-          const target = path ? resolve(context.cwd, path) : context.cwd;
-          const output = execSync(`rg -n --max-count 50 -- ${JSON.stringify(pattern)} ${JSON.stringify(target)}`, {
+          if (path && !isAbsolute(path)) return 'Error: path must be an absolute path.';
+          const target = path || context.cwd;
+          const args: string[] = [
+            '--no-heading',
+            '--color',
+            'never',
+            '--max-columns',
+            '500',
+          ];
+
+          if (ignore_case) {
+            args.push('--ignore-case');
+          }
+
+          if (output_mode === 'files_with_matches') {
+            args.push('--files-with-matches');
+            args.push('--max-count', '100');
+          } else if (output_mode === 'count') {
+            args.push('--count');
+          } else if (showLineNumbers ?? true) {
+            args.push('--line-number');
+            args.push('--max-count', '100');
+          }
+
+          args.push('--', pattern, target);
+
+          const output = execFileSync(RG_PATH, args, {
             encoding: 'utf-8',
             timeout: 15000,
             env: { ...process.env, FORCE_COLOR: '0' },
           });
           return output.slice(0, 8000);
         } catch (err) {
-          if ((err as { status?: number }).status === 1) {
+          const status = (err as { status?: number }).status;
+          if (status === 1) {
             return '(no matches)';
           }
           return `Error: ${(err as Error).message}`;
@@ -109,15 +220,28 @@ export function createTools(context: AgentContext) {
     }),
 
     TodoWrite: tool({
-      description: 'Update the todo list. Replaces the entire current list.',
-      inputSchema: zodSchema(z.object({
-        todos: z.array(z.object({
-          id: z.string(),
-          content: z.string(),
-          status: z.enum(['pending', 'in_progress', 'done']),
-        })),
-      })),
-      execute: async ({ todos }: { todos: Array<{ id: string; content: string; status: 'pending' | 'in_progress' | 'done' }> }) => {
+      description:
+        'Plan and track progress. Use this as your FIRST tool call to break down the task into steps, then update after each step completes. ' +
+        'Params: { thought, todos: [{ content, status, activeForm? }] }. Replaces the entire list. ' +
+        'Statuses: pending | in_progress | completed. Keep at most one in_progress.' + THOUGHT_HINT,
+      inputSchema: zodSchema(
+        z.object({
+          thought: thoughtField,
+          todos: z.array(
+            z.object({
+              content: z.string(),
+              status: z.enum(['pending', 'in_progress', 'completed']),
+              activeForm: z.string().optional(),
+            })
+          ),
+        })
+      ),
+      execute: async ({
+        todos,
+      }: {
+        thought: string;
+        todos: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string }>;
+      }) => {
         context.todos = todos;
         const summary = todos.map(t => `- [${t.status}] ${t.content}`).join('\n');
         return `Todo list updated:\n${summary}`;

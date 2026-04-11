@@ -5,7 +5,12 @@ export type SafeEnqueue = (data: string) => void;
 export async function consumeStream(
   fullStream: AsyncIterable<TextStreamPart<Record<string, never>>>,
   safeEnqueue: SafeEnqueue,
-  _sessionId: string
+  _sessionId: string,
+  opts?: {
+    onToolResult?: (toolUseId: string, content: string) => void;
+    onToolCall?: (toolUseId: string, toolName: string, input: Record<string, unknown>) => void;
+    onTextFlush?: (text: string) => void;
+  }
 ): Promise<{
   text: string;
   toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }>;
@@ -32,20 +37,37 @@ export async function consumeStream(
       }
 
       case 'tool-call': {
+        // Flush accumulated text before persisting the tool call (preserves chronological order)
+        if (text) {
+          opts?.onTextFlush?.(text);
+          text = '';
+        }
+        const input = (part.input || {}) as Record<string, unknown>;
+        opts?.onToolCall?.(part.toolCallId, part.toolName, input);
+        safeEnqueue(
+          `data: ${JSON.stringify({
+            type: 'assistant',
+            message: {
+              content: [{ type: 'tool_use', id: part.toolCallId, name: part.toolName, input }],
+            },
+          })}\n\n`
+        );
         pendingToolCalls.set(part.toolCallId, {
           id: part.toolCallId,
           name: part.toolName,
-          args: JSON.stringify(part.input),
+          args: JSON.stringify(input),
         });
         break;
       }
 
       case 'tool-result': {
+        const content = String(part.output);
+        opts?.onToolResult?.(part.toolCallId, content);
         safeEnqueue(
           `data: ${JSON.stringify({
             type: 'user',
             message: {
-              content: [{ tool_use_id: part.toolCallId, content: String(part.output) }],
+              content: [{ type: 'tool_result', tool_use_id: part.toolCallId, content, is_error: false }],
             },
           })}\n\n`
         );

@@ -189,6 +189,24 @@ export function getClaudeSessionPath(cwd: string, sessionId: string): string {
   return join(getClaudeProjectDir(cwd), `${sessionId}.jsonl`);
 }
 
+// ============================================
+// Ollama Session Paths (~/.cockpit/ollama-sessions/<encoded-cwd>/... )
+// ============================================
+
+/**
+ * Get the Ollama sessions directory for a given cwd
+ */
+export function getOllamaSessionsDir(cwd: string): string {
+  return join(COCKPIT_DIR, 'ollama-sessions', encodePath(cwd));
+}
+
+/**
+ * Get the Ollama session file path for a given cwd
+ */
+export function getOllamaSessionPath(cwd: string, sessionId: string): string {
+  return join(getOllamaSessionsDir(cwd), `${sessionId}.jsonl`);
+}
+
 /**
  * Find a Codex session file by thread_id.
  * Codex stores sessions at ~/.codex/sessions/YYYY/MM/DD/rollout-<timestamp>-<thread_id>.jsonl

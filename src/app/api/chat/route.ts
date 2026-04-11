@@ -9,15 +9,16 @@ interface ImageData {
   data: string;
 }
 
-interface ContentBlock {
-  type: 'text' | 'image';
-  text?: string;
-  source?: {
-    type: 'base64';
-    media_type: string;
-    data: string;
-  };
-}
+type ContentBlock =
+  | { type: 'text'; text: string }
+  | {
+      type: 'image';
+      source: {
+        type: 'base64';
+        media_type: ImageData['media_type'];
+        data: string;
+      };
+    };
 
 export async function POST(request: NextRequest) {
   try {

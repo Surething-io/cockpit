@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import * as fs from 'fs';
 import * as readline from 'readline';
-import { getClaudeSessionPath, findCodexSessionPath, findKimiSessionPath } from '@/lib/paths';
+import { getClaudeSessionPath, findCodexSessionPath, findKimiSessionPath, getOllamaSessionPath } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -90,9 +90,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Build the full session file path — try Claude first, then Codex, then Kimi
+    // Build the full session file path — try Claude first, then Codex, then Kimi, then Ollama
     let sessionPath = getClaudeSessionPath(cwd, sessionId);
-    let engine: 'claude' | 'codex' | 'kimi' = 'claude';
+    let engine: 'claude' | 'codex' | 'kimi' | 'ollama' = 'claude';
 
     if (!fs.existsSync(sessionPath)) {
       const codexPath = findCodexSessionPath(sessionId);
@@ -105,10 +105,16 @@ export async function POST(request: NextRequest) {
           sessionPath = kimiPath;
           engine = 'kimi';
         } else {
-          return new Response(JSON.stringify({ error: 'Session not found', messages: [] }), {
-            status: 404,
-            headers: { 'Content-Type': 'application/json' },
-          });
+          const ollamaPath = getOllamaSessionPath(cwd, sessionId);
+          if (fs.existsSync(ollamaPath)) {
+            sessionPath = ollamaPath;
+            engine = 'ollama';
+          } else {
+            return new Response(JSON.stringify({ error: 'Session not found', messages: [] }), {
+              status: 404,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
         }
       }
     }
@@ -129,7 +135,14 @@ export async function POST(request: NextRequest) {
       ? await parseCodexTranscriptFile(sessionPath)
       : engine === 'kimi'
         ? await parseKimiTranscriptFile(sessionPath)
-        : await parseTranscriptFile(sessionPath, limit, beforeTurnIndex);
+        : engine === 'ollama'
+          ? await (async () => {
+              const r = await parseTranscriptFile(sessionPath, limit, beforeTurnIndex);
+              // Backward compatibility: older Ollama sessions were stored as AI SDK ModelMessage JSONL
+              if (r.messages.length === 0) return await parseOllamaTranscriptFile(sessionPath);
+              return r;
+            })()
+          : await parseTranscriptFile(sessionPath, limit, beforeTurnIndex);
 
     const { messages, title, usage } = parseResult;
     const totalTurns = 'totalTurns' in parseResult ? parseResult.totalTurns : 0;
@@ -673,6 +686,129 @@ async function parseKimiTranscriptFile(
       }
     }
   }
+
+  return { messages, title };
+}
+
+// ============================================
+// Ollama session transcript parser
+// ============================================
+// Format: AI SDK ModelMessage JSONL
+// { role: 'user'|'assistant'|'tool', content: string | ContentPart[] }
+
+async function parseOllamaTranscriptFile(
+  filePath: string
+): Promise<{ messages: ChatMessage[]; title: string; usage?: TokenUsage }> {
+  const fileStream = fs.createReadStream(filePath);
+  const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+
+  let title = 'Untitled Session';
+  let msgCounter = 0;
+
+  // First pass: collect all lines and tool results
+  const rawLines: string[] = [];
+  const toolResults = new Map<string, string>();
+
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    rawLines.push(line);
+    try {
+      const entry = JSON.parse(line) as Record<string, unknown>;
+      if (entry.role === 'tool' && Array.isArray(entry.content)) {
+        for (const part of entry.content as Array<{ type?: string; toolCallId?: string; result?: unknown }>) {
+          if (part.type === 'tool-result' && part.toolCallId) {
+            toolResults.set(part.toolCallId, String(part.result ?? ''));
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  const messages: ChatMessage[] = [];
+  let currentAssistant: ChatMessage | null = null;
+
+  const flushAssistant = () => {
+    if (currentAssistant) {
+      messages.push(currentAssistant);
+      currentAssistant = null;
+    }
+  };
+
+  for (const line of rawLines) {
+    try {
+      const entry = JSON.parse(line) as Record<string, unknown>;
+
+      if (entry.role === 'user') {
+        flushAssistant();
+        let text = '';
+        if (typeof entry.content === 'string') {
+          text = entry.content;
+        } else if (Array.isArray(entry.content)) {
+          text = (entry.content as Array<{ type?: string; text?: string }>)
+            .filter(p => p.type === 'text')
+            .map(p => p.text || '')
+            .join('\n');
+        }
+        if (title === 'Untitled Session' && text) {
+          title = text.slice(0, 80);
+        }
+        messages.push({
+          id: `ollama-user-${msgCounter++}`,
+          role: 'user',
+          content: text,
+        });
+      } else if (entry.role === 'assistant') {
+        let text = '';
+        const newToolCalls: NonNullable<ChatMessage['toolCalls']> = [];
+
+        if (typeof entry.content === 'string') {
+          text = entry.content;
+        } else if (Array.isArray(entry.content)) {
+          for (const part of entry.content as Array<Record<string, unknown>>) {
+            if (part.type === 'text' && typeof part.text === 'string') {
+              text += (text ? '\n' : '') + part.text;
+            } else if (part.type === 'tool-call') {
+              const tcId = String(part.toolCallId || '');
+              const tcName = String(part.toolName || '');
+              let input: Record<string, unknown> = {};
+              try {
+                if (typeof part.args === 'string') {
+                  input = JSON.parse(part.args);
+                } else if (typeof part.args === 'object' && part.args !== null) {
+                  input = part.args as Record<string, unknown>;
+                }
+              } catch { /* ignore */ }
+              newToolCalls.push({
+                id: tcId,
+                name: tcName,
+                input,
+                result: toolResults.get(tcId),
+                isLoading: false,
+              });
+            }
+          }
+        }
+
+        if (!currentAssistant) {
+          currentAssistant = {
+            id: `ollama-assistant-${msgCounter++}`,
+            role: 'assistant',
+            content: text,
+            toolCalls: [],
+          };
+        } else {
+          currentAssistant.content += (currentAssistant.content && text ? '\n' : '') + text;
+        }
+
+        if (newToolCalls.length > 0) {
+          currentAssistant.toolCalls = currentAssistant.toolCalls || [];
+          currentAssistant.toolCalls.push(...newToolCalls);
+        }
+      }
+    } catch { /* ignore parse errors */ }
+  }
+
+  flushAssistant();
 
   return { messages, title };
 }

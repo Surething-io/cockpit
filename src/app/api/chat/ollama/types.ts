@@ -7,9 +7,9 @@ export interface ChatRequestBody {
 }
 
 export interface TodoItem {
-  id: string;
   content: string;
-  status: 'pending' | 'in_progress' | 'done';
+  status: 'pending' | 'in_progress' | 'completed';
+  activeForm?: string;
 }
 
 export interface AgentContext {

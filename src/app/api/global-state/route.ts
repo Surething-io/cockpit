@@ -35,7 +35,7 @@ export async function GET() {
   const sessionsWithLastMessage = await Promise.all(
     recentSessions.map(async (session) => {
       const lastUserMessage = await getLastUserMessage(session.cwd, session.sessionId);
-      return { ...session, lastUserMessage };
+      return { ...session, lastUserMessage: lastUserMessage ?? session.lastUserMessage };
     })
   );
 

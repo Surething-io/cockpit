@@ -9,6 +9,7 @@ interface SessionInfo {
   modifiedAt: string;
   firstMessages: string[];
   lastMessages: string[];
+  engine?: 'claude' | 'ollama' | 'codex' | 'kimi';
 }
 
 interface ProjectInfo {
@@ -336,10 +337,22 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
                             onClick={() => handleSessionClick(project.fullPath, session.path)}
                             className="p-3 bg-secondary rounded border border-border hover:border-brand hover:shadow-md cursor-pointer transition-all"
                           >
-                            {/* Session Title */}
-                            <h4 className="text-xs font-medium text-foreground mb-1 truncate" title={session.title}>
-                              {session.title}
-                            </h4>
+                            {/* Session Title + Engine Badge */}
+                            <div className="flex items-center gap-1.5 mb-1">
+                              {session.engine && session.engine !== 'claude' && (
+                                <span className={`shrink-0 px-1 py-0.5 text-[10px] leading-none font-medium rounded ${
+                                  session.engine === 'ollama' ? 'bg-blue-500/15 text-blue-11' :
+                                  session.engine === 'codex' ? 'bg-green-500/15 text-green-11' :
+                                  session.engine === 'kimi' ? 'bg-purple-500/15 text-purple-11' :
+                                  'bg-muted text-muted-foreground'
+                                }`}>
+                                  {session.engine}
+                                </span>
+                              )}
+                              <h4 className="text-xs font-medium text-foreground truncate" title={session.title}>
+                                {session.title}
+                              </h4>
+                            </div>
 
                             {/* Session Time */}
                             <div className="text-xs text-muted-foreground mb-2">

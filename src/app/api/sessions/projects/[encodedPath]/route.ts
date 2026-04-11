@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
-import { CLAUDE_PROJECTS_DIR } from '@/lib/paths';
+import { CLAUDE_PROJECTS_DIR, COCKPIT_DIR, COCKPIT_PROJECTS_DIR, findCodexSessionPath, findKimiSessionPath } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,6 +13,7 @@ interface SessionInfo {
   modifiedAt: string;
   firstMessages: string[];
   lastMessages: string[];
+  engine?: 'claude' | 'ollama' | 'codex' | 'kimi';
 }
 
 interface TranscriptLine {
@@ -144,6 +145,105 @@ function getFileModifiedTime(filePath: string): Date {
   return stats.mtime;
 }
 
+// Collect .jsonl session files from a directory (exclude agent- subprocess files)
+function collectSessionFiles(dir: string, engine?: SessionInfo['engine']): Array<{ name: string; path: string; modifiedAt: Date; engine?: SessionInfo['engine'] }> {
+  if (!fs.existsSync(dir)) return [];
+  try {
+    return fs.readdirSync(dir)
+      .filter(file => file.endsWith('.jsonl') && !file.startsWith('agent-'))
+      .map(file => ({
+        name: file,
+        path: path.join(dir, file),
+        modifiedAt: getFileModifiedTime(path.join(dir, file)),
+        engine,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+// Read cockpit session.json to find codex/kimi session IDs
+function getCodexKimiSessionIds(encodedPath: string): Array<{ sessionId: string; engine: 'codex' | 'kimi' }> {
+  try {
+    const sessionJsonPath = path.join(COCKPIT_PROJECTS_DIR, encodedPath, 'session.json');
+    if (!fs.existsSync(sessionJsonPath)) return [];
+    const content = fs.readFileSync(sessionJsonPath, 'utf-8');
+    const state = JSON.parse(content) as {
+      sessions?: string[];
+      engines?: Record<string, string>;
+    };
+    if (!state.sessions || !state.engines) return [];
+
+    const results: Array<{ sessionId: string; engine: 'codex' | 'kimi' }> = [];
+    for (const sessionId of state.sessions) {
+      const engine = state.engines[sessionId];
+      if (engine === 'codex' || engine === 'kimi') {
+        results.push({ sessionId, engine });
+      }
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+// Parse a Codex session file for title and user messages
+async function parseCodexSessionFile(filePath: string): Promise<{ title: string; userMessages: string[] }> {
+  const fileStream = fs.createReadStream(filePath);
+  const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+
+  const userMessages: string[] = [];
+
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line) as { type?: string; payload?: { type?: string; role?: string; content?: Array<{ type?: string; text?: string }> } };
+      if (entry.type !== 'response_item') continue;
+      const payload = entry.payload;
+      if (!payload || payload.type !== 'message' || payload.role !== 'user') continue;
+
+      const text = payload.content
+        ?.filter(c => c.type === 'input_text' && c.text)
+        .map(c => c.text!)
+        .join('') || '';
+
+      // Skip system/developer messages
+      if (!text || text.startsWith('<') || text.startsWith('#')) continue;
+      userMessages.push(text);
+    } catch { /* ignore */ }
+  }
+
+  return { title: '', userMessages };
+}
+
+// Parse a Kimi session file for title and user messages
+async function parseKimiSessionFile(filePath: string): Promise<{ title: string; userMessages: string[] }> {
+  const fileStream = fs.createReadStream(filePath);
+  const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+
+  const userMessages: string[] = [];
+
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line) as { role?: string; content?: string | Array<{ type?: string; text?: string }> };
+      if (entry.role !== 'user') continue;
+
+      const text = typeof entry.content === 'string'
+        ? entry.content
+        : Array.isArray(entry.content)
+          ? entry.content.filter(c => (c.type === 'input_text' || c.type === 'text') && c.text).map(c => c.text!).join('')
+          : '';
+
+      // Skip system-injected messages
+      if (!text || text.startsWith('<system') || text.startsWith('<environment') || text.startsWith('# AGENTS.md') || text.startsWith('<permissions')) continue;
+      userMessages.push(text);
+    } catch { /* ignore */ }
+  }
+
+  return { title: '', userMessages };
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ encodedPath: string }> }
@@ -158,29 +258,29 @@ export async function GET(
       });
     }
 
-    const projectPath = path.join(CLAUDE_PROJECTS_DIR, encodedPath);
+    // Collect session files from all engine directories
+    const claudeDir = path.join(CLAUDE_PROJECTS_DIR, encodedPath);
+    const ollamaDir = path.join(COCKPIT_DIR, 'ollama-sessions', encodedPath);
 
-    // Check if the directory exists
-    if (!fs.existsSync(projectPath)) {
-      return new Response(JSON.stringify({ error: 'Project not found' }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
+    const allSessionFiles = [
+      ...collectSessionFiles(claudeDir, 'claude'),
+      ...collectSessionFiles(ollamaDir, 'ollama'),
+    ];
 
-    // Read all .jsonl files (exclude subprocess files starting with agent-)
-    const sessionFiles = fs.readdirSync(projectPath)
-      .filter(file => file.endsWith('.jsonl') && !file.startsWith('agent-'))
-      .map(file => ({
-        name: file,
-        path: path.join(projectPath, file),
-        modifiedAt: getFileModifiedTime(path.join(projectPath, file)),
-      }))
+    // Deduplicate by filename (same sessionId could theoretically appear in both)
+    const seen = new Set<string>();
+    const sessionFiles = allSessionFiles
+      .filter(f => {
+        if (seen.has(f.name)) return false;
+        seen.add(f.name);
+        return true;
+      })
       // Sort by modification time descending
       .sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime());
 
     const sessions: SessionInfo[] = [];
 
+    // Parse Claude/Ollama session files (both use Claude-style transcript format)
     for (const sessionFile of sessionFiles) {
       try {
         const { title, userMessages } = await parseSessionFile(sessionFile.path);
@@ -208,12 +308,67 @@ export async function GET(
           modifiedAt: sessionFile.modifiedAt.toISOString(),
           firstMessages,
           lastMessages,
+          engine: sessionFile.engine,
         });
       } catch (error) {
         console.error(`Error parsing session file ${sessionFile.path}:`, error);
         // Skip files that fail to parse
       }
     }
+
+    // Parse Codex/Kimi sessions (resolved via cockpit session.json)
+    const engineSessions = getCodexKimiSessionIds(encodedPath);
+    for (const { sessionId, engine } of engineSessions) {
+      // Skip if already found (e.g. session was also saved as Claude format)
+      if (seen.has(`${sessionId}.jsonl`)) continue;
+
+      try {
+        let filePath: string | null = null;
+        let parseResult: { title: string; userMessages: string[] } | null = null;
+
+        if (engine === 'codex') {
+          filePath = findCodexSessionPath(sessionId);
+          if (filePath && fs.existsSync(filePath)) {
+            parseResult = await parseCodexSessionFile(filePath);
+          }
+        } else if (engine === 'kimi') {
+          filePath = findKimiSessionPath(sessionId);
+          if (filePath && fs.existsSync(filePath)) {
+            parseResult = await parseKimiSessionFile(filePath);
+          }
+        }
+
+        if (!filePath || !parseResult) continue;
+        if (parseResult.userMessages.length === 0) continue;
+
+        const modifiedAt = getFileModifiedTime(filePath);
+        const { userMessages } = parseResult;
+
+        let firstMessages: string[] = [];
+        let lastMessages: string[] = [];
+
+        if (userMessages.length <= 10) {
+          firstMessages = userMessages.map(m => truncateMessage(m));
+        } else {
+          firstMessages = userMessages.slice(0, 5).map(m => truncateMessage(m));
+          lastMessages = userMessages.slice(-5).map(m => truncateMessage(m));
+        }
+
+        sessions.push({
+          path: filePath,
+          title: generateTitle('', userMessages),
+          modifiedAt: modifiedAt.toISOString(),
+          firstMessages,
+          lastMessages,
+          engine,
+        });
+      } catch (error) {
+        console.error(`Error parsing ${engine} session ${sessionId}:`, error);
+      }
+    }
+
+    // Re-sort all sessions by modification time descending
+    sessions.sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
 
     return new Response(JSON.stringify(sessions), {
       status: 200,

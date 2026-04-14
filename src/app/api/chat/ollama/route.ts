@@ -17,7 +17,7 @@ const DEFAULT_MODEL = 'qwen3.5:35b-a3b-coding-nvfp4';
 
 
 function buildSystemPrompt(cwd: string): string {
-  let prompt = `You are a coding agent. You help the user build and modify software using the provided tools.
+  const prompt = `You are a coding agent. You help the user build and modify software using the provided tools.
 
 CWD: ${cwd}
 

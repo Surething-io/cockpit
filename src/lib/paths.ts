@@ -31,6 +31,8 @@ export function notifyReviewChange(): void {
 }
 export const CLAUDE_DIR = join(HOME_DIR, '.claude');
 export const CLAUDE_PROJECTS_DIR = join(CLAUDE_DIR, 'projects');
+export const CLAUDE2_DIR = join(HOME_DIR, '.claude2');
+export const CLAUDE2_PROJECTS_DIR = join(CLAUDE2_DIR, 'projects');
 
 // ============================================
 // Path Encoding
@@ -187,6 +189,24 @@ export function getClaudeProjectDir(cwd: string): string {
  */
 export function getClaudeSessionPath(cwd: string, sessionId: string): string {
   return join(getClaudeProjectDir(cwd), `${sessionId}.jsonl`);
+}
+
+// ============================================
+// Claude2 Project Paths (~/.claude2/projects/<encoded-cwd>/...)
+// ============================================
+
+/**
+ * Get the Claude2 project directory for a given cwd
+ */
+export function getClaude2ProjectDir(cwd: string): string {
+  return join(CLAUDE2_PROJECTS_DIR, encodePath(cwd));
+}
+
+/**
+ * Get the session file path in Claude2's projects directory
+ */
+export function getClaude2SessionPath(cwd: string, sessionId: string): string {
+  return join(getClaude2ProjectDir(cwd), `${sessionId}.jsonl`);
 }
 
 // ============================================

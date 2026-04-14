@@ -7,7 +7,7 @@ import { usePageVisible } from '@/hooks/usePageVisible';
 // Types
 // ============================================
 
-export type ChatEngine = 'claude' | 'codex' | 'kimi' | 'ollama';
+export type ChatEngine = 'claude' | 'claude2' | 'codex' | 'kimi' | 'ollama';
 
 export interface TabInfo {
   id: string;
@@ -229,6 +229,11 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     addTab(initialCwd);
   }, [initialCwd, addTab]);
 
+  // Create new Claude 2 tab
+  const handleNewClaude2Tab = useCallback(() => {
+    addTab(initialCwd, undefined, 'New Claude 2 Chat', 'claude2');
+  }, [initialCwd, addTab]);
+
   // Create new Codex tab
   const handleNewCodexTab = useCallback(() => {
     addTab(initialCwd, undefined, 'New Codex Chat', 'codex');
@@ -378,6 +383,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     switchTab,
     handleSelectSession,
     handleNewTab,
+    handleNewClaude2Tab,
     handleNewCodexTab,
     handleNewKimiTab,
     handleNewOllamaTab,

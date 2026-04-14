@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
-import { CLAUDE_PROJECTS_DIR, COCKPIT_DIR, COCKPIT_PROJECTS_DIR, findCodexSessionPath, findKimiSessionPath } from '@/lib/paths';
+import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, COCKPIT_DIR, COCKPIT_PROJECTS_DIR, findCodexSessionPath, findKimiSessionPath } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,7 @@ interface SessionInfo {
   modifiedAt: string;
   firstMessages: string[];
   lastMessages: string[];
-  engine?: 'claude' | 'ollama' | 'codex' | 'kimi';
+  engine?: 'claude' | 'claude2' | 'ollama' | 'codex' | 'kimi';
 }
 
 interface TranscriptLine {
@@ -260,10 +260,12 @@ export async function GET(
 
     // Collect session files from all engine directories
     const claudeDir = path.join(CLAUDE_PROJECTS_DIR, encodedPath);
+    const claude2Dir = path.join(CLAUDE2_PROJECTS_DIR, encodedPath);
     const ollamaDir = path.join(COCKPIT_DIR, 'ollama-sessions', encodedPath);
 
     const allSessionFiles = [
       ...collectSessionFiles(claudeDir, 'claude'),
+      ...collectSessionFiles(claude2Dir, 'claude2'),
       ...collectSessionFiles(ollamaDir, 'ollama'),
     ];
 

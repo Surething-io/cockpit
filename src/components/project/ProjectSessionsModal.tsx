@@ -9,7 +9,7 @@ interface SessionInfo {
   modifiedAt: string;
   firstMessages: string[];
   lastMessages: string[];
-  engine?: 'claude' | 'ollama' | 'codex' | 'kimi';
+  engine?: 'claude' | 'claude2' | 'ollama' | 'codex' | 'kimi';
 }
 
 interface ProjectSessionsModalProps {
@@ -194,6 +194,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
                   <div className="flex items-center gap-1.5 mb-1">
                     {session.engine && session.engine !== 'claude' && (
                       <span className={`shrink-0 px-1 py-0.5 text-[10px] leading-none font-medium rounded ${
+                        session.engine === 'claude2' ? 'bg-orange-500/15 text-orange-11' :
                         session.engine === 'ollama' ? 'bg-blue-500/15 text-blue-11' :
                         session.engine === 'codex' ? 'bg-green-500/15 text-green-11' :
                         session.engine === 'kimi' ? 'bg-purple-500/15 text-purple-11' :

@@ -2,13 +2,11 @@ import { readFile, readdir, writeFile, stat } from 'fs/promises';
 import { join } from 'path';
 import { createReadStream } from 'fs';
 import { createInterface } from 'readline';
-import { CLAUDE_DIR, COCKPIT_DIR, ensureDir } from '@/lib/paths';
+import { CLAUDE_DIR, CLAUDE2_DIR, COCKPIT_DIR, ensureDir } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const PROJECTS_DIR = join(CLAUDE_DIR, 'projects');
-const CACHE_FILE = join(COCKPIT_DIR, 'stats-cache.json');
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 interface ModelUsage {
@@ -38,7 +36,7 @@ function emptyUsage(): ModelUsage {
 /**
  * Scan all session JSONL files under ~/.claude/projects and aggregate token usage in real time.
  */
-async function scanSessions() {
+async function scanSessions(projectsDir: string) {
   const modelUsage: Record<string, ModelUsage> = {};
   // date → { messages, sessions: Set<sessionId>, toolCalls }
   const dailyMap = new Map<string, { messages: number; sessions: Set<string>; toolCalls: number }>();
@@ -56,13 +54,13 @@ async function scanSessions() {
   // List project dirs
   let projectDirs: string[];
   try {
-    projectDirs = await readdir(PROJECTS_DIR);
+    projectDirs = await readdir(projectsDir);
   } catch {
     return null;
   }
 
   for (const projDir of projectDirs) {
-    const projPath = join(PROJECTS_DIR, projDir);
+    const projPath = join(projectsDir, projDir);
     let files: string[];
     try {
       files = await readdir(projPath);
@@ -246,11 +244,11 @@ async function processJSONL(filePath: string, ctx: ProcessContext) {
   }
 }
 
-async function readCache(): Promise<unknown | null> {
+async function readCache(cacheFile: string): Promise<unknown | null> {
   try {
-    const s = await stat(CACHE_FILE);
+    const s = await stat(cacheFile);
     if (Date.now() - s.mtimeMs < CACHE_TTL) {
-      const content = await readFile(CACHE_FILE, 'utf-8');
+      const content = await readFile(cacheFile, 'utf-8');
       return JSON.parse(content);
     }
   } catch {
@@ -259,30 +257,40 @@ async function readCache(): Promise<unknown | null> {
   return null;
 }
 
-async function writeCache(data: unknown): Promise<void> {
+async function writeCache(cacheFile: string, data: unknown): Promise<void> {
   try {
     await ensureDir(COCKPIT_DIR);
-    await writeFile(CACHE_FILE, JSON.stringify(data), 'utf-8');
+    await writeFile(cacheFile, JSON.stringify(data), 'utf-8');
   } catch {
     // ignore write errors
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const engine = searchParams.get('engine') || 'claude';
+
+    const projectsDir = engine === 'claude2'
+      ? join(CLAUDE2_DIR, 'projects')
+      : join(CLAUDE_DIR, 'projects');
+    const cacheFile = engine === 'claude2'
+      ? join(COCKPIT_DIR, 'stats-cache-claude2.json')
+      : join(COCKPIT_DIR, 'stats-cache.json');
+
     // Check cache first
-    const cached = await readCache();
+    const cached = await readCache(cacheFile);
     if (cached) {
       return Response.json(cached);
     }
 
-    const stats = await scanSessions();
+    const stats = await scanSessions(projectsDir);
     if (!stats) {
       return Response.json({ error: 'Projects directory not found' }, { status: 404 });
     }
 
     // Write cache for next request
-    await writeCache(stats);
+    await writeCache(cacheFile, stats);
 
     return Response.json(stats);
   } catch (e) {

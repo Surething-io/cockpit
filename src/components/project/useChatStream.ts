@@ -285,6 +285,7 @@ export function useChatStream(
             cwd,
             language: i18n.language,
             ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
+            ...(engine === 'claude2' && { engine: 'claude2' }),
           }),
           signal: abortControllerRef.current.signal,
         });

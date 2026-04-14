@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { CLAUDE_PROJECTS_DIR, COCKPIT_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath } from '@/lib/paths';
+import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, COCKPIT_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -178,6 +178,29 @@ export async function GET() {
 
         const count = countSessionFiles(claudeDir);
         if (count > 0) {
+          projectMap.set(dirName, { fullPath, sessionCount: count });
+        }
+      }
+    }
+
+    // --- Source 1b: Claude2 projects dir ---
+    if (fs.existsSync(CLAUDE2_PROJECTS_DIR)) {
+      const projectDirs = fs.readdirSync(CLAUDE2_PROJECTS_DIR, { withFileTypes: true })
+        .filter(dirent => dirent.isDirectory())
+        .map(dirent => dirent.name);
+
+      for (const dirName of projectDirs) {
+        const claude2Dir = path.join(CLAUDE2_PROJECTS_DIR, dirName);
+        const fullPath = resolveProjectPath(dirName, cwdLookup, claude2Dir);
+        if (!fullPath) continue;
+
+        const count = countSessionFiles(claude2Dir);
+        if (count === 0) continue;
+
+        const existing = projectMap.get(dirName);
+        if (existing) {
+          existing.sessionCount += count;
+        } else {
           projectMap.set(dirName, { fullPath, sessionCount: count });
         }
       }

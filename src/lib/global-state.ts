@@ -4,6 +4,7 @@ import {
   writeJsonFile,
   withFileLock,
   getClaudeSessionPath,
+  getClaude2SessionPath,
   getOllamaSessionPath,
   findCodexSessionPath,
   findKimiSessionPath,
@@ -20,7 +21,7 @@ interface GlobalSession {
   status: SessionStatus;
   title?: string;
   lastUserMessage?: string;
-  engine?: 'claude' | 'codex' | 'ollama';
+  engine?: 'claude' | 'claude2' | 'codex' | 'ollama';
 }
 
 interface GlobalState {
@@ -107,6 +108,11 @@ export async function getSessionTitle(cwd: string, sessionId: string): Promise<s
     return getClaudeStyleTitle(claudePath);
   }
 
+  const claude2Path = getClaude2SessionPath(cwd, sessionId);
+  if (existsSync(claude2Path)) {
+    return getClaudeStyleTitle(claude2Path);
+  }
+
   const ollamaPath = getOllamaSessionPath(cwd, sessionId);
   if (existsSync(ollamaPath)) {
     return getClaudeStyleTitle(ollamaPath);
@@ -134,6 +140,11 @@ export async function getLastUserMessage(cwd: string, sessionId: string): Promis
   const claudePath = getClaudeSessionPath(cwd, sessionId);
   if (existsSync(claudePath)) {
     return await getClaudeStyleLastUserMessage(claudePath);
+  }
+
+  const claude2Path = getClaude2SessionPath(cwd, sessionId);
+  if (existsSync(claude2Path)) {
+    return await getClaudeStyleLastUserMessage(claude2Path);
   }
 
   const ollamaPath = getOllamaSessionPath(cwd, sessionId);

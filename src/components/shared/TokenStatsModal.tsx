@@ -372,16 +372,17 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<TimeRange>('day');
   const [tokenChartMode, setTokenChartMode] = useState<'tokens' | 'cost'>('tokens');
+  const [statsEngine, setStatsEngine] = useState<'claude' | 'claude2'>('claude');
 
   useEffect(() => {
     if (!isOpen) return;
     queueMicrotask(() => setLoading(true));
-    fetch('/api/claude-stats')
+    fetch(`/api/claude-stats?engine=${statsEngine}`)
       .then(r => r.json())
       .then(data => { if (!data.error) queueMicrotask(() => setStats(data)); })
       .catch(() => {})
       .finally(() => queueMicrotask(() => setLoading(false)));
-  }, [isOpen]);
+  }, [isOpen, statsEngine]);
 
   // Model cost breakdown table
   const modelRows = useMemo(() => {
@@ -546,6 +547,22 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
         <div className="flex items-center justify-between px-6 py-3 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-medium text-foreground">{t('tokenStats.title')}</h2>
+            {/* Engine toggle */}
+            <div className="flex bg-muted rounded-md p-0.5">
+              {(['claude', 'claude2'] as const).map(eng => (
+                <button
+                  key={eng}
+                  className={`px-2.5 py-0.5 text-[11px] rounded transition-colors ${
+                    statsEngine === eng
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  onClick={() => { setStats(null); setStatsEngine(eng); }}
+                >
+                  {eng === 'claude' ? 'Claude' : 'Claude 2'}
+                </button>
+              ))}
+            </div>
             {/* Time range toggle */}
             <div className="flex bg-muted rounded-md p-0.5">
               {rangeButtons.map(b => (

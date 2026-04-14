@@ -1,5 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { SCHEDULED_TASKS_FILE, readJsonFile, writeJsonFile } from './paths';
+import { SCHEDULED_TASKS_FILE, CLAUDE2_DIR, readJsonFile, writeJsonFile } from './paths';
 import { updateGlobalState, getSessionTitle } from './global-state';
 
 // ============================================
@@ -12,6 +12,7 @@ export interface ScheduledTask {
   cwd: string;
   tabId: string;
   sessionId: string;       // chat session id
+  engine?: string;         // 'claude2' uses ~/.claude2
   message: string;
   type: 'once' | 'interval' | 'cron';
   delayMinutes?: number;   // type=once
@@ -109,6 +110,10 @@ async function sendChatMessage(task: ScheduledTask): Promise<boolean> {
       ],
       permissionMode: 'bypassPermissions' as const,
       allowDangerouslySkipPermissions: true,
+      // For claude2 engine, override config directory to ~/.claude2
+      ...(task.engine === 'claude2' && {
+        env: { ...process.env, CLAUDE_CONFIG_DIR: CLAUDE2_DIR },
+      }),
     };
 
     // Mark as loading

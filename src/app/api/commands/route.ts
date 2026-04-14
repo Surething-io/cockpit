@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { CLAUDE_DIR } from '@/lib/paths';
+import { CLAUDE_DIR, CLAUDE2_DIR } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -90,6 +90,10 @@ export async function GET(request: Request) {
     // 2. User global commands (~/.claude/commands/)
     const globalCommandsDir = path.join(CLAUDE_DIR, 'commands');
     commands.push(...readCommandsFromDir(globalCommandsDir, 'global'));
+
+    // 2b. User global commands from Claude 2 (~/.claude2/commands/)
+    const claude2CommandsDir = path.join(CLAUDE2_DIR, 'commands');
+    commands.push(...readCommandsFromDir(claude2CommandsDir, 'global'));
 
     // 3. Current project commands ({cwd}/.claude/commands/)
     if (cwd) {

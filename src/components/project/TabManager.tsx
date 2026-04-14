@@ -39,6 +39,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     switchTab,
     handleSelectSession,
     handleNewTab,
+    handleNewClaude2Tab,
     handleNewCodexTab,
     handleNewKimiTab,
     handleNewOllamaTab,
@@ -278,6 +279,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                 onSwitchTab={switchTab}
                 onCloseTab={closeTab}
                 onNewTab={handleNewTab}
+                onNewClaude2Tab={handleNewClaude2Tab}
                 onNewCodexTab={handleNewCodexTab}
                 onNewKimiTab={handleNewKimiTab}
                 onNewOllamaTab={handleNewOllamaTab}
@@ -343,8 +345,9 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               onSwitchTab={switchTab}
               onCloseTab={closeTab}
               onNewTab={handleNewTab}
+              onNewClaude2Tab={handleNewClaude2Tab}
               onNewCodexTab={handleNewCodexTab}
-                onNewKimiTab={handleNewKimiTab}
+              onNewKimiTab={handleNewKimiTab}
               onDragStart={handleTabDragStart}
               onDragOver={handleTabDragOver}
               onDrop={handleTabDrop}

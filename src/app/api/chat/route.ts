@@ -2,6 +2,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { NextRequest } from 'next/server';
 import { updateGlobalState, getSessionTitle } from '@/lib/global-state';
 import { resolveCommandPrompt } from '@/lib/chat/slashCommands';
+import { CLAUDE2_DIR } from '@/lib/paths';
 
 interface ImageData {
   type: 'base64';
@@ -22,7 +23,7 @@ type ContentBlock =
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt: rawPrompt, sessionId, images, cwd, language } = await request.json();
+    const { prompt: rawPrompt, sessionId, images, cwd, language, engine } = await request.json();
 
     // Resolve built-in slash commands (/qa, /fx, etc.) based on language
     const prompt = typeof rawPrompt === 'string' ? resolveCommandPrompt(rawPrompt, language) : rawPrompt;
@@ -133,6 +134,10 @@ export async function POST(request: NextRequest) {
             // betas: ['context-1m-2025-08-07'],
             // Pass abortController for cancelling query
             abortController: queryAbortController,
+            // For claude2 engine, override config directory to ~/.claude2
+            ...(engine === 'claude2' && {
+              env: { ...process.env, CLAUDE_CONFIG_DIR: CLAUDE2_DIR },
+            }),
           };
 
           let response;

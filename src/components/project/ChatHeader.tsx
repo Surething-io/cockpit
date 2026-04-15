@@ -191,9 +191,9 @@ export function TokenUsageBar({ tokenUsage, rateLimitInfo }: TokenUsageBarProps)
           </span>
         )}
 
-        {/* Utilization bar (shown when allowed but utilization is available) */}
-        {rateLimitInfo && !rateLimitLabel && rateLimitInfo.utilization != null && rateLimitInfo.utilization > 0 && (
-          <span className="flex items-center gap-1.5" title={`Rate limit usage: ${(rateLimitInfo.utilization * 100).toFixed(0)}%${rateLimitInfo.rateLimitType ? ` (${rateLimitInfo.rateLimitType})` : ''}`}>
+        {/* Utilization indicator (shown when allowed, always visible once rate limit data received) */}
+        {rateLimitInfo && !rateLimitLabel && rateLimitInfo.utilization != null && (
+          <span className="flex items-center gap-1.5" title={`Rate limit usage: ${(rateLimitInfo.utilization * 100).toFixed(0)}%${rateLimitInfo.rateLimitType ? ` (${rateLimitInfo.rateLimitType})` : ''}${rateLimitInfo.resetsAt ? ` · Resets in: ${formatResetTime(rateLimitInfo.resetsAt)}` : ''}`}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>

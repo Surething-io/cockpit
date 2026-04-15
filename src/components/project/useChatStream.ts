@@ -86,7 +86,7 @@ export function useChatStream(
       return;
     }
 
-    // Handle rate limit event
+    // Handle rate limit event (claude.ai subscription users only)
     if (eventType === 'rate_limit_event') {
       const info = event.rate_limit_info as Record<string, unknown> | undefined;
       if (info) {

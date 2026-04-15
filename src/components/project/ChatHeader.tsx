@@ -148,17 +148,25 @@ export function TokenUsageBar({ tokenUsage, rateLimitInfo }: TokenUsageBarProps)
       ? t('chat.rateLimitWarning', 'Approaching Limit')
       : null;
 
-  // Format reset time
+  // Format reset time as countdown
   const formatResetTime = (resetsAt?: number) => {
     if (!resetsAt) return '';
+    // resetsAt could be seconds or milliseconds — normalize
+    const resetsAtMs = resetsAt < 1e12 ? resetsAt * 1000 : resetsAt;
     const now = Date.now();
-    const diffMs = resetsAt - now;
+    const diffMs = resetsAtMs - now;
     if (diffMs <= 0) return '';
     const diffMin = Math.ceil(diffMs / 60000);
     if (diffMin < 60) return `${diffMin}m`;
     const diffHr = Math.floor(diffMin / 60);
     const remainMin = diffMin % 60;
     return remainMin > 0 ? `${diffHr}h${remainMin}m` : `${diffHr}h`;
+  };
+
+  // Format rateLimitType for display
+  const formatLimitType = (type?: string) => {
+    if (!type) return '';
+    return type.replace(/_/g, ' ');
   };
 
   return (
@@ -168,7 +176,7 @@ export function TokenUsageBar({ tokenUsage, rateLimitInfo }: TokenUsageBarProps)
         {rateLimitInfo && rateLimitLabel && (
           <span className={`flex items-center gap-1 ${rateLimitColor}`}
             title={[
-              rateLimitInfo.rateLimitType && `Type: ${rateLimitInfo.rateLimitType}`,
+              rateLimitInfo.rateLimitType && `Type: ${formatLimitType(rateLimitInfo.rateLimitType)}`,
               rateLimitInfo.utilization != null && `Usage: ${(rateLimitInfo.utilization * 100).toFixed(0)}%`,
               rateLimitInfo.resetsAt && `Resets in: ${formatResetTime(rateLimitInfo.resetsAt)}`,
               rateLimitInfo.isUsingOverage && 'Using overage',
@@ -191,13 +199,22 @@ export function TokenUsageBar({ tokenUsage, rateLimitInfo }: TokenUsageBarProps)
           </span>
         )}
 
-        {/* Utilization indicator (shown when allowed, always visible once rate limit data received) */}
-        {rateLimitInfo && !rateLimitLabel && rateLimitInfo.utilization != null && (
-          <span className="flex items-center gap-1.5" title={`Rate limit usage: ${(rateLimitInfo.utilization * 100).toFixed(0)}%${rateLimitInfo.rateLimitType ? ` (${rateLimitInfo.rateLimitType})` : ''}${rateLimitInfo.resetsAt ? ` · Resets in: ${formatResetTime(rateLimitInfo.resetsAt)}` : ''}`}>
+        {/* Rate limit info (shown when allowed — display reset countdown) */}
+        {rateLimitInfo && !rateLimitLabel && rateLimitInfo.resetsAt && (
+          <span className="flex items-center gap-1.5"
+            title={[
+              rateLimitInfo.rateLimitType && formatLimitType(rateLimitInfo.rateLimitType),
+              rateLimitInfo.utilization != null && `Usage: ${(rateLimitInfo.utilization * 100).toFixed(0)}%`,
+              `Resets in: ${formatResetTime(rateLimitInfo.resetsAt)}`,
+            ].filter(Boolean).join(' · ')}
+          >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
-            <span>{(rateLimitInfo.utilization * 100).toFixed(0)}%</span>
+            {rateLimitInfo.utilization != null
+              ? <span>{(rateLimitInfo.utilization * 100).toFixed(0)}%</span>
+              : <span>{formatResetTime(rateLimitInfo.resetsAt)}</span>
+            }
           </span>
         )}
 

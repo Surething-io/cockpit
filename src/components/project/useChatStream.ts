@@ -95,6 +95,8 @@ export function useChatStream(
           resetsAt: info.resetsAt as number | undefined,
           rateLimitType: info.rateLimitType as string | undefined,
           utilization: info.utilization as number | undefined,
+          overageStatus: info.overageStatus as string | undefined,
+          overageDisabledReason: info.overageDisabledReason as string | undefined,
           isUsingOverage: info.isUsingOverage as boolean | undefined,
           surpassedThreshold: info.surpassedThreshold as number | undefined,
         });

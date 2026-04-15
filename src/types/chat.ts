@@ -58,6 +58,8 @@ export interface RateLimitInfo {
   resetsAt?: number;
   rateLimitType?: string;
   utilization?: number;
+  overageStatus?: string;
+  overageDisabledReason?: string;
   isUsingOverage?: boolean;
   surpassedThreshold?: number;
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { TokenUsage } from '@/types/chat';
+import { TokenUsage, RateLimitInfo } from '@/types/chat';
 import { useTranslation } from 'react-i18next';
 
 // ============================================
@@ -129,13 +129,78 @@ export function ChatHeader({
 
 interface TokenUsageBarProps {
   tokenUsage: TokenUsage;
+  rateLimitInfo?: RateLimitInfo | null;
 }
 
-export function TokenUsageBar({ tokenUsage }: TokenUsageBarProps) {
+export function TokenUsageBar({ tokenUsage, rateLimitInfo }: TokenUsageBarProps) {
   const { t } = useTranslation();
+
+  // Rate limit status styling
+  const rateLimitColor = rateLimitInfo?.status === 'rejected'
+    ? 'text-red-500'
+    : rateLimitInfo?.status === 'allowed_warning'
+      ? 'text-yellow-500'
+      : 'text-muted-foreground';
+
+  const rateLimitLabel = rateLimitInfo?.status === 'rejected'
+    ? t('chat.rateLimitRejected', 'Rate Limited')
+    : rateLimitInfo?.status === 'allowed_warning'
+      ? t('chat.rateLimitWarning', 'Approaching Limit')
+      : null;
+
+  // Format reset time
+  const formatResetTime = (resetsAt?: number) => {
+    if (!resetsAt) return '';
+    const now = Date.now();
+    const diffMs = resetsAt - now;
+    if (diffMs <= 0) return '';
+    const diffMin = Math.ceil(diffMs / 60000);
+    if (diffMin < 60) return `${diffMin}m`;
+    const diffHr = Math.floor(diffMin / 60);
+    const remainMin = diffMin % 60;
+    return remainMin > 0 ? `${diffHr}h${remainMin}m` : `${diffHr}h`;
+  };
+
   return (
     <div className="px-4 py-1.5 border-t border-border bg-secondary">
       <div className="flex items-center justify-end gap-4 text-xs text-muted-foreground">
+        {/* Rate limit warning/rejected indicator */}
+        {rateLimitInfo && rateLimitLabel && (
+          <span className={`flex items-center gap-1 ${rateLimitColor}`}
+            title={[
+              rateLimitInfo.rateLimitType && `Type: ${rateLimitInfo.rateLimitType}`,
+              rateLimitInfo.utilization != null && `Usage: ${(rateLimitInfo.utilization * 100).toFixed(0)}%`,
+              rateLimitInfo.resetsAt && `Resets in: ${formatResetTime(rateLimitInfo.resetsAt)}`,
+              rateLimitInfo.isUsingOverage && 'Using overage',
+            ].filter(Boolean).join(' · ')}
+          >
+            {rateLimitInfo.status === 'rejected' ? (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            )}
+            <span>
+              <strong>{rateLimitLabel}</strong>
+              {rateLimitInfo.utilization != null && ` ${(rateLimitInfo.utilization * 100).toFixed(0)}%`}
+              {rateLimitInfo.resetsAt && ` · ${formatResetTime(rateLimitInfo.resetsAt)}`}
+            </span>
+          </span>
+        )}
+
+        {/* Utilization bar (shown when allowed but utilization is available) */}
+        {rateLimitInfo && !rateLimitLabel && rateLimitInfo.utilization != null && rateLimitInfo.utilization > 0 && (
+          <span className="flex items-center gap-1.5" title={`Rate limit usage: ${(rateLimitInfo.utilization * 100).toFixed(0)}%${rateLimitInfo.rateLimitType ? ` (${rateLimitInfo.rateLimitType})` : ''}`}>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <span>{(rateLimitInfo.utilization * 100).toFixed(0)}%</span>
+          </span>
+        )}
+
         <span className="flex items-center gap-1">
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />

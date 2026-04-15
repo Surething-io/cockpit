@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import { ChatMessage, ToolCallInfo, ImageInfo, MessageImage, TokenUsage } from '@/types/chat';
+import { ChatMessage, ToolCallInfo, ImageInfo, MessageImage, TokenUsage, RateLimitInfo } from '@/types/chat';
 import type { ChatEngine } from './useTabState';
 import i18n from '@/lib/i18n';
 
@@ -21,6 +21,7 @@ interface UseChatStreamOptions {
 interface UseChatStreamReturn {
   isLoading: boolean;
   tokenUsage: TokenUsage | null;
+  rateLimitInfo: RateLimitInfo | null;
   handleSend: (content: string, images?: ImageInfo[]) => Promise<void>;
   handleStop: () => void;
   abortControllerRef: React.RefObject<AbortController | null>;
@@ -37,6 +38,7 @@ export function useChatStream(
 ): UseChatStreamReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
+  const [rateLimitInfo, setRateLimitInfo] = useState<RateLimitInfo | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Used to get latest sessionId in handleStreamEvent
@@ -81,6 +83,22 @@ export function useChatStream(
       const newSessionId = event.session_id as string;
       onSessionId(newSessionId);
       sessionIdRef.current = newSessionId;
+      return;
+    }
+
+    // Handle rate limit event
+    if (eventType === 'rate_limit_event') {
+      const info = event.rate_limit_info as Record<string, unknown> | undefined;
+      if (info) {
+        setRateLimitInfo({
+          status: (info.status as RateLimitInfo['status']) || 'allowed',
+          resetsAt: info.resetsAt as number | undefined,
+          rateLimitType: info.rateLimitType as string | undefined,
+          utilization: info.utilization as number | undefined,
+          isUsingOverage: info.isUsingOverage as boolean | undefined,
+          surpassedThreshold: info.surpassedThreshold as number | undefined,
+        });
+      }
       return;
     }
 
@@ -357,6 +375,7 @@ export function useChatStream(
   return {
     isLoading,
     tokenUsage,
+    rateLimitInfo,
     handleSend,
     handleStop,
     abortControllerRef,

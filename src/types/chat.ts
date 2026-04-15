@@ -51,3 +51,13 @@ export interface TokenUsage {
   cacheReadInputTokens: number;
   totalCostUsd: number;
 }
+
+// Rate limit info (from SDK rate_limit_event)
+export interface RateLimitInfo {
+  status: 'allowed' | 'allowed_warning' | 'rejected';
+  resetsAt?: number;
+  rateLimitType?: string;
+  utilization?: number;
+  isUsingOverage?: boolean;
+  surpassedThreshold?: number;
+}

@@ -87,6 +87,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
   const {
     isLoading,
     tokenUsage: streamTokenUsage,
+    rateLimitInfo,
     handleSend,
     handleStop,
   } = useChatStream(messages, setMessages, {
@@ -337,7 +338,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
         )}
 
         {/* Token Usage Display */}
-        {tokenUsage && <TokenUsageBar tokenUsage={tokenUsage} />}
+        {tokenUsage && <TokenUsageBar tokenUsage={tokenUsage} rateLimitInfo={rateLimitInfo} />}
 
         {/* Input */}
         <ChatInput

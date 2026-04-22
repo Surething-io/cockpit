@@ -269,7 +269,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
           {/* Text content — rendered as Markdown */}
           {message.content && (
             <div className="break-words">
-              <MarkdownRenderer content={message.content} isUser={isUser} isStreaming={message.isStreaming} />
+              <MarkdownRenderer content={message.content} isUser={isUser} isStreaming={message.isStreaming} enableMath={false} />
               {message.isStreaming && (
                 <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />
               )}

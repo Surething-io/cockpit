@@ -18,12 +18,15 @@ import { MermaidBlock } from './MermaidBlock';
 
 // Stable reference — avoid recreating on every render
 const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkAlert];
+const REMARK_PLUGINS_NO_MATH = [remarkGfm, remarkAlert];
 const REHYPE_PLUGINS_BASE = [rehypeRaw, rehypeKatex];
+const REHYPE_PLUGINS_NO_MATH = [rehypeRaw];
 
 interface MarkdownRendererProps {
   content: string;
   isUser?: boolean;
   isStreaming?: boolean;
+  enableMath?: boolean;
   rehypePlugins?: PluggableList;
 }
 
@@ -223,7 +226,7 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
   };
 }
 
-export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser = false, isStreaming = false, rehypePlugins }: MarkdownRendererProps) {
+export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser = false, isStreaming = false, enableMath = true, rehypePlugins }: MarkdownRendererProps) {
   // Use global Theme Context to avoid each component creating its own MutationObserver
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
@@ -233,20 +236,24 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
   const components = useMemo(() => createMarkdownComponents(isDark), [isDark]);
   const streamComponents = useMemo(() => createMarkdownComponents(isDark, true), [isDark]);
 
+  const remarkPlugins = enableMath ? REMARK_PLUGINS : REMARK_PLUGINS_NO_MATH;
+  const rehypePluginsBase = enableMath ? REHYPE_PLUGINS_BASE : REHYPE_PLUGINS_NO_MATH;
+
   // After streaming or for historical messages, detect and pre-process ASCII art
   const processedContent = useMemo(() => {
     // Skip for user messages or while streaming
     if (isUser || isStreaming) {
       return content;
     }
-    return escapeCurrencyDollars(escapeTablePipes(preprocessAsciiArt(content)));
-  }, [content, isUser, isStreaming]);
+    const processed = escapeTablePipes(preprocessAsciiArt(content));
+    return enableMath ? escapeCurrencyDollars(processed) : processed;
+  }, [content, isUser, isStreaming, enableMath]);
 
-  // Merge rehype plugins: base plugins (rehype-raw + rehype-katex) + caller-supplied plugins
+  // Merge rehype plugins: base plugins + caller-supplied plugins
   const mergedRehypePlugins = useMemo(() => {
-    if (!rehypePlugins?.length) return REHYPE_PLUGINS_BASE;
-    return [...REHYPE_PLUGINS_BASE, ...rehypePlugins];
-  }, [rehypePlugins]);
+    if (!rehypePlugins?.length) return rehypePluginsBase;
+    return [...rehypePluginsBase, ...rehypePlugins];
+  }, [rehypePlugins, rehypePluginsBase]);
 
   // Use simplified style for user messages
   if (isUser) {
@@ -270,11 +277,11 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
       <div className="markdown-body">
         {/* Render completed lines as Markdown */}
         <ReactMarkdown
-          remarkPlugins={REMARK_PLUGINS}
-          rehypePlugins={REHYPE_PLUGINS_BASE}
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={rehypePluginsBase}
           components={streamComponents}
         >
-          {escapeCurrencyDollars(escapeTablePipes(completedLines))}
+          {enableMath ? escapeCurrencyDollars(escapeTablePipes(completedLines)) : escapeTablePipes(completedLines)}
         </ReactMarkdown>
         {/* Current line being typed — plain text */}
         {currentLine && (
@@ -287,7 +294,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
   return (
     <div className="markdown-body">
       <ReactMarkdown
-        remarkPlugins={REMARK_PLUGINS}
+        remarkPlugins={remarkPlugins}
         rehypePlugins={mergedRehypePlugins}
         components={components}
       >

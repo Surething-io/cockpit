@@ -890,33 +890,64 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
             {activeTab === 'history' && (
               <div className="p-3 border-b border-border">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 min-w-0">
-                    <BranchSelector
-                      branches={gitHistory.branches}
-                      selectedBranch={gitHistory.selectedBranch}
-                      onSelect={(branch) => {
-                        gitHistory.setSelectedBranch(branch);
-                        // Auto-refresh when switching branches in compare mode
-                        if (gitHistory.compareMode) {
-                          gitHistory.loadCompareFiles(branch);
-                        }
-                      }}
-                      isLoading={gitHistory.isLoadingBranches}
-                    />
+                {gitHistory.compareMode ? (
+                  /* Compare mode: two rows — HEAD (read-only) + base (selector) */
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-border rounded bg-secondary text-foreground flex items-center gap-2">
+                        <svg className="w-4 h-4 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        <span className="truncate">{gitHistory.branches?.current || 'HEAD'}</span>
+                        <span className="text-xs text-green-11 flex-shrink-0">HEAD</span>
+                      </div>
+                      <button
+                        onClick={() => gitHistory.toggleCompareMode(false)}
+                        className="flex-shrink-0 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors bg-brand text-white"
+                        title={t('fileBrowser.compareModeOff')}
+                      >
+                        {t('fileBrowser.compareMode')}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground flex-shrink-0 pl-1">vs</span>
+                      <div className="flex-1 min-w-0">
+                        <BranchSelector
+                          branches={gitHistory.branches}
+                          selectedBranch={gitHistory.compareBaseBranch}
+                          onSelect={(branch) => {
+                            gitHistory.setCompareBaseBranch(branch);
+                            gitHistory.loadCompareFiles(branch);
+                          }}
+                          isLoading={gitHistory.isLoadingBranches}
+                          pinnedBranches={['origin/main', ...(gitHistory.upstreamBranch && gitHistory.upstreamBranch !== 'origin/main' ? [gitHistory.upstreamBranch] : [])]}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => gitHistory.toggleCompareMode(!gitHistory.compareMode)}
-                    className={`flex-shrink-0 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                      gitHistory.compareMode
-                        ? 'bg-brand text-white'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-accent border border-border'
-                    }`}
-                    title={gitHistory.compareMode ? t('fileBrowser.compareModeOff') : t('fileBrowser.compareModeOn')}
-                  >
-                    {t('fileBrowser.compareMode')}
-                  </button>
-                </div>
+                ) : (
+                  /* Normal mode: single branch selector */
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <BranchSelector
+                        branches={gitHistory.branches}
+                        selectedBranch={gitHistory.selectedBranch}
+                        onSelect={(branch) => {
+                          gitHistory.setSelectedBranch(branch);
+                        }}
+                        isLoading={gitHistory.isLoadingBranches}
+                        pinnedBranches={['origin/main', ...(gitHistory.upstreamBranch && gitHistory.upstreamBranch !== 'origin/main' ? [gitHistory.upstreamBranch] : [])]}
+                      />
+                    </div>
+                    <button
+                      onClick={() => gitHistory.toggleCompareMode(true)}
+                      className="flex-shrink-0 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors text-muted-foreground hover:text-foreground hover:bg-accent border border-border"
+                      title={t('fileBrowser.compareModeOn')}
+                    >
+                      {t('fileBrowser.compareMode')}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1265,7 +1296,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   </div>
                 ) : gitHistory.compareMode ? (
                   /* Compare mode: show file changes list on the left (replaces commit list) */
-                  <div className="flex-1 overflow-y-auto">
+                  <div className="flex-1 overflow-y-auto overflow-x-hidden">
                     {gitHistory.isLoadingCompareFiles ? (
                       <div className="p-4 text-center text-muted-foreground text-sm">{t('fileBrowser.loadingDiff')}</div>
                     ) : gitHistory.compareFiles.length === 0 ? (
@@ -1274,7 +1305,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                       <>
                         <div className="px-3 py-2 border-b border-border">
                           <span className="text-xs text-muted-foreground">
-                            {t('fileBrowser.nFilesChanged', { count: gitHistory.compareFiles.length, branch: gitHistory.selectedBranch })}
+                            {t('fileBrowser.nFilesChanged', { count: gitHistory.compareFiles.length, branch: gitHistory.compareBaseBranch })}
                           </span>
                         </div>
                         <GitFileTree

@@ -30,9 +30,10 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
   // Branch comparison mode
+  // HEAD end is always the real git HEAD (branches.current); only the base end is user-selectable.
   const [compareMode, setCompareMode] = useState(false);
-  const [savedBranch, setSavedBranch] = useState<string>(''); // Branch saved before entering compare mode
   const [upstreamBranch, setUpstreamBranch] = useState<string>(''); // Upstream of the current branch
+  const [compareBaseBranch, setCompareBaseBranch] = useState<string>(''); // Base branch to compare HEAD against
   const [compareFiles, setCompareFiles] = useState<FileChange[]>([]);
   const [compareFileTree, setCompareFileTree] = useState<GitFileNode<unknown>[]>([]);
   const [compareExpandedPaths, setCompareExpandedPaths] = useState<Set<string>>(new Set());
@@ -178,12 +179,12 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
     setCompareSelectedFile(file);
     addToRecentFiles(file.path);
     setIsLoadingCompareDiff(true);
-    fetch(`/api/git/branch-diff?cwd=${encodeURIComponent(cwd)}&base=${encodeURIComponent(selectedBranch)}&file=${encodeURIComponent(file.path)}`)
+    fetch(`/api/git/branch-diff?cwd=${encodeURIComponent(cwd)}&base=${encodeURIComponent(compareBaseBranch)}&file=${encodeURIComponent(file.path)}`)
       .then(res => res.json())
       .then(data => setCompareFileDiff(data))
       .catch(console.error)
       .finally(() => setIsLoadingCompareDiff(false));
-  }, [cwd, selectedBranch, addToRecentFiles]);
+  }, [cwd, compareBaseBranch, addToRecentFiles]);
 
   // Toggle directory expansion in comparison mode
   const handleCompareToggle = useCallback((path: string) => {
@@ -199,26 +200,21 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
   }, []);
 
   // Toggle comparison mode
+  // HEAD end is always branches.current (read-only); only base end is selectable.
   const toggleCompareMode = useCallback((enabled: boolean) => {
     setCompareMode(enabled);
     if (enabled) {
-      // Save current branch; switch to the upstream branch for comparison
-      setSavedBranch(selectedBranch);
-      const compareBranch = upstreamBranch || 'origin/main';
-      setSelectedBranch(compareBranch);
-      loadCompareFiles(compareBranch);
+      const baseBranch = 'origin/main';
+      setCompareBaseBranch(baseBranch);
+      loadCompareFiles(baseBranch);
     } else {
-      // Exit comparison mode, restore the current branch and refresh the commit list
       setCompareFiles([]);
       setCompareFileTree([]);
       setCompareSelectedFile(null);
       setCompareFileDiff(null);
-      if (savedBranch) {
-        setSelectedBranch(savedBranch);
-        loadCommits(savedBranch);
-      }
+      setCompareBaseBranch('');
     }
-  }, [selectedBranch, savedBranch, upstreamBranch, loadCompareFiles, loadCommits]);
+  }, [upstreamBranch, loadCompareFiles]);
 
   const handleCommitInfoMouseMove = useCallback((e: React.MouseEvent) => {
     setTooltipPos({ x: e.clientX, y: e.clientY });
@@ -263,6 +259,9 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
     // Branch comparison mode
     compareMode,
     toggleCompareMode,
+    compareBaseBranch,
+    setCompareBaseBranch,
+    upstreamBranch,
     compareFiles,
     compareFileTree,
     compareExpandedPaths,

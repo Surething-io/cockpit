@@ -188,7 +188,7 @@ export function GitFileTree({
   }
 
   return (
-    <div className={className || "py-1 overflow-y-auto h-full min-w-max"}>
+    <div className={className || "py-1"}>
       {files.map(node => (
         <GitFileTreeItem
           key={node.path}

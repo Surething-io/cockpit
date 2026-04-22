@@ -99,7 +99,7 @@ function GitFileTreeDemo({
       <div className="flex-shrink-0 px-3 py-2 border-b border-border text-xs text-muted-foreground">
         {files.length} 个文件变更
       </div>
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
         <GitFileTree
           files={tree}
           selectedPath={selectedPath}
@@ -176,7 +176,7 @@ export const WithActions: Story = {
     const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set(['src', 'src/components', 'src/utils']));
 
     return (
-      <div className="h-full">
+      <div className="h-full overflow-y-auto overflow-x-hidden">
         <GitFileTree
           files={tree}
           selectedPath={selectedPath}

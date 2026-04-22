@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TokenUsage, RateLimitInfo } from '@/types/chat';
 import { useTranslation } from 'react-i18next';
 
@@ -135,6 +135,15 @@ interface TokenUsageBarProps {
 export function TokenUsageBar({ tokenUsage, rateLimitInfo }: TokenUsageBarProps) {
   const { t } = useTranslation();
 
+  // "Now" updates every 30s so the countdown stays fresh without calling Date.now()
+  // during render (which would violate react-hooks/purity).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!rateLimitInfo?.resetsAt) return;
+    const id = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, [rateLimitInfo?.resetsAt]);
+
   // Rate limit status styling
   const rateLimitColor = rateLimitInfo?.status === 'rejected'
     ? 'text-red-500'
@@ -153,7 +162,6 @@ export function TokenUsageBar({ tokenUsage, rateLimitInfo }: TokenUsageBarProps)
     if (!resetsAt) return '';
     // resetsAt could be seconds or milliseconds — normalize
     const resetsAtMs = resetsAt < 1e12 ? resetsAt * 1000 : resetsAt;
-    const now = Date.now();
     const diffMs = resetsAtMs - now;
     if (diffMs <= 0) return '';
     const diffMin = Math.ceil(diffMs / 60000);

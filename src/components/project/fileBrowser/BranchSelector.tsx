@@ -9,6 +9,7 @@ interface BranchSelectorProps {
   selectedBranch: string;
   onSelect: (branch: string) => void;
   isLoading: boolean;
+  pinnedBranches?: string[];
 }
 
 export function BranchSelector({
@@ -16,6 +17,7 @@ export function BranchSelector({
   selectedBranch,
   onSelect,
   isLoading,
+  pinnedBranches = [],
 }: BranchSelectorProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
@@ -39,12 +41,15 @@ export function BranchSelector({
     }
   }, [isOpen]);
 
-  const filteredLocal = branches?.local.filter(b =>
-    b.toLowerCase().includes(search.toLowerCase())
-  ) || [];
-  const filteredRemote = branches?.remote.filter(b =>
-    b.toLowerCase().includes(search.toLowerCase())
-  ) || [];
+  const searchLower = search.toLowerCase();
+  const allBranches = new Set([...(branches?.local || []), ...(branches?.remote || [])]);
+
+  // Pinned branches: appear at the very top, filtered by search, deduplicated from local/remote
+  const pinnedFiltered = pinnedBranches.filter(b => allBranches.has(b) && b.toLowerCase().includes(searchLower));
+  const pinnedSet = new Set(pinnedFiltered);
+
+  const filteredLocal = (branches?.local.filter(b => !pinnedSet.has(b) && b.toLowerCase().includes(searchLower))) || [];
+  const filteredRemote = (branches?.remote.filter(b => !pinnedSet.has(b) && b.toLowerCase().includes(searchLower))) || [];
 
   const handleSelect = (branch: string) => {
     onSelect(branch);
@@ -86,6 +91,27 @@ export function BranchSelector({
             />
           </div>
           <div className="overflow-y-auto flex-1">
+            {pinnedFiltered.length > 0 && pinnedFiltered.map(branch => (
+              <div
+                key={`pinned-${branch}`}
+                onClick={() => handleSelect(branch)}
+                className={`px-3 py-1.5 text-sm cursor-pointer flex items-center gap-2 ${
+                  branch === selectedBranch
+                    ? 'bg-brand/10 text-brand'
+                    : 'hover:bg-accent text-foreground'
+                }`}
+              >
+                <span className="truncate flex-1">{branch}</span>
+                {branch === branches?.current && (
+                  <span className="text-xs text-green-11 flex-shrink-0">{t('git.currentBranch')}</span>
+                )}
+                {branch === selectedBranch && (
+                  <svg className="w-4 h-4 text-brand flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </div>
+            ))}
             {filteredLocal.length > 0 && (
               <div>
                 <div className="px-3 py-1 text-xs font-medium text-muted-foreground bg-secondary sticky top-0">
@@ -139,7 +165,7 @@ export function BranchSelector({
                 ))}
               </div>
             )}
-            {filteredLocal.length === 0 && filteredRemote.length === 0 && (
+            {pinnedFiltered.length === 0 && filteredLocal.length === 0 && filteredRemote.length === 0 && (
               <div className="px-3 py-4 text-sm text-muted-foreground text-center">
                 {t('git.noMatchingBranches')}
               </div>

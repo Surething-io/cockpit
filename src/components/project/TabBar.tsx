@@ -84,7 +84,7 @@ function NewTabButton({ onNewTab, onNewClaude2Tab, onNewCodexTab, onNewKimiTab, 
       <button
         ref={btnRef}
         onClick={toggle}
-        className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+        className="flex-shrink-0 p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
         title="New tab"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -189,7 +189,7 @@ export function TabBar({
     <div className="border-b border-border bg-card shrink-0">
       <div className="flex items-center px-2 gap-1 overflow-x-auto">
         {tabs.map((tab, index) => (
-          <Tooltip key={tab.id} content={tab.title} delay={200}>
+          <Tooltip key={tab.id} content={tab.title} delay={200} className="flex-1 min-w-16 max-w-32">
             <div
               draggable
               onDragStart={() => onDragStart(index)}
@@ -247,7 +247,7 @@ export function TabBar({
                   </button>
                 )}
               </div>
-              <span className="max-w-32 truncate">{tab.title}</span>
+              <span className="flex-1 min-w-0 truncate">{tab.title}</span>
               {tab.engine === 'claude2' && (
                 <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-orange-500/15 text-orange-400 font-medium leading-relaxed">C2</span>
               )}

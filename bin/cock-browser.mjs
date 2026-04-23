@@ -353,6 +353,32 @@ async function run() {
 
 async function formatOutput(action, data) {
   if (data === undefined || data === null) {
+    // evaluate-family silently returning undefined/null is a major source of
+    // confusion for LLM callers — they can't tell "code ran but produced no
+    // value" from "something broke". Write a concrete hint to stderr so the
+    // Bash tool's empty-stdout annotation surfaces it alongside the
+    // "(exit 0 — empty stdout)" note instead of guessing causes.
+    if (action === 'evaluate' || action === 'evaluate_chunk') {
+      process.stderr.write(
+        `(evaluate returned ${data === null ? 'null' : 'undefined'} — nothing to print.\n` +
+        ` Common causes:\n` +
+        `  (a) bare arrow function: \`() => x\` defines but does not invoke — wrap as \`(() => x)()\` or \`(async()=>{...})()\`.\n` +
+        `  (b) a .then(...) callback didn't return the value — add an explicit \`return\` in each step of the chain.\n` +
+        `  (c) accessed a missing property — e.g. \`d.chat.x\` when response has no \`chat\` field, yielding undefined.\n` +
+        ` To force output: wrap the final value with \`JSON.stringify(...)\`, or return a short scalar.\n`
+      );
+    }
+    return;
+  }
+  if (typeof data === 'function') {
+    // Structured clone usually drops functions into undefined before this
+    // point, but if one slips through (e.g. from a custom bridge), surface
+    // it explicitly instead of swallowing.
+    process.stderr.write(
+      `(evaluate returned a function reference, which cannot be serialized.\n` +
+      ` If you defined an arrow function, invoke it: \`(async()=>{...})()\`.\n` +
+      ` To return the function's *result*, call it; to inspect the source, use \`fn.toString()\`.\n`
+    );
     return;
   }
 

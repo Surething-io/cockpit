@@ -130,6 +130,7 @@
     "expandSidebar": "Expand sidebar",
     "collapseSidebar": "Collapse sidebar",
     "notes": "Notes",
+    "skills": "Skills",
     "settings": "Settings",
     "projectNotes": "Project Notes",
     "closeProject": "Close project"
@@ -352,7 +353,8 @@
     "copiedCommandTooltip": "Copied!",
     "copyCommandTooltip": "Copy command: claude -r {{sessionId}}",
     "executedCommand": "Executed `{{command}}`{{exitInfo}}, output:\n```\n{{output}}\n```",
-    "executedCommandFailed": "Failed to execute `{{command}}`: {{error}}"
+    "executedCommandFailed": "Failed to execute `{{command}}`: {{error}}",
+    "skillExpansionPrompt": "Please read this skill file:"
   },
   "console": {
     "enterCommandOrUrl": "Enter a command or URL to start",

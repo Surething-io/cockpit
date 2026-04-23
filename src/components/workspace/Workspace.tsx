@@ -8,6 +8,7 @@ import { SessionBrowser } from '../shared/SessionBrowser';
 import { SettingsModal } from '../shared/SettingsModal';
 import { TokenStatsModal } from '../shared/TokenStatsModal';
 import { NoteModal } from '../shared/NoteModal';
+import { SkillsModal } from '../shared/SkillsModal';
 import { SessionCompleteToastContainer, showSessionCompleteToast } from './SessionCompleteToast';
 
 interface ProjectsData {
@@ -31,6 +32,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   const [isTokenStatsOpen, setIsTokenStatsOpen] = useState(false);
   const [isNoteOpen, setIsNoteOpen] = useState(false);
   const [noteProjectCwd, setNoteProjectCwd] = useState<string | null>(null);
+  const [isSkillsOpen, setIsSkillsOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   // Lazy load: only render project iframes that have been activated before (ever-growing set)
   const [loadedCwds, setLoadedCwds] = useState<Set<string>>(new Set());
@@ -416,6 +418,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         onOpenSessionBrowser={() => setIsSessionBrowserOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenNote={(cwd) => { setNoteProjectCwd(cwd ?? null); setIsNoteOpen(true); }}
+        onOpenSkills={() => setIsSkillsOpen(true)}
         onSwitchProject={handleSwitchProject}
         onAddProject={(cwd) => {
           const existingIndex = projects.findIndex(p => p.cwd === cwd);
@@ -503,6 +506,12 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         onClose={() => { setIsNoteOpen(false); setNoteProjectCwd(null); }}
         projectCwd={noteProjectCwd}
         projectName={noteProjectCwd ? noteProjectCwd.split('/').pop() : null}
+      />
+
+      {/* Skills Modal */}
+      <SkillsModal
+        isOpen={isSkillsOpen}
+        onClose={() => setIsSkillsOpen(false)}
       />
 
       {/* Bottom-left session complete notification */}

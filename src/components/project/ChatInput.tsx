@@ -7,13 +7,27 @@ import { ImagePreview } from '../shared/ImagePreview';
 import { toast } from '../shared/Toast';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
 import { useTranslation } from 'react-i18next';
+import { onSkillsChanged } from '@/lib/skills/skillsBus';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 
 interface CommandInfo {
   name: string;
   description: string;
-  source: 'builtin' | 'global' | 'project';
+  source: 'builtin' | 'global' | 'project' | 'skill';
+  // Only present when source === 'skill'
+  skillPath?: string;
+  argumentHint?: string;
+}
+
+interface SkillInfo {
+  id: string;
+  path: string;
+  name: string;
+  description: string;
+  icon?: string;
+  argumentHint?: string;
+  valid: boolean;
 }
 
 interface ChatInputProps {
@@ -41,6 +55,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
   const [input, setInput] = useState('');
   const [images, setImages] = useState<ImageInfo[]>([]);
   const [commands, setCommands] = useState<CommandInfo[]>([]);
+  const [skills, setSkills] = useState<CommandInfo[]>([]);
   const [showScheduler, setShowScheduler] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [commandsDismissed, setCommandsDismissed] = useState(false);
@@ -83,14 +98,42 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
     loadCommands();
   }, [cwd]);
 
+  // Load skills (separate endpoint, globally-configured, ~/.cockpit/skills.json)
+  const loadSkills = useCallback(async () => {
+    try {
+      const response = await fetch('/api/skills');
+      if (response.ok) {
+        const data = (await response.json()) as SkillInfo[];
+        const mapped: CommandInfo[] = data
+          .filter((s) => s.valid && !!s.name)
+          .map((s) => ({
+            name: `/${s.name}`,
+            description: s.description || '',
+            source: 'skill' as const,
+            skillPath: s.path,
+            argumentHint: s.argumentHint,
+          }));
+        setSkills(mapped);
+      }
+    } catch (error) {
+      console.error('Failed to load skills:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSkills();
+    // Re-load when SkillsModal notifies the skills list changed
+    return onSkillsChanged(loadSkills);
+  }, [loadSkills]);
+
   // Command filtering: useMemo derived computation, eliminates 3 setState calls per keystroke
+  // Commands first, then skills — grouped display preserves the two sections.
   const filteredCommands = useMemo(() => {
     if (!input.startsWith('/')) return [];
     const keyword = input.toLowerCase();
-    return commands.filter((cmd) =>
-      cmd.name.toLowerCase().startsWith(keyword)
-    );
-  }, [input, commands]);
+    const match = (cmd: CommandInfo) => cmd.name.toLowerCase().startsWith(keyword);
+    return [...commands.filter(match), ...skills.filter(match)];
+  }, [input, commands, skills]);
 
   const showCommands = !commandsDismissed && input.startsWith('/') && filteredCommands.length > 0;
 
@@ -119,7 +162,26 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
     const hasContent = trimmed || images.length > 0;
 
     if (hasContent && !disabled) {
-      onSend(trimmed, images.length > 0 ? images : undefined);
+      // Expand leading /<skill-name> into "请读取这个 skill 文件：<abs path>\n\n<rest>"
+      let finalMessage = trimmed;
+      if (trimmed.startsWith('/') && skills.length > 0) {
+        // Longest-name-first match to handle overlapping prefixes (e.g. /foo vs /foo-bar)
+        const sorted = [...skills].sort((a, b) => b.name.length - a.name.length);
+        for (const skill of sorted) {
+          if (!skill.skillPath) continue;
+          if (trimmed === skill.name) {
+            finalMessage = `${t('chat.skillExpansionPrompt')}\n${skill.skillPath}`;
+            break;
+          }
+          const prefix = `${skill.name} `;
+          if (trimmed.startsWith(prefix)) {
+            const rest = trimmed.slice(prefix.length).trimStart();
+            finalMessage = `${t('chat.skillExpansionPrompt')}\n${skill.skillPath}\n\n${rest}`;
+            break;
+          }
+        }
+      }
+      onSend(finalMessage, images.length > 0 ? images : undefined);
       setInput('');
       setImages([]);
       // Reset textarea height
@@ -127,7 +189,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
         textareaRef.current.style.height = 'auto';
       }
     }
-  }, [input, images, disabled, onSend]);
+  }, [input, images, disabled, onSend, skills, t]);
 
   const handleSelectCommand = useCallback((command: CommandInfo) => {
     setInput(command.name + ' ');
@@ -230,6 +292,8 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
         return t('common.global');
       case 'project':
         return t('common.project');
+      case 'skill':
+        return 'Skill';
     }
   };
 
@@ -241,6 +305,8 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
         return 'bg-green-9/15 text-green-11 dark:bg-green-9/25 dark:text-green-11';
       case 'project':
         return 'bg-amber-9/15 text-amber-11 dark:bg-amber-9/25 dark:text-amber-11';
+      case 'skill':
+        return 'bg-purple-9/15 text-purple-11 dark:bg-purple-9/25 dark:text-purple-11';
     }
   };
 
@@ -254,29 +320,52 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
           ref={commandListRef}
           className="absolute bottom-full left-0 right-0 mx-4 mb-2 max-h-64 overflow-y-auto bg-card border border-border rounded-lg shadow-lg"
         >
-          {filteredCommands.map((cmd, index) => (
-            <div
-              key={cmd.name}
-              onClick={() => handleSelectCommand(cmd)}
-              className={`flex items-center gap-3 px-4 py-2 cursor-pointer ${
-                index === selectedIndex
-                  ? 'bg-brand/10'
-                  : 'hover:bg-accent'
-              }`}
-            >
-              <span className="font-mono text-sm font-medium text-foreground">
-                {cmd.name}
-              </span>
-              <span className="flex-1 text-sm text-muted-foreground truncate">
-                {cmd.description}
-              </span>
-              <span
-                className={`text-xs px-1.5 py-0.5 rounded ${getSourceColor(cmd.source)}`}
-              >
-                {getSourceLabel(cmd.source)}
-              </span>
-            </div>
-          ))}
+          {filteredCommands.map((cmd, index) => {
+            const prev = index > 0 ? filteredCommands[index - 1] : null;
+            const isFirstSkill = cmd.source === 'skill' && (!prev || prev.source !== 'skill');
+            const isFirstCommand = cmd.source !== 'skill' && index === 0;
+            return (
+              <div key={cmd.name}>
+                {isFirstCommand && (
+                  <div className="px-4 py-1 text-[10px] uppercase tracking-wider text-muted-foreground bg-muted/40">
+                    Commands
+                  </div>
+                )}
+                {isFirstSkill && (
+                  <div className="px-4 py-1 text-[10px] uppercase tracking-wider text-muted-foreground bg-muted/40">
+                    Skills
+                  </div>
+                )}
+                <div
+                  onClick={() => handleSelectCommand(cmd)}
+                  className={`px-4 py-2 cursor-pointer ${
+                    index === selectedIndex
+                      ? 'bg-brand/10'
+                      : 'hover:bg-accent'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-sm font-medium text-foreground">
+                      {cmd.name}
+                    </span>
+                    <span className="flex-1 text-sm text-muted-foreground truncate">
+                      {cmd.description}
+                    </span>
+                    <span
+                      className={`text-xs px-1.5 py-0.5 rounded ${getSourceColor(cmd.source)}`}
+                    >
+                      {getSourceLabel(cmd.source)}
+                    </span>
+                  </div>
+                  {cmd.source === 'skill' && cmd.argumentHint && (
+                    <div className="font-mono text-xs text-muted-foreground mt-0.5 pl-0 truncate">
+                      {cmd.argumentHint}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

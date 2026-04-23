@@ -16,6 +16,7 @@ export const PINNED_SESSIONS_FILE = join(COCKPIT_DIR, 'pinned-sessions.json');
 export const NOTE_FILE = join(COCKPIT_DIR, 'note.md');
 export const SCHEDULED_TASKS_FILE = join(COCKPIT_DIR, 'scheduled-tasks.json');
 export const SETTINGS_FILE = join(COCKPIT_DIR, 'settings.json');
+export const SKILLS_FILE = join(COCKPIT_DIR, 'skills.json');
 export const REVIEW_DIR = join(COCKPIT_DIR, 'review');
 export const REVIEW_SIGNAL_FILE = join(REVIEW_DIR, '_signal');
 

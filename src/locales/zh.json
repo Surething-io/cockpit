@@ -130,6 +130,7 @@
     "expandSidebar": "展开侧边栏",
     "collapseSidebar": "折叠侧边栏",
     "notes": "笔记",
+    "skills": "技能",
     "settings": "设置",
     "projectNotes": "项目笔记",
     "closeProject": "关闭项目"
@@ -352,7 +353,8 @@
     "copiedCommandTooltip": "已复制!",
     "copyCommandTooltip": "复制命令: claude -r {{sessionId}}",
     "executedCommand": "执行了 `{{command}}`{{exitInfo}}，输出：\n```\n{{output}}\n```",
-    "executedCommandFailed": "执行 `{{command}}` 失败：{{error}}"
+    "executedCommandFailed": "执行 `{{command}}` 失败：{{error}}",
+    "skillExpansionPrompt": "请读取这个 skill 文件："
   },
   "console": {
     "enterCommandOrUrl": "输入命令或网址开始使用",

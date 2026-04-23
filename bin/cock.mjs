@@ -59,18 +59,36 @@ if (!process.env.COCKPIT_PORT) {
 }
 
 // Subcommand routing
+
+// Flush stdout/stderr before exit. process.exit() does NOT wait for
+// async pipe writes to drain — for large outputs (> 16 KiB Node stream
+// highWaterMark) this truncates at exactly 16384 bytes on macOS pipes.
+// Without this, an ollama agent capturing our stdout via execAsync
+// receives a cleanly cut mid-string blob and then misdiagnoses it as
+// "output truncated" (reproduced in sessions 6910d071 & 22727dd4).
+async function flushAndExit(code) {
+  const drain = (stream) => new Promise((resolve) => {
+    if (!stream.writableLength) { resolve(); return; }
+    // Writing an empty string returns false iff the stream is backpressured;
+    // the callback then fires once the kernel has actually accepted the data.
+    stream.write('', 'utf8', () => resolve());
+  });
+  try { await Promise.all([drain(process.stdout), drain(process.stderr)]); } catch { /* ignore */ }
+  process.exit(code);
+}
+
 if (process.argv[2] === 'browser') {
   process.argv.splice(2, 1);
   const mod = await import('./cock-browser.mjs');
   await mod.done;
-  process.exit(0);
+  await flushAndExit(0);
 }
 
 if (process.argv[2] === 'terminal') {
   process.argv.splice(2, 1);
   const mod = await import('./cock-terminal.mjs');
   await mod.done;
-  process.exit(0);
+  await flushAndExit(0);
 }
 
 if (process.argv[2] === 'update') {

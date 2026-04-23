@@ -250,18 +250,65 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       target,
       world: 'MAIN',
       func: async (code) => {
+        // Chrome extension messaging 在 sendResponse 的 structured clone 边界
+        // 存在一个隐性约 8 KiB 的截断点（复现于 session 6910d071 的 evaluate
+        // 输出精确停在 8192 字节）。为避免大结果被默默截掉，我们在 MAIN
+        // world 里先评估结果；如果序列化后 > CHUNK_THRESHOLD，把完整负载
+        // 暂存到页面 window 上的一个 Map，只把一个 descriptor 返回给上层。
+        // cock-browser CLI 会识别这个 descriptor 并通过 evaluate_chunk
+        // action 分块读取、拼回完整内容，对调用方透明。
+        const CHUNK_THRESHOLD = 6000;
+
+        const maybeChunk = (data) => {
+          let serialized;
+          const isString = typeof data === 'string';
+          try {
+            serialized = isString
+              ? data
+              : (data === null || data === undefined)
+                ? ''
+                : JSON.stringify(data);
+          } catch {
+            // 不可序列化（循环引用等）— 原样返回，让上层照原路径处理
+            return { ok: true, data };
+          }
+          if (!serialized || serialized.length <= CHUNK_THRESHOLD) {
+            return { ok: true, data };
+          }
+          const W = window;
+          if (!W.__cockpit_eval_stash_v1__) W.__cockpit_eval_stash_v1__ = new Map();
+          const stash = W.__cockpit_eval_stash_v1__;
+          // 10 min GC：避免长会话页面堆积大 payload
+          const cutoff = Date.now() - 10 * 60 * 1000;
+          for (const [k, v] of stash) {
+            if (v.created < cutoff) stash.delete(k);
+          }
+          const token =
+            'ck-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+          stash.set(token, { payload: serialized, isString, created: Date.now() });
+          return {
+            ok: true,
+            data: {
+              __cockpit_chunked: true,
+              token,
+              totalBytes: serialized.length,
+              isString,
+            },
+          };
+        };
+
         // 层 1: 直接 eval — 覆盖表达式、多语句、IIFE、模板字面量等
         // eval 自动返回最后一个表达式的值（类似 CDP replMode）
         try {
           const result = (0, eval)(code);
           const data = result instanceof Promise ? await result : result;
-          return { ok: true, data };
+          return maybeChunk(data);
         } catch (e1) {
           // 层 2: AsyncFunction fallback — 覆盖含顶层 await 的代码
           try {
             const AF = Object.getPrototypeOf(async function(){}).constructor;
             const data = await new AF(code)();
-            return { ok: true, data };
+            return maybeChunk(data);
           } catch {
             return { ok: false, error: e1.message };
           }

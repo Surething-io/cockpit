@@ -225,6 +225,66 @@ async function fetchBrowserInfo(shortId) {
   }
 }
 
+// Chunked evaluate result resolver
+//
+// Chrome extension 的 runtime messaging 在 sendResponse 边界有一个 ~8 KiB 的
+// 隐性 structured-clone 截断点；为了避免 evaluate 大结果被默默截掉，
+// extension 侧会把 >6 KiB 的结果暂存到 page window 上的一个 Map，
+// 返回一个 { __cockpit_chunked: true, token, totalBytes, isString } 的
+// descriptor。这里遇到 descriptor 就自动走 evaluate_chunk action 把完整
+// payload 拉回来，对上层 formatOutput 完全透明。
+async function fetchOneChunk(baseUrl, id, token, offset, cmdTimeout) {
+  const resp = await fetch(`${baseUrl}/api/browser/evaluate_chunk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id,
+      params: { token, offset, size: 5000 },
+      timeout: Math.max(5000, Math.min(cmdTimeout, 15000)),
+    }),
+    signal: AbortSignal.timeout(20000),
+  });
+  const j = await resp.json();
+  if (!j.ok) throw new Error(`evaluate_chunk HTTP failed: ${j.error || 'unknown'}`);
+  const r = j.data;
+  if (!r || r.error) throw new Error(`evaluate_chunk error: ${r?.error || 'empty response'}`);
+  return r; // { chunk, done, nextOffset, totalBytes, isString }
+}
+
+async function resolveChunkedDescriptor(baseUrl, id, descriptor, cmdTimeout) {
+  const { token, totalBytes, isString } = descriptor;
+  const parts = [];
+  let offset = 0;
+  let iterations = 0;
+  while (offset < totalBytes) {
+    if (++iterations > 2000) throw new Error('evaluate chunking: too many iterations (>2000)');
+    const r = await fetchOneChunk(baseUrl, id, token, offset, cmdTimeout);
+    parts.push(r.chunk);
+    offset = r.nextOffset;
+    if (r.done) break;
+  }
+  const full = parts.join('');
+  if (isString) return full;
+  try {
+    return JSON.parse(full);
+  } catch (err) {
+    throw new Error(`evaluate chunking: concatenated payload is not valid JSON (${err.message}); raw length=${full.length}`);
+  }
+}
+
+async function autoResolveChunked(baseUrl, id, data, cmdTimeout) {
+  if (data && typeof data === 'object') {
+    if (data.__cockpit_chunked === true && typeof data.token === 'string') {
+      return await resolveChunkedDescriptor(baseUrl, id, data, cmdTimeout);
+    }
+    // allFrames=true 聚合时可能得到数组，每一项都可能是独立 chunked
+    if (Array.isArray(data)) {
+      return Promise.all(data.map(item => autoResolveChunked(baseUrl, id, item, cmdTimeout)));
+    }
+  }
+  return data;
+}
+
 // Send request
 async function run() {
   // Only id provided without action → show help + status
@@ -273,8 +333,12 @@ async function run() {
       process.exit(1);
     }
 
+    // 大结果由 extension 端自动 stash 并返回 chunked descriptor;
+    // 这里透明地把完整内容拉回来，调用方看不到 chunking 细节。
+    const resolved = await autoResolveChunked(baseUrl, id, data.data, timeout);
+
     // Format output
-    await formatOutput(action, data.data);
+    await formatOutput(action, resolved);
   } catch (err) {
     if (err.name === 'TimeoutError' || err.code === 'ABORT_ERR') {
       console.error(`Timeout: No response within ${timeout}ms. Is the browser bubble connected?`);

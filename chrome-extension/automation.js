@@ -446,6 +446,8 @@ const handlers = {
     // 通过 background.js 的 chrome.scripting.executeScript 在 main world 执行
     // 不受页面 CSP 限制，可访问页面 JS 变量（React state 等）
     // allFrames: true → 在所有 frame 中执行（解决跨域 iframe 访问问题）
+    // 大结果 (>6 KiB) 会在 MAIN world 被 auto-stash 并以 descriptor 形式返回；
+    // cock-browser CLI 识别 descriptor 后会通过 evaluate_chunk 回填内容。
     return new Promise((resolve) => {
       _chrome.runtime.sendMessage({ type: 'cockpit:evaluate', js, allFrames: !!allFrames }, (response) => {
         if (_chrome.runtime.lastError) {
@@ -454,6 +456,40 @@ const handlers = {
         }
         if (response?.ok) resolve(response.data);
         else resolve({ error: response?.error || 'Evaluation failed' });
+      });
+    });
+  },
+
+  evaluate_chunk: async ({ token, offset = 0, size = 5000 }) => {
+    // 读取 MAIN-world stash 里某个 token 的一段内容。token 由上一次 evaluate
+    // 返回的 descriptor 提供。注意 stash 在 page window 上，页面导航/刷新会丢；
+    // 必须同一个浏览器 session、同一个页面上下文。
+    //
+    // 返回 { chunk, done, nextOffset, totalBytes, isString }；
+    // size 默认 5000 以确保每次返回对象 JSON 序列化 < 6000，远低于 Chrome
+    // 在 chrome.runtime 消息边界的 ~8192 字节隐性截断阈值。
+    const offNum = Number(offset) || 0;
+    const szNum = Math.min(Math.max(1, Number(size) || 5000), 7000);
+    const tokStr = String(token);
+    const js =
+      '(()=>{' +
+        'const M=window.__cockpit_eval_stash_v1__;' +
+        "if(!M)return{error:'stash not initialised — nothing has been chunked, or page was reloaded after evaluate'};" +
+        'const e=M.get(' + JSON.stringify(tokStr) + ');' +
+        "if(!e)return{error:'token not found or expired (stash TTL is 10 min, and page navigation clears it)'};" +
+        'const off=' + offNum + ';' +
+        'const sz=' + szNum + ';' +
+        'const chunk=e.payload.slice(off,off+sz);' +
+        'const nextOffset=off+chunk.length;' +
+        'const done=nextOffset>=e.payload.length;' +
+        'if(done)M.delete(' + JSON.stringify(tokStr) + ');' +
+        'return{chunk,done,nextOffset,totalBytes:e.payload.length,isString:e.isString};' +
+      '})()';
+    return new Promise((resolve) => {
+      _chrome.runtime.sendMessage({ type: 'cockpit:evaluate', js, allFrames: false }, (response) => {
+        if (_chrome.runtime.lastError) { resolve({ error: _chrome.runtime.lastError.message }); return; }
+        if (response?.ok) resolve(response.data);
+        else resolve({ error: response?.error || 'evaluate_chunk failed' });
       });
     });
   },

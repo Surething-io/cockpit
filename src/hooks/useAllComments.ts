@@ -67,11 +67,11 @@ export async function fetchAllCommentsWithCode(cwd: string): Promise<CommentWith
     Array.from(commentsByFile.keys()).map(async (filePath) => {
       try {
         const fileResponse = await fetch(
-          `/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`
+          `/api/files/text?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`
         );
         if (fileResponse.ok) {
           const fileData = await fileResponse.json();
-          if (fileData.type === 'text' && fileData.content) {
+          if (typeof fileData.content === 'string') {
             fileContents.set(filePath, fileData.content.split('\n'));
           }
         }

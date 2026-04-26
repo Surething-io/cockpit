@@ -10,6 +10,7 @@ import { TocSidebar } from '../shared/TocSidebar';
 import { rehypeSourceLines } from '@/lib/rehypeSourceLines';
 import { toast } from '../shared/Toast';
 import { useJsonSearch, JsonSearchBar } from '../../hooks/useJsonSearch';
+import { FileImagePreview } from './fileBrowser/FileImagePreview';
 import {
   isValidJson,
   formatAsJson,
@@ -82,18 +83,15 @@ function FilePreview({ filePath }: FilePreviewProps) {
     );
   }
 
-  // Image file: render directly with <img>
+  // Image file: shared component, same cache/etag semantics as the file browser.
   if (isImageFile(filePath)) {
-    const rawUrl = `/api/file?path=${encodeURIComponent(filePath)}&raw=true`;
     return (
-      <div className="flex items-center justify-center h-full overflow-auto">
-        { }
-        <img
-          src={rawUrl}
-          alt={filePath.split('/').pop() || 'image'}
-          className="max-w-full max-h-full object-contain"
-        />
-      </div>
+      <FileImagePreview
+        absPath={filePath}
+        className="flex items-center justify-center h-full overflow-auto"
+        imgClassName="max-w-full max-h-full object-contain"
+        alt={filePath.split('/').pop() || 'image'}
+      />
     );
   }
 

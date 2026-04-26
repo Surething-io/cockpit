@@ -126,7 +126,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
       } else {
         // Read code content from file
         const fileResponse = await fetch(
-          `/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(comment.filePath)}`
+          `/api/files/text?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(comment.filePath)}`
         );
         if (!fileResponse.ok) {
           throw new Error('Failed to read file');

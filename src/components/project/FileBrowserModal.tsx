@@ -21,6 +21,7 @@ import type { TabType, GitFileStatus, GitStatusResponse, FileBrowserModalProps, 
 import { getTargetDirPath, isImageFile, formatDateTime, NOOP, COMMITS_PER_PAGE } from './fileBrowser/utils';
 
 import { BranchSelector } from './fileBrowser/BranchSelector';
+import { FileImagePreview } from './fileBrowser/FileImagePreview';
 
 import { useFileTree } from '../../hooks/useFileTree';
 import { useContentSearch } from '../../hooks/useContentSearch';
@@ -647,9 +648,19 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       const currentType = fileContentTypeRef.current;
       if (currentPath && currentType === 'text') {
         promises.push(
-          fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(currentPath)}`)
-            .then(res => res.json())
-            .then(data => { if (data.type === 'text') fileTree.setFileContent(data); })
+          fetch(`/api/files/text?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(currentPath)}`)
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+              if (data && typeof data.content === 'string') {
+                fileTree.setFileContent({
+                  type: 'text',
+                  content: data.content,
+                  size: data.size,
+                  mtime: data.mtimeMs,
+                  ...(data.isSymlink ? { isSymlink: true, symlinkTarget: data.symlinkTarget } : {}),
+                });
+              }
+            })
         );
       }
 
@@ -1609,14 +1620,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                             }}
                           />
                         )
-                      ) : fileTree.fileContent.type === 'image' && fileTree.fileContent.content ? (
-                        <div className="h-full flex items-center justify-center p-4 bg-secondary">
-                          <img
-                            src={fileTree.fileContent.content}
-                            alt={fileTree.selectedPath}
-                            className="max-w-full max-h-full object-contain"
-                          />
-                        </div>
+                      ) : fileTree.fileContent.type === 'image' && fileTree.selectedPath ? (
+                        <FileImagePreview
+                          cwd={cwd}
+                          path={fileTree.selectedPath}
+                          refreshKey={fileTree.fileContent.mtime}
+                          alt={fileTree.selectedPath}
+                        />
                       ) : (
                         <div className="h-full flex items-center justify-center text-muted-foreground">
                           <div className="text-center">
@@ -1693,13 +1703,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   </div>
                   <div className="flex-1 overflow-auto">
                     {isImageFile(gitStatus.statusSelectedFile.file.path) ? (
-                      <div className="p-4 flex items-center justify-center">
-                        <img
-                          src={`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(gitStatus.statusSelectedFile.file.path)}&raw=1`}
-                          alt={gitStatus.statusSelectedFile.file.path}
-                          className="max-w-full max-h-[60vh] object-contain"
-                        />
-                      </div>
+                      <FileImagePreview
+                        cwd={cwd}
+                        path={gitStatus.statusSelectedFile.file.path}
+                        className="p-4 flex items-center justify-center"
+                        imgClassName="max-w-full max-h-[60vh] object-contain"
+                        alt={gitStatus.statusSelectedFile.file.path}
+                      />
                     ) : (
                       <DiffView
                         oldContent={gitStatus.statusDiff.oldContent}

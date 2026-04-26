@@ -137,11 +137,11 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
 
       if (response.status === 409 && data.conflict) {
         try {
-          const readRes = await fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`);
+          const readRes = await fetch(`/api/files/text?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`);
           const readData = await readRes.json();
           setConflictState({
             show: true,
-            diskContent: readData.type === 'text' ? readData.content : undefined,
+            diskContent: readRes.ok && typeof readData.content === 'string' ? readData.content : undefined,
           });
         } catch {
           setConflictState({ show: true });

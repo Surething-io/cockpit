@@ -1,170 +1,142 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFile, stat, lstat, readlink } from 'fs/promises';
-import { join, extname } from 'path';
+import { createReadStream } from 'fs';
+import { Readable } from 'stream';
+import path from 'path';
+import {
+  resolveSafePath,
+  statWithSymlink,
+  classify,
+  computeETag,
+  buildCacheHeaders,
+  ifNoneMatch,
+  getMimeType,
+  MAX_IMAGE_SIZE,
+} from '@/lib/files/shared';
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-
-// Image extensions that can be previewed
-const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp']);
-
-// Binary file extensions (non-text, non-image)
-const BINARY_EXTENSIONS = new Set([
-  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-  '.zip', '.tar', '.gz', '.rar', '.7z',
-  '.exe', '.dll', '.so', '.dylib',
-  '.mp3', '.mp4', '.avi', '.mov', '.mkv', '.wav', '.flac',
-  '.ttf', '.otf', '.woff', '.woff2', '.eot',
-  '.db', '.sqlite', '.sqlite3',
-  '.pyc', '.class', '.o', '.a',
-]);
-
+/**
+ * GET /api/files/read
+ *
+ * Streams the raw bytes of a file. Designed for direct use in `<img src>` /
+ * `<video src>` / `<a href>`, never wrapped in JSON, never base64-encoded.
+ *
+ * - Always sets `ETag` + `Last-Modified` + `Cache-Control: no-cache,
+ *   must-revalidate`, so the browser revalidates via conditional GET on
+ *   every access (304 when unchanged, fresh body when bytes change).
+ * - Supports `Range` requests for large media.
+ * - Streams from disk; never reads the full body into memory.
+ *
+ * Categories:
+ *   - image  → 200 stream
+ *   - text   → 409 (callers should use `/api/files/text` instead)
+ *   - binary → 409 (no inline preview supported)
+ *
+ * Status codes:
+ *   200, 206, 304, 400, 403, 404, 409, 413, 416, 500
+ */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const cwd = searchParams.get('cwd') || process.cwd();
   const filePath = searchParams.get('path');
-  const raw = searchParams.get('raw') === '1';
 
   if (!filePath) {
-    return NextResponse.json(
-      { error: 'File path is required' },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: 'File path is required' }, { status: 400 });
+  }
+
+  const fullPath = resolveSafePath(cwd, filePath);
+  if (!fullPath) {
+    return NextResponse.json({ error: 'Path escapes cwd' }, { status: 403 });
   }
 
   try {
-    const fullPath = join(cwd, filePath);
-    const ext = extname(filePath).toLowerCase();
+    const info = await statWithSymlink(fullPath);
+    if (info.isDirectory) {
+      return NextResponse.json({ error: 'Path is a directory' }, { status: 409 });
+    }
 
-    // Detect symlink before stat (which follows the link)
-    let isSymlink = false;
-    let symlinkTarget: string | undefined;
-    try {
-      const lstats = await lstat(fullPath);
-      if (lstats.isSymbolicLink()) {
-        isSymlink = true;
-        symlinkTarget = await readlink(fullPath);
-      }
-    } catch { /* file may not exist, stat below will handle */ }
+    const ext = path.extname(filePath).toLowerCase();
+    const category = classify(ext, info.size);
 
-    // Get file stats (follows symlinks)
-    const stats = await stat(fullPath);
-
-    if (stats.isDirectory()) {
+    if (category === 'too-large') {
       return NextResponse.json(
-        { error: 'Path is a directory' },
-        { status: 400 }
+        {
+          error: `File too large (over ${Math.floor(MAX_IMAGE_SIZE / 1024 / 1024)}MB)`,
+          size: info.size,
+        },
+        { status: 413 },
+      );
+    }
+    if (category !== 'image') {
+      return NextResponse.json(
+        {
+          error: `This endpoint streams images only (category: ${category}). Use /api/files/text for text.`,
+          category,
+        },
+        { status: 409 },
       );
     }
 
-    const fileSize = stats.size;
+    const etag = computeETag(info.size, info.mtimeMs);
 
-    // Check if it's an image
-    if (IMAGE_EXTENSIONS.has(ext)) {
-      // For images, return base64 encoded content
-      if (fileSize > MAX_FILE_SIZE * 5) { // Allow larger images up to 5MB
-        if (raw) {
-          return new NextResponse('Image file too large', { status: 413 });
+    // Conditional GET — short-circuit when nothing changed.
+    if (ifNoneMatch(request.headers.get('if-none-match'), etag)) {
+      return new NextResponse(null, {
+        status: 304,
+        headers: buildCacheHeaders(etag, info.mtimeMs),
+      });
+    }
+
+    const baseHeaders = {
+      ...buildCacheHeaders(etag, info.mtimeMs),
+      'Content-Type': getMimeType(ext),
+      'Accept-Ranges': 'bytes',
+    };
+
+    // Range support for large media.
+    const range = request.headers.get('range');
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (match) {
+        const start = match[1] ? parseInt(match[1], 10) : 0;
+        const end = match[2] ? parseInt(match[2], 10) : info.size - 1;
+        if (
+          Number.isFinite(start) &&
+          Number.isFinite(end) &&
+          start >= 0 &&
+          end < info.size &&
+          start <= end
+        ) {
+          const stream = createReadStream(fullPath, { start, end });
+          return new NextResponse(Readable.toWeb(stream) as ReadableStream, {
+            status: 206,
+            headers: {
+              ...baseHeaders,
+              'Content-Length': String(end - start + 1),
+              'Content-Range': `bytes ${start}-${end}/${info.size}`,
+            },
+          });
         }
-        return NextResponse.json({
-          type: 'error',
-          message: 'Image too large to preview',
-          size: fileSize,
+        return new NextResponse(null, {
+          status: 416,
+          headers: { 'Content-Range': `bytes */${info.size}` },
         });
       }
-
-      const content = await readFile(fullPath);
-      const mimeType = getMimeType(ext);
-
-      // If raw=1, return raw image data for <img src="..."> usage
-      if (raw) {
-        return new NextResponse(content, {
-          headers: {
-            'Content-Type': mimeType,
-            'Content-Length': String(fileSize),
-          },
-        });
-      }
-
-      const base64 = content.toString('base64');
-      return NextResponse.json({
-        type: 'image',
-        content: `data:${mimeType};base64,${base64}`,
-        size: fileSize,
-      });
     }
 
-    // Check if it's a binary file
-    if (BINARY_EXTENSIONS.has(ext)) {
-      return NextResponse.json({
-        type: 'binary',
-        message: 'Cannot preview binary file',
-        size: fileSize,
-      });
-    }
-
-    // Check file size for text files
-    if (fileSize > MAX_FILE_SIZE) {
-      return NextResponse.json({
-        type: 'error',
-        message: 'File too large to preview (over 10MB)',
-        size: fileSize,
-      });
-    }
-
-    // Read as text
-    const content = await readFile(fullPath, 'utf-8');
-
-    // Check if content looks like binary
-    if (isBinaryContent(content)) {
-      return NextResponse.json({
-        type: 'binary',
-        message: 'Cannot preview binary file',
-        size: fileSize,
-      });
-    }
-
-    return NextResponse.json({
-      type: 'text',
-      content,
-      size: fileSize,
-      mtime: stats.mtimeMs,
-      ...(isSymlink ? { isSymlink: true, symlinkTarget } : {}),
+    // Full body, streamed from disk — large images never enter Node's heap.
+    const stream = createReadStream(fullPath);
+    return new NextResponse(Readable.toWeb(stream) as ReadableStream, {
+      status: 200,
+      headers: {
+        ...baseHeaders,
+        'Content-Length': String(info.size),
+      },
     });
   } catch (error) {
     console.error('Error reading file:', error);
-    return NextResponse.json(
-      { error: 'Failed to read file' },
-      { status: 500 }
-    );
-  }
-}
-
-function getMimeType(ext: string): string {
-  const mimeTypes: Record<string, string> = {
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.webp': 'image/webp',
-    '.svg': 'image/svg+xml',
-    '.ico': 'image/x-icon',
-    '.bmp': 'image/bmp',
-  };
-  return mimeTypes[ext] || 'application/octet-stream';
-}
-
-function isBinaryContent(content: string): boolean {
-  // Check for null bytes or high ratio of non-printable characters
-  let nonPrintable = 0;
-  const sampleSize = Math.min(content.length, 1000);
-
-  for (let i = 0; i < sampleSize; i++) {
-    const code = content.charCodeAt(i);
-    if (code === 0) return true; // Null byte = definitely binary
-    if (code < 32 && code !== 9 && code !== 10 && code !== 13) {
-      nonPrintable++;
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (code === 'ENOENT') {
+      return NextResponse.json({ error: 'File not found' }, { status: 404 });
     }
+    return NextResponse.json({ error: 'Failed to read file' }, { status: 500 });
   }
-
-  return nonPrintable / sampleSize > 0.1; // More than 10% non-printable = likely binary
 }

@@ -283,9 +283,90 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     setBlameError(null);
     setBlameSelectedCommit(null);
     try {
-      const res = await fetch(`/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`);
-      const data = await res.json();
-      setFileContent(data);
+      // Two-step: cheap stat decides what to do; only text fetches bytes.
+      // Image bytes are NEVER pulled into JS heap — the renderer uses <FileImagePreview/>
+      // which talks to /api/files/read directly via <img src>.
+      const statRes = await fetch(
+        `/api/files/stat?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`,
+        { cache: 'no-store' },
+      );
+      const stat = await statRes.json();
+
+      if (!statRes.ok) {
+        setFileContent({ type: 'error', message: stat?.error || 'Failed to stat file' });
+        return;
+      }
+      if (!stat.exists) {
+        setFileContent({ type: 'error', message: 'File not found' });
+        return;
+      }
+      if (stat.kind === 'dir') {
+        setFileContent({ type: 'error', message: 'Path is a directory' });
+        return;
+      }
+
+      switch (stat.category) {
+        case 'image': {
+          // No fetch — the image renderer streams directly from /read.
+          setFileContent({
+            type: 'image',
+            size: stat.size,
+            mtime: stat.mtimeMs,
+            ...(stat.isSymlink ? { isSymlink: true, symlinkTarget: stat.symlinkTarget } : {}),
+          });
+          break;
+        }
+        case 'binary': {
+          setFileContent({
+            type: 'binary',
+            message: 'Cannot preview binary file',
+            size: stat.size,
+            mtime: stat.mtimeMs,
+          });
+          break;
+        }
+        case 'too-large': {
+          setFileContent({
+            type: 'error',
+            message: 'File too large to preview',
+            size: stat.size,
+            mtime: stat.mtimeMs,
+          });
+          break;
+        }
+        case 'text':
+        default: {
+          const textRes = await fetch(
+            `/api/files/text?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`,
+            { cache: 'no-store' },
+          );
+          if (textRes.status === 409) {
+            // File turned out to be binary on second sniff
+            const body = await textRes.json().catch(() => ({}));
+            setFileContent({
+              type: 'binary',
+              message: body?.error || 'Cannot preview binary file',
+              size: stat.size,
+              mtime: stat.mtimeMs,
+            });
+            break;
+          }
+          if (!textRes.ok) {
+            const body = await textRes.json().catch(() => ({}));
+            setFileContent({ type: 'error', message: body?.error || 'Failed to load file' });
+            break;
+          }
+          const text = await textRes.json();
+          setFileContent({
+            type: 'text',
+            content: text.content,
+            size: text.size,
+            mtime: text.mtimeMs,
+            ...(text.isSymlink ? { isSymlink: true, symlinkTarget: text.symlinkTarget } : {}),
+          });
+          break;
+        }
+      }
       addToRecentFiles(filePath);
       // Auto-load blame (used for inline blame annotations, does not block file content rendering)
       loadBlame(filePath);

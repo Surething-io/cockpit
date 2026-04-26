@@ -14,7 +14,6 @@ import { memo, useMemo, ComponentPropsWithoutRef } from 'react';
 import type { PluggableList } from 'unified';
 import type { ExtraProps } from 'react-markdown';
 import { useTheme } from './ThemeProvider';
-import { MermaidBlock } from './MermaidBlock';
 
 // Stable reference — avoid recreating on every render
 const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkAlert];
@@ -129,7 +128,7 @@ function preprocessAsciiArt(content: string): string {
 }
 
 // Extract Markdown component config to avoid redefining on each render
-function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
+function createMarkdownComponents(isDark: boolean) {
   return {
     // Code block — node comes from react-markdown passNode, destructure to avoid passing to DOM
     code({ className, children, node: _node, ...props }: ComponentPropsWithoutRef<'code'> & ExtraProps & { className?: string }) {
@@ -147,11 +146,6 @@ function createMarkdownComponents(isDark: boolean, isStreaming?: boolean) {
 
       const code = String(children).replace(/\n$/, '');
       const language = match?.[1] || 'text';
-
-      // Mermaid code block: render diagram when not streaming, show code while streaming
-      if (language === 'mermaid' && !isStreaming) {
-        return <MermaidBlock code={code} isDark={isDark} />;
-      }
 
       // Get line range of <pre> from data-source-start injected by rehypeSourceLines onto <code>
       // (node.position on <code> itself is inconsistent with <pre> and unreliable)
@@ -234,7 +228,6 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
   // Memoize components to keep stable references — prevents ReactMarkdown from
   // tearing down and recreating the entire DOM tree on parent re-renders
   const components = useMemo(() => createMarkdownComponents(isDark), [isDark]);
-  const streamComponents = useMemo(() => createMarkdownComponents(isDark, true), [isDark]);
 
   const remarkPlugins = enableMath ? REMARK_PLUGINS : REMARK_PLUGINS_NO_MATH;
   const rehypePluginsBase = enableMath ? REHYPE_PLUGINS_BASE : REHYPE_PLUGINS_NO_MATH;
@@ -279,7 +272,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
         <ReactMarkdown
           remarkPlugins={remarkPlugins}
           rehypePlugins={rehypePluginsBase}
-          components={streamComponents}
+          components={components}
         >
           {enableMath ? escapeCurrencyDollars(escapeTablePipes(completedLines)) : escapeTablePipes(completedLines)}
         </ReactMarkdown>

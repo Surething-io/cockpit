@@ -766,15 +766,6 @@
     "commentAuthor": "评论 ({{author}}): {{content}}",
     "replyAuthor": "  ↳ {{author}}: {{content}}"
   },
-  "mermaid": {
-    "chart": "图表",
-    "code": "代码",
-    "renderFailed": "Mermaid 渲染失败",
-    "clickToEnlarge": "点击放大查看",
-    "rendering": "渲染中...",
-    "mermaidChart": "Mermaid 图表",
-    "closeEsc": "关闭 (ESC)"
-  },
   "markdown": {
     "copied": "✓ 已复制",
     "copy": "复制"

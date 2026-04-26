@@ -766,15 +766,6 @@
     "commentAuthor": "Comment ({{author}}): {{content}}",
     "replyAuthor": "  ↳ {{author}}: {{content}}"
   },
-  "mermaid": {
-    "chart": "Chart",
-    "code": "Code",
-    "renderFailed": "Mermaid render failed",
-    "clickToEnlarge": "Click to enlarge",
-    "rendering": "Rendering...",
-    "mermaidChart": "Mermaid Chart",
-    "closeEsc": "Close (ESC)"
-  },
   "markdown": {
     "copied": "✓ Copied",
     "copy": "Copy"

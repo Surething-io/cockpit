@@ -28,7 +28,7 @@ https://github.com/user-attachments/assets/18f1a5dc-64f3-4ff6-b9fc-9cd08181fbb8
 - 语法高亮 (Shiki) + Vi 模式编辑
 - Git blame、Diff 视图、分支切换、Worktree 管理
 - LSP 集成 — 跳转定义、查找引用、悬浮类型信息
-- 模糊搜索 (Cmd+F)、JSON 可读视图、Markdown 预览、Mermaid 图表
+- 模糊搜索 (Cmd+F)、JSON 可读视图、Markdown 预览
 
 ### Console — 终端与气泡
 

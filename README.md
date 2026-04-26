@@ -26,7 +26,7 @@ A unified development cockpit built on **Claude Code (Agent SDK)** — chat, cod
 - Syntax highlighting (Shiki) with Vi mode editing
 - Git blame, diff view, branch switching, worktree management
 - LSP integration — go to definition, find references, hover info
-- Fuzzy file search (Cmd+F), JSON viewer, Markdown preview, Mermaid diagrams
+- Fuzzy file search (Cmd+F), JSON viewer, Markdown preview
 
 ### Console — Terminal & Bubbles
 - Full terminal emulator (xterm.js) with shell integration

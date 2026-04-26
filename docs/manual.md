@@ -90,7 +90,6 @@ Type `/` to trigger the completion menu; use Up/Down arrows to select, Enter/Tab
 ### 2.4 AI Message Display
 
 - Full Markdown rendering: syntax highlighting, tables, lists, GitHub Alerts, math formulas, HTML
-- **Mermaid diagrams**: Interactive rendering
 - **Tool calls**: Displayed collapsed; expandable to view input/output details
 - **File changes**: After Edit/Write tool calls, a "View file changes" button opens a Diff view
 - **Markdown file preview**: Read/Edit of `.md` files shows a preview button

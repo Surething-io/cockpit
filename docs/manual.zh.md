@@ -90,7 +90,6 @@
 ### 2.4 AI 消息展示
 
 - 完整 Markdown 渲染：代码高亮、表格、列表、GitHub Alerts、数学公式、HTML
-- **Mermaid 图表**：交互式渲染
 - **工具调用**：折叠显示，可展开查看输入/输出详情
 - **文件变更**：Edit/Write 工具调用后显示「查看文件变更」按钮，打开 Diff 视图
 - **Markdown 文件预览**：Read/Edit 的 `.md` 文件显示为预览按钮

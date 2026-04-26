@@ -1,5 +1,5 @@
 import { createServer } from 'http';
-import { exec } from 'child_process';
+import { exec, execSync } from 'child_process';
 import { networkInterfaces, homedir } from 'os';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
@@ -17,17 +17,61 @@ process.env.COCKPIT_PORT = String(port);
 
 // ============================================
 // 进程生命周期防护
-// 父进程死亡后 stdout/stderr 管道断裂，Next.js 的 uncaughtException handler
-// 会尝试 console.log 报错 → 写 stdout → EPIPE → 再次触发 handler → CPU 死循环
-// 在管道错误升级为 uncaughtException 之前拦截，直接退出
+//
+// 1) 父进程死亡后 stdout/stderr 管道断裂，Next.js 的 uncaughtException handler
+//    会尝试 console.log 报错 → 写 stdout → EPIPE → 再次触发 handler → CPU 死循环
+//    在管道错误升级为 uncaughtException 之前拦截，直接退出。
+//
+// 2) Next.js 在 dev 模式下会在自己的子进程里跑 `next-server` worker（turbopack）。
+//    如果父进程被异常杀掉（npm reinstall、Ctrl+C 后 npm 包了一层、IDE 杀任务等），
+//    next-server 子进程不会跟着死，而是会失去父进程后**重新绑定到 next 自带的默认
+//    端口 3000**，然后把后续 `npm run dev` 卡死（Next 通过 .next/dev/logs 检测到
+//    "已有 dev server 在跑"而拒绝再启）。所以父进程退出前必须显式杀掉所有直接子进程。
 // ============================================
+let _cleanupRan = false;
+function killChildren() {
+  if (_cleanupRan) return;
+  _cleanupRan = true;
+  if (process.platform === 'win32') {
+    // Windows: 走 wmic 列出子 PID 再逐个 taskkill /F /T，避免 /T 把自己也带走
+    try {
+      const out = execSync(`wmic process where (ParentProcessId=${process.pid}) get ProcessId /value`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const pids = (out.match(/ProcessId=(\d+)/g) || []).map(s => s.split('=')[1]).filter(Boolean);
+      for (const pid of pids) {
+        try { execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' }); } catch {}
+      }
+    } catch {}
+    return;
+  }
+  // POSIX: pkill -P 只杀直接子进程，不递归（next-server 等都是直接子进程，足够）
+  // pkill 在没有匹配到任何进程时返回 1，不当作错误
+  try { execSync(`pkill -TERM -P ${process.pid}`, { stdio: 'ignore' }); } catch {}
+}
+
+// 正常退出路径（包括所有的 process.exit() 调用）—— Node 保证此 handler 同步执行
+process.on('exit', killChildren);
+
+// 信号路径 —— 先杀子进程再退出，并让 shell 看到正确的退出码
+const cleanupAndExit = (code) => () => { killChildren(); process.exit(code); };
+process.on('SIGINT',  cleanupAndExit(130));
+process.on('SIGTERM', cleanupAndExit(143));
+process.on('SIGQUIT', cleanupAndExit(131));
+process.on('SIGHUP',  cleanupAndExit(0));
+
+// 未捕获异常 —— 不能让 Next.js 的默认 handler 再走 console.log 触发 EPIPE 死循环
+process.on('uncaughtException', (err) => {
+  try { console.error('uncaughtException:', err); } catch {}
+  killChildren();
+  process.exit(1);
+});
+
+// stdout/stderr 管道断裂 → 立刻退出（exit handler 会顺手清子进程）
 process.stdout.on('error', (err) => {
   if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') process.exit(0);
 });
 process.stderr.on('error', (err) => {
   if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') process.exit(0);
 });
-process.on('SIGHUP', () => process.exit(0));
 
 const app = next({ dev });
 const handle = app.getRequestHandler();

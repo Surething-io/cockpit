@@ -12,6 +12,73 @@ import { registerTerminal, finalizeTerminal, notifyOutputListeners, notifyExitLi
 
 const MAX_OUTPUT_LINES = 5000;
 const OUTPUT_FILE_THRESHOLD = 4096;
+/** PTY raw byte ring buffer cap (~2MB worth of chars, covers 20k+ typical lines) */
+const PTY_RING_BUFFER_MAX = 2 * 1024 * 1024;
+
+/**
+ * Append-only ring buffer for raw PTY output.
+ *
+ * Stores raw chunks (preserving ANSI control sequences intact) and trims the
+ * oldest content when the total exceeds the cap. We keep raw text and let the
+ * frontend's xterm.js parse it on replay — no per-line splitting, which would
+ * corrupt cursor/styling sequences that span line boundaries.
+ */
+export class PtyRingBuffer {
+  private chunks: string[] = [];
+  private totalLen = 0;
+  private readonly max: number;
+
+  constructor(max: number = PTY_RING_BUFFER_MAX) {
+    this.max = max;
+  }
+
+  append(data: string): void {
+    if (!data) return;
+    this.chunks.push(data);
+    this.totalLen += data.length;
+    while (this.totalLen > this.max && this.chunks.length > 0) {
+      const overflow = this.totalLen - this.max;
+      const oldest = this.chunks[0];
+      if (oldest.length <= overflow) {
+        this.chunks.shift();
+        this.totalLen -= oldest.length;
+      } else {
+        this.chunks[0] = oldest.slice(overflow);
+        this.totalLen -= overflow;
+      }
+    }
+  }
+
+  snapshot(): string {
+    return this.chunks.length === 1 ? this.chunks[0] : this.chunks.join('');
+  }
+
+  get length(): number {
+    return this.totalLen;
+  }
+}
+
+/**
+ * Find a safe replay start position inside a PTY snapshot.
+ *
+ * The buffer's head may be in the middle of an ANSI escape sequence
+ * (because the ring buffer trims by raw byte count). Replaying from a
+ * partial sequence makes xterm render garbage. Strategy:
+ *   1. Prefer the position right after the first '\n' — line feed cannot
+ *      appear inside CSI sequences, and is a UTF-16 code-unit boundary.
+ *   2. Fall back to the first ESC (0x1B) — guaranteed start of a fresh sequence.
+ *   3. Worst case: position 0 (only if 2MB contains neither '\n' nor ESC,
+ *      which is essentially impossible for real terminal output).
+ *
+ * No scan upper bound: indexOf is V8-optimized and attach is rare.
+ */
+export function findSafeStart(s: string): number {
+  const lf = s.indexOf('\n');
+  if (lf !== -1) return lf + 1;
+  const esc = s.indexOf('\x1b');
+  if (esc !== -1) return esc;
+  return 0;
+}
 
 export interface RunningCommand {
   commandId: string;
@@ -27,6 +94,8 @@ export interface RunningCommand {
   usePty?: boolean;
   outputLines: string[];
   outputPartial: string;
+  /** PTY raw output ring buffer — only set in PTY mode, released on finalize */
+  ptyRingBuffer?: PtyRingBuffer;
   timestamp: string;
 }
 
@@ -62,13 +131,16 @@ function getRegistry(): Map<string, RunningCommand> {
  * Register a running command
  * Automatically attaches close/error listeners to ensure finalizeCommand always runs
  */
-export function registerCommand(cmd: Omit<RunningCommand, 'outputLines' | 'outputPartial'>): void {
+export function registerCommand(cmd: Omit<RunningCommand, 'outputLines' | 'outputPartial' | 'ptyRingBuffer'>): void {
   console.log(`[registry] register: id=${cmd.commandId}, cmd="${cmd.command}", pid=${cmd.pid}, pty=${!!cmd.ptyProcess}, server=${getServerId()}`);
-  getRegistry().set(cmd.commandId, {
+  const entry: RunningCommand = {
     ...cmd,
     outputLines: [],
     outputPartial: '',
-  });
+    // Only PTY commands get a ring buffer — pipe mode replay still uses outputLines.
+    ...(cmd.ptyProcess ? { ptyRingBuffer: new PtyRingBuffer() } : {}),
+  };
+  getRegistry().set(cmd.commandId, entry);
 
   // Register in TerminalBridge (for CLI access)
   registerTerminal(cmd.tabId, cmd.commandId, cmd.command, cmd.projectCwd);
@@ -77,12 +149,14 @@ export function registerCommand(cmd: Omit<RunningCommand, 'outputLines' | 'outpu
   writeHistoryPlaceholder(cmd.commandId, cmd.command, cmd.timestamp, cmd.cwd, cmd.projectCwd, cmd.tabId, !!cmd.usePty).catch(() => {});
 
   if (cmd.ptyProcess) {
-    // PTY mode: single data event (stdout + stderr merged, matching a real terminal)
-    // Skip line-based buffering — PTY output contains cursor control sequences
-    // that are meaningless when replayed line-by-line. Just notify listeners.
+    // PTY mode: single data event (stdout + stderr merged, matching a real terminal).
+    // We don't split into lines — control sequences span chunks and would be
+    // corrupted by line-based handling. Instead, append raw chunks to a ring
+    // buffer for refresh-time replay, and notify live listeners untouched.
     const pty = cmd.ptyProcess;
 
     pty.onData((data: string) => {
+      entry.ptyRingBuffer?.append(data);
       notifyOutputListeners(cmd.commandId, data);
     });
 
@@ -257,6 +331,10 @@ export async function finalizeCommand(commandId: string, exitCode: number, pid?:
   finalizeTerminal(commandId, exitCode);
 
   const output = getBufferedOutput(cmd);
+  // Release the PTY ring buffer — the JSONL/output file written below is the
+  // canonical record for already-exited commands; the ring buffer was only
+  // needed for live attach/replay during the run.
+  cmd.ptyRingBuffer = undefined;
   registry.delete(commandId);
 
   const entry: Record<string, unknown> = {

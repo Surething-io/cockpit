@@ -10,7 +10,7 @@ import { fileWatcher, reviewWatcher, type FileEvent } from './fileWatcher';
 import { GLOBAL_STATE_FILE, readJsonFile, getTerminalHistoryPath } from './paths';
 import { readFile } from 'fs/promises';
 import { getLastUserMessage } from './global-state';
-import { registerCommand, finalizeCommand, getRunningCommands, getRunningCommand, getRegistrySize, getAllProjectCwds } from './terminal/RunningCommandRegistry';
+import { registerCommand, finalizeCommand, getRunningCommands, getRunningCommand, getRegistrySize, getAllProjectCwds, findSafeStart } from './terminal/RunningCommandRegistry';
 import { registerBrowser, unregisterBrowser, resolvePendingRequest, getBrowserByShortId, createPendingRequest, sendCommandToBrowser, listBrowsers } from './bubbles/browser/BrowserBridge';
 import { getTerminalByShortId, listTerminals, addOutputListener, addExitListener, registerTerminal, unregisterTerminal } from './terminal/TerminalBridge';
 import { randomUUID } from 'crypto';
@@ -496,10 +496,21 @@ function handleTerminal(ws: WebSocket, projectCwd: string): void {
       // Send pid
       send({ type: 'pid', commandId, pid: cmd.pid });
 
-      // Send all buffered output
-      const buffered = cmd.outputLines.join('\n') + (cmd.outputPartial ? '\n' + cmd.outputPartial : '');
-      if (buffered) {
-        send({ type: 'stdout', commandId, data: buffered });
+      // Send buffered output for replay.
+      // PTY mode: replay from the raw ring buffer, sliced at a safe boundary
+      // so xterm doesn't render a partial ANSI sequence at the head.
+      // Pipe mode: keep the existing line-based replay.
+      if (cmd.usePty && cmd.ptyRingBuffer) {
+        const snap = cmd.ptyRingBuffer.snapshot();
+        if (snap) {
+          const replay = snap.slice(findSafeStart(snap));
+          if (replay) send({ type: 'stdout', commandId, data: replay });
+        }
+      } else {
+        const buffered = cmd.outputLines.join('\n') + (cmd.outputPartial ? '\n' + cmd.outputPartial : '');
+        if (buffered) {
+          send({ type: 'stdout', commandId, data: buffered });
+        }
       }
 
       // Attach WS forwarding listeners (old ones were cleaned up when the previous WS disconnected)

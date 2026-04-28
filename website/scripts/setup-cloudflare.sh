@@ -132,6 +132,37 @@ else
   warn "You may need to: 1) bind cocking.cc to Cloudflare DNS, or 2) attach manually via dashboard."
 fi
 
+# ─── 3b. Ensure DNS CNAME exists (apex → <project>.pages.dev) ─────────
+# Pages doesn't auto-create the CNAME for apex domains — we have to do it
+# ourselves. Skipped if the record is already present.
+ZONE_TAG=$(echo "$domain_response" | grep -oE '"zone_tag":[[:space:]]*"[a-f0-9]+"' | head -1 | sed -E 's/.*"([a-f0-9]+)".*/\1/' || true)
+if [[ -n "$ZONE_TAG" ]]; then
+  say "Checking DNS CNAME for $DOMAIN → $PROJECT_NAME.pages.dev…"
+  existing=$(curl -sS \
+    "https://api.cloudflare.com/client/v4/zones/$ZONE_TAG/dns_records?type=CNAME&name=$DOMAIN" \
+    -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+
+  if echo "$existing" | grep -qE '"count":[[:space:]]*[1-9]'; then
+    ok "CNAME already exists."
+  else
+    cname_resp=$(curl -sS -X POST \
+      "https://api.cloudflare.com/client/v4/zones/$ZONE_TAG/dns_records" \
+      -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+      -H "Content-Type: application/json" \
+      --data "{\"type\":\"CNAME\",\"name\":\"$DOMAIN\",\"content\":\"$PROJECT_NAME.pages.dev\",\"proxied\":true,\"comment\":\"Cockpit marketing site (Cloudflare Pages)\"}")
+    if echo "$cname_resp" | grep -qE '"success":[[:space:]]*true'; then
+      ok "CNAME created — TLS cert finalizes within a few minutes."
+    else
+      warn "CNAME creation failed (token may lack Zone:DNS:Edit). Add manually:"
+      warn "  Type: CNAME, Name: $DOMAIN, Target: $PROJECT_NAME.pages.dev, Proxy: on"
+      warn "Response: $cname_resp"
+    fi
+  fi
+else
+  warn "Could not derive zone_tag from domain attach response — skipping CNAME setup."
+  warn "If $DOMAIN doesn't load, check that a CNAME → $PROJECT_NAME.pages.dev exists."
+fi
+
 # ─── 4. Push secrets to GitHub repo ───────────────────────────────────
 say "Pushing CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID to GitHub…"
 gh secret set CLOUDFLARE_API_TOKEN --body "$CLOUDFLARE_API_TOKEN"

@@ -51,25 +51,38 @@ jobs:
           # from 60 → 5000 req/hour. Provided automatically by GitHub Actions.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Sanitize the branch name in a separate run step, so the value handed
+      # to wrangler-action's `command:` input is a static string (no shell
+      # interpolation needed at deploy time, no injection risk). This is
+      # required because wrangler-action runs the command via @actions/exec
+      # which doesn't expand $VARS the way a shell would.
+      - name: Resolve branch name
+        id: branch
+        env:
+          RAW_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          # Strip everything except [A-Za-z0-9/._-] to defang any malicious branch name.
+          branch=$(printf '%s' "$RAW_BRANCH" | tr -cd 'A-Za-z0-9/._-')
+          if [ -z "$branch" ]; then
+            echo "Branch name is empty after sanitization" >&2
+            exit 1
+          fi
+          echo "name=$branch" >> "$GITHUB_OUTPUT"
+          echo "Deploying branch: $branch"
+
       - name: Deploy to Cloudflare Pages
         id: deploy
-        # Pass branch name via env var (not via command interpolation) to
-        # avoid shell-injection risk from PR branch names — see
-        # https://docs.github.com/en/actions/reference/security/secure-use
-        env:
-          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: website
-          # `branch=main` triggers a production deployment on Cloudflare Pages.
+          # `--branch=main` triggers a production deployment on Cloudflare Pages.
           # Anything else creates a preview deployment with a unique URL.
-          # The shell quotes around $BRANCH_NAME prevent any branch-name injection.
           command: >-
             pages deploy out
             --project-name=cockpit-website
-            --branch="$BRANCH_NAME"
+            --branch=${{ steps.branch.outputs.name }}
 
       - name: Summary
         env:

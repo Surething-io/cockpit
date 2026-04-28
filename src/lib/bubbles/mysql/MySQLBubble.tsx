@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { Portal, usePanelPortalTarget } from '@/components/shared/Portal';
 import { BUBBLE_CONTENT_HEIGHT } from '@/components/project/console/CommandBubble';
 import { useToast } from '@/components/shared/Toast';
 import { modKey } from '@/lib/platform';
@@ -171,6 +171,7 @@ function CellTooltip({ text }: { text: string }) {
   const wrapRef = useRef<HTMLSpanElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
   const overTip = useRef(false);
+  const panelTarget = usePanelPortalTarget();
 
   const scheduleHide = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -188,22 +189,31 @@ function CellTooltip({ text }: { text: string }) {
       // Skip tooltip if the text is not truncated
       if (el.scrollWidth <= el.clientWidth) return;
       const rect = el.getBoundingClientRect();
-      const vw = window.innerWidth;
-      // Keep right edge within viewport
-      const maxW = Math.min(TOOLTIP_MAX_W, vw - rect.left - TOOLTIP_MARGIN);
-      const x = maxW < 200 ? Math.max(TOOLTIP_MARGIN, vw - TOOLTIP_MAX_W - TOOLTIP_MARGIN) : rect.left;
-      const finalMaxW = maxW < 200 ? Math.min(TOOLTIP_MAX_W, vw - TOOLTIP_MARGIN * 2) : maxW;
-      // Open on whichever side has more space; clamp height to avoid viewport overflow
-      const vh = window.innerHeight;
-      const spaceAbove = rect.top - TOOLTIP_MARGIN;
-      const spaceBelow = vh - rect.bottom - TOOLTIP_MARGIN;
+      // Compute coordinates relative to the portal target (panel wrapper) so
+      // the tooltip lands at the cell's visual position. With document.body
+      // fallback origin is (0,0) and bounds are the viewport.
+      const origin = panelTarget?.getBoundingClientRect();
+      const ox = origin?.left ?? 0;
+      const oy = origin?.top ?? 0;
+      const ow = origin?.width ?? window.innerWidth;
+      const oh = origin?.height ?? window.innerHeight;
+      const localLeft = rect.left - ox;
+      const localTop = rect.top - oy;
+      const localBottom = rect.bottom - oy;
+      // Keep right edge within bounds
+      const maxW = Math.min(TOOLTIP_MAX_W, ow - localLeft - TOOLTIP_MARGIN);
+      const x = maxW < 200 ? Math.max(TOOLTIP_MARGIN, ow - TOOLTIP_MAX_W - TOOLTIP_MARGIN) : localLeft;
+      const finalMaxW = maxW < 200 ? Math.min(TOOLTIP_MAX_W, ow - TOOLTIP_MARGIN * 2) : maxW;
+      // Open on whichever side has more space; clamp height to avoid bounds overflow
+      const spaceAbove = localTop - TOOLTIP_MARGIN;
+      const spaceBelow = oh - localBottom - TOOLTIP_MARGIN;
       const above = spaceAbove > spaceBelow && spaceAbove > 80;
-      const y = above ? rect.top - 4 : rect.bottom + 4;
+      const y = above ? localTop - 4 : localBottom + 4;
       const maxH = above ? spaceAbove - 4 : spaceBelow - 4;
       setPos({ x, y, maxW: finalMaxW, maxH: Math.max(60, maxH), above });
       setShow(true);
     }, 350);
-  }, []);
+  }, [panelTarget]);
 
   const handleCellLeave = useCallback(() => {
     scheduleHide();
@@ -227,7 +237,7 @@ function CellTooltip({ text }: { text: string }) {
       onMouseLeave={handleCellLeave}
     >
       {text}
-      {show && createPortal(
+      {show && <Portal>
         <div
           className="fixed z-[9999] overflow-y-auto px-2 py-1.5 text-xs font-mono bg-popover text-popover-foreground border border-border rounded shadow-lg whitespace-pre-wrap break-all select-text cursor-text"
           style={{ left: pos.x, top: pos.y, maxWidth: pos.maxW, maxHeight: pos.maxH, transform: pos.above ? 'translateY(-100%)' : undefined }}
@@ -235,9 +245,8 @@ function CellTooltip({ text }: { text: string }) {
           onMouseLeave={handleTipLeave}
         >
           {tooltipValue(text)}
-        </div>,
-        document.body
-      )}
+        </div>
+      </Portal>}
     </span>
   );
 }
@@ -1041,6 +1050,7 @@ function FilterDropdown({ filter, onApply, onClear, onToggle, onClose, colName, 
   const [op, setOp] = useState<FilterOp>(filter?.op || '=');
   const [value, setValue] = useState(filter?.value || '');
   const panelRef = useRef<HTMLDivElement>(null);
+  const panelTarget = usePanelPortalTarget();
 
   // Close on outside click
   useEffect(() => {
@@ -1064,18 +1074,23 @@ function FilterDropdown({ filter, onApply, onClear, onToggle, onClose, colName, 
     if (e.key === 'Enter') { e.preventDefault(); handleApply(); }
   };
 
-  // Compute dropdown position
+  // Compute dropdown position relative to portal target (panel wrapper or viewport)
   const dropW = 220;
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 1000;
-  let left = anchorRect.left;
-  if (left + dropW > vw - 8) left = vw - dropW - 8;
+  const origin = panelTarget?.getBoundingClientRect();
+  const ox = origin?.left ?? 0;
+  const oy = origin?.top ?? 0;
+  const ow = origin?.width ?? (typeof window !== 'undefined' ? window.innerWidth : 1000);
+  let left = anchorRect.left - ox;
+  if (left + dropW > ow - 8) left = ow - dropW - 8;
   if (left < 8) left = 8;
+  const top = anchorRect.bottom + 2 - oy;
 
-  return createPortal(
+  return (
+    <Portal>
     <div
       ref={panelRef}
       className="fixed z-[9998] w-[220px] bg-popover border border-border rounded-md shadow-lg p-2 space-y-2"
-      style={{ left, top: anchorRect.bottom + 2 }}
+      style={{ left, top }}
       onClick={(e) => e.stopPropagation()}
     >
       {/* Header with toggle */}
@@ -1133,8 +1148,8 @@ function FilterDropdown({ filter, onApply, onClear, onToggle, onClose, colName, 
           </button>
         )}
       </div>
-    </div>,
-    document.body
+    </div>
+    </Portal>
   );
 }
 

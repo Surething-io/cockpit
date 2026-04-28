@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { Portal, usePanelPortalTarget } from '../shared/Portal';
 import { CommitDetailPanel } from './CommitDetailPanel';
 import { DiffView } from './DiffView';
 import { toast } from '../shared/Toast';
@@ -48,6 +49,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const [deleteConfirm, setDeleteConfirm] = useState<{ path: string; isDirectory: boolean; name: string } | null>(null);
   const [showQuickOpen, setShowQuickOpen] = useState(false);
   const [hoverTooltip, setHoverTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+  const panelTarget = usePanelPortalTarget();
   // CodeViewer currently visible line number (1-based), used to sync editor ↔ viewer position
   const visibleLineRef = useRef<number>(1);
   // Vi cursor position ref (0-based), continuously updated by CodeViewer
@@ -1906,18 +1908,26 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
           </div>
         )}
       </div>
-      {/* Global tooltip - portaled to document body top */}
-      {hoverTooltip && createPortal(
-        <div
-          className="fixed z-[9999] px-2 py-1 bg-popover text-popover-foreground text-xs font-mono rounded shadow-lg border border-brand whitespace-nowrap pointer-events-none"
-          style={{ left: hoverTooltip.x + 12, top: hoverTooltip.y + 16 }}
-        >
-          {hoverTooltip.text}
-        </div>,
-        document.body
-      )}
+      {/* Global tooltip - portaled (panel-aware via Portal) */}
+      {hoverTooltip && (() => {
+        // Translate viewport mouse coords into portal-target-local coords so
+        // the tooltip lands at the cursor regardless of swipe transform.
+        const origin = panelTarget?.getBoundingClientRect();
+        const ox = origin?.left ?? 0;
+        const oy = origin?.top ?? 0;
+        return (
+          <Portal>
+            <div
+              className="fixed z-[9999] px-2 py-1 bg-popover text-popover-foreground text-xs font-mono rounded shadow-lg border border-brand whitespace-nowrap pointer-events-none"
+              style={{ left: hoverTooltip.x + 12 - ox, top: hoverTooltip.y + 16 - oy }}
+            >
+              {hoverTooltip.text}
+            </div>
+          </Portal>
+        );
+      })()}
       {/* Delete confirmation dialog */}
-      {deleteConfirm && createPortal(
+      {deleteConfirm && <Portal>
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50" onClick={() => setDeleteConfirm(null)}>
           <div className="bg-card border border-border rounded-lg shadow-xl p-4 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-sm font-medium text-foreground mb-2">{t('fileBrowser.confirmDelete')}</h3>
@@ -1963,9 +1973,8 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               </button>
             </div>
           </div>
-        </div>,
-        document.body
-      )}
+        </div>
+      </Portal>}
       {/* LSP HoverTooltip - portaled inside menuContainer, using absolute positioning */}
       {lspHover.hoverInfo && menuContainer && createPortal(
         <HoverTooltip

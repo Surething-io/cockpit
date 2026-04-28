@@ -9,6 +9,7 @@ import { ConsoleView } from './console/ConsoleView';
 import { AliasManager } from './AliasManager';
 import { ChatProvider } from './ChatContext';
 import { SwipeableViewContainer, SwipeableContent, type ViewType } from './SwipeableViewContainer';
+import { PanelPortalProvider } from '../shared/Portal';
 import { useTabState } from './useTabState';
 import { TabManagerTopBar } from './TabManagerTopBar';
 import { TabBar } from './TabBar';
@@ -268,67 +269,75 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           <SwipeableContent>
             {/* AGENT view: Tab bar + Chat */}
             <div className="w-1/3 h-full flex flex-col overflow-hidden">
-              <TabBar
-                tabs={tabs}
-                activeTabId={activeTabId}
-                unreadTabs={unreadTabs}
-                dragTabIndex={dragTabIndex}
-                dragOverTabIndex={dragOverTabIndex}
-                isPinned={isTabPinned}
-                onTogglePin={handleTogglePin}
-                onSwitchTab={switchTab}
-                onCloseTab={closeTab}
-                onNewTab={handleNewTab}
-                onNewClaude2Tab={handleNewClaude2Tab}
-                onNewCodexTab={handleNewCodexTab}
-                onNewKimiTab={handleNewKimiTab}
-                onNewOllamaTab={handleNewOllamaTab}
-                onDragStart={handleTabDragStart}
-                onDragOver={handleTabDragOver}
-                onDrop={handleTabDrop}
-                onDragEnd={handleTabDragEnd}
-              />
-              <div className="flex-1 overflow-hidden relative">
-                {tabs.map((tab) => (
-                  <div
-                    key={tab.id}
-                    className={`h-full ${tab.id === activeTabId ? 'block' : 'hidden'}`}
-                  >
-                    <ChatPanel
-                      tabId={tab.id}
-                      cwd={tab.cwd}
-                      sessionId={tab.sessionId}
-                      engine={tab.engine}
-                      ollamaModel={tab.ollamaModel}
-                      onOllamaModelChange={updateTabOllamaModel}
-                      isActive={tab.id === activeTabId && activeView === 'agent'}
-                      onStateChange={updateTabState}
-                      onShowGitStatus={handleShowGitStatus}
-                      onContentSearch={handleContentSearch}
-                      onOpenNote={handleOpenNote}
-                      onCreateScheduledTask={createScheduledTask}
-                      onOpenSession={handleOpenSession}
-                    />
+              <PanelPortalProvider>
+                <div className="w-full h-full flex flex-col">
+                  <TabBar
+                    tabs={tabs}
+                    activeTabId={activeTabId}
+                    unreadTabs={unreadTabs}
+                    dragTabIndex={dragTabIndex}
+                    dragOverTabIndex={dragOverTabIndex}
+                    isPinned={isTabPinned}
+                    onTogglePin={handleTogglePin}
+                    onSwitchTab={switchTab}
+                    onCloseTab={closeTab}
+                    onNewTab={handleNewTab}
+                    onNewClaude2Tab={handleNewClaude2Tab}
+                    onNewCodexTab={handleNewCodexTab}
+                    onNewKimiTab={handleNewKimiTab}
+                    onNewOllamaTab={handleNewOllamaTab}
+                    onDragStart={handleTabDragStart}
+                    onDragOver={handleTabDragOver}
+                    onDrop={handleTabDrop}
+                    onDragEnd={handleTabDragEnd}
+                  />
+                  <div className="flex-1 overflow-hidden relative">
+                    {tabs.map((tab) => (
+                      <div
+                        key={tab.id}
+                        className={`h-full ${tab.id === activeTabId ? 'block' : 'hidden'}`}
+                      >
+                        <ChatPanel
+                          tabId={tab.id}
+                          cwd={tab.cwd}
+                          sessionId={tab.sessionId}
+                          engine={tab.engine}
+                          ollamaModel={tab.ollamaModel}
+                          onOllamaModelChange={updateTabOllamaModel}
+                          isActive={tab.id === activeTabId && activeView === 'agent'}
+                          onStateChange={updateTabState}
+                          onShowGitStatus={handleShowGitStatus}
+                          onContentSearch={handleContentSearch}
+                          onOpenNote={handleOpenNote}
+                          onCreateScheduledTask={createScheduledTask}
+                          onOpenSession={handleOpenSession}
+                        />
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              </PanelPortalProvider>
             </div>
 
             {/* EXPLORER view: FileBrowser */}
             <div className="w-1/3 h-full overflow-hidden">
-              <FileBrowserModal
-                onClose={() => handleViewChange('agent')}
-                cwd={initialCwd}
-                initialTab={fileBrowserInitialTab}
-                tabSwitchTrigger={tabSwitchTrigger}
-                initialSearchQuery={fileBrowserSearchQuery}
-                searchQueryTrigger={searchQueryTrigger}
-              />
+              <PanelPortalProvider>
+                <FileBrowserModal
+                  onClose={() => handleViewChange('agent')}
+                  cwd={initialCwd}
+                  initialTab={fileBrowserInitialTab}
+                  tabSwitchTrigger={tabSwitchTrigger}
+                  initialSearchQuery={fileBrowserSearchQuery}
+                  searchQueryTrigger={searchQueryTrigger}
+                />
+              </PanelPortalProvider>
             </div>
 
             {/* CONSOLE view: command execution + browser */}
             <div className="w-1/3 h-full overflow-hidden">
-              <ConsoleView cwd={initialCwd} tabId="default" onOpenNote={handleOpenNote} />
+              <PanelPortalProvider>
+                <ConsoleView cwd={initialCwd} tabId="default" onOpenNote={handleOpenNote} />
+              </PanelPortalProvider>
             </div>
           </SwipeableContent>
         ) : (

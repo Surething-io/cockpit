@@ -2,9 +2,9 @@
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { createPortal } from 'react-dom';
 import type { FileNode } from './fileBrowser/types';
 import { FileIcon } from '../shared/FileIcon';
+import { Portal } from '../shared/Portal';
 
 // ============================================
 // Types
@@ -246,7 +246,8 @@ export function QuickFileOpen({ files, fileIndex, recentFiles, onSelectFile, onC
     }
   }, [results, selectedIndex, handleSelect, onClose]);
 
-  return createPortal(
+  return (
+    <Portal>
     <div className="fixed inset-0 z-[300] flex items-start justify-center pt-[15vh]" onClick={onClose}>
       <div
         className="w-[680px] max-h-[60vh] bg-card border border-border rounded-lg shadow-2xl overflow-hidden flex flex-col"
@@ -314,7 +315,7 @@ export function QuickFileOpen({ files, fileIndex, recentFiles, onSelectFile, onC
           </span>
         </div>
       </div>
-    </div>,
-    document.body
+    </div>
+    </Portal>
   );
 }

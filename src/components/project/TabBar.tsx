@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 
 import { TabInfo } from './useTabState';
 import { Tooltip } from '../shared/Tooltip';
+import { Portal, usePanelPortalTarget } from '../shared/Portal';
 import { useTranslation } from 'react-i18next';
 
 // ============================================
@@ -45,6 +45,7 @@ function NewTabButton({ onNewTab, onNewClaude2Tab, onNewCodexTab, onNewKimiTab, 
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ top: 0, right: 0 });
+  const panelTarget = usePanelPortalTarget();
 
   useEffect(() => {
     if (!open) return;
@@ -61,10 +62,18 @@ function NewTabButton({ onNewTab, onNewClaude2Tab, onNewCodexTab, onNewKimiTab, 
   const toggle = () => {
     if (!open && btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect();
+      // Compute position relative to portal target (panel wrapper or viewport).
+      // When inside a PanelPortalProvider the portaled element's `position: fixed`
+      // is relative to the panel wrapper (containing block), so we subtract the
+      // wrapper's viewport origin. With document.body fallback the origin is (0,0).
+      const origin = panelTarget?.getBoundingClientRect();
+      const ox = origin?.left ?? 0;
+      const oy = origin?.top ?? 0;
+      const ow = origin?.width ?? window.innerWidth;
       // Position: below button, right-aligned (opens to the left)
       setPos({
-        top: rect.bottom + 4,
-        right: window.innerWidth - rect.right,
+        top: rect.bottom + 4 - oy,
+        right: ow - (rect.right - ox),
       });
     }
     setOpen(v => !v);
@@ -91,7 +100,7 @@ function NewTabButton({ onNewTab, onNewClaude2Tab, onNewCodexTab, onNewKimiTab, 
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
       </button>
-      {open && createPortal(
+      {open && <Portal>
         <div
           ref={menuRef}
           className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-lg py-1 min-w-[140px]"
@@ -132,9 +141,8 @@ function NewTabButton({ onNewTab, onNewClaude2Tab, onNewCodexTab, onNewKimiTab, 
             <span className="w-2 h-2 rounded-full bg-violet-500 flex-shrink-0" />
             Ollama
           </button>
-        </div>,
-        document.body
-      )}
+        </div>
+      </Portal>}
     </>
   );
 }

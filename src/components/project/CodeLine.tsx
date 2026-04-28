@@ -3,7 +3,7 @@
 import React, { memo, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/lib/i18n';
-import { createPortal } from 'react-dom';
+import { Portal, usePanelPortalTarget } from '../shared/Portal';
 import type { CodeComment } from '@/hooks/useComments';
 import type { BlameLine } from './fileBrowser/types';
 
@@ -34,6 +34,7 @@ function InlineBlameAnnotation({ blame, onClick }: { blame: BlameLine; onClick?:
   const { t } = useTranslation();
   const spanRef = useRef<HTMLSpanElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
+  const panelTarget = usePanelPortalTarget();
   // Track all state with refs, zero useState → showing/hiding tooltip triggers no re-render
   const showingRef = useRef(false);
   const onCardRef = useRef(false);
@@ -51,21 +52,29 @@ function InlineBlameAnnotation({ blame, onClick }: { blame: BlameLine; onClick?:
     if (!tip || !anchor) return;
     const anchorRect = anchor.getBoundingClientRect();
     const tipRect = tip.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let x = anchorRect.left;
-    if (x + tipRect.width > vw - 8) x = vw - tipRect.width - 8;
+    // Compute coordinates relative to the portal target (panel wrapper) so the
+    // tooltip lands at the anchor's visual position. With document.body fallback
+    // origin is (0,0) and bounds are the viewport.
+    const origin = panelTarget?.getBoundingClientRect();
+    const ox = origin?.left ?? 0;
+    const oy = origin?.top ?? 0;
+    const ow = origin?.width ?? window.innerWidth;
+    const oh = origin?.height ?? window.innerHeight;
+    let x = anchorRect.left - ox;
+    if (x + tipRect.width > ow - 8) x = ow - tipRect.width - 8;
     if (x < 8) x = 8;
     let y: number;
-    if (anchorRect.top - tipRect.height - 4 < 0) {
-      y = anchorRect.bottom + 4;
+    const anchorTop = anchorRect.top - oy;
+    const anchorBottom = anchorRect.bottom - oy;
+    if (anchorTop - tipRect.height - 4 < 0) {
+      y = anchorBottom + 4;
     } else {
-      y = anchorRect.top - tipRect.height - 4;
+      y = anchorTop - tipRect.height - 4;
     }
-    if (y + tipRect.height > vh - 8) y = vh - tipRect.height - 8;
+    if (y + tipRect.height > oh - 8) y = oh - tipRect.height - 8;
     tip.style.left = `${x}px`;
     tip.style.top = `${y}px`;
-  }, []);
+  }, [panelTarget]);
 
   // Imperative hide (no setState)
   const hideTip = useCallback(() => {
@@ -165,7 +174,7 @@ function InlineBlameAnnotation({ blame, onClick }: { blame: BlameLine; onClick?:
       >
         {blame.author.split(' ')[0]}, {formatRelativeTime(blame.time)} · {firstLine}
       </span>
-      {createPortal(
+      <Portal>
         <div
           ref={tipRef}
           className="fixed z-[9999] bg-card border border-border rounded-lg shadow-xl p-3 text-xs text-foreground whitespace-pre-wrap max-w-md select-text"
@@ -182,9 +191,8 @@ function InlineBlameAnnotation({ blame, onClick }: { blame: BlameLine; onClick?:
           <div className="font-medium">{firstLine}</div>
           {body && <div className="mt-1 text-muted-foreground">{body}</div>}
           <div className="mt-2 text-[11px] text-brand border-t border-border pt-2 cursor-pointer hover:underline" onClick={handleTipClick}>{t('codeViewer.clickToViewDetails')}</div>
-        </div>,
-        document.body,
-      )}
+        </div>
+      </Portal>
     </>
   );
 }

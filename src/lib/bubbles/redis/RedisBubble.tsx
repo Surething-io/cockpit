@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { Portal, usePanelPortalTarget } from '@/components/shared/Portal';
 import { BUBBLE_CONTENT_HEIGHT } from '@/components/project/console/CommandBubble';
 import { useToast } from '@/components/shared/Toast';
 import { modKey } from '@/lib/platform';
@@ -121,6 +121,7 @@ function CellTooltip({ text }: { text: string }) {
   const [pos, setPos] = useState({ x: 0, y: 0, above: true });
   const wrapRef = useRef<HTMLSpanElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const panelTarget = usePanelPortalTarget();
 
   const handleEnter = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -128,11 +129,19 @@ function CellTooltip({ text }: { text: string }) {
       const el = wrapRef.current;
       if (!el || el.scrollWidth <= el.clientWidth) return;
       const rect = el.getBoundingClientRect();
-      const above = rect.top > window.innerHeight / 2;
-      setPos({ x: rect.left, y: above ? rect.top - 4 : rect.bottom + 4, above });
+      // Compute coordinates relative to the portal target (panel wrapper) so
+      // the tooltip lands at the cell's visual position.
+      const origin = panelTarget?.getBoundingClientRect();
+      const ox = origin?.left ?? 0;
+      const oy = origin?.top ?? 0;
+      const oh = origin?.height ?? window.innerHeight;
+      const localTop = rect.top - oy;
+      const localBottom = rect.bottom - oy;
+      const above = localTop > oh / 2;
+      setPos({ x: rect.left - ox, y: above ? localTop - 4 : localBottom + 4, above });
       setShow(true);
     }, 350);
-  }, []);
+  }, [panelTarget]);
 
   const handleLeave = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -142,15 +151,14 @@ function CellTooltip({ text }: { text: string }) {
   return (
     <span ref={wrapRef} className="block truncate" onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
       {text}
-      {show && createPortal(
+      {show && <Portal>
         <div
           className="fixed z-[9999] max-w-[500px] max-h-[200px] overflow-y-auto px-2 py-1.5 text-xs font-mono bg-popover text-popover-foreground border border-border rounded shadow-lg whitespace-pre-wrap break-all select-text"
           style={{ left: pos.x, top: pos.y, transform: pos.above ? 'translateY(-100%)' : undefined }}
         >
           {text}
-        </div>,
-        document.body
-      )}
+        </div>
+      </Portal>}
     </span>
   );
 }

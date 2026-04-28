@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import { Portal, usePanelPortalTarget } from '../shared/Portal';
 
 interface OllamaModel {
   name: string;
@@ -31,6 +31,7 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
+  const panelTarget = usePanelPortalTarget();
 
   // Close on outside click
   useEffect(() => {
@@ -93,21 +94,13 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
   const toggle = () => {
     if (!open) {
       if (btnRef.current) {
-        // Compute position accounting for CSS transforms (swipeable panel)
-        let offsetX = 0, offsetY = 0;
-        let el: HTMLElement | null = btnRef.current.parentElement;
-        while (el) {
-          const transform = getComputedStyle(el).transform;
-          if (transform && transform !== 'none') {
-            const elRect = el.getBoundingClientRect();
-            offsetX = elRect.left - el.offsetLeft;
-            offsetY = elRect.top - el.offsetTop;
-            break;
-          }
-          el = el.parentElement;
-        }
         const rect = btnRef.current.getBoundingClientRect();
-        setPos({ top: rect.bottom + 4 - offsetY, left: rect.left - offsetX });
+        // Compute position relative to portal target (panel wrapper) so the
+        // popover lands at the trigger's visual position regardless of swipe.
+        const origin = panelTarget?.getBoundingClientRect();
+        const ox = origin?.left ?? 0;
+        const oy = origin?.top ?? 0;
+        setPos({ top: rect.bottom + 4 - oy, left: rect.left - ox });
       }
       fetchModels();
     }
@@ -121,7 +114,8 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
 
   const displayName = currentModel ? currentModel.replace(/:latest$/, '') : 'Select model';
 
-  const menu = open ? createPortal(
+  const menu = open ? (
+    <Portal>
     <div
       ref={menuRef}
       className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-lg py-1 min-w-[200px] max-h-[300px] overflow-y-auto"
@@ -154,8 +148,8 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
           </button>
         ))
       )}
-    </div>,
-    document.body
+    </div>
+    </Portal>
   ) : null;
 
   return (

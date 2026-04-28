@@ -1,0 +1,28 @@
+{
+  "name": "cockpit-website",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Marketing site for Cockpit (cocking.cc)",
+  "scripts": {
+    "dev": "TURBOPACK= next dev -p 3458",
+    "build": "node scripts/fetch-changelog.mjs && NODE_ENV=production TURBOPACK= next build",
+    "start": "next start -p 3458",
+    "lint": "next lint",
+    "preview": "npx wrangler pages dev out --compatibility-date=2024-09-23"
+  },
+  "dependencies": {
+    "next": "^16.2.4",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.2",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "tailwindcss": "^4",
+    "typescript": "5.9.3"
+  }
+}

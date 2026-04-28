@@ -19,6 +19,8 @@ const eslintConfig = defineConfig([
     // Plain JS — not part of Next.js/TS source
     "chrome-extension/**",
     "scripts/**",
+    // Standalone marketing site with its own toolchain
+    "website/**",
   ]),
   ...storybook.configs["flat/recommended"],
   {

@@ -1,0 +1,138 @@
+[
+  {
+    "tag": "v1.0.192",
+    "name": "v1.0.192",
+    "publishedAt": "2026-04-26T13:30:51Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.192",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.191...v1.0.192",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.191",
+    "name": "v1.0.191",
+    "publishedAt": "2026-04-23T12:08:40Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.191",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.190...v1.0.191",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.190",
+    "name": "v1.0.190",
+    "publishedAt": "2026-04-23T11:57:09Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.190",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.189...v1.0.190",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.189",
+    "name": "v1.0.189",
+    "publishedAt": "2026-04-23T10:22:02Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.189",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.188...v1.0.189",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.188",
+    "name": "v1.0.188",
+    "publishedAt": "2026-04-22T11:45:46Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.188",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.187...v1.0.188",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.187",
+    "name": "v1.0.187",
+    "publishedAt": "2026-04-22T06:40:28Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.187",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.186...v1.0.187",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.186",
+    "name": "v1.0.186",
+    "publishedAt": "2026-04-11T08:31:15Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.186",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.185...v1.0.186",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.185",
+    "name": "v1.0.185",
+    "publishedAt": "2026-03-31T19:29:14Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.185",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.184...v1.0.185",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.184",
+    "name": "v1.0.184",
+    "publishedAt": "2026-03-31T19:06:23Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.184",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.183...v1.0.184",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.183",
+    "name": "v1.0.183",
+    "publishedAt": "2026-03-30T15:54:33Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.183",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.182...v1.0.183",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.182",
+    "name": "v1.0.182",
+    "publishedAt": "2026-03-30T13:12:39Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.182",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.181...v1.0.182",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.181",
+    "name": "v1.0.181",
+    "publishedAt": "2026-03-28T10:17:21Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.181",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.180...v1.0.181",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.180",
+    "name": "v1.0.180",
+    "publishedAt": "2026-03-28T10:04:53Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.180",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.179...v1.0.180",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.178",
+    "name": "v1.0.178",
+    "publishedAt": "2026-03-26T06:55:47Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.178",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/commits/v1.0.178",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.177",
+    "name": "v1.0.177",
+    "publishedAt": "2026-03-25T20:13:41Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.177",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.176...v1.0.177",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.176",
+    "name": "v1.0.176",
+    "publishedAt": "2026-03-25T20:03:45Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.176",
+    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.175...v1.0.176",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.175",
+    "name": "v1.0.175",
+    "publishedAt": "2026-03-25T19:45:12Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.175",
+    "body": "## What's Changed\n* chore: add open-source scaffolding and npm publish CI by @tomisnotme in https://github.com/Surething-io/cockpit/pull/1\n* chore: rename package to @surething/cockpit by @tomisnotme in https://github.com/Surething-io/cockpit/pull/2\n\n## New Contributors\n* @tomisnotme made their first contribution in https://github.com/Surething-io/cockpit/pull/1\n\n**Full Changelog**: https://github.com/Surething-io/cockpit/commits/v1.0.175",
+    "prerelease": false
+  }
+]

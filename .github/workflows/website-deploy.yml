@@ -1,0 +1,84 @@
+name: Deploy Website
+
+# Triggers ONLY when website code or this workflow changes.
+# Other paths (src/, bin/, e2b/, README, etc.) won't fire this workflow.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/website-deploy.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/website-deploy.yml"
+  # Allow manual run from the Actions tab if needed.
+  workflow_dispatch:
+
+# Cancel in-flight runs for the same ref so a rapid push series
+# only deploys the latest commit.
+concurrency:
+  group: website-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write # let wrangler-action attach a preview URL to PRs
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (static export to website/out)
+        run: npm run build
+        env:
+          # Raises GitHub API rate limit for scripts/fetch-changelog.mjs
+          # from 60 → 5000 req/hour. Provided automatically by GitHub Actions.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        # Pass branch name via env var (not via command interpolation) to
+        # avoid shell-injection risk from PR branch names — see
+        # https://docs.github.com/en/actions/reference/security/secure-use
+        env:
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: website
+          # `branch=main` triggers a production deployment on Cloudflare Pages.
+          # Anything else creates a preview deployment with a unique URL.
+          # The shell quotes around $BRANCH_NAME prevent any branch-name injection.
+          command: >-
+            pages deploy out
+            --project-name=cockpit-website
+            --branch="$BRANCH_NAME"
+
+      - name: Summary
+        env:
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+          DEPLOY_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: |
+          {
+            echo "### 🚀 Deployment"
+            echo ""
+            echo "- Branch: \`$BRANCH_NAME\`"
+            echo "- URL: $DEPLOY_URL"
+          } >> "$GITHUB_STEP_SUMMARY"

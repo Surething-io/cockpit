@@ -1,0 +1,17 @@
+/node_modules
+/.next
+/out
+/.wrangler
+
+# NOTE: data/changelog.json is committed as a placeholder (empty array).
+# The build script (scripts/fetch-changelog.mjs) overwrites it from GitHub
+# Releases each time `npm run build` runs.
+
+# Environment
+.env
+.env.local
+# Re-allow the template (parent .gitignore has `.env*` which would catch this)
+!.env.example
+
+# OS
+.DS_Store

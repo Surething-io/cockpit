@@ -1,10 +1,20 @@
 name: CI
 
+# Skip when only website/, docs, or markdown files change — those are
+# either deployed by website-deploy.yml or have no impact on the package.
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "website/**"
+      - "docs/**"
+      - "**/*.md"
   push:
     branches: [main]
+    paths-ignore:
+      - "website/**"
+      - "docs/**"
+      - "**/*.md"
 
 jobs:
   ci:

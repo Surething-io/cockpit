@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "description": "Only `/` (i18n redirect) and `/try*` (E2B demo handler) go through Pages Functions; everything else is served directly as a static asset to minimize Function invocations.",
+  "include": ["/", "/try", "/try/*"],
+  "exclude": []
+}

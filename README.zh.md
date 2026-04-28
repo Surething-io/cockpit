@@ -65,7 +65,7 @@ https://github.com/user-attachments/assets/18f1a5dc-64f3-4ff6-b9fc-9cd08181fbb8
 
 无需安装 — 在浏览器中直接体验 Cockpit（5 分钟沙盒，无 AI 对话）：
 
-[![在线体验](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E4%BD%93%E9%AA%8C-Cockpit%20Demo-blue?style=for-the-badge)](https://e2b-nu.vercel.app/api/try)
+[![在线体验](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E4%BD%93%E9%AA%8C-Cockpit%20Demo-blue?style=for-the-badge)](https://cocking.cc/try)
 
 ## 前置依赖
 

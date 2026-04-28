@@ -59,7 +59,7 @@ A unified development cockpit built on **Claude Code (Agent SDK)** — chat, cod
 
 No install needed — try Cockpit in your browser (5-minute sandbox, no AI chat):
 
-[![Try Online](https://img.shields.io/badge/Try%20Online-Cockpit%20Demo-blue?style=for-the-badge)](https://e2b-nu.vercel.app/api/try)
+[![Try Online](https://img.shields.io/badge/Try%20Online-Cockpit%20Demo-blue?style=for-the-badge)](https://cocking.cc/try)
 
 ## Prerequisites
 

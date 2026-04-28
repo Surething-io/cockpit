@@ -1,0 +1,159 @@
+@import "tailwindcss";
+
+/* ============================================
+   Cockpit Website Design System
+   Reuses Radix Teal + Slate from main app's globals.css
+   ============================================ */
+
+:root {
+  /* Radix Teal (brand) */
+  --teal-1: 180 50% 99.2%;
+  --teal-2: 180 44% 97%;
+  --teal-3: 180 43% 93.8%;
+  --teal-4: 180 44% 89.7%;
+  --teal-5: 180 42% 84.3%;
+  --teal-6: 181 39% 76.8%;
+  --teal-7: 181 35% 66.3%;
+  --teal-8: 181 33% 52.5%;
+  --teal-9: 179 35% 35%;
+  --teal-10: 179 37% 31%;
+  --teal-11: 180 50% 22%;
+  --teal-12: 186 100% 7%;
+
+  /* Radix Slate (UI gray) */
+  --slate-1: 240 20% 99%;
+  --slate-2: 240 17% 97%;
+  --slate-3: 240 14% 94.5%;
+  --slate-4: 240 13% 92%;
+  --slate-5: 240 12% 89.5%;
+  --slate-6: 237 11% 86%;
+  --slate-7: 235 9% 81%;
+  --slate-8: 233 8% 70%;
+  --slate-9: 230 7% 55%;
+  --slate-10: 228 6% 50%;
+  --slate-11: 225 6% 40%;
+  --slate-12: 210 14% 13%;
+
+  /* Semantic */
+  --background: 0 0% 98%;
+  --foreground: var(--slate-12);
+  --card: 0 0% 100%;
+  --muted: var(--slate-3);
+  --muted-foreground: var(--slate-11);
+  --border: var(--slate-5);
+  --brand: var(--teal-9);
+  --brand-foreground: var(--teal-11);
+
+  --radius: 0.5rem;
+}
+
+.dark {
+  --teal-1: 183 30% 7%;
+  --teal-2: 183 35% 9%;
+  --teal-3: 183 38% 12%;
+  --teal-4: 182 40% 15%;
+  --teal-5: 182 40% 18%;
+  --teal-6: 182 38% 23%;
+  --teal-7: 181 35% 30%;
+  --teal-8: 180 34% 40%;
+  --teal-9: 179 42% 50%;
+  --teal-10: 179 48% 56%;
+  --teal-11: 179 55% 65%;
+  --teal-12: 180 50% 85%;
+
+  --slate-1: 240 6% 7%;
+  --slate-2: 240 5% 10%;
+  --slate-3: 240 5% 13%;
+  --slate-4: 240 4% 16%;
+  --slate-5: 240 4% 19%;
+  --slate-6: 238 4% 23%;
+  --slate-7: 235 4% 30%;
+  --slate-8: 233 4% 40%;
+  --slate-9: 230 5% 52%;
+  --slate-10: 228 5% 58%;
+  --slate-11: 220 9% 70%;
+  --slate-12: 220 9% 80%;
+
+  --background: var(--slate-1);
+  --card: 0 0% 12%;
+  --border: var(--slate-6);
+}
+
+@theme inline {
+  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "Maple Mono CN", "JetBrains Mono", "Menlo", "Consolas", monospace;
+
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-border: hsl(var(--border));
+  --color-brand: hsl(var(--brand));
+  --color-brand-foreground: hsl(var(--brand-foreground));
+
+  --color-teal-1: hsl(var(--teal-1));
+  --color-teal-2: hsl(var(--teal-2));
+  --color-teal-3: hsl(var(--teal-3));
+  --color-teal-4: hsl(var(--teal-4));
+  --color-teal-5: hsl(var(--teal-5));
+  --color-teal-6: hsl(var(--teal-6));
+  --color-teal-7: hsl(var(--teal-7));
+  --color-teal-8: hsl(var(--teal-8));
+  --color-teal-9: hsl(var(--teal-9));
+  --color-teal-10: hsl(var(--teal-10));
+  --color-teal-11: hsl(var(--teal-11));
+  --color-teal-12: hsl(var(--teal-12));
+
+  --color-slate-1: hsl(var(--slate-1));
+  --color-slate-2: hsl(var(--slate-2));
+  --color-slate-3: hsl(var(--slate-3));
+  --color-slate-4: hsl(var(--slate-4));
+  --color-slate-5: hsl(var(--slate-5));
+  --color-slate-6: hsl(var(--slate-6));
+  --color-slate-7: hsl(var(--slate-7));
+  --color-slate-8: hsl(var(--slate-8));
+  --color-slate-9: hsl(var(--slate-9));
+  --color-slate-10: hsl(var(--slate-10));
+  --color-slate-11: hsl(var(--slate-11));
+  --color-slate-12: hsl(var(--slate-12));
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Subtle gradient backdrop for hero */
+.hero-bg {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, hsl(var(--teal-9) / 0.15), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 0%, hsl(var(--teal-7) / 0.08), transparent);
+}
+
+.dark .hero-bg {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, hsl(var(--teal-9) / 0.25), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 0%, hsl(var(--teal-7) / 0.15), transparent);
+}
+
+/* Code block */
+.code-inline {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: hsl(var(--muted));
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.25rem;
+}

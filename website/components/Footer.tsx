@@ -31,6 +31,11 @@ export function Footer({ locale }: { locale: Locale }) {
               </Link>
             </li>
             <li>
+              <Link href={`${base}/blog/`} className="hover:text-brand transition-colors">
+                {t.nav.blog}
+              </Link>
+            </li>
+            <li>
               <Link href={`${base}/changelog/`} className="hover:text-brand transition-colors">
                 {t.nav.changelog}
               </Link>

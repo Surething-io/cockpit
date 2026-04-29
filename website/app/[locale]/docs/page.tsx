@@ -76,22 +76,22 @@ export default async function DocsPage({
       <section className="mt-10">
         <h2 className="text-xl font-semibold">{t.docs.sections.firstRun}</h2>
         <div className="mt-4 space-y-3">
-          <CopyableCommand command="cock" />
-          <CopyableCommand command="cock ." />
-          <CopyableCommand command="cock ~/my-project" />
+          <CopyableCommand command="cockpit" />
+          <CopyableCommand command="cockpit ." />
+          <CopyableCommand command="cockpit ~/my-project" />
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
           {locale === 'zh'
-            ? '启动后访问 http://localhost:3457'
-            : 'Then open http://localhost:3457'}
+            ? '启动后访问 http://localhost:3457 ｜ 短别名 cock 同样可用'
+            : 'Then open http://localhost:3457 · The short alias `cock` also works'}
         </p>
       </section>
 
       <section className="mt-10">
         <h2 className="text-xl font-semibold">{t.docs.sections.cli}</h2>
         <div className="mt-4 space-y-3">
-          <CopyableCommand command="cock browser <id> snapshot" />
-          <CopyableCommand command='cock terminal <id> exec "ls"' />
+          <CopyableCommand command="cockpit browser <id> snapshot" />
+          <CopyableCommand command='cockpit terminal <id> exec "ls"' />
         </div>
       </section>
 

@@ -5,9 +5,10 @@
   "description": "Marketing site for Cockpit (cocking.cc)",
   "scripts": {
     "dev": "TURBOPACK= next dev -p 3458",
-    "build": "node scripts/fetch-changelog.mjs && NODE_ENV=production TURBOPACK= next build",
+    "build": "node scripts/fetch-changelog.mjs && node scripts/generate-og.mjs && NODE_ENV=production TURBOPACK= next build",
     "start": "next start -p 3458",
     "lint": "next lint",
+    "og": "node scripts/generate-og.mjs",
     "preview": "npx wrangler pages dev out --compatibility-date=2024-09-23"
   },
   "dependencies": {

@@ -24,6 +24,9 @@ export function Hero({ locale, t }: { locale: Locale; t: Messages }) {
         <p className="mt-4 text-xl md:text-2xl font-medium text-muted-foreground">
           {t.hero.subheadline}
         </p>
+        <p className="mt-2 text-xs font-mono text-muted-foreground/70">
+          {t.hero.pronounce}
+        </p>
         <p className="mt-4 mx-auto max-w-2xl text-base md:text-lg text-muted-foreground leading-relaxed">
           {t.hero.description}
         </p>

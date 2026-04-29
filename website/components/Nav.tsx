@@ -35,6 +35,12 @@ export function Nav({ locale }: { locale: Locale }) {
             {t.nav.docs}
           </Link>
           <Link
+            href={`${base}/blog/`}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {t.nav.blog}
+          </Link>
+          <Link
             href={`${base}/changelog/`}
             className="text-muted-foreground hover:text-foreground transition-colors"
           >

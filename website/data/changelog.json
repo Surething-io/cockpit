@@ -1,10 +1,34 @@
 [
   {
+    "tag": "v1.0.195",
+    "name": "v1.0.195",
+    "publishedAt": "2026-04-29T07:32:32Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.195",
+    "body": "## ✨ New: Deepseek engine\n\nTalk to **DeepSeek** models directly from cockpit, alongside Claude / Codex / Kimi / Ollama.\n\n- Pick **Deepseek** from the new-tab dropdown\n- Click the picker in the chat header to **paste your API key** (saved locally in \\`~/.cockpit/settings.json\\`) and **switch between models**:\n  - \\`deepseek-v4-pro\\` (default)\n  - \\`deepseek-v4-flash\\`\n- Sessions are kept in \\`~/.cockpit/deepseek/\\` so they don't mix with your existing Claude history or credentials\n- All the normal goodies (file edits, bash, web search, slash commands, sub-agents, …) work as on Claude\n\n> Get a key from https://platform.deepseek.com/api_keys, paste it into the picker, send a message — done.\n\n## 🔄 Retry visibility\n\nWhen the upstream API hiccups and the SDK silently retries (transient 401, rate limit, 5xx), you now see it: an amber line under \"thinking…\" shows **attempt N/M, delay, and error reason** in real time. No more wondering why a response feels slow.\n\n## 🐛 Terminal: no more phantom commands\n\nFixed a long-standing bug where running certain CLI tools left the shell spitting out things like:\n\n\\`\\`\\`\nzsh: command not found: 11\nzsh: no such file or directory: rgb:0000/0000/0000\n\\`\\`\\`\n\nCockpit's terminal now swallows OSC color / DSR cursor-position / Device Attributes queries so a misbehaving child can't poison the parent shell's input.",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.194",
+    "name": "v1.0.194",
+    "publishedAt": "2026-04-29T06:35:37Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.194",
+    "body": "## 🌐 Website: Slash Modes, Skills, real screenshots\n\ncocking.cc got three upgrades:\n- **Slash Modes** section showcasing the built-in \\`/qa\\`, \\`/fx\\`, \\`/review\\`, \\`/commit\\` workflows\n- **Skills** surfaced in the Extras section\n- Placeholder cards replaced with **real product screenshots**\n\n## 🐛 \\`/fx\\` now appears in autocomplete\n\nTyping \\`/\\` shows \\`/fx\\` alongside the other built-in commands (was missing before).",
+    "prerelease": false
+  },
+  {
+    "tag": "v1.0.193",
+    "name": "v1.0.193",
+    "publishedAt": "2026-04-29T06:35:25Z",
+    "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.193",
+    "body": "## 🌐 cocking.cc is live\n\nFirst cut of the public marketing site at **https://cocking.cc** — landing page introducing cockpit's three-panel layout, browser automation, and slash workflows.\n\n## 🐛 Panels: overlays follow swipes\n\nModals and popovers inside the three-panel UI (Agent / Explorer / Console) now correctly stick to the panel you're on when you swipe. No more orphan menus drifting into the wrong panel.",
+    "prerelease": false
+  },
+  {
     "tag": "v1.0.192",
     "name": "v1.0.192",
     "publishedAt": "2026-04-26T13:30:51Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.192",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.191...v1.0.192",
+    "body": "## ✨ Terminal sessions survive page refresh\n\nReload the page and the Console terminal **replays its last screen** — running commands keep running, scrollback comes back, no more starting from a blank prompt.\n\n## 🐛 Git Changes: fresh image previews\n\nImage diffs in the Git Changes tab no longer show stale thumbnails after the file is updated.",
     "prerelease": false
   },
   {
@@ -12,7 +36,7 @@
     "name": "v1.0.191",
     "publishedAt": "2026-04-23T12:08:40Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.191",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.190...v1.0.191",
+    "body": "## 🐛 Better error message in \\`cock browser evaluate\\`\n\nWhen your JS expression returns nothing (e.g. you forgot to add \\`return\\`), you now get a clear hint — instead of a confusing generic \"no result\".",
     "prerelease": false
   },
   {
@@ -20,7 +44,7 @@
     "name": "v1.0.190",
     "publishedAt": "2026-04-23T11:57:09Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.190",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.189...v1.0.190",
+    "body": "## 🐛 Cleaner CLI exit\n\n\\`cock\\` and its subcommands no longer cut off the last line of output before exiting — error messages and logs now always print in full.",
     "prerelease": false
   },
   {
@@ -28,7 +52,7 @@
     "name": "v1.0.189",
     "publishedAt": "2026-04-23T10:22:02Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.189",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.188...v1.0.189",
+    "body": "## ✨ Skills sidebar\n\nA new **Skills** entry in the sidebar lets you browse all your installed Skills and **inject any of them as a slash command** directly into the chat input.\n\n## ✨ Chat tabs shrink-to-fit\n\nMany tabs no longer overflow horizontally — they shrink to fit the available width while keeping the close button reachable.\n\n## 🐛 Ollama: tools are non-blocking + truncation-aware\n\nWhen Ollama uses Bash or Grep, the calls are now non-blocking and gracefully truncate huge outputs — no more long pauses or chat freezes on commands that emit megabytes.",
     "prerelease": false
   },
   {
@@ -36,7 +60,7 @@
     "name": "v1.0.188",
     "publishedAt": "2026-04-22T11:45:46Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.188",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.187...v1.0.188",
+    "body": "## ✨ Branch compare: HEAD vs. base, with one-click pins\n\nThe Git branch-compare UI now splits the source and target into two separate selectors. Common targets (`main`, `master`, current branch's upstream) are pinned at the top so you don't have to scroll.",
     "prerelease": false
   },
   {
@@ -44,7 +68,7 @@
     "name": "v1.0.187",
     "publishedAt": "2026-04-22T06:40:28Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.187",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.186...v1.0.187",
+    "body": "## ✨ Claude 2 engine — run two accounts in parallel\n\nA second Claude engine that uses an independent config directory (`~/.claude2`) so you can stay signed in to **two Anthropic accounts at the same time** (e.g. personal + work) and chat with each from a different tab.\n\n## ✨ Rate limit visibility\n\nThe Anthropic SDK's rate-limit info is now shown in the token usage bar — utilization %, reset time, and overage status. You can see at a glance how close you are to your quota.\n\n## Markdown math toggle\n\nMath rendering in markdown is now opt-in per renderer (kept off in chat to avoid surprises with `\\$...\\$` text).",
     "prerelease": false
   },
   {
@@ -52,7 +76,7 @@
     "name": "v1.0.186",
     "publishedAt": "2026-04-11T08:31:15Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.186",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.185...v1.0.186",
+    "body": "## ✨ Built-in slash commands \\`/qa\\` and \\`/fx\\`\n\nTwo universal workflows built right into the chat:\n- \\`/qa\\` — requirements clarification mode (asks before coding)\n- \\`/fx\\` — bug evidence-chain analysis mode\n\nAuto-localized: the prompt picks Chinese or English based on your UI language.\n\n## ✨ Ollama: smarter agent loop for small models\n\nThe Ollama chat route was rewritten with a tool-design and UI tuned for weaker local models, so you get more reliable tool calls and reasoning even on 7B–14B class models.\n\n## ✨ Unified session format across engines\n\nAll engines (Claude, Codex, Kimi, Ollama) now use a Claude-style transcript format under the hood, so chat history loads consistently no matter which model produced it.\n\n## 🐛 Streaming + terminal fixes\n\n- Fixed duplicated text appearing during streaming\n- Fixed PTY garbled output in the Console terminal\n- Jupyter bridge is now bundled correctly in production installs",
     "prerelease": false
   },
   {
@@ -60,7 +84,7 @@
     "name": "v1.0.185",
     "publishedAt": "2026-03-31T19:29:14Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.185",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.184...v1.0.185",
+    "body": "## 🐛 New Tab menu position fix\n\nWhen you swiped to the Explorer or Console panel, opening the New Tab dropdown could land in the wrong place. The popover now anchors correctly regardless of which panel you're on.",
     "prerelease": false
   },
   {
@@ -68,7 +92,7 @@
     "name": "v1.0.184",
     "publishedAt": "2026-03-31T19:06:23Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.184",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.183...v1.0.184",
+    "body": "## ✨ Multi-provider chat: Codex, Kimi, Ollama\n\nCockpit no longer only talks to Claude. From the new-tab dropdown you can now pick:\n\n- **OpenAI Codex** (uses your OpenAI account / `~/.codex`)\n- **Kimi** (Moonshot)\n- **Ollama** (local models, with a model picker in the chat header)\n\nEach engine keeps its own session history and badge in the tab.\n\n## ✨ Tool calls visible in Kimi\n\nTool invocations made by Kimi are now rendered in the chat just like Claude's — you can see what was called and what came back.",
     "prerelease": false
   },
   {
@@ -76,7 +100,7 @@
     "name": "v1.0.183",
     "publishedAt": "2026-03-30T15:54:33Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.183",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.182...v1.0.183",
+    "body": "## 🐛 More reliable end-of-turn detection\n\nThe chat now decides \"the assistant is done\" based on whether a `result` message arrived, instead of guessing from `stop_reason`. Fixes occasional cases where the spinner never stopped.\n\n## 🐛 ESC cancel: no more auto-continue\n\nPressing ESC to cancel a streaming response no longer triggers a stale \"continue\" retry afterwards.",
     "prerelease": false
   },
   {
@@ -84,7 +108,7 @@
     "name": "v1.0.182",
     "publishedAt": "2026-03-30T13:12:39Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.182",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.181...v1.0.182",
+    "body": "## ✨ Neo4j browser bubble\n\nOpen a Neo4j database directly in the Console panel — **interactive graph visualization plus a schema browser** for nodes, relationships, and constraints.\n\n## 🐛 Cmd+V paste, scheduled task unread, compaction\n\n- Cmd+V paste in chat now works reliably\n- Scheduled tasks correctly mark sessions as unread on completion\n- Long conversations no longer hang during the SDK's auto-compaction\n\n## 🐛 No more duplicate user messages\n\nAdjacent identical user messages are deduplicated when loading transcripts — your chat history now reads cleanly.",
     "prerelease": false
   },
   {
@@ -92,7 +116,7 @@
     "name": "v1.0.181",
     "publishedAt": "2026-03-28T10:17:21Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.181",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.180...v1.0.181",
+    "body": "Internal release — no user-facing changes.",
     "prerelease": false
   },
   {
@@ -100,7 +124,7 @@
     "name": "v1.0.180",
     "publishedAt": "2026-03-28T10:04:53Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.180",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.179...v1.0.180",
+    "body": "Internal release — no user-facing changes.",
     "prerelease": false
   },
   {
@@ -108,7 +132,7 @@
     "name": "v1.0.178",
     "publishedAt": "2026-03-26T06:55:47Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.178",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/commits/v1.0.178",
+    "body": "## ✨ \\`cock <path>\\` to open a project\n\nOne-shot command to open any directory as a project:\n\n\\`\\`\\`bash\ncock ~/Work/my-app\n\\`\\`\\`\n\nREADME also got a Prerequisites section.",
     "prerelease": false
   },
   {
@@ -116,7 +140,7 @@
     "name": "v1.0.177",
     "publishedAt": "2026-03-25T20:13:41Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.177",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.176...v1.0.177",
+    "body": "## 🐛 Sudo install: extension files owned by you\n\nWhen installing globally with `sudo npm install -g`, the chrome extension files are now chown'd back to your user — so you can load them in Chrome without \"permission denied\" errors.",
     "prerelease": false
   },
   {
@@ -124,7 +148,7 @@
     "name": "v1.0.176",
     "publishedAt": "2026-03-25T20:03:45Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.176",
-    "body": "**Full Changelog**: https://github.com/Surething-io/cockpit/compare/v1.0.175...v1.0.176",
+    "body": "## 🐛 Chrome extension auto-installs\n\nThe cockpit chrome extension is now copied to `~/.cockpit/` during `npm install`, so the browser bubble works out of the box without manual setup.",
     "prerelease": false
   },
   {
@@ -132,7 +156,7 @@
     "name": "v1.0.175",
     "publishedAt": "2026-03-25T19:45:12Z",
     "url": "https://github.com/Surething-io/cockpit/releases/tag/v1.0.175",
-    "body": "## What's Changed\n* chore: add open-source scaffolding and npm publish CI by @tomisnotme in https://github.com/Surething-io/cockpit/pull/1\n* chore: rename package to @surething/cockpit by @tomisnotme in https://github.com/Surething-io/cockpit/pull/2\n\n## New Contributors\n* @tomisnotme made their first contribution in https://github.com/Surething-io/cockpit/pull/1\n\n**Full Changelog**: https://github.com/Surething-io/cockpit/commits/v1.0.175",
+    "body": "First release tracked in the public changelog.",
     "prerelease": false
   }
 ]

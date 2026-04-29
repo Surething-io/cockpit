@@ -134,10 +134,38 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
     term.loadAddon(searchAddon);
     term.open(containerRef.current);
 
-    // Forward each key to PTY
+    // ===== Block terminal-protocol response floods =====
+    // When a hung child process leaves unread query responses in the pty input
+    // buffer (e.g. it asked OSC 11 background color or CSI 6n cursor position
+    // and exited before reading the answer), the parent zsh later reads those
+    // bytes as keystrokes. ESC/CSI gets eaten by ZLE; the printable remainder
+    // is run as a command, producing `command not found: 11` /
+    // `no such file or directory: rgb:0000/0000/0000` storms.
+    //
+    // Two layers of defense:
+    //   (1) Don't let xterm.js auto-answer these queries in the first place.
+    //   (2) Even if something else generates a response, strip it from the
+    //       upstream onData stream before it reaches the pty.
+    const blockOsc = (id: number) =>
+      term.parser.registerOscHandler(id, () => true);
+    blockOsc(10);   // foreground color query
+    blockOsc(11);   // background color query (root cause in observed bug)
+    blockOsc(12);   // cursor color query
+    blockOsc(4);    // palette color query
+    blockOsc(52);   // clipboard read
+    term.parser.registerCsiHandler({ final: 'n' }, () => true);  // DSR / CPR
+    term.parser.registerCsiHandler({ final: 'c' }, () => true);  // Device Attributes
+
+    // Match OSC responses (ESC ] N ; ... BEL  or  ESC ] N ; ... ESC \)
+    // and CSI responses ending in R (CPR) or c (DA).
+    const RESPONSE_SEQ_RE = /\x1b\][0-9]+;[^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[\d;?]*[Rc]/g;
+
+    // Forward each key to PTY (filter out any stray protocol responses)
     term.onData((data: string) => {
+      const cleaned = data.replace(RESPONSE_SEQ_RE, '');
+      if (!cleaned) return;
       if (onInputRef.current) {
-        onInputRef.current(data);
+        onInputRef.current(cleaned);
       }
     });
 

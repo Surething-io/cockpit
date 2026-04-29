@@ -99,6 +99,11 @@ export const messages = {
         title: 'Scheduled Tasks',
         desc: 'One-time, interval, or cron-based scheduling. Pause, resume, reorder, track results across projects.',
       },
+      skills: {
+        title: 'Skills',
+        desc: 'Drop in any SKILL.md to teach the agent a new trick — invoke with /skill-name from chat. Manage everything from a single Skills panel.',
+        tag: '🧩 Extensibility',
+      },
     },
     builtOn: {
       headline: 'Built on Claude Code (Agent SDK)',
@@ -230,6 +235,11 @@ export const messages = {
       schedule: {
         title: '定时任务',
         desc: '一次性、间隔、Cron 三种调度。暂停、恢复、拖拽排序，跨项目追踪执行结果。',
+      },
+      skills: {
+        title: '技能 Skills',
+        desc: '任意一个 SKILL.md 都能教会 Agent 新技能 —— 在对话中用 /skill-name 直接调用，所有技能在统一面板集中管理。',
+        tag: '🧩 可扩展性',
       },
     },
     builtOn: {

@@ -34,6 +34,10 @@ export const CLAUDE_DIR = join(HOME_DIR, '.claude');
 export const CLAUDE_PROJECTS_DIR = join(CLAUDE_DIR, 'projects');
 export const CLAUDE2_DIR = join(HOME_DIR, '.claude2');
 export const CLAUDE2_PROJECTS_DIR = join(CLAUDE2_DIR, 'projects');
+// Deepseek uses the Claude Agent SDK with CLAUDE_CONFIG_DIR pointed here
+// to keep its credentials/sessions isolated from the user's real ~/.claude
+export const DEEPSEEK_DIR = join(COCKPIT_DIR, 'deepseek');
+export const DEEPSEEK_PROJECTS_DIR = join(DEEPSEEK_DIR, 'projects');
 
 // ============================================
 // Path Encoding
@@ -208,6 +212,25 @@ export function getClaude2ProjectDir(cwd: string): string {
  */
 export function getClaude2SessionPath(cwd: string, sessionId: string): string {
   return join(getClaude2ProjectDir(cwd), `${sessionId}.jsonl`);
+}
+
+// ============================================
+// Deepseek Project Paths (~/.cockpit/deepseek/projects/<encoded-cwd>/...)
+// Sessions written by Claude Agent SDK with CLAUDE_CONFIG_DIR=DEEPSEEK_DIR
+// ============================================
+
+/**
+ * Get the Deepseek project directory for a given cwd
+ */
+export function getDeepseekProjectDir(cwd: string): string {
+  return join(DEEPSEEK_PROJECTS_DIR, encodePath(cwd));
+}
+
+/**
+ * Get the session file path in Deepseek's projects directory
+ */
+export function getDeepseekSessionPath(cwd: string, sessionId: string): string {
+  return join(getDeepseekProjectDir(cwd), `${sessionId}.jsonl`);
 }
 
 // ============================================

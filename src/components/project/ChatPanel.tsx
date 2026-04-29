@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { Chat } from './Chat';
-import type { ChatEngine } from './useTabState';
+import type { ChatEngine, DeepseekModel } from './useTabState';
 
 // ============================================
 // ChatPanel - Simplified Chat panel without header and sidebar
@@ -15,6 +15,8 @@ interface ChatPanelProps {
   engine?: ChatEngine;
   ollamaModel?: string;
   onOllamaModelChange?: (tabId: string, model: string) => void;
+  deepseekModel?: DeepseekModel;
+  onDeepseekModelChange?: (tabId: string, model: DeepseekModel) => void;
   isActive?: boolean;
   onStateChange: (tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string }) => void;
   onShowGitStatus?: () => void;
@@ -35,7 +37,7 @@ interface ChatPanelProps {
   onContentSearch?: (query: string) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllamaModelChange, isActive, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, isActive, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -52,6 +54,10 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllama
     onOllamaModelChange?.(tabId, model);
   }, [tabId, onOllamaModelChange]);
 
+  const handleDeepseekModelChange = useCallback((model: DeepseekModel) => {
+    onDeepseekModelChange?.(tabId, model);
+  }, [tabId, onDeepseekModelChange]);
+
   return (
     <Chat
       tabId={tabId}
@@ -60,6 +66,8 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllama
       engine={engine}
       ollamaModel={ollamaModel}
       onOllamaModelChange={handleOllamaModelChange}
+      deepseekModel={deepseekModel}
+      onDeepseekModelChange={handleDeepseekModelChange}
       hideHeader
       hideSidebar
       isActive={isActive}

@@ -44,9 +44,11 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     handleNewCodexTab,
     handleNewKimiTab,
     handleNewOllamaTab,
+    handleNewDeepseekTab,
     handleOpenSession,
     updateTabState,
     updateTabOllamaModel,
+    updateTabDeepseekModel,
     handleTabDragStart,
     handleTabDragOver,
     handleTabDrop,
@@ -286,6 +288,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                     onNewCodexTab={handleNewCodexTab}
                     onNewKimiTab={handleNewKimiTab}
                     onNewOllamaTab={handleNewOllamaTab}
+                    onNewDeepseekTab={handleNewDeepseekTab}
                     onDragStart={handleTabDragStart}
                     onDragOver={handleTabDragOver}
                     onDrop={handleTabDrop}
@@ -304,6 +307,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                           engine={tab.engine}
                           ollamaModel={tab.ollamaModel}
                           onOllamaModelChange={updateTabOllamaModel}
+                          deepseekModel={tab.deepseekModel}
+                          onDeepseekModelChange={updateTabDeepseekModel}
                           isActive={tab.id === activeTabId && activeView === 'agent'}
                           onStateChange={updateTabState}
                           onShowGitStatus={handleShowGitStatus}
@@ -357,6 +362,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
               onNewClaude2Tab={handleNewClaude2Tab}
               onNewCodexTab={handleNewCodexTab}
               onNewKimiTab={handleNewKimiTab}
+              onNewDeepseekTab={handleNewDeepseekTab}
               onDragStart={handleTabDragStart}
               onDragOver={handleTabDragOver}
               onDrop={handleTabDrop}
@@ -375,6 +381,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                     engine={tab.engine}
                     ollamaModel={tab.ollamaModel}
                     onOllamaModelChange={updateTabOllamaModel}
+                    deepseekModel={tab.deepseekModel}
+                    onDeepseekModelChange={updateTabDeepseekModel}
                     isActive={tab.id === activeTabId}
                     onStateChange={updateTabState}
                     onCreateScheduledTask={createScheduledTask}

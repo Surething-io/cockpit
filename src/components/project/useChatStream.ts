@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import { ChatMessage, ToolCallInfo, ImageInfo, MessageImage, TokenUsage, RateLimitInfo } from '@/types/chat';
-import type { ChatEngine } from './useTabState';
+import { ChatMessage, ToolCallInfo, ImageInfo, MessageImage, TokenUsage, RateLimitInfo, ApiRetryInfo } from '@/types/chat';
+import type { ChatEngine, DeepseekModel } from './useTabState';
 import i18n from '@/lib/i18n';
 
 // ============================================
@@ -14,6 +14,7 @@ interface UseChatStreamOptions {
   cwd?: string;
   engine?: ChatEngine;
   ollamaModel?: string;
+  deepseekModel?: DeepseekModel;
   onSessionId: (sid: string) => void;
   onFetchTitle: (sid: string) => void;
 }
@@ -22,6 +23,7 @@ interface UseChatStreamReturn {
   isLoading: boolean;
   tokenUsage: TokenUsage | null;
   rateLimitInfo: RateLimitInfo | null;
+  apiRetryInfo: ApiRetryInfo | null;
   handleSend: (content: string, images?: ImageInfo[]) => Promise<void>;
   handleStop: () => void;
   abortControllerRef: React.RefObject<AbortController | null>;
@@ -34,11 +36,12 @@ interface UseChatStreamReturn {
 export function useChatStream(
   messages: ChatMessage[],
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  { sessionId, cwd, engine, ollamaModel, onSessionId, onFetchTitle }: UseChatStreamOptions
+  { sessionId, cwd, engine, ollamaModel, deepseekModel, onSessionId, onFetchTitle }: UseChatStreamOptions
 ): UseChatStreamReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const [rateLimitInfo, setRateLimitInfo] = useState<RateLimitInfo | null>(null);
+  const [apiRetryInfo, setApiRetryInfo] = useState<ApiRetryInfo | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Used to get latest sessionId in handleStreamEvent
@@ -83,6 +86,20 @@ export function useChatStream(
       const newSessionId = event.session_id as string;
       onSessionId(newSessionId);
       sessionIdRef.current = newSessionId;
+      // Successful init means any prior retry chain has resolved
+      setApiRetryInfo(null);
+      return;
+    }
+
+    // Handle SDK api_retry event (e.g. transient 401/5xx). Show in loading bubble.
+    if (eventType === 'system' && event.subtype === 'api_retry') {
+      setApiRetryInfo({
+        attempt: (event.attempt as number) ?? 0,
+        maxRetries: (event.max_retries as number) ?? 0,
+        delayMs: (event.retry_delay_ms as number) ?? 0,
+        errorStatus: event.error_status as number | undefined,
+        error: event.error as string | undefined,
+      });
       return;
     }
 
@@ -106,6 +123,8 @@ export function useChatStream(
 
     // Handle streaming text chunk (typewriter effect) - use buffer throttle
     if (eventType === 'stream_event') {
+      // Any actual stream content means the retry (if any) succeeded
+      setApiRetryInfo(prev => prev ? null : prev);
       const streamEvent = event.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
       if (streamEvent?.type === 'content_block_delta' && streamEvent.delta?.type === 'text_delta') {
         const deltaText = streamEvent.delta.text || '';
@@ -205,6 +224,8 @@ export function useChatStream(
 
     // Handle final result
     if (eventType === 'result') {
+      // Stream ended → drop any retry indicator
+      setApiRetryInfo(null);
       // Stream ended, flush buffer immediately
       if (streamFlushTimerRef.current) {
         clearTimeout(streamFlushTimerRef.current);
@@ -273,6 +294,8 @@ export function useChatStream(
       };
       setMessages((prev) => [...prev, userMessage]);
       setIsLoading(true);
+      // Fresh send: clear stale retry indicator from a previous turn
+      setApiRetryInfo(null);
 
       // Create assistant message placeholder
       const assistantMessageId = `assistant-${Date.now()}`;
@@ -294,7 +317,7 @@ export function useChatStream(
           throw new Error('Please select an Ollama model first (click the model picker above)');
         }
 
-        const apiUrl = engine === 'codex' ? '/api/chat/codex' : engine === 'kimi' ? '/api/chat/kimi' : engine === 'ollama' ? '/api/chat/ollama' : '/api/chat';
+        const apiUrl = engine === 'codex' ? '/api/chat/codex' : engine === 'kimi' ? '/api/chat/kimi' : engine === 'ollama' ? '/api/chat/ollama' : engine === 'deepseek' ? '/api/chat/deepseek' : '/api/chat';
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -305,10 +328,17 @@ export function useChatStream(
             cwd,
             language: i18n.language,
             ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
+            ...(engine === 'deepseek' && deepseekModel && { model: deepseekModel }),
             ...(engine === 'claude2' && { engine: 'claude2' }),
           }),
           signal: abortControllerRef.current.signal,
         });
+
+        if (response.status === 400 && engine === 'deepseek') {
+          // Surface the readable error (likely "API key is not configured")
+          const errBody = await response.json().catch(() => null);
+          throw new Error(errBody?.error || 'Deepseek request failed');
+        }
 
         if (!response.ok) {
           throw new Error(i18n.t('chat.requestFailed'));
@@ -371,13 +401,14 @@ export function useChatStream(
         );
       }
     },
-    [cwd, engine, ollamaModel, setMessages, handleStreamEvent]
+    [cwd, engine, ollamaModel, deepseekModel, setMessages, handleStreamEvent]
   );
 
   return {
     isLoading,
     tokenUsage,
     rateLimitInfo,
+    apiRetryInfo,
     handleSend,
     handleStop,
     abortControllerRef,

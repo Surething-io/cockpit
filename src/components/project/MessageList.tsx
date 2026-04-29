@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react';
-import { ChatMessage } from '@/types/chat';
+import { ChatMessage, ApiRetryInfo } from '@/types/chat';
 import type { ChatEngine } from './useTabState';
 import { MessageBubble } from './MessageBubble';
 import { useChatSearch } from '@/hooks/useChatSearch';
@@ -18,6 +18,7 @@ interface MessageListProps {
   cwd?: string;
   sessionId?: string | null;
   engine?: ChatEngine;
+  apiRetryInfo?: ApiRetryInfo | null;
   hasMoreHistory?: boolean;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
@@ -32,7 +33,7 @@ export interface MessageListHandle {
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
-  { messages, isLoading, cwd, sessionId, engine, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch },
+  { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch },
   ref
 ) {
   const { t } = useTranslation();
@@ -405,11 +406,33 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
             ))}
             {isLoading && (
               <div className="flex justify-start mb-4">
-                <div className="bg-accent rounded-2xl rounded-bl-md px-4 py-3">
+                <div className="bg-accent rounded-2xl rounded-bl-md px-4 py-3 max-w-[90%]">
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <span className="inline-block w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-                    <span className="text-sm">{engine === 'claude2' ? 'Claude 2 is thinking...' : engine === 'codex' ? 'Codex is thinking...' : engine === 'kimi' ? 'Kimi is thinking...' : engine === 'ollama' ? 'Ollama is thinking...' : t('chat.claudeThinking')}</span>
+                    <span className="text-sm">{engine === 'claude2' ? 'Claude 2 is thinking...' : engine === 'codex' ? 'Codex is thinking...' : engine === 'kimi' ? 'Kimi is thinking...' : engine === 'ollama' ? 'Ollama is thinking...' : engine === 'deepseek' ? 'Deepseek is thinking...' : t('chat.claudeThinking')}</span>
                   </div>
+                  {apiRetryInfo && (
+                    <div className="mt-2 flex items-start gap-2 text-xs text-amber-400 border-t border-border/50 pt-2">
+                      <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      <div className="flex-1 min-w-0">
+                        <div>
+                          Retrying API call (attempt {apiRetryInfo.attempt}
+                          {apiRetryInfo.maxRetries > 0 ? `/${apiRetryInfo.maxRetries}` : ''}
+                          {apiRetryInfo.delayMs > 0 ? `, delay ${(apiRetryInfo.delayMs / 1000).toFixed(1)}s` : ''}
+                          )
+                        </div>
+                        {(apiRetryInfo.errorStatus || apiRetryInfo.error) && (
+                          <div className="text-muted-foreground/80 break-words">
+                            {apiRetryInfo.errorStatus ? `${apiRetryInfo.errorStatus}` : ''}
+                            {apiRetryInfo.errorStatus && apiRetryInfo.error ? ' · ' : ''}
+                            {apiRetryInfo.error || ''}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

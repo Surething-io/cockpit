@@ -4,8 +4,9 @@ import { getSessionFilePath, readJsonFile, writeJsonFile } from '@/lib/paths';
 interface ProjectState {
   sessions: string[];
   activeSessionId?: string; // sessionId of the currently active tab
-  engines?: Record<string, string>; // sessionId → engine ('claude' | 'codex' | 'ollama')
+  engines?: Record<string, string>; // sessionId → engine ('claude' | 'codex' | 'ollama' | 'deepseek' | ...)
   ollamaModels?: Record<string, string>; // sessionId → ollama model name
+  deepseekModels?: Record<string, string>; // sessionId → deepseek model name
 }
 
 // GET: Read the project's session list
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
 // body: { cwd: string, sessions: string[], activeSessionId?: string }
 export async function POST(request: Request) {
   const body = await request.json();
-  const { cwd, sessions, activeSessionId, engines, ollamaModels } = body;
+  const { cwd, sessions, activeSessionId, engines, ollamaModels, deepseekModels } = body;
 
   if (!cwd) {
     return NextResponse.json({ error: 'Missing cwd parameter' }, { status: 400 });
@@ -37,7 +38,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'sessions must be an array' }, { status: 400 });
   }
 
-  const state: ProjectState = { sessions, activeSessionId, ...(engines && { engines }), ...(ollamaModels && { ollamaModels }) };
+  const state: ProjectState = {
+    sessions,
+    activeSessionId,
+    ...(engines && { engines }),
+    ...(ollamaModels && { ollamaModels }),
+    ...(deepseekModels && { deepseekModels }),
+  };
   const filePath = getSessionFilePath(cwd);
   await writeJsonFile(filePath, state);
   return NextResponse.json(state);

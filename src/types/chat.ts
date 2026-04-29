@@ -52,6 +52,15 @@ export interface TokenUsage {
   totalCostUsd: number;
 }
 
+// Retry info (from SDK system/api_retry event)
+export interface ApiRetryInfo {
+  attempt: number;
+  maxRetries: number;
+  delayMs: number;
+  errorStatus?: number;
+  error?: string;
+}
+
 // Rate limit info (from SDK rate_limit_event)
 export interface RateLimitInfo {
   status: 'allowed' | 'allowed_warning' | 'rejected';

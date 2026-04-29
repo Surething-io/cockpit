@@ -14,8 +14,9 @@ import { ChatHeader, TokenUsageBar } from './ChatHeader';
 import { useChatStream } from './useChatStream';
 import { useChatHistory } from './useChatHistory';
 import { useTranslation } from 'react-i18next';
-import type { ChatEngine } from './useTabState';
+import type { ChatEngine, DeepseekModel } from './useTabState';
 import { OllamaModelPicker } from './OllamaModelPicker';
+import { DeepseekConfigPicker } from './DeepseekConfigPicker';
 
 interface ChatProps {
   tabId?: string; // Tab ID, used to register with ChatContext
@@ -24,6 +25,8 @@ interface ChatProps {
   engine?: ChatEngine;
   ollamaModel?: string;
   onOllamaModelChange?: (model: string) => void;
+  deepseekModel?: DeepseekModel;
+  onDeepseekModelChange?: (model: DeepseekModel) => void;
   hideHeader?: boolean;
   hideSidebar?: boolean;
   isActive?: boolean; // Whether the tab is active (used to handle scroll issues for hidden tabs)
@@ -48,7 +51,7 @@ interface ChatProps {
   onContentSearch?: (query: string) => void; // Selected text → project-wide search
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel, onOllamaModelChange, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch }: ChatProps) {
   const { t } = useTranslation();
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -88,6 +91,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
     isLoading,
     tokenUsage: streamTokenUsage,
     rateLimitInfo,
+    apiRetryInfo,
     handleSend,
     handleStop,
   } = useChatStream(messages, setMessages, {
@@ -95,6 +99,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
     cwd: initialCwd,
     engine,
     ollamaModel,
+    deepseekModel,
     onSessionId: setSessionId,
     onFetchTitle: fetchSessionTitle,
   });
@@ -315,6 +320,13 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
           </div>
         )}
 
+        {/* Deepseek API key + model picker */}
+        {engine === 'deepseek' && onDeepseekModelChange && (
+          <div className="flex items-center px-3 py-1.5 border-b border-border bg-card/50">
+            <DeepseekConfigPicker currentModel={deepseekModel} onModelChange={onDeepseekModelChange} />
+          </div>
+        )}
+
         {/* Messages */}
         {isLoadingHistory ? (
           <div className="flex-1 flex items-center justify-center">
@@ -328,6 +340,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
             cwd={initialCwd}
             sessionId={sessionId}
             engine={engine}
+            apiRetryInfo={apiRetryInfo}
             hasMoreHistory={hasMoreHistory}
             isLoadingMore={isLoadingMore}
             onLoadMore={loadMoreHistory}

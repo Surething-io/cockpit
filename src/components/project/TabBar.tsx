@@ -40,7 +40,7 @@ function TabNumberIcon({ number, isActive }: { number: number; isActive: boolean
 // NewTabButton with engine picker popover
 // ============================================
 
-function NewTabButton({ onNewTab, onNewClaude2Tab, onNewCodexTab, onNewKimiTab, onNewOllamaTab }: { onNewTab: () => void; onNewClaude2Tab?: () => void; onNewCodexTab?: () => void; onNewKimiTab?: () => void; onNewOllamaTab?: () => void }) {
+function NewTabButton({ onNewTab, onNewClaude2Tab, onNewCodexTab, onNewKimiTab, onNewOllamaTab, onNewDeepseekTab }: { onNewTab: () => void; onNewClaude2Tab?: () => void; onNewCodexTab?: () => void; onNewKimiTab?: () => void; onNewOllamaTab?: () => void; onNewDeepseekTab?: () => void }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -79,12 +79,13 @@ function NewTabButton({ onNewTab, onNewClaude2Tab, onNewCodexTab, onNewKimiTab, 
     setOpen(v => !v);
   };
 
-  const pick = (engine: 'claude' | 'claude2' | 'codex' | 'kimi' | 'ollama') => {
+  const pick = (engine: 'claude' | 'claude2' | 'codex' | 'kimi' | 'ollama' | 'deepseek') => {
     setOpen(false);
     if (engine === 'claude2') onNewClaude2Tab?.();
     else if (engine === 'codex') onNewCodexTab?.();
     else if (engine === 'kimi') onNewKimiTab?.();
     else if (engine === 'ollama') onNewOllamaTab?.();
+    else if (engine === 'deepseek') onNewDeepseekTab?.();
     else onNewTab();
   };
 
@@ -128,6 +129,13 @@ function NewTabButton({ onNewTab, onNewClaude2Tab, onNewCodexTab, onNewKimiTab, 
             OpenAI Codex
           </button>
           <button
+            onClick={() => pick('deepseek')}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors whitespace-nowrap"
+          >
+            <span className="w-2 h-2 rounded-full bg-sky-500 flex-shrink-0" />
+            Deepseek
+          </button>
+          <button
             onClick={() => pick('kimi')}
             className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors whitespace-nowrap"
           >
@@ -166,6 +174,7 @@ interface TabBarProps {
   onNewCodexTab?: () => void;
   onNewKimiTab?: () => void;
   onNewOllamaTab?: () => void;
+  onNewDeepseekTab?: () => void;
   onDragStart: (index: number) => void;
   onDragOver: (e: React.DragEvent, index: number) => void;
   onDrop: (index: number) => void;
@@ -187,6 +196,7 @@ export function TabBar({
   onNewCodexTab,
   onNewKimiTab,
   onNewOllamaTab,
+  onNewDeepseekTab,
   onDragStart,
   onDragOver,
   onDrop,
@@ -268,6 +278,9 @@ export function TabBar({
               {tab.engine === 'ollama' && (
                 <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-violet-500/15 text-violet-400 font-medium leading-relaxed">OL</span>
               )}
+              {tab.engine === 'deepseek' && (
+                <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-sky-500/15 text-sky-400 font-medium leading-relaxed">DS</span>
+              )}
               {tabs.length > 1 && (
                 <button
                   onClick={(e) => {
@@ -286,7 +299,7 @@ export function TabBar({
           </Tooltip>
         ))}
         {/* New tab button with engine picker */}
-        <NewTabButton onNewTab={onNewTab} onNewClaude2Tab={onNewClaude2Tab} onNewCodexTab={onNewCodexTab} onNewKimiTab={onNewKimiTab} onNewOllamaTab={onNewOllamaTab} />
+        <NewTabButton onNewTab={onNewTab} onNewClaude2Tab={onNewClaude2Tab} onNewCodexTab={onNewCodexTab} onNewKimiTab={onNewKimiTab} onNewOllamaTab={onNewOllamaTab} onNewDeepseekTab={onNewDeepseekTab} />
       </div>
     </div>
   );

@@ -7,7 +7,9 @@ import { usePageVisible } from '@/hooks/usePageVisible';
 // Types
 // ============================================
 
-export type ChatEngine = 'claude' | 'claude2' | 'codex' | 'kimi' | 'ollama';
+export type ChatEngine = 'claude' | 'claude2' | 'codex' | 'kimi' | 'ollama' | 'deepseek';
+
+export type DeepseekModel = 'deepseek-v4-flash' | 'deepseek-v4-pro';
 
 export interface TabInfo {
   id: string;
@@ -17,6 +19,7 @@ export interface TabInfo {
   isLoading?: boolean;
   engine?: ChatEngine;
   ollamaModel?: string;
+  deepseekModel?: DeepseekModel;
 }
 
 // ============================================
@@ -84,6 +87,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
           const savedActiveSessionId: string | undefined = data.activeSessionId;
           const savedEngines: Record<string, string> = data.engines || {};
           const savedOllamaModels: Record<string, string> = data.ollamaModels || {};
+          const savedDeepseekModels: Record<string, string> = data.deepseekModels || {};
 
           // Merge URL sessionId with sessions in session.json (deduplicate)
           let allSessions = [...savedSessions];
@@ -99,6 +103,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
               title: `Session ${sessionId.slice(0, 6)}...`,
               engine: (savedEngines[sessionId] as ChatEngine) || undefined,
               ollamaModel: savedOllamaModels[sessionId] || undefined,
+              deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || undefined,
             }));
 
             // Activation priority: URL sessionId > session.json activeSessionId > first
@@ -140,6 +145,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     // Build engine map for tabs that have a non-default engine
     const engines: Record<string, string> = {};
     const ollamaModels: Record<string, string> = {};
+    const deepseekModels: Record<string, string> = {};
     for (const tab of tabs) {
       if (tab.sessionId && tab.engine) {
         engines[tab.sessionId] = tab.engine;
@@ -147,12 +153,15 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       if (tab.sessionId && tab.ollamaModel) {
         ollamaModels[tab.sessionId] = tab.ollamaModel;
       }
+      if (tab.sessionId && tab.deepseekModel) {
+        deepseekModels[tab.sessionId] = tab.deepseekModel;
+      }
     }
 
     fetch('/api/project-state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cwd: initialCwd, sessions: sessionIds, activeSessionId, engines, ollamaModels }),
+      body: JSON.stringify({ cwd: initialCwd, sessions: sessionIds, activeSessionId, engines, ollamaModels, deepseekModels }),
     }).catch(error => {
       console.error('Failed to save sessions:', error);
     });
@@ -173,7 +182,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   }, [activeTabId, tabs, initialCwd]);
 
   // Add new tab (insert to the right of current tab)
-  const addTab = useCallback((cwd?: string, sessionId?: string, title?: string, engine?: ChatEngine, ollamaModel?: string) => {
+  const addTab = useCallback((cwd?: string, sessionId?: string, title?: string, engine?: ChatEngine, ollamaModel?: string, deepseekModel?: DeepseekModel) => {
     const newTab: TabInfo = {
       id: `tab-${Date.now()}`,
       cwd,
@@ -181,6 +190,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       title: title || (sessionId ? `Session ${sessionId.slice(0, 6)}...` : 'New Chat'),
       engine,
       ollamaModel,
+      deepseekModel,
     };
     setTabs((prev) => {
       const currentIndex = prev.findIndex((t) => t.id === activeTabId);
@@ -254,6 +264,20 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     setTabs((prev) =>
       prev.map((tab) =>
         tab.id === tabId ? { ...tab, ollamaModel: model } : tab
+      )
+    );
+  }, []);
+
+  // Create new Deepseek tab (defaults to v4-flash; picker in chat header lets user switch later)
+  const handleNewDeepseekTab = useCallback(() => {
+    addTab(initialCwd, undefined, 'New Deepseek Chat', 'deepseek', undefined, 'deepseek-v4-flash');
+  }, [initialCwd, addTab]);
+
+  // Update Deepseek model for a tab
+  const updateTabDeepseekModel = useCallback((tabId: string, model: DeepseekModel) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, deepseekModel: model } : tab
       )
     );
   }, []);
@@ -387,9 +411,11 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     handleNewCodexTab,
     handleNewKimiTab,
     handleNewOllamaTab,
+    handleNewDeepseekTab,
     handleOpenSession,
     updateTabState,
     updateTabOllamaModel,
+    updateTabDeepseekModel,
 
     // Drag operations
     handleTabDragStart,

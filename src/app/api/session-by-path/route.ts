@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import * as fs from 'fs';
 import * as readline from 'readline';
-import { getClaudeSessionPath, getClaude2SessionPath, findCodexSessionPath, findKimiSessionPath, getOllamaSessionPath } from '@/lib/paths';
+import { getClaudeSessionPath, getClaude2SessionPath, findCodexSessionPath, findKimiSessionPath, getOllamaSessionPath, getDeepseekSessionPath } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -90,9 +90,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Build the full session file path — try Claude first, then Claude2, then Codex, then Kimi, then Ollama
+    // Build the full session file path — try Claude first, then Claude2, then Deepseek (also JSONL via SDK), then Codex, then Kimi, then Ollama
     let sessionPath = getClaudeSessionPath(cwd, sessionId);
-    let engine: 'claude' | 'claude2' | 'codex' | 'kimi' | 'ollama' = 'claude';
+    let engine: 'claude' | 'claude2' | 'codex' | 'kimi' | 'ollama' | 'deepseek' = 'claude';
 
     if (!fs.existsSync(sessionPath)) {
       const claude2Path = getClaude2SessionPath(cwd, sessionId);
@@ -100,25 +100,31 @@ export async function POST(request: NextRequest) {
         sessionPath = claude2Path;
         engine = 'claude2';
       } else {
-        const codexPath = findCodexSessionPath(sessionId);
-        if (codexPath) {
-          sessionPath = codexPath;
-          engine = 'codex';
+        const deepseekPath = getDeepseekSessionPath(cwd, sessionId);
+        if (fs.existsSync(deepseekPath)) {
+          sessionPath = deepseekPath;
+          engine = 'deepseek';
         } else {
-          const kimiPath = findKimiSessionPath(sessionId);
-          if (kimiPath) {
-            sessionPath = kimiPath;
-            engine = 'kimi';
+          const codexPath = findCodexSessionPath(sessionId);
+          if (codexPath) {
+            sessionPath = codexPath;
+            engine = 'codex';
           } else {
-            const ollamaPath = getOllamaSessionPath(cwd, sessionId);
-            if (fs.existsSync(ollamaPath)) {
-              sessionPath = ollamaPath;
-              engine = 'ollama';
+            const kimiPath = findKimiSessionPath(sessionId);
+            if (kimiPath) {
+              sessionPath = kimiPath;
+              engine = 'kimi';
             } else {
-              return new Response(JSON.stringify({ error: 'Session not found', messages: [] }), {
-                status: 404,
-                headers: { 'Content-Type': 'application/json' },
-              });
+              const ollamaPath = getOllamaSessionPath(cwd, sessionId);
+              if (fs.existsSync(ollamaPath)) {
+                sessionPath = ollamaPath;
+                engine = 'ollama';
+              } else {
+                return new Response(JSON.stringify({ error: 'Session not found', messages: [] }), {
+                  status: 404,
+                  headers: { 'Content-Type': 'application/json' },
+                });
+              }
             }
           }
         }

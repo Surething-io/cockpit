@@ -1,27 +1,49 @@
 {
   "name": "@surething/cockpit",
   "version": "1.0.195",
-  "description": "The Cockpit That Drives AI",
+  "description": "Claude Code GUI for parallel AI coding — multi-project sessions, terminal, browser & DB bubbles, code review, and slash modes. Built on the official Claude Agent SDK. Local-first, open source.",
   "author": "Robert",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Surething-io/cockpit.git"
   },
-  "homepage": "https://github.com/Surething-io/cockpit#readme",
+  "homepage": "https://cocking.cc",
   "bugs": {
     "url": "https://github.com/Surething-io/cockpit/issues"
   },
   "keywords": [
-    "ai",
+    "claude-code",
+    "claude-code-gui",
+    "claude-code-desktop",
+    "claude-code-client",
+    "claude-agent-sdk",
+    "anthropic",
+    "ai-coding",
+    "ai-coding-agent",
+    "ai-ide",
+    "ai-pair-programming",
+    "ai-code-review",
+    "agent-sdk",
+    "coding-agent",
+    "parallel-ai",
+    "multi-project-ai",
     "cockpit",
+    "cocking",
+    "cursor-alternative",
+    "aider-alternative",
+    "continue-alternative",
+    "ai",
     "cli",
-    "agent"
+    "agent",
+    "developer-tools",
+    "productivity"
   ],
   "engines": {
     "node": ">=20"
   },
   "bin": {
+    "cockpit": "./bin/cockpit.mjs",
     "cock": "./bin/cock.mjs",
     "cock-dev": "./bin/cock-dev.mjs"
   },

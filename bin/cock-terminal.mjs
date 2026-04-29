@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * cock terminal <id> <action> [args...]
+ * cockpit terminal <id> <action> [args...]
  *
  * CLI entry point: access a running terminal bubble, read output, stream in real time, send input.
  */
@@ -22,7 +22,7 @@ function readServerPort() {
 function printHelp(prefix = '<id>', status = null) {
   console.log(`Interact with a running terminal process — read output, stream logs, and send input.
 
-Usage: cock terminal ${prefix} <action>`);
+Usage: cockpit terminal ${prefix} <action>`);
 
   if (status) {
     if (status.running) {
@@ -41,14 +41,14 @@ Actions:
   stdin <data>              Send input to process
 
 ── Next step ──────────────────────────────────────────
-Run \`cock terminal ${prefix} output\` to read the terminal output.
+Run \`cockpit terminal ${prefix} output\` to read the terminal output.
 Use \`stdin\` to send commands or input to the process.
 
 Example session:
-  cock terminal ${prefix} output               # 1. read current output
-  cock terminal ${prefix} stdin "ls -la"        # 2. send a command
-  cock terminal ${prefix} output               # 3. read new output
-  cock terminal ${prefix} follow               # stream output in real-time`);
+  cockpit terminal ${prefix} output               # 1. read current output
+  cockpit terminal ${prefix} stdin "ls -la"        # 2. send a command
+  cockpit terminal ${prefix} output               # 3. read new output
+  cockpit terminal ${prefix} follow               # stream output in real-time`);
 }
 
 if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
@@ -150,7 +150,7 @@ async function run() {
   if (action === 'stdin') {
     const inputData = extraArgs.join(' ');
     if (!inputData) {
-      console.error('Usage: cock terminal <id> stdin <data>');
+      console.error('Usage: cockpit terminal <id> stdin <data>');
       process.exit(1);
     }
     try {

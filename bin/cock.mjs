@@ -13,12 +13,12 @@ if (process.argv[2] === '--help' || process.argv[2] === '-h' || process.argv[2] 
   const pkg = JSON.parse(readFileSync(resolve(PROJECT_ROOT, 'package.json'), 'utf8'));
   console.log(`Cockpit v${pkg.version} - One seat. One AI. Everything under control.
 
-Usage: cock [path] [options]
+Usage: cockpit [path] [options]   (alias: cock)
 
 Commands:
-  cock                           Start server, open last project
-  cock .                         Start server, open current directory
-  cock <path>                    Start server, open specified directory
+  cockpit                        Start server, open last project
+  cockpit .                      Start server, open current directory
+  cockpit <path>                 Start server, open specified directory
   browser <id> <action>          Control browser bubbles
   terminal <id> <action>         Control terminal bubbles
   update                         Update to latest version
@@ -27,7 +27,9 @@ Options:
   --port <port>                  Set server port (default: 3457)
   --no-open                      Don't open browser after start
   -v, --version                  Show version
-  -h, --help                     Show this help`);
+  -h, --help                     Show this help
+
+Both \`cockpit\` and the short alias \`cock\` work everywhere.`);
   process.exit(0);
 }
 

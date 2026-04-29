@@ -11,7 +11,7 @@ import type { AgentContext } from './types';
 
 // Async child-process helpers. We must NOT use execSync/execFileSync here:
 // this module runs inside the Next.js request handler, and commands like
-// `cock browser <action>` issue HTTP calls back to the same server. A
+// `cockpit browser <action>` issue HTTP calls back to the same server. A
 // synchronous child_process call freezes the event loop so the server
 // can't answer that HTTP call → self-deadlock until timeout (ETIMEDOUT).
 const execAsync = promisify(exec);

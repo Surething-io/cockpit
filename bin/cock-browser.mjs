@@ -1,22 +1,22 @@
 #!/usr/bin/env node
 
 /**
- * cock browser <id> <action> [args...]
+ * cockpit browser <id> <action> [args...]
  *
  * CLI entry point: parse arguments, send commands to browser bubble via HTTP API, print results.
  *
  * Usage examples:
- *   cock browser abcd snapshot
- *   cock browser abcd navigate --url https://example.com
- *   cock browser abcd click --ref e5
- *   cock browser abcd type --ref e3 --text "hello"
- *   cock browser abcd evaluate --js "return document.title"
- *   cock browser abcd evaluate --all-frames --js "return document.title"
- *   cock browser abcd console --level error
- *   cock browser abcd network --status 4xx,5xx
- *   cock browser abcd assert --ref e5 --visible true
- *   cock browser abcd perf --metric timing
- *   cock browser abcd list   (list all connected browsers)
+ *   cockpit browser abcd snapshot
+ *   cockpit browser abcd navigate --url https://example.com
+ *   cockpit browser abcd click --ref e5
+ *   cockpit browser abcd type --ref e3 --text "hello"
+ *   cockpit browser abcd evaluate --js "return document.title"
+ *   cockpit browser abcd evaluate --all-frames --js "return document.title"
+ *   cockpit browser abcd console --level error
+ *   cockpit browser abcd network --status 4xx,5xx
+ *   cockpit browser abcd assert --ref e5 --visible true
+ *   cockpit browser abcd perf --metric timing
+ *   cockpit browser abcd list   (list all connected browsers)
  */
 
 const args = process.argv.slice(2);
@@ -26,7 +26,7 @@ const args = process.argv.slice(2);
 function printHelp(prefix = '<id>', status = null) {
   console.log(`Control a Chrome tab — inspect elements, navigate, interact, and debug.
 
-Usage: cock browser ${prefix} <action>`);
+Usage: cockpit browser ${prefix} <action>`);
 
   if (status) {
     if (status.connected) {
@@ -86,16 +86,16 @@ Console & Debug:
   storage [--type T]          Get storage (local|session)
 
 ── Next step ──────────────────────────────────────────
-Run \`cock browser ${prefix} snapshot\` to inspect the page.
+Run \`cockpit browser ${prefix} snapshot\` to inspect the page.
 It returns an element tree with refs like [e5]. Use those
 refs to interact: click, type, fill, hover, etc.
 
 Example session:
-  cock browser ${prefix} snapshot              # 1. see the page
-  cock browser ${prefix} click e5              # 2. click a button
-  cock browser ${prefix} type e3 "hello"       # 3. type into input
-  cock browser ${prefix} evaluate "document.title"  # run JS
-  cock browser ${prefix} evaluate "await fetch('/api/data').then(r=>r.json())"
+  cockpit browser ${prefix} snapshot              # 1. see the page
+  cockpit browser ${prefix} click e5              # 2. click a button
+  cockpit browser ${prefix} type e3 "hello"       # 3. type into input
+  cockpit browser ${prefix} evaluate "document.title"  # run JS
+  cockpit browser ${prefix} evaluate "await fetch('/api/data').then(r=>r.json())"
         # fetch() inherits the browser's auth session — use it to
         # call APIs, inspect responses, or pull data for analysis.`);
 }

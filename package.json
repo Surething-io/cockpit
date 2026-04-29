@@ -1,6 +1,6 @@
 {
   "name": "@surething/cockpit",
-  "version": "1.0.195",
+  "version": "1.0.196",
   "description": "Claude Code GUI for parallel AI coding — multi-project sessions, terminal, browser & DB bubbles, code review, and slash modes. Built on the official Claude Agent SDK. Local-first, open source.",
   "author": "Robert",
   "license": "MIT",

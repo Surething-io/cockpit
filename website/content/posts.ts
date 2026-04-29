@@ -32,6 +32,304 @@ export interface Post {
 
 export const posts: Post[] = [
   {
+    slug: 'chat-to-skill',
+    date: '2026-04-30',
+    keywords: [
+      'Claude Code skills',
+      'SKILL.md',
+      'Claude Code custom commands',
+      'Claude Code memory',
+      'prompt library',
+      'AI workflow capture',
+      'slash commands',
+      'Cockpit',
+      'team prompt sharing',
+      'Anthropic skills',
+    ],
+    content: {
+      en: {
+        title: 'From chat to skill: turn yesterday\u2019s 28-minute debug into today\u2019s /command',
+        description:
+          'Every productive Claude Code session ends with dark knowledge: which file mattered, which assumption was load-bearing, what the bug actually was. By default that knowledge dies with the conversation. Cockpit\u2019s Skills feature is the bridge \u2014 let the agent crystallize a chat into a SKILL.md, and tomorrow it comes back as a slash command.',
+        readingTime: '6 min read',
+        body: `Yesterday I spent **28 minutes** walking Claude through our OAuth refresh-token flow. Token endpoint, leeway window, two custom claims, the one staging-only quirk. Bug found, fixed, shipped.
+
+This morning, almost the same problem in a sister service. I open a new chat. The agent has no memory of yesterday. **28 minutes again.**
+
+This isn't an Anthropic limitation. Stateless agents are the right default — you don't want yesterday's wrong assumption haunting tomorrow's session. The fix isn't "give the AI memory". The fix is **give yourself memory, in a place the agent will read again.**
+
+That place is a Skill.
+
+## What a Skill actually is
+
+There's no magic. A Skill is one Markdown file:
+
+\`\`\`
+~/.claude/skills/oauth-debug/SKILL.md
+\`\`\`
+
+(Or per-repo: \`./.claude/skills/oauth-debug/SKILL.md\`.)
+
+The body of that file becomes the system prompt when you type \`/oauth-debug\` in chat. That's the whole spec. Anthropic owns the convention; Cockpit just makes it ergonomic:
+
+- **Skills sidebar**: auto-discovers every \`SKILL.md\` under \`~/.claude/skills/\` and the current repo, shows description + last-used time
+- **Slash autocomplete**: \`/\` in chat shows your skills mixed with built-ins like \`/qa\`, \`/fx\`, \`/review\`
+- **Edit-in-place**: click any skill in the sidebar, refine the markdown, save — next \`/skill-name\` picks it up
+
+No build step. No registration. Drop a file, it works.
+
+## The crystallize loop
+
+The trick isn't writing skills by hand. The trick is **letting the conversation that just succeeded write the skill for you.**
+
+Three messages at the end of every productive session:
+
+**Message 1 — distill**
+
+> Summarize what we just figured out about the OAuth refresh flow.
+> Be concrete: file paths, the actual root cause, what we'd check next time.
+
+The agent now has the conversation in its working set. It knows what mattered.
+
+**Message 2 — encode**
+
+> Now write that as a SKILL.md I can drop into
+> \`~/.claude/skills/oauth-debug/SKILL.md\`.
+>
+> Shape: when invoked, it should take a problem statement, walk
+> through the same diagnostic steps we used today, in the same order,
+> and refuse to suggest a fix until step 4. Keep it under 40 lines.
+
+You'll get something like:
+
+\`\`\`markdown
+---
+name: oauth-debug
+description: Diagnose OAuth refresh-token failures using our debugging playbook.
+---
+
+You diagnose OAuth refresh-token failures in our auth stack.
+
+When the user describes a failure, follow these steps in order:
+
+1. Confirm which environment (dev / staging / prod). Staging has a
+   60-second leeway window; prod does not.
+2. Read \`auth/refresh.ts\` and identify which JWT claims are validated.
+   We require both \`sub\` and \`tid\` — never just \`sub\`.
+3. Ask for the failing access token (or a redacted version). Decode
+   the header and check \`alg\` — must be RS256, never HS256.
+4. Check \`auth/keys.ts\` for the JWKS cache TTL. We've shipped 3 bugs
+   in 2 years from stale JWKS.
+5. Only after the above, propose a fix.
+
+Never edit code until step 5. If the user asks earlier, restate the
+remaining diagnostic steps and ask them to choose.
+\`\`\`
+
+**Message 3 — save**
+
+> Save it.
+
+If you've given the agent write access to \`~/.claude/skills/\`, it'll create the file itself. Otherwise copy-paste — same outcome. Cockpit's Skills sidebar refreshes on file watch and the new skill is live.
+
+## Tomorrow morning
+
+\`\`\`
+/oauth-debug Token refresh failing intermittently in staging only.
+\`\`\`
+
+The agent enters the **same posture** you trained yesterday. Same checks, same order, same refusal to jump to fixes. Not because it remembers — because **you wrote yesterday down, somewhere it will read again.**
+
+The 28 minutes from yesterday is now a 30-second invocation.
+
+## Three skill shapes that earn the file
+
+Not every conversation deserves a skill. The ones that do tend to fall into three shapes:
+
+**Diagnostic skills** — \`/oauth-debug\`, \`/db-deadlock\`, \`/cors-issue\`, \`/flaky-test\`. Freeze a debugging procedure. The agent gets a checklist instead of guessing.
+
+**Convention skills** — \`/our-pr-style\`, \`/our-test-style\`, \`/our-error-handling\`. Freeze your team's tribal knowledge. New contributor on day one types \`/our-pr-style\` and the agent writes PRs that pass review without 4 rounds of nitpicks.
+
+**Onboarding skills** — \`/our-stack\`, \`/our-deploy-flow\`, \`/where-does-X-live\`. Explain your codebase to a fresh agent. This is the highest-leverage one — every new chat in your repo starts with the right map.
+
+If a conversation doesn't fit one of these, it's probably a one-off. Don't crystallize it.
+
+## Skills as team assets
+
+The killer move: \`./.claude/skills/\` is a folder.
+
+Folders go into git. A skill becomes diffable, reviewable, \`git blame\`-able. The senior engineer's "always do X but never Y" stops being a Slack DM and becomes a PR with a reviewer. The skill the team agrees on is the skill the agent uses tomorrow.
+
+Cockpit's LAN-shared review surface (see [our previous post](/en/blog/claude-code-gui-comparison/)) makes this loop tighter: write a skill in chat, share the review page over LAN, teammate comments line-by-line, send their comments back to the agent as context, agent revises the skill, merge.
+
+Your team's tacit knowledge becomes a versioned, searchable, importable artifact. That's not a small thing.
+
+## Meta: a skill that writes skills
+
+Once you have one skill, you can write a meta-skill:
+
+\`\`\`
+/distill Read the last 50 messages in this conversation. If you
+spot any pattern that repeated 3+ times, propose a SKILL.md for
+it. Don't save automatically — show me the draft first.
+\`\`\`
+
+Now your Skills sidebar fills itself, slowly, from the conversations you actually have. Cockpit ships \`/qa\`, \`/fx\`, \`/review\`, \`/commit\` as opinionated defaults — but the **best skills in your sidebar a year from now will be ones you didn't write by hand.**
+
+## The bigger principle
+
+Stateless agents are correct. They reset between conversations because that's how you avoid yesterday's wrong assumption breaking tomorrow's session.
+
+But your **team** isn't stateless. Your team learns. The question is whether that learning lives in three engineers' heads or in 12 reviewed Markdown files in \`./.claude/skills/\`.
+
+Skills are how you make that choice explicit.
+
+---
+
+\`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [Try Online](/try)`,
+      },
+      zh: {
+        title: '把对话沉淀成技能：让昨天那 28 分钟变成今天的 /命令',
+        description:
+          '每一次高质量的 Claude Code 对话都会沉淀一堆"暗知识"：哪个文件是关键、哪个假设支撑全局、bug 真正的根因是什么。默认情况下这些知识随对话死掉。Cockpit 的 Skills 功能是那座桥 —— 让 Agent 把对话浓缩成一个 SKILL.md，明天它就以斜杠指令的形式回来。',
+        readingTime: '阅读约 6 分钟',
+        body: `昨天我花了**整整 28 分钟**带着 Claude 把我们 OAuth 刷新令牌流程过了一遍。Token 端点、leeway 窗口、两个自定义 claims、那个仅 staging 环境才有的怪癖。Bug 找到、修掉、上线。
+
+今天早上，姊妹服务里几乎一模一样的问题。我打开一个新对话。Agent 对昨天毫无记忆。**又是 28 分钟。**
+
+这不是 Anthropic 的设计缺陷。**无状态 Agent 才是正确的默认值**——你不会希望昨天那个错的假设缠着今天的对话。解法不是"给 AI 记忆"，解法是**给你自己记忆，存在 Agent 明天会读到的地方。**
+
+那个地方就是 Skill。
+
+## Skill 到底是什么
+
+没有魔法。一个 Skill 就是一个 Markdown 文件：
+
+\`\`\`
+~/.claude/skills/oauth-debug/SKILL.md
+\`\`\`
+
+（或者放仓库本地：\`./.claude/skills/oauth-debug/SKILL.md\`。）
+
+文件正文 *就是* 你输入 \`/oauth-debug\` 时的 system prompt。整套规范就这样。Anthropic 定义了约定，Cockpit 把它变得顺手：
+
+- **Skills 侧边栏**：自动发现 \`~/.claude/skills/\` 和当前仓库下所有 \`SKILL.md\`，显示描述和上次使用时间
+- **斜杠补全**：在对话里打 \`/\`，你的技能跟内置的 \`/qa\`、\`/fx\`、\`/review\` 混排出现
+- **就地编辑**：点侧边栏任意技能、改 markdown、保存——下一次 \`/skill-name\` 立即生效
+
+无需构建、无需注册。丢一个文件，就能用。
+
+## 沉淀循环（真正的工作流）
+
+诀窍不是手写 skills。诀窍是**让刚刚奏效的对话自己写 skill 给你。**
+
+每一次成功的对话末尾，加三句话：
+
+**第 1 句：浓缩**
+
+> 总结一下我们刚才搞清楚的 OAuth 刷新流程。
+> 要具体：文件路径、真正的根因、下次该先查什么。
+
+Agent 现在把整段对话拉到了工作集里。它知道什么是关键。
+
+**第 2 句：编码**
+
+> 把它写成一个 SKILL.md，我要放进
+> \`~/.claude/skills/oauth-debug/SKILL.md\`。
+>
+> 形态：被调用时接收一个问题陈述，按今天的同样顺序走完同样的诊断步骤，
+> 第 4 步之前不许提修复方案。控制在 40 行以内。
+
+你会拿到类似这样的输出：
+
+\`\`\`markdown
+---
+name: oauth-debug
+description: 用我们的诊断剧本排查 OAuth 刷新令牌失败。
+---
+
+你负责诊断我们鉴权栈中的 OAuth 刷新令牌失败问题。
+
+当用户描述故障时，按以下顺序执行：
+
+1. 确认是哪个环境（dev / staging / prod）。Staging 有 60 秒的 leeway
+   窗口，prod 没有。
+2. 读 \`auth/refresh.ts\`，找出验证了哪些 JWT claims。我们要求同时
+   存在 \`sub\` 和 \`tid\`，绝不能只验 \`sub\`。
+3. 索取失败的 access token（或脱敏版）。解码 header 检查 \`alg\`，
+   必须 RS256，永远不允许 HS256。
+4. 看 \`auth/keys.ts\` 里 JWKS 的缓存 TTL。两年里有 3 个 bug 来自
+   过期的 JWKS 缓存。
+5. 只有走完上面 4 步，才允许提修复方案。
+
+第 5 步前绝不修改代码。如果用户提前要修，复述剩下的诊断步骤让用户选。
+\`\`\`
+
+**第 3 句：保存**
+
+> 存起来。
+
+如果你给了 Agent 对 \`~/.claude/skills/\` 的写权限，它会自己建文件。否则复制粘贴一下，效果一样。Cockpit Skills 侧边栏 watch 文件变化、新技能立刻生效。
+
+## 明天早上
+
+\`\`\`
+/oauth-debug 刷新令牌只在 staging 偶发失败。
+\`\`\`
+
+Agent 自动进入你昨天训练过的**同款姿态**。同样的检查、同样的顺序、同样的"先别急着修"。不是因为它记得——而是**你把昨天写下来了，写在了它会再读的地方。**
+
+昨天的 28 分钟，今天浓缩成一次 30 秒的调用。
+
+## 值得"立此存照"的三种 skill 形态
+
+不是每段对话都值得做成 skill。值得的那些通常是这三类：
+
+**诊断型** —— \`/oauth-debug\`、\`/db-deadlock\`、\`/cors-issue\`、\`/flaky-test\`。把一套排查流程冻结成 checklist，Agent 不用再瞎猜。
+
+**约定型** —— \`/our-pr-style\`、\`/our-test-style\`、\`/our-error-handling\`。把团队的部落知识冻结下来。新人入职第一天敲 \`/our-pr-style\`，Agent 写出来的 PR 一次过 review，不用 4 轮 nitpick。
+
+**Onboarding 型** —— \`/our-stack\`、\`/our-deploy-flow\`、\`/where-does-X-live\`。给新 Agent 解释你的代码库。**这一类杠杆最高**——每一次新对话都从一张正确的地图开始。
+
+不属于这三类的对话，多半是一次性的，不必沉淀。
+
+## Skill 作为团队资产
+
+杀手级用法：\`./.claude/skills/\` 是个目录。
+
+目录可以进 git。Skill 因此可以 diff、可以 review、可以 \`git blame\`。Senior 那句"始终做 X、绝不做 Y"不再是一条 Slack 私信，而是一个有 reviewer 的 PR。**团队 review 通过的那个 skill，就是 Agent 明天会用的 skill。**
+
+Cockpit 的局域网共享评审页（参见[上一篇博客](/zh/blog/claude-code-gui-comparison/)）让这个循环更紧：在对话里写出 skill、把评审页面分享到局域网、队友逐行评论、把评论喂回 Agent 作为上下文、Agent 修订、合并。
+
+你团队的隐性知识变成一个有版本、可搜索、可被人 import 的资产。这不是小事。
+
+## 进阶：用 skill 写 skill
+
+有了第一个 skill，下一步可以写一个 meta-skill：
+
+\`\`\`
+/distill 读这次对话最近 50 条消息。如果发现任何重复出现 3+ 次的
+模式，给我提一个 SKILL.md 草案。先别自动保存，给我看草案再说。
+\`\`\`
+
+从此你的 Skills 侧边栏会**自己慢慢长出来**，从你真实进行的对话里长出来。Cockpit 内置的 \`/qa\`、\`/fx\`、\`/review\`、\`/commit\` 是有主见的默认值——但**一年后你侧边栏里最好用的那些 skill，多半不是你手写的。**
+
+## 背后的原则
+
+无状态 Agent 是对的。它在每段对话之间重置自己，因为这样昨天那个错的假设才不会污染今天的对话。
+
+但你的**团队**不是无状态的。团队会学习。问题只是：那些学习到的东西，是住在三位工程师的脑子里，还是住在 \`./.claude/skills/\` 下 12 个被 review 过的 Markdown 文件里。
+
+**Skills 就是把这个选择显式化的方式。**
+
+---
+
+\`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [在线体验](/try)`,
+      },
+    },
+  },
+
+  {
     slug: 'parallel-claude-code-sessions',
     date: '2026-04-29',
     keywords: [

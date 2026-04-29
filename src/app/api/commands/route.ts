@@ -12,8 +12,12 @@ interface CommandInfo {
 }
 
 // Built-in commands
+// NOTE: Keep this list in sync with COMMAND_CONTENT in src/lib/chat/slashCommands.ts —
+// any key with a prompt body there should also appear here so the slash-autocomplete
+// menu surfaces it.
 const BUILTIN_COMMANDS: CommandInfo[] = [
   { name: '/qa', description: 'Enter requirements clarification mode', source: 'builtin' },
+  { name: '/fx', description: 'Enter bug evidence-chain analysis mode', source: 'builtin' },
   { name: '/commit', description: 'Commit code changes', source: 'builtin' },
   { name: '/review', description: 'Code review', source: 'builtin' },
   { name: '/test', description: 'Run tests', source: 'builtin' },

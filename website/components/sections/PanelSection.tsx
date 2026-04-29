@@ -54,7 +54,7 @@ export function PanelSection({
  */
 function ScreenshotFrame({ src, alt }: { src: string; alt: string }) {
   return (
-    <div className="relative aspect-[4/3] rounded-xl border border-border bg-card overflow-hidden shadow-xl">
+    <div className="relative aspect-video rounded-xl border border-border bg-card overflow-hidden shadow-xl">
       {/* Decorative gradient backdrop (always visible behind image) */}
       <div
         className="absolute inset-0 bg-gradient-to-br from-teal-3 via-card to-card opacity-80"

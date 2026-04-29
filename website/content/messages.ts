@@ -71,6 +71,18 @@ export const messages = {
           'Per-tab environment variables and shell aliases',
         ],
       },
+      review: {
+        tag: 'Team',
+        name: 'Code Review',
+        title: 'Ship faster, together',
+        bullets: [
+          'LAN-shareable review pages — teammates need zero install',
+          'Line-level comments with reply threads',
+          'Send any comment back to AI as context for an automated fix',
+          'Red-dot badges keep unread feedback visible across projects',
+          'Built on top of GUIDE.md / Markdown — no separate review system',
+        ],
+      },
     },
     bubbles: {
       headline: 'Smart Bubbles in Console',
@@ -83,13 +95,9 @@ export const messages = {
       ],
     },
     extras: {
-      review: {
-        title: 'Code Review for teams',
-        desc: 'LAN-shareable review pages — line-level comments, reply threads, send back to AI as context for automated fixes.',
-      },
       schedule: {
         title: 'Scheduled Tasks',
-        desc: 'One-time, interval, or cron-based scheduling. Pause, resume, reorder, track results.',
+        desc: 'One-time, interval, or cron-based scheduling. Pause, resume, reorder, track results across projects.',
       },
     },
     builtOn: {
@@ -195,6 +203,18 @@ export const messages = {
           '每个标签独立的环境变量与 Shell 别名',
         ],
       },
+      review: {
+        tag: '团队',
+        name: '代码评审',
+        title: '团队协作，加速发布',
+        bullets: [
+          '局域网分享评审页面 —— 队友零安装即可参与',
+          '行级评论与回复线程',
+          '任意评论可发给 AI 作为上下文，自动修复',
+          '未读评论红点提醒，跨项目可见',
+          '直接基于 GUIDE.md / Markdown，无需额外评审系统',
+        ],
+      },
     },
     bubbles: {
       headline: 'Console 中的智能气泡',
@@ -207,13 +227,9 @@ export const messages = {
       ],
     },
     extras: {
-      review: {
-        title: '团队代码评审',
-        desc: '局域网分享评审页面 —— 行级评论、回复线程，评论可发给 AI 作为上下文自动修复。',
-      },
       schedule: {
         title: '定时任务',
-        desc: '一次性、间隔、Cron 三种调度。暂停、恢复、拖拽排序、结果追踪。',
+        desc: '一次性、间隔、Cron 三种调度。暂停、恢复、拖拽排序，跨项目追踪执行结果。',
       },
     },
     builtOn: {

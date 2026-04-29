@@ -49,7 +49,7 @@ export default async function HomePage({
         name={t.panels.agent.name}
         title={t.panels.agent.title}
         bullets={t.panels.agent.bullets}
-        screenshot="/screenshots/agent.png"
+        screenshot="/screenshots/agent.webp"
         align="left"
       />
       <PanelSection
@@ -57,7 +57,7 @@ export default async function HomePage({
         name={t.panels.explorer.name}
         title={t.panels.explorer.title}
         bullets={t.panels.explorer.bullets}
-        screenshot="/screenshots/explorer.png"
+        screenshot="/screenshots/explorer.webp"
         align="right"
       />
       <PanelSection
@@ -65,10 +65,18 @@ export default async function HomePage({
         name={t.panels.console.name}
         title={t.panels.console.title}
         bullets={t.panels.console.bullets}
-        screenshot="/screenshots/console.png"
+        screenshot="/screenshots/console.webp"
         align="left"
       />
       <Bubbles t={t} />
+      <PanelSection
+        tag={t.panels.review.tag}
+        name={t.panels.review.name}
+        title={t.panels.review.title}
+        bullets={t.panels.review.bullets}
+        screenshot="/screenshots/review.webp"
+        align="right"
+      />
       <Extras t={t} />
       <BuiltOn t={t} />
       <FinalCTA locale={locale as Locale} t={t} />

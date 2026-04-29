@@ -94,6 +94,33 @@ export const messages = {
         { name: 'Redis', desc: 'Browse keys, inspect values, execute commands.' },
       ],
     },
+    modes: {
+      headline: 'One stroke to switch the AI’s mindset',
+      desc: 'Slash commands flip the agent into a specific posture — talk first, debug only, never touch code. Drop any markdown into ~/.claude/commands/ to define your own.',
+      items: [
+        {
+          cmd: '/qa',
+          name: 'Clarify',
+          desc: 'Restate the requirement, ask back on anything ambiguous, follow KISS — talk first, never code.',
+        },
+        {
+          cmd: '/fx',
+          name: 'Diagnose',
+          desc: 'Bug evidence-chain analysis. The agent reasons through the failure end-to-end and never edits a file.',
+        },
+        {
+          cmd: '/review',
+          name: 'Review',
+          desc: 'Reads the current diff and writes review notes — line by line, no rewrites.',
+        },
+        {
+          cmd: '/commit',
+          name: 'Commit',
+          desc: 'Stage what changed, draft a message in your repo’s style, commit.',
+        },
+      ],
+      customHint: 'Custom: any *.md in ~/.claude/commands/ or ./.claude/commands/ becomes a slash command — auto-loaded into the autocomplete menu.',
+    },
     extras: {
       schedule: {
         title: 'Scheduled Tasks',
@@ -230,6 +257,33 @@ export const messages = {
         { name: 'MySQL', desc: '浏览数据库与表、执行查询。' },
         { name: 'Redis', desc: '浏览键值、查看数据、执行命令。' },
       ],
+    },
+    modes: {
+      headline: '一行斜杠，切换 AI 的思考姿态',
+      desc: '斜杠指令把 Agent 切到指定模式——只问不写、只查不改、只评不动。把任意 markdown 丢进 ~/.claude/commands/ 就能定义自己的模式。',
+      items: [
+        {
+          cmd: '/qa',
+          name: '澄清',
+          desc: '复述需求、对模糊点反问、遵循 KISS——先讨论清楚，绝不动代码。',
+        },
+        {
+          cmd: '/fx',
+          name: '诊断',
+          desc: 'Bug 证据链分析。Agent 从头到尾推理失败原因，不改任何文件。',
+        },
+        {
+          cmd: '/review',
+          name: '评审',
+          desc: '读取当前 diff 并写评审意见——逐行点评，不动手重写。',
+        },
+        {
+          cmd: '/commit',
+          name: '提交',
+          desc: '暂存改动、按你仓库的风格起草 message、完成提交。',
+        },
+      ],
+      customHint: '自定义：~/.claude/commands/ 或 ./.claude/commands/ 下任意 *.md 都会成为斜杠指令——自动出现在补全菜单。',
     },
     extras: {
       schedule: {

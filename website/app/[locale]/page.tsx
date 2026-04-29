@@ -6,6 +6,7 @@ import { Hero } from '@/components/sections/Hero';
 import { ValueProp } from '@/components/sections/ValueProp';
 import { PanelSection } from '@/components/sections/PanelSection';
 import { Bubbles } from '@/components/sections/Bubbles';
+import { Modes } from '@/components/sections/Modes';
 import { Extras } from '@/components/sections/Extras';
 import { BuiltOn } from '@/components/sections/BuiltOn';
 import { FinalCTA } from '@/components/sections/FinalCTA';
@@ -69,6 +70,7 @@ export default async function HomePage({
         align="left"
       />
       <Bubbles t={t} />
+      <Modes t={t} />
       <PanelSection
         tag={t.panels.review.tag}
         name={t.panels.review.name}

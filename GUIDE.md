@@ -5,8 +5,8 @@
 ```bash
 cd /path/to/cockpit
 npm install
-npm run setup       # Build + register the cock command
-cock                # Start server, auto-opens browser at http://localhost:3457
+npm run setup       # Build + register both `cockpit` and `cock` commands
+cockpit             # Start server, auto-opens browser at http://localhost:3457
 ```
 
 Dev mode: `npm run dev` (port 3456, HMR hot reload)
@@ -86,18 +86,19 @@ Browser and terminal bubbles each have a 4-character short ID (shown as a badge 
 
 ```bash
 # Browser automation
-cock browser list                    # List all browser bubbles
-cock browser abcd snapshot           # Get page element tree
-cock browser abcd click --ref e5     # Click an element
-cock browser abcd evaluate --js "return document.title"
+cockpit browser list                    # List all browser bubbles
+cockpit browser abcd snapshot           # Get page element tree
+cockpit browser abcd click --ref e5     # Click an element
+cockpit browser abcd evaluate --js "return document.title"
 
 # Terminal automation
-cock terminal list                   # List all terminal bubbles
-cock terminal abcd output            # Read terminal output
-cock terminal abcd stdin "npm test"  # Send command to terminal
+cockpit terminal list                   # List all terminal bubbles
+cockpit terminal abcd output            # Read terminal output
+cockpit terminal abcd stdin "npm test"  # Send command to terminal
 ```
 
-Full commands: `cock browser --help` / `cock terminal --help`
+Full commands: `cockpit browser --help` / `cockpit terminal --help`
+*(The short alias `cock` works in every example above.)*
 
 ## Common Keyboard Shortcuts
 

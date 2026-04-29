@@ -5,8 +5,8 @@
 ```bash
 cd /path/to/cockpit
 npm install
-npm run setup       # 构建 + 注册 cock 命令
-cock                # 启动服务，自动打开浏览器 http://localhost:3457
+npm run setup       # 构建 + 注册 cockpit 与 cock 命令
+cockpit             # 启动服务，自动打开浏览器 http://localhost:3457
 ```
 
 开发模式：`npm run dev`（端口 3456，HMR 热更新）
@@ -86,18 +86,19 @@ cock                # 启动服务，自动打开浏览器 http://localhost:3457
 
 ```bash
 # 浏览器自动化
-cock browser list                    # 列出所有浏览器气泡
-cock browser abcd snapshot           # 获取页面元素树
-cock browser abcd click --ref e5     # 点击元素
-cock browser abcd evaluate --js "return document.title"
+cockpit browser list                    # 列出所有浏览器气泡
+cockpit browser abcd snapshot           # 获取页面元素树
+cockpit browser abcd click --ref e5     # 点击元素
+cockpit browser abcd evaluate --js "return document.title"
 
 # 终端自动化
-cock terminal list                   # 列出所有终端气泡
-cock terminal abcd output            # 读取终端输出
-cock terminal abcd stdin "npm test"  # 发送命令
+cockpit terminal list                   # 列出所有终端气泡
+cockpit terminal abcd output            # 读取终端输出
+cockpit terminal abcd stdin "npm test"  # 发送命令
 ```
 
-完整命令：`cock browser --help` / `cock terminal --help`
+完整命令：`cockpit browser --help` / `cockpit terminal --help`
+*（短别名 `cock` 在以上每条命令里都能直接替换。）*
 
 ## 常用快捷键
 

@@ -32,6 +32,170 @@ export interface Post {
 
 export const posts: Post[] = [
   {
+    slug: 'deepseek-in-cockpit',
+    date: '2026-04-30',
+    keywords: [
+      'DeepSeek',
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
+      'agentic coding',
+      'Cockpit',
+      'AI coding assistant',
+      'multi-model',
+      'cheap AI coding',
+    ],
+    content: {
+      en: {
+        title: 'Use DeepSeek inside Cockpit — and keep all your Claude habits',
+        description:
+          'Cockpit now talks to DeepSeek. Open a tab, paste a key, and DeepSeek-v4 edits your files, runs your terminal, reviews your diffs — exactly the way you already use Claude. Here is how to set it up in under a minute and what to expect.',
+        readingTime: '4 min read',
+        body: `If you already use Cockpit with Claude, you have a workflow: open a tab, ask the agent to fix a bug, watch it edit files, run tests, hand you a clean diff. Slash commands like \`/qa\` and \`/fx\` are muscle memory.
+
+Now you can do all of that with **DeepSeek** instead — usually at a fraction of the cost. As of v1.0.195, DeepSeek sits next to Claude in the new-tab menu, and everything you already know how to do works exactly the same.
+
+## Setup: under a minute
+
+1. **Get a key.** Go to [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys), create one, copy it.
+2. **Open a Deepseek tab.** Click the \`+\` on the tab bar, pick **Deepseek**.
+3. **Paste the key.** A blue **Set API key** pill appears in the chat header. Click it, paste, hit **Save**.
+4. **Send a message.** That's it.
+
+Your key stays on your laptop, in \`~/.cockpit/settings.json\`. Cockpit has no server — nothing leaves your machine except the request to DeepSeek itself.
+
+## Pick a model from the same pill
+
+Once the key is in, that pill turns into the current model name. Click it again to switch:
+
+- **\`deepseek-v4-pro\`** — the default. Use it for the kind of tasks you'd give Claude Sonnet: refactors, debugging, multi-file edits, writing tests.
+- **\`deepseek-v4-flash\`** — faster and cheaper. Great for "do this small thing" tasks: rename a function, write a one-off script, summarize a file.
+
+You can have one tab on \`pro\` and another on \`flash\` at the same time. Each tab remembers its own model.
+
+## What it can do (spoiler: everything)
+
+The whole point of plugging DeepSeek into Cockpit is that **nothing else changes**. In a Deepseek tab the agent can still:
+
+- **Read and edit files** in your project.
+- **Run terminal commands** — install deps, run tests, start a dev server.
+- **Search the codebase** with Grep / Glob.
+- **Browse the web** — \`WebFetch\` and \`WebSearch\` work the same.
+- **Run your slash commands** — \`/qa\` to clarify before coding, \`/fx\` to diagnose a bug, \`/review\` for a pre-PR look, \`/commit\` to wrap up.
+- **Spawn sub-agents** for parallel research / refactor work.
+- **Take screenshots / pasted images** as input.
+- **Pick up where you left off** — close the tab, reopen tomorrow, the conversation is right there.
+
+If you've built habits around Cockpit's Claude experience, your habits transfer over wholesale. Same buttons, same shortcuts, same flow.
+
+## A few real workflows worth trying
+
+**The "cheap second opinion".** Open two tabs side-by-side: one Claude, one DeepSeek-v4-pro. Paste the same prompt into both. Compare answers. You'll learn fast which model your codebase prefers — and the comparison itself usually surfaces a better question.
+
+**Bulk grunt work on Flash.** That afternoon of "rename this prop across 40 files, update the storybook stories, regenerate types" — point a Flash tab at it. It's plenty smart for mechanical changes, and noticeably faster.
+
+**\`/fx\` on DeepSeek.** Bug-evidence mode (\`/fx The login modal sometimes flashes empty\`) works particularly well here — the agent reads the failing path, builds a hypothesis, and stays out of your code until you say go.
+
+**Long sessions without the bill anxiety.** Long agent conversations on Claude can get expensive once the context grows. DeepSeek's pricing means you can let a session breathe — keep iterating, keep showing it more files, keep refining — without watching the meter.
+
+## Things kept clean and separated
+
+Two practical promises about how DeepSeek lives next to Claude on your machine:
+
+- **Conversations don't mix.** A DeepSeek session is stored separately from your Claude history. Searching Claude history won't surface DeepSeek replies, and vice versa.
+- **Credentials don't leak.** Your Claude login and your DeepSeek key live in different places. One has nothing to do with the other.
+
+You can swap between Claude and DeepSeek tabs all day and never worry about cross-contamination.
+
+## How to start right now
+
+\`\`\`bash
+npm i -g @surething/cockpit
+cock
+\`\`\`
+
+Open the app, pick **Deepseek** from the new-tab menu, paste your key, ask it to fix something. If it understands your codebase as well as Claude does, the cost per task may surprise you.
+
+---
+
+\`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [Try Online](/try)`,
+      },
+      zh: {
+        title: 'Cockpit 用上 DeepSeek：你的 Claude 习惯一个都不用改',
+        description:
+          'Cockpit 现在能直接对接 DeepSeek：开个 Tab、贴个 Key，DeepSeek-v4 就能像 Claude 一样改你的文件、跑你的终端、评你的 diff。这篇讲怎么 1 分钟内配好，以及配好之后能做什么。',
+        readingTime: '阅读约 4 分钟',
+        body: `如果你已经在用 Cockpit + Claude，你已经有了一套工作流：开个 Tab、让 Agent 修个 Bug、看它改文件、跑测试、给你一份干净的 diff；\`/qa\`、\`/fx\` 这些斜杠指令早就是肌肉记忆。
+
+现在你可以把这一整套照搬到 **DeepSeek** 上跑 —— 而且通常便宜很多。从 v1.0.195 开始，DeepSeek 跟 Claude 一起出现在新 Tab 菜单里，你已经会的所有操作都不用改。
+
+## 配置：不到一分钟
+
+1. **拿一个 Key。** 去 [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys) 新建一个，复制下来。
+2. **开一个 Deepseek Tab。** Tab 栏点 \`+\`，选 **Deepseek**。
+3. **贴 Key。** 聊天面板顶部会出现一颗蓝色胶囊 **Set API key**，点它，把 Key 粘上去，**Save**。
+4. **发消息。** 就这样。
+
+你的 Key 只留在本机的 \`~/.cockpit/settings.json\` 里。Cockpit 没有服务器 —— 除了你发给 DeepSeek 的那次请求，没有任何东西会离开你的电脑。
+
+## 模型在同一颗胶囊里切换
+
+Key 配好之后，那颗胶囊会显示当前模型名。再点它就能切换：
+
+- **\`deepseek-v4-pro\`** —— 默认。给它的活就是你平时给 Claude Sonnet 的活：重构、Debug、多文件改动、写测试。
+- **\`deepseek-v4-flash\`** —— 更快、更便宜。适合 "顺手做个小事"：改个函数名、写个一次性脚本、总结一个文件。
+
+你可以一个 Tab 用 \`pro\`、另一个用 \`flash\` 同时开着。每个 Tab 自己记住自己用的模型。
+
+## 它能做什么（剧透：都能）
+
+把 DeepSeek 接进 Cockpit 的核心理由就是：**别的什么都不用变**。在 Deepseek Tab 里，Agent 一样能：
+
+- **读你的文件、改你的文件**。
+- **跑终端命令** —— 装依赖、跑测试、起 dev server。
+- **搜代码** —— Grep / Glob 都在。
+- **上网** —— \`WebFetch\`、\`WebSearch\` 一样工作。
+- **跑你的斜杠指令** —— \`/qa\` 上线前对齐需求、\`/fx\` 排查 Bug、\`/review\` 提 PR 前过一遍、\`/commit\` 收尾。
+- **派生子 Agent** 做并行调研或重构。
+- **吃截图 / 粘贴的图片** 作为输入。
+- **断线续聊** —— 关掉 Tab，明天再打开，对话还在原地。
+
+如果你已经围绕 Cockpit 的 Claude 体验养出了一整套习惯，这些习惯整个搬过来就行。同样的按钮、同样的快捷键、同样的流程。
+
+## 几个值得一试的真实玩法
+
+**"廉价的二次意见"。** 并排开两个 Tab：一个 Claude、一个 DeepSeek-v4-pro，把同一个 Prompt 粘进去，看两边的答案。你很快会摸出你的代码库更对哪个模型的胃口 —— 而且对比本身往往能让你想出更好的问题。
+
+**Flash 跑批量琐事。** 那种 "把这个 prop 在 40 个文件里改名、顺带更新 storybook、再重新生成 types" 的下午活儿，丢给 Flash Tab。机械改动它够聪明，而且明显更快。
+
+**用 DeepSeek 跑 \`/fx\`。** Bug 证据链模式（\`/fx 登录弹窗有时候会闪一下空白\`）在这里特别好用 —— Agent 读一遍调用路径、给出假设、在你点头之前一行代码都不动。
+
+**长 Session 不再心疼账单。** 在 Claude 上长对话一旦上下文堆起来就开始烧钱。DeepSeek 的定价让你可以放手让 Session 自然展开 —— 多迭代几轮、多塞几个文件给它看、慢慢打磨 —— 不用一直盯着计价器。
+
+## 干净的隔离
+
+两个实际承诺，关于 DeepSeek 在你机器上跟 Claude 怎么共处：
+
+- **对话不串。** DeepSeek 的会话跟 Claude 的历史分开存。在 Claude 历史里搜不到 DeepSeek 的回复，反之亦然。
+- **凭据不串。** 你的 Claude 登录和你的 DeepSeek Key 存在不同的地方，互不干涉。
+
+你可以一整天在 Claude Tab 和 Deepseek Tab 之间来回切，完全不用担心污染。
+
+## 现在就开始
+
+\`\`\`bash
+npm i -g @surething/cockpit
+cock
+\`\`\`
+
+打开应用，从新 Tab 菜单里选 **Deepseek**，把 Key 粘进去，让它修点东西。如果它对你的代码库的理解能跟 Claude 持平，每个任务的成本可能会让你有点意外。
+
+---
+
+\`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [在线体验](/try)`,
+      },
+    },
+  },
+  {
     slug: 'chat-to-skill',
     date: '2026-04-30',
     keywords: [

@@ -153,12 +153,24 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
     blockOsc(12);   // cursor color query
     blockOsc(4);    // palette color query
     blockOsc(52);   // clipboard read
-    term.parser.registerCsiHandler({ final: 'n' }, () => true);  // DSR / CPR
-    term.parser.registerCsiHandler({ final: 'c' }, () => true);  // Device Attributes
+    // CSI handlers are matched by (prefix, intermediates, final) — register
+    // every variant we want to swallow. Without the prefix variants xterm.js
+    // still auto-answers `\x1b[>c` (secondary DA) and `\x1b[=c` (tertiary DA),
+    // which then leaks `0;276;0c` onto the next zsh prompt as a self-insert.
+    const blockCsi = (final: string, prefix?: string) =>
+      term.parser.registerCsiHandler({ prefix, final }, () => true);
+    blockCsi('n');           // DSR / CPR (cursor position report)
+    blockCsi('n', '?');      // DEC private DSR
+    blockCsi('c');           // Primary DA  (`\x1b[c`,  `\x1b[0c`)
+    blockCsi('c', '>');      // Secondary DA (`\x1b[>c`, `\x1b[>0c`) — xterm.js replies `\x1b[>0;276;0c`
+    blockCsi('c', '=');      // Tertiary DA  (`\x1b[=c`)
 
-    // Match OSC responses (ESC ] N ; ... BEL  or  ESC ] N ; ... ESC \)
-    // and CSI responses ending in R (CPR) or c (DA).
-    const RESPONSE_SEQ_RE = /\x1b\][0-9]+;[^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[\d;?]*[Rc]/g;
+    // Match OSC responses (ESC ] N ; ... BEL  or  ESC ] N ; ... ESC \) and
+    // CSI responses ending in R (CPR) or c (DA). The CSI parameter class must
+    // include `>` and `=` so secondary/tertiary DA replies (e.g.
+    // `\x1b[>0;276;0c`) get stripped — otherwise the whole reply is forwarded
+    // to the pty as stdin and zsh self-inserts the printable tail.
+    const RESPONSE_SEQ_RE = /\x1b\][0-9]+;[^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[\d;?>=]*[Rc]/g;
 
     // Forward each key to PTY (filter out any stray protocol responses)
     term.onData((data: string) => {

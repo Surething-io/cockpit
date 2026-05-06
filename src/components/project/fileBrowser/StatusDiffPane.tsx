@@ -110,32 +110,35 @@ export function StatusDiffPane({
 }: StatusDiffPaneProps) {
   const { t } = useTranslation();
   /** 2-way toggle:
-   *  - 'file':  line-by-line DiffView (default)
-   *  - 'block': BlockDiffViewer (chip layout filtered to changed
-   *             functions, with caller/callee context, amber accents
-   *             on neighbours that also changed, and per-line green
-   *             tint on added/modified lines).
+   *  - 'file': line-by-line DiffView (default)
+   *  - 'map':  BlockDiffViewer = Code Map view filtered to changed
+   *            functions, with caller/callee context, amber accents
+   *            on neighbours that also changed, and per-line green
+   *            tint on added/modified lines.
    *
-   *  Same vocabulary as the directory tree's "代码块" toggle — a "block"
-   *  view always means the chip layout from `BlockViewer`. The git
+   *  Same vocabulary as the directory tree's "Code Map / 代码地图"
+   *  toggle and the editor's `editorMode: 'code' | 'map'`. The git
    *  diff version just filters/decorates the same component with the
-   *  diff projection. */
-  const [diffViewerMode, setDiffViewerMode] = useState<'file' | 'block'>('file');
+   *  diff projection. (The component itself is still called
+   *  `BlockDiffViewer` because internally a Code Map is composed of
+   *  per-function "blocks" / chips — the Block* names describe that
+   *  primitive, not the user-facing feature.) */
+  const [diffViewerMode, setDiffViewerMode] = useState<'file' | 'map'>('file');
 
   const filePath = selected.file.path;
   const isImage = isImageFile(filePath);
-  const isBlockMode = !isImage && diffViewerMode === 'block';
+  const isBlockMode = !isImage && diffViewerMode === 'map';
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {isBlockMode ? (
-        // Block-mode case is special: the host toolbar is REMOVED and
+        // Code Map mode is special: the host toolbar is REMOVED and
         // BlockDiffViewer's own Header absorbs everything via render-
         // prop slots — file path, copy/locate actions, dynamic
         // git-status badge (tracks pin navigation), and the
-        // file/block toggle. The merged bar is the only bar; visually
+        // file/map toggle. The merged bar is the only bar; visually
         // one row, vocabulary consistent with the directory tree's
-        // 代码块 view.
+        // Code Map view.
         <BlockDiffViewer
           cwd={cwd}
           filePath={diff.filePath}
@@ -200,7 +203,7 @@ export function StatusDiffPane({
           }}
           headerExtraRight={() => (
             <div className="flex items-center gap-0.5 rounded border border-border overflow-hidden">
-              {(['file', 'block'] as const).map((mode) => (
+              {(['file', 'map'] as const).map((mode) => (
                 <button
                   key={mode}
                   onClick={(e) => {
@@ -213,7 +216,7 @@ export function StatusDiffPane({
                       : 'text-muted-foreground hover:bg-accent'
                   }`}
                 >
-                  {t(`common.${mode}`)}
+                  {t(mode === 'file' ? 'common.file' : 'common.codeMap')}
                 </button>
               ))}
             </div>
@@ -269,7 +272,7 @@ export function StatusDiffPane({
             <div className="flex-1" />
             {!isImage && (
               <div className="flex items-center gap-0.5 rounded border border-border overflow-hidden">
-                {(['file', 'block'] as const).map((mode) => (
+                {(['file', 'map'] as const).map((mode) => (
                   <button
                     key={mode}
                     onClick={(e) => {
@@ -282,7 +285,7 @@ export function StatusDiffPane({
                         : 'text-muted-foreground hover:bg-accent'
                     }`}
                   >
-                    {t(`common.${mode}`)}
+                    {t(mode === 'file' ? 'common.file' : 'common.codeMap')}
                   </button>
                 ))}
               </div>

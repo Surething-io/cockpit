@@ -1621,20 +1621,20 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               )}
                             </button>
                           )}
-                          {/* Block view — peers with Edit / Blame as a third
-                              reading mode. Click to flip the right panel
-                              into BlockViewer's decomposed view; the
+                          {/* Code Map view — peers with Edit / Blame as a
+                              third reading mode. Click to flip the right
+                              panel into BlockViewer's decomposed view; the
                               BlockViewer header itself has the reverse
                               "Code" button to come back. We don't render
                               an "active" state here because this button is
-                              physically gone when block mode is on. */}
+                              physically gone when Code Map mode is on. */}
                           {fileTree.fileContent?.type === 'text' && (
                             <button
                               onClick={() => setEditorMode('map')}
                               className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
                               title={t('blockViewer.viewerToggle.toBlock')}
                             >
-                              {t('common.block')}
+                              {t('common.codeMap')}
                             </button>
                           )}
                           {fileTree.fileContent?.type === 'text' && (

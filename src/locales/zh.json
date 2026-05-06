@@ -7,7 +7,7 @@
     "copy": "复制",
     "edit": "编辑",
     "file": "文件",
-    "block": "代码块",
+    "codeMap": "代码地图",
     "confirm": "确认",
     "loading": "加载中...",
     "search": "搜索",
@@ -235,7 +235,7 @@
   },
   "blockViewer": {
     "empty": {
-      "body": "在左侧文件树选择一个文件，查看它的函数调用关系。",
+      "body": "在左侧文件树选择一个文件，查看它的代码地图。",
       "hint": "或按 ⌘K 搜索。"
     },
     "fileMode": {
@@ -250,18 +250,18 @@
       "symbols": "符号"
     },
     "viewerToggle": {
-      "toBlock": "显示代码块视图",
+      "toBlock": "显示代码地图",
       "toCode": "返回代码视图"
     },
     "refresh": "重新构建项目图",
     "retry": "重试"
   },
   "blockDiffViewer": {
-    "loading": "正在分析代码块…",
-    "unsupported": "该文件类型不支持代码块 diff",
+    "loading": "正在生成代码地图…",
+    "unsupported": "该文件类型暂不支持代码地图 diff",
     "unsupportedHint": "切回常规 diff 视图查看。",
-    "error": "代码块 diff 失败：{{message}}",
-    "noBlockChanges": "无代码块级变更（仅格式或空白）。",
+    "error": "代码地图 diff 失败：{{message}}",
+    "noBlockChanges": "代码地图无变化（仅格式或空白）。",
     "noBefore": "（新增）",
     "noAfter": "（已删除）",
     "kind": {

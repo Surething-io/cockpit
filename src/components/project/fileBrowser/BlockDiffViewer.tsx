@@ -1,20 +1,26 @@
 'use client';
 
 /**
- * BlockDiffViewer — git-diff "代码块" view.
+ * BlockDiffViewer — git-diff "Code Map / 代码地图" view.
  *
- * Mounts when the user toggles the diff toolbar to "Block". This is the
- * SAME chip layout users already know from the directory tree's "代码块"
- * (BlockViewer) — caller pins on the left, code body in the middle,
- * callee pins on the right — but filtered to the functions touched by
- * the diff and overlaid with line-level change highlights.
+ * Mounts when the user toggles the diff toolbar to "Code Map". This is
+ * the SAME chip layout users already know from the directory tree's
+ * "Code Map" (BlockViewer) — caller pins on the left, code body in the
+ * middle, callee pins on the right — but filtered to the functions
+ * touched by the diff and overlaid with line-level change highlights.
+ *
+ * Naming note: the user-visible feature is "Code Map / 代码地图" (in
+ * i18n as `common.codeMap`). The component is still called
+ * `BlockDiffViewer` because internally a Code Map is composed of per-
+ * function "blocks" / chips — the Block* names describe that
+ * primitive, not the user-facing feature.
  *
  * Why we don't have a separate "split before/after" mode anymore: file
  * mode (DiffView's unified line diff) already covers "show me what
- * lines changed", and the chip view on top of that gives "show me what
- * functions changed and how they're connected". A third split-panel
- * mode was redundant and inconsistent with the directory tree's
- * 代码块 — the same word now means the same chip layout everywhere.
+ * lines changed", and the Code Map view on top of that gives "show me
+ * what functions changed and how they're connected". A third split-
+ * panel mode was redundant and inconsistent with the directory tree's
+ * Code Map — the same word now means the same chip layout everywhere.
  *
  * Focal-following: when the user pin-jumps from the diff target to
  * ANOTHER changed file, BlockDiffViewer re-fetches that file's

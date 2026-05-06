@@ -7,7 +7,7 @@
     "copy": "Copy",
     "edit": "Edit",
     "file": "File",
-    "block": "Block",
+    "codeMap": "Code Map",
     "confirm": "Confirm",
     "loading": "Loading...",
     "search": "Search",
@@ -235,7 +235,7 @@
   },
   "blockViewer": {
     "empty": {
-      "body": "Select a file in the left tree to see its function call graph.",
+      "body": "Select a file in the left tree to see its code map.",
       "hint": "or press ⌘K to search."
     },
     "fileMode": {
@@ -250,18 +250,18 @@
       "symbols": "Symbols"
     },
     "viewerToggle": {
-      "toBlock": "Show block view",
+      "toBlock": "Show code map",
       "toCode": "Back to code view"
     },
     "refresh": "Rebuild project graph",
     "retry": "Retry"
   },
   "blockDiffViewer": {
-    "loading": "Analyzing blocks…",
-    "unsupported": "Block diff is not available for this file type.",
+    "loading": "Building code map…",
+    "unsupported": "Code map diff is not available for this file type.",
     "unsupportedHint": "Switch back to the regular diff view to read it.",
-    "error": "Block diff failed: {{message}}",
-    "noBlockChanges": "No block-level changes (formatting / whitespace only).",
+    "error": "Code map diff failed: {{message}}",
+    "noBlockChanges": "No code-map changes (formatting / whitespace only).",
     "noBefore": "(new)",
     "noAfter": "(removed)",
     "kind": {

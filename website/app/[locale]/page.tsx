@@ -6,6 +6,7 @@ import { Hero } from '@/components/sections/Hero';
 import { ValueProp } from '@/components/sections/ValueProp';
 import { PanelSection } from '@/components/sections/PanelSection';
 import { Bubbles } from '@/components/sections/Bubbles';
+import { CodeMap } from '@/components/sections/CodeMap';
 import { Modes } from '@/components/sections/Modes';
 import { Extras } from '@/components/sections/Extras';
 import { BuiltOn } from '@/components/sections/BuiltOn';
@@ -101,6 +102,7 @@ export default async function HomePage({
       'Slash modes: /qa, /fx, /review, /commit',
       'Custom skills via SKILL.md',
       'Scheduled tasks (one-time, interval, cron)',
+      'Code Map — chip view with caller/callee pins (TS/JS/Python/Go/Rust)',
     ],
   };
 
@@ -150,6 +152,7 @@ export default async function HomePage({
         align="left"
       />
       <Bubbles t={t} />
+      <CodeMap t={t} />
       <Modes t={t} />
       <PanelSection
         tag={t.panels.review.tag}

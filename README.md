@@ -46,6 +46,7 @@ Cockpit is the instrument panel. It does **not** replace Claude Code; it stands 
 | Image attachments are awkward | Drop / paste images straight into chat |
 | "What was I debugging yesterday?" | Cmd+K cross-project session browser, pinning, forking |
 | Agent can't reach your browser / DB | **Smart Bubbles**: Chrome, PostgreSQL, MySQL, Redis — drivable by the agent |
+| Reading an unfamiliar repo means a 90-min file-tree scavenger hunt | **Code Map** chip view — caller / callee pins, click to walk the call graph |
 | Reviewing AI output is friction | **LAN-shared review pages**, line-level comments, send any comment back as AI context |
 | Same "do X but don't change code" prompt every day | **Slash modes** `/qa /fx /review /commit` + custom `~/.claude/commands/*.md` |
 | No automation hooks | One-time / interval / cron-based **scheduled tasks** |
@@ -67,6 +68,7 @@ Cockpit is the instrument panel. It does **not** replace Claude Code; it stands 
 - Syntax highlighting (Shiki) with **Vi mode** editing
 - Git **blame**, diff view, branch switching, **worktree** management
 - **LSP integration** — go to definition, find references, hover info
+- **Code Map** — every function as a chip with caller / callee pins; click to walk the call graph. Multi-language: TS/JS, Python, Go, Rust. No LSP, no project setup, works offline.
 - Fuzzy file search (Cmd+F), JSON viewer, Markdown preview
 
 ### Console — Terminal & smart Bubbles
@@ -107,7 +109,9 @@ Cockpit is the instrument panel. It does **not** replace Claude Code; it stands 
 ## Use cases
 
 - **Solo dev, multi-repo:** "I have a refactor running in API, tests writing in Web, and a bug investigation in Pipeline — all at once, all visible."
+- **Day one in an unfamiliar repo:** Open it in Code Map, click through caller/callee pins, walk the auth flow in five clicks instead of a 90-minute file-tree scavenger hunt.
 - **Two-person team:** Senior reviews via LAN-shared review page, no GitHub PR round-trip needed for in-progress work.
+- **Reviewing AI-generated PRs:** Switch the changed files into Code Map — changed functions are highlighted with their callers / callees still drawn around them, so blast-radius is one click away.
 - **Full-stack chore mode:** `/fx` in one tab on a backend bug, `/review` in another on the frontend diff, `/commit` to wrap up — three slash modes, three different agent postures.
 - **AI-driven QA:** Browser Bubble + scheduled task = "every night at 2 AM, run this UI smoke flow and post a summary".
 - **Privacy-sensitive code:** runs on your laptop, talks only to the Claude API your `claude` CLI is already configured with. No telemetry, no relay.
@@ -172,6 +176,7 @@ Read the long version: [Claude Code GUI: CLI vs Cockpit vs IDE plugins](https://
 
 ## Read more
 
+- 📖 [Read code as a map, not a tree](https://cocking.cc/en/blog/read-code-as-a-map/)
 - 📖 [How to run 5 Claude Code sessions in parallel](https://cocking.cc/en/blog/parallel-claude-code-sessions/)
 - 📖 [Slash modes in Claude Code: /qa /fx /review /commit](https://cocking.cc/en/blog/slash-modes-claude-code/)
 - 📖 [Full blog](https://cocking.cc/en/blog/)

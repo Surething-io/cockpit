@@ -31,7 +31,7 @@
  * top-level FileBrowserModal layout, which is a separate concern.
  */
 
-import { useState, type RefObject } from 'react';
+import { useMemo, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@/components/shared/Toast';
 
@@ -41,6 +41,9 @@ import { isMarkdownFile, formatAsHumanReadable } from '@/components/project/tool
 import { type useJsonSearch, JsonSearchBar } from '@/hooks/useJsonSearch';
 
 import { Tooltip } from '@/components/shared/Tooltip';
+
+import { useFileFunctions } from '@/hooks/useFileBlocks';
+import { isFunctionLike } from '@/lib/codeMap/types';
 
 import { BlockDiffViewer } from './BlockDiffViewer';
 import { FileImagePreview } from './FileImagePreview';
@@ -127,9 +130,41 @@ export function StatusDiffPane({
    *  primitive, not the user-facing feature.) */
   const [diffViewerMode, setDiffViewerMode] = useState<'file' | 'map'>('file');
 
+  /** File-mode density toggle:
+   *   - 'compact' (default): GitHub-style — only changed lines + 3-
+   *     line context render; unchanged stretches collapse into
+   *     clickable bars that expand to function head/tail (AST-aware,
+   *     uses `useFileFunctions` for symbol ranges) on first click,
+   *     to "show all" on second.
+   *   - 'full': renders every line of the file. Useful when the user
+   *     wants to copy a long unchanged region or read the whole file
+   *     alongside the diff.
+   *
+   *  Lives next to `diffViewerMode` because both are file-pane-local
+   *  presentation choices that shouldn't bleed into other tabs. */
+  const [fileDensity, setFileDensity] = useState<'compact' | 'full'>('compact');
+
   const filePath = selected.file.path;
   const isImage = isImageFile(filePath);
   const isBlockMode = !isImage && diffViewerMode === 'map';
+
+  // Symbol ranges for AST-aware gap expansion in compact mode. Pulls
+  // from the same useFileFunctions hook BlockDiffViewer uses, so:
+  //   - mtime-driven freshness comes for free (refreshFocalFile on
+  //     the server gates re-parse)
+  //   - the request is cached client-side, so when the user toggles
+  //     between file/map modes there's no second network round-trip
+  // Filter to function-like kinds only (function/class/method) —
+  // matches what call-graph nodes and the TOC use for "navigable
+  // symbols", which is the same notion that makes "expand to
+  // enclosing function" useful.
+  const { state: fileFnsState } = useFileFunctions(cwd, filePath);
+  const symbolRanges = useMemo(() => {
+    if (fileFnsState.state !== 'ready') return undefined;
+    return fileFnsState.data.functions
+      .filter(isFunctionLike)
+      .map((fn) => ({ startLine: fn.startLine, endLine: fn.endLine }));
+  }, [fileFnsState]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -276,6 +311,31 @@ export function StatusDiffPane({
               {selected.type === 'staged' ? t('fileBrowser.staged') : t('fileBrowser.unstaged')}
             </span>
             <div className="flex-1" />
+            {/* File-mode density toggle — only relevant when we're
+                actually rendering a DiffView (i.e. not in map mode,
+                not previewing an image). Map mode is already
+                "compact-by-design" so a duplicate toggle would just
+                confuse. */}
+            {!isImage && diffViewerMode === 'file' && (
+              <div className="flex items-center gap-0.5 rounded border border-border overflow-hidden">
+                {(['compact', 'full'] as const).map((density) => (
+                  <button
+                    key={density}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFileDensity(density);
+                    }}
+                    className={`px-2 py-0.5 text-xs transition-colors ${
+                      fileDensity === density
+                        ? 'bg-brand text-white'
+                        : 'text-muted-foreground hover:bg-accent'
+                    }`}
+                  >
+                    {t(density === 'compact' ? 'diffViewer.compact' : 'diffViewer.full')}
+                  </button>
+                ))}
+              </div>
+            )}
             {!isImage && (
               <div className="flex items-center gap-0.5 rounded border border-border overflow-hidden">
                 {(['file', 'map'] as const).map((mode) => (
@@ -315,6 +375,8 @@ export function StatusDiffPane({
                 isDeleted={diff.isDeleted}
                 cwd={cwd}
                 enableComments={true}
+                compact={fileDensity === 'compact'}
+                symbols={symbolRanges}
                 onPreview={
                   !diff.isDeleted && isMarkdownFile(filePath)
                     ? () => setShowMarkdownPreview(true)

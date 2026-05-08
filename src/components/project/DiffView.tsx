@@ -10,6 +10,12 @@ import { useMenuContainer } from './FileContextMenu';
 import { useChatContextOptional } from './ChatContext';
 import { AddCommentInput, SendToAIInput } from './CodeInputCards';
 import { computeLineDiff } from './diffAlgorithm';
+import {
+  buildCompactRows,
+  type RenderRow,
+  type SymbolRange,
+  type VisualLine,
+} from './compactDiff';
 import { toast } from '../shared/Toast';
 import { useLineHighlight } from '@/hooks/useLineHighlight';
 import { escapeHtml } from '@/lib/codeHighlighter';
@@ -47,6 +53,27 @@ interface DiffViewProps {
    * on the same line wouldn't re-trigger the scroll.
    */
   targetLine?: { line: number; side: 'before' | 'after'; tick: number } | null;
+  /**
+   * GitHub-style compact view: only changed lines + 3-line context
+   * are rendered; unchanged stretches collapse into clickable bars.
+   *
+   * Default `false` so existing call sites (DiffViewerModal,
+   * CommitDetailPanel, …) keep their full-file behaviour. Currently
+   * only `StatusDiffPane` (file-mode of git changes) defaults this
+   * on, with a Compact/Full toggle for the user.
+   */
+  compact?: boolean;
+  /**
+   * AST symbol ranges in the AFTER file. Used by compact mode to
+   * decide what "expand to function context" means. When omitted
+   * (or empty), compact mode falls back to single-click-expands-all
+   * for every gap.
+   *
+   * Caller is expected to pull this from `useFileFunctions` (which
+   * is already mtime-aware via the server's `refreshFocalFile`),
+   * filter to `function | class | method` kinds, and pass through.
+   */
+  symbols?: readonly SymbolRange[];
 }
 
 // ============================================
@@ -100,7 +127,7 @@ const ToolbarRenderer = memo(ToolbarRendererInner);
 // Main DiffView Component (Split View)
 // ============================================
 
-export function DiffView({ oldContent, newContent, filePath, isNew = false, isDeleted = false, cwd, enableComments = false, onPreview, previewLabel, onContentSearch, targetLine }: DiffViewProps) {
+export function DiffView({ oldContent, newContent, filePath, isNew = false, isDeleted = false, cwd, enableComments = false, onPreview, previewLabel, onContentSearch, targetLine, compact = false, symbols }: DiffViewProps) {
   const { t } = useTranslation();
   const resolvedPreviewLabel = previewLabel ?? t('common.preview');
   const diffLines = useMemo(() => computeLineDiff(oldContent, newContent), [oldContent, newContent]);
@@ -447,11 +474,93 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
   const allLines = useMemo(() => diffLines.map(line => line.content), [diffLines]);
   const highlightedLines = useLineHighlight(allLines, filePath);
 
+  // ============================================
+  // Compact mode — gap state + render-row pipeline.
+  // When `compact === false` the pipeline degenerates to one diff
+  // row per visual row (i.e. the original behaviour, just routed
+  // through `renderRows`). Keeping a single virtualizer code path
+  // for both modes avoids forking the JSX below.
+  // ============================================
+
+  const [gapStates, setGapStates] = useState<Map<number, 0 | 1 | 2>>(
+    () => new Map(),
+  );
+
+  // Reset gap states when the underlying diff changes (different file
+  // or a fresh diff for the same file). Without this, an "expanded"
+  // gap from file A would persist into file B as if its gap-id
+  // referred to the same logical region — which it doesn't (gap ids
+  // are positional, recomputed every build).
+  useEffect(() => {
+    setGapStates(new Map());
+  }, [leftLines, rightLines]);
+
+  // Symbol ranges for AST-aware expand. Only meaningful in compact
+  // mode; passing the array through unconditionally is fine — when
+  // compact is off, `buildCompactRows` isn't invoked.
+  const symbolRanges = useMemo<readonly SymbolRange[]>(
+    () => symbols ?? [],
+    [symbols],
+  );
+
+  // Cast away the `originalIdx` field that DiffView's internal row
+  // builder added — `compactDiff` only needs `lineNum + type`.
+  const visualLeft = leftLines as readonly VisualLine[];
+  const visualRight = rightLines as readonly VisualLine[];
+
+  const { rows: renderRows, gaps: compactGaps } = useMemo(() => {
+    if (!compact) {
+      // Fast path: one diff row per visual row, no gaps.
+      const rows: RenderRow[] = leftLines.map((_, i) => ({
+        kind: 'diff' as const,
+        idx: i,
+      }));
+      return { rows, gaps: [] };
+    }
+    return buildCompactRows(visualLeft, visualRight, gapStates, symbolRanges);
+  }, [compact, leftLines, visualLeft, visualRight, gapStates, symbolRanges]);
+
+  const handleGapClick = useCallback(
+    (gapId: number, nextState: 1 | 2) => {
+      setGapStates((prev) => {
+        const cur = prev.get(gapId) ?? 0;
+        if (cur === nextState) return prev;
+        const next = new Map(prev);
+        next.set(gapId, nextState);
+        return next;
+      });
+    },
+    [],
+  );
+
+  // Helper for the targetLine effect: when the user wants to scroll
+  // to a line that's currently inside a collapsed gap, look up the
+  // gap id by visual index so we can expand it.
+  const findGapIdForVisualIdx = useCallback(
+    (visualIdx: number): number | null => {
+      for (const g of compactGaps) {
+        if (visualIdx >= g.startIdx && visualIdx <= g.endIdx) return g.id;
+      }
+      return null;
+    },
+    [compactGaps],
+  );
+
+  // Row-height estimator for the variable-size virtualizer. Diff
+  // rows reuse the original 20 px constant so the visual rhythm of
+  // the unchanged code is preserved; gap bars get a bit more
+  // breathing room (28 px) so the click target is comfortable.
+  const GAP_ROW_HEIGHT = 28;
+  const estimateRowSize = useCallback(
+    (i: number) => (renderRows[i]?.kind === 'gap' ? GAP_ROW_HEIGHT : ROW_HEIGHT),
+    [renderRows],
+  );
+
   // Virtual scrolling
   const virtualizer = useVirtualizer({
-    count: leftLines.length,
+    count: renderRows.length,
     getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: estimateRowSize,
     overscan: 20,
   });
 
@@ -459,13 +568,24 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
   const leftWidth = isNew ? 'w-1/4' : isDeleted ? 'w-3/4' : 'w-1/2';
   const rightWidth = isNew ? 'w-3/4' : isDeleted ? 'w-1/4' : 'w-1/2';
 
-  // Prepare minimap line types
-  const minimapLines = useMemo(() => leftLines.map((leftLine, idx) => {
-    const rightLine = rightLines[idx];
-    if (leftLine.type === 'removed') return { type: 'removed' as const };
-    if (rightLine?.type === 'added') return { type: 'added' as const };
-    return { type: 'unchanged' as const };
-  }), [leftLines, rightLines]);
+  // Prepare minimap line types — projected from `renderRows` so the
+  // minimap's vertical scale matches the scroll container's. In
+  // compact mode collapsed gaps don't contribute to the scrollable
+  // height, so they shouldn't contribute to the minimap either.
+  // Gap rows render as `unchanged` strips — the user reads the
+  // proportions of the actually-visible content, not what's hidden.
+  const minimapLines = useMemo(
+    () =>
+      renderRows.map((row) => {
+        if (row.kind === 'gap') return { type: 'unchanged' as const };
+        const leftLine = leftLines[row.idx];
+        const rightLine = rightLines[row.idx];
+        if (leftLine.type === 'removed') return { type: 'removed' as const };
+        if (rightLine?.type === 'added') return { type: 'added' as const };
+        return { type: 'unchanged' as const };
+      }),
+    [renderRows, leftLines, rightLines],
+  );
 
   const totalSize = virtualizer.getTotalSize();
   const virtualItems = virtualizer.getVirtualItems();
@@ -475,20 +595,59 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
   // The parent supplies a fresh object (with new `tick`) on every request, so
   // ref-equality changes are sufficient to retrigger this effect — including
   // when the user clicks the same symbol twice.
+  //
+  // Compact mode: the target visual row may be hidden inside a
+  // collapsed gap. In that case we first auto-expand the containing
+  // gap to level 2 (full reveal) so the target has a render row, then
+  // do the scroll on the next tick — `renderRows` recomputes via the
+  // memo dep on `gapStates`, the second-tick effect catches the now-
+  // visible target.
   useEffect(() => {
     if (!targetLine) return;
     const arr = targetLine.side === 'after' ? rightLines : leftLines;
-    const idx = arr.findIndex((l) => l.lineNum === targetLine.line);
-    if (idx === -1) return;
+    const visualIdx = arr.findIndex((l) => l.lineNum === targetLine.line);
+    if (visualIdx === -1) return;
+
+    // Map the visual index → renderRow index (compact mode reorders
+    // and may skip rows). Linear scan; renderRows is small relative
+    // to a typical UI scroll.
+    const renderIdx = renderRows.findIndex(
+      (r) => r.kind === 'diff' && r.idx === visualIdx,
+    );
+    if (renderIdx === -1) {
+      // Target is in a collapsed gap — find which one and expand.
+      // Comparing visualIdx against gap boundaries from the row list
+      // would require rebuilding `gaps`; cheaper to let the renderer
+      // re-compute by setting state and let the next effect tick
+      // redo the scroll.
+      // Strategy: nudge gap state. We don't know the gapId without
+      // the gaps registry, so the safest catch-all is to re-render
+      // `buildCompactRows` with `compact=false` semantics for this
+      // tick. Simpler: walk `gapStates` for any gap whose visual
+      // range covers visualIdx and bump it to 2. But that requires
+      // the gaps list. Re-export `gaps` from the memo to enable.
+      // (Implemented in a tiny helper below.)
+      const gapId = findGapIdForVisualIdx(visualIdx);
+      if (gapId !== null) {
+        setGapStates((prev) => {
+          if ((prev.get(gapId) ?? 0) === 2) return prev;
+          const next = new Map(prev);
+          next.set(gapId, 2);
+          return next;
+        });
+      }
+      return;
+    }
+
     // Defer one frame so layout is settled when DiffView just mounted with a
     // new file (e.g. user clicked a symbol in a different file).
     const raf = requestAnimationFrame(() => {
-      virtualizer.scrollToIndex(idx, { align: 'start' });
+      virtualizer.scrollToIndex(renderIdx, { align: 'start' });
     });
     return () => cancelAnimationFrame(raf);
     // virtualizer is a fresh instance every render; including it would loop.
 
-  }, [targetLine, leftLines, rightLines]);
+  }, [targetLine, leftLines, rightLines, renderRows]);
 
   return (
     <div className="font-mono flex flex-col h-full text-sm">
@@ -532,7 +691,34 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
             >
               <div className="min-w-max h-full" style={{ position: 'relative' }}>
                 {virtualItems.map((virtualItem) => {
-                  const line = leftLines[virtualItem.index];
+                  const row = renderRows[virtualItem.index];
+                  if (row.kind === 'gap') {
+                    // Bar half on the left panel — same height as
+                    // the right half so the two columns stay
+                    // aligned. Text only on the right side; left is
+                    // a passive backdrop with the same hover/click
+                    // affordance so clicking either column triggers
+                    // the same action.
+                    return (
+                      <button
+                        key={virtualItem.key}
+                        type="button"
+                        onClick={() => handleGapClick(row.gapId, row.nextState)}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          height: `${virtualItem.size}px`,
+                          transform: `translateY(${virtualItem.start}px)`,
+                        }}
+                        className="flex items-center justify-center text-[11px] text-muted-foreground bg-secondary/40 hover:bg-secondary/70 border-y border-border/50 cursor-pointer transition-colors"
+                      >
+                        <span className="opacity-60">⋯</span>
+                      </button>
+                    );
+                  }
+                  const line = leftLines[row.idx];
                   return (
                     <div
                       key={virtualItem.key}
@@ -566,7 +752,37 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
             >
               <div className="min-w-max h-full" style={{ position: 'relative' }}>
                 {virtualItems.map((virtualItem) => {
-                  const line = rightLines[virtualItem.index];
+                  const row = renderRows[virtualItem.index];
+                  if (row.kind === 'gap') {
+                    // Right half of the bar — carries the label
+                    // (line count + action prompt). Click the
+                    // whole row → bump gap state via `nextState`.
+                    const label =
+                      row.level === 0
+                        ? row.nextState === 1
+                          ? t('diffViewer.gap.showContext', { count: row.hiddenCount })
+                          : t('diffViewer.gap.showAll', { count: row.hiddenCount })
+                        : t('diffViewer.gap.showAll', { count: row.hiddenCount });
+                    return (
+                      <button
+                        key={virtualItem.key}
+                        type="button"
+                        onClick={() => handleGapClick(row.gapId, row.nextState)}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          height: `${virtualItem.size}px`,
+                          transform: `translateY(${virtualItem.start}px)`,
+                        }}
+                        className="flex items-center justify-center text-[11px] text-muted-foreground bg-secondary/40 hover:bg-secondary/70 hover:text-foreground border-y border-border/50 cursor-pointer transition-colors"
+                      >
+                        <span className="opacity-80">{label}</span>
+                      </button>
+                    );
+                  }
+                  const line = rightLines[row.idx];
                   const lineNum = line?.lineNum || 0;
                   const hasComments = lineNum > 0 && linesWithComments.has(lineNum);
                   const lineComments = commentsByEndLine.get(lineNum);

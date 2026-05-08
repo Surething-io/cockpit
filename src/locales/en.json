@@ -899,7 +899,13 @@
     "sideBySide": "Side by side",
     "unified": "Unified",
     "previewFile": "Preview file",
-    "copiedAll": "Full text copied"
+    "copiedAll": "Full text copied",
+    "compact": "Compact",
+    "full": "Full",
+    "gap": {
+      "showContext": "{{count}} lines hidden — show function context",
+      "showAll": "{{count}} lines hidden — show all"
+    }
   },
   "commitDetail": {
     "title": "Commit Details",

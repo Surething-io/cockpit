@@ -899,7 +899,13 @@
     "sideBySide": "并列对比",
     "unified": "统一对比",
     "previewFile": "预览文件",
-    "copiedAll": "已复制全文"
+    "copiedAll": "已复制全文",
+    "compact": "精简",
+    "full": "全文",
+    "gap": {
+      "showContext": "已隐藏 {{count}} 行 —— 展开函数上下文",
+      "showAll": "已隐藏 {{count}} 行 —— 全部展开"
+    }
   },
   "commitDetail": {
     "title": "提交详情",

@@ -1,6 +1,6 @@
 import { watch, readFileSync, statSync, existsSync, mkdirSync, writeFileSync, type FSWatcher } from 'fs';
 import { join, resolve } from 'path';
-import { REVIEW_SIGNAL_FILE, REVIEW_DIR } from './paths';
+import { REVIEW_SIGNAL_FILE, REVIEW_DIR } from '@cockpit/shared-utils';
 
 export interface FileEvent {
   /** 'file' = regular file change, 'git' = .git directory change, 'review' = review file change */

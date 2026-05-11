@@ -1,6 +1,3 @@
-// For more info, see https://github.com/storybookjs/eslint-plugin-storybook#configuration-flat-config-format
-import storybook from "eslint-plugin-storybook";
-
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
@@ -23,7 +20,33 @@ const eslintConfig = defineConfig([
     // Standalone marketing site with its own toolchain
     "website/**",
   ]),
-  ...storybook.configs["flat/recommended"],
+  // ============================================================
+  // 2-layer dependency rule: feature-* → shared-*
+  // ============================================================
+  // - feature-*: may import other @cockpit/feature-* (supporting subdomain
+  //   pattern, e.g. agent → explorer for code-rendering primitives) and
+  //   @cockpit/shared-*. Cycles must be avoided — the current dependency
+  //   graph is acyclic (workspace → all features; agent → explorer →
+  //   comments → shared-*; review/skills → comments).
+  //   By convention, only feature-workspace imports across multiple
+  //   features (it's the application integrator). Other features should
+  //   import from another feature only when there's a clear "supporting
+  //   subdomain" relationship.
+  // - shared-*: leaf layer. Must NOT import any @cockpit/feature-*. Use
+  //   IoC slots if host-injected behavior is needed.
+  //
+  // See CLAUDE.md / MODULES.md for the full architecture doc.
+  {
+    files: ["packages/shared/*/src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{
+          group: ["@cockpit/feature-*", "@cockpit/feature-*/*"],
+          message: "Shared packages are leaves and must not import from feature packages. Use IoC slots if you need host-injected behavior.",
+        }],
+      }],
+    },
+  },
   {
     rules: {
       // Allow <img> — Next.js <Image> is unnecessary for a local-only app

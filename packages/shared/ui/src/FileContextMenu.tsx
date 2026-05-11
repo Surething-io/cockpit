@@ -1,0 +1,261 @@
+'use client';
+
+import { useState, useEffect, useCallback, useRef, ReactNode, createContext, useContext } from 'react';
+import { useTranslation } from 'react-i18next';
+import { createPortal } from 'react-dom';
+import { toast } from './Toast';
+
+// Migrated from src/components/project/FileContextMenu.tsx.
+
+// Context for menu container - allows FileContextMenu to portal to a specific container
+const MenuContainerContext = createContext<HTMLElement | null>(null);
+
+export function MenuContainerProvider({ container, children }: { container: HTMLElement | null; children: ReactNode }) {
+  return (
+    <MenuContainerContext.Provider value={container}>
+      {children}
+    </MenuContainerContext.Provider>
+  );
+}
+
+// Hook to access the menu container for portal mounting
+export function useMenuContainer() {
+  return useContext(MenuContainerContext);
+}
+
+interface FileContextMenuProps {
+  x: number;
+  y: number;
+  path: string; // relative path
+  cwd: string; // working directory
+  isDirectory: boolean;
+  onClose: () => void;
+  // Operation callbacks
+  onCreateFile?: (dirPath: string) => void;
+  onDelete?: (path: string, isDirectory: boolean, name: string) => void;
+  onRefresh?: () => void;
+  onCopyFile?: (path: string) => void;
+  onPaste?: (targetDir: string) => void;
+}
+
+export function FileContextMenu({
+  x, y, path, cwd, isDirectory, onClose,
+  onCreateFile, onDelete, onRefresh: _onRefresh,
+  onCopyFile, onPaste,
+}: FileContextMenuProps) {
+  const { t } = useTranslation();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuContainer = useContext(MenuContainerContext);
+
+  // Compute various path variants
+  const fileName = path.split('/').pop() || path;
+  const absolutePath = `${cwd}/${path}`;
+  const relativeDirPath = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
+  const absoluteDirPath = relativeDirPath ? `${cwd}/${relativeDirPath}` : cwd;
+
+  // If it's a directory, the dir path is itself
+  const actualRelativeDirPath = isDirectory ? path : relativeDirPath;
+  const actualAbsoluteDirPath = isDirectory ? absolutePath : absoluteDirPath;
+
+  // Close menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
+  // Calculate position relative to the container
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  useEffect(() => {
+    if (menuRef.current && menuContainer) {
+      const containerRect = menuContainer.getBoundingClientRect();
+      const menuRect = menuRef.current.getBoundingClientRect();
+
+      // Calculate coordinates relative to container
+      let relX = x - containerRect.left;
+      let relY = y - containerRect.top;
+
+      // Clamp to stay within container bounds
+      relX = Math.min(relX, containerRect.width - menuRect.width - 8);
+      relY = Math.min(relY, containerRect.height - menuRect.height - 8);
+      relX = Math.max(8, relX);
+      relY = Math.max(8, relY);
+
+      setPosition({ x: relX, y: relY });
+    } else if (menuRef.current) {
+      // Without a container, use viewport coordinates
+      const rect = menuRef.current.getBoundingClientRect();
+      const newX = Math.min(x, window.innerWidth - rect.width - 8);
+      const newY = Math.min(y, window.innerHeight - rect.height - 8);
+      setPosition({ x: Math.max(8, newX), y: Math.max(8, newY) });
+    }
+  }, [x, y, menuContainer]);
+
+  const copyToClipboard = useCallback(async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(t('toast.copiedName', { name: label }), 'success');
+    } catch {
+      toast(t('toast.copyFailed'), 'error');
+    }
+    onClose();
+  }, [onClose, t]);
+
+  // Target directory for create/operations
+  const targetDir = isDirectory ? path : relativeDirPath;
+
+  const copyMenuItems = [
+    { label: t('fileContextMenu.copyRelativePath'), value: path },
+    { label: t('fileContextMenu.copyAbsolutePath'), value: absolutePath },
+    { label: t('fileContextMenu.copyRelativeDirPath'), value: actualRelativeDirPath || '.' },
+    { label: t('fileContextMenu.copyAbsoluteDirPath'), value: actualAbsoluteDirPath },
+    { label: isDirectory ? t('fileContextMenu.copyFolderName') : t('fileContextMenu.copyFileName'), value: fileName },
+  ];
+
+  const menuElement = (
+    <div
+      ref={menuRef}
+      className="absolute z-[200] bg-card border border-border rounded-lg shadow-lg py-1 w-fit whitespace-nowrap"
+      style={{ left: position.x, top: position.y }}
+    >
+      {/* Operation menu items */}
+      {onCreateFile && (
+        <button
+          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
+          onClick={() => { onClose(); onCreateFile(targetDir); }}
+        >
+          {t('fileContextMenu.createFile')}
+        </button>
+      )}
+      {onCopyFile && (
+        <button
+          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
+          onClick={() => { onClose(); onCopyFile(path); }}
+        >
+          {isDirectory ? t('fileContextMenu.copyFolder') : t('fileContextMenu.copyFile')}
+        </button>
+      )}
+      {onPaste && (
+        <button
+          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
+          onClick={() => { onClose(); onPaste(targetDir); }}
+        >
+          {t('fileContextMenu.pasteHere')}
+        </button>
+      )}
+      {onDelete && (
+        <button
+          className="block w-full px-3 py-1.5 text-left text-sm text-destructive hover:bg-accent transition-colors"
+          onClick={() => { onClose(); onDelete(path, isDirectory, fileName); }}
+        >
+          {isDirectory ? t('fileContextMenu.deleteFolder') : t('fileContextMenu.deleteFile')}
+        </button>
+      )}
+
+      {/* Divider */}
+      {(onCreateFile || onDelete || onCopyFile || onPaste) && (
+        <div className="my-1 border-t border-border" />
+      )}
+
+      {/* Copy path menu items */}
+      {copyMenuItems.map((item, index) => (
+        <button
+          key={index}
+          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
+          onClick={() => copyToClipboard(item.value, item.label)}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  // Portal to the specified container, or render directly
+  if (menuContainer) {
+    return createPortal(menuElement, menuContainer);
+  }
+  return menuElement;
+}
+
+// Hook for managing context menu state
+export function useFileContextMenu() {
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    path: string;
+    isDirectory: boolean;
+  } | null>(null);
+
+  const showContextMenu = useCallback((e: React.MouseEvent, path: string, isDirectory: boolean) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, path, isDirectory });
+  }, []);
+
+  const hideContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  return { contextMenu, showContextMenu, hideContextMenu };
+}
+
+// Context menu wrapper component for easy integration
+interface FileContextMenuWrapperProps {
+  children: ReactNode;
+  path: string;
+  cwd: string;
+  isDirectory: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+  onClick?: (e: React.MouseEvent) => void;
+}
+
+export function FileContextMenuWrapper({
+  children,
+  path,
+  cwd,
+  isDirectory,
+  className,
+  style,
+  onClick,
+}: FileContextMenuWrapperProps) {
+  const { contextMenu, showContextMenu, hideContextMenu } = useFileContextMenu();
+
+  return (
+    <>
+      <div
+        className={className}
+        style={style}
+        onClick={onClick}
+        onContextMenu={(e) => showContextMenu(e, path, isDirectory)}
+      >
+        {children}
+      </div>
+      {contextMenu && (
+        <FileContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          path={contextMenu.path}
+          cwd={cwd}
+          isDirectory={contextMenu.isDirectory}
+          onClose={hideContextMenu}
+        />
+      )}
+    </>
+  );
+}

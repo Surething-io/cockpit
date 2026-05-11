@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import { ReviewPage } from '@/components/review/ReviewPage';
+import { ReviewPage } from '@cockpit/feature-review';
 
 export const dynamic = 'force-dynamic';
 

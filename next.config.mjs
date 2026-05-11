@@ -11,6 +11,16 @@ const EMPTY_STUB = './src/lib/empty-stub.js';
 const nextConfig = {
   // dev 和 prod 使用不同输出目录，避免 Turbopack 热更新影响 prod
   distDir: dev ? '.next' : '.next-prod',
+  // Workspace packages ship raw .ts/.tsx (their package.json `main` points
+  // straight at source). Next.js needs to compile them like local source.
+  // See MODULES.md for the modularization layout.
+  transpilePackages: [
+    '@cockpit/shared-ui',
+    '@cockpit/shared-utils',
+    '@cockpit/feature-agent',
+    '@cockpit/feature-explorer',
+    '@cockpit/feature-console',
+  ],
   turbopack: {
     // Stub Node built-ins for the BROWSER bundle only. `web-tree-sitter` ships
     // a Node-detection branch full of `await import("fs/promises" | "module" | ...)`

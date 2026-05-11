@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Lora, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { Providers } from "@/components/shared/Providers";
+import { Providers } from "@cockpit/feature-workspace";
 
 const inter = Inter({
   variable: "--font-inter",

@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'fs/promises';
-import { COCKPIT_DIR, NOTE_FILE, ensureDir, getProjectNotePath, getCockpitProjectDir } from '@/lib/paths';
+import { COCKPIT_DIR, NOTE_FILE, ensureDir, getProjectNotePath, getCockpitProjectDir } from '@cockpit/shared-utils';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

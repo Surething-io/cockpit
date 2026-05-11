@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import { Workspace } from '@/components/workspace';
+import { Workspace } from '@cockpit/feature-workspace';
 
 // Disable static pre-rendering; use dynamic rendering
 export const dynamic = 'force-dynamic';

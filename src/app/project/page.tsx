@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import { TabManager } from '@/components/project/TabManager';
+import { TabManager } from '@cockpit/feature-workspace';
 
 // Disable static pre-rendering; use dynamic rendering (fixes SSR hooks issues)
 export const dynamic = 'force-dynamic';

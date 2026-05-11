@@ -1,0 +1,339 @@
+'use client';
+
+import React, { useMemo, useRef, useEffect, useCallback } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { FileContextMenu, useFileContextMenu } from '@cockpit/shared-ui';
+import { FileIcon } from '@cockpit/shared-ui';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface FileNode {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  children?: FileNode[];
+  isSymlink?: boolean;
+  symlinkTarget?: string;
+}
+
+// Git status type: M=modified, A=added, D=deleted, ?=untracked, R=renamed
+export type GitStatusCode = 'M' | 'A' | 'D' | '?' | 'R';
+
+// Git status map: path -> status code
+export type GitStatusMap = Map<string, GitStatusCode>;
+
+interface FlatTreeItem {
+  node: FileNode;
+  level: number;
+  gitStatus?: GitStatusCode;
+  hasChangedChildren?: boolean; // Whether the directory contains changed files
+}
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const ROW_HEIGHT = 26;
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+// Check if the directory contains changed files (prefix match, does not depend on whether children are loaded)
+function hasChangedFilesInDir(dirPath: string, gitStatusMap: GitStatusMap | null): boolean {
+  if (!gitStatusMap) return false;
+  const prefix = dirPath + '/';
+  for (const filePath of gitStatusMap.keys()) {
+    if (filePath.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+function flattenTree(
+  nodes: FileNode[],
+  expandedPaths: Set<string>,
+  matchedPaths: Set<string> | null,
+  gitStatusMap: GitStatusMap | null = null,
+  level: number = 0
+): FlatTreeItem[] {
+  const result: FlatTreeItem[] = [];
+
+  for (const node of nodes) {
+    // If search filter is active, check if the node matches
+    if (matchedPaths !== null && !matchedPaths.has(node.path)) {
+      continue;
+    }
+
+    const gitStatus = gitStatusMap?.get(node.path);
+    const hasChangedChildren = node.isDirectory ? hasChangedFilesInDir(node.path, gitStatusMap) : undefined;
+
+    result.push({ node, level, gitStatus, hasChangedChildren });
+
+    if (node.isDirectory && node.children && expandedPaths.has(node.path)) {
+      result.push(...flattenTree(node.children, expandedPaths, matchedPaths, gitStatusMap, level + 1));
+    }
+  }
+
+  return result;
+}
+
+// ============================================================================
+// VirtualTreeRow Component
+// ============================================================================
+
+// Git status color configuration
+const GIT_STATUS_COLORS: Record<GitStatusCode, { text: string; bg: string }> = {
+  'M': { text: 'text-amber-11', bg: 'bg-amber-9/20' },      // modified - yellow
+  'A': { text: 'text-green-11', bg: 'bg-green-9/20' },      // added - green
+  'D': { text: 'text-red-11', bg: 'bg-red-9/20' },          // deleted - red
+  '?': { text: 'text-slate-9', bg: 'bg-slate-9/20' },       // untracked - gray
+  'R': { text: 'text-blue-11', bg: 'bg-blue-9/20' },        // renamed - blue
+};
+
+interface VirtualTreeRowProps {
+  item: FlatTreeItem;
+  isSelected: boolean;
+  isExpanded: boolean;
+  isLoading?: boolean;
+  onSelect: (path: string) => void;
+  onToggle: (path: string) => void;
+  onContextMenu: (e: React.MouseEvent, path: string, isDirectory: boolean) => void;
+  renderActions?: (node: FileNode) => React.ReactNode;
+}
+
+const VirtualTreeRow = React.memo(function VirtualTreeRow({
+  item,
+  isSelected,
+  isExpanded,
+  isLoading,
+  onSelect,
+  onToggle,
+  onContextMenu,
+  renderActions,
+}: VirtualTreeRowProps) {
+  const { node, level, gitStatus, hasChangedChildren } = item;
+  const statusColors = gitStatus ? GIT_STATUS_COLORS[gitStatus] : null;
+
+  const handleClick = useCallback(() => {
+    if (node.isDirectory) {
+      onToggle(node.path);
+    } else {
+      onSelect(node.path);
+    }
+  }, [node.isDirectory, node.path, onSelect, onToggle]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    onContextMenu(e, node.path, node.isDirectory);
+  }, [node.path, node.isDirectory, onContextMenu]);
+
+  // Color class for file/directory name (both support color changes)
+  const isEnvFile = !node.isDirectory && (node.name === '.env' || node.name.startsWith('.env.'));
+  const nameColorClass = gitStatus
+    ? statusColors!.text
+    : hasChangedChildren
+    ? 'text-amber-11'  // Directory name color changes when it contains changed files
+    : isEnvFile
+    ? 'text-yellow-600 dark:text-yellow-500'  // Highlight .env sensitive files
+    : isSelected && !node.isDirectory
+    ? 'text-brand'
+    : 'text-foreground';
+
+  return (
+    <div
+      className={`flex items-center gap-1.5 py-0.5 px-2 cursor-pointer hover:bg-accent ${
+        isSelected ? 'bg-brand/10' : ''
+      }`}
+      style={{ paddingLeft: `${level * 12 + 8}px` }}
+      onClick={handleClick}
+      onContextMenu={handleContextMenu}
+    >
+      {node.isDirectory ? (
+        isLoading ? (
+          <svg className="w-4 h-4 flex-shrink-0 text-muted-foreground animate-spin" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" opacity="0.3" />
+            <path d="M14 8a6 6 0 0 0-6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        ) : (
+          <svg
+            className={`w-4 h-4 flex-shrink-0 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+            viewBox="0 0 16 16"
+            fill="none"
+          >
+            <path d="M6 4 L10 8 L6 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )
+      ) : (
+        <FileIcon name={node.name} size={16} className="flex-shrink-0 ml-4" />
+      )}
+      <span className={`text-sm truncate flex-1 ${nameColorClass}`} data-tooltip={node.isSymlink && node.symlinkTarget ? `${node.path} → ${node.symlinkTarget}` : node.path}>
+        {node.name}
+      </span>
+      {node.isSymlink && (
+        <span className="text-xs text-muted-foreground flex-shrink-0">→</span>
+      )}
+      {/* File Git status badge (right-aligned) */}
+      {gitStatus && (
+        <span className={`text-xs font-mono px-1 rounded ${statusColors!.text} ${statusColors!.bg} flex-shrink-0`}>
+          {gitStatus}
+        </span>
+      )}
+      {/* Show a dot when the directory contains changed files (right-aligned) */}
+      {node.isDirectory && hasChangedChildren && (
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-9 flex-shrink-0" />
+      )}
+      {/* Custom right-side content */}
+      {renderActions?.(node)}
+    </div>
+  );
+});
+
+// ============================================================================
+// FileTree Component (with Virtual Scrolling)
+// ============================================================================
+
+export interface FileTreeProps {
+  files: FileNode[];
+  selectedPath: string | null;
+  expandedPaths: Set<string>;
+  matchedPaths?: Set<string> | null;
+  gitStatusMap?: GitStatusMap | null;
+  loadingDirs?: Set<string>;
+  onSelect: (path: string) => void;
+  onToggle: (path: string) => void;
+  cwd: string;
+  shouldScrollToSelected?: boolean;
+  onScrolledToSelected?: () => void;
+  className?: string;
+  renderActions?: (node: FileNode) => React.ReactNode;
+  // Context menu operation callbacks
+  onCreateFile?: (dirPath: string) => void;
+  onDelete?: (path: string, isDirectory: boolean, name: string) => void;
+  onRefresh?: () => void;
+  onCopyFile?: (path: string) => void;
+  onPaste?: (targetDir: string) => void;
+}
+
+export function FileTree({
+  files,
+  selectedPath,
+  expandedPaths,
+  matchedPaths = null,
+  gitStatusMap = null,
+  loadingDirs,
+  onSelect,
+  onToggle,
+  cwd,
+  shouldScrollToSelected = false,
+  onScrolledToSelected,
+  className,
+  renderActions,
+  onCreateFile,
+  onDelete,
+  onRefresh,
+  onCopyFile,
+  onPaste,
+}: FileTreeProps) {
+  const parentRef = useRef<HTMLDivElement>(null);
+  const { contextMenu, showContextMenu, hideContextMenu } = useFileContextMenu();
+
+  const flatItems = useMemo(() => {
+    return flattenTree(files, expandedPaths, matchedPaths, gitStatusMap);
+  }, [files, expandedPaths, matchedPaths, gitStatusMap]);
+
+  const virtualizer = useVirtualizer({
+    count: flatItems.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 10,
+  });
+
+  // Scroll to selected file only when shouldScrollToSelected is true (one-shot)
+  const onScrolledRef = useRef(onScrolledToSelected);
+  onScrolledRef.current = onScrolledToSelected;
+
+  useEffect(() => {
+    if (shouldScrollToSelected && selectedPath && flatItems.length > 0) {
+      const index = flatItems.findIndex(item => item.node.path === selectedPath);
+      if (index >= 0) {
+        // Delay to ensure the DOM is rendered (must wait for hidden state to be removed after tab switch)
+        const timer = setTimeout(() => {
+          virtualizer.scrollToIndex(index, { align: 'center' });
+          // Auto-reset the flag after scrolling to avoid re-triggering on expand/collapse
+          onScrolledRef.current?.();
+        }, 150);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [shouldScrollToSelected, selectedPath, flatItems, virtualizer]);
+
+  if (flatItems.length === 0) {
+    return (
+      <div className="p-4 text-center text-muted-foreground text-sm">
+        No files
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={parentRef}
+      className={className || "h-full overflow-y-auto"}
+      style={{ willChange: 'transform' }}
+    >
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {virtualizer.getVirtualItems().map((virtualItem) => {
+          const item = flatItems[virtualItem.index];
+          return (
+            <div
+              key={item.node.path}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: `${virtualItem.size}px`,
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+            >
+              <VirtualTreeRow
+                item={item}
+                isSelected={selectedPath === item.node.path}
+                isExpanded={expandedPaths.has(item.node.path)}
+                isLoading={loadingDirs?.has(item.node.path)}
+                onSelect={onSelect}
+                onToggle={onToggle}
+                onContextMenu={showContextMenu}
+                renderActions={renderActions}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {contextMenu && (
+        <FileContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          path={contextMenu.path}
+          cwd={cwd}
+          isDirectory={contextMenu.isDirectory}
+          onClose={hideContextMenu}
+          onCreateFile={onCreateFile}
+          onDelete={onDelete}
+          onRefresh={onRefresh}
+          onCopyFile={onCopyFile}
+          onPaste={onPaste}
+        />
+      )}
+    </div>
+  );
+}
+

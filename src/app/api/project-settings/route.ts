@@ -1,5 +1,4 @@
-import { NextRequest } from 'next/server';
-import { getProjectSettingsPath, readJsonFile, writeJsonFile } from '@/lib/paths';
+import { getProjectSettingsPath, readJsonFile, writeJsonFile } from '@cockpit/shared-utils';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,7 +15,7 @@ const DEFAULT_SETTINGS: ProjectSettings = {
 };
 
 // GET: Fetch project settings
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const cwd = searchParams.get('cwd');
@@ -45,7 +44,7 @@ export async function GET(request: NextRequest) {
 }
 
 // POST: Save project settings (incremental merge)
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { cwd, settings } = body;

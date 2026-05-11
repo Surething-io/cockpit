@@ -1,0 +1,14 @@
+{
+  "name": "@cockpit/feature-explorer",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    ".":          "./src/client/index.ts",
+    "./server":   "./src/server/index.ts",
+    "./server/*": "./src/server/*.ts"
+  },
+  "sideEffects": [
+    "**/codeMap/handlers/index.ts",
+    "**/codeMap/handlers/*.ts"
+  ]
+}

@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -14,12 +13,12 @@ export async function GET() {
 
     const manifestPath = join(extensionDir, 'manifest.json');
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
-    return NextResponse.json({
+    return Response.json({
       version: manifest.version,
       name: manifest.name,
       path: extensionDir,
     });
   } catch {
-    return NextResponse.json({ error: 'manifest not found' }, { status: 404 });
+    return Response.json({ error: 'manifest not found' }, { status: 404 });
   }
 }

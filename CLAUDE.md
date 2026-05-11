@@ -19,25 +19,33 @@
 
 ## Project Structure
 
-- `/src/app` - Next.js App Router pages and API routes
-- `/src/components` - React components
-  - `FileBrowserModal.tsx` - Unified file browser with 4 tabs (Directory tree, Recent files, Git changes, Git history)
-  - `TabManager.tsx` - Main tab manager component
-  - `Chat.tsx` - Chat interface component
-  - `ChatInput.tsx` - Chat input component
-  - `console/BrowserBubble.tsx` - Browser bubble component (iframe + automation bridge)
-- `/src/lib/browser` - Browser automation server-side logic
-  - `BrowserBridge.ts` - shortId registry + pending request management
-- `/src/hooks/useBrowserBridge.ts` - WS bridge hook for BrowserBubble
-- `/chrome-extension` - Chrome extension (Manifest V3)
-  - `content.js` - Content script (activated within iframes)
-  - `automation.js` - Automation layer (a11y tree, DOM operations, console/network interception)
-  - `background.js` - Service Worker (cookie injection, screenshots)
-- `/bin` - CLI entry points
-  - `cock.mjs` - Main entry (starts server, routes subcommands, --help/--version)
-  - `cock-browser.mjs` - `cock browser` subcommand
-  - `cock-terminal.mjs` - `cock terminal` subcommand
-  - `postinstall.mjs` - Post-install fix for node-pty permissions (macOS)
+Business code lives in `packages/`; `src/` is intentionally minimal
+framework boot. See `MODULES.md` for the dependency rules.
+
+- `/src/app/` - Next.js routing only (page.tsx + layout.tsx + one-line
+  `route.ts` shims that re-export from feature packages)
+- `/src/lib/` - Server bootstrap: `wsServer.ts` (WS server),
+  `fileWatcher.ts` (fs watcher)
+- `/packages/feature/` - Self-contained domain features:
+  - `agent/` - Chat domain (Claude/Ollama/Codex/Kimi/Deepseek), scheduled
+    tasks, slash commands, sidebar panels
+  - `comments/` - Code annotation API + hooks
+  - `console/` - Terminal + browser bubbles + DB bubbles (Postgres / MySQL
+    / Redis / Neo4j / MongoDB / Bash / Jupyter)
+  - `explorer/` - File browser + code rendering (DiffView, CodeViewer,
+    InteractiveMarkdownPreview, PreviewModal) + git + LSP
+  - `review/` - Review pages with anchored highlights and threaded comments
+  - `skills/` - SKILL.md parser + slash autocomplete + cross-frame bus
+  - `workspace/` - Application integrator (Workspace, TabManager,
+    Providers, SettingsModal, NoteModal, SessionBrowser)
+- `/packages/shared/` - Cross-feature infrastructure:
+  - `i18n/` - Translation dictionary + i18next singleton
+  - `ui/` - UI primitives (Toast, MarkdownRenderer, Tooltip,
+    codeHighlighter, Swipeable*, useViMode, useWebSocket, …)
+  - `utils/` - Pure utilities (paths, ollamaEnv, platform, shortId)
+- `/chrome-extension/` - Chrome extension (Manifest V3, independent
+  sub-project)
+- `/bin/` - CLI entry points (`cock.mjs`, `postinstall.mjs`)
 
 ## Key Features
 

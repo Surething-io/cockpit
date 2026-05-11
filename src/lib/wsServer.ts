@@ -7,14 +7,14 @@ import { dirname } from 'path';
 import { spawn, execSync } from 'child_process';
 import * as nodePty from 'node-pty';
 import { fileWatcher, reviewWatcher, type FileEvent } from './fileWatcher';
-import { GLOBAL_STATE_FILE, readJsonFile, getTerminalHistoryPath } from './paths';
+import { GLOBAL_STATE_FILE, readJsonFile, getTerminalHistoryPath } from '@cockpit/shared-utils';
 import { readFile } from 'fs/promises';
-import { getLastUserMessage } from './global-state';
-import { registerCommand, finalizeCommand, getRunningCommands, getRunningCommand, getRegistrySize, getAllProjectCwds, findSafeStart } from './terminal/RunningCommandRegistry';
-import { registerBrowser, unregisterBrowser, resolvePendingRequest, getBrowserByShortId, createPendingRequest, sendCommandToBrowser, listBrowsers } from './bubbles/browser/BrowserBridge';
-import { getTerminalByShortId, listTerminals, addOutputListener, addExitListener, registerTerminal, unregisterTerminal } from './terminal/TerminalBridge';
+import { getLastUserMessage } from '@cockpit/feature-agent/server/state/globalState';
+import { registerCommand, finalizeCommand, getRunningCommands, getRunningCommand, getRegistrySize, getAllProjectCwds, findSafeStart } from '@cockpit/feature-console/server';
+import { registerBrowser, unregisterBrowser, resolvePendingRequest, getBrowserByShortId, createPendingRequest, sendCommandToBrowser, listBrowsers } from '@cockpit/feature-console/server';
+import { getTerminalByShortId, listTerminals, addOutputListener, addExitListener, registerTerminal, unregisterTerminal } from '@cockpit/feature-console/server';
 import { randomUUID } from 'crypto';
-import { isWindows, getDefaultShell, getDefaultPath } from './platform';
+import { isWindows, getDefaultShell, getDefaultPath } from '@cockpit/shared-utils';
 
 interface GlobalSession {
   cwd: string;
@@ -911,7 +911,7 @@ async function handleJupyter(ws: WebSocket, bubbleId: string, cwd: string): Prom
   }, HEARTBEAT_INTERVAL);
 
   // Lazy import to avoid loading kernel manager on every WS connection
-  const { kernelManager } = await import('./bubbles/jupyter/JupyterKernelManager');
+  const { kernelManager } = await import('@cockpit/feature-console/server');
 
   // Start or connect to existing kernel
   try {

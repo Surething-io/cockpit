@@ -1,10 +1,9 @@
-import { NextResponse } from 'next/server';
 import { execSync } from 'child_process';
 import { homedir } from 'os';
-import { isMac, isWindows } from '@/lib/platform';
-import { SETTINGS_FILE, readJsonFile } from '@/lib/paths';
-import en from '@/locales/en.json';
-import zh from '@/locales/zh.json';
+import { isMac, isWindows } from '@cockpit/shared-utils';
+import { SETTINGS_FILE, readJsonFile } from '@cockpit/shared-utils';
+import en from '@cockpit/shared-i18n/locales/en.json';
+import zh from '@cockpit/shared-i18n/locales/zh.json';
 
 const locales: Record<string, typeof en> = { en, zh };
 
@@ -37,11 +36,11 @@ export async function GET() {
 
     if (result) {
       const folder = result.replace(/[/\\]$/, '');
-      return NextResponse.json({ folder });
+      return Response.json({ folder });
     }
 
-    return NextResponse.json({ folder: null });
+    return Response.json({ folder: null });
   } catch {
-    return NextResponse.json({ folder: null });
+    return Response.json({ folder: null });
   }
 }

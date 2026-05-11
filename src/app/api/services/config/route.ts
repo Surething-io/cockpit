@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getServicesConfigPath, getGlobalServicesConfigPath, readJsonFile, writeJsonFile } from '@/lib/paths';
+import { getServicesConfigPath, getGlobalServicesConfigPath, readJsonFile, writeJsonFile } from '@cockpit/shared-utils';
 
 export interface CustomCommand {
   name: string;
@@ -10,9 +9,9 @@ interface ServicesConfig {
   customCommands: CustomCommand[];
 }
 
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
-    const searchParams = request.nextUrl.searchParams;
+    const searchParams = new URL(request.url).searchParams;
     const cwd = searchParams.get('cwd');
     const scope = searchParams.get('scope'); // 'global' for global commands
 
@@ -23,7 +22,7 @@ export async function GET(request: NextRequest) {
         : null;
 
     if (!configPath) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Missing cwd or scope' },
         { status: 400 }
       );
@@ -31,17 +30,17 @@ export async function GET(request: NextRequest) {
 
     const config = await readJsonFile<ServicesConfig>(configPath, { customCommands: [] });
 
-    return NextResponse.json(config);
+    return Response.json(config);
   } catch (error) {
     console.error('Failed to read services config:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: error instanceof Error ? error.message : 'Failed to read config' },
       { status: 500 }
     );
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
     const { cwd, scope, customCommands } = await request.json();
 
@@ -52,7 +51,7 @@ export async function POST(request: NextRequest) {
         : null;
 
     if (!configPath) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Missing cwd or scope' },
         { status: 400 }
       );
@@ -61,10 +60,10 @@ export async function POST(request: NextRequest) {
     const config: ServicesConfig = { customCommands: customCommands || [] };
     await writeJsonFile(configPath, config);
 
-    return NextResponse.json({ success: true });
+    return Response.json({ success: true });
   } catch (error) {
     console.error('Failed to write services config:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: error instanceof Error ? error.message : 'Failed to write config' },
       { status: 500 }
     );

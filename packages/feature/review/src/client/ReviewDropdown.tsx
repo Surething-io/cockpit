@@ -1,0 +1,336 @@
+'use client';
+
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useWebSocket } from '@cockpit/shared-ui';
+import { ReviewCommentsListModal, type UserNameMap, type ReviewComment } from '@cockpit/feature-review';
+
+interface ReviewSummary {
+  id: string;
+  title: string;
+  active: boolean;
+  createdAt: number;
+  updatedAt?: number;
+  commentCount: number;
+  lastCommentAt?: number;
+  sourceFile?: string;
+}
+
+const LS_KEY = 'review-last-viewed';
+
+function getLastViewed(): Record<string, number> {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch { return {}; }
+}
+
+function setLastViewed(id: string) {
+  const map = getLastViewed();
+  map[id] = Date.now();
+  localStorage.setItem(LS_KEY, JSON.stringify(map));
+}
+
+function formatTime(ts: number) {
+  const d = new Date(ts);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${mm}-${dd} ${hh}:${min}`;
+}
+
+/** Check whether a review has unread comments */
+function hasUnread(r: ReviewSummary, lastViewed: Record<string, number>): boolean {
+  if (!r.lastCommentAt) return false;
+  const viewed = lastViewed[r.id];
+  return !viewed || r.lastCommentAt > viewed;
+}
+
+/**
+ * ReviewDropdown - Review management dropdown panel in the TopBar
+ * Feature-aligned with ReviewListPanel: list, status, toggle active, delete, drag-to-reorder
+ * + New comment red-dot notifications (fswatch → ws/watch → review event)
+ */
+export function ReviewDropdown({ cwd }: { cwd?: string }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [reviews, setReviews] = useState<ReviewSummary[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [tooltip, setTooltip] = useState<{ id: string; text: string; top: number; left: number } | null>(null);
+  const [lastViewed, setLastViewedState] = useState<Record<string, number>>({});
+
+  // Comments list modal state
+  const [commentsModal, setCommentsModal] = useState<{
+    open: boolean;
+    comments: ReviewComment[];
+    title: string;
+    userNameMap: UserNameMap;
+  }>({ open: false, comments: [], title: '', userNameMap: {} });
+
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const dragId = useRef<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+
+  // Initialize lastViewed from localStorage
+  useEffect(() => {
+    queueMicrotask(() => setLastViewedState(getLastViewed()));
+  }, []);
+
+  // Close when clicking outside
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  // Fetch the review list
+  const fetchList = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/review');
+      if (res.ok) {
+        const data = await res.json();
+        setReviews(data.reviews || []);
+      }
+    } catch { /* ignore */ }
+    setLoading(false);
+  }, []);
+
+  // Load when the panel opens
+  useEffect(() => {
+    if (open) queueMicrotask(() => fetchList());
+  }, [open, fetchList]);
+
+  // Subscribe to /ws/watch review events; silently refresh the list on receipt (update red-dot state)
+  const handleWsMessage = useCallback((msg: unknown) => {
+    const { data } = msg as { type: string; data: Array<{ type: string }> };
+    if (data?.some(e => e.type === 'review')) {
+      fetchList();
+    }
+  }, [fetchList]);
+
+  useWebSocket({
+    url: `/ws/watch?cwd=${encodeURIComponent(cwd || '/')}`,
+    onMessage: handleWsMessage,
+    enabled: !!cwd,
+  });
+
+  // Also fetch once on mount (for initial red-dot determination)
+  useEffect(() => { queueMicrotask(() => fetchList()); }, [fetchList]);
+
+  // Only show active reviews
+  const activeReviews = useMemo(() => reviews.filter(r => r.active), [reviews]);
+
+  // Check whether any active review has unread comments
+  const hasAnyUnread = useMemo(() => {
+    return activeReviews.some(r => hasUnread(r, lastViewed));
+  }, [activeReviews, lastViewed]);
+
+  // Click review → mark as read + open in new tab
+  const handleOpen = useCallback((id: string) => {
+    setLastViewed(id);
+    setLastViewedState(getLastViewed());
+    window.open(`${window.location.origin}/review/${id}`, '_blank');
+  }, []);
+
+  // View comments: fetch review details + user map, show modal on current page
+  const handleViewComments = useCallback(async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    try {
+      const [reviewRes, usersRes] = await Promise.all([
+        fetch(`/api/review/${id}`),
+        fetch('/api/review/users'),
+      ]);
+      if (!reviewRes.ok) return;
+      const { review } = await reviewRes.json();
+      const userNameMap: UserNameMap = {};
+      if (usersRes.ok) {
+        const { users } = await usersRes.json();
+        for (const [uid, record] of Object.entries(users)) {
+          userNameMap[uid] = (record as { name: string }).name;
+        }
+      }
+      setCommentsModal({
+        open: true,
+        comments: review.comments || [],
+        title: review.title,
+        userNameMap,
+      });
+    } catch { /* ignore */ }
+  }, []);
+
+  // Drag & drop
+  const handleDragStart = useCallback((e: React.DragEvent, id: string) => {
+    dragId.current = id;
+    e.dataTransfer.effectAllowed = 'move';
+    const el = e.currentTarget as HTMLElement;
+    requestAnimationFrame(() => el.classList.add('opacity-30'));
+  }, []);
+
+  const handleDragEnd = useCallback((e: React.DragEvent) => {
+    dragId.current = null;
+    setDropTarget(null);
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.classList.remove('opacity-30');
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, id: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragId.current && dragId.current !== id) {
+      setDropTarget(id);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    setDropTarget(null);
+    const sourceId = dragId.current;
+    dragId.current = null;
+    if (!sourceId || sourceId === targetId) return;
+
+    setReviews(prev => {
+      const list = [...prev];
+      const fromIdx = list.findIndex(r => r.id === sourceId);
+      const toIdx = list.findIndex(r => r.id === targetId);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      const [item] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, item);
+
+      const order = list.map(r => r.id);
+      fetch('/api/review/order', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order }),
+      }).catch(() => {});
+
+      return list;
+    });
+  }, []);
+
+  return (
+    <div ref={dropdownRef} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`relative p-2 rounded-lg transition-colors ${
+          open
+            ? 'text-foreground bg-accent'
+            : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+        }`}
+        title={t('review.reviewManagement')}
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+        </svg>
+        {/* Button-level red dot */}
+        {hasAnyUnread && (
+          <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-64 bg-popover border border-border rounded-lg shadow-xl z-50 overflow-hidden">
+          {/* Header */}
+          <div className="px-3 py-2 border-b border-border flex items-center justify-between">
+            <div>
+              <span className="text-xs font-medium text-muted-foreground">{t('review.allReviews')}</span>
+              <span className="text-xs text-muted-foreground/60 ml-1.5">{activeReviews.length}</span>
+            </div>
+            <button
+              onClick={fetchList}
+              className="p-0.5 text-muted-foreground hover:text-foreground rounded transition-colors"
+              title={t('common.refresh')}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+          </div>
+
+          {/* List — only show active reviews */}
+          <div className="max-h-80 overflow-y-auto">
+            {loading && reviews.length === 0 ? (
+              <div className="px-3 py-4 text-xs text-muted-foreground/50 text-center">{t('common.loading')}</div>
+            ) : activeReviews.length === 0 ? (
+              <div className="px-3 py-4 text-xs text-muted-foreground/50 text-center">{t('review.noOpenReviews')}</div>
+            ) : (
+              activeReviews.map((r) => {
+                const unread = hasUnread(r, lastViewed);
+                return (
+                  <div
+                    key={r.id}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, r.id)}
+                    onDragEnd={handleDragEnd}
+                    onDragOver={(e) => handleDragOver(e, r.id)}
+                    onDrop={(e) => handleDrop(e, r.id)}
+                    onMouseEnter={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setTooltip({ id: r.id, text: r.title, top: rect.top + rect.height / 2, left: rect.left });
+                    }}
+                    onMouseLeave={() => setTooltip(prev => prev?.id === r.id ? null : prev)}
+                    onClick={() => handleOpen(r.id)}
+                    className={`group px-3 py-2 cursor-pointer border-b transition-colors ${
+                      dropTarget === r.id
+                        ? 'border-b-brand border-t border-t-transparent'
+                        : 'border-b-border/50'
+                    } hover:bg-accent/30`}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {/* Status dot: red when there are unread comments, green otherwise */}
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                        unread ? 'bg-red-500' : 'bg-green-500'
+                      }`} />
+                      {/* Title */}
+                      <span className={`text-xs truncate flex-1 ${unread ? 'font-medium text-foreground' : ''}`}>{r.title}</span>
+                      {/* View comments button */}
+                      {r.commentCount > 0 && (
+                        <button
+                          onClick={(e) => handleViewComments(e, r.id)}
+                          className="flex-shrink-0 p-0.5 rounded text-muted-foreground/0 group-hover:text-muted-foreground/60 hover:!text-brand hover:!bg-brand/10 transition-colors"
+                          title={t('review.viewComments')}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                    {/* Updated time + comment count */}
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground/50 mt-0.5 pl-3">
+                      <span>{formatTime(r.updatedAt || r.createdAt)}</span>
+                      {r.commentCount > 0 && <span>{t('review.nComments', { count: r.commentCount })}</span>}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tooltip */}
+      {tooltip && open && (
+        <div
+          className="fixed z-[60] px-2 py-1 text-xs bg-popover text-popover-foreground border border-border rounded shadow-md whitespace-nowrap pointer-events-none"
+          style={{ top: tooltip.top, left: tooltip.left - 8, transform: 'translate(-100%, -50%)' }}
+        >
+          {tooltip.text}
+        </div>
+      )}
+
+      {/* Comments list modal */}
+      <ReviewCommentsListModal
+        isOpen={commentsModal.open}
+        onClose={() => setCommentsModal(prev => ({ ...prev, open: false }))}
+        comments={commentsModal.comments}
+        reviewTitle={commentsModal.title}
+        userNameMap={commentsModal.userNameMap}
+      />
+    </div>
+  );
+}

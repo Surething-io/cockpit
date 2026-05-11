@@ -1,10 +1,10 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: [
-    'src/lib/wsServer.ts',
-    'src/lib/scheduledTasks.ts',
-  ],
+  entry: {
+    wsServer:       'src/lib/wsServer.ts',
+    scheduledTasks: 'packages/feature/agent/src/server/scheduledTasks.ts',
+  },
   outDir: 'dist',
   format: 'esm',
   target: 'node20',

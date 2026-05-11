@@ -1,4 +1,4 @@
-import { COCKPIT_DIR, readJsonFile, writeJsonFile } from '@/lib/paths';
+import { COCKPIT_DIR, readJsonFile, writeJsonFile } from '@cockpit/shared-utils';
 import { join } from 'path';
 
 export const runtime = 'nodejs';

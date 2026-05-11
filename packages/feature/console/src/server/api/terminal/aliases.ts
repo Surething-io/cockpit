@@ -1,0 +1,70 @@
+import * as fs from 'fs/promises';
+import { getGlobalAliasesPath, ensureParentDir } from '@cockpit/shared-utils';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+const DEFAULT_ALIASES: Record<string, string> = {
+  'll': 'ls -la',
+  'gs': 'git status',
+  'gp': 'git pull',
+  'gc': 'git commit',
+};
+
+// GET: Fetch global command aliases
+export async function GET() {
+  try {
+    const aliasesFilePath = getGlobalAliasesPath();
+
+    try {
+      const content = await fs.readFile(aliasesFilePath, 'utf-8');
+      const aliases = JSON.parse(content);
+      return new Response(JSON.stringify({ aliases }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch {
+      // File does not exist, return default aliases
+      return new Response(JSON.stringify({ aliases: DEFAULT_ALIASES }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  } catch (error) {
+    console.error('Get aliases error:', error);
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+}
+
+// POST: Save global command aliases
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { aliases } = body;
+
+    if (!aliases) {
+      return new Response(JSON.stringify({ error: 'Missing aliases' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const aliasesFilePath = getGlobalAliasesPath();
+    await ensureParentDir(aliasesFilePath);
+    await fs.writeFile(aliasesFilePath, JSON.stringify(aliases, null, 2), 'utf-8');
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    console.error('Save aliases error:', error);
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+}

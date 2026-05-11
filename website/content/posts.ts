@@ -32,6 +32,172 @@ export interface Post {
 
 export const posts: Post[] = [
   {
+    slug: 'vibe-coding-needs-taste',
+    date: '2026-05-12',
+    keywords: [
+      'vibe coding',
+      'AI coding agent',
+      'code taste',
+      'code aesthetics',
+      'package boundaries',
+      'monorepo structure',
+      'npm package design',
+      'codebase architecture',
+      'cohesion',
+      'engineering discipline',
+      'Cockpit',
+      'Claude Code',
+    ],
+    content: {
+      en: {
+        title: 'Vibe coding needs a bit of taste',
+        description:
+          "Vibe coding's hidden cost isn't speed — it's entropy. Cockpit's repo today is two piles: `packages/feature/` is the business, `packages/shared/` is the common floor, arrows go one way. From that picture, three old-school engineering habits — putting things in the right place, drawing real boundaries, deleting what doesn't fit — become more valuable when the agent is the one typing.",
+        readingTime: '6 min read',
+        body: `The agent finishes a run. Diff is a hundred-something lines. Looks fine. You hit approve.
+
+Two weeks later, something's broken somewhere and you can't find it. Every function is reasonable. No name is bad enough to need changing. You just don't really want to open this repo anymore.
+
+What's hard about vibe coding isn't making the agent faster. It's the codebase still looking like a codebase after the agent has run a thousand times.
+
+## The current shape
+
+\`\`\`
+src/                       Next.js entry, no business code
+ │
+ ▼
+packages/feature/          agent  console  explorer
+                           workspace  review  comments  skills
+ │                         (may reference each other, must stay acyclic)
+ ▼
+packages/shared/           ui  utils  i18n
+                           (leaf; cannot import feature)
+\`\`\`
+
+Three slots, that's the whole repo:
+
+- \`src/\` is what Next.js itself needs — page files, thin shim routes that forward to the API handlers. No business code.
+- \`packages/feature/\` is the business. Seven packages, each a standalone npm package.
+- \`packages/shared/\` is the common floor. Three packages: UI components, utilities, the i18n dictionary.
+
+Arrows go one way: anything on top may depend on anything below, but the bottom never imports up. ESLint watches this. Write it the wrong way and lint refuses to pass.
+
+Every point that follows lands on a specific spot in that picture.
+
+## A few old-school things
+
+**Where a thing goes.** Chat — API, UI, state, scheduled jobs, slash commands — all lives under \`packages/feature/agent\`, one folder. To change anything about chat you don't hunt across the repo. This isn't for tidiness. It's so a person — or an agent — can finish a job with one folder's worth of attention.
+
+**Boundaries.** \`shared/\` is not allowed to import from \`feature/\`. This rule isn't in a README that humans are supposed to remember; it's in ESLint, enforced by a tool. "Be considerate to the next reader" isn't a slogan — it's a lint error.
+
+**Delete with conviction.** The dev dependencies I've removed weren't bad because they were old. They were bad because they didn't fit anywhere in the picture — not part of any feature, not part of the shared floor. Anything that doesn't fit the picture shouldn't be in the repo.
+
+**Don't invent vocabulary.** The picture has two nouns: feature and shared. I didn't use domain, didn't use module, didn't use app or infra. An npm package is a contract everyone already understands; "feature" and "shared" are plain English. Every noun you'll find in this repo is either npm's own term or a word a middle schooler reads without thinking.
+
+## Three pictures from this refactor
+
+**\`src/\` got emptied out.** It used to hold components, hooks, contexts — the lot. Now it's only the top slot of the diagram — Next.js's entry. The business sits in the middle slot. When you open the repo you can tell at a glance where to look, because framework noise and business work are physically separated.
+
+**Only two horizontal piles.** Adding a third is easy: feature, shared, then "infra"? Then "core"? Every new name needs explaining, and every explanation eventually triggers "well, which pile does this go in?" I held the line at two. Anyone who has ever installed an npm package needs zero extra training to read this repo — \`package.json\`, \`exports\`, \`dependencies\` — they already know how those work. I didn't make them learn anything new.
+
+**The moment of deletion.** A test framework that hadn't been run in a year, a component sandbox nobody opened, a browser-automation harness from a finished experiment. One commit, all gone. I hesitated for two seconds before deleting, and nobody missed any of it after. Admitting I'd added something I shouldn't have is a thing I do faster every year.
+
+## How the agent moves inside this picture
+
+A human reads code with intuition. An agent reads whatever fits in its context window. The picture itself helps the agent in two specific ways.
+
+**Blast radius has a ceiling.** When the agent is changing chat, it opens \`packages/feature/agent\` and nothing else. It can't see, and doesn't need to see, console or explorer. The physical separation makes "agent casually broke an unrelated feature" structurally hard, not just unlikely.
+
+**The arrow direction teaches the agent how to write.** When the agent is writing inside \`shared/\`, it can't see any feature — it literally cannot import a feature's internals. That forces it to write something genuinely general. When it's writing inside \`feature/\`, it knows it can't reach beyond \`shared/\`, and that knowledge lets it work without hedging.
+
+A codebase's habits, the agent learns fast. That shortcut you took six months ago — it's already in the context window, presented as the project's style, and the agent will follow it. A repo without taste teaches the agent to be tasteless, fast. The flip side: when the words in the repo are ones the agent has read a million times — \`package.json\`, \`exports\`, \`dependencies\` — it just works. It hasn't read your homemade module system.
+
+## Last thing
+
+Taste isn't a synonym for slowness. It's what lets "fast" last past the second month.
+
+Set the boundaries, keep the vocabulary as small as you can, pull out what isn't being used. Let the agent run inside that shape — it can keep up. A year later you come back and you still want to open the repo. That's not a thing that lands in the changelog, but it's the thing that decides whether this project stays fun to work on.
+
+---
+
+\`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [Try Online](/try)`,
+      },
+      zh: {
+        title: 'Vibe coding 需要一点品味',
+        description:
+          '现在的 Cockpit 仓库就两堆代码：`packages/feature/` 是业务，`packages/shared/` 是公共底子，箭头只有一个方向。从这张图能讲清楚为什么 vibe coding 时代反而更需要品味——把东西放对、划清边界、敢删没用的东西，三件老掉牙的事在 agent 改代码的当下比以前更值钱。',
+        readingTime: '阅读约 6 分钟',
+        body: `agent 跑完一轮，diff 一百多行，看着没毛病，你点了通过。
+
+两周以后某个角落坏了。回去看，每个函数都说得过去，没有哪个名字烂到必须改，但你就是不太愿意再打开这个仓库。
+
+vibe coding 真正难的不是怎么让 agent 跑得更快。是跑了一千次以后，仓库还像个仓库。
+
+## 现在的架构
+
+\`\`\`
+src/                       Next.js 入口，没有业务
+ │
+ ▼
+packages/feature/          agent  console  explorer
+                           workspace  review  comments  skills
+ │                         （彼此可以互相依赖，必须无环）
+ ▼
+packages/shared/           ui  utils  i18n
+                           （叶子，不允许反过来 import feature）
+\`\`\`
+
+整个仓库就这三块：
+
+- \`src/\` 是 Next.js 框架自己需要的入口——页面文件、API route 的转发 shim——没有业务代码。
+- \`packages/feature/\` 是业务，七个包，每个包是一个独立的 npm package。
+- \`packages/shared/\` 是公共底子，三个包：UI 组件、工具函数、翻译字典。
+
+箭头只有一个方向：上面的可以依赖下面的，下面的不允许反过来 import 上面。这一条规则由 ESLint 盯着，写反了过不了 lint。
+
+后面要说的事情，全都落在这张图上的某个具体位置。
+
+## 老掉牙的几件事
+
+**一个东西该放哪儿。** 聊天功能的 API、UI、状态、定时任务、slash 命令，全在 \`packages/feature/agent\` 一个目录里。要改聊天的任何东西都不用满仓库找。这不是为了"看着整齐"，是让人——和 agent——能用一个文件夹的注意力做完一件事。
+
+**边界。** \`shared/\` 不允许反向 import \`feature/\`。这条规则不是写在 README 里靠人记，是写在 ESLint 里靠工具卡。"对下一个读代码的人客气" 不是口号，是 lint 报错。
+
+**该删要狠。** 删掉过的那十几个开发依赖，它们的问题不是"老"，是它们归不进图里任何一个位置——既不是某个 feature 的事，也不是 shared 的公共底子。归不进图的东西，就说明它不该留。
+
+**不造词。** 图里只有两个名词：feature 和 shared。我没用 domain，没用 module，没用 app 和 infra。npm package 是一个所有人都懂的契约，feature 和 shared 是大白话。仓库里你能查到的所有名词，要么是 npm 自己的术语，要么是中学生都看得懂的英文单词。
+
+## 这次重构里的三张画面
+
+**\`src/\` 被搬空了。** 之前那里堆着组件、hook、context，一锅端。现在它只是图最上面那一小格——Next.js 的入口。业务全在中间那一格。打开仓库的人一眼就知道往哪儿看，因为框架噪音和业务被物理分开了。
+
+**横向只有两堆。** 加第三堆很容易：feature、shared，再来一个 "infra"？再来一个 "core"？每一个新名字都要解释，解释就会引来"那这个东西该放哪一堆"的问题。我坚持两堆。装过 npm 包的人打开仓库不需要任何额外培训——\`package.json\` 怎么读、\`exports\` 怎么写、\`dependencies\` 怎么追，他都本能地知道。我没让他多学任何东西。
+
+**删 devDep 那一刻。** 一个一年没跑过的测试框架、一个没人打开过的组件 demo 工具、一个废弃实验留下的浏览器自动化。一个 commit 全删。删之前犹豫过两秒，删之后没人想起它们。承认当初加错了，是我这两年做得越来越快的一件事。
+
+## agent 在这张图里改代码
+
+人读代码靠直觉。agent 读代码靠塞进上下文的那部分。这张图本身就在两个地方帮 agent。
+
+**爆炸半径有上限。** agent 要改聊天，它打开 \`packages/feature/agent\` 这一个目录就够。它看不到、也不需要看到 console 或 explorer。物理隔离让"agent 顺手把一个无关功能改坏"这件事在结构上变得难以发生。
+
+**箭头方向能教 agent 怎么写。** agent 在 \`shared/\` 里写代码时，看不到任何 feature——它根本没法 import 某个 feature 的内部细节。这强迫它写出真正"通用"的东西。反过来在 \`feature/\` 里写时，它知道改不到 shared 以外的世界，下手就更放。
+
+代码库有什么习惯，agent 会学得飞快。你半年前留下的临时方案，它会当成"这个项目的写法"沿用下去。库里没品味，agent 就跟着没品味，速度比人快得多。反过来，库里用的都是 agent 见过几百万遍的那些词——\`package.json\`、\`exports\`、\`dependencies\`——它直接上手。它没读过你自创的模块体系。
+
+## 最后
+
+品味不是慢工细活的代名词。它是让"快"能撑过第二个月的那个东西。
+
+把边界划清，词汇压到最小，没在用的东西早点拔掉，剩下的让 agent 去跑就行——它跑得动。一年以后回来，你还愿意打开这个仓库。这件事不会写进 changelog，但它决定了你做这个项目快不快乐。
+
+---
+
+\`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [在线体验](/try)`,
+      },
+    },
+  },
+  {
     slug: 'read-code-as-a-map',
     date: '2026-05-07',
     keywords: [

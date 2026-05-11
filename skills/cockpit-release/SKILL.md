@@ -107,8 +107,12 @@ sleep 12      # cold-start of next-server + WS + share server takes ~8-12s
 
 FAIL=0
 
-# Probe a few endpoints — any non-2xx is a hard fail
-curl -fsS "http://localhost:$SMOKE_PORT/api/version"                                                          >/dev/null || FAIL=1
+# Probe a few endpoints — any non-2xx is a hard fail.
+# /api/version must also report the new version string (not empty) — the
+# handler used to read process.cwd()/package.json which silently returned
+# empty when the prod-install was running from outside the repo.
+VERSION_BODY=$(curl -fsS "http://localhost:$SMOKE_PORT/api/version") || FAIL=1
+echo "$VERSION_BODY" | grep -q "1\.0\." || { echo "version body unexpected: $VERSION_BODY"; FAIL=1; }
 curl -fsS "http://localhost:$SMOKE_PORT/api/commands?cwd=$PWD"                                                >/dev/null || FAIL=1
 curl -fsS "http://localhost:$SMOKE_PORT/api/projectGraph/file-functions?cwd=$PWD&path=packages/feature/explorer/src/server/codeMap/types.ts" >/dev/null || FAIL=1
 

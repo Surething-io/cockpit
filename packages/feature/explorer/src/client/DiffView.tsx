@@ -513,8 +513,30 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
   // gap from file A would persist into file B as if its gap-id
   // referred to the same logical region — which it doesn't (gap ids
   // are positional, recomputed every build).
+  //
+  // Also reset the virtualizer's per-index measurement cache.
+  // `@tanstack/react-virtual` keys measurementsCache by index, and
+  // useVirtualizer here has no `getItemKey`, so file A's row-height
+  // measurements at indices 0..N persist into file B at the same
+  // indices. Combined with the height-feedback loop (row outer div
+  // has `height: ${virtualItem.size}px` inline AND `ref={measureElement}`
+  // implementing `getBoundingClientRect().height` — each reciprocally
+  // confirms the other), if a measurement is ever recorded as ~0
+  // (e.g. during a layout-jitter frame between useLineHighlight's
+  // plain-text → token-HTML setState pair) it pins itself there
+  // forever: a stretch of rows collapses to a single row's vertical
+  // space (overlapping text), and the only thing that nudges it
+  // back is another DOM-content size change that retriggers
+  // ResizeObserver — which is why "refresh tree-sitter cache"
+  // (== re-running useLineHighlight) appeared to fix the symptom.
+  // `virtualizer.measure()` clears the cache so the next paint
+  // re-measures from a clean slate.
+  // virtualizer is a fresh instance every render but wraps stable
+  // internal state (refs); intentionally not in deps (would loop).
   useEffect(() => {
     setGapStates(new Map());
+    virtualizer.measure();
+
   }, [leftLines, rightLines]);
 
   // Cast away the `originalIdx` field that DiffView's internal row

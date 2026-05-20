@@ -5,7 +5,7 @@
  */
 import { stat } from "fs/promises"
 import { join, resolve, sep } from "path"
-import { execFile, execSync } from "child_process"
+import { execFile, execSync, spawnSync } from "child_process"
 import { promisify } from "util"
 import { Effect } from "effect"
 import { isMac, isWindows } from "@cockpit/shared-utils"
@@ -29,14 +29,20 @@ async function writeClipboard(fullPath: string): Promise<void> {
       `powershell -Command "Set-Clipboard -Value '${fullPath.replace(/'/g, "''")}'"`
     )
   } else {
+    // Pipe the path via stdin in both branches so the file name is never
+    // interpolated into a shell command (avoids quoting/escaping pitfalls).
     try {
       await execFileAsync("xclip", ["-selection", "clipboard"], {
         input: fullPath,
       } as never)
     } catch {
-      execSync(
-        `echo -n '${fullPath.replace(/'/g, "\\'")}' | xsel --clipboard`
-      )
+      const result = spawnSync("xsel", ["--clipboard", "--input"], {
+        input: fullPath,
+      })
+      if (result.status !== 0) {
+        const stderr = result.stderr?.toString() ?? ""
+        throw new Error(`xsel failed: ${stderr || result.error?.message || "unknown"}`)
+      }
     }
   }
 }

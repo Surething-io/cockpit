@@ -17,6 +17,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FileFunctionsResponse } from '@cockpit/feature-explorer/server/codeMap/projectGraph/types';
+// Wrap fetches in Effect while preserving the cache/inflight de-dup semantics below.
+import { Effect } from 'effect';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { AppError } from '@cockpit/effect-core';
 
 export type FileFunctionsState =
   | { state: 'idle' }
@@ -55,19 +59,37 @@ async function fetchFileFunctions(
   } else {
     invalidateBlocksCache(cwd);
   }
-  const req = (async () => {
-    const params = new URLSearchParams({ cwd, path: filePath });
-    if (forceRefresh) params.set('refresh', '1');
-    const res = await fetch(`/api/projectGraph/file-functions?${params}`);
-    if (res.status === 404) return 'not-found' as const;
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      throw new Error(data.error || `HTTP ${res.status}`);
-    }
-    const json = (await res.json()) as FileFunctionsResponse;
-    ffCache.set(k, json);
-    return json;
-  })().finally(() => ffInflight.delete(k));
+  // Effect wrapper: status 404 -> 'not-found'; 4xx throws the inner Error via cause.
+  // Note: to keep the `.catch((err: Error) => err.message)` semantics intact, when
+  // runPromise fails we rethrow AppError.cause (the original Error) instead of
+  // letting a FiberFailure leak out.
+  const fetchEff: Effect.Effect<FileFunctionsResponse | 'not-found', AppError> = Effect.tryPromise({
+    try: async () => {
+      const params = new URLSearchParams({ cwd, path: filePath });
+      if (forceRefresh) params.set('refresh', '1');
+      const res = await fetch(`/api/projectGraph/file-functions?${params}`);
+      if (res.status === 404) return 'not-found' as const;
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      const json = (await res.json()) as FileFunctionsResponse;
+      ffCache.set(k, json);
+      return json;
+    },
+    catch: (cause) => new AppError({ message: 'fetchFileFunctions failed', cause }),
+  });
+  const req = BrowserRuntime.runPromiseExit(fetchEff)
+    .then((exit) => {
+      if (exit._tag === 'Success') return exit.value;
+      // Extract the innermost Error and rethrow it so the downstream
+      // `.catch((err: Error) => err.message)` keeps its existing semantics.
+      const failure = exit.cause._tag === 'Fail' ? exit.cause.error : null;
+      const inner = failure?.cause;
+      if (inner instanceof Error) throw inner;
+      throw new Error(failure?.message ?? 'fetchFileFunctions failed');
+    })
+    .finally(() => ffInflight.delete(k));
   ffInflight.set(k, req);
   return req;
 }

@@ -3,6 +3,7 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
   entry: {
     wsServer:       'src/lib/wsServer.ts',
+    httpApi:        'src/lib/httpApi.ts',
     scheduledTasks: 'packages/feature/agent/src/server/scheduledTasks.ts',
   },
   outDir: 'dist',

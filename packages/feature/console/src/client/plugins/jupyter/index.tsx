@@ -1,5 +1,6 @@
 import { registerBubble, type BubbleComponentProps, type PluginItemBase } from '../../bubblePlugins';
 import { JupyterBubble } from './JupyterBubble';
+import { shutdownJupyterKernel } from '../../effect/pluginDisconnect';
 
 /** Jupyter notebook bubble data */
 export interface JupyterPluginItem extends PluginItemBase {
@@ -62,12 +63,6 @@ registerBubble({
   Component: JupyterAdapter,
 
   async onClose(item) {
-    try {
-      await fetch('/api/jupyter/shutdown', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bubbleId: item.id }),
-      });
-    } catch { /* ignore */ }
+    await shutdownJupyterKernel(item.id);
   },
 });

@@ -2,6 +2,8 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { loadOllamaModelsWithAutoStart } from './effect/agentClient';
 
 interface OllamaModel {
   name: string;
@@ -49,46 +51,29 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
   const fetchModels = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await fetch('/api/ollama/models');
-      if (res.status === 503) {
-        // Ollama not running, try to start it
-        setStarting(true);
-        const startRes = await fetch('/api/ollama/start', { method: 'POST' });
-        const startData = await startRes.json();
-
-        if (startRes.status === 404) {
-          setError(startData.message || 'Ollama is not installed');
-          setStarting(false);
-          return;
-        }
-
-        if (!startRes.ok) {
-          setError('Failed to start Ollama');
-          setStarting(false);
-          return;
-        }
-
-        setStarting(false);
-        // Retry fetching models after start
-        const retryRes = await fetch('/api/ollama/models');
-        if (!retryRes.ok) {
-          setError('Ollama started but cannot fetch models');
-          return;
-        }
-        const retryData = await retryRes.json();
-        setModels(retryData.models || []);
-      } else if (!res.ok) {
-        setError('Failed to fetch models');
-      } else {
-        const data = await res.json();
-        setModels(data.models || []);
-      }
-    } catch {
+    const exit = await BrowserRuntime.runPromiseExit(
+      loadOllamaModelsWithAutoStart(() => setStarting(true))
+    );
+    setStarting(false);
+    if (exit._tag === 'Failure') {
       setError('Connection error');
-    } finally {
-      setLoading(false);
+    } else {
+      const result = exit.value;
+      switch (result._tag) {
+        case 'ok':
+          setModels(result.models as OllamaModel[]);
+          break;
+        case 'not-installed':
+        case 'error':
+          setError(result.message);
+          break;
+        case 'not-running':
+          // Should not reach here (loadOllamaModelsWithAutoStart handles it internally); defensive fallback.
+          setError('Ollama is not running');
+          break;
+      }
     }
+    setLoading(false);
   }, []);
 
   const toggle = () => {

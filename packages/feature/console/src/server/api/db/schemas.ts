@@ -1,18 +1,39 @@
-import { pgPoolManager } from '@cockpit/feature-console/server';
+/**
+ * /api/db/schemas — P9 round 2 (Service Tag migration)
+ *
+ * List all tables/views under a schema + rowEstimate.
+ */
+import { Effect } from "effect"
+import { handler, ok } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
+import { PgService } from "@cockpit/effect-services"
 
-export async function GET(req: Request) {
-  try {
-    const sp = new URL(req.url).searchParams;
-    const id = sp.get('id');
-    const connectionString = sp.get('connectionString');
-    const schema = sp.get('schema') || 'public';
+type TableRow = {
+  name: string
+  type: string
+  row_estimate: string
+}
+
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const sp = new URL(req.url).searchParams
+    const id = sp.get("id")
+    const connectionString = sp.get("connectionString")
+    const schema = sp.get("schema") || "public"
 
     if (!id || !connectionString) {
-      return Response.json({ error: 'Missing id or connectionString' }, { status: 400 });
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !id ? "id" : "connectionString",
+          reason: "missing",
+        })
+      )
     }
 
-    const pool = await pgPoolManager.getPool(id, connectionString);
-    const result = await pool.query(
+    const pg = yield* PgService
+    const rows = yield* pg.query<TableRow>(
+      id,
+      connectionString,
       `SELECT t.table_name AS name,
               t.table_type AS type,
               COALESCE(c.reltuples, 0)::bigint AS row_estimate
@@ -21,18 +42,15 @@ export async function GET(req: Request) {
          AND c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = t.table_schema)
        WHERE t.table_schema = $1
        ORDER BY t.table_name`,
-      [schema],
-    );
+      [schema]
+    )
 
-    return Response.json({
-      tables: result.rows.map((r: { name: string; type: string; row_estimate: string }) => ({
+    return ok({
+      tables: rows.map((r) => ({
         name: r.name,
-        type: r.type === 'BASE TABLE' ? 'table' : 'view',
+        type: r.type === "BASE TABLE" ? "table" : "view",
         rowEstimate: Math.max(0, Number(r.row_estimate)),
       })),
-    });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return Response.json({ error: msg }, { status: 500 });
-  }
-}
+    })
+  }).pipe(Effect.withSpan("api.db.schemas"))
+)

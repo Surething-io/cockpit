@@ -1,6 +1,14 @@
 'use client';
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  querySessionByPath,
+  runBashCommand,
+  forkSession,
+} from './effect/agentClient';
+import { publishTopic } from '@cockpit/effect-react';
+import { Topics } from '@cockpit/effect-services';
 import { ChatHeader } from './ChatHeader';
 import { TokenUsageBar } from './TokenUsageBar';
 import { UserMessagesModal } from './UserMessagesModal';
@@ -70,20 +78,13 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
   // Fetch session title
   const fetchSessionTitle = useCallback(async (sid: string) => {
     if (!initialCwd) return;
-    try {
-      const response = await fetch('/api/session-by-path', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd: initialCwd, sessionId: sid }),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.title) {
-          onTitleChange?.(data.title);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to fetch session title:', error);
+    const exit = await BrowserRuntime.runPromiseExit(
+      querySessionByPath({ cwd: initialCwd, sessionId: sid })
+    );
+    if (exit._tag === 'Success' && exit.value && typeof exit.value.title === 'string') {
+      onTitleChange?.(exit.value.title);
+    } else if (exit._tag === 'Failure') {
+      console.error('Failed to fetch session title:', exit.cause);
     }
   }, [initialCwd, onTitleChange]);
 
@@ -115,20 +116,18 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
 
       const userNote = content.split('\n').slice(1).join('\n').trim();
 
-      try {
-        const res = await fetch('/api/bash', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ command, cwd: initialCwd }),
-        });
-        const data = await res.json();
+      const exit = await BrowserRuntime.runPromiseExit(
+        runBashCommand({ command, cwd: initialCwd })
+      );
+      if (exit._tag === 'Success') {
+        const data = exit.value;
         const output = [data.stdout, data.stderr].filter(Boolean).join('\n') || '(no output)';
         const exitInfo = data.exitCode ? ` (exit code: ${data.exitCode})` : '';
         let message = t('chat.executedCommand', { command, exitInfo, output });
         if (userNote) message += `\n\n${userNote}`;
         handleSend(message, images);
-      } catch (err) {
-        handleSend(t('chat.executedCommandFailed', { command, error: err }), images);
+      } else {
+        handleSend(t('chat.executedCommandFailed', { command, error: exit.cause }), images);
       }
       return;
     }
@@ -185,12 +184,11 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
           break;
         }
       }
-      window.parent.postMessage({
-        type: 'SESSION_COMPLETE',
+      publishTopic(Topics.SessionComplete, {
         cwd: initialCwd,
         sessionId,
         lastUserMessage,
-      }, '*');
+      });
     }
     prevIsLoadingRef.current = isLoading;
   }, [isLoading, onLoadingChange, initialCwd]);
@@ -244,32 +242,24 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
   const handleFork = useCallback(async (messageId: string) => {
     if (!initialCwd || !sessionId) return;
 
-    try {
-      const response = await fetch(`/api/session/${sessionId}/fork`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cwd: initialCwd,
-          fromMessageUuid: messageId,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (onOpenSession) {
-          onOpenSession(data.newSessionId, 'Fork');
-        } else {
-          window.parent.postMessage({
-            type: 'OPEN_PROJECT',
-            cwd: initialCwd,
-            sessionId: data.newSessionId,
-          }, '*');
-        }
+    const exit = await BrowserRuntime.runPromiseExit(
+      forkSession<{ newSessionId?: string }>(sessionId, {
+        cwd: initialCwd,
+        fromMessageUuid: messageId,
+      })
+    );
+    if (exit._tag === 'Success' && exit.value.newSessionId) {
+      const newSessionId = exit.value.newSessionId;
+      if (onOpenSession) {
+        onOpenSession(newSessionId, 'Fork');
       } else {
-        console.error('Fork failed:', await response.text());
+        publishTopic(Topics.OpenProject, {
+          cwd: initialCwd,
+          sessionId: newSessionId,
+        });
       }
-    } catch (error) {
-      console.error('Fork error:', error);
+    } else if (exit._tag === 'Failure') {
+      console.error('Fork failed:', exit.cause);
     }
   }, [initialCwd, sessionId, onOpenSession]);
 

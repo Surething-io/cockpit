@@ -6,6 +6,9 @@ import i18n from '@cockpit/shared-i18n';
 import { clearAllComments, emitCommentsChange, fetchAllCommentsWithCode, CHAT_COMMENT_FILE } from '@cockpit/feature-comments';
 import { Portal } from '@cockpit/shared-ui';
 import { toast } from '@cockpit/shared-ui';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { loadAllProjectComments, deleteComment as deleteCommentEff } from './effect/commentsClient';
+import { fetchFileText } from '@cockpit/feature-explorer';
 
 interface CodeComment {
   id: string;
@@ -79,17 +82,13 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
   const loadComments = useCallback(async () => {
     if (!cwd) return;
     setIsLoading(true);
-    try {
-      const response = await fetch(`/api/comments?cwd=${encodeURIComponent(cwd)}&all=true`);
-      if (response.ok) {
-        const data = await response.json();
-        setComments(data.comments || []);
-      }
-    } catch (err) {
-      console.error('Failed to load comments:', err);
-    } finally {
-      setIsLoading(false);
+    const exit = await BrowserRuntime.runPromiseExit(loadAllProjectComments(cwd));
+    if (exit._tag === 'Success') {
+      setComments((exit.value.comments ?? []) as CodeComment[]);
+    } else {
+      console.error('Failed to load comments:', exit.cause);
     }
+    setIsLoading(false);
   }, [cwd]);
 
   useEffect(() => {
@@ -99,18 +98,13 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
   }, [isOpen, loadComments]);
 
   const handleDelete = async (id: string) => {
-    try {
-      const response = await fetch(
-        `/api/comments?cwd=${encodeURIComponent(cwd)}&id=${encodeURIComponent(id)}`,
-        { method: 'DELETE' }
-      );
-      if (response.ok) {
-        setComments(prev => prev.filter(c => c.id !== id));
-        // Trigger global refresh so comment bubbles in file browser sync
-        emitCommentsChange();
-      }
-    } catch (err) {
-      console.error('Failed to delete comment:', err);
+    const exit = await BrowserRuntime.runPromiseExit(deleteCommentEff(cwd, id));
+    if (exit._tag === 'Success') {
+      setComments(prev => prev.filter(c => c.id !== id));
+      // Trigger global refresh so comment bubbles in file browser sync
+      emitCommentsChange();
+    } else {
+      console.error('Failed to delete comment:', exit.cause);
     }
   };
 
@@ -124,15 +118,14 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
         // Comments with selectedText (e.g., AI message bubbles) use it directly
         codeContent = comment.selectedText;
       } else {
-        // Read code content from file
-        const fileResponse = await fetch(
-          `/api/files/text?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(comment.filePath)}`
+        // Read code content from file (reuses explorer's fetchFileText Effect)
+        const exit = await BrowserRuntime.runPromiseExit(
+          fetchFileText(cwd, comment.filePath)
         );
-        if (!fileResponse.ok) {
+        if (exit._tag !== 'Success' || !exit.value.ok) {
           throw new Error('Failed to read file');
         }
-        const fileData = await fileResponse.json();
-        const lines = (fileData.content || '').split('\n');
+        const lines = (exit.value.data?.content || '').split('\n');
         codeContent = lines.slice(comment.startLine - 1, comment.endLine).join('\n');
       }
 

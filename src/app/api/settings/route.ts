@@ -1,27 +1,48 @@
-import { SETTINGS_FILE, readJsonFile, writeJsonFile } from '@cockpit/shared-utils';
+/**
+ * /api/settings — P6 migration
+ *
+ * Settings read/write; PUT is a merge-update.
+ */
+import { Effect } from "effect"
+import {
+  SETTINGS_FILE,
+  readJsonFile,
+  writeJsonFile,
+} from "@cockpit/shared-utils"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { FSError } from "@cockpit/effect-core"
 
 interface Settings {
-  language?: string; // 'en' | 'zh' | 'auto'
-  [key: string]: unknown;
+  language?: string // 'en' | 'zh' | 'auto'
+  [key: string]: unknown
 }
 
-/**
- * GET /api/settings
- * Read global settings from ~/.cockpit/settings.json
- */
-export async function GET() {
-  const settings = await readJsonFile<Settings>(SETTINGS_FILE, {});
-  return Response.json(settings);
-}
+const readSettings: Effect.Effect<Settings, FSError> = Effect.tryPromise({
+  try: () => readJsonFile<Settings>(SETTINGS_FILE, {}),
+  catch: (cause) =>
+    new FSError({ path: SETTINGS_FILE, op: "read", cause }),
+})
 
-/**
- * PUT /api/settings
- * Merge-update global settings to ~/.cockpit/settings.json
- */
-export async function PUT(request: Request) {
-  const body = await request.json() as Partial<Settings>;
-  const current = await readJsonFile<Settings>(SETTINGS_FILE, {});
-  const merged = { ...current, ...body };
-  await writeJsonFile(SETTINGS_FILE, merged);
-  return Response.json(merged);
-}
+const writeSettings = (data: Settings): Effect.Effect<void, FSError> =>
+  Effect.tryPromise({
+    try: () => writeJsonFile(SETTINGS_FILE, data),
+    catch: (cause) =>
+      new FSError({ path: SETTINGS_FILE, op: "write", cause }),
+  })
+
+export const GET = handler(() =>
+  Effect.gen(function* () {
+    const settings = yield* readSettings
+    return ok(settings)
+  })
+)
+
+export const PUT = handler((req) =>
+  Effect.gen(function* () {
+    const patch = (yield* parseJsonRaw(req)) as Partial<Settings>
+    const current = yield* readSettings
+    const merged = { ...current, ...patch }
+    yield* writeSettings(merged)
+    return ok(merged)
+  })
+)

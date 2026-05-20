@@ -1,5 +1,6 @@
 import { registerBubble, type BubbleComponentProps, type PluginItemBase } from '../../bubblePlugins';
 import { DatabaseBubble } from './DatabaseBubble';
+import { disconnectPluginBubble } from '../../effect/pluginDisconnect';
 
 /** Database bubble data */
 export interface DatabasePluginItem extends PluginItemBase {
@@ -62,12 +63,6 @@ registerBubble({
   Component: DatabaseAdapter,
 
   async onClose(item) {
-    try {
-      await fetch('/api/db/disconnect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: item.id }),
-      });
-    } catch { /* ignore */ }
+    await disconnectPluginBubble('db', item.id);
   },
 });

@@ -3,6 +3,20 @@ import { type CommitInfo } from '../CommitDetailPanel';
 import type { FileNode, FileContent, BlameLine } from '../fileBrowser/types';
 import { buildTreeFromPaths, collectAllDirPaths, computeMatchedPaths, computeMatchedPathsFromIndex, findNodeByPath } from '../fileBrowser/utils';
 import type { RecentFileEntry } from '@/app/api/files/recent/route';
+import { Effect } from 'effect';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  loadFilesInit,
+  loadFileIndex as loadFileIndexEff,
+  readDirectory,
+  loadRecentFiles as loadRecentFilesEff,
+  persistRecentFile,
+  saveExpandedPaths as saveExpandedPathsEff,
+  loadBlame as loadBlameEff,
+  fetchFileStat,
+  fetchFileText,
+  type StatLike,
+} from '../effect/filesClient';
 
 interface UseFileTreeOptions {
   cwd: string;
@@ -107,88 +121,100 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     if (saveExpandedPathsTimeoutRef.current) {
       clearTimeout(saveExpandedPathsTimeoutRef.current);
     }
-    saveExpandedPathsTimeoutRef.current = setTimeout(async () => {
-      try {
-        await fetch('/api/files/expanded', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cwd, paths: Array.from(paths) }),
-        });
-      } catch (err) {
-        console.error('Error saving expanded paths:', err);
-      }
+    saveExpandedPathsTimeoutRef.current = setTimeout(() => {
+      BrowserRuntime.runFork(
+        saveExpandedPathsEff(cwd, Array.from(paths)).pipe(
+          Effect.tapError((err) =>
+            Effect.sync(() => console.error('Error saving expanded paths:', err))
+          ),
+          Effect.orElse(() => Effect.void)
+        )
+      );
     }, 500);
   }, [cwd]);
 
   const loadFiles = useCallback(async () => {
     setIsLoadingFiles(true);
     setFileError(null);
-    try {
-      const res = await fetch(`/api/files/init?cwd=${encodeURIComponent(cwd)}`);
-      const data = await res.json();
-      if (data.error) {
-        setFileError(data.error);
-      } else {
-        setFiles(data.files || []);
-        // init returns expandedPaths from persisted state
-        if (data.expandedPaths && Array.isArray(data.expandedPaths)) {
-          setExpandedPaths(new Set(data.expandedPaths));
-        }
-      }
-    } catch (err) {
-      console.error('Error loading files:', err);
-      setFileError('Failed to load files');
-    } finally {
-      setIsLoadingFiles(false);
-    }
+    await BrowserRuntime.runPromise(
+      loadFilesInit<FileNode>(cwd).pipe(
+        Effect.match({
+          onSuccess: (data) => {
+            if (data.error) {
+              setFileError(data.error);
+            } else {
+              setFiles((data.files ?? []) as FileNode[]);
+              // init returns expandedPaths from persisted state
+              if (data.expandedPaths && Array.isArray(data.expandedPaths)) {
+                setExpandedPaths(new Set(data.expandedPaths));
+              }
+            }
+          },
+          onFailure: (err) => {
+            console.error('Error loading files:', err);
+            setFileError('Failed to load files');
+          },
+        })
+      )
+    );
+    setIsLoadingFiles(false);
   }, [cwd]);
 
-  const loadFileIndex = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/files/index?cwd=${encodeURIComponent(cwd)}`);
-      const data = await res.json();
-      if (data.paths) {
-        setFileIndex(data.paths);
-      }
-    } catch (err) {
-      console.error('Error loading file index:', err);
-    }
+  const loadFileIndex = useCallback(() => {
+    BrowserRuntime.runPromise(
+      loadFileIndexEff(cwd).pipe(
+        Effect.match({
+          onSuccess: (data) => {
+            if (data.paths) {
+              setFileIndex(data.paths as string[]);
+            }
+          },
+          onFailure: (err) => {
+            console.error('Error loading file index:', err);
+          },
+        })
+      )
+    );
   }, [cwd]);
 
   const loadDirectory = useCallback(async (dirPath: string) => {
     setLoadingDirs(prev => new Set([...prev, dirPath]));
-    try {
-      const res = await fetch(`/api/files/readdir?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(dirPath)}`);
-      const data = await res.json();
-      if (data.children) {
-        setFiles(prev => {
-          if (!dirPath) {
-            // Root directory: replace top-level nodes while preserving children of already-loaded subdirectories
-            const prevMap = new Map(prev.map(n => [n.path, n]));
-            return (data.children as FileNode[]).map(newNode => {
-              const existing = prevMap.get(newNode.path);
-              return existing?.children && newNode.isDirectory
-                ? { ...newNode, children: existing.children }
-                : newNode;
-            });
-          }
-          const next = structuredClone(prev);
-          const node = findNodeByPath(next, dirPath);
-          if (node) {
-            node.children = data.children;
-          }
-          return next;
-        });
-      }
-    } catch (err) {
-      console.error('Error loading directory:', err);
-    } finally {
-      setLoadingDirs(prev => {
-        const next = new Set(prev);
-        next.delete(dirPath);
-        return next;
-      });
-    }
+    await BrowserRuntime.runPromise(
+      readDirectory<FileNode>(cwd, dirPath).pipe(
+        Effect.match({
+          onSuccess: (data) => {
+            if (data.children) {
+              setFiles(prev => {
+                if (!dirPath) {
+                  // Root directory: replace top-level nodes while preserving children of already-loaded subdirectories
+                  const prevMap = new Map(prev.map(n => [n.path, n]));
+                  return (data.children as FileNode[]).map(newNode => {
+                    const existing = prevMap.get(newNode.path);
+                    return existing?.children && newNode.isDirectory
+                      ? { ...newNode, children: existing.children }
+                      : newNode;
+                  });
+                }
+                const next = structuredClone(prev);
+                const node = findNodeByPath(next, dirPath);
+                if (node) {
+                  node.children = data.children as FileNode[];
+                }
+                return next;
+              });
+            }
+          },
+          onFailure: (err) => {
+            console.error('Error loading directory:', err);
+          },
+        })
+      )
+    );
+    setLoadingDirs(prev => {
+      const next = new Set(prev);
+      next.delete(dirPath);
+      return next;
+    });
   }, [cwd]);
 
   // Safety net: auto-load expanded dirs that don't have children yet
@@ -206,13 +232,14 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
   }, [files, expandedPaths, searchTreeExpandedPaths, loadDirectory]);
 
   const loadRecentFiles = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/files/recent?cwd=${encodeURIComponent(cwd)}`);
-      const data = await res.json();
-      setRecentFiles(data.files || []);
-    } catch (err) {
-      console.error('Error loading recent files:', err);
-    }
+    await BrowserRuntime.runPromise(
+      loadRecentFilesEff<RecentFileEntry>(cwd).pipe(
+        Effect.match({
+          onSuccess: (data) => setRecentFiles((data.files ?? []) as RecentFileEntry[]),
+          onFailure: (err) => console.error('Error loading recent files:', err),
+        })
+      )
+    );
   }, [cwd]);
 
   const addToRecentFiles = useCallback(async (filePath: string) => {
@@ -223,15 +250,14 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     });
 
     // Persist to server (fire and forget)
-    try {
-      await fetch('/api/files/recent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, file: filePath }),
-      });
-    } catch (err) {
-      console.error('Error adding to recent files:', err);
-    }
+    await BrowserRuntime.runPromise(
+      persistRecentFile(cwd, filePath).pipe(
+        Effect.tapError((err) =>
+          Effect.sync(() => console.error('Error adding to recent files:', err))
+        ),
+        Effect.orElse(() => Effect.void)
+      )
+    );
   }, [cwd]);
 
   /** Update the cursor/scroll position of a recent file entry (without changing order) */
@@ -242,11 +268,11 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     ));
 
     // Persist to server (fire and forget)
-    fetch('/api/files/recent', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cwd, file: filePath, scrollLine, cursorLine, cursorCol }),
-    }).catch(() => {});
+    BrowserRuntime.runFork(
+      persistRecentFile(cwd, filePath, { scrollLine, cursorLine, cursorCol }).pipe(
+        Effect.orElse(() => Effect.void)
+      )
+    );
   }, [cwd]);
 
   /** Find a file's saved position in the recent files list */
@@ -259,20 +285,24 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     if (!path) return;
     setIsLoadingBlame(true);
     setBlameError(null);
-    try {
-      const res = await fetch(`/api/files/blame?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(path)}`);
-      const data = await res.json();
-      if (data.error) {
-        setBlameError(data.error);
-      } else {
-        setBlameLines(data.blame || []);
-      }
-    } catch (err) {
-      console.error('Error loading blame:', err);
-      setBlameError('Failed to load blame info');
-    } finally {
-      setIsLoadingBlame(false);
-    }
+    await BrowserRuntime.runPromise(
+      loadBlameEff<BlameLine>(cwd, path).pipe(
+        Effect.match({
+          onSuccess: (data) => {
+            if (data.error) {
+              setBlameError(data.error);
+            } else {
+              setBlameLines((data.blame ?? []) as BlameLine[]);
+            }
+          },
+          onFailure: (err) => {
+            console.error('Error loading blame:', err);
+            setBlameError('Failed to load blame info');
+          },
+        })
+      )
+    );
+    setIsLoadingBlame(false);
   }, [cwd, selectedPath]);
 
   const loadFileContent = useCallback(async (filePath: string) => {
@@ -282,100 +312,84 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
     setBlameLines([]);
     setBlameError(null);
     setBlameSelectedCommit(null);
-    try {
-      // Two-step: cheap stat decides what to do; only text fetches bytes.
-      // Image bytes are NEVER pulled into JS heap — the renderer uses <FileImagePreview/>
-      // which talks to /api/files/read directly via <img src>.
-      const statRes = await fetch(
-        `/api/files/stat?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`,
-        { cache: 'no-store' },
-      );
-      const stat = await statRes.json();
 
-      if (!statRes.ok) {
-        setFileContent({ type: 'error', message: stat?.error || 'Failed to stat file' });
-        return;
+    // Two-step Effect pipeline: cheap stat → (image/binary/too-large yields FileContent directly; text chains through fetchFileText)
+    // Image bytes are NEVER pulled into JS heap — <FileImagePreview/> goes through /api/files/read via <img src>.
+    const flow = Effect.gen(function* () {
+      const stat = yield* fetchFileStat(cwd, filePath);
+      if (!stat.ok) {
+        return { type: 'error', message: stat.data?.error || 'Failed to stat file' } as FileContent;
       }
-      if (!stat.exists) {
-        setFileContent({ type: 'error', message: 'File not found' });
-        return;
+      const s: StatLike = stat.data ?? {};
+      if (!s.exists) {
+        return { type: 'error', message: 'File not found' } as FileContent;
       }
-      if (stat.kind === 'dir') {
-        setFileContent({ type: 'error', message: 'Path is a directory' });
-        return;
+      if (s.kind === 'dir') {
+        return { type: 'error', message: 'Path is a directory' } as FileContent;
       }
-
-      switch (stat.category) {
-        case 'image': {
-          // No fetch — the image renderer streams directly from /read.
-          setFileContent({
+      switch (s.category) {
+        case 'image':
+          return {
             type: 'image',
-            size: stat.size,
-            mtime: stat.mtimeMs,
-            ...(stat.isSymlink ? { isSymlink: true, symlinkTarget: stat.symlinkTarget } : {}),
-          });
-          break;
-        }
-        case 'binary': {
-          setFileContent({
+            size: s.size,
+            mtime: s.mtimeMs,
+            ...(s.isSymlink ? { isSymlink: true, symlinkTarget: s.symlinkTarget } : {}),
+          } as FileContent;
+        case 'binary':
+          return {
             type: 'binary',
             message: 'Cannot preview binary file',
-            size: stat.size,
-            mtime: stat.mtimeMs,
-          });
-          break;
-        }
-        case 'too-large': {
-          setFileContent({
+            size: s.size,
+            mtime: s.mtimeMs,
+          } as FileContent;
+        case 'too-large':
+          return {
             type: 'error',
             message: 'File too large to preview',
-            size: stat.size,
-            mtime: stat.mtimeMs,
-          });
-          break;
-        }
+            size: s.size,
+            mtime: s.mtimeMs,
+          } as FileContent;
         case 'text':
         default: {
-          const textRes = await fetch(
-            `/api/files/text?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`,
-            { cache: 'no-store' },
-          );
-          if (textRes.status === 409) {
-            // File turned out to be binary on second sniff
-            const body = await textRes.json().catch(() => ({}));
-            setFileContent({
+          const text = yield* fetchFileText(cwd, filePath);
+          if (text.status === 409) {
+            return {
               type: 'binary',
-              message: body?.error || 'Cannot preview binary file',
-              size: stat.size,
-              mtime: stat.mtimeMs,
-            });
-            break;
+              message: text.data?.error || 'Cannot preview binary file',
+              size: s.size,
+              mtime: s.mtimeMs,
+            } as FileContent;
           }
-          if (!textRes.ok) {
-            const body = await textRes.json().catch(() => ({}));
-            setFileContent({ type: 'error', message: body?.error || 'Failed to load file' });
-            break;
+          if (!text.ok) {
+            return { type: 'error', message: text.data?.error || 'Failed to load file' } as FileContent;
           }
-          const text = await textRes.json();
-          setFileContent({
+          const t = text.data ?? {};
+          return {
             type: 'text',
-            content: text.content,
-            size: text.size,
-            mtime: text.mtimeMs,
-            ...(text.isSymlink ? { isSymlink: true, symlinkTarget: text.symlinkTarget } : {}),
-          });
-          break;
+            content: t.content,
+            size: t.size,
+            mtime: t.mtimeMs,
+            ...(t.isSymlink ? { isSymlink: true, symlinkTarget: t.symlinkTarget } : {}),
+          } as FileContent;
         }
       }
-      addToRecentFiles(filePath);
-      // Auto-load blame (used for inline blame annotations, does not block file content rendering)
-      loadBlame(filePath);
-    } catch (err) {
-      console.error('Error loading file content:', err);
-      setFileContent({ type: 'error', message: 'Failed to load file' });
-    } finally {
-      setIsLoadingContent(false);
-    }
+    });
+
+    await BrowserRuntime.runPromise(
+      flow.pipe(
+        Effect.match({
+          onSuccess: (content) => setFileContent(content),
+          onFailure: (err) => {
+            console.error('Error loading file content:', err);
+            setFileContent({ type: 'error', message: 'Failed to load file' });
+          },
+        })
+      )
+    );
+    addToRecentFiles(filePath);
+    // Auto-load blame (used for inline blame annotations, does not block file content rendering)
+    loadBlame(filePath);
+    setIsLoadingContent(false);
   }, [cwd, addToRecentFiles, loadBlame]);
 
   const handleToggleBlame = useCallback(() => {

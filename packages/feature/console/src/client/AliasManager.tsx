@@ -3,6 +3,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Plus, Trash2, Terminal } from 'lucide-react';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  loadAliases as loadAliasesEff,
+  saveAliases,
+} from './effect/consoleClient';
 
 interface AliasManagerProps {
   onClose: () => void;
@@ -18,17 +23,13 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
 
   const loadAliases = useCallback(async () => {
     setIsLoading(true);
-    try {
-      const response = await fetch('/api/terminal/aliases');
-      if (response.ok) {
-        const data = await response.json();
-        setAliases(data.aliases || {});
-      }
-    } catch (error) {
-      console.error('Failed to load aliases:', error);
-    } finally {
-      setIsLoading(false);
+    const exit = await BrowserRuntime.runPromiseExit(loadAliasesEff());
+    if (exit._tag === 'Success') {
+      setAliases(exit.value);
+    } else {
+      console.error('Failed to load aliases:', exit.cause);
     }
+    setIsLoading(false);
   }, []);
 
   // Load global aliases
@@ -63,19 +64,12 @@ export function AliasManager({ onClose, onSave }: AliasManagerProps) {
   };
 
   const handleSave = async () => {
-    try {
-      const response = await fetch('/api/terminal/aliases', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aliases }),
-      });
-
-      if (response.ok) {
-        onSave(aliases);
-        onClose();
-      }
-    } catch (error) {
-      console.error('Failed to save aliases:', error);
+    const exit = await BrowserRuntime.runPromiseExit(saveAliases(aliases));
+    if (exit._tag === 'Success') {
+      onSave(aliases);
+      onClose();
+    } else {
+      console.error('Failed to save aliases:', exit.cause);
     }
   };
 

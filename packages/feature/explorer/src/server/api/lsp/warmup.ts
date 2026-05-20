@@ -1,41 +1,49 @@
-import { readFile } from 'fs/promises';
-import { resolve } from 'path';
-import { getLanguageForFile } from '@cockpit/feature-explorer/server/lsp/types';
-import { getOrCreateServer, ensureFileOpen } from '@cockpit/feature-explorer/server/lsp/LSPServerRegistry';
-
 /**
- * Warm up LSP: start the Language Server for the given language and open the file
- * Called by the frontend when a TS/JS/PY file is selected; does not block the UI
+ * /api/lsp/warmup — P8+ migration
+ *
+ * Non-blocking warmup: spawn LSP server + pre-open file; failures return { ok: false }.
  */
-export async function POST(request: Request) {
-  try {
-    const { cwd, filePath } = await request.json();
-    if (!filePath) {
-      return Response.json({ ok: false });
-    }
+import { readFile } from "fs/promises"
+import { resolve } from "path"
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { getLanguageForFile } from "@cockpit/feature-explorer/server/lsp/types"
+import {
+  getOrCreateServer,
+  ensureFileOpen,
+} from "@cockpit/feature-explorer/server/lsp/LSPServerRegistry"
 
-    const language = getLanguageForFile(filePath);
-    if (!language) {
-      return Response.json({ ok: false });
-    }
-
-    const server = await getOrCreateServer(language, cwd || process.cwd());
-    if (!server) {
-      return Response.json({ ok: false });
-    }
-
-    // Pre-open the file so subsequent hover/definition requests don't need to wait for open
-    const absPath = resolve(cwd || process.cwd(), filePath);
-    try {
-      const content = await readFile(absPath, 'utf-8');
-      await ensureFileOpen(server, absPath, content);
-    } catch {
-      // File is not readable, ignore
-    }
-
-    return Response.json({ ok: true, language, pid: server.process.pid });
-  } catch (error) {
-    console.error('[lsp/warmup] error:', error);
-    return Response.json({ ok: false });
-  }
+interface WarmupBody {
+  cwd?: string
+  filePath?: string
 }
+
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as WarmupBody
+    if (!body.filePath) return ok({ ok: false })
+
+    const language = getLanguageForFile(body.filePath)
+    if (!language) return ok({ ok: false })
+
+    const projectCwd = body.cwd || process.cwd()
+    const server = yield* Effect.tryPromise({
+      try: () => getOrCreateServer(language, projectCwd),
+      catch: () => null,
+    }).pipe(Effect.orElseSucceed(() => null))
+
+    if (!server) return ok({ ok: false })
+
+    // Pre-open the file; failure does not affect the overall response
+    const absPath = resolve(projectCwd, body.filePath)
+    yield* Effect.tryPromise({
+      try: async () => {
+        const content = await readFile(absPath, "utf-8")
+        await ensureFileOpen(server, absPath, content)
+      },
+      catch: () => null,
+    }).pipe(Effect.orElseSucceed(() => null))
+
+    return ok({ ok: true, language, pid: server.process.pid })
+  })
+)

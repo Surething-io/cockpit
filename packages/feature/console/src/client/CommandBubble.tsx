@@ -9,6 +9,12 @@ import type { XtermSearchHandle } from './XtermRenderer';
 import { toShortId } from '@cockpit/shared-utils';
 import { ShortIdBadge } from './ShortIdBadge';
 import { modKey } from '@cockpit/shared-utils';
+import { Effect } from 'effect';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  registerRunningCommand,
+  unregisterRunningCommand,
+} from './effect/consoleClient';
 
 const XtermRenderer = lazy(() => import('./XtermRenderer').then(m => ({ default: m.XtermRenderer })));
 
@@ -473,18 +479,18 @@ export const CommandBubble = memo(function CommandBubble({
                   shortId={shortId}
                   type="terminal"
                   onRegister={() => {
-                    fetch('/api/terminal/register', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ tabId, commandId, command, projectCwd }),
-                    }).catch(() => {});
+                    BrowserRuntime.runFork(
+                      registerRunningCommand({ tabId, commandId, command, projectCwd }).pipe(
+                        Effect.orElse(() => Effect.void)
+                      )
+                    );
                   }}
                   onUnregister={() => {
-                    fetch('/api/terminal/unregister', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ commandId }),
-                    }).catch(() => {});
+                    BrowserRuntime.runFork(
+                      unregisterRunningCommand({ commandId }).pipe(
+                        Effect.orElse(() => Effect.void)
+                      )
+                    );
                   }}
                 />
               )}

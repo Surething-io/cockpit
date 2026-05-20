@@ -1,6 +1,13 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { CodeComment } from '../server/api/comments';
 import { subscribeCommentsChange } from './useAllComments';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  loadComments,
+  addComment as addCommentEff,
+  updateComment as updateCommentEff,
+  deleteComment as deleteCommentEff,
+} from './effect/commentsClient';
 
 export type { CodeComment };
 
@@ -32,21 +39,15 @@ export function useComments({ cwd, filePath }: UseCommentsOptions): UseCommentsR
     setIsLoading(true);
     setError(null);
 
-    try {
-      const response = await fetch(
-        `/api/comments?cwd=${encodeURIComponent(cwd)}&filePath=${encodeURIComponent(filePath)}`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setComments(data.comments || []);
-      } else {
-        setError('Failed to load comments');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    } finally {
-      setIsLoading(false);
+    const exit = await BrowserRuntime.runPromiseExit(loadComments(cwd, filePath));
+    if (exit._tag === 'Success') {
+      setComments((exit.value.comments ?? []) as CodeComment[]);
+    } else {
+      const failure = exit.cause._tag === 'Fail' ? exit.cause.error : null;
+      const inner = failure?.cause;
+      setError(inner instanceof Error ? inner.message : 'Failed to load comments');
     }
+    setIsLoading(false);
   }, [cwd, filePath]);
 
   // Initial load
@@ -68,61 +69,49 @@ export function useComments({ cwd, filePath }: UseCommentsOptions): UseCommentsR
     content: string,
     selectedText?: string
   ): Promise<CodeComment | null> => {
-    try {
-      const response = await fetch('/api/comments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, filePath, startLine, endLine, content, ...(selectedText ? { selectedText } : {}) }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setComments(prev => [...prev, data.comment]);
-        return data.comment;
-      }
-    } catch (err) {
-      console.error('Failed to add comment:', err);
+    const exit = await BrowserRuntime.runPromiseExit(
+      addCommentEff({
+        cwd,
+        filePath,
+        startLine,
+        endLine,
+        content,
+        ...(selectedText ? { selectedText } : {}),
+      })
+    );
+    if (exit._tag === 'Success' && exit.value.comment) {
+      const created = exit.value.comment;
+      setComments(prev => [...prev, created]);
+      return created;
+    }
+    if (exit._tag === 'Failure') {
+      console.error('Failed to add comment:', exit.cause);
     }
     return null;
   }, [cwd, filePath]);
 
   // Update comment
   const updateComment = useCallback(async (id: string, content: string): Promise<boolean> => {
-    try {
-      const response = await fetch('/api/comments', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, id, content }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setComments(prev =>
-          prev.map(c => (c.id === id ? data.comment : c))
-        );
-        return true;
-      }
-    } catch (err) {
-      console.error('Failed to update comment:', err);
+    const exit = await BrowserRuntime.runPromiseExit(updateCommentEff(cwd, id, content));
+    if (exit._tag === 'Success' && exit.value.comment) {
+      const updated = exit.value.comment;
+      setComments(prev => prev.map(c => (c.id === id ? updated : c)));
+      return true;
+    }
+    if (exit._tag === 'Failure') {
+      console.error('Failed to update comment:', exit.cause);
     }
     return false;
   }, [cwd]);
 
   // Delete comment
   const deleteComment = useCallback(async (id: string): Promise<boolean> => {
-    try {
-      const response = await fetch(
-        `/api/comments?cwd=${encodeURIComponent(cwd)}&id=${encodeURIComponent(id)}`,
-        { method: 'DELETE' }
-      );
-
-      if (response.ok) {
-        setComments(prev => prev.filter(c => c.id !== id));
-        return true;
-      }
-    } catch (err) {
-      console.error('Failed to delete comment:', err);
+    const exit = await BrowserRuntime.runPromiseExit(deleteCommentEff(cwd, id));
+    if (exit._tag === 'Success') {
+      setComments(prev => prev.filter(c => c.id !== id));
+      return true;
     }
+    console.error('Failed to delete comment:', exit.cause);
     return false;
   }, [cwd]);
 

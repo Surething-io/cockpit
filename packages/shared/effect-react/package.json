@@ -1,0 +1,17 @@
+{
+  "name": "@cockpit/effect-react",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "sideEffects": false,
+  "dependencies": {
+    "effect": "^3.21.2",
+    "@cockpit/effect-core": "*",
+    "@cockpit/effect-services": "*",
+    "@cockpit/effect-runtime": "*"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  }
+}

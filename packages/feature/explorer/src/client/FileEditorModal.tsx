@@ -3,6 +3,8 @@
 import React, { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast, confirm } from '@cockpit/shared-ui';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { saveFile, fetchFileText } from './effect/filesClient';
 
 export interface FileEditorHandle {
   save: () => void;
@@ -121,52 +123,49 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
 
   const doSave = useCallback(async (skipConflictCheck = false) => {
     setIsSaving(true);
-    try {
-      const response = await fetch('/api/files/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cwd,
-          path: filePath,
-          content,
-          expectedMtime: skipConflictCheck ? undefined : mtimeRef.current,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.status === 409 && data.conflict) {
-        try {
-          const readRes = await fetch(`/api/files/text?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`);
-          const readData = await readRes.json();
-          setConflictState({
-            show: true,
-            diskContent: readRes.ok && typeof readData.content === 'string' ? readData.content : undefined,
-          });
-        } catch {
-          setConflictState({ show: true });
-        }
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error('Failed to save file');
-      }
-
-      if (data.mtime) {
-        mtimeRef.current = data.mtime;
-      }
-      setIsDirty(false);
-      setConflictState({ show: false });
-      toast(t('toast.savedSuccess'), 'success');
-      onSaved?.();
-    } catch (error) {
-      console.error('Error saving file:', error);
+    const exit = await BrowserRuntime.runPromiseExit(
+      saveFile({
+        cwd,
+        path: filePath,
+        content,
+        expectedMtime: skipConflictCheck ? undefined : mtimeRef.current,
+      })
+    );
+    if (exit._tag === 'Failure') {
+      console.error('Error saving file:', exit.cause);
       toast(t('toast.saveFailed'), 'error');
-    } finally {
       setIsSaving(false);
+      return;
     }
-  }, [cwd, filePath, content, onSaved]);
+    const result = exit.value;
+    const data = result.data;
+
+    if (result.status === 409 && data?.conflict) {
+      const readExit = await BrowserRuntime.runPromiseExit(fetchFileText(cwd, filePath));
+      if (readExit._tag === 'Success' && readExit.value.ok && typeof readExit.value.data?.content === 'string') {
+        setConflictState({ show: true, diskContent: readExit.value.data.content });
+      } else {
+        setConflictState({ show: true });
+      }
+      setIsSaving(false);
+      return;
+    }
+
+    if (!result.ok) {
+      console.error('Error saving file: status', result.status);
+      toast(t('toast.saveFailed'), 'error');
+      setIsSaving(false);
+      return;
+    }
+
+    const mtime = (data as { mtime?: number } | null)?.mtime;
+    if (mtime) mtimeRef.current = mtime;
+    setIsDirty(false);
+    setConflictState({ show: false });
+    toast(t('toast.savedSuccess'), 'success');
+    onSaved?.();
+    setIsSaving(false);
+  }, [cwd, filePath, content, onSaved, t]);
 
   const handleSave = useCallback(async () => {
     if (!isDirty || isSaving) return;

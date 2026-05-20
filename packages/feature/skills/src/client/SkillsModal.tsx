@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from '@cockpit/shared-ui';
 import { SkillPreviewModal } from './SkillPreviewModal';
 import { notifySkillsChanged } from './skillsBus';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { loadSkillsList, addSkill, deleteSkill } from './effect/skillsClient';
 
 export interface SkillInfo {
   id: string;
@@ -32,17 +34,13 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    try {
-      const res = await fetch('/api/skills');
-      if (res.ok) {
-        const data = (await res.json()) as SkillInfo[];
-        setSkills(data);
-      }
-    } catch (err) {
-      console.error('Failed to load skills', err);
-    } finally {
-      setLoading(false);
+    const exit = await BrowserRuntime.runPromiseExit(loadSkillsList<SkillInfo>());
+    if (exit._tag === 'Success') {
+      setSkills(exit.value as SkillInfo[]);
+    } else {
+      console.error('Failed to load skills', exit.cause);
     }
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -83,44 +81,30 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
     const p = addPath.trim();
     if (!p) return;
     setAdding(true);
-    try {
-      const res = await fetch('/api/skills', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: p }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        toast(err.error || 'Failed to add skill', 'error');
-        return;
-      }
+    const exit = await BrowserRuntime.runPromiseExit(addSkill(p));
+    if (exit._tag === 'Success') {
       toast('Skill added', 'success');
       setAddPath('');
       setShowAdd(false);
       await reload();
       notifySkillsChanged();
-    } catch (err) {
-      console.error(err);
-      toast('Failed to add skill', 'error');
-    } finally {
-      setAdding(false);
+    } else {
+      // Surface the underlying Error.message (may be the backend's body.error)
+      const failure = exit.cause._tag === 'Fail' ? exit.cause.error : null;
+      const inner = failure?.cause;
+      const msg = inner instanceof Error ? inner.message : 'Failed to add skill';
+      toast(msg, 'error');
     }
+    setAdding(false);
   }, [addPath, reload]);
 
   const handleDelete = useCallback(
     async (id: string) => {
-      try {
-        const res = await fetch(`/api/skills/${encodeURIComponent(id)}`, {
-          method: 'DELETE',
-        });
-        if (!res.ok) {
-          toast('Failed to delete', 'error');
-          return;
-        }
+      const exit = await BrowserRuntime.runPromiseExit(deleteSkill(id));
+      if (exit._tag === 'Success') {
         setSkills((prev) => prev.filter((s) => s.id !== id));
         notifySkillsChanged();
-      } catch (err) {
-        console.error(err);
+      } else {
         toast('Failed to delete', 'error');
       }
     },

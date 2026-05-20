@@ -1,4 +1,17 @@
-import path from 'path';
+/**
+ * /api/files/stat
+ *
+ * Lightweight file metadata (no byte read), including a `category`
+ * classification (image / text / binary / too-large) and an etag.
+ */
+import path from "path"
+import { Effect } from "effect"
+import { handler, ok } from "@cockpit/effect-runtime/server"
+import {
+  FSError,
+  PermissionError,
+  ValidationError,
+} from "@cockpit/effect-core"
 import {
   resolveSafePath,
   statWithSymlink,
@@ -6,60 +19,66 @@ import {
   computeETag,
   getMimeType,
   type FileCategory,
-} from '@cockpit/feature-explorer/server/files/shared';
+} from "@cockpit/feature-explorer/server/files/shared"
 
-/**
- * GET /api/files/stat?cwd=...&path=...
- *
- * Returns lightweight metadata for a single path. Never reads file bytes,
- * so it is safe to call freely (tooltips, list rendering, pre-flight before
- * a heavier `/read` or `/text`).
- *
- * Response (200):
- *   {
- *     exists: true,
- *     kind: 'file' | 'dir' | 'symlink',
- *     size, mtimeMs, isSymlink, symlinkTarget,
- *     category: 'image' | 'text' | 'binary' | 'too-large',
- *     mimeType, etag
- *   }
- *
- * Response (200, missing):  { exists: false }
- * Response (400/403/500):   { error }
- */
-export async function GET(request: Request) {
-  const searchParams = new URL(request.url).searchParams;
-  const cwd = searchParams.get('cwd') || process.cwd();
-  const filePath = searchParams.get('path');
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const sp = new URL(req.url).searchParams
+    const cwd = sp.get("cwd") || process.cwd()
+    const filePath = sp.get("path")
 
-  if (!filePath) {
-    return Response.json({ error: 'File path is required' }, { status: 400 });
-  }
-
-  const fullPath = resolveSafePath(cwd, filePath);
-  if (!fullPath) {
-    return Response.json({ error: 'Path escapes cwd' }, { status: 403 });
-  }
-
-  try {
-    const info = await statWithSymlink(fullPath);
-    const ext = path.extname(filePath).toLowerCase();
-
-    let kind: 'file' | 'dir' | 'symlink' = 'file';
-    if (info.isDirectory) kind = 'dir';
-    else if (info.isSymlink) kind = 'symlink';
-
-    let category: FileCategory | null = null;
-    let mimeType: string | undefined;
-    let etag: string | undefined;
-    if (!info.isDirectory) {
-      category = classify(ext, info.size);
-      mimeType = category === 'image' ? getMimeType(ext) : undefined;
-      etag = computeETag(info.size, info.mtimeMs);
+    if (!filePath) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "path", reason: "missing" })
+      )
     }
 
-    return Response.json(
-      {
+    const fullPath = resolveSafePath(cwd, filePath)
+    if (!fullPath) {
+      return yield* Effect.fail(
+        new PermissionError({ action: "stat", resource: filePath })
+      )
+    }
+
+    // File missing -> exists: false (do not error out)
+    const info = yield* Effect.tryPromise({
+      try: () => statWithSymlink(fullPath),
+      catch: (cause) => {
+        const code = (cause as NodeJS.ErrnoException)?.code
+        if (code === "ENOENT") return null // signal "not found"
+        return new FSError({ path: fullPath, op: "stat", cause })
+      },
+    }).pipe(
+      Effect.catchAll((e) =>
+        e === null ? Effect.succeed(null) : Effect.fail(e)
+      )
+    )
+
+    if (info === null) {
+      return new Response(JSON.stringify({ exists: false }), {
+        headers: {
+          "Cache-Control": "no-cache",
+          "Content-Type": "application/json",
+        },
+      })
+    }
+
+    const ext = path.extname(filePath).toLowerCase()
+    let kind: "file" | "dir" | "symlink" = "file"
+    if (info.isDirectory) kind = "dir"
+    else if (info.isSymlink) kind = "symlink"
+
+    let category: FileCategory | null = null
+    let mimeType: string | undefined
+    let etag: string | undefined
+    if (!info.isDirectory) {
+      category = classify(ext, info.size)
+      mimeType = category === "image" ? getMimeType(ext) : undefined
+      etag = computeETag(info.size, info.mtimeMs)
+    }
+
+    return new Response(
+      JSON.stringify({
         exists: true,
         kind,
         size: info.size,
@@ -69,15 +88,17 @@ export async function GET(request: Request) {
         category,
         mimeType,
         etag,
-      },
-      { headers: { 'Cache-Control': 'no-cache' } },
-    );
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException)?.code;
-    if (code === 'ENOENT') {
-      return Response.json({ exists: false }, { headers: { 'Cache-Control': 'no-cache' } });
-    }
-    console.error('Error stat file:', error);
-    return Response.json({ error: 'Failed to stat file' }, { status: 500 });
-  }
-}
+      }),
+      {
+        headers: {
+          "Cache-Control": "no-cache",
+          "Content-Type": "application/json",
+        },
+      }
+    )
+  })
+)
+
+// Reference `ok` to avoid an unused-import lint warning; this route uses a
+// raw Response so it can attach custom headers.
+void ok

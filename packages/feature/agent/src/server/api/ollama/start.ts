@@ -1,64 +1,72 @@
-import { spawn, execSync } from 'child_process';
+/**
+ * /api/ollama/start — P8+ migration
+ */
+import { spawn, execSync } from "child_process"
+import { Effect } from "effect"
+import { handler, ok } from "@cockpit/effect-runtime/server"
+import { AppError, NotFoundError } from "@cockpit/effect-core"
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
-const OLLAMA_BASE = 'http://localhost:11434';
+const OLLAMA_BASE = "http://localhost:11434"
 
-/** Check if Ollama is reachable */
 async function isOllamaRunning(): Promise<boolean> {
   try {
-    const res = await fetch(`${OLLAMA_BASE}/api/tags`, { signal: AbortSignal.timeout(2000) });
-    return res.ok;
+    const res = await fetch(`${OLLAMA_BASE}/api/tags`, {
+      signal: AbortSignal.timeout(2000),
+    })
+    return res.ok
   } catch {
-    return false;
+    return false
   }
 }
 
-/** Check if ollama binary exists */
 function findOllama(): string | null {
   try {
-    const path = execSync('which ollama', { encoding: 'utf-8' }).trim();
-    return path || null;
+    return execSync("which ollama", { encoding: "utf-8" }).trim() || null
   } catch {
-    return null;
+    return null
   }
 }
 
-export async function POST() {
-  try {
-    // Already running?
-    if (await isOllamaRunning()) {
-      return Response.json({ status: 'already_running' });
+export const POST = handler(() =>
+  Effect.gen(function* () {
+    if (yield* Effect.promise(() => isOllamaRunning())) {
+      return ok({ status: "already_running" })
     }
 
-    // Check if ollama is installed
-    const ollamaPath = findOllama();
+    const ollamaPath = findOllama()
     if (!ollamaPath) {
-      return Response.json(
-        { error: 'ollama_not_installed', message: 'Ollama is not installed. Visit https://ollama.com to install.' },
-        { status: 404 }
-      );
+      return yield* Effect.fail(
+        new NotFoundError({ resource: "binary", id: "ollama" })
+      )
     }
 
-    // Start ollama serve in background
-    const child = spawn(ollamaPath, ['serve'], {
-      detached: true,
-      stdio: 'ignore',
-    });
-    child.unref();
+    yield* Effect.sync(() => {
+      const child = spawn(ollamaPath, ["serve"], {
+        detached: true,
+        stdio: "ignore",
+      })
+      child.unref()
+    })
 
-    // Wait for it to become ready (up to 8 seconds)
-    for (let i = 0; i < 16; i++) {
-      await new Promise(r => setTimeout(r, 500));
-      if (await isOllamaRunning()) {
-        return Response.json({ status: 'started' });
+    // Wait for readiness (up to 8s)
+    const started = yield* Effect.promise(async () => {
+      for (let i = 0; i < 16; i++) {
+        await new Promise((r) => setTimeout(r, 500))
+        if (await isOllamaRunning()) return true
       }
-    }
+      return false
+    })
 
-    return Response.json({ error: 'ollama_start_timeout', message: 'Ollama started but not responding yet' }, { status: 504 });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Unknown error';
-    return Response.json({ error: msg }, { status: 500 });
-  }
-}
+    if (!started) {
+      return yield* Effect.fail(
+        new AppError({
+          message: "Ollama started but not responding yet (timeout)",
+        })
+      )
+    }
+    return ok({ status: "started" })
+  })
+)

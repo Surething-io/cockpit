@@ -43,6 +43,8 @@
 
 import { useEffect, useState } from 'react';
 import { BlockViewer, type BlockViewerHeaderState } from './BlockViewer';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { fetchGitDiffRaw } from '../effect/gitClient';
 import {
   buildImpactProjection,
   type ImpactProjection,
@@ -246,9 +248,9 @@ async function loadDiffContent(
   if (!statusType) return null; // can't fetch without knowing staged vs unstaged
 
   const params = new URLSearchParams({ cwd, file: activeFile, type: statusType });
-  const res = await fetch(`/api/git/diff?${params}`);
-  if (!res.ok) return null;
-  const data = (await res.json()) as GitDiffResponse;
+  const exit = await BrowserRuntime.runPromiseExit(fetchGitDiffRaw<GitDiffResponse>(params));
+  if (exit._tag !== 'Success') return null;
+  const data = exit.value;
   return {
     oldContent: data.oldContent,
     newContent: data.newContent,

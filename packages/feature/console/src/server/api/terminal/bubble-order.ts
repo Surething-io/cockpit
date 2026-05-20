@@ -1,63 +1,62 @@
-import { getBubbleOrderPath, readJsonFile, writeJsonFile } from '@cockpit/shared-utils';
+/**
+ * /api/terminal/bubble-order — P8+ migration
+ */
+import { Effect } from "effect"
+import {
+  getBubbleOrderPath,
+  readJsonFile,
+  writeJsonFile,
+} from "@cockpit/shared-utils"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { FSError, ValidationError } from "@cockpit/effect-core"
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
-// GET: Fetch bubble order
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const cwd = searchParams.get('cwd');
-    const tabId = searchParams.get('tabId');
-
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const sp = new URL(req.url).searchParams
+    const cwd = sp.get("cwd")
+    const tabId = sp.get("tabId")
     if (!cwd || !tabId) {
-      return new Response(JSON.stringify({ error: 'Missing cwd or tabId' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !cwd ? "cwd" : "tabId",
+          reason: "missing",
+        })
+      )
     }
+    const orderPath = getBubbleOrderPath(cwd, tabId)
+    const order = yield* Effect.tryPromise({
+      try: () => readJsonFile<string[]>(orderPath, []),
+      catch: (cause) =>
+        new FSError({ path: orderPath, op: "read", cause }),
+    })
+    return ok({ order })
+  })
+)
 
-    const orderPath = getBubbleOrderPath(cwd, tabId);
-    const order = await readJsonFile<string[]>(orderPath, []);
-
-    return new Response(JSON.stringify({ order }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (error) {
-    console.error('Get bubble order error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-}
-
-// POST: Save bubble order
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { cwd, tabId, order } = body;
-
-    if (!cwd || !tabId || !Array.isArray(order)) {
-      return new Response(JSON.stringify({ error: 'Missing cwd, tabId or order' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as {
+      cwd?: string
+      tabId?: string
+      order?: string[]
     }
-
-    const orderPath = getBubbleOrderPath(cwd, tabId);
-    await writeJsonFile(orderPath, order);
-
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (error) {
-    console.error('Save bubble order error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-}
+    if (!body.cwd || !body.tabId || !Array.isArray(body.order)) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.cwd ? "cwd" : !body.tabId ? "tabId" : "order",
+          reason: "missing or invalid",
+        })
+      )
+    }
+    const orderPath = getBubbleOrderPath(body.cwd, body.tabId)
+    yield* Effect.tryPromise({
+      try: () => writeJsonFile(orderPath, body.order),
+      catch: (cause) =>
+        new FSError({ path: orderPath, op: "write", cause }),
+    })
+    return ok({ success: true })
+  })
+)

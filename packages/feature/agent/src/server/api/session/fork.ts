@@ -2,7 +2,18 @@ import { createReadStream, existsSync } from 'fs';
 import { writeFile } from 'fs/promises';
 import { createInterface } from 'readline';
 import { randomUUID } from 'crypto';
+import { Effect } from 'effect';
 import { getClaudeSessionPath } from '@cockpit/shared-utils';
+import {
+  dynamicHandler,
+  ok,
+  parseJsonRaw,
+} from '@cockpit/effect-runtime/server';
+import {
+  FSError,
+  NotFoundError,
+  ValidationError,
+} from '@cockpit/effect-core';
 
 export const runtime = 'nodejs';
 
@@ -42,100 +53,74 @@ function isRealUserMessage(entry: Record<string, unknown>): boolean {
  * - Continue copying all subsequent messages in that turn (assistant reply, tool_use, tool_result, etc.)
  * - Stop when the next "real user message" is encountered
  */
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ sessionId: string }> }
-) {
-  try {
-    const { sessionId: originalSessionId } = await params;
-    const body: ForkRequestBody = await request.json();
+export const POST = dynamicHandler<
+  { sessionId: string },
+  FSError | NotFoundError | ValidationError
+>((req, { sessionId: originalSessionId }) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as ForkRequestBody;
     const { cwd, fromMessageUuid } = body;
-
     if (!cwd) {
-      return Response.json(
-        { error: 'Missing cwd parameter' },
-        { status: 400 }
+      return yield* Effect.fail(
+        new ValidationError({ field: 'cwd', reason: 'missing' })
       );
     }
-
-    // Get the original session file path
     const originalPath = getClaudeSessionPath(cwd, originalSessionId);
-
     if (!existsSync(originalPath)) {
-      return Response.json(
-        { error: 'Original session not found' },
-        { status: 404 }
+      return yield* Effect.fail(
+        new NotFoundError({ resource: 'session', id: originalSessionId })
       );
     }
 
-    // Generate a new sessionId
-    const newSessionId = randomUUID();
+    const result = yield* Effect.tryPromise({
+      try: async () => {
+        const newSessionId = randomUUID();
+        const newLines: string[] = [];
+        const fileStream = createReadStream(originalPath);
+        const rl = createInterface({
+          input: fileStream,
+          crlfDelay: Infinity,
+        });
 
-    // Read and process the JSONL file
-    const newLines: string[] = [];
-    const fileStream = createReadStream(originalPath);
-    const rl = createInterface({
-      input: fileStream,
-      crlfDelay: Infinity,
-    });
-
-    // State machine:
-    // - 'collecting': normally collecting messages
-    // - 'found_target': target message found, continue collecting until the next real user message
-    // - 'done': finished
-    let state: 'collecting' | 'found_target' | 'done' = 'collecting';
-
-    for await (const line of rl) {
-      if (state === 'done') break;
-      if (!line.trim()) continue;
-
-      try {
-        const entry = JSON.parse(line);
-
-        // State handling
-        if (state === 'found_target') {
-          // Stop when the next real user message is encountered
-          if (isRealUserMessage(entry)) {
-            state = 'done';
-            break;
+        let state: 'collecting' | 'found_target' | 'done' = 'collecting';
+        for await (const line of rl) {
+          if (state === 'done') break;
+          if (!line.trim()) continue;
+          try {
+            const entry = JSON.parse(line);
+            if (state === 'found_target') {
+              if (isRealUserMessage(entry)) {
+                state = 'done';
+                break;
+              }
+            }
+            if (fromMessageUuid && entry.uuid === fromMessageUuid) {
+              state = 'found_target';
+            }
+            entry.sessionId = newSessionId;
+            newLines.push(JSON.stringify(entry));
+          } catch {
+            const modifiedLine = line.replace(
+              new RegExp(originalSessionId, 'g'),
+              newSessionId
+            );
+            newLines.push(modifiedLine);
           }
         }
 
-        // Check whether the target message has been reached
-        if (fromMessageUuid && entry.uuid === fromMessageUuid) {
-          state = 'found_target';
-        }
+        const newPath = getClaudeSessionPath(cwd, newSessionId);
+        await writeFile(newPath, newLines.join('\n') + '\n', 'utf-8');
+        return { newSessionId, messageCount: newLines.length };
+      },
+      catch: (cause) =>
+        new FSError({ path: originalPath, op: 'write', cause }),
+    });
 
-        // Replace the sessionId
-        entry.sessionId = newSessionId;
-
-        // Append the modified record to the new file content
-        newLines.push(JSON.stringify(entry));
-      } catch {
-        // If parsing fails, keep the original line (but replace the sessionId string)
-        const modifiedLine = line.replace(
-          new RegExp(originalSessionId, 'g'),
-          newSessionId
-        );
-        newLines.push(modifiedLine);
-      }
-    }
-
-    // Write the new JSONL file
-    const newPath = getClaudeSessionPath(cwd, newSessionId);
-    await writeFile(newPath, newLines.join('\n') + '\n', 'utf-8');
-
-    return Response.json({
+    return ok({
       success: true,
       originalSessionId,
-      newSessionId,
-      messageCount: newLines.length,
+      newSessionId: result.newSessionId,
+      messageCount: result.messageCount,
     });
-  } catch (error) {
-    console.error('Fork session error:', error);
-    return Response.json(
-      { error: 'Failed to fork session' },
-      { status: 500 }
-    );
-  }
-}
+  })
+);

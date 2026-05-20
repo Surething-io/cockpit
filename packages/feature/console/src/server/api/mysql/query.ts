@@ -1,45 +1,57 @@
-import { mysqlPoolManager } from '@cockpit/feature-console/server';
+/**
+ * /api/mysql/query — P9 round 2 (Service Tag migration)
+ */
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
+import { MySQLService } from "@cockpit/effect-services"
 
-const MAX_ROWS = 1000;
+const MAX_ROWS = 1000
 
-export async function POST(req: Request) {
-  try {
-    const { id, connectionString, sql, params } = await req.json();
-    if (!id || !connectionString || !sql) {
-      return Response.json({ error: 'Missing required fields' }, { status: 400 });
-    }
-
-    const pool = await mysqlPoolManager.getPool(id, connectionString);
-    const start = performance.now();
-    const [result, fieldPackets] = await pool.query(sql, params || []);
-    const duration = Math.round((performance.now() - start) * 100) / 100;
-
-    // SELECT-like queries return arrays
-    if (Array.isArray(result) && Array.isArray(fieldPackets)) {
-      const rows = result as Record<string, unknown>[];
-      const fields = (fieldPackets as Array<{ name: string; columnType: number }>).map((f) => ({
-        name: f.name,
-        dataTypeID: f.columnType ?? 0,
-      }));
-      const truncated = rows.length > MAX_ROWS;
-      return Response.json({
-        fields,
-        rows: truncated ? rows.slice(0, MAX_ROWS) : rows,
-        rowCount: rows.length,
-        truncated,
-        duration,
-      });
-    }
-
-    // DML/DDL — result is ResultSetHeader
-    const header = result as { affectedRows?: number; insertId?: number };
-    return Response.json({
-      command: sql.trim().split(/\s+/)[0]?.toUpperCase() || 'QUERY',
-      rowCount: header.affectedRows ?? 0,
-      duration,
-    });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return Response.json({ error: msg }, { status: 500 });
-  }
+interface QueryRequest {
+  id?: string
+  connectionString?: string
+  sql?: string
+  params?: unknown[]
 }
+
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as QueryRequest
+    if (!body.id || !body.connectionString || !body.sql) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.id
+            ? "id"
+            : !body.connectionString
+              ? "connectionString"
+              : "sql",
+          reason: "missing",
+        })
+      )
+    }
+    const { id, connectionString, sql, params } = body
+
+    const mysql = yield* MySQLService
+    const result = yield* mysql.queryWithMeta(id, connectionString, sql, params)
+
+    // SELECT path: fields is non-null
+    if (result.fields !== null) {
+      const truncated = result.rows.length > MAX_ROWS
+      return ok({
+        fields: result.fields,
+        rows: truncated ? result.rows.slice(0, MAX_ROWS) : result.rows,
+        rowCount: result.rowCount,
+        truncated,
+        duration: result.duration,
+      })
+    }
+
+    // DML/DDL path
+    return ok({
+      command: result.command,
+      rowCount: result.rowCount,
+      duration: result.duration,
+    })
+  }).pipe(Effect.withSpan("api.mysql.query"))
+)

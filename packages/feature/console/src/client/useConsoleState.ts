@@ -3,6 +3,18 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { executeCommand as execCmd, interruptCommand as interruptCmd, attachCommand, queryRunningCommands, sendStdin, resizePty, dispose as disposeTerminalWs } from './TerminalWsManager';
 import { matchInput, getPlugin, generatePluginItemId, type PluginItemBase } from './pluginRegistry';
+import { Effect } from 'effect';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  loadTerminalEnv,
+  loadAliases as loadAliasesEff,
+  loadBubbleOrder as loadBubbleOrderEff,
+  saveBubbleOrder as saveBubbleOrderEff,
+  loadHistoryPage,
+  saveHistoryEntry,
+  deleteHistoryEntry,
+  patchHistoryEntry,
+} from './effect/consoleClient';
 
 // ============================================
 // Types
@@ -253,17 +265,31 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
 
     setIsLoadingHistory(true);
     try {
-      const response = await fetch(
-        `/api/terminal/history?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}&page=${page}&pageSize=100`
-      );
-      if (response.ok) {
-        const data = await response.json();
-
+      const data = await BrowserRuntime.runPromise(
+        loadHistoryPage(cwd, tabId, page, 100)
+      ).catch((err) => {
+        console.error('Failed to load history:', err);
+        return null;
+      });
+      if (data) {
         const historyCommands: Command[] = [];
         const historyPluginItems: PluginItemBase[] = [];
         const restoredSleeping = new Set<string>();
 
-        for (const entry of data.entries) {
+        for (const rawEntry of data.entries) {
+          // The v1 backend history-item schema is loose with dynamic runtime fields; preserve v1 any-style behavior here
+          const entry = rawEntry as unknown as {
+            type: string;
+            id: string;
+            timestamp: string;
+            sleeping?: boolean;
+            running?: boolean;
+            command: string;
+            output: string;
+            exitCode?: number;
+            cwd?: string;
+            usePty?: boolean;
+          };
           const plugin = getPlugin(entry.type);
           if (plugin) {
             // Plugin type: restore via plugin's fromHistory method
@@ -321,26 +347,21 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
 
   const saveCdToHistory = useCallback(async (command: Command) => {
     if (!tabId) return;
-    try {
-      await fetch('/api/terminal/history', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cwd,
-          tabId,
-          entry: {
-            id: command.id,
-            command: command.command,
-            output: command.output,
-            exitCode: command.exitCode,
-            timestamp: command.timestamp,
-            cwd: currentCwd,
-          },
-        }),
-      });
-    } catch (error) {
-      console.error('Failed to save cd history:', error);
-    }
+    await BrowserRuntime.runPromise(
+      saveHistoryEntry(cwd, tabId, {
+        id: command.id,
+        command: command.command,
+        output: command.output,
+        exitCode: command.exitCode,
+        timestamp: command.timestamp,
+        cwd: currentCwd,
+      }).pipe(
+        Effect.tapError((err) =>
+          Effect.sync(() => console.error('Failed to save cd history:', err))
+        ),
+        Effect.orElse(() => Effect.void)
+      )
+    );
   }, [cwd, tabId, currentCwd]);
 
   // ========== Reattach running commands ==========
@@ -651,14 +672,14 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     setCommands((prev) => prev.filter((cmd) => cmd.id !== commandId));
     cleanupOutputRefs(commandId);
     if (tabId) {
-      try {
-        await fetch(
-          `/api/terminal/history?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}&commandId=${encodeURIComponent(commandId)}`,
-          { method: 'DELETE' },
-        );
-      } catch (error) {
-        console.error('Failed to delete command:', error);
-      }
+      await BrowserRuntime.runPromise(
+        deleteHistoryEntry(cwd, tabId, commandId).pipe(
+          Effect.tapError((err) =>
+            Effect.sync(() => console.error('Failed to delete command:', err))
+          ),
+          Effect.orElse(() => Effect.void)
+        )
+      );
     }
   }, [cwd, tabId, cleanupOutputRefs]);
 
@@ -696,26 +717,30 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
       }
       setBubbleOrder(currentOrder);
       if (tabId) {
-        fetch('/api/terminal/bubble-order', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cwd, tabId, order: currentOrder }),
-        }).catch(() => {});
+        BrowserRuntime.runFork(
+          saveBubbleOrderEff(cwd, tabId, currentOrder).pipe(
+            Effect.orElse(() => Effect.void)
+          )
+        );
       }
     }
 
     // Persist
     if (tabId) {
       const historyFields = plugin.toHistory(item);
-      fetch('/api/terminal/history', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cwd,
-          tabId,
-          entry: { type, id: item.id, timestamp: item.timestamp, ...historyFields },
-        }),
-      }).catch(e => console.error(`Failed to save ${type} item:`, e));
+      BrowserRuntime.runFork(
+        saveHistoryEntry(cwd, tabId, {
+          type,
+          id: item.id,
+          timestamp: item.timestamp,
+          ...historyFields,
+        }).pipe(
+          Effect.tapError((e) =>
+            Effect.sync(() => console.error(`Failed to save ${type} item:`, e))
+          ),
+          Effect.orElse(() => Effect.void)
+        )
+      );
     }
   }, [scrollToBottom, cwd, tabId, bubbleOrder]);
 
@@ -733,10 +758,14 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
 
     // Delete persisted entry
     if (tabId) {
-      fetch(
-        `/api/terminal/history?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}&commandId=${encodeURIComponent(id)}`,
-        { method: 'DELETE' },
-      ).catch(e => console.error('Failed to delete plugin item:', e));
+      BrowserRuntime.runFork(
+        deleteHistoryEntry(cwd, tabId, id).pipe(
+          Effect.tapError((e) =>
+            Effect.sync(() => console.error('Failed to delete plugin item:', e))
+          ),
+          Effect.orElse(() => Effect.void)
+        )
+      );
     }
   }, [pluginItems, cwd, tabId]);
 
@@ -745,11 +774,11 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
 
   const persistSleeping = useCallback((id: string, sleeping: boolean) => {
     if (!tabId) return;
-    fetch('/api/terminal/history', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cwd, tabId, id, fields: { sleeping } }),
-    }).catch(() => {});
+    BrowserRuntime.runFork(
+      patchHistoryEntry(cwd, tabId, id, { sleeping }).pipe(
+        Effect.orElse(() => Effect.void)
+      )
+    );
   }, [cwd, tabId]);
 
   const handleBubbleSleep = useCallback((id: string) => {
@@ -767,13 +796,11 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
   const saveBubbleOrder = useCallback(async (newOrder: string[]) => {
     setBubbleOrder(newOrder);
     if (!tabId) return;
-    try {
-      await fetch('/api/terminal/bubble-order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, tabId, order: newOrder }),
-      });
-    } catch { /* ignore */ }
+    await BrowserRuntime.runPromise(
+      saveBubbleOrderEff(cwd, tabId, newOrder).pipe(
+        Effect.orElse(() => Effect.void)
+      )
+    );
   }, [cwd, tabId]);
 
   // ========== Merged list ==========
@@ -814,42 +841,39 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
   // ========== Initialization ==========
 
   const loadEnv = async () => {
-    try {
-      const params = new URLSearchParams({ cwd });
-      if (tabId) params.set('tabId', tabId);
-      const response = await fetch(`/api/terminal/env?${params}`);
-      if (response.ok) {
-        const data = await response.json();
-        setCustomEnv(data.env || {});
-      }
-    } catch (error) {
-      console.error('Failed to load env:', error);
-    }
+    const env = await BrowserRuntime.runPromise(
+      loadTerminalEnv(cwd, tabId).pipe(
+        Effect.tapError((e) =>
+          Effect.sync(() => console.error('Failed to load env:', e))
+        ),
+        Effect.orElseSucceed(() => ({}) as Record<string, string>)
+      )
+    );
+    setCustomEnv(env);
   };
 
   const loadAliases = async () => {
-    try {
-      const response = await fetch('/api/terminal/aliases');
-      if (response.ok) {
-        const data = await response.json();
-        setAliases(data.aliases || {});
-      }
-    } catch (error) {
-      console.error('Failed to load aliases:', error);
-    }
+    const aliases = await BrowserRuntime.runPromise(
+      loadAliasesEff().pipe(
+        Effect.tapError((e) =>
+          Effect.sync(() => console.error('Failed to load aliases:', e))
+        ),
+        Effect.orElseSucceed(() => ({}) as Record<string, string>)
+      )
+    );
+    setAliases(aliases);
   };
 
   const loadBubbleOrder = async () => {
     if (!tabId) return;
-    try {
-      const res = await fetch(`/api/terminal/bubble-order?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.order && data.order.length > 0) {
-          setBubbleOrder(data.order);
-        }
-      }
-    } catch { /* ignore */ }
+    const order = await BrowserRuntime.runPromise(
+      loadBubbleOrderEff(cwd, tabId).pipe(
+        Effect.orElseSucceed(() => [] as string[])
+      )
+    );
+    if (order.length > 0) {
+      setBubbleOrder(order);
+    }
   };
 
   useEffect(() => {

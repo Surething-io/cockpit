@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { publishTopic } from '@cockpit/effect-react';
+import { Topics } from '@cockpit/effect-services';
 
 interface BrowserCmd {
   type: 'browser:cmd';
@@ -64,7 +66,7 @@ export function useBrowserBridge(
         //    Notify Workspace to save the current project and switch to this project
         const cwd = new URLSearchParams(window.location.search).get('cwd') || '';
         window.dispatchEvent(new CustomEvent('cockpit-screenshot-state', { detail: { active: true } }));
-        window.parent.postMessage({ type: 'SCREENSHOT_PREPARE', cwd }, '*');
+        publishTopic(Topics.ScreenshotPrepare, { cwd });
 
         // 2) Wait for rendering to complete (3 frames + 150ms)
         requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -111,7 +113,7 @@ export function useBrowserBridge(
       // screenshot-done: screenshot complete, restore UI
       if (e.data?.type === 'cockpit:screenshot-done') {
         window.dispatchEvent(new CustomEvent('cockpit-screenshot-state', { detail: { active: false } }));
-        window.parent.postMessage({ type: 'SCREENSHOT_DONE' }, '*');
+        publishTopic(Topics.ScreenshotDone, {});
         return;
       }
 

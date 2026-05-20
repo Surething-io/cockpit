@@ -30,6 +30,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FileText, RefreshCw, Search, X } from 'lucide-react';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { fetchProjectGraphSearch } from '../effect/gitClient';
+import { fetchFileTextRaw } from '../effect/filesClient';
 
 import { SymbolIcon } from './symbolIcon';
 
@@ -676,17 +679,13 @@ function SearchPalette({ cwd, onSelect, onClose }: SearchPaletteProps) {
     }
     setLoading(true);
     const handle = setTimeout(async () => {
-      try {
-        const params = new URLSearchParams({ cwd, q, limit: '12' });
-        const res = await fetch(`/api/projectGraph/search?${params}`);
-        if (res.ok) {
-          const data = (await res.json()) as SearchResponse;
-          setHits(data);
-          setActiveIdx(0);
-        }
-      } finally {
-        setLoading(false);
+      const params = new URLSearchParams({ cwd, q, limit: '12' });
+      const exit = await BrowserRuntime.runPromiseExit(fetchProjectGraphSearch<SearchResponse>(params));
+      if (exit._tag === 'Success') {
+        setHits(exit.value);
+        setActiveIdx(0);
       }
+      setLoading(false);
     }, 120);
     return () => clearTimeout(handle);
   }, [query, cwd]);
@@ -950,19 +949,15 @@ export function BlockViewer({
     let cancelled = false;
     setFileSource(null);
     (async () => {
-      try {
-        const params = new URLSearchParams({ cwd, path: focalFile });
-        const res = await fetch(`/api/files/text?${params}`);
-        if (!res.ok) return;
-        const json = (await res.json()) as {
-          content: string;
-          mtimeMs: number;
-        };
-        if (!cancelled) {
-          setFileSource({ content: json.content, mtimeMs: json.mtimeMs });
-        }
-      } catch (err) {
-        console.error('[BlockViewer] failed to load file source for', focalFile, err);
+      const params = new URLSearchParams({ cwd, path: focalFile });
+      const exit = await BrowserRuntime.runPromiseExit(
+        fetchFileTextRaw<{ content: string; mtimeMs: number }>(params)
+      );
+      if (cancelled) return;
+      if (exit._tag === 'Success') {
+        setFileSource({ content: exit.value.content, mtimeMs: exit.value.mtimeMs });
+      } else {
+        console.error('[BlockViewer] failed to load file source for', focalFile, exit.cause);
       }
     })();
     return () => {

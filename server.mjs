@@ -78,7 +78,9 @@ const handle = app.getRequestHandler();
 
 app.prepare().then(async () => {
   const upgradeHandler = app.getUpgradeHandler();
-  const { handleUpgrade, broadcastToGlobalState, handleBrowserApi, handleTerminalApi } = await import(dev ? './src/lib/wsServer.ts' : './dist/wsServer.mjs');
+  // v2 P8: HTTP intercepts (handleTerminalApi / handleBrowserApi) moved to src/lib/httpApi.ts
+  const { handleUpgrade, broadcastToGlobalState } = await import(dev ? './src/lib/wsServer.ts' : './dist/wsServer.mjs');
+  const { handleBrowserApi, handleTerminalApi } = await import(dev ? './src/lib/httpApi.ts' : './dist/httpApi.mjs');
   const { scheduledTaskManager } = await import(dev ? '@cockpit/feature-agent/server/scheduledTasks' : './dist/scheduledTasks.mjs');
 
   // 初始化定时任务管理器

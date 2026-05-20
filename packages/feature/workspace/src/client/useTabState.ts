@@ -3,6 +3,16 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { usePageVisible } from '@cockpit/shared-ui';
 import type { ChatEngine, DeepseekModel } from '@cockpit/feature-agent';
+import { publishTopic } from '@cockpit/effect-react';
+import { Topics } from '@cockpit/effect-services';
+import { Effect } from 'effect';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  loadProjectState,
+  saveProjectState,
+  updateSessionStatus as updateSessionStatusEff,
+  markScheduledTasksReadBySession,
+} from './effect/stateClient';
 
 // ============================================
 // Types
@@ -59,11 +69,11 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   // Update session status in state.json (notify Workspace layer)
   const updateSessionStatus = useCallback((sessionId: string, status: string) => {
     if (!initialCwd || !sessionId) return;
-    fetch('/api/global-state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cwd: initialCwd, sessionId, status }),
-    }).catch(() => {});
+    BrowserRuntime.runFork(
+      updateSessionStatusEff(initialCwd, sessionId, status).pipe(
+        Effect.catchAll(() => Effect.void)
+      )
+    );
   }, [initialCwd]);
 
   // Tab drag state
@@ -75,52 +85,56 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     if (!initialCwd || hasLoadedRef.current) return;
     hasLoadedRef.current = true;
 
+    // loadProjectState wraps Effect.catchAll -> Effect.succeed(null) internally so
+    // runPromise never rejects; the outer try/catch would never fire. On failure
+    // data === null and we fall through to the else branch.
     const loadSessions = async () => {
-      try {
-        const response = await fetch(`/api/project-state?cwd=${encodeURIComponent(initialCwd)}`);
-        if (response.ok) {
-          const data = await response.json();
-          const savedSessions: string[] = data.sessions || [];
-          const savedActiveSessionId: string | undefined = data.activeSessionId;
-          const savedEngines: Record<string, string> = data.engines || {};
-          const savedOllamaModels: Record<string, string> = data.ollamaModels || {};
-          const savedDeepseekModels: Record<string, string> = data.deepseekModels || {};
+      const data = await BrowserRuntime.runPromise(
+        loadProjectState(initialCwd).pipe(
+          Effect.catchAll(() => Effect.succeed(null))
+        )
+      );
+      if (data) {
+        const savedSessions: string[] = data.sessions || [];
+        const savedActiveSessionId: string | undefined = data.activeSessionId;
+        const savedEngines: Record<string, string> = data.engines || {};
+        const savedOllamaModels: Record<string, string> = data.ollamaModels || {};
+        const savedDeepseekModels: Record<string, string> = data.deepseekModels || {};
 
-          // Merge URL sessionId with sessions in session.json (deduplicate)
-          let allSessions = [...savedSessions];
-          if (initialSessionId && !allSessions.includes(initialSessionId)) {
-            allSessions = [initialSessionId, ...allSessions];
-          }
-
-          if (allSessions.length > 0) {
-            const restoredTabs: TabInfo[] = allSessions.map((sessionId: string, index: number) => ({
-              id: `tab-${Date.now()}-${index}`,
-              cwd: initialCwd,
-              sessionId,
-              title: `Session ${sessionId.slice(0, 6)}...`,
-              engine: (savedEngines[sessionId] as ChatEngine) || undefined,
-              ollamaModel: savedOllamaModels[sessionId] || undefined,
-              deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || undefined,
-            }));
-
-            // Activation priority: URL sessionId > session.json activeSessionId > first
-            const activeSessionToUse = initialSessionId || savedActiveSessionId;
-            let activeIndex = activeSessionToUse ? allSessions.indexOf(activeSessionToUse) : -1;
-            if (activeIndex < 0) activeIndex = 0;
-
-            const newActiveTabId = restoredTabs[activeIndex].id;
-            setTabs(restoredTabs);
-            setActiveTabId(newActiveTabId);
-
-            setTimeout(() => {
-              isInitializingRef.current = false;
-            }, 0);
-          } else {
-            isInitializingRef.current = false;
-          }
+        // Merge URL sessionId with sessions in session.json (deduplicate)
+        let allSessions = [...savedSessions];
+        if (initialSessionId && !allSessions.includes(initialSessionId)) {
+          allSessions = [initialSessionId, ...allSessions];
         }
-      } catch (error) {
-        console.error('Failed to load sessions:', error);
+
+        if (allSessions.length > 0) {
+          const restoredTabs: TabInfo[] = allSessions.map((sessionId: string, index: number) => ({
+            id: `tab-${Date.now()}-${index}`,
+            cwd: initialCwd,
+            sessionId,
+            title: `Session ${sessionId.slice(0, 6)}...`,
+            engine: (savedEngines[sessionId] as ChatEngine) || undefined,
+            ollamaModel: savedOllamaModels[sessionId] || undefined,
+            deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || undefined,
+          }));
+
+          // Activation priority: URL sessionId > session.json activeSessionId > first
+          const activeSessionToUse = initialSessionId || savedActiveSessionId;
+          let activeIndex = activeSessionToUse ? allSessions.indexOf(activeSessionToUse) : -1;
+          if (activeIndex < 0) activeIndex = 0;
+
+          const newActiveTabId = restoredTabs[activeIndex].id;
+          setTabs(restoredTabs);
+          setActiveTabId(newActiveTabId);
+
+          setTimeout(() => {
+            isInitializingRef.current = false;
+          }, 0);
+        } else {
+          isInitializingRef.current = false;
+        }
+      } else {
+        // loadProjectState failed: don't block init, keep the default tab list
         isInitializingRef.current = false;
       }
     };
@@ -155,13 +169,21 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       }
     }
 
-    fetch('/api/project-state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cwd: initialCwd, sessions: sessionIds, activeSessionId, engines, ollamaModels, deepseekModels }),
-    }).catch(error => {
-      console.error('Failed to save sessions:', error);
-    });
+    BrowserRuntime.runFork(
+      saveProjectState({
+        cwd: initialCwd,
+        sessions: sessionIds,
+        activeSessionId,
+        engines,
+        ollamaModels,
+        deepseekModels,
+      }).pipe(
+        Effect.tapError((e) =>
+          Effect.sync(() => console.error('Failed to save sessions:', e))
+        ),
+        Effect.catchAll(() => Effect.void)
+      )
+    );
   }, [tabs, activeTabId, initialCwd]);
 
   // Notify parent Workspace when switching tab (parent handles URL update)
@@ -171,11 +193,10 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     const activeTab = tabs.find(t => t.id === activeTabId);
     if (!activeTab?.sessionId) return;
 
-    window.parent.postMessage({
-      type: 'SESSION_CHANGE',
+    publishTopic(Topics.SessionChange, {
       cwd: initialCwd,
       sessionId: activeTab.sessionId,
-    }, '*');
+    });
   }, [activeTabId, tabs, initialCwd]);
 
   // Add new tab (insert to the right of current tab)
@@ -324,11 +345,11 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         if (tab?.sessionId) {
           updateSessionStatus(tab.sessionId, 'normal');
           // Clear scheduled task unread for this session
-          fetch('/api/scheduled-tasks', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'markReadBySessionId', fields: { sessionId: tab.sessionId } }),
-          }).catch(() => {});
+          BrowserRuntime.runFork(
+            markScheduledTasksReadBySession(tab.sessionId).pipe(
+              Effect.catchAll(() => Effect.void)
+            )
+          );
         }
         return next;
       });
@@ -347,11 +368,11 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       if (tab?.sessionId) {
         updateSessionStatus(tab.sessionId, 'normal');
         // Clear scheduled task unread for this session
-        fetch('/api/scheduled-tasks', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'markReadBySessionId', fields: { sessionId: tab.sessionId } }),
-        }).catch(() => {});
+        BrowserRuntime.runFork(
+          markScheduledTasksReadBySession(tab.sessionId).pipe(
+            Effect.catchAll(() => Effect.void)
+          )
+        );
       }
       return next;
     });

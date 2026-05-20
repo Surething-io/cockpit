@@ -1,40 +1,57 @@
-import { exec } from 'child_process';
-
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 /**
- * POST /api/bash
- * Lightweight bash execution endpoint for Chat's ! prefix commands.
- * Does not use terminal WS and does not produce console bubbles.
+ * /api/bash — P8+ migration
+ *
+ * Chat's ! prefix command; lightweight bash execution (does not go through the terminal WS).
  */
-export async function POST(request: Request) {
-  try {
-    const { command, cwd } = await request.json();
+import { exec } from "child_process"
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
 
-    if (!command || typeof command !== 'string') {
-      return Response.json({ error: 'Missing command' }, { status: 400 });
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
+
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as {
+      command?: unknown
+      cwd?: string
     }
+    if (!body.command || typeof body.command !== "string") {
+      return yield* Effect.fail(
+        new ValidationError({ field: "command", reason: "missing" })
+      )
+    }
+    const { command, cwd } = body
 
-    const timeout = 30000; // 30s
+    const result = yield* Effect.promise(
+      () =>
+        new Promise<{
+          stdout: string
+          stderr: string
+          exitCode: number
+        }>((resolve) => {
+          exec(
+            command,
+            {
+              cwd: cwd || process.cwd(),
+              timeout: 30000,
+              maxBuffer: 1024 * 1024,
+              env: { ...process.env, FORCE_COLOR: "0" },
+            },
+            (error, stdout, stderr) => {
+              resolve({
+                stdout: stdout || "",
+                stderr: stderr || "",
+                exitCode:
+                  (error?.code as number | undefined) ??
+                  (error ? 1 : 0),
+              })
+            }
+          )
+        })
+    )
 
-    const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve) => {
-      exec(command, {
-        cwd: cwd || process.cwd(),
-        timeout,
-        maxBuffer: 1024 * 1024, // 1MB
-        env: { ...process.env, FORCE_COLOR: '0' }, // Disable color output
-      }, (error, stdout, stderr) => {
-        resolve({
-          stdout: stdout || '',
-          stderr: stderr || '',
-          exitCode: error?.code ?? (error ? 1 : 0),
-        });
-      });
-    });
-
-    return Response.json({ ok: true, ...result });
-  } catch (error) {
-    return Response.json({ error: String(error) }, { status: 500 });
-  }
-}
+    return ok({ ok: true, ...result })
+  })
+)

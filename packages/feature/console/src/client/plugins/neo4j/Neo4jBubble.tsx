@@ -3,6 +3,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { BUBBLE_CONTENT_HEIGHT } from '../../CommandBubble';
 import { modKey } from '@cockpit/shared-utils';
+import { pluginApiPost as apiPost } from '../../effect/pluginDisconnect';
 
 // ============================================================================
 // Types
@@ -69,16 +70,7 @@ function getLabelColor(label: string, allLabels: string[]): string {
   return LABEL_COLORS[idx % LABEL_COLORS.length];
 }
 
-async function apiPost(path: string, body: Record<string, unknown>) {
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-  return data;
-}
+// apiPost imported from effect/pluginDisconnect (Effect-wrapped)
 
 function formatTime(ts?: string): string {
   if (!ts) return '';

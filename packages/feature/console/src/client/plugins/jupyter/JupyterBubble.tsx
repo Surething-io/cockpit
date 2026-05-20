@@ -5,6 +5,7 @@ import { BUBBLE_CONTENT_HEIGHT } from '../../CommandBubble';
 import { useToast } from '@cockpit/shared-ui';
 import { modKey } from '@cockpit/shared-utils';
 import { CellRenderer, type NotebookCell, type CellOutput } from './CellRenderer';
+import { pluginApiPost } from '../../effect/pluginDisconnect';
 
 // ============================================
 // Types
@@ -95,14 +96,7 @@ export function JupyterBubble({
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch('/api/jupyter/load', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filePath, cwd }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to load notebook');
-
+      const data = await pluginApiPost('/api/jupyter/load', { filePath, cwd });
       setCells(data.cells.map((c: NotebookCell, i: number) => ({ ...c, index: i, isExecuting: false })));
       setDirty(false);
     } catch (err) {
@@ -124,23 +118,17 @@ export function JupyterBubble({
     if (saving) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/jupyter/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filePath,
-          cwd,
-          cells: cells.map(c => ({
-            cell_type: c.cell_type,
-            source: c.source,
-            outputs: c.outputs,
-            execution_count: c.execution_count,
-            metadata: c.metadata,
-          })),
-        }),
+      await pluginApiPost('/api/jupyter/save', {
+        filePath,
+        cwd,
+        cells: cells.map(c => ({
+          cell_type: c.cell_type,
+          source: c.source,
+          outputs: c.outputs,
+          execution_count: c.execution_count,
+          metadata: c.metadata,
+        })),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to save');
       setDirty(false);
       showToast('Saved', 'success');
     } catch (err) {

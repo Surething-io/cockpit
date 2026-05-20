@@ -1,7 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
+import { Effect } from 'effect';
 import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, COCKPIT_DIR, COCKPIT_PROJECTS_DIR, findCodexSessionPath, findKimiSessionPath } from '@cockpit/shared-utils';
+import { dynamicHandler } from '@cockpit/effect-runtime/server';
+import { AppError, ValidationError } from '@cockpit/effect-core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -243,20 +246,29 @@ async function parseKimiSessionFile(filePath: string): Promise<{ title: string; 
   return { title: '', userMessages };
 }
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ encodedPath: string }> }
-) {
-  try {
-    const { encodedPath } = await params;
-
+export const GET = dynamicHandler<
+  { encodedPath: string },
+  AppError | ValidationError
+>((_req, { encodedPath }) =>
+  Effect.gen(function* () {
     if (!encodedPath) {
-      return new Response(JSON.stringify({ error: 'Missing encodedPath' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return yield* Effect.fail(
+        new ValidationError({ field: 'encodedPath', reason: 'missing' })
+      );
     }
+    const sessions = yield* Effect.tryPromise({
+      try: () => loadSessions(encodedPath),
+      catch: (cause) =>
+        new AppError({ message: 'Failed to load project sessions', cause }),
+    });
+    return new Response(JSON.stringify(sessions), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  })
+);
 
+async function loadSessions(encodedPath: string) {
     // Collect session files from all engine directories
     const claudeDir = path.join(CLAUDE_PROJECTS_DIR, encodedPath);
     const claude2Dir = path.join(CLAUDE2_PROJECTS_DIR, encodedPath);
@@ -370,16 +382,5 @@ export async function GET(
 
     // Re-sort all sessions by modification time descending
     sessions.sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
-
-    return new Response(JSON.stringify(sessions), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (error) {
-    console.error('Project sessions API error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+    return sessions;
 }

@@ -9,7 +9,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: isDev ? 'Cockpit (Dev)' : 'Cockpit',
     short_name: isDev ? 'Cockpit Dev' : 'Cockpit',
-    description: 'One seat. One AI. Everything under control.',
+    description: 'Cockpit is a local-first AI development hub with chat agents, a file explorer, terminals, and browser bubbles in one swipeable workspace. One seat. One AI.',
     start_url: '/',
     display: 'standalone',
     background_color: '#f9f9fb',

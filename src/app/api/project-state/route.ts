@@ -1,50 +1,73 @@
-import { getSessionFilePath, readJsonFile, writeJsonFile } from '@cockpit/shared-utils';
+/**
+ * /api/project-state — P6 migration
+ *
+ * Project session-list CRUD (indexed by cwd).
+ */
+import { Effect } from "effect"
+import {
+  getSessionFilePath,
+  readJsonFile,
+  writeJsonFile,
+} from "@cockpit/shared-utils"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { FSError, ValidationError } from "@cockpit/effect-core"
 
 interface ProjectState {
-  sessions: string[];
-  activeSessionId?: string; // sessionId of the currently active tab
-  engines?: Record<string, string>; // sessionId → engine ('claude' | 'codex' | 'ollama' | 'deepseek' | ...)
-  ollamaModels?: Record<string, string>; // sessionId → ollama model name
-  deepseekModels?: Record<string, string>; // sessionId → deepseek model name
+  sessions: string[]
+  activeSessionId?: string
+  engines?: Record<string, string>
+  ollamaModels?: Record<string, string>
+  deepseekModels?: Record<string, string>
 }
 
-// GET: Read the project's session list
-// ?cwd=/path/to/project
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const cwd = searchParams.get('cwd');
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const cwd = new URL(req.url).searchParams.get("cwd")
+    if (!cwd) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "cwd", reason: "missing" })
+      )
+    }
+    const filePath = getSessionFilePath(cwd)
+    const state = yield* Effect.tryPromise({
+      try: () => readJsonFile<ProjectState>(filePath, { sessions: [] }),
+      catch: (cause) => new FSError({ path: filePath, op: "read", cause }),
+    })
+    return ok(state)
+  })
+)
 
-  if (!cwd) {
-    return Response.json({ error: 'Missing cwd parameter' }, { status: 400 });
-  }
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as Partial<ProjectState> & {
+      cwd?: string
+    }
+    if (!body.cwd) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "cwd", reason: "missing" })
+      )
+    }
+    if (!Array.isArray(body.sessions)) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: "sessions",
+          reason: "must be array",
+        })
+      )
+    }
 
-  const filePath = getSessionFilePath(cwd);
-  const state = await readJsonFile<ProjectState>(filePath, { sessions: [] });
-  return Response.json(state);
-}
-
-// POST: Update the project's session list and the active sessionId
-// body: { cwd: string, sessions: string[], activeSessionId?: string }
-export async function POST(request: Request) {
-  const body = await request.json();
-  const { cwd, sessions, activeSessionId, engines, ollamaModels, deepseekModels } = body;
-
-  if (!cwd) {
-    return Response.json({ error: 'Missing cwd parameter' }, { status: 400 });
-  }
-
-  if (!Array.isArray(sessions)) {
-    return Response.json({ error: 'sessions must be an array' }, { status: 400 });
-  }
-
-  const state: ProjectState = {
-    sessions,
-    activeSessionId,
-    ...(engines && { engines }),
-    ...(ollamaModels && { ollamaModels }),
-    ...(deepseekModels && { deepseekModels }),
-  };
-  const filePath = getSessionFilePath(cwd);
-  await writeJsonFile(filePath, state);
-  return Response.json(state);
-}
+    const state: ProjectState = {
+      sessions: body.sessions,
+      activeSessionId: body.activeSessionId,
+      ...(body.engines && { engines: body.engines }),
+      ...(body.ollamaModels && { ollamaModels: body.ollamaModels }),
+      ...(body.deepseekModels && { deepseekModels: body.deepseekModels }),
+    }
+    const filePath = getSessionFilePath(body.cwd)
+    yield* Effect.tryPromise({
+      try: () => writeJsonFile(filePath, state),
+      catch: (cause) => new FSError({ path: filePath, op: "write", cause }),
+    })
+    return ok(state)
+  })
+)

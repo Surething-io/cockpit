@@ -1,77 +1,125 @@
-import { neo4jManager } from '@cockpit/feature-console/server';
+/**
+ * /api/neo4j/schema — P9 second pass (Service Tag migration)
+ *
+ * Lists labels / relationship types / property keys / indexes / constraints.
+ * Uses Neo4jService.run to reuse the driver (serializeValue automatically
+ * converts Integer → number, so this route no longer needs toNumber()).
+ */
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
+import { Neo4jService } from "@cockpit/effect-services"
 
-export async function POST(req: Request) {
-  try {
-    const { id, connectionString } = await req.json();
-    if (!id || !connectionString) {
-      return Response.json({ error: 'Missing id or connectionString' }, { status: 400 });
-    }
-
-    const driver = await neo4jManager.getDriver(id, connectionString);
-    const session = driver.session();
-    try {
-      // Labels with counts
-      const labelsResult = await session.run(
-        'CALL db.labels() YIELD label RETURN label ORDER BY label'
-      );
-      const labels = labelsResult.records.map(r => r.get('label') as string);
-
-      // Label counts (parallel)
-      const labelCounts: Record<string, number> = {};
-      for (const label of labels) {
-        const countRes = await session.run(`MATCH (n:\`${label}\`) RETURN count(n) AS cnt`);
-        const cnt = countRes.records[0]?.get('cnt');
-        labelCounts[label] = cnt?.toNumber?.() ?? cnt ?? 0;
-      }
-
-      // Relationship types with counts
-      const relTypesResult = await session.run(
-        'CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType ORDER BY relationshipType'
-      );
-      const relTypes = relTypesResult.records.map(r => r.get('relationshipType') as string);
-
-      const relCounts: Record<string, number> = {};
-      for (const relType of relTypes) {
-        const countRes = await session.run(`MATCH ()-[r:\`${relType}\`]->() RETURN count(r) AS cnt`);
-        const cnt = countRes.records[0]?.get('cnt');
-        relCounts[relType] = cnt?.toNumber?.() ?? cnt ?? 0;
-      }
-
-      // Property keys
-      const propsResult = await session.run('CALL db.propertyKeys() YIELD propertyKey RETURN propertyKey ORDER BY propertyKey');
-      const propertyKeys = propsResult.records.map(r => r.get('propertyKey') as string);
-
-      // Indexes
-      const indexResult = await session.run('SHOW INDEXES YIELD name, type, labelsOrTypes, properties, state');
-      const indexes = indexResult.records.map(r => ({
-        name: r.get('name'),
-        type: r.get('type'),
-        labelsOrTypes: r.get('labelsOrTypes'),
-        properties: r.get('properties'),
-        state: r.get('state'),
-      }));
-
-      // Constraints
-      const constraintResult = await session.run('SHOW CONSTRAINTS YIELD name, type, labelsOrTypes, properties');
-      const constraints = constraintResult.records.map(r => ({
-        name: r.get('name'),
-        type: r.get('type'),
-        labelsOrTypes: r.get('labelsOrTypes'),
-        properties: r.get('properties'),
-      }));
-
-      return Response.json({
-        labels: labels.map(l => ({ name: l, count: labelCounts[l] || 0 })),
-        relationshipTypes: relTypes.map(r => ({ name: r, count: relCounts[r] || 0 })),
-        propertyKeys,
-        indexes,
-        constraints,
-      });
-    } finally {
-      await session.close();
-    }
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return Response.json({ error: msg }, { status: 500 });
-  }
+interface SchemaBody {
+  id?: string
+  connectionString?: string
 }
+
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as SchemaBody
+    if (!body.id || !body.connectionString) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.id ? "id" : "connectionString",
+          reason: "missing",
+        })
+      )
+    }
+    const { id, connectionString } = body
+    const neo4j = yield* Neo4jService
+
+    // Run the 4 schema metadata cyphers concurrently
+    const [labelRows, relTypeRows, propRows, idxRows, conRows] =
+      yield* Effect.all(
+        [
+          neo4j.run<{ label: string }>(
+            id,
+            connectionString,
+            "CALL db.labels() YIELD label RETURN label ORDER BY label"
+          ),
+          neo4j.run<{ relationshipType: string }>(
+            id,
+            connectionString,
+            "CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType ORDER BY relationshipType"
+          ),
+          neo4j.run<{ propertyKey: string }>(
+            id,
+            connectionString,
+            "CALL db.propertyKeys() YIELD propertyKey RETURN propertyKey ORDER BY propertyKey"
+          ),
+          neo4j.run<{
+            name: string
+            type: string
+            labelsOrTypes: unknown
+            properties: unknown
+            state: string
+          }>(
+            id,
+            connectionString,
+            "SHOW INDEXES YIELD name, type, labelsOrTypes, properties, state"
+          ),
+          neo4j.run<{
+            name: string
+            type: string
+            labelsOrTypes: unknown
+            properties: unknown
+          }>(
+            id,
+            connectionString,
+            "SHOW CONSTRAINTS YIELD name, type, labelsOrTypes, properties"
+          ),
+        ],
+        { concurrency: "unbounded" }
+      )
+
+    const labels = labelRows.map((r) => r.label)
+    const relTypes = relTypeRows.map((r) => r.relationshipType)
+
+    // labels count + relTypes count — concurrent (N+M cyphers); acceptable for small DBs
+    const labelCountEffs = labels.map((l) =>
+      neo4j
+        .run<{ cnt: number }>(
+          id,
+          connectionString,
+          `MATCH (n:\`${l}\`) RETURN count(n) AS cnt`
+        )
+        .pipe(Effect.map((rows) => ({ name: l, count: rows[0]?.cnt ?? 0 })))
+    )
+    const relCountEffs = relTypes.map((rt) =>
+      neo4j
+        .run<{ cnt: number }>(
+          id,
+          connectionString,
+          `MATCH ()-[r:\`${rt}\`]->() RETURN count(r) AS cnt`
+        )
+        .pipe(Effect.map((rows) => ({ name: rt, count: rows[0]?.cnt ?? 0 })))
+    )
+    const [labelCounts, relCounts] = yield* Effect.all(
+      [
+        Effect.all(labelCountEffs, { concurrency: "unbounded" }),
+        Effect.all(relCountEffs, { concurrency: "unbounded" }),
+      ],
+      { concurrency: "unbounded" }
+    )
+
+    return ok({
+      labels: labelCounts,
+      relationshipTypes: relCounts,
+      propertyKeys: propRows.map((r) => r.propertyKey),
+      indexes: idxRows.map((r) => ({
+        name: r.name,
+        type: r.type,
+        labelsOrTypes: r.labelsOrTypes,
+        properties: r.properties,
+        state: r.state,
+      })),
+      constraints: conRows.map((r) => ({
+        name: r.name,
+        type: r.type,
+        labelsOrTypes: r.labelsOrTypes,
+        properties: r.properties,
+      })),
+    })
+  }).pipe(Effect.withSpan("api.neo4j.schema"))
+)

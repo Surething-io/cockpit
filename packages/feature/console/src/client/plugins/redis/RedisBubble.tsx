@@ -6,6 +6,7 @@ import { BUBBLE_CONTENT_HEIGHT } from '../../CommandBubble';
 import { useToast } from '@cockpit/shared-ui';
 import { modKey } from '@cockpit/shared-utils';
 import { useTranslation } from 'react-i18next';
+import { pluginApiPost as apiPost } from '../../effect/pluginDisconnect';
 
 // ============================================================================
 // Types
@@ -66,16 +67,7 @@ function formatBytes(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-async function apiPost(path: string, body: Record<string, unknown>) {
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-  return data;
-}
+// apiPost imported from effect/pluginDisconnect (Effect-wrapped)
 
 /** Format a Redis command result for CLI display */
 function formatResult(result: unknown, indent: number = 0): string {

@@ -1,91 +1,114 @@
-import { stat, cp } from 'fs/promises';
-import { join, resolve, basename, extname } from 'path';
-
 /**
- * Generate a non-conflicting destination name.
- * file.ts → file copy.ts → file copy 2.ts → ...
- * dir → dir copy → dir copy 2 → ...
+ * /api/files/paste — P8+ migration
+ *
+ * Copies source from the system clipboard into cwd/targetDir, auto-renaming to avoid conflicts.
  */
-async function getUniqueName(targetDir: string, originalName: string): Promise<string> {
-  const ext = extname(originalName);
-  const base = basename(originalName, ext);
+import { stat, cp } from "fs/promises"
+import { join, resolve, basename, extname } from "path"
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import {
+  FSError,
+  PermissionError,
+  ValidationError,
+} from "@cockpit/effect-core"
 
-  // Check if original name conflicts first
+async function getUniqueName(
+  targetDir: string,
+  originalName: string
+): Promise<string> {
+  const ext = extname(originalName)
+  const base = basename(originalName, ext)
+
   try {
-    await stat(join(targetDir, originalName));
+    await stat(join(targetDir, originalName))
   } catch {
-    return originalName; // Does not exist, use directly
+    return originalName
   }
 
-  // Conflict found, try "file copy.ext"
-  let candidate = `${base} copy${ext}`;
+  let candidate = `${base} copy${ext}`
   try {
-    await stat(join(targetDir, candidate));
+    await stat(join(targetDir, candidate))
   } catch {
-    return candidate;
+    return candidate
   }
 
-  // Continue trying "file copy 2.ext", "file copy 3.ext", ...
-  let counter = 2;
+  let counter = 2
   while (counter < 100) {
-    candidate = `${base} copy ${counter}${ext}`;
+    candidate = `${base} copy ${counter}${ext}`
     try {
-      await stat(join(targetDir, candidate));
-      counter++;
+      await stat(join(targetDir, candidate))
+      counter++
     } catch {
-      return candidate;
+      return candidate
     }
   }
 
-  throw new Error('Failed to generate a unique filename');
+  throw new Error("Failed to generate a unique filename")
 }
 
-/**
- * POST /api/files/paste
- * body: { cwd, targetDir, sourceAbsPath }
- * - sourceAbsPath: absolute path of source file (obtained from system clipboard)
- */
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { cwd, targetDir, sourceAbsPath } = body;
-
-    if (!cwd || targetDir == null || !sourceAbsPath) {
-      return Response.json({ error: 'Missing required parameters' }, { status: 400 });
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as {
+      cwd?: string
+      targetDir?: string
+      sourceAbsPath?: string
     }
-
-    const basePath = resolve(cwd);
-    const targetAbsDir = resolve(join(basePath, targetDir));
+    if (!body.cwd || body.targetDir == null || !body.sourceAbsPath) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.cwd
+            ? "cwd"
+            : body.targetDir == null
+              ? "targetDir"
+              : "sourceAbsPath",
+          reason: "missing",
+        })
+      )
+    }
+    const { cwd, targetDir, sourceAbsPath } = body
+    const basePath = resolve(cwd)
+    const targetAbsDir = resolve(join(basePath, targetDir))
 
     if (!targetAbsDir.startsWith(basePath)) {
-      return Response.json({ error: 'Operation not allowed on this path' }, { status: 403 });
+      return yield* Effect.fail(
+        new PermissionError({ action: "paste", resource: targetDir })
+      )
     }
 
-    const srcAbsPath = resolve(sourceAbsPath);
+    const result = yield* Effect.tryPromise({
+      try: async () => {
+        const srcAbsPath = resolve(sourceAbsPath)
+        const srcStat = await stat(srcAbsPath)
+        const targetStat = await stat(targetAbsDir)
+        if (!targetStat.isDirectory()) {
+          throw new Error("target-not-dir")
+        }
+        const srcName = basename(srcAbsPath)
+        const destName = await getUniqueName(targetAbsDir, srcName)
+        const destPath = join(targetAbsDir, destName)
+        await cp(srcAbsPath, destPath, { recursive: srcStat.isDirectory() })
+        return { destName }
+      },
+      catch: (cause) => {
+        if (cause instanceof Error && cause.message === "target-not-dir") {
+          return new ValidationError({
+            field: "targetDir",
+            reason: "not a directory",
+          })
+        }
+        return new FSError({
+          path: sourceAbsPath,
+          op: "write",
+          cause,
+        })
+      },
+    })
 
-    // Verify source file exists
-    const srcStat = await stat(srcAbsPath);
+    const relPath = targetDir
+      ? `${targetDir}/${result.destName}`
+      : result.destName
 
-    // Verify target directory exists
-    const targetStat = await stat(targetAbsDir);
-    if (!targetStat.isDirectory()) {
-      return Response.json({ error: 'Target is not a folder' }, { status: 400 });
-    }
-
-    // Generate non-conflicting filename
-    const srcName = basename(srcAbsPath);
-    const destName = await getUniqueName(targetAbsDir, srcName);
-    const destPath = join(targetAbsDir, destName);
-
-    // Copy (recursive, supports folders)
-    await cp(srcAbsPath, destPath, { recursive: srcStat.isDirectory() });
-
-    // Return relative path of the new file
-    const relPath = targetDir ? `${targetDir}/${destName}` : destName;
-
-    return Response.json({ success: true, newPath: relPath, newName: destName });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return Response.json({ error: message }, { status: 500 });
-  }
-}
+    return ok({ success: true, newPath: relPath, newName: result.destName })
+  })
+)

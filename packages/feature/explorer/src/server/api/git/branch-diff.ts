@@ -1,157 +1,153 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
+/**
+ * /api/git/branch-diff — P8+ migration
+ *
+ * Two-dot diff of current HEAD vs base branch (equivalent to a PR diff).
+ */
+import { exec } from "child_process"
+import { promisify } from "util"
+import { Effect } from "effect"
+import { handler, ok } from "@cockpit/effect-runtime/server"
+import { AppError, ValidationError } from "@cockpit/effect-core"
 
-const execAsync = promisify(exec);
+const execAsync = promisify(exec)
 
-// Strip quotes that git adds to filenames containing spaces
-function unquotePath(path: string): string {
-  if (path.startsWith('"') && path.endsWith('"')) {
-    return path.slice(1, -1);
-  }
-  return path;
+function unquotePath(p: string): string {
+  if (p.startsWith('"') && p.endsWith('"')) return p.slice(1, -1)
+  return p
 }
 
 interface FileChange {
-  path: string;
-  status: 'added' | 'modified' | 'deleted' | 'renamed';
-  oldPath?: string;
-  additions: number;
-  deletions: number;
+  path: string
+  status: "added" | "modified" | "deleted" | "renamed"
+  oldPath?: string
+  additions: number
+  deletions: number
 }
 
-export async function GET(request: Request) {
-  const searchParams = new URL(request.url).searchParams;
-  const cwd = searchParams.get('cwd') || process.cwd();
-  const base = searchParams.get('base'); // Base branch to compare against
-  const file = searchParams.get('file'); // Optional: get diff for a specific file
+const runGit = (
+  cmd: string,
+  cwd: string
+): Effect.Effect<string, AppError> =>
+  Effect.tryPromise({
+    try: () =>
+      execAsync(cmd, { cwd, maxBuffer: 10 * 1024 * 1024 }).then(
+        (r) => r.stdout
+      ),
+    catch: (cause) =>
+      new AppError({ message: `git command failed: ${cmd}`, cause }),
+  })
 
-  if (!base) {
-    return Response.json(
-      { error: 'Missing base parameter' },
-      { status: 400 }
-    );
-  }
+const runGitOrEmpty = (cmd: string, cwd: string): Effect.Effect<string> =>
+  runGit(cmd, cwd).pipe(Effect.orElseSucceed(() => ""))
 
-  try {
-    // If a file is specified, return its diff content
-    if (file) {
-      return await getBranchFileDiff(cwd, base, file);
-    }
+const getBranchChangedFiles = (cwd: string, base: string) =>
+  Effect.gen(function* () {
+    const [nameStatus, numstat] = yield* Effect.all(
+      [
+        runGit(
+          `git -c core.quotePath=false diff ${base} HEAD --name-status`,
+          cwd
+        ),
+        runGit(
+          `git -c core.quotePath=false diff ${base} HEAD --numstat`,
+          cwd
+        ),
+      ],
+      { concurrency: "unbounded" }
+    )
 
-    // Otherwise return the list of changed files
-    return await getBranchChangedFiles(cwd, base);
-  } catch (error) {
-    console.error('Error getting branch diff:', error);
-    return Response.json(
-      { error: 'Failed to get branch diff' },
-      { status: 500 }
-    );
-  }
-}
+    const statsMap = new Map<
+      string,
+      { additions: number; deletions: number }
+    >()
+    numstat
+      .split("\n")
+      .filter(Boolean)
+      .forEach((line) => {
+        const parts = line.split("\t")
+        if (parts.length >= 3) {
+          const additions = parts[0] === "-" ? 0 : parseInt(parts[0], 10)
+          const deletions = parts[1] === "-" ? 0 : parseInt(parts[1], 10)
+          const filename = unquotePath(parts.slice(2).join("\t"))
+          statsMap.set(filename, { additions, deletions })
+        }
+      })
 
-/**
- * Get the list of changed files between the current HEAD and the base branch.
- * Uses two-dot diff: git diff base HEAD (equivalent to PR diff).
- * old=base (target branch), new=HEAD (current branch)
- */
-async function getBranchChangedFiles(cwd: string, base: string) {
-  const nameStatusCmd = `git -c core.quotePath=false diff ${base} HEAD --name-status`;
-  const numstatCmd = `git -c core.quotePath=false diff ${base} HEAD --numstat`;
+    const files: FileChange[] = []
+    nameStatus
+      .split("\n")
+      .filter(Boolean)
+      .forEach((line) => {
+        const parts = line.split("\t")
+        if (parts.length < 2) return
 
-  const { stdout: nameStatus } = await execAsync(nameStatusCmd, { cwd, maxBuffer: 10 * 1024 * 1024 });
-  const { stdout: numstat } = await execAsync(numstatCmd, { cwd, maxBuffer: 10 * 1024 * 1024 });
+        const statusCode = parts[0]
+        let status: FileChange["status"]
+        let path: string
+        let oldPath: string | undefined
 
-  // Parse numstat
-  const statsMap = new Map<string, { additions: number; deletions: number }>();
-  numstat.split('\n').filter(Boolean).forEach(line => {
-    const parts = line.split('\t');
-    if (parts.length >= 3) {
-      const additions = parts[0] === '-' ? 0 : parseInt(parts[0], 10);
-      const deletions = parts[1] === '-' ? 0 : parseInt(parts[1], 10);
-      let filename = parts.slice(2).join('\t');
-      filename = unquotePath(filename);
-      statsMap.set(filename, { additions, deletions });
-    }
-  });
+        if (statusCode.startsWith("R")) {
+          status = "renamed"
+          oldPath = unquotePath(parts[1])
+          path = unquotePath(parts[2])
+        } else {
+          path = unquotePath(parts[1])
+          switch (statusCode) {
+            case "A":
+              status = "added"
+              break
+            case "D":
+              status = "deleted"
+              break
+            case "M":
+            default:
+              status = "modified"
+              break
+          }
+        }
 
-  // Parse name-status
-  const files: FileChange[] = [];
-  nameStatus.split('\n').filter(Boolean).forEach(line => {
-    const parts = line.split('\t');
-    if (parts.length < 2) return;
+        const stats = statsMap.get(path) ||
+          statsMap.get(oldPath || "") || { additions: 0, deletions: 0 }
+        files.push({
+          path,
+          status,
+          oldPath,
+          additions: stats.additions,
+          deletions: stats.deletions,
+        })
+      })
 
-    const statusCode = parts[0];
-    let status: FileChange['status'];
-    let path: string;
-    let oldPath: string | undefined;
+    return ok({ files })
+  })
 
-    if (statusCode.startsWith('R')) {
-      status = 'renamed';
-      oldPath = unquotePath(parts[1]);
-      path = unquotePath(parts[2]);
-    } else {
-      path = unquotePath(parts[1]);
-      switch (statusCode) {
-        case 'A': status = 'added'; break;
-        case 'D': status = 'deleted'; break;
-        case 'M':
-        default: status = 'modified'; break;
-      }
-    }
+const getBranchFileDiff = (cwd: string, base: string, file: string) =>
+  Effect.gen(function* () {
+    const oldContent = yield* runGitOrEmpty(`git show ${base}:"${file}"`, cwd)
+    const newContent = yield* runGitOrEmpty(`git show HEAD:"${file}"`, cwd)
 
-    const stats = statsMap.get(path) || statsMap.get(oldPath || '') || { additions: 0, deletions: 0 };
-    files.push({ path, status, oldPath, additions: stats.additions, deletions: stats.deletions });
-  });
-
-  return Response.json({ files });
-}
-
-/**
- * Get the diff for a file between the current HEAD and the base branch.
- * Direction: old=base (target branch), new=HEAD (current branch).
- * Equivalent to PR diff: shows changes in the current branch relative to the target branch.
- */
-async function getBranchFileDiff(cwd: string, base: string, file: string) {
-  try {
-    // old = file content in the target branch (base)
-    let oldContent = '';
-    try {
-      const { stdout } = await execAsync(
-        `git show ${base}:"${file}"`,
-        { cwd, maxBuffer: 10 * 1024 * 1024 }
-      );
-      oldContent = stdout;
-    } catch {
-      oldContent = '';
-    }
-
-    // new = file content in the current branch (HEAD)
-    let newContent = '';
-    try {
-      const { stdout } = await execAsync(
-        `git show HEAD:"${file}"`,
-        { cwd, maxBuffer: 10 * 1024 * 1024 }
-      );
-      newContent = stdout;
-    } catch {
-      newContent = '';
-    }
-
-    const isNew = oldContent === '' && newContent !== '';
-    const isDeleted = oldContent !== '' && newContent === '';
-
-    return Response.json({
+    return ok({
       oldContent,
       newContent,
       filePath: file,
-      isNew,
-      isDeleted,
-    });
-  } catch (error) {
-    console.error('Error getting branch file diff:', error);
-    return Response.json(
-      { error: 'Failed to get branch file diff' },
-      { status: 500 }
-    );
-  }
-}
+      isNew: oldContent === "" && newContent !== "",
+      isDeleted: oldContent !== "" && newContent === "",
+    })
+  })
+
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const sp = new URL(req.url).searchParams
+    const cwd = sp.get("cwd") || process.cwd()
+    const base = sp.get("base")
+    const file = sp.get("file")
+
+    if (!base) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "base", reason: "missing" })
+      )
+    }
+
+    if (file) return yield* getBranchFileDiff(cwd, base, file)
+    return yield* getBranchChangedFiles(cwd, base)
+  }).pipe(Effect.withSpan("api.git.branch-diff"))
+)

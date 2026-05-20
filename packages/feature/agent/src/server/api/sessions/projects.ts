@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { Effect } from 'effect';
 import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, COCKPIT_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath } from '@cockpit/shared-utils';
+import { handler } from '@cockpit/effect-runtime/server';
+import { AppError } from '@cockpit/effect-core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -158,9 +161,22 @@ function countEngineSessionsFromCockpitState(encodedDirName: string): number {
   }
 }
 
-export async function GET() {
-  try {
-    const cwdLookup = buildCwdLookupFromGlobalState();
+export const GET = handler(() =>
+  Effect.gen(function* () {
+    const projects = yield* Effect.tryPromise({
+      try: () => buildProjectsList(),
+      catch: (cause) =>
+        new AppError({ message: 'Failed to list projects', cause }),
+    });
+    return new Response(JSON.stringify(projects), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  })
+);
+
+async function buildProjectsList() {
+  const cwdLookup = buildCwdLookupFromGlobalState();
 
     // Collect projects from all sources: Map<encodedPath, { fullPath, sessionCount }>
     const projectMap = new Map<string, { fullPath: string; sessionCount: number }>();
@@ -271,16 +287,5 @@ export async function GET() {
 
     // Sort alphabetically by last path component
     projects.sort((a, b) => a.name.localeCompare(b.name));
-
-    return new Response(JSON.stringify(projects), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (error) {
-    console.error('Projects API error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+    return projects;
 }

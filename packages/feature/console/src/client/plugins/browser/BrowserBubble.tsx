@@ -7,6 +7,7 @@ import { BUBBLE_CONTENT_HEIGHT } from '../../CommandBubble';
 import { useBrowserBridge } from '../../useBrowserBridge';
 import { ShortIdBadge } from '../../ShortIdBadge';
 import { modKey } from '@cockpit/shared-utils';
+import { unregisterBrowserBridge } from '../../effect/pluginDisconnect';
 
 // ============================================================================
 // Utility Functions
@@ -428,11 +429,7 @@ export function BrowserBubble({
                 onRegister={() => bridgeConnect()}
                 onUnregister={async () => {
                   bridgeDisconnect();
-                  await fetch('/api/browser/unregister', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: shortId }),
-                  }).catch(() => {});
+                  await unregisterBrowserBridge(shortId);
                 }}
               />
             )}
@@ -503,11 +500,7 @@ export function BrowserBubble({
                 onRegister={() => bridgeConnect()}
                 onUnregister={async () => {
                   bridgeDisconnect();
-                  await fetch('/api/browser/unregister', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: shortId }),
-                  }).catch(() => {});
+                  await unregisterBrowserBridge(shortId);
                 }}
               />
             )}

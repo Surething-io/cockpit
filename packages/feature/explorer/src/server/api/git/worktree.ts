@@ -1,237 +1,224 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { dirname, basename, join } from 'path';
+/**
+ * /api/git/worktree — P8+ migration
+ *
+ * GET: list worktrees + candidate nextPath
+ * POST: 5 actions — add / remove / lock / unlock / checkout
+ */
+import { exec } from "child_process"
+import { promisify } from "util"
+import { dirname, basename, join } from "path"
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { AppError, ValidationError } from "@cockpit/effect-core"
 
-const execAsync = promisify(exec);
+const execAsync = promisify(exec)
 
-// Generate a random readable word (consonant + vowel/rhyme, 2 groups)
 function generateRandomWord(): string {
-  const consonants = 'bcdfghjklmnprstvwz';
-  const vowels = ['a', 'e', 'i', 'o', 'u', 'ai', 'au', 'ea', 'ee', 'ia', 'io', 'oa', 'oo', 'ou', 'ui'];
-
-  let word = '';
-  // Generate 2 groups (consonant + vowel/rhyme)
+  const consonants = "bcdfghjklmnprstvwz"
+  const vowels = [
+    "a", "e", "i", "o", "u",
+    "ai", "au", "ea", "ee", "ia", "io", "oa", "oo", "ou", "ui",
+  ]
+  let word = ""
   for (let i = 0; i < 2; i++) {
-    word += consonants[Math.floor(Math.random() * consonants.length)];
-    word += vowels[Math.floor(Math.random() * vowels.length)];
+    word += consonants[Math.floor(Math.random() * consonants.length)]
+    word += vowels[Math.floor(Math.random() * vowels.length)]
   }
-
-  return word;
+  return word
 }
 
 export interface WorktreeInfo {
-  path: string;
-  head: string;
-  branch: string | null;
-  isDetached: boolean;
-  isLocked: boolean;
-  isBare: boolean;
+  path: string
+  head: string
+  branch: string | null
+  isDetached: boolean
+  isLocked: boolean
+  isBare: boolean
 }
 
-// Parse git worktree list --porcelain output
 function parseWorktreeList(output: string): WorktreeInfo[] {
-  const worktrees: WorktreeInfo[] = [];
-  const blocks = output.trim().split('\n\n');
-
+  const worktrees: WorktreeInfo[] = []
+  const blocks = output.trim().split("\n\n")
   for (const block of blocks) {
-    if (!block.trim()) continue;
-
-    const lines = block.split('\n');
+    if (!block.trim()) continue
+    const lines = block.split("\n")
     const worktree: Partial<WorktreeInfo> = {
       isDetached: false,
       isLocked: false,
       isBare: false,
-    };
-
+    }
     for (const line of lines) {
-      if (line.startsWith('worktree ')) {
-        worktree.path = line.substring(9);
-      } else if (line.startsWith('HEAD ')) {
-        worktree.head = line.substring(5);
-      } else if (line.startsWith('branch ')) {
-        // refs/heads/main -> main
-        const ref = line.substring(7);
-        worktree.branch = ref.replace('refs/heads/', '');
-      } else if (line === 'detached') {
-        worktree.isDetached = true;
-      } else if (line === 'locked') {
-        worktree.isLocked = true;
-      } else if (line === 'bare') {
-        worktree.isBare = true;
-      }
+      if (line.startsWith("worktree ")) worktree.path = line.substring(9)
+      else if (line.startsWith("HEAD ")) worktree.head = line.substring(5)
+      else if (line.startsWith("branch ")) {
+        const ref = line.substring(7)
+        worktree.branch = ref.replace("refs/heads/", "")
+      } else if (line === "detached") worktree.isDetached = true
+      else if (line === "locked") worktree.isLocked = true
+      else if (line === "bare") worktree.isBare = true
     }
-
     if (worktree.path && worktree.head) {
-      worktrees.push(worktree as WorktreeInfo);
+      worktrees.push(worktree as WorktreeInfo)
     }
   }
-
-  return worktrees;
+  return worktrees
 }
 
-// Generate the next available worktree path (format: {main repo parent dir}/{main repo name}-{random word})
-async function getNextWorktreePath(cwd: string, worktrees: WorktreeInfo[]): Promise<{ path: string; randomWord: string }> {
-  // Main repo is the first entry in the worktree list
-  const mainRepoPath = worktrees.length > 0 ? worktrees[0].path : cwd;
-  const parentDir = dirname(mainRepoPath);
-  const projectName = basename(mainRepoPath);
+const runGit = (
+  cmd: string,
+  cwd: string
+): Effect.Effect<string, AppError> =>
+  Effect.tryPromise({
+    try: () => execAsync(cmd, { cwd }).then((r) => r.stdout),
+    catch: (cause) =>
+      new AppError({ message: `git command failed: ${cmd}`, cause }),
+  })
 
-  // Try up to 50 times to generate a non-duplicate random word
-  for (let i = 0; i < 50; i++) {
-    const randomWord = generateRandomWord();
-    const candidatePath = join(parentDir, `${projectName}-${randomWord}`);
-    try {
-      await execAsync(`test -e "${candidatePath}"`);
-      // Path exists, keep trying
-    } catch {
-      // Path does not exist, can be used
-      return { path: candidatePath, randomWord };
-    }
-  }
+const runGitOrEmpty = (cmd: string, cwd: string): Effect.Effect<string> =>
+  runGit(cmd, cwd).pipe(Effect.orElseSucceed(() => ""))
 
-  throw new Error('No available worktree path (too many attempts)');
-}
+const getNextWorktreePath = (
+  cwd: string,
+  worktrees: WorktreeInfo[]
+): Effect.Effect<{ path: string; randomWord: string } | null> =>
+  Effect.tryPromise({
+    try: async () => {
+      const mainRepoPath =
+        worktrees.length > 0 ? worktrees[0].path : cwd
+      const parentDir = dirname(mainRepoPath)
+      const projectName = basename(mainRepoPath)
+      for (let i = 0; i < 50; i++) {
+        const randomWord = generateRandomWord()
+        const candidatePath = join(parentDir, `${projectName}-${randomWord}`)
+        try {
+          await execAsync(`test -e "${candidatePath}"`)
+        } catch {
+          return { path: candidatePath, randomWord }
+        }
+      }
+      return null
+    },
+    catch: () => null,
+  }).pipe(Effect.orElseSucceed(() => null))
 
-// GET: List all worktrees
-export async function GET(request: Request) {
-  const searchParams = new URL(request.url).searchParams;
-  const cwd = searchParams.get('cwd') || process.cwd();
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const cwd = new URL(req.url).searchParams.get("cwd") || process.cwd()
 
-  try {
-    // Check if this is a git repository
-    try {
-      await execAsync('git rev-parse --git-dir', { cwd });
-    } catch {
-      return Response.json({ isGitRepo: false, worktrees: [] });
-    }
-
-    const { stdout } = await execAsync('git worktree list --porcelain', { cwd });
-    const worktrees = parseWorktreeList(stdout);
-
-    // Get next available path and random word (based on main repo path)
-    let nextPath: string | null = null;
-    let nextRandomWord: string | null = null;
-    try {
-      const result = await getNextWorktreePath(cwd, worktrees);
-      nextPath = result.path;
-      nextRandomWord = result.randomWord;
-    } catch {
-      // Ignore error
-    }
-
-    // Get git user.name
-    let gitUserName = '';
-    try {
-      const { stdout: userName } = await execAsync('git config user.name', { cwd });
-      gitUserName = userName.trim().toLowerCase().replace(/\s+/g, '');
-    } catch {
-      // Ignore error
+    // Fallback response when not a git repo
+    const isRepoCheck = yield* runGit("git rev-parse --git-dir", cwd).pipe(
+      Effect.map(() => true),
+      Effect.orElseSucceed(() => false)
+    )
+    if (!isRepoCheck) {
+      return ok({ isGitRepo: false, worktrees: [] })
     }
 
-    return Response.json({
+    const stdout = yield* runGit("git worktree list --porcelain", cwd)
+    const worktrees = parseWorktreeList(stdout)
+
+    const next = yield* getNextWorktreePath(cwd, worktrees)
+    const gitUserName = (
+      yield* runGitOrEmpty("git config user.name", cwd)
+    )
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "")
+
+    return ok({
       isGitRepo: true,
       worktrees,
-      nextPath,
-      nextRandomWord,
+      nextPath: next?.path ?? null,
+      nextRandomWord: next?.randomWord ?? null,
       currentPath: cwd,
       gitUserName,
-    });
-  } catch (error) {
-    console.error('Error listing worktrees:', error);
-    return Response.json(
-      { error: 'Failed to list worktrees' },
-      { status: 500 }
-    );
-  }
+    })
+  }).pipe(Effect.withSpan("api.git.worktree.GET"))
+)
+
+interface PostBody {
+  action?: string
+  cwd?: string
+  path?: string
+  branch?: string
+  newBranch?: string
+  baseBranch?: string
 }
 
-// POST: Create, remove, lock, or unlock a worktree
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { action, cwd, path, branch, newBranch, baseBranch } = body;
-
-    if (!cwd) {
-      return Response.json({ error: 'cwd is required' }, { status: 400 });
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as PostBody
+    if (!body.cwd) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "cwd", reason: "missing" })
+      )
     }
+    const { action, cwd, path, branch, newBranch, baseBranch } = body
 
     switch (action) {
-      case 'add': {
-        // Create worktree
+      case "add": {
         if (!path) {
-          return Response.json({ error: 'path is required' }, { status: 400 });
+          return yield* Effect.fail(
+            new ValidationError({ field: "path", reason: "missing" })
+          )
         }
-
-        let cmd: string;
+        let cmd: string
         if (newBranch) {
-          // Create new branch based on baseBranch (--no-track ensures no remote tracking)
-          const base = baseBranch || 'origin/main';
-          cmd = `git worktree add --no-track -b "${newBranch}" "${path}" "${base}"`;
+          const base = baseBranch || "origin/main"
+          cmd = `git worktree add --no-track -b "${newBranch}" "${path}" "${base}"`
         } else if (branch) {
-          // Use existing branch.
-          // If it is a remote branch (origin/xxx), strip the prefix to get the local name.
-          // git worktree add <path> <local-name> will auto-create a tracking branch.
-          const localBranch = branch.replace(/^origin\//, '');
-          cmd = `git worktree add "${path}" "${localBranch}"`;
+          const localBranch = branch.replace(/^origin\//, "")
+          cmd = `git worktree add "${path}" "${localBranch}"`
         } else {
-          return Response.json({ error: 'branch or newBranch is required' }, { status: 400 });
+          return yield* Effect.fail(
+            new ValidationError({
+              field: "branch|newBranch",
+              reason: "one is required",
+            })
+          )
         }
-
-        await execAsync(cmd, { cwd });
-        return Response.json({ success: true, path });
+        yield* runGit(cmd, cwd)
+        return ok({ success: true, path })
       }
-
-      case 'remove': {
-        // Remove worktree
+      case "remove":
+      case "lock":
+      case "unlock": {
         if (!path) {
-          return Response.json({ error: 'path is required' }, { status: 400 });
+          return yield* Effect.fail(
+            new ValidationError({ field: "path", reason: "missing" })
+          )
         }
-
-        // --force allows removing a worktree with uncommitted changes
-        await execAsync(`git worktree remove --force "${path}"`, { cwd });
-        return Response.json({ success: true });
+        const cmd =
+          action === "remove"
+            ? `git worktree remove --force "${path}"`
+            : action === "lock"
+              ? `git worktree lock "${path}"`
+              : `git worktree unlock "${path}"`
+        yield* runGit(cmd, cwd)
+        return ok({ success: true })
       }
-
-      case 'lock': {
-        // Lock worktree
+      case "checkout": {
         if (!path) {
-          return Response.json({ error: 'path is required' }, { status: 400 });
-        }
-
-        await execAsync(`git worktree lock "${path}"`, { cwd });
-        return Response.json({ success: true });
-      }
-
-      case 'unlock': {
-        // Unlock worktree
-        if (!path) {
-          return Response.json({ error: 'path is required' }, { status: 400 });
-        }
-
-        await execAsync(`git worktree unlock "${path}"`, { cwd });
-        return Response.json({ success: true });
-      }
-
-      case 'checkout': {
-        // Switch branch in the specified worktree
-        if (!path) {
-          return Response.json({ error: 'path is required' }, { status: 400 });
+          return yield* Effect.fail(
+            new ValidationError({ field: "path", reason: "missing" })
+          )
         }
         if (!branch) {
-          return Response.json({ error: 'branch is required' }, { status: 400 });
+          return yield* Effect.fail(
+            new ValidationError({ field: "branch", reason: "missing" })
+          )
         }
-        // Strip origin/ prefix from remote branch
-        const localBranch = branch.replace(/^origin\//, '');
-        await execAsync(`git checkout "${localBranch}"`, { cwd: path });
-        return Response.json({ success: true });
+        const localBranch = branch.replace(/^origin\//, "")
+        yield* runGit(`git checkout "${localBranch}"`, path)
+        return ok({ success: true })
       }
-
       default:
-        return Response.json({ error: `Unknown action: ${action}` }, { status: 400 });
+        return yield* Effect.fail(
+          new ValidationError({
+            field: "action",
+            reason: `unknown: ${action}`,
+          })
+        )
     }
-  } catch (error) {
-    console.error('Error with worktree operation:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return Response.json({ error: message }, { status: 500 });
-  }
-}
+  }).pipe(Effect.withSpan("api.git.worktree.POST"))
+)

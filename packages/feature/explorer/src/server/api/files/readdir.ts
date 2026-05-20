@@ -1,82 +1,92 @@
-import { stat, readdir, readlink } from 'fs/promises';
-import { join } from 'path';
+/**
+ * /api/files/readdir — P8+ migration
+ *
+ * List directory children (supports symlink target resolution).
+ */
+import { stat, readdir, readlink } from "fs/promises"
+import { join } from "path"
+import { Effect } from "effect"
+import { handler, ok } from "@cockpit/effect-runtime/server"
+import { FSError, ValidationError } from "@cockpit/effect-core"
 
 interface FileNode {
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  children?: FileNode[];
-  isSymlink?: boolean;
-  symlinkTarget?: string;
+  name: string
+  path: string
+  isDirectory: boolean
+  children?: FileNode[]
+  isSymlink?: boolean
+  symlinkTarget?: string
 }
 
-/**
- * GET /api/files/readdir?cwd=...&path=src/components
- * Returns direct children of the specified directory { children: FileNode[] }
- */
-export async function GET(request: Request) {
-  const searchParams = new URL(request.url).searchParams;
-  const cwd = searchParams.get('cwd') || process.cwd();
-  const path = searchParams.get('path') || '';
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const sp = new URL(req.url).searchParams
+    const cwd = sp.get("cwd") || process.cwd()
+    const path = sp.get("path") || ""
 
-  // Safety check: disallow .. traversal
-  if (path.includes('..')) {
-    return Response.json({ error: 'Invalid path' }, { status: 400 });
-  }
-
-  try {
-    const absPath = path ? join(cwd, path) : cwd;
-
-    const stats = await stat(absPath);
-    if (!stats.isDirectory()) {
-      return Response.json({ error: 'Path is not a directory' }, { status: 400 });
+    if (path.includes("..")) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "path", reason: "contains '..'" })
+      )
     }
 
-    const entries = await readdir(absPath, { withFileTypes: true });
-    const nodes: FileNode[] = [];
+    const absPath = path ? join(cwd, path) : cwd
 
-    for (const entry of entries) {
-      if (entry.name === '.git') continue;
-
-      const entryRelPath = path ? `${path}/${entry.name}` : entry.name;
-      const isSymlink = entry.isSymbolicLink();
-      let isDir = entry.isDirectory();
-
-      if (isSymlink) {
-        try {
-          const targetStats = await stat(join(absPath, entry.name));
-          isDir = targetStats.isDirectory();
-        } catch {
-          // broken symlink
+    const nodes = yield* Effect.tryPromise({
+      try: async () => {
+        const stats = await stat(absPath)
+        if (!stats.isDirectory()) {
+          throw new Error("Path is not a directory")
         }
-      }
 
-      const node: FileNode = {
-        name: entry.name,
-        path: entryRelPath,
-        isDirectory: isDir,
-        ...(isSymlink ? { isSymlink: true } : {}),
-      };
+        const entries = await readdir(absPath, { withFileTypes: true })
+        const result: FileNode[] = []
 
-      // Resolve symlink target
-      if (isSymlink) {
-        try {
-          node.symlinkTarget = await readlink(join(absPath, entry.name));
-        } catch { /* ignore */ }
-      }
+        for (const entry of entries) {
+          if (entry.name === ".git") continue
 
-      nodes.push(node);
-    }
+          const entryRelPath = path ? `${path}/${entry.name}` : entry.name
+          const isSymlink = entry.isSymbolicLink()
+          let isDir = entry.isDirectory()
 
-    nodes.sort((a, b) => {
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
-      return a.name.localeCompare(b.name);
-    });
+          if (isSymlink) {
+            try {
+              const targetStats = await stat(join(absPath, entry.name))
+              isDir = targetStats.isDirectory()
+            } catch {
+              /* broken symlink */
+            }
+          }
 
-    return Response.json({ children: nodes });
-  } catch (error) {
-    console.error('Error reading directory:', error);
-    return Response.json({ error: 'Failed to read directory' }, { status: 500 });
-  }
-}
+          const node: FileNode = {
+            name: entry.name,
+            path: entryRelPath,
+            isDirectory: isDir,
+            ...(isSymlink ? { isSymlink: true } : {}),
+          }
+
+          if (isSymlink) {
+            try {
+              node.symlinkTarget = await readlink(join(absPath, entry.name))
+            } catch {
+              /* ignore */
+            }
+          }
+
+          result.push(node)
+        }
+
+        result.sort((a, b) => {
+          if (a.isDirectory && !b.isDirectory) return -1
+          if (!a.isDirectory && b.isDirectory) return 1
+          return a.name.localeCompare(b.name)
+        })
+
+        return result
+      },
+      catch: (cause) => new FSError({ path: absPath, op: "read", cause }),
+    })
+
+    return ok({ children: nodes })
+  })
+)

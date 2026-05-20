@@ -3,6 +3,14 @@ import { buildGitFileTree, collectGitTreeDirPaths, type GitFileNode } from '../G
 import type { Branch, Commit, FileChange, FileDiff } from '../fileBrowser/types';
 import { COMMITS_PER_PAGE } from '../fileBrowser/utils';
 import i18n from '@cockpit/shared-i18n';
+import { Effect } from 'effect';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  fetchBranches,
+  fetchCommits,
+  fetchCommitDiff,
+  fetchBranchDiff,
+} from '../effect/gitClient';
 
 interface UseGitHistoryOptions {
   cwd: string;
@@ -45,27 +53,31 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
   const loadBranches = useCallback(() => {
     setIsLoadingBranches(true);
     setHistoryError(null);
-    fetch(`/api/git/branches?cwd=${encodeURIComponent(cwd)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.error) {
-          setHistoryError(data.error === 'Failed to get branches' ? i18n.t('git.notGitRepo') : data.error);
-          setBranches(null);
-        } else if (data.local && data.current) {
-          setBranches(data);
-          setSelectedBranch(data.current);
-          if (data.upstream) setUpstreamBranch(data.upstream);
-        } else {
-          setHistoryError(i18n.t('git.cannotGetBranches'));
-          setBranches(null);
-        }
-      })
-      .catch(err => {
-        console.error(err);
-        setHistoryError(i18n.t('git.getBranchesFailed'));
-        setBranches(null);
-      })
-      .finally(() => setIsLoadingBranches(false));
+    BrowserRuntime.runPromise(
+      fetchBranches(cwd).pipe(
+        Effect.match({
+          onSuccess: (data) => {
+            if (data.local && data.current) {
+              setBranches(data as Branch);
+              setSelectedBranch(data.current);
+              if (data.upstream) setUpstreamBranch(data.upstream);
+            } else {
+              setHistoryError(i18n.t('git.cannotGetBranches'));
+              setBranches(null);
+            }
+          },
+          onFailure: (err) => {
+            console.error(err);
+            if (err._tag === 'NotFoundError') {
+              setHistoryError(i18n.t('git.notGitRepo'));
+            } else {
+              setHistoryError(i18n.t('git.getBranchesFailed'));
+            }
+            setBranches(null);
+          },
+        })
+      )
+    ).finally(() => setIsLoadingBranches(false));
   }, [cwd]);
 
   const loadCommits = useCallback((branch: string) => {
@@ -76,15 +88,20 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
     setHistorySelectedFile(null);
     setHistoryFileDiff(null);
     setHasMoreCommits(true);
-    fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(branch)}&limit=${COMMITS_PER_PAGE}`)
-      .then(res => res.json())
-      .then(data => {
-        const newCommits = data.commits || [];
-        setCommits(newCommits);
-        setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
-      })
-      .catch(console.error)
-      .finally(() => setIsLoadingCommits(false));
+    BrowserRuntime.runPromise(
+      fetchCommits(cwd, branch, COMMITS_PER_PAGE).pipe(
+        Effect.match({
+          onSuccess: (data) => {
+            const newCommits = (data.commits || []) as Commit[];
+            setCommits(newCommits);
+            setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
+          },
+          onFailure: (err) => {
+            console.error(err);
+          },
+        })
+      )
+    ).finally(() => setIsLoadingCommits(false));
   }, [cwd]);
 
   const loadMoreCommits = useCallback(() => {
@@ -93,17 +110,22 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
     setIsLoadingMore(true);
     const offset = commits.length;
 
-    fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(selectedBranch)}&limit=${COMMITS_PER_PAGE}&offset=${offset}`)
-      .then(res => res.json())
-      .then(data => {
-        const newCommits = data.commits || [];
-        if (newCommits.length > 0) {
-          setCommits(prev => [...prev, ...newCommits]);
-        }
-        setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
-      })
-      .catch(console.error)
-      .finally(() => setIsLoadingMore(false));
+    BrowserRuntime.runPromise(
+      fetchCommits(cwd, selectedBranch, COMMITS_PER_PAGE, offset).pipe(
+        Effect.match({
+          onSuccess: (data) => {
+            const newCommits = (data.commits || []) as Commit[];
+            if (newCommits.length > 0) {
+              setCommits(prev => [...prev, ...newCommits]);
+            }
+            setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
+          },
+          onFailure: (err) => {
+            console.error(err);
+          },
+        })
+      )
+    ).finally(() => setIsLoadingMore(false));
   }, [cwd, selectedBranch, commits.length, isLoadingMore, hasMoreCommits]);
 
   const handleCommitListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
@@ -119,17 +141,22 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
     setHistorySelectedFile(null);
     setHistoryFileDiff(null);
     setIsLoadingHistoryFiles(true);
-    fetch(`/api/git/commit-diff?cwd=${encodeURIComponent(cwd)}&hash=${commit.hash}`)
-      .then(res => res.json())
-      .then(data => {
-        const fileList = data.files || [];
-        setHistoryFiles(fileList);
-        const tree = buildGitFileTree(fileList);
-        setHistoryFileTree(tree);
-        setHistoryExpandedPaths(new Set(collectGitTreeDirPaths(tree)));
-      })
-      .catch(console.error)
-      .finally(() => setIsLoadingHistoryFiles(false));
+    BrowserRuntime.runPromise(
+      fetchCommitDiff(cwd, commit.hash).pipe(
+        Effect.match({
+          onSuccess: (data) => {
+            const fileList = (data.files || []) as FileChange[];
+            setHistoryFiles(fileList);
+            const tree = buildGitFileTree(fileList);
+            setHistoryFileTree(tree);
+            setHistoryExpandedPaths(new Set(collectGitTreeDirPaths(tree)));
+          },
+          onFailure: (err) => {
+            console.error(err);
+          },
+        })
+      )
+    ).finally(() => setIsLoadingHistoryFiles(false));
   }, [cwd]);
 
   const handleSelectHistoryFile = useCallback((file: FileChange) => {
@@ -137,11 +164,16 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
     setHistorySelectedFile(file);
     addToRecentFiles(file.path);
     setIsLoadingHistoryDiff(true);
-    fetch(`/api/git/commit-diff?cwd=${encodeURIComponent(cwd)}&hash=${selectedCommit.hash}&file=${encodeURIComponent(file.path)}`)
-      .then(res => res.json())
-      .then(data => setHistoryFileDiff(data))
-      .catch(console.error)
-      .finally(() => setIsLoadingHistoryDiff(false));
+    BrowserRuntime.runPromise(
+      fetchCommitDiff(cwd, selectedCommit.hash, file.path).pipe(
+        Effect.match({
+          onSuccess: (data) => setHistoryFileDiff(data as unknown as FileDiff),
+          onFailure: (err) => {
+            console.error(err);
+          },
+        })
+      )
+    ).finally(() => setIsLoadingHistoryDiff(false));
   }, [cwd, selectedCommit, addToRecentFiles]);
 
   const handleHistoryToggle = useCallback((path: string) => {
@@ -161,17 +193,22 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
     setIsLoadingCompareFiles(true);
     setCompareSelectedFile(null);
     setCompareFileDiff(null);
-    fetch(`/api/git/branch-diff?cwd=${encodeURIComponent(cwd)}&base=${encodeURIComponent(baseBranch)}`)
-      .then(res => res.json())
-      .then(data => {
-        const fileList = data.files || [];
-        setCompareFiles(fileList);
-        const tree = buildGitFileTree(fileList);
-        setCompareFileTree(tree);
-        setCompareExpandedPaths(new Set(collectGitTreeDirPaths(tree)));
-      })
-      .catch(console.error)
-      .finally(() => setIsLoadingCompareFiles(false));
+    BrowserRuntime.runPromise(
+      fetchBranchDiff(cwd, baseBranch).pipe(
+        Effect.match({
+          onSuccess: (data) => {
+            const fileList = (data.files || []) as FileChange[];
+            setCompareFiles(fileList);
+            const tree = buildGitFileTree(fileList);
+            setCompareFileTree(tree);
+            setCompareExpandedPaths(new Set(collectGitTreeDirPaths(tree)));
+          },
+          onFailure: (err) => {
+            console.error(err);
+          },
+        })
+      )
+    ).finally(() => setIsLoadingCompareFiles(false));
   }, [cwd]);
 
   // Select a comparison file to view its diff
@@ -179,11 +216,16 @@ export function useGitHistory({ cwd, addToRecentFiles }: UseGitHistoryOptions) {
     setCompareSelectedFile(file);
     addToRecentFiles(file.path);
     setIsLoadingCompareDiff(true);
-    fetch(`/api/git/branch-diff?cwd=${encodeURIComponent(cwd)}&base=${encodeURIComponent(compareBaseBranch)}&file=${encodeURIComponent(file.path)}`)
-      .then(res => res.json())
-      .then(data => setCompareFileDiff(data))
-      .catch(console.error)
-      .finally(() => setIsLoadingCompareDiff(false));
+    BrowserRuntime.runPromise(
+      fetchBranchDiff(cwd, compareBaseBranch, file.path).pipe(
+        Effect.match({
+          onSuccess: (data) => setCompareFileDiff(data as unknown as FileDiff),
+          onFailure: (err) => {
+            console.error(err);
+          },
+        })
+      )
+    ).finally(() => setIsLoadingCompareDiff(false));
   }, [cwd, compareBaseBranch, addToRecentFiles]);
 
   // Toggle directory expansion in comparison mode

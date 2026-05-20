@@ -2,7 +2,10 @@ import { readFile, readdir, writeFile, stat } from 'fs/promises';
 import { join } from 'path';
 import { createReadStream } from 'fs';
 import { createInterface } from 'readline';
+import { Effect } from 'effect';
 import { CLAUDE_DIR, CLAUDE2_DIR, COCKPIT_DIR, ensureDir } from '@cockpit/shared-utils';
+import { handler, ok } from '@cockpit/effect-runtime/server';
+import { AppError, NotFoundError } from '@cockpit/effect-core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -266,34 +269,40 @@ async function writeCache(cacheFile: string, data: unknown): Promise<void> {
   }
 }
 
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const engine = searchParams.get('engine') || 'claude';
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const engine = new URL(req.url).searchParams.get('engine') || 'claude';
+    const projectsDir =
+      engine === 'claude2'
+        ? join(CLAUDE2_DIR, 'projects')
+        : join(CLAUDE_DIR, 'projects');
+    const cacheFile =
+      engine === 'claude2'
+        ? join(COCKPIT_DIR, 'stats-cache-claude2.json')
+        : join(COCKPIT_DIR, 'stats-cache.json');
 
-    const projectsDir = engine === 'claude2'
-      ? join(CLAUDE2_DIR, 'projects')
-      : join(CLAUDE_DIR, 'projects');
-    const cacheFile = engine === 'claude2'
-      ? join(COCKPIT_DIR, 'stats-cache-claude2.json')
-      : join(COCKPIT_DIR, 'stats-cache.json');
+    const cached = yield* Effect.tryPromise({
+      try: () => readCache(cacheFile),
+      catch: () => null,
+    }).pipe(Effect.orElseSucceed(() => null));
+    if (cached) return ok(cached);
 
-    // Check cache first
-    const cached = await readCache(cacheFile);
-    if (cached) {
-      return Response.json(cached);
-    }
-
-    const stats = await scanSessions(projectsDir);
+    const stats = yield* Effect.tryPromise({
+      try: () => scanSessions(projectsDir),
+      catch: (cause) =>
+        new AppError({ message: 'Failed to scan sessions', cause }),
+    });
     if (!stats) {
-      return Response.json({ error: 'Projects directory not found' }, { status: 404 });
+      return yield* Effect.fail(
+        new NotFoundError({ resource: 'projectsDir', id: projectsDir })
+      );
     }
 
-    // Write cache for next request
-    await writeCache(cacheFile, stats);
+    yield* Effect.tryPromise({
+      try: () => writeCache(cacheFile, stats),
+      catch: () => null,
+    }).pipe(Effect.orElseSucceed(() => null));
 
-    return Response.json(stats);
-  } catch (e) {
-    return Response.json({ error: String(e) }, { status: 500 });
-  }
-}
+    return ok(stats);
+  })
+);

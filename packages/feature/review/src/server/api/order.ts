@@ -1,25 +1,37 @@
-import { join } from 'path';
-import { REVIEW_DIR, writeJsonFile, ensureDir } from '@cockpit/shared-utils';
+/**
+ * /api/review/order — P8+ migration (PUT)
+ */
+import { join } from "path"
+import { Effect } from "effect"
+import {
+  REVIEW_DIR,
+  writeJsonFile,
+  ensureDir,
+} from "@cockpit/shared-utils"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { FSError, ValidationError } from "@cockpit/effect-core"
 
-const ORDER_FILE = join(REVIEW_DIR, '_order.json');
+const ORDER_FILE = join(REVIEW_DIR, "_order.json")
 
-// PUT - Save sort order
-// body: { order: string[] }
-export async function PUT(request: Request) {
-  try {
-    const body = await request.json();
-    const { order } = body;
-
-    if (!Array.isArray(order)) {
-      return Response.json({ error: 'order must be an array' }, { status: 400 });
+export const PUT = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as { order?: unknown[] }
+    if (!Array.isArray(body.order)) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: "order",
+          reason: "must be an array",
+        })
+      )
     }
-
-    await ensureDir(REVIEW_DIR);
-    await writeJsonFile(ORDER_FILE, order);
-
-    return Response.json({ success: true });
-  } catch (error) {
-    console.error('Error saving review order:', error);
-    return Response.json({ error: 'Failed to save order' }, { status: 500 });
-  }
-}
+    yield* Effect.tryPromise({
+      try: async () => {
+        await ensureDir(REVIEW_DIR)
+        await writeJsonFile(ORDER_FILE, body.order)
+      },
+      catch: (cause) =>
+        new FSError({ path: ORDER_FILE, op: "write", cause }),
+    })
+    return ok({ success: true })
+  })
+)

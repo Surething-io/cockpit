@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next';
 import { DiffView } from '@cockpit/feature-explorer';
 import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, type GitFileNode } from './GitFileTree';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { fetchCommitDiff } from './effect/gitClient';
 import { formatAsHumanReadable } from './toolCallUtils';
 import { useJsonSearch, JsonSearchBar } from '@cockpit/shared-ui';
 
@@ -115,35 +117,38 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
       setIsLoadingFiles(true);
     });
 
-    fetch(`/api/git/commit-diff?cwd=${encodeURIComponent(cwd)}&hash=${commit.hash}`)
-      .then(res => res.json())
-      .then(data => {
-        const fileList: FileChange[] = data.files || [];
+    BrowserRuntime.runPromiseExit(fetchCommitDiff(cwd, commit.hash)).then((exit) => {
+      if (exit._tag === 'Success') {
+        const fileList: FileChange[] = (exit.value.files ?? []) as FileChange[];
         setFiles(fileList);
-        // Build file tree
         const tree = buildGitFileTree(fileList);
         setFileTree(tree);
-        // Initialize expanded paths
         setExpandedPaths(new Set(collectGitTreeDirPaths(tree)));
 
         // If initialFilePath is set, auto-select the corresponding file
         if (initialFilePath && fileList.length > 0) {
           const matchedFile = fileList.find(f => f.path === initialFilePath);
           if (matchedFile) {
-            // Delay to ensure state has updated
             setTimeout(() => {
               setSelectedFile(matchedFile);
               // Load diff
-              fetch(`/api/git/commit-diff?cwd=${encodeURIComponent(cwd)}&hash=${commit.hash}&file=${encodeURIComponent(matchedFile.path)}`)
-                .then(res => res.json())
-                .then(diffData => setFileDiff(diffData))
-                .catch(console.error);
+              BrowserRuntime.runPromiseExit(
+                fetchCommitDiff(cwd, commit.hash, matchedFile.path)
+              ).then((diffExit) => {
+                if (diffExit._tag === 'Success') {
+                  setFileDiff(diffExit.value as unknown as FileDiff);
+                } else {
+                  console.error(diffExit.cause);
+                }
+              });
             }, 0);
           }
         }
-      })
-      .catch(console.error)
-      .finally(() => setIsLoadingFiles(false));
+      } else {
+        console.error(exit.cause);
+      }
+      setIsLoadingFiles(false);
+    });
   }, [isOpen, commit, cwd, initialFilePath]);
 
   // Load diff when file selected
@@ -151,11 +156,14 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
     if (!commit) return;
     setSelectedFile(file);
     setIsLoadingDiff(true);
-    fetch(`/api/git/commit-diff?cwd=${encodeURIComponent(cwd)}&hash=${commit.hash}&file=${encodeURIComponent(file.path)}`)
-      .then(res => res.json())
-      .then(data => setFileDiff(data))
-      .catch(console.error)
-      .finally(() => setIsLoadingDiff(false));
+    BrowserRuntime.runPromiseExit(fetchCommitDiff(cwd, commit.hash, file.path)).then((exit) => {
+      if (exit._tag === 'Success') {
+        setFileDiff(exit.value as unknown as FileDiff);
+      } else {
+        console.error(exit.cause);
+      }
+      setIsLoadingDiff(false);
+    });
   }, [cwd, commit]);
 
   // Toggle directory expand/collapse

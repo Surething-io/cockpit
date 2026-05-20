@@ -6,12 +6,13 @@
 // ============================================
 // Plugin server-side managers
 // ============================================
+// Pg / MySQL / Redis / Neo4j no longer use module-level singletons — connection
+// state is owned by the corresponding `Layer.scoped` and the db/* routes consume
+// the PgService / MySQLService / RedisService / Neo4jService Tags directly.
 export * from './plugins/browser/BrowserBridge';
-export * from './plugins/database/PgPoolManager';
 export * from './plugins/jupyter/JupyterKernelManager';
-export * from './plugins/mysql/MySQLPoolManager';
-export * from './plugins/neo4j/Neo4jManager';
-export * from './plugins/redis/RedisManager';
+// Neo4j pure helpers (driver creation + cypher serialization) — consumed by effect/neo4jLive.ts.
+export * from './plugins/neo4j/neo4jCore';
 
 // ============================================
 // Terminal

@@ -1,30 +1,71 @@
-import { mysqlPoolManager } from '@cockpit/feature-console/server';
+/**
+ * /api/mysql/connect — P9 second pass (Service Tag migration)
+ *
+ * Validate the connection + fetch the database list; both queries share the same pool (same id).
+ */
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { DBError, ValidationError } from "@cockpit/effect-core"
+import { MySQLService } from "@cockpit/effect-services"
 
-export async function POST(req: Request) {
-  try {
-    const { id, connectionString } = await req.json();
-    if (!id || !connectionString) {
-      return Response.json({ error: 'Missing id or connectionString' }, { status: 400 });
-    }
-
-    const pool = await mysqlPoolManager.getPool(id, connectionString);
-    const conn = await pool.getConnection();
-    try {
-      const [[dbRow]] = await conn.query('SELECT DATABASE() AS db, VERSION() AS version') as [Array<{ db: string; version: string }>, unknown];
-      const [dbRows] = await conn.query('SHOW DATABASES') as [Array<{ Database: string }>, unknown];
-      const databases = dbRows
-        .map((r) => r.Database)
-        .filter((d) => !['information_schema', 'performance_schema', 'mysql', 'sys'].includes(d));
-      return Response.json({
-        database: dbRow.db,
-        version: dbRow.version,
-        schemas: databases,
-      });
-    } finally {
-      conn.release();
-    }
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return Response.json({ error: msg }, { status: 500 });
-  }
+interface ConnectBody {
+  id?: string
+  connectionString?: string
 }
+
+type VersionRow = { db: string; version: string }
+type DbRow = { Database: string }
+
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as ConnectBody
+    if (!body.id || !body.connectionString) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.id ? "id" : "connectionString",
+          reason: "missing",
+        })
+      )
+    }
+    const { id, connectionString } = body
+
+    const mysql = yield* MySQLService
+    const [versionRows, dbRows] = yield* Effect.all(
+      [
+        mysql.query<VersionRow>(
+          id,
+          connectionString,
+          "SELECT DATABASE() AS db, VERSION() AS version"
+        ),
+        mysql.query<DbRow>(id, connectionString, "SHOW DATABASES"),
+      ],
+      { concurrency: "unbounded" }
+    )
+
+    const versionRow = versionRows[0]
+    if (!versionRow) {
+      return yield* Effect.fail(
+        new DBError({
+          db: "mysql",
+          op: "connect",
+          cause: new Error("empty version response"),
+        })
+      )
+    }
+
+    const databases = dbRows
+      .map((r) => r.Database)
+      .filter(
+        (d) =>
+          !["information_schema", "performance_schema", "mysql", "sys"].includes(
+            d
+          )
+      )
+
+    return ok({
+      database: versionRow.db,
+      version: versionRow.version,
+      schemas: databases,
+    })
+  }).pipe(Effect.withSpan("api.mysql.connect"))
+)

@@ -1,64 +1,61 @@
 /**
- * File detail endpoint — symbol tree for the right-side function drawer.
- *
- * GET /api/projectGraph/file?cwd=<abs>&path=<rel>
- *
- * Returns the file's symbol tree (functions, classes, methods …) so the
- * Code Map canvas can render function-level children when the user expands
- * a file node, and so the drawer can list a file's symbols alongside the
- * code body of the one being viewed.
- *
- * Backed by the same code index as `/api/projectGraph`, so this is a cheap
- * projection from cached data after the first build for a given cwd.
- *
- * Status codes:
- *   200 — FileDetailResponse JSON
- *   400 — missing cwd / path
- *   404 — file is not in the index (unsupported language, beyond cap …)
- *   500 — build failed
+ * /api/projectGraph/file — P8+ migration
  */
-
+import { Effect } from "effect"
 import {
   fileDetailFromIndex,
   getCodeIndex,
   invalidateIndex,
-} from '@cockpit/feature-explorer/server/codeMap/projectGraph/codeIndex';
-import { validateCwd } from '@cockpit/feature-explorer/server/files/shared';
+} from "@cockpit/feature-explorer/server/codeMap/projectGraph/codeIndex"
+import { validateCwd } from "@cockpit/feature-explorer/server/files/shared"
+import { handler, ok } from "@cockpit/effect-runtime/server"
+import {
+  AppError,
+  NotFoundError,
+  ValidationError,
+} from "@cockpit/effect-core"
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
-export async function GET(request: Request) {
-  const cwdParam = new URL(request.url).searchParams.get('cwd');
-  const filePath = new URL(request.url).searchParams.get('path');
-  const cwdCheck = await validateCwd(cwdParam);
-  if (!cwdCheck.ok) {
-    return Response.json({ error: cwdCheck.reason }, { status: 400 });
-  }
-  const cwd = cwdCheck.abs;
-  if (!filePath) {
-    return Response.json({ error: 'Missing path parameter' }, { status: 400 });
-  }
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const sp = new URL(req.url).searchParams
+    const cwdParam = sp.get("cwd")
+    const filePath = sp.get("path")
 
-  try {
-    const index = await getCodeIndex(cwd);
-    const detail = fileDetailFromIndex(index, filePath);
-    if (!detail) {
-      return Response.json(
-        {
-          error: 'File not in index',
-          hint: 'File may be an unsupported language or beyond the file cap.',
-        },
-        { status: 404 },
-      );
+    const cwdCheck = yield* Effect.promise(() => validateCwd(cwdParam))
+    if (!cwdCheck.ok) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "cwd", reason: cwdCheck.reason })
+      )
     }
-    return Response.json(detail);
-  } catch (err) {
-    console.error('[projectGraph/file] failed:', err);
-    invalidateIndex(cwd);
-    return Response.json(
-      { error: err instanceof Error ? err.message : 'Failed to load file detail' },
-      { status: 500 },
-    );
-  }
-}
+    const cwd = cwdCheck.abs
+    if (!filePath) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "path", reason: "missing" })
+      )
+    }
+
+    const detail = yield* Effect.tryPromise({
+      try: async () => {
+        const index = await getCodeIndex(cwd)
+        return fileDetailFromIndex(index, filePath)
+      },
+      catch: (cause) => {
+        invalidateIndex(cwd)
+        return new AppError({
+          message: "Failed to load file detail",
+          cause,
+        })
+      },
+    })
+
+    if (!detail) {
+      return yield* Effect.fail(
+        new NotFoundError({ resource: "projectGraph.file", id: filePath })
+      )
+    }
+    return ok(detail)
+  })
+)

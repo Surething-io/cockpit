@@ -1,201 +1,180 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
+/**
+ * /api/git/commit-diff
+ *
+ * Fetch the diff for a commit:
+ * - without `file`: returns the list of changed files
+ * - with `file`:    returns oldContent / newContent for that single file
+ *
+ * Merge commits and regular commits use different diff commands.
+ */
+import { exec } from "child_process"
+import { promisify } from "util"
+import { Effect } from "effect"
+import { handler, ok } from "@cockpit/effect-runtime/server"
+import { AppError, ValidationError } from "@cockpit/effect-core"
 
-const execAsync = promisify(exec);
+const execAsync = promisify(exec)
 
-// Strip quotes that git adds to filenames containing spaces
-function unquotePath(path: string): string {
-  if (path.startsWith('"') && path.endsWith('"')) {
-    return path.slice(1, -1);
-  }
-  return path;
+function unquotePath(p: string): string {
+  if (p.startsWith('"') && p.endsWith('"')) return p.slice(1, -1)
+  return p
 }
 
 interface FileChange {
-  path: string;
-  status: 'added' | 'modified' | 'deleted' | 'renamed';
-  oldPath?: string;
-  additions: number;
-  deletions: number;
+  path: string
+  status: "added" | "modified" | "deleted" | "renamed"
+  oldPath?: string
+  additions: number
+  deletions: number
 }
 
-export async function GET(request: Request) {
-  const searchParams = new URL(request.url).searchParams;
-  const cwd = searchParams.get('cwd') || process.cwd();
-  const hash = searchParams.get('hash');
-  const file = searchParams.get('file');
+const runGit = (
+  cmd: string,
+  cwd: string,
+  maxBuffer = 10 * 1024 * 1024
+): Effect.Effect<string, AppError> =>
+  Effect.tryPromise({
+    try: () =>
+      execAsync(cmd, { cwd, maxBuffer }).then((r) => r.stdout),
+    catch: (cause) =>
+      new AppError({ message: `git command failed: ${cmd}`, cause }),
+  })
 
-  if (!hash) {
-    return Response.json(
-      { error: 'Missing hash parameter' },
-      { status: 400 }
-    );
-  }
+const runGitOrEmpty = (
+  cmd: string,
+  cwd: string
+): Effect.Effect<string> =>
+  runGit(cmd, cwd).pipe(Effect.orElseSucceed(() => ""))
 
-  try {
-    // If a file is specified, return its diff content
-    if (file) {
-      return await getFileDiff(cwd, hash, file);
-    }
+const getChangedFiles = (cwd: string, hash: string) =>
+  Effect.gen(function* () {
+    const parentInfo = yield* runGit(
+      `git rev-list --parents -n 1 ${hash}`,
+      cwd
+    )
+    const parents = parentInfo.trim().split(" ").slice(1)
+    const isMergeCommit = parents.length > 1
 
-    // Otherwise return the list of changed files
-    return await getChangedFiles(cwd, hash);
-  } catch (error) {
-    console.error('Error getting commit diff:', error);
-    return Response.json(
-      { error: 'Failed to get commit diff' },
-      { status: 500 }
-    );
-  }
-}
+    const [nameStatusCmd, numstatCmd] = isMergeCommit
+      ? [
+          `git -c core.quotePath=false diff ${hash}^1 ${hash} --name-status`,
+          `git -c core.quotePath=false diff ${hash}^1 ${hash} --numstat`,
+        ]
+      : [
+          `git -c core.quotePath=false show ${hash} --name-status --format=""`,
+          `git -c core.quotePath=false show ${hash} --numstat --format=""`,
+        ]
 
-async function getChangedFiles(cwd: string, hash: string) {
-  // Check if this is a merge commit (has multiple parent commits)
-  const { stdout: parentCount } = await execAsync(
-    `git rev-list --parents -n 1 ${hash}`,
-    { cwd }
-  );
-  const parents = parentCount.trim().split(' ').slice(1);
-  const isMergeCommit = parents.length > 1;
+    const [nameStatus, numstat] = yield* Effect.all(
+      [runGit(nameStatusCmd, cwd), runGit(numstatCmd, cwd)],
+      { concurrency: "unbounded" }
+    )
 
-  // Get list of changed files and their status.
-  // For merge commits, use git diff against the first parent commit.
-  // For regular commits, use git show.
-  let nameStatusCmd: string;
-  let numstatCmd: string;
+    const statsMap = new Map<
+      string,
+      { additions: number; deletions: number }
+    >()
+    numstat
+      .split("\n")
+      .filter(Boolean)
+      .forEach((line) => {
+        const parts = line.split("\t")
+        if (parts.length >= 3) {
+          const additions = parts[0] === "-" ? 0 : parseInt(parts[0], 10)
+          const deletions = parts[1] === "-" ? 0 : parseInt(parts[1], 10)
+          let filename = parts.slice(2).join("\t")
+          filename = unquotePath(filename)
+          statsMap.set(filename, { additions, deletions })
+        }
+      })
 
-  // -c core.quotePath=false prevents Chinese filenames from being escaped as octal
-  if (isMergeCommit) {
-    // For merge commits, show diff against the first parent commit
-    nameStatusCmd = `git -c core.quotePath=false diff ${hash}^1 ${hash} --name-status`;
-    numstatCmd = `git -c core.quotePath=false diff ${hash}^1 ${hash} --numstat`;
-  } else {
-    nameStatusCmd = `git -c core.quotePath=false show ${hash} --name-status --format=""`;
-    numstatCmd = `git -c core.quotePath=false show ${hash} --numstat --format=""`;
-  }
+    const files: FileChange[] = []
+    nameStatus
+      .split("\n")
+      .filter(Boolean)
+      .forEach((line) => {
+        const parts = line.split("\t")
+        if (parts.length < 2) return
 
-  const { stdout: nameStatus } = await execAsync(
-    nameStatusCmd,
-    { cwd, maxBuffer: 10 * 1024 * 1024 }
-  );
+        const statusCode = parts[0]
+        let status: FileChange["status"]
+        let path: string
+        let oldPath: string | undefined
 
-  const { stdout: numstat } = await execAsync(
-    numstatCmd,
-    { cwd, maxBuffer: 10 * 1024 * 1024 }
-  );
+        if (statusCode.startsWith("R")) {
+          status = "renamed"
+          oldPath = unquotePath(parts[1])
+          path = unquotePath(parts[2])
+        } else {
+          path = unquotePath(parts[1])
+          switch (statusCode) {
+            case "A":
+              status = "added"
+              break
+            case "D":
+              status = "deleted"
+              break
+            case "M":
+            default:
+              status = "modified"
+              break
+          }
+        }
 
-  // Parse numstat (additions, deletions, filename)
-  const statsMap = new Map<string, { additions: number; deletions: number }>();
-  numstat.split('\n').filter(Boolean).forEach(line => {
-    const parts = line.split('\t');
-    if (parts.length >= 3) {
-      const additions = parts[0] === '-' ? 0 : parseInt(parts[0], 10);
-      const deletions = parts[1] === '-' ? 0 : parseInt(parts[1], 10);
-      let filename = parts.slice(2).join('\t'); // Handle filenames that may contain tabs
-      filename = unquotePath(filename);
-      statsMap.set(filename, { additions, deletions });
-    }
-  });
+        const stats = statsMap.get(path) ||
+          statsMap.get(oldPath || "") || { additions: 0, deletions: 0 }
 
-  // Parse name-status
-  const files: FileChange[] = [];
-  nameStatus.split('\n').filter(Boolean).forEach(line => {
-    const parts = line.split('\t');
-    if (parts.length < 2) return;
+        files.push({
+          path,
+          status,
+          oldPath,
+          additions: stats.additions,
+          deletions: stats.deletions,
+        })
+      })
 
-    const statusCode = parts[0];
-    let status: FileChange['status'];
-    let path: string;
-    let oldPath: string | undefined;
+    return ok({ files })
+  })
 
-    if (statusCode.startsWith('R')) {
-      // Rename: R100\told_name\tnew_name
-      status = 'renamed';
-      oldPath = unquotePath(parts[1]);
-      path = unquotePath(parts[2]);
-    } else {
-      path = unquotePath(parts[1]);
-      switch (statusCode) {
-        case 'A':
-          status = 'added';
-          break;
-        case 'D':
-          status = 'deleted';
-          break;
-        case 'M':
-        default:
-          status = 'modified';
-          break;
-      }
-    }
-
-    const stats = statsMap.get(path) || statsMap.get(oldPath || '') || { additions: 0, deletions: 0 };
-
-    files.push({
-      path,
-      status,
-      oldPath,
-      additions: stats.additions,
-      deletions: stats.deletions,
-    });
-  });
-
-  return Response.json({ files });
-}
-
-async function getFileDiff(cwd: string, hash: string, file: string) {
-  try {
-    // Get the first parent commit of this commit (also works for merge commits)
-    const { stdout: parentHash } = await execAsync(
+const getFileDiff = (cwd: string, hash: string, file: string) =>
+  Effect.gen(function* () {
+    const parentHash = (yield* runGitOrEmpty(
       `git rev-parse ${hash}^1`,
-      { cwd }
-    ).catch(() => ({ stdout: '' }));
+      cwd
+    )).trim()
 
-    const parent = parentHash.trim();
+    const oldContent = parentHash
+      ? yield* runGitOrEmpty(`git show ${parentHash}:${file}`, cwd)
+      : ""
 
-    // Get old file content (from parent commit)
-    let oldContent = '';
-    if (parent) {
-      try {
-        const { stdout } = await execAsync(
-          `git show ${parent}:${file}`,
-          { cwd, maxBuffer: 10 * 1024 * 1024 }
-        );
-        oldContent = stdout;
-      } catch {
-        // File does not exist in parent commit (new file)
-        oldContent = '';
-      }
-    }
+    const newContent = yield* runGitOrEmpty(`git show ${hash}:${file}`, cwd)
 
-    // Get new file content (from current commit)
-    let newContent = '';
-    try {
-      const { stdout } = await execAsync(
-        `git show ${hash}:${file}`,
-        { cwd, maxBuffer: 10 * 1024 * 1024 }
-      );
-      newContent = stdout;
-    } catch {
-      // File does not exist in current commit (deleted file)
-      newContent = '';
-    }
+    const isNew = oldContent === "" && newContent !== ""
+    const isDeleted = oldContent !== "" && newContent === ""
 
-    const isNew = oldContent === '' && newContent !== '';
-    const isDeleted = oldContent !== '' && newContent === '';
-
-    return Response.json({
+    return ok({
       oldContent,
       newContent,
       filePath: file,
       isNew,
       isDeleted,
-    });
-  } catch (error) {
-    console.error('Error getting file diff:', error);
-    return Response.json(
-      { error: 'Failed to get file diff' },
-      { status: 500 }
-    );
-  }
-}
+    })
+  })
+
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const sp = new URL(req.url).searchParams
+    const cwd = sp.get("cwd") || process.cwd()
+    const hash = sp.get("hash")
+    const file = sp.get("file")
+
+    if (!hash) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "hash", reason: "missing" })
+      )
+    }
+
+    if (file) return yield* getFileDiff(cwd, hash, file)
+    return yield* getChangedFiles(cwd, hash)
+  }).pipe(Effect.withSpan("api.git.commit-diff"))
+)

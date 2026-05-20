@@ -1,2 +1,2 @@
-// @cockpit/feature-workspace (server) — application layer server bits, if any.
-export {};
+// @cockpit/feature-workspace (server) — application layer server bits.
+export * from "./effect/project"

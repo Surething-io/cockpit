@@ -81,6 +81,10 @@ class JupyterKernelManager {
       return installedPath;
     }
 
+    // EFFECT.md §0 exemption: Jupyter manager falls under the "subprocess IPC
+    // adapter" exemption with an internal imperative API. COCKPIT_ROOT is the
+    // dev-mode repo root and is only used as a fallback when resolving
+    // jupyter_bridge.py; prod uses the ~/.cockpit/kernels path.
     const root = process.env.COCKPIT_ROOT;
     if (root) {
       const devPath = join(root, 'kernels', 'jupyter_bridge.py');

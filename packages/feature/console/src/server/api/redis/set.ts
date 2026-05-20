@@ -1,44 +1,63 @@
-import { redisManager } from '@cockpit/feature-console/server';
+/**
+ * /api/redis/set — P9 round 2 (Service Tag migration)
+ */
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
+import { RedisService } from "@cockpit/effect-services"
 
-export async function POST(req: Request) {
-  try {
-    const { id, connectionString, key, value, type, field, ttl } = await req.json();
-    if (!id || !connectionString || key === undefined) {
-      return Response.json({ error: 'Missing required fields' }, { status: 400 });
+interface SetBody {
+  id?: string
+  connectionString?: string
+  key?: string
+  value?: string
+  type?: "string" | "hash" | "list" | "set" | "zset"
+  field?: string
+  ttl?: number
+}
+
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as SetBody
+    if (!body.id || !body.connectionString || body.key === undefined) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.id
+            ? "id"
+            : !body.connectionString
+              ? "connectionString"
+              : "key",
+          reason: "missing",
+        })
+      )
     }
-
-    const client = await redisManager.getClient(id, connectionString);
+    const { id, connectionString, key, value, type, field, ttl } = body
+    const redis = yield* RedisService
+    const cmd = (name: string, ...args: unknown[]) =>
+      redis.command(id, connectionString, name, args)
 
     switch (type) {
-      case 'string':
-        await client.set(key, value);
-        break;
-      case 'hash':
+      case "string":
+        yield* cmd("SET", key, value ?? "")
+        break
+      case "hash":
         if (field !== undefined) {
-          await client.hset(key, field, value);
+          yield* cmd("HSET", key, field, value ?? "")
         }
-        break;
-      case 'list':
+        break
+      case "list":
+      case "set":
+      case "zset":
         // Direct modification not supported; use CLI
-        break;
-      case 'set':
-        // Direct modification not supported; use CLI
-        break;
-      case 'zset':
-        // Direct modification not supported; use CLI
-        break;
+        break
       default:
-        await client.set(key, value);
+        yield* cmd("SET", key, value ?? "")
     }
 
-    // Set TTL if provided
     if (ttl !== undefined && ttl > 0) {
-      await client.expire(key, ttl);
+      yield* cmd("EXPIRE", key, ttl)
     }
 
-    return Response.json({ ok: true });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return Response.json({ error: msg }, { status: 500 });
-  }
-}
+    return ok({ ok: true })
+  }).pipe(Effect.withSpan("api.redis.set"))
+)

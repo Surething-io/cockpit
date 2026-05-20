@@ -1,6 +1,9 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { SCHEDULED_TASKS_FILE, CLAUDE2_DIR, readJsonFile, writeJsonFile } from '@cockpit/shared-utils';
 import { updateGlobalState, getSessionTitle } from './state/globalState';
+import { Effect } from 'effect';
+import { AgentError, CockpitConfig } from '@cockpit/effect-core';
+import { AppRuntime } from '@cockpit/effect-runtime/server';
 
 // ============================================
 // Types
@@ -98,66 +101,96 @@ export function getNextCronTime(cronExpr: string, after: Date = new Date()): num
 // Send Chat Message (invokes SDK directly, bypasses HTTP)
 // ============================================
 
-async function sendChatMessage(task: ScheduledTask): Promise<boolean> {
-  try {
-    const options = {
-      resume: task.sessionId,
-      cwd: task.cwd,
-      settingSources: ['user' as const, 'project' as const, 'local' as const],
-      allowedTools: [
-        'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep',
-        'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'mcp__*',
-      ],
-      permissionMode: 'bypassPermissions' as const,
-      allowDangerouslySkipPermissions: true,
-      // For claude2 engine, override config directory to ~/.claude2
-      ...(task.engine === 'claude2' && {
-        env: { ...process.env, CLAUDE_CONFIG_DIR: CLAUDE2_DIR },
-      }),
-    };
+/**
+ * Effect form of sendChatMessage.
+ *
+ * 1. updateGlobalState 'loading' (silent; failure does not block)
+ * 2. Claude SDK query() stream iteration, with up to 1 compaction retry
+ * 3. On completion, updateGlobalState 'unread' + refresh title
+ *
+ * Failures are uniformly mapped to AgentError (sessionId / cwd context preserved).
+ */
+export const sendChatMessageEff = (task: ScheduledTask): Effect.Effect<boolean, AgentError> => {
+  const options = {
+    resume: task.sessionId,
+    cwd: task.cwd,
+    settingSources: ['user' as const, 'project' as const, 'local' as const],
+    allowedTools: [
+      'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep',
+      'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'mcp__*',
+    ],
+    permissionMode: 'bypassPermissions' as const,
+    allowDangerouslySkipPermissions: true,
+    // For claude2 engine, override config directory to ~/.claude2
+    ...(task.engine === 'claude2' && {
+      env: { ...process.env, CLAUDE_CONFIG_DIR: CLAUDE2_DIR },
+    }),
+  };
 
-    // Mark as loading
-    await updateGlobalState(task.cwd, task.sessionId, 'loading', undefined, task.message).catch(() => {});
+  const MAX_COMPACTION_RETRIES = 1;
 
-    // SDK may perform context compaction mid-stream, which ends the async iterable
-    // without a final end_turn. Detect this and re-query with resume to continue.
-    const MAX_COMPACTION_RETRIES = 1;
+  return Effect.gen(function* () {
+    // 1. Mark loading (silent; failures are swallowed)
+    yield* Effect.tryPromise(() =>
+      updateGlobalState(task.cwd, task.sessionId, 'loading', undefined, task.message),
+    ).pipe(Effect.orElse(() => Effect.void));
 
-    for (let attempt = 0; attempt <= MAX_COMPACTION_RETRIES; attempt++) {
-      let receivedResult = false;
-
-      const response = query({
-        // First attempt: send the actual message
-        // Retry after compaction: send 'continue' to resume
-        prompt: attempt === 0 ? task.message : 'continue',
-        options,
-      });
-
-      for await (const message of response) {
-        const msg = message as { type?: string };
-        if (msg.type === 'result') {
-          receivedResult = true;
+    // 2. Compaction-aware iteration
+    yield* Effect.tryPromise({
+      try: async () => {
+        for (let attempt = 0; attempt <= MAX_COMPACTION_RETRIES; attempt++) {
+          let receivedResult = false;
+          const response = query({
+            prompt: attempt === 0 ? task.message : 'continue',
+            options,
+          });
+          for await (const message of response) {
+            const msg = message as { type?: string };
+            if (msg.type === 'result') receivedResult = true;
+          }
+          if (receivedResult) break;
+          console.log(`[ScheduledTask] Stream ended without result, resuming (attempt ${attempt + 1}/${MAX_COMPACTION_RETRIES})`);
         }
-      }
+      },
+      catch: (cause) =>
+        // claude2 is a separate Anthropic credential set; the SDK is still claude. Classify under the 'claude' provider.
+        new AgentError({
+          provider: 'claude',
+          kind: 'unknown',
+          cause,
+        }),
+    });
 
-      // Got result = task truly finished
-      if (receivedResult) break;
-
-      // Stream ended without result → likely compaction, re-query to continue
-      console.log(`[ScheduledTask] Stream ended without result, resuming (attempt ${attempt + 1}/${MAX_COMPACTION_RETRIES})`);
-    }
-
-    // Mark as done
-    const title = await getSessionTitle(task.cwd, task.sessionId);
-    await updateGlobalState(task.cwd, task.sessionId, 'unread', title);
+    // 3. Done -> unread
+    const title = yield* Effect.tryPromise(() => getSessionTitle(task.cwd, task.sessionId)).pipe(
+      Effect.orElseSucceed(() => undefined),
+    );
+    yield* Effect.tryPromise(() =>
+      updateGlobalState(task.cwd, task.sessionId, 'unread', title),
+    ).pipe(Effect.orElse(() => Effect.void));
 
     return true;
-  } catch (error) {
-    console.error(`[ScheduledTask] Failed to send message for task ${task.id}:`, error);
-    // Mark as done
-    await updateGlobalState(task.cwd, task.sessionId, 'unread').catch(() => {});
-    return false;
-  }
+  }).pipe(
+    Effect.catchAll((err) =>
+      Effect.gen(function* () {
+        console.error(`[ScheduledTask] Failed to send message for task ${task.id}:`, err);
+        // Even on failure, mark the task unread
+        yield* Effect.tryPromise(() =>
+          updateGlobalState(task.cwd, task.sessionId, 'unread'),
+        ).pipe(Effect.orElse(() => Effect.void));
+        return false as const;
+      })
+    ),
+  );
+};
+
+/**
+ * Promise<boolean> entry point that delegates to the Effect version internally.
+ * fireTask / fireTaskManual continue to use Promise/async so the manager's
+ * scheduling logic stays unchanged.
+ */
+async function sendChatMessage(task: ScheduledTask): Promise<boolean> {
+  return AppRuntime.runPromise(sendChatMessageEff(task));
 }
 
 // ============================================
@@ -177,16 +210,15 @@ class ScheduledTaskManager {
   private onTaskFired: TaskFiredCallback | null = null;
 
   /**
-   * Return the current port (from explicit init or environment variables).
+   * Return the current port (from explicit init or CockpitConfig).
+   * CockpitConfig handles `Config.orElse(COCKPIT_PORT, PORT)` plus derived
+   * dev/prod defaults; a single sync runPromise gets the unified typed value,
+   * cached into this.port.
    */
   private getPort(): number {
     if (this.port) return this.port;
-    // Prefer explicitly set COCKPIT_PORT
-    const envPort = parseInt(process.env.COCKPIT_PORT || '0', 10);
-    if (envPort) { this.port = envPort; return this.port; }
-    // Fallback: infer from COCKPIT_ENV, matching server.mjs logic
-    const isDev = process.env.COCKPIT_ENV === 'dev';
-    this.port = isDev ? 3456 : 3457;
+    const cfg = AppRuntime.runSync(CockpitConfig);
+    this.port = cfg.port;
     return this.port;
   }
 

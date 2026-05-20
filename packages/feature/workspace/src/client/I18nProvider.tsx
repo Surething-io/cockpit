@@ -3,6 +3,8 @@
 import { useEffect } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '@cockpit/shared-i18n';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { loadSettings } from './effect/workspaceClient';
 
 interface I18nProviderProps {
   children: React.ReactNode;
@@ -29,21 +31,13 @@ function resolveLanguage(setting: string): string {
 export function I18nProvider({ children }: I18nProviderProps) {
   // Fetch language from backend on mount, then apply
   useEffect(() => {
-    fetch('/api/settings')
-      .then(r => r.json())
-      .then(data => {
-        const lang = resolveLanguage(data.language || 'auto');
-        if (i18n.language !== lang) {
-          i18n.changeLanguage(lang);
-        }
-      })
-      .catch(() => {
-        // Fallback: use browser language
-        const lang = resolveLanguage('auto');
-        if (i18n.language !== lang) {
-          i18n.changeLanguage(lang);
-        }
-      });
+    BrowserRuntime.runPromiseExit(loadSettings()).then((exit) => {
+      const setting = exit._tag === 'Success' ? exit.value.language : 'auto';
+      const lang = resolveLanguage(setting || 'auto');
+      if (i18n.language !== lang) {
+        i18n.changeLanguage(lang);
+      }
+    });
   }, []);
 
   // When language changes, broadcast to all iframes

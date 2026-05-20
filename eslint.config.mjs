@@ -38,6 +38,10 @@ const eslintConfig = defineConfig([
   // See CLAUDE.md / MODULES.md for the full architecture doc.
   {
     files: ["packages/shared/*/src/**/*.{ts,tsx}"],
+    // v2 P8 例外:effect-runtime/server/runtime.ts 是 AppLayer 装配中心,
+    // 需要 import 所有 feature 的 Live 才能 merge。这是 IoC 反转的合理实现位置。
+    // 后续 phase 可改为 server.mjs 收集 layers 注入 (BACKLOG)。
+    ignores: ["packages/shared/effect-runtime/src/server/runtime.ts"],
     rules: {
       "no-restricted-imports": ["error", {
         patterns: [{
@@ -65,6 +69,59 @@ const eslintConfig = defineConfig([
         caughtErrorsIgnorePattern: "^_",
         destructuredArrayIgnorePattern: "^_",
       }],
+    },
+  },
+  // ============================================================
+  // v2 Effect 范式约束 (P8 启用,警告级别 — 不阻塞合并,推动 P8+ 持续清理)
+  // 详见 EFFECT.md §10
+  // ============================================================
+  {
+    files: [
+      "src/app/api/**/*.ts",
+      "src/lib/effect/**/*.ts",
+      "packages/feature/*/src/effect/**/*.ts",
+      "packages/feature/*/src/server/effect/**/*.ts",
+      "packages/feature/*/src/server/api/**/*.ts",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "warn",
+        {
+          selector:
+            "CallExpression[callee.object.name='Promise'][callee.property.name='all']",
+          message:
+            "v2: use `Effect.all([...], { concurrency: 'unbounded' })` instead of `Promise.all`.",
+        },
+        {
+          selector:
+            "CallExpression[callee.object.name='Promise'][callee.property.name='race']",
+          message: "v2: use `Effect.race` instead of `Promise.race`.",
+        },
+        {
+          selector: "CallExpression[callee.name='setTimeout']",
+          message:
+            "v2: use `Effect.delay` / `Schedule.spaced` / `wsReconnectDelayMs` instead of bare setTimeout for retry/delay logic.",
+        },
+        {
+          selector: "CallExpression[callee.name='setInterval']",
+          message:
+            "v2: use `Effect.repeat(Schedule.spaced(...))` or `Scheduler.schedule` instead of bare setInterval.",
+        },
+      ],
+    },
+  },
+  {
+    files: ["packages/feature/*/src/client/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "warn",
+        {
+          selector:
+            "CallExpression[callee.object.object.name='window'][callee.object.property.name='parent'][callee.property.name='postMessage']",
+          message:
+            "v2: use `publishTopic(Topics.X, payload)` from `@cockpit/effect-react` (with corresponding entry in `@cockpit/effect-services/topics`).",
+        },
+      ],
     },
   },
 ]);

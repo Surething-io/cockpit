@@ -1,39 +1,51 @@
-import { getExpandedPathsPath, readJsonFile, writeJsonFile } from '@cockpit/shared-utils';
+/**
+ * /api/files/expanded — P8+ migration
+ */
+import { Effect } from "effect"
+import {
+  getExpandedPathsPath,
+  readJsonFile,
+  writeJsonFile,
+} from "@cockpit/shared-utils"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { FSError, ValidationError } from "@cockpit/effect-core"
 
-// GET - Read expanded paths
-export async function GET(request: Request) {
-  const cwd = new URL(request.url).searchParams.get('cwd');
-
-  if (!cwd) {
-    return Response.json({ error: 'cwd is required' }, { status: 400 });
-  }
-
-  try {
-    const filePath = getExpandedPathsPath(cwd);
-    const paths = await readJsonFile<string[]>(filePath, []);
-    return Response.json({ paths });
-  } catch (error) {
-    console.error('Error reading expanded paths:', error);
-    return Response.json({ error: 'Failed to read expanded paths' }, { status: 500 });
-  }
-}
-
-// POST - Save expanded paths
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { cwd, paths } = body;
-
-    if (!cwd || !Array.isArray(paths)) {
-      return Response.json({ error: 'cwd and paths array are required' }, { status: 400 });
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const cwd = new URL(req.url).searchParams.get("cwd")
+    if (!cwd) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "cwd", reason: "missing" })
+      )
     }
+    const filePath = getExpandedPathsPath(cwd)
+    const paths = yield* Effect.tryPromise({
+      try: () => readJsonFile<string[]>(filePath, []),
+      catch: (cause) => new FSError({ path: filePath, op: "read", cause }),
+    })
+    return ok({ paths })
+  })
+)
 
-    const filePath = getExpandedPathsPath(cwd);
-    await writeJsonFile(filePath, paths);
-
-    return Response.json({ success: true });
-  } catch (error) {
-    console.error('Error saving expanded paths:', error);
-    return Response.json({ error: 'Failed to save expanded paths' }, { status: 500 });
-  }
-}
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as {
+      cwd?: string
+      paths?: string[]
+    }
+    if (!body.cwd || !Array.isArray(body.paths)) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.cwd ? "cwd" : "paths",
+          reason: "missing or invalid",
+        })
+      )
+    }
+    const filePath = getExpandedPathsPath(body.cwd)
+    yield* Effect.tryPromise({
+      try: () => writeJsonFile(filePath, body.paths),
+      catch: (cause) => new FSError({ path: filePath, op: "write", cause }),
+    })
+    return ok({ success: true })
+  })
+)

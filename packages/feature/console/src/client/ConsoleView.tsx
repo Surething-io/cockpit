@@ -10,6 +10,12 @@ import { ConsoleScrollButtons } from './ConsoleScrollButtons';
 import { useConsoleState, type ConsoleItem } from './useConsoleState';
 import { interruptCommand as interruptCmd } from './TerminalWsManager';
 import { getPlugin } from './pluginRegistry';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { Effect } from 'effect';
+import {
+  loadProjectSettings,
+  saveProjectSettings,
+} from './effect/consoleClient';
 
 interface ConsoleViewProps {
   cwd: string;
@@ -79,29 +85,26 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
   // ========== Settings ==========
 
   const loadSettings = async () => {
-    try {
-      const response = await fetch(`/api/project-settings?cwd=${encodeURIComponent(cwd)}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.settings?.gridLayout !== undefined) {
-          setGridLayout(data.settings.gridLayout);
-        }
+    const exit = await BrowserRuntime.runPromiseExit(loadProjectSettings(cwd));
+    if (exit._tag === 'Success') {
+      const settings = exit.value.settings as { gridLayout?: unknown } | undefined;
+      if (settings?.gridLayout !== undefined) {
+        setGridLayout(settings.gridLayout as typeof gridLayout);
       }
-    } catch (error) {
-      console.error('Failed to load project settings:', error);
+    } else {
+      console.error('Failed to load project settings:', exit.cause);
     }
   };
 
-  const saveSettings = async (settings: Record<string, unknown>) => {
-    try {
-      await fetch('/api/project-settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, settings }),
-      });
-    } catch (error) {
-      console.error('Failed to save project settings:', error);
-    }
+  const saveSettings = (settings: Record<string, unknown>) => {
+    BrowserRuntime.runFork(
+      saveProjectSettings({ cwd, settings }).pipe(
+        Effect.tapError((err) =>
+          Effect.sync(() => console.error('Failed to save project settings:', err))
+        ),
+        Effect.orElse(() => Effect.void)
+      )
+    );
   };
 
   useEffect(() => { queueMicrotask(() => loadSettings()); }, []);

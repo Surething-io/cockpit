@@ -3,6 +3,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@cockpit/shared-ui';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  fetchGitWorktrees,
+  postGitWorktree,
+  fetchBranches,
+} from './effect/gitClient';
+import { publishTopic } from '@cockpit/effect-react';
+import { Topics } from '@cockpit/effect-services';
 
 // Generate a random readable word (consonant + vowel/rime, 2 pairs)
 function generateRandomWord(): string {
@@ -75,27 +83,38 @@ export function GitWorktreeModal({
   const [branchesLoading, setBranchesLoading] = useState(false);
 
 
+  // Helper: extract the innermost Error.message (if any) from an Effect Exit's Cause,
+  // otherwise fall back to the i18n key. AppError's cause is typically an Error that
+  // wraps the backend body.error.
+  const errMsgFromCause = useCallback(
+    (cause: unknown, fallbackKey: string): string => {
+      const c = cause as { _tag?: string; error?: { cause?: unknown } };
+      if (c?._tag === 'Fail' && c.error?.cause instanceof Error) {
+        return c.error.cause.message;
+      }
+      return t(fallbackKey);
+    },
+    [t],
+  );
+
   // Load worktree list
   const loadWorktrees = useCallback(async () => {
     setLoading(true);
-    try {
-      const response = await fetch(`/api/git/worktree?cwd=${encodeURIComponent(cwd)}`);
-      if (response.ok) {
-        const data: WorktreeListResponse = await response.json();
-        setWorktrees(data.worktrees);
-        setNextPath(data.nextPath);
-        setNextRandomWord(data.nextRandomWord);
-        if (data.gitUserName) {
-          setGitUserName(data.gitUserName);
-        }
+    const exit = await BrowserRuntime.runPromiseExit(fetchGitWorktrees(cwd));
+    if (exit._tag === 'Success') {
+      const data = exit.value as unknown as WorktreeListResponse;
+      setWorktrees(data.worktrees);
+      setNextPath(data.nextPath);
+      setNextRandomWord(data.nextRandomWord);
+      if (data.gitUserName) {
+        setGitUserName(data.gitUserName);
       }
-    } catch (error) {
-      console.error('Failed to load worktrees:', error);
+    } else {
+      console.error('Failed to load worktrees:', exit.cause);
       toast(t('toast.worktreeLoadFailed'), 'error');
-    } finally {
-      setLoading(false);
     }
-  }, [cwd]);
+    setLoading(false);
+  }, [cwd, t]);
 
   // Get the default base branch (priority: origin/main → origin/master → main → master → first available)
   const getDefaultBaseBranch = useCallback((data: BranchesResponse): string => {
@@ -128,14 +147,9 @@ export function GitWorktreeModal({
 
     // Fetch branch list first to determine the default base branch
     let defaultBase = 'origin/main';
-    try {
-      const response = await fetch(`/api/git/branches?cwd=${encodeURIComponent(cwd)}`);
-      if (response.ok) {
-        const data: BranchesResponse = await response.json();
-        defaultBase = getDefaultBaseBranch(data);
-      }
-    } catch {
-      // Ignore error, use default value
+    const branchesExit = await BrowserRuntime.runPromiseExit(fetchBranches(cwd));
+    if (branchesExit._tag === 'Success') {
+      defaultBase = getDefaultBaseBranch(branchesExit.value as BranchesResponse);
     }
 
     // Use the random word returned by the API (shared for both directory name and branch name)
@@ -143,32 +157,23 @@ export function GitWorktreeModal({
     const branchName = gitUserName ? `${gitUserName}/${randomWord}` : randomWord;
 
     setIsCreating(true);
-    try {
-      const response = await fetch('/api/git/worktree', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'add',
-          cwd,
-          path: nextPath,
-          newBranch: branchName,
-          baseBranch: defaultBase,
-        }),
-      });
-
-      if (response.ok) {
-        toast(t('toast.worktreeCreateSuccess', { name: branchName }), 'success');
-        loadWorktrees();
-      } else {
-        const data = await response.json();
-        toast(data.error || t('toast.worktreeCreateFailed'), 'error');
-      }
-    } catch (error) {
-      console.error('Failed to create worktree:', error);
-      toast(t('toast.worktreeCreateFailed'), 'error');
-    } finally {
-      setIsCreating(false);
+    const exit = await BrowserRuntime.runPromiseExit(
+      postGitWorktree({
+        action: 'add',
+        cwd,
+        path: nextPath,
+        newBranch: branchName,
+        baseBranch: defaultBase,
+      })
+    );
+    if (exit._tag === 'Success') {
+      toast(t('toast.worktreeCreateSuccess', { name: branchName }), 'success');
+      loadWorktrees();
+    } else {
+      console.error('Failed to create worktree:', exit.cause);
+      toast(errMsgFromCause(exit.cause, 'toast.worktreeCreateFailed'), 'error');
     }
+    setIsCreating(false);
   };
 
   // Open the branch picker
@@ -176,24 +181,23 @@ export function GitWorktreeModal({
     setBranchesLoading(true);
     setBranchSearch('');
     setShowBranchPicker(true);
-    try {
-      const response = await fetch(`/api/git/branches?cwd=${encodeURIComponent(cwd)}`);
-      if (response.ok) {
-        const data: BranchesResponse = await response.json();
-        // Branches already used by a worktree
-        const usedBranches = new Set(worktrees.map(w => w.branch).filter(Boolean));
-        // Merge local + remote, excluding already-used branches
-        const allBranches = [
-          ...data.local.filter(b => !usedBranches.has(b)),
-          ...data.remote.filter(b => !usedBranches.has(b) && !data.local.includes(b.replace(/^origin\//, ''))),
-        ];
-        setBranches(allBranches);
-      }
-    } catch {
+    const exit = await BrowserRuntime.runPromiseExit(fetchBranches(cwd));
+    if (exit._tag === 'Success') {
+      const data = exit.value as BranchesResponse;
+      const local = data.local ?? [];
+      const remote = data.remote ?? [];
+      // Branches already used by a worktree
+      const usedBranches = new Set(worktrees.map(w => w.branch).filter(Boolean));
+      // Merge local + remote, excluding already-used branches
+      const allBranches = [
+        ...local.filter(b => !usedBranches.has(b)),
+        ...remote.filter(b => !usedBranches.has(b) && !local.includes(b.replace(/^origin\//, ''))),
+      ];
+      setBranches(allBranches);
+    } else {
       toast(t('toast.loadBranchFailed'), 'error');
-    } finally {
-      setBranchesLoading(false);
     }
+    setBranchesLoading(false);
   };
 
   // Create a worktree from an existing branch
@@ -201,30 +205,17 @@ export function GitWorktreeModal({
     if (!nextPath) return;
     setShowBranchPicker(false);
     setIsCreating(true);
-    try {
-      const response = await fetch('/api/git/worktree', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'add',
-          cwd,
-          path: nextPath,
-          branch,
-        }),
-      });
-      if (response.ok) {
-        toast(t('toast.worktreeCreateSuccess', { name: branch }), 'success');
-        loadWorktrees();
-      } else {
-        const data = await response.json();
-        toast(data.error || t('toast.worktreeCreateFailed'), 'error');
-      }
-    } catch (error) {
-      console.error('Failed to create worktree:', error);
-      toast(t('toast.worktreeCreateFailed'), 'error');
-    } finally {
-      setIsCreating(false);
+    const exit = await BrowserRuntime.runPromiseExit(
+      postGitWorktree({ action: 'add', cwd, path: nextPath, branch })
+    );
+    if (exit._tag === 'Success') {
+      toast(t('toast.worktreeCreateSuccess', { name: branch }), 'success');
+      loadWorktrees();
+    } else {
+      console.error('Failed to create worktree:', exit.cause);
+      toast(errMsgFromCause(exit.cause, 'toast.worktreeCreateFailed'), 'error');
     }
+    setIsCreating(false);
   };
 
   // Delete worktree
@@ -232,57 +223,32 @@ export function GitWorktreeModal({
     if (!deleteTarget) return;
 
     setIsDeleting(true);
-    try {
-      const response = await fetch('/api/git/worktree', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'remove',
-          cwd,
-          path: deleteTarget.path,
-        }),
-      });
-
-      if (response.ok) {
-        toast(t('toast.worktreeDeleted'), 'success');
-        setDeleteTarget(null);
-        loadWorktrees();
-      } else {
-        const data = await response.json();
-        toast(data.error || t('toast.worktreeDeleteFailed'), 'error');
-      }
-    } catch (error) {
-      console.error('Failed to delete worktree:', error);
-      toast(t('toast.worktreeDeleteFailed'), 'error');
-    } finally {
-      setIsDeleting(false);
+    const exit = await BrowserRuntime.runPromiseExit(
+      postGitWorktree({ action: 'remove', cwd, path: deleteTarget.path })
+    );
+    if (exit._tag === 'Success') {
+      toast(t('toast.worktreeDeleted'), 'success');
+      setDeleteTarget(null);
+      loadWorktrees();
+    } else {
+      console.error('Failed to delete worktree:', exit.cause);
+      toast(errMsgFromCause(exit.cause, 'toast.worktreeDeleteFailed'), 'error');
     }
+    setIsDeleting(false);
   };
 
   // Lock/unlock worktree
   const handleToggleLock = async (worktree: WorktreeInfo) => {
     const action = worktree.isLocked ? 'unlock' : 'lock';
-    try {
-      const response = await fetch('/api/git/worktree', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          cwd,
-          path: worktree.path,
-        }),
-      });
-
-      if (response.ok) {
-        toast(worktree.isLocked ? t('toast.worktreeUnlocked') : t('toast.worktreeLocked'), 'success');
-        loadWorktrees();
-      } else {
-        const data = await response.json();
-        toast(data.error || t('toast.operationFailed'), 'error');
-      }
-    } catch (error) {
-      console.error('Failed to toggle lock:', error);
-      toast(t('toast.operationFailed'), 'error');
+    const exit = await BrowserRuntime.runPromiseExit(
+      postGitWorktree({ action, cwd, path: worktree.path })
+    );
+    if (exit._tag === 'Success') {
+      toast(worktree.isLocked ? t('toast.worktreeUnlocked') : t('toast.worktreeLocked'), 'success');
+      loadWorktrees();
+    } else {
+      console.error('Failed to toggle lock:', exit.cause);
+      toast(errMsgFromCause(exit.cause, 'toast.operationFailed'), 'error');
     }
   };
 
@@ -290,10 +256,7 @@ export function GitWorktreeModal({
   const handleClickWorktree = (worktree: WorktreeInfo) => {
     if (worktree.path === cwd) return; // Already in this worktree
 
-    window.parent.postMessage({
-      type: 'OPEN_PROJECT',
-      cwd: worktree.path,
-    }, '*');
+    publishTopic(Topics.OpenProject, { cwd: worktree.path });
     onClose();
   };
 

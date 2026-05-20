@@ -1,7 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
+import { Effect } from 'effect';
 import { CLAUDE_PROJECTS_DIR } from '@cockpit/shared-utils';
+import { handler } from '@cockpit/effect-runtime/server';
+import { AppError } from '@cockpit/effect-core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -149,16 +152,25 @@ function getFileModifiedTime(filePath: string): Date {
   return stats.mtime;
 }
 
-export async function GET() {
-  try {
+export const GET = handler(() =>
+  Effect.gen(function* () {
+    const projectGroups = yield* Effect.tryPromise({
+      try: () => loadProjectGroups(),
+      catch: (cause) =>
+        new AppError({ message: 'Failed to load sessions', cause }),
+    });
+    return new Response(JSON.stringify(projectGroups), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  })
+);
+
+async function loadProjectGroups(): Promise<ProjectGroup[]> {
     const projectsDir = CLAUDE_PROJECTS_DIR;
 
-    // Check if the directory exists
     if (!fs.existsSync(projectsDir)) {
-      return new Response(JSON.stringify([]), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return [];
     }
 
     // Read all project directories
@@ -238,16 +250,5 @@ export async function GET() {
 
     // Sort alphabetically by project name
     projectGroups.sort((a, b) => a.name.localeCompare(b.name));
-
-    return new Response(JSON.stringify(projectGroups), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (error) {
-    console.error('Sessions API error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+    return projectGroups;
 }

@@ -1,78 +1,98 @@
-import { getRecentFilesPath, readJsonFile, writeJsonFile } from '@cockpit/shared-utils';
+/**
+ * /api/files/recent — P8+ migration
+ *
+ * Recent files list (top 15) + scroll/cursor position memory.
+ */
+import { Effect } from "effect"
+import {
+  getRecentFilesPath,
+  readJsonFile,
+  writeJsonFile,
+} from "@cockpit/shared-utils"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { FSError, ValidationError } from "@cockpit/effect-core"
 
-const MAX_RECENT_FILES = 15;
+const MAX_RECENT_FILES = 15
 
 export interface RecentFileEntry {
-  path: string;
-  scrollLine?: number;   // First visible line on screen (1-based)
-  cursorLine?: number;   // Cursor line (1-based)
-  cursorCol?: number;    // Cursor column (1-based)
+  path: string
+  scrollLine?: number
+  cursorLine?: number
+  cursorCol?: number
 }
 
-/** Read and normalize: backward compatible with old string entries, filter invalid data */
 function normalize(raw: unknown[]): RecentFileEntry[] {
   return raw
-    .map(item => typeof item === 'string' ? { path: item } : item as RecentFileEntry)
-    .filter(item => item && typeof item.path === 'string' && item.path);
+    .map((item) =>
+      typeof item === "string" ? { path: item } : (item as RecentFileEntry)
+    )
+    .filter((item) => item && typeof item.path === "string" && item.path)
 }
 
-// GET - Read recent files
-export async function GET(request: Request) {
-  const cwd = new URL(request.url).searchParams.get('cwd');
+const readRecent = (cwd: string): Effect.Effect<RecentFileEntry[], FSError> =>
+  Effect.gen(function* () {
+    const filePath = getRecentFilesPath(cwd)
+    const raw = yield* Effect.tryPromise({
+      try: () => readJsonFile<unknown[]>(filePath, []),
+      catch: (cause) =>
+        new FSError({ path: filePath, op: "read", cause }),
+    })
+    return normalize(raw)
+  })
 
-  if (!cwd) {
-    return Response.json({ error: 'cwd is required' }, { status: 400 });
-  }
-
-  try {
-    const filePath = getRecentFilesPath(cwd);
-    const raw = await readJsonFile<unknown[]>(filePath, []);
-    const files = normalize(raw);
-    return Response.json({ files });
-  } catch (error) {
-    console.error('Error reading recent files:', error);
-    return Response.json({ error: 'Failed to read recent files' }, { status: 500 });
-  }
-}
-
-// POST - Add file / update position
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { cwd, file, scrollLine, cursorLine, cursorCol } = body as {
-      cwd: string; file: string;
-      scrollLine?: number; cursorLine?: number; cursorCol?: number;
-    };
-
-    if (!cwd || !file) {
-      return Response.json({ error: 'cwd and file are required' }, { status: 400 });
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const cwd = new URL(req.url).searchParams.get("cwd")
+    if (!cwd) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "cwd", reason: "missing" })
+      )
     }
+    const files = yield* readRecent(cwd)
+    return ok({ files })
+  })
+)
 
-    const filePath = getRecentFilesPath(cwd);
-    let files = normalize(await readJsonFile<unknown[]>(filePath, []));
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as {
+      cwd?: string
+      file?: string
+      scrollLine?: number
+      cursorLine?: number
+      cursorCol?: number
+    }
+    if (!body.cwd || !body.file) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.cwd ? "cwd" : "file",
+          reason: "missing",
+        })
+      )
+    }
+    const { cwd, file, scrollLine, cursorLine, cursorCol } = body
+    const filePath = getRecentFilesPath(cwd)
+    let files = yield* readRecent(cwd)
 
-    const hasPosition = scrollLine != null || cursorLine != null;
-
+    const hasPosition = scrollLine != null || cursorLine != null
     if (hasPosition) {
-      // Update position info for existing entry without changing order
-      const idx = files.findIndex(f => f.path === file);
+      const idx = files.findIndex((f) => f.path === file)
       if (idx !== -1) {
-        if (scrollLine != null) files[idx].scrollLine = scrollLine;
-        if (cursorLine != null) files[idx].cursorLine = cursorLine;
-        if (cursorCol != null) files[idx].cursorCol = cursorCol;
+        if (scrollLine != null) files[idx].scrollLine = scrollLine
+        if (cursorLine != null) files[idx].cursorLine = cursorLine
+        if (cursorCol != null) files[idx].cursorCol = cursorCol
       }
-      // Ignore if entry does not exist (should not happen)
     } else {
-      // Add file to top of list (deduplicated)
-      files = files.filter(f => f.path !== file);
-      files.unshift({ path: file });
-      files = files.slice(0, MAX_RECENT_FILES);
+      files = files.filter((f) => f.path !== file)
+      files.unshift({ path: file })
+      files = files.slice(0, MAX_RECENT_FILES)
     }
 
-    await writeJsonFile(filePath, files);
-    return Response.json({ files });
-  } catch (error) {
-    console.error('Error updating recent file:', error);
-    return Response.json({ error: 'Failed to update recent file' }, { status: 500 });
-  }
-}
+    yield* Effect.tryPromise({
+      try: () => writeJsonFile(filePath, files),
+      catch: (cause) => new FSError({ path: filePath, op: "write", cause }),
+    })
+
+    return ok({ files })
+  })
+)

@@ -1,6 +1,13 @@
 import * as fs from 'fs';
 import * as readline from 'readline';
+import { Effect } from 'effect';
 import { getClaudeSessionPath, getClaude2SessionPath, findCodexSessionPath, findKimiSessionPath, getOllamaSessionPath, getDeepseekSessionPath } from '@cockpit/shared-utils';
+import { handler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
+import {
+  AppError,
+  NotFoundError,
+  ValidationError,
+} from '@cockpit/effect-core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -70,106 +77,103 @@ function getFileFingerprint(filePath: string): string {
   return `${stat.mtimeMs}-${stat.size}`;
 }
 
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const cwd = body.cwd as string;
-    const sessionId = body.sessionId as string;
-    // Pagination params: limit = number of turns per page (one turn = user + assistant message pair)
-    // beforeTurnIndex = load messages before this turn index (used for scroll-up to load more)
-    const limit = body.limit as number | undefined;
-    const beforeTurnIndex = body.beforeTurnIndex as number | undefined;
-    // Lightweight check: client sends last fingerprint; return a 304-equivalent if unchanged
-    const ifFingerprint = body.ifFingerprint as string | undefined;
+interface SessionByPathBody {
+  cwd?: string;
+  sessionId?: string;
+  limit?: number;
+  beforeTurnIndex?: number;
+  ifFingerprint?: string;
+}
 
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as SessionByPathBody;
+    const { cwd, sessionId, limit, beforeTurnIndex, ifFingerprint } = body;
     if (!cwd || !sessionId) {
-      return new Response(JSON.stringify({ error: 'Missing cwd or sessionId' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !cwd ? 'cwd' : 'sessionId',
+          reason: 'missing',
+        })
+      );
     }
 
-    // Build the full session file path — try Claude first, then Claude2, then DeepSeek (also JSONL via SDK), then Codex, then Kimi, then Ollama
-    let sessionPath = getClaudeSessionPath(cwd, sessionId);
-    let engine: 'claude' | 'claude2' | 'codex' | 'kimi' | 'ollama' | 'deepseek' = 'claude';
-
-    if (!fs.existsSync(sessionPath)) {
-      const claude2Path = getClaude2SessionPath(cwd, sessionId);
-      if (fs.existsSync(claude2Path)) {
-        sessionPath = claude2Path;
-        engine = 'claude2';
-      } else {
-        const deepseekPath = getDeepseekSessionPath(cwd, sessionId);
-        if (fs.existsSync(deepseekPath)) {
-          sessionPath = deepseekPath;
-          engine = 'deepseek';
-        } else {
-          const codexPath = findCodexSessionPath(sessionId);
-          if (codexPath) {
-            sessionPath = codexPath;
-            engine = 'codex';
-          } else {
-            const kimiPath = findKimiSessionPath(sessionId);
-            if (kimiPath) {
-              sessionPath = kimiPath;
-              engine = 'kimi';
-            } else {
-              const ollamaPath = getOllamaSessionPath(cwd, sessionId);
-              if (fs.existsSync(ollamaPath)) {
-                sessionPath = ollamaPath;
-                engine = 'ollama';
-              } else {
-                return new Response(JSON.stringify({ error: 'Session not found', messages: [] }), {
-                  status: 404,
-                  headers: { 'Content-Type': 'application/json' },
-                });
-              }
-            }
-          }
-        }
-      }
+    // Resolve session file across 6 engines (claude/claude2/deepseek/codex/kimi/ollama)
+    const resolved = yield* Effect.sync(() => resolveSessionPath(cwd, sessionId));
+    if (!resolved) {
+      return yield* Effect.fail(
+        new NotFoundError({ resource: 'session', id: sessionId })
+      );
     }
+    const { sessionPath, engine } = resolved;
 
-    // Get the file fingerprint
     const fingerprint = getFileFingerprint(sessionPath);
-
-    // If the client fingerprint matches the server's, data is unchanged; skip parsing
     if (ifFingerprint && ifFingerprint === fingerprint) {
-      return new Response(JSON.stringify({ notModified: true, fingerprint }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return ok({ notModified: true, fingerprint });
     }
 
-    // Read and parse the JSONL file (with pagination support)
-    const parseResult = engine === 'codex'
-      ? await parseCodexTranscriptFile(sessionPath)
-      : engine === 'kimi'
-        ? await parseKimiTranscriptFile(sessionPath)
-        : engine === 'ollama'
-          ? await (async () => {
-              const r = await parseTranscriptFile(sessionPath, limit, beforeTurnIndex);
-              // Backward compatibility: older Ollama sessions were stored as AI SDK ModelMessage JSONL
-              if (r.messages.length === 0) return await parseOllamaTranscriptFile(sessionPath);
-              return r;
-            })()
-          : await parseTranscriptFile(sessionPath, limit, beforeTurnIndex);
+    const parseResult = yield* Effect.tryPromise({
+      try: async () => {
+        if (engine === 'codex') return parseCodexTranscriptFile(sessionPath);
+        if (engine === 'kimi') return parseKimiTranscriptFile(sessionPath);
+        if (engine === 'ollama') {
+          const r = await parseTranscriptFile(sessionPath, limit, beforeTurnIndex);
+          if (r.messages.length === 0) return parseOllamaTranscriptFile(sessionPath);
+          return r;
+        }
+        return parseTranscriptFile(sessionPath, limit, beforeTurnIndex);
+      },
+      catch: (cause) =>
+        new AppError({ message: 'parseTranscriptFile failed', cause }),
+    });
 
     const { messages, title, usage } = parseResult;
     const totalTurns = 'totalTurns' in parseResult ? parseResult.totalTurns : 0;
     const hasMore = 'hasMore' in parseResult ? parseResult.hasMore : false;
+    return ok({
+      messages,
+      sessionId,
+      title,
+      usage,
+      totalTurns,
+      hasMore,
+      fingerprint,
+    });
+  })
+);
 
-    return new Response(JSON.stringify({ messages, sessionId, title, usage, totalTurns, hasMore, fingerprint }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (error) {
-    console.error('Session by path API error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+function resolveSessionPath(
+  cwd: string,
+  sessionId: string
+): {
+  sessionPath: string;
+  engine: 'claude' | 'claude2' | 'codex' | 'kimi' | 'ollama' | 'deepseek';
+} | null {
+  const sessionPath = getClaudeSessionPath(cwd, sessionId);
+  if (fs.existsSync(sessionPath)) {
+    return { sessionPath, engine: 'claude' };
   }
+  const claude2Path = getClaude2SessionPath(cwd, sessionId);
+  if (fs.existsSync(claude2Path)) {
+    return { sessionPath: claude2Path, engine: 'claude2' };
+  }
+  const deepseekPath = getDeepseekSessionPath(cwd, sessionId);
+  if (fs.existsSync(deepseekPath)) {
+    return { sessionPath: deepseekPath, engine: 'deepseek' };
+  }
+  const codexPath = findCodexSessionPath(sessionId);
+  if (codexPath) {
+    return { sessionPath: codexPath, engine: 'codex' };
+  }
+  const kimiPath = findKimiSessionPath(sessionId);
+  if (kimiPath) {
+    return { sessionPath: kimiPath, engine: 'kimi' };
+  }
+  const ollamaPath = getOllamaSessionPath(cwd, sessionId);
+  if (fs.existsSync(ollamaPath)) {
+    return { sessionPath: ollamaPath, engine: 'ollama' };
+  }
+  return null;
 }
 
 // Filter command tags and extract meaningful content

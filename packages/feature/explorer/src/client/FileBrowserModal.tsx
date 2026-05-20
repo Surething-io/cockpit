@@ -3,6 +3,22 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Portal } from '@cockpit/shared-ui';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  saveFile,
+  loadFileClipboard,
+  saveFileClipboard,
+  pasteFiles,
+  deleteFiles,
+  loadFilesInit,
+  loadFileIndex,
+  loadRecentFiles,
+  fetchFileText,
+} from './effect/filesClient';
+import {
+  fetchGitStatus,
+  fetchCommits,
+} from './effect/gitClient';
 import { CommitDetailPanel } from './CommitDetailPanel';
 import { DiffView } from '@cockpit/feature-explorer';
 import { toast } from '@cockpit/shared-ui';
@@ -18,7 +34,9 @@ import { QuickFileOpen } from './QuickFileOpen';
 import { useWebSocket } from '@cockpit/shared-ui';
 import { usePageVisible } from '@cockpit/shared-ui';
 
-import type { TabType, GitFileStatus, GitStatusResponse, FileBrowserModalProps, SearchResult } from './fileBrowser/types';
+import type { TabType, GitFileStatus, GitStatusResponse, FileBrowserModalProps, SearchResult, Commit } from './fileBrowser/types';
+import type { FileNode } from './FileTree';
+import type { RecentFileEntry } from '@/app/api/files/recent/route';
 import { BlockViewer } from './fileBrowser/BlockViewer';
 import { StatusDiffPane } from './fileBrowser/StatusDiffPane';
 import { getTargetDirPath, formatDateTime, NOOP, COMMITS_PER_PAGE } from './fileBrowser/utils';
@@ -134,21 +152,21 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
   const handleViSave = useCallback(async () => {
     if (!fileTree.fileContent || fileTree.fileContent.type !== 'text' || !fileTree.fileContent.content) return;
+    const exit = await BrowserRuntime.runPromiseExit(
+      saveFile({
+        cwd,
+        path: fileTree.selectedPath!,
+        content: fileTree.fileContent.content,
+      })
+    );
     try {
-      const response = await fetch('/api/files/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cwd,
-          path: fileTree.selectedPath,
-          content: fileTree.fileContent.content,
-        }),
-      });
-      if (!response.ok) throw new Error('Failed to save file');
-      const data = await response.json();
-      if (data.mtime) {
+      if (exit._tag === 'Failure' || !exit.value.ok) {
+        throw new Error('Failed to save file');
+      }
+      const mtime = (exit.value.data as { mtime?: number } | null)?.mtime;
+      if (mtime) {
         fileTree.setFileContent(prev =>
-          prev?.type === 'text' ? { ...prev, mtime: data.mtime } : prev
+          prev?.type === 'text' ? { ...prev, mtime } : prev
         );
       }
       toast(t('toast.savedSuccess'), 'success');
@@ -359,45 +377,44 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   // ========== Copy / Paste Handlers ==========
   const handleCopyFile = useCallback(async (path: string) => {
     const fileName = path.split('/').pop() || path;
-    try {
-      await fetch('/api/files/clipboard', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, path }),
-      });
+    const exit = await BrowserRuntime.runPromiseExit(
+      saveFileClipboard({ cwd, paths: [path], op: 'copy' })
+    );
+    if (exit._tag === 'Success') {
       toast(t('toast.copiedName', { name: fileName }), 'success');
-    } catch {
+    } else {
       toast(t('toast.copyFailed'), 'error');
     }
-  }, [cwd]);
+  }, [cwd, t]);
 
   const handlePaste = useCallback(async (targetDir: string) => {
-    try {
-      // Read the file path from the system clipboard
-      const clipRes = await fetch('/api/files/clipboard');
-      const clipData = await clipRes.json();
-      if (!clipData.path) {
-        toast(t('toast.noFileToPaste'), 'info');
-        return;
-      }
-
-      const res = await fetch('/api/files/paste', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, targetDir, sourceAbsPath: clipData.path }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast(t('toast.pastedFile', { name: data.newName }), 'success');
-        fileTree.loadDirectory(targetDir);
-        fileTree.loadFileIndex();
-      } else {
-        toast(data.error || t('toast.pasteFailed'), 'error');
-      }
-    } catch {
-      toast(t('toast.pasteFailed'), 'error');
+    // Read the file path from the system clipboard
+    const clipExit = await BrowserRuntime.runPromiseExit(loadFileClipboard());
+    if (clipExit._tag !== 'Success' || !(clipExit.value as { path?: string }).path) {
+      toast(t('toast.noFileToPaste'), 'info');
+      return;
     }
-  }, [cwd, fileTree]);
+    const sourcePath = (clipExit.value as { path: string }).path;
+
+    const pasteExit = await BrowserRuntime.runPromiseExit(
+      pasteFiles<{ newName?: string; error?: string }>({
+        cwd,
+        targetDir,
+        sourceAbsPath: sourcePath,
+      })
+    );
+    if (pasteExit._tag === 'Success') {
+      toast(t('toast.pastedFile', { name: pasteExit.value.newName }), 'success');
+      fileTree.loadDirectory(targetDir);
+      fileTree.loadFileIndex();
+    } else {
+      // Surface the underlying body.error
+      const failure = pasteExit.cause._tag === 'Fail' ? pasteExit.cause.error : null;
+      const inner = failure?.cause;
+      const msg = inner instanceof Error ? inner.message : t('toast.pasteFailed');
+      toast(msg, 'error');
+    }
+  }, [cwd, fileTree, t]);
 
   // ========== Keyboard Shortcuts ==========
   const lastEscTimeRef = useRef<number>(0);
@@ -583,8 +600,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
       if (hasFileChange || hasGitChange) {
         promises.push(
-          fetch(`/api/files/init?cwd=${encodeURIComponent(cwd)}`)
-            .then(res => res.json())
+          BrowserRuntime.runPromise(loadFilesInit<FileNode>(cwd))
             .then(data => {
               if (data.error) return;
               // Merge instead of replace: `/api/files/init` only fills children
@@ -594,37 +610,37 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
               // which is never persisted). That visible "collapse" is what
               // causes the directory-tree flicker while files keep changing.
               // See `mergeFileTree` jsdoc for the per-node semantics.
-              fileTree.setFiles(prev => mergeFileTree(data.files || [], prev));
+              fileTree.setFiles(prev => mergeFileTree((data.files ?? []) as FileNode[], prev));
             })
+            .catch(() => {})
         );
         promises.push(
-          fetch(`/api/files/index?cwd=${encodeURIComponent(cwd)}`)
-            .then(res => res.json())
-            .then(data => { if (data.paths) fileTree.setFileIndex(data.paths); })
+          BrowserRuntime.runPromise(loadFileIndex(cwd))
+            .then(data => { if (data.paths) fileTree.setFileIndex(data.paths as string[]); })
+            .catch(() => {})
         );
         promises.push(
-          fetch(`/api/files/recent?cwd=${encodeURIComponent(cwd)}`)
-            .then(res => res.json())
-            .then(data => { fileTree.setRecentFiles(data.files || []); })
+          BrowserRuntime.runPromise(loadRecentFiles<RecentFileEntry>(cwd))
+            .then(data => { fileTree.setRecentFiles((data.files ?? []) as RecentFileEntry[]); })
+            .catch(() => {})
         );
       }
 
       if (hasGitChange || hasFileChange) {
         promises.push(
-          fetch(`/api/git/status?cwd=${encodeURIComponent(cwd)}`)
-            .then(res => {
-              if (!res.ok) return;
-              return res.json().then((statusData: GitStatusResponse) => {
-                gitStatus.setStatus(statusData);
-                const staged = buildGitFileTree(statusData.staged);
-                const unstaged = buildGitFileTree(statusData.unstaged);
-                gitStatus.setStagedTree(staged);
-                gitStatus.setUnstagedTree(unstaged);
-                // Do NOT mutate fold state here — useGitStatus derives expandedPaths from
-                // (allTreeDirs − userCollapsedPaths), so a refetch can never re-expand a
-                // folder the user just collapsed.
-              });
+          BrowserRuntime.runPromise(fetchGitStatus(cwd))
+            .then((statusData) => {
+              const typed = statusData as unknown as GitStatusResponse;
+              gitStatus.setStatus(typed);
+              const staged = buildGitFileTree(typed.staged);
+              const unstaged = buildGitFileTree(typed.unstaged);
+              gitStatus.setStagedTree(staged);
+              gitStatus.setUnstagedTree(unstaged);
+              // Do NOT mutate fold state here — useGitStatus derives expandedPaths from
+              // (allTreeDirs − userCollapsedPaths), so a refetch can never re-expand a
+              // folder the user just collapsed.
             })
+            .catch(() => {})
         );
         // Refresh the currently viewed diff
         gitStatus.refreshDiff();
@@ -637,13 +653,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
         const branch = selectedBranchRef.current;
         if (branch) {
           promises.push(
-            fetch(`/api/git/commits?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(branch)}&limit=${COMMITS_PER_PAGE}`)
-              .then(res => res.json())
+            BrowserRuntime.runPromise(fetchCommits(cwd, branch, COMMITS_PER_PAGE))
               .then(data => {
-                const newCommits = data.commits || [];
+                const newCommits = (data.commits ?? []) as Commit[];
                 gitHistory.setCommits(newCommits);
                 gitHistory.setHasMoreCommits(newCommits.length >= COMMITS_PER_PAGE);
               })
+              .catch(() => {})
           );
         }
       }
@@ -652,9 +668,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       const currentType = fileContentTypeRef.current;
       if (currentPath && currentType === 'text') {
         promises.push(
-          fetch(`/api/files/text?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(currentPath)}`)
-            .then(res => res.ok ? res.json() : null)
-            .then(data => {
+          BrowserRuntime.runPromise(fetchFileText(cwd, currentPath))
+            .then(result => {
+              const data = result.ok ? result.data : null;
               if (data && typeof data.content === 'string') {
                 fileTree.setFileContent({
                   type: 'text',
@@ -665,6 +681,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                 });
               }
             })
+            .catch(() => {})
         );
       }
 
@@ -990,30 +1007,23 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           if (!name) return;
                           const parentPath = fileTree.creatingItem!.parentPath;
                           const fullPath = parentPath ? `${parentPath}/${name}` : name;
-                          try {
-                            const res = await fetch('/api/files/save', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                cwd,
-                                path: fullPath,
-                                content: '',
-                              }),
-                            });
-                            if (res.ok) {
-                              toast(t('toast.createdFile', { name }), 'success');
-                              fileTree.setCreatingItem(null);
-                              fileTree.loadDirectory(parentPath);
-                              fileTree.loadFileIndex();
-                              if (parentPath) {
-                                fileTree.setExpandedPaths(prev => new Set([...prev, parentPath]));
-                              }
-                              handleSelectFileWithSave(fullPath);
-                            } else {
-                              const data = await res.json();
-                              toast(data.error || t('toast.createFailed'), 'error');
+                          const exit = await BrowserRuntime.runPromiseExit(
+                            saveFile({ cwd, path: fullPath, content: '' })
+                          );
+                          if (exit._tag === 'Success' && exit.value.ok) {
+                            toast(t('toast.createdFile', { name }), 'success');
+                            fileTree.setCreatingItem(null);
+                            fileTree.loadDirectory(parentPath);
+                            fileTree.loadFileIndex();
+                            if (parentPath) {
+                              fileTree.setExpandedPaths(prev => new Set([...prev, parentPath]));
                             }
-                          } catch (_err) {
+                            handleSelectFileWithSave(fullPath);
+                          } else if (exit._tag === 'Success') {
+                            // res.ok = false but the request itself did not fail — surface the backend error
+                            const errorMsg = (exit.value.data as { error?: string } | null)?.error;
+                            toast(errorMsg || t('toast.createFailed'), 'error');
+                          } else {
                             toast(t('toast.createFailed'), 'error');
                           }
                         } else if (e.key === 'Escape') {
@@ -1911,25 +1921,24 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                 onClick={async () => {
                   const { path, name } = deleteConfirm;
                   setDeleteConfirm(null);
-                  try {
-                    const res = await fetch('/api/files/delete', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ cwd, path }),
-                    });
-                    if (res.ok) {
-                      toast(t('toast.movedToTrash', { name }), 'success');
-                      const parentDir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
-                      fileTree.loadDirectory(parentDir);
-                      fileTree.loadFileIndex();
-                      if (fileTree.selectedPath === path) {
-                        handleSelectFileWithSave('');
-                      }
-                    } else {
-                      const data = await res.json();
-                      toast(data.error || t('toast.deleteFailed'), 'error');
+                  const exit = await BrowserRuntime.runPromiseExit(
+                    deleteFiles({ cwd, path })
+                  );
+                  if (exit._tag === 'Success') {
+                    toast(t('toast.movedToTrash', { name }), 'success');
+                    const parentDir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
+                    fileTree.loadDirectory(parentDir);
+                    fileTree.loadFileIndex();
+                    if (fileTree.selectedPath === path) {
+                      handleSelectFileWithSave('');
                     }
-                  } catch { toast(t('toast.deleteFailed'), 'error'); }
+                  } else {
+                    // Surface the underlying body.error
+                    const failure = exit.cause._tag === 'Fail' ? exit.cause.error : null;
+                    const inner = failure?.cause;
+                    const msg = inner instanceof Error ? inner.message : t('toast.deleteFailed');
+                    toast(msg, 'error');
+                  }
                 }}
                 className="px-3 py-1.5 text-sm rounded bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
               >

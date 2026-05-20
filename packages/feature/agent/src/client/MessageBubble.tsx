@@ -15,6 +15,8 @@ import type { ChatMessage, MessageImage } from './types';
 import { InteractiveMarkdownPreview } from '@cockpit/feature-explorer';
 import { MenuContainerProvider } from '@cockpit/shared-ui';
 import { MarkdownRenderer } from '@cockpit/shared-ui';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { readFileForPreview } from './effect/agentClient';
 import { useTranslation } from 'react-i18next';
 
 // Migrated from src/components/project/MessageBubble.tsx.
@@ -167,12 +169,17 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   useEffect(() => {
     if (!mdPreviewFile) { queueMicrotask(() => setMdFileContent(null)); return; }
     let cancelled = false;
-    fetch(`/api/file?path=${encodeURIComponent(mdPreviewFile)}`)
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(d => { if (!cancelled) setMdFileContent(d.content); })
-      .catch(() => { if (!cancelled) { toast(t('toast.readFileFailed'), 'error'); setMdPreviewFile(null); } });
+    BrowserRuntime.runPromiseExit(readFileForPreview(mdPreviewFile)).then((exit) => {
+      if (cancelled) return;
+      if (exit._tag === 'Success' && exit.value.content !== undefined) {
+        setMdFileContent(exit.value.content);
+      } else {
+        toast(t('toast.readFileFailed'), 'error');
+        setMdPreviewFile(null);
+      }
+    });
     return () => { cancelled = true; };
-  }, [mdPreviewFile]);
+  }, [mdPreviewFile, t]);
 
 
   // Copy message content

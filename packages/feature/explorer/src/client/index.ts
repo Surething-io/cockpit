@@ -89,3 +89,9 @@ export * from './hooks/useGitHistory';
 export * from './hooks/useFileBlocks';
 export * from './hooks/useLineHighlight';
 export * from './hooks/useContentSearch';
+
+// ============================================
+// Effect-wrapped HTTP clients (shared with other features, e.g. workspace calling /api/git/branches)
+// ============================================
+export * from './effect/gitClient';
+export * from './effect/filesClient';

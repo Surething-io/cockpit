@@ -1,39 +1,61 @@
-import { pgPoolManager } from '@cockpit/feature-console/server';
+/**
+ * /api/db/query
+ *
+ * Executes arbitrary SQL (SELECT / DML / DDL) via the PgService Tag, preserving
+ * the fields / command / rowCount metadata. MAX_ROWS provides truncation
+ * protection on result sets.
+ */
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
+import { PgService } from "@cockpit/effect-services"
 
-const MAX_ROWS = 1000;
+const MAX_ROWS = 1000
 
-export async function POST(req: Request) {
-  try {
-    const { id, connectionString, sql, params } = await req.json();
-    if (!id || !connectionString || !sql) {
-      return Response.json({ error: 'Missing required fields' }, { status: 400 });
+interface QueryRequest {
+  id?: string
+  connectionString?: string
+  sql?: string
+  params?: unknown[]
+}
+
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as QueryRequest
+    if (!body.id || !body.connectionString || !body.sql) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.id
+            ? "id"
+            : !body.connectionString
+              ? "connectionString"
+              : "sql",
+          reason: "missing",
+        })
+      )
     }
+    const { id, connectionString, sql, params } = body
 
-    const pool = await pgPoolManager.getPool(id, connectionString);
-    const start = performance.now();
-    const result = await pool.query(sql, params || []);
-    const duration = Math.round((performance.now() - start) * 100) / 100;
+    const pg = yield* PgService
+    const result = yield* pg.queryWithMeta(id, connectionString, sql, params)
 
-    // SELECT-like queries return rows
-    if (result.rows && result.fields) {
-      const truncated = result.rows.length > MAX_ROWS;
-      return Response.json({
-        fields: result.fields.map((f: { name: string; dataTypeID: number }) => ({ name: f.name, dataTypeID: f.dataTypeID })),
+    // SELECT path: fields is non-null
+    if (result.fields !== null) {
+      const truncated = result.rows.length > MAX_ROWS
+      return ok({
+        fields: result.fields,
         rows: truncated ? result.rows.slice(0, MAX_ROWS) : result.rows,
         rowCount: result.rowCount,
         truncated,
-        duration,
-      });
+        duration: result.duration,
+      })
     }
 
-    // DML/DDL
-    return Response.json({
+    // DML / DDL path
+    return ok({
       command: result.command,
       rowCount: result.rowCount,
-      duration,
-    });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return Response.json({ error: msg }, { status: 500 });
-  }
-}
+      duration: result.duration,
+    })
+  }).pipe(Effect.withSpan("api.db.query"))
+)

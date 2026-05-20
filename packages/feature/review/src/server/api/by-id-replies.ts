@@ -1,138 +1,200 @@
-import { existsSync } from 'fs';
-import { getReviewFilePath, readJsonFile, writeJsonFile, withFileLock, notifyReviewChange } from '@cockpit/shared-utils';
-import { ReviewData, generateReplyId } from '../lib/reviewUtils';
+/**
+ * /api/review/[id]/replies — P8+ migration (POST/PATCH/DELETE)
+ */
+import { existsSync } from "fs"
+import { Effect } from "effect"
+import {
+  getReviewFilePath,
+  readJsonFile,
+  writeJsonFile,
+  withFileLock,
+  notifyReviewChange,
+} from "@cockpit/shared-utils"
+import {
+  dynamicHandler,
+  ok,
+  parseJsonRaw,
+} from "@cockpit/effect-runtime/server"
+import {
+  FSError,
+  NotFoundError,
+  ValidationError,
+} from "@cockpit/effect-core"
+import { ReviewData, generateReplyId } from "../lib/reviewUtils"
 
-type RouteParams = { params: Promise<{ id: string }> };
-
-// POST - Add a reply
-// body: { commentId, author, authorId, content }
-export async function POST(request: Request, { params }: RouteParams) {
-  const { id } = await params;
-
-  try {
-    const filePath = getReviewFilePath(id);
-    if (!existsSync(filePath)) {
-      return Response.json({ error: 'Review not found' }, { status: 404 });
-    }
-
-    const body = await request.json();
-    const { commentId, author, authorId, content } = body;
-
-    if (!commentId || !author || !authorId || !content) {
-      return Response.json(
-        { error: 'commentId, author, authorId, and content are required' },
-        { status: 400 }
-      );
-    }
-
-    const reply = await withFileLock(filePath, async () => {
-      const review = await readJsonFile<ReviewData>(filePath, null as unknown as ReviewData);
-      if (!review) throw new Error('Review not found');
-
-      const comment = review.comments.find(c => c.id === commentId);
-      if (!comment) throw new Error('Comment not found');
-
-      const newReply = {
-        id: generateReplyId(),
-        author,
-        authorId,
-        content,
-        createdAt: Date.now(),
-      };
-
-      comment.replies.push(newReply);
-      await writeJsonFile(filePath, review);
-      return newReply;
-    });
-
-    notifyReviewChange();
-    return Response.json({ reply });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Failed to add reply';
-    const status = msg === 'Comment not found' ? 404 : 500;
-    return Response.json({ error: msg }, { status });
-  }
+interface Params {
+  id: string
 }
 
-// PATCH - Edit a reply
-// body: { commentId, replyId, content }
-export async function PATCH(request: Request, { params }: RouteParams) {
-  const { id } = await params;
-
-  try {
-    const filePath = getReviewFilePath(id);
-    if (!existsSync(filePath)) {
-      return Response.json({ error: 'Review not found' }, { status: 404 });
-    }
-
-    const body = await request.json();
-    const { commentId, replyId, content } = body;
-
-    if (!commentId || !replyId || !content) {
-      return Response.json({ error: 'commentId, replyId and content are required' }, { status: 400 });
-    }
-
-    const updated = await withFileLock(filePath, async () => {
-      const review = await readJsonFile<ReviewData>(filePath, null as unknown as ReviewData);
-      if (!review) throw new Error('Review not found');
-
-      const comment = review.comments.find(c => c.id === commentId);
-      if (!comment) throw new Error('Comment not found');
-
-      const reply = comment.replies.find(r => r.id === replyId);
-      if (!reply) throw new Error('Reply not found');
-
-      reply.content = content.trim();
-      reply.edited = true;
-      await writeJsonFile(filePath, review);
-      return reply;
-    });
-
-    notifyReviewChange();
-    return Response.json({ reply: updated });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Failed to edit reply';
-    const status = ['Comment not found', 'Reply not found'].includes(msg) ? 404 : 500;
-    return Response.json({ error: msg }, { status });
-  }
+const checkExists = (
+  id: string
+): Effect.Effect<string, NotFoundError> => {
+  const filePath = getReviewFilePath(id)
+  return existsSync(filePath)
+    ? Effect.succeed(filePath)
+    : Effect.fail(new NotFoundError({ resource: "review", id }))
 }
 
-// DELETE - Delete a reply
-// ?commentId=xxx&replyId=xxx
-export async function DELETE(request: Request, { params }: RouteParams) {
-  const { id } = await params;
-  const commentId = new URL(request.url).searchParams.get('commentId');
-  const replyId = new URL(request.url).searchParams.get('replyId');
-
-  if (!commentId || !replyId) {
-    return Response.json({ error: 'commentId and replyId are required' }, { status: 400 });
-  }
-
-  try {
-    const filePath = getReviewFilePath(id);
-    if (!existsSync(filePath)) {
-      return Response.json({ error: 'Review not found' }, { status: 404 });
+// Helper: translate internally thrown "Comment not found" / "Reply not found" into NotFoundError
+const translateError = (
+  filePath: string,
+  ids: { commentId?: string; replyId?: string }
+) =>
+  (cause: unknown): NotFoundError | FSError => {
+    if (cause instanceof Error) {
+      if (cause.message === "Comment not found") {
+        return new NotFoundError({
+          resource: "comment",
+          id: ids.commentId ?? "?",
+        })
+      }
+      if (cause.message === "Reply not found") {
+        return new NotFoundError({
+          resource: "reply",
+          id: ids.replyId ?? "?",
+        })
+      }
     }
-
-    await withFileLock(filePath, async () => {
-      const review = await readJsonFile<ReviewData>(filePath, null as unknown as ReviewData);
-      if (!review) throw new Error('Review not found');
-
-      const comment = review.comments.find(c => c.id === commentId);
-      if (!comment) throw new Error('Comment not found');
-
-      const idx = comment.replies.findIndex(r => r.id === replyId);
-      if (idx === -1) throw new Error('Reply not found');
-
-      comment.replies.splice(idx, 1);
-      await writeJsonFile(filePath, review);
-    });
-
-    notifyReviewChange();
-    return Response.json({ success: true });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Failed to delete reply';
-    const status = ['Comment not found', 'Reply not found'].includes(msg) ? 404 : 500;
-    return Response.json({ error: msg }, { status });
+    return new FSError({ path: filePath, op: "write", cause })
   }
-}
+
+export const POST = dynamicHandler<
+  Params,
+  NotFoundError | ValidationError | FSError
+>((req, { id }) =>
+  Effect.gen(function* () {
+    const filePath = yield* checkExists(id)
+    const body = (yield* parseJsonRaw(req)) as {
+      commentId?: string
+      author?: string
+      authorId?: string
+      content?: string
+    }
+    if (!body.commentId || !body.author || !body.authorId || !body.content) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.commentId
+            ? "commentId"
+            : !body.author
+              ? "author"
+              : !body.authorId
+                ? "authorId"
+                : "content",
+          reason: "missing",
+        })
+      )
+    }
+    const { commentId, author, authorId, content } = body
+    const reply = yield* Effect.tryPromise({
+      try: () =>
+        withFileLock(filePath, async () => {
+          const review = await readJsonFile<ReviewData>(
+            filePath,
+            null as unknown as ReviewData
+          )
+          if (!review) throw new Error("Review not found")
+          const comment = review.comments.find((c) => c.id === commentId)
+          if (!comment) throw new Error("Comment not found")
+          const newReply = {
+            id: generateReplyId(),
+            author,
+            authorId,
+            content,
+            createdAt: Date.now(),
+          }
+          comment.replies.push(newReply)
+          await writeJsonFile(filePath, review)
+          return newReply
+        }),
+      catch: translateError(filePath, { commentId }),
+    })
+    notifyReviewChange()
+    return ok({ reply })
+  })
+)
+
+export const PATCH = dynamicHandler<
+  Params,
+  NotFoundError | ValidationError | FSError
+>((req, { id }) =>
+  Effect.gen(function* () {
+    const filePath = yield* checkExists(id)
+    const body = (yield* parseJsonRaw(req)) as {
+      commentId?: string
+      replyId?: string
+      content?: string
+    }
+    if (!body.commentId || !body.replyId || !body.content) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.commentId
+            ? "commentId"
+            : !body.replyId
+              ? "replyId"
+              : "content",
+          reason: "missing",
+        })
+      )
+    }
+    const { commentId, replyId, content } = body
+    const updated = yield* Effect.tryPromise({
+      try: () =>
+        withFileLock(filePath, async () => {
+          const review = await readJsonFile<ReviewData>(
+            filePath,
+            null as unknown as ReviewData
+          )
+          if (!review) throw new Error("Review not found")
+          const comment = review.comments.find((c) => c.id === commentId)
+          if (!comment) throw new Error("Comment not found")
+          const reply = comment.replies.find((r) => r.id === replyId)
+          if (!reply) throw new Error("Reply not found")
+          reply.content = content.trim()
+          reply.edited = true
+          await writeJsonFile(filePath, review)
+          return reply
+        }),
+      catch: translateError(filePath, { commentId, replyId }),
+    })
+    notifyReviewChange()
+    return ok({ reply: updated })
+  })
+)
+
+export const DELETE = dynamicHandler<
+  Params,
+  NotFoundError | ValidationError | FSError
+>((req, { id }) =>
+  Effect.gen(function* () {
+    const commentId = new URL(req.url).searchParams.get("commentId")
+    const replyId = new URL(req.url).searchParams.get("replyId")
+    if (!commentId || !replyId) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !commentId ? "commentId" : "replyId",
+          reason: "missing",
+        })
+      )
+    }
+    const filePath = yield* checkExists(id)
+    yield* Effect.tryPromise({
+      try: () =>
+        withFileLock(filePath, async () => {
+          const review = await readJsonFile<ReviewData>(
+            filePath,
+            null as unknown as ReviewData
+          )
+          if (!review) throw new Error("Review not found")
+          const comment = review.comments.find((c) => c.id === commentId)
+          if (!comment) throw new Error("Comment not found")
+          const idx = comment.replies.findIndex((r) => r.id === replyId)
+          if (idx === -1) throw new Error("Reply not found")
+          comment.replies.splice(idx, 1)
+          await writeJsonFile(filePath, review)
+        }),
+      catch: translateError(filePath, { commentId, replyId }),
+    })
+    notifyReviewChange()
+    return ok({ success: true })
+  })
+)

@@ -7,6 +7,9 @@ import { useTranslation } from 'react-i18next';
 import { ImagePreview } from '@cockpit/shared-ui';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
 import { onSkillsChanged } from '@cockpit/feature-skills';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { stageFiles } from '@cockpit/feature-explorer';
+import { loadSkills as loadSkillsEff, loadSlashCommands } from './effect/agentClient';
 
 // Migrated from src/components/project/ChatInput.tsx.
 
@@ -84,40 +87,34 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
 
   // Load command list
   useEffect(() => {
-    const loadCommands = async () => {
-      try {
-        const url = cwd ? `/api/commands?cwd=${encodeURIComponent(cwd)}` : '/api/commands';
-        const response = await fetch(url);
-        if (response.ok) {
-          const data = await response.json();
-          setCommands(data);
-        }
-      } catch (error) {
-        console.error('Failed to load commands:', error);
+    BrowserRuntime.runPromiseExit(loadSlashCommands<CommandInfo>(cwd)).then((exit) => {
+      if (exit._tag === 'Success') {
+        setCommands(exit.value as CommandInfo[]);
+      } else {
+        console.error('Failed to load commands:', exit.cause);
       }
-    };
-    loadCommands();
+    });
   }, [cwd]);
 
   // Load skills (separate endpoint, globally-configured, ~/.cockpit/skills.json)
   const loadSkills = useCallback(async () => {
-    try {
-      const response = await fetch('/api/skills');
-      if (response.ok) {
-        const data = (await response.json()) as SkillInfo[];
-        const mapped: CommandInfo[] = data
-          .filter((s) => s.valid && !!s.name)
-          .map((s) => ({
-            name: `/${s.name}`,
-            description: s.description || '',
-            source: 'skill' as const,
-            skillPath: s.path,
-            argumentHint: s.argumentHint,
-          }));
-        setSkills(mapped);
-      }
-    } catch (error) {
-      console.error('Failed to load skills:', error);
+    const exit = await BrowserRuntime.runPromiseExit(loadSkillsEff());
+    if (exit._tag === 'Success') {
+      const data = (exit.value as { skills?: SkillInfo[] }).skills
+        ?? (exit.value as unknown as SkillInfo[]);
+      const list = Array.isArray(data) ? data : [];
+      const mapped: CommandInfo[] = list
+        .filter((s) => s.valid && !!s.name)
+        .map((s) => ({
+          name: `/${s.name}`,
+          description: s.description || '',
+          source: 'skill' as const,
+          skillPath: s.path,
+          argumentHint: s.argumentHint,
+        }));
+      setSkills(mapped);
+    } else {
+      console.error('Failed to load skills:', exit.cause);
     }
   }, []);
 
@@ -374,20 +371,13 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
         {/* Git stage all files button */}
         <button
           onClick={async () => {
-            try {
-              const response = await fetch('/api/git/stage', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cwd, files: ['.'] }),
-              });
-              if (response.ok) {
-                toast(t('toast.stagedAllFiles'), 'success');
-                window.dispatchEvent(new CustomEvent('git-status-changed'));
-              } else {
-                toast(t('toast.stageFailed'), 'error');
-              }
-            } catch (err) {
-              console.error('Error staging files:', err);
+            if (!cwd) return;
+            const exit = await BrowserRuntime.runPromiseExit(stageFiles(cwd, ['.']));
+            if (exit._tag === 'Success') {
+              toast(t('toast.stagedAllFiles'), 'success');
+              window.dispatchEvent(new CustomEvent('git-status-changed'));
+            } else {
+              console.error('Error staging files:', exit.cause);
               toast(t('toast.stageFailed'), 'error');
             }
           }}

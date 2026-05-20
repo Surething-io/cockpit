@@ -2,6 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { Effect } from 'effect';
+import {
+  loadReviews,
+  updateReview,
+  deleteReview,
+  reorderReviews,
+} from './effect/reviewClient';
 
 interface ReviewSummary {
   id: string;
@@ -37,13 +45,11 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const fetchList = useCallback(async () => {
-    try {
-      const res = await fetch('/api/review');
-      if (res.ok) {
-        const data = await res.json();
-        setReviews(data.reviews || []);
-      }
-    } catch { /* ignore */ }
+    const exit = await BrowserRuntime.runPromiseExit(loadReviews());
+    if (exit._tag === 'Success') {
+      setReviews(((exit.value.reviews ?? []) as unknown) as ReviewSummary[]);
+    }
+    // silent — v1 try/catch ignored errors
   }, []);
 
   useEffect(() => {
@@ -59,16 +65,12 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
     e.stopPropagation();
     if (toggling) return;
     setToggling(id);
-    try {
-      const res = await fetch(`/api/review/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ active: !currentActive }),
-      });
-      if (res.ok) {
-        setReviews(prev => prev.map(r => r.id === id ? { ...r, active: !currentActive } : r));
-      }
-    } catch { /* ignore */ }
+    const exit = await BrowserRuntime.runPromiseExit(
+      updateReview(id, { active: !currentActive })
+    );
+    if (exit._tag === 'Success') {
+      setReviews(prev => prev.map(r => r.id === id ? { ...r, active: !currentActive } : r));
+    }
     setToggling(null);
   }, [toggling]);
 
@@ -76,19 +78,17 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
     e.stopPropagation();
     if (deleting) return;
     setDeleting(id);
-    try {
-      const res = await fetch(`/api/review/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setReviews(prev => prev.filter(r => r.id !== id));
-        // If the current one was deleted, switch to the first in the list
-        if (id === currentReviewId) {
-          const remaining = reviews.filter(r => r.id !== id);
-          if (remaining.length > 0) {
-            onSelect(remaining[0].id);
-          }
+    const exit = await BrowserRuntime.runPromiseExit(deleteReview(id));
+    if (exit._tag === 'Success') {
+      setReviews(prev => prev.filter(r => r.id !== id));
+      // If the current one was deleted, switch to the first in the list
+      if (id === currentReviewId) {
+        const remaining = reviews.filter(r => r.id !== id);
+        if (remaining.length > 0) {
+          onSelect(remaining[0].id);
         }
       }
-    } catch { /* ignore */ }
+    }
     setDeleting(null);
   }, [deleting, currentReviewId, reviews, onSelect]);
 
@@ -132,13 +132,11 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
       const [item] = list.splice(fromIdx, 1);
       list.splice(toIdx, 0, item);
 
-      // Persist asynchronously
+      // Persist asynchronously (fire-and-forget)
       const order = list.map(r => r.id);
-      fetch('/api/review/order', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order }),
-      }).catch(() => { /* ignore */ });
+      BrowserRuntime.runFork(
+        reorderReviews(order).pipe(Effect.orElse(() => Effect.void))
+      );
 
       return list;
     });

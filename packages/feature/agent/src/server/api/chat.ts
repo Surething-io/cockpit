@@ -1,7 +1,10 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { Effect } from 'effect';
 import { updateGlobalState, getSessionTitle } from '../state/globalState';
 import { resolveCommandPrompt } from '../lib/slashCommands';
 import { CLAUDE2_DIR } from '@cockpit/shared-utils';
+import { handler, parseJsonRaw } from '@cockpit/effect-runtime/server';
+import { ValidationError } from '@cockpit/effect-core';
 
 interface ImageData {
   type: 'base64';
@@ -20,20 +23,42 @@ type ContentBlock =
       };
     };
 
-export async function POST(request: Request) {
-  try {
-    const { prompt: rawPrompt, sessionId, images, cwd, language, engine } = await request.json();
+export const POST = handler((request) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(request)) as {
+      prompt?: unknown;
+      sessionId?: string;
+      images?: ImageData[];
+      cwd?: string;
+      language?: string;
+      engine?: string;
+    };
+    const {
+      prompt: rawPrompt,
+      sessionId,
+      images,
+      cwd,
+      language,
+      engine,
+    } = body;
 
     // Resolve built-in slash commands (/qa, /fx, etc.) based on language
-    const prompt = typeof rawPrompt === 'string' ? resolveCommandPrompt(rawPrompt, language) : rawPrompt;
+    const prompt =
+      typeof rawPrompt === 'string'
+        ? resolveCommandPrompt(rawPrompt, language)
+        : rawPrompt;
 
     // Allow sending images only (no text)
-    const hasContent = (prompt && typeof prompt === 'string') || (images && images.length > 0);
+    const hasContent =
+      (prompt && typeof prompt === 'string') ||
+      (images && images.length > 0);
     if (!hasContent) {
-      return new Response(JSON.stringify({ error: 'Missing prompt or images' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return yield* Effect.fail(
+        new ValidationError({
+          field: 'prompt|images',
+          reason: 'Missing prompt or images',
+        })
+      );
     }
 
     // Build message content
@@ -108,7 +133,7 @@ export async function POST(request: Request) {
             // Set working directory if cwd is provided
             ...(cwd && { cwd }),
             // Load user and project level settings
-            settingSources: ['user', 'project', 'local'],
+            settingSources: ['user', 'project', 'local'] as Array<'user' | 'project' | 'local'>,
             // Allowed tools - includes all MCP tools
             allowedTools: [
               'Read',
@@ -270,11 +295,5 @@ export async function POST(request: Request) {
         Connection: 'keep-alive',
       },
     });
-  } catch (error) {
-    console.error('API error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-}
+  })
+);

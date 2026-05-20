@@ -1,5 +1,10 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { PinnedSession } from '@/app/api/pinned-sessions/route';
+import { publishTopic } from '@cockpit/effect-react';
+import { Topics } from '@cockpit/effect-services';
+import { Effect } from 'effect';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { AppError } from '@cockpit/effect-core';
 
 export type { PinnedSession };
 
@@ -8,10 +13,23 @@ export function usePinnedSessions() {
 
   // Load
   const reload = useCallback(() => {
-    fetch('/api/pinned-sessions')
-      .then(res => res.json())
-      .then(data => setPinnedSessions(data.sessions || []))
-      .catch(() => {});
+    const loadEff = Effect.tryPromise({
+      try: async () => {
+        const res = await fetch('/api/pinned-sessions');
+        return (await res.json()) as { sessions?: PinnedSession[] };
+      },
+      catch: (cause) => new AppError({ message: 'loadPinnedSessions failed', cause }),
+    });
+    BrowserRuntime.runPromise(
+      loadEff.pipe(
+        Effect.match({
+          onSuccess: (data) => setPinnedSessions(data.sessions || []),
+          onFailure: () => {
+            /* silent — v1 .catch(()=>{}) */
+          },
+        })
+      )
+    );
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
@@ -30,15 +48,19 @@ export function usePinnedSessions() {
   // Save + notify
   const save = useCallback((sessions: PinnedSession[]) => {
     setPinnedSessions(sessions);
-    fetch('/api/pinned-sessions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessions }),
-    }).catch(() => {});
-    // Notify parent window and all iframes
-    try {
-      window.parent.postMessage({ type: 'PINNED_SESSIONS_CHANGED' }, '*');
-    } catch { /* ignore */ }
+    const saveEff = Effect.tryPromise({
+      try: async () => {
+        await fetch('/api/pinned-sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessions }),
+        });
+      },
+      catch: (cause) => new AppError({ message: 'savePinnedSessions failed', cause }),
+    });
+    BrowserRuntime.runFork(saveEff.pipe(Effect.orElse(() => Effect.void)));
+    // Notify parent window and all iframes via IframeBus
+    publishTopic(Topics.PinnedSessionsChanged, {});
   }, []);
 
   const isPinned = useCallback((sessionId: string) => {

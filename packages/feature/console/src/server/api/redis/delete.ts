@@ -1,18 +1,40 @@
-import { redisManager } from '@cockpit/feature-console/server';
+/**
+ * /api/redis/delete — P9 round 2 (Service Tag migration)
+ */
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
+import { RedisService } from "@cockpit/effect-services"
 
-export async function POST(req: Request) {
-  try {
-    const { id, connectionString, keys } = await req.json();
-    if (!id || !connectionString || !Array.isArray(keys) || keys.length === 0) {
-      return Response.json({ error: 'Missing required fields' }, { status: 400 });
-    }
-
-    const client = await redisManager.getClient(id, connectionString);
-    const deleted = await client.del(...keys);
-
-    return Response.json({ deleted });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return Response.json({ error: msg }, { status: 500 });
-  }
+interface DeleteBody {
+  id?: string
+  connectionString?: string
+  keys?: string[]
 }
+
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as DeleteBody
+    if (
+      !body.id ||
+      !body.connectionString ||
+      !Array.isArray(body.keys) ||
+      body.keys.length === 0
+    ) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.id
+            ? "id"
+            : !body.connectionString
+              ? "connectionString"
+              : "keys",
+          reason: "missing or empty",
+        })
+      )
+    }
+    const { id, connectionString, keys } = body
+    const redis = yield* RedisService
+    const deleted = yield* redis.command(id, connectionString, "DEL", keys)
+    return ok({ deleted })
+  }).pipe(Effect.withSpan("api.redis.delete"))
+)

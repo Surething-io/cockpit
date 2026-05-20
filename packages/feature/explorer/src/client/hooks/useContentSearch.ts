@@ -1,6 +1,9 @@
 import { useState, useCallback, useRef } from 'react';
 import type { SearchResult, SearchResponse } from '../fileBrowser/types';
 import i18n from '@cockpit/shared-i18n';
+import { Effect } from 'effect';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { AppError } from '@cockpit/effect-core';
 
 interface UseContentSearchOptions {
   cwd: string;
@@ -38,41 +41,49 @@ export function useContentSearch({ cwd, onSearchComplete }: UseContentSearchOpti
     setIsSearching(true);
     setSearchError(null);
 
-    try {
-      const params = new URLSearchParams({
-        cwd,
-        q: query,
-        caseSensitive: String(searchOptions.caseSensitive),
-        wholeWord: String(searchOptions.wholeWord),
-        regex: String(searchOptions.regex),
-        fileType: searchOptions.fileType,
-      });
+    const params = new URLSearchParams({
+      cwd,
+      q: query,
+      caseSensitive: String(searchOptions.caseSensitive),
+      wholeWord: String(searchOptions.wholeWord),
+      regex: String(searchOptions.regex),
+      fileType: searchOptions.fileType,
+    });
 
-      const response = await fetch(`/api/files/search?${params}`);
-      const data: SearchResponse = await response.json();
+    const searchEff = Effect.tryPromise({
+      try: async () => {
+        const response = await fetch(`/api/files/search?${params}`);
+        const data = (await response.json()) as SearchResponse;
+        if (data.error) throw new Error(data.error);
+        return data;
+      },
+      catch: (cause) => new AppError({ message: 'content search failed', cause }),
+    });
 
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      setContentSearchResults(data.results);
-      setSearchStats({
-        totalFiles: data.totalFiles,
-        totalMatches: data.totalMatches,
-        truncated: data.truncated,
-      });
-
-      // Expand all search results by default
-      const expandedPaths = new Set(data.results.map(r => r.path));
-      setSearchExpandedPaths(expandedPaths);
-
-      if (data.results.length > 0) onSearchComplete?.();
-    } catch (err) {
-      setSearchError(err instanceof Error ? err.message : 'Search failed');
-      setContentSearchResults([]);
-    } finally {
-      setIsSearching(false);
-    }
+    await BrowserRuntime.runPromise(
+      searchEff.pipe(
+        Effect.match({
+          onSuccess: (data) => {
+            setContentSearchResults(data.results);
+            setSearchStats({
+              totalFiles: data.totalFiles,
+              totalMatches: data.totalMatches,
+              truncated: data.truncated,
+            });
+            // Expand all search results by default
+            const expandedPaths = new Set(data.results.map((r) => r.path));
+            setSearchExpandedPaths(expandedPaths);
+            if (data.results.length > 0) onSearchComplete?.();
+          },
+          onFailure: (err) => {
+            const msg = err.cause instanceof Error ? err.cause.message : 'Search failed';
+            setSearchError(msg);
+            setContentSearchResults([]);
+          },
+        })
+      )
+    );
+    setIsSearching(false);
   }, [cwd, searchOptions, onSearchComplete]);
 
   const handleSearchToggle = useCallback((path: string) => {

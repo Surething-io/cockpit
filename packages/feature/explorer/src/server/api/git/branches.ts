@@ -1,54 +1,59 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
+/**
+ * /api/git/branches — P8+ migration
+ *
+ * List current / upstream / local / remote branches.
+ */
+import { exec } from "child_process"
+import { promisify } from "util"
+import { Effect } from "effect"
+import { handler, ok } from "@cockpit/effect-runtime/server"
+import { AppError } from "@cockpit/effect-core"
 
-const execAsync = promisify(exec);
+const execAsync = promisify(exec)
 
-export async function GET(request: Request) {
-  const searchParams = new URL(request.url).searchParams;
-  const cwd = searchParams.get('cwd') || process.cwd();
+const runGit = (
+  cmd: string,
+  cwd: string
+): Effect.Effect<string, AppError> =>
+  Effect.tryPromise({
+    try: () => execAsync(cmd, { cwd }).then((r) => r.stdout),
+    catch: (cause) =>
+      new AppError({ message: `git command failed: ${cmd}`, cause }),
+  })
 
-  try {
-    // Get current branch
-    const { stdout: currentBranch } = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd });
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const cwd = new URL(req.url).searchParams.get("cwd") || process.cwd()
 
-    // Get all local branches
-    const { stdout: localBranches } = await execAsync('git branch --format="%(refname:short)"', { cwd });
+    const [currentBranch, localBranches, remoteBranches] = yield* Effect.all(
+      [
+        runGit("git rev-parse --abbrev-ref HEAD", cwd),
+        runGit('git branch --format="%(refname:short)"', cwd),
+        runGit('git branch -r --format="%(refname:short)"', cwd),
+      ],
+      { concurrency: "unbounded" }
+    )
 
-    // Get all remote branches
-    const { stdout: remoteBranches } = await execAsync('git branch -r --format="%(refname:short)"', { cwd });
-
-    // Get the upstream (parent) branch of the current branch
-    let upstream = '';
-    try {
-      const { stdout } = await execAsync('git rev-parse --abbrev-ref @{upstream}', { cwd });
-      upstream = stdout.trim();
-    } catch {
-      // No upstream set, fall back to origin/main
-      upstream = 'origin/main';
-    }
+    // Upstream may not exist → fall back to origin/main
+    const upstream = yield* runGit(
+      "git rev-parse --abbrev-ref @{upstream}",
+      cwd
+    ).pipe(
+      Effect.map((s) => s.trim()),
+      Effect.orElseSucceed(() => "origin/main")
+    )
 
     const local = localBranches
-      .split('\n')
-      .map(b => b.trim())
-      .filter(Boolean);
+      .split("\n")
+      .map((b) => b.trim())
+      .filter(Boolean)
 
     const remote = remoteBranches
-      .split('\n')
-      .map(b => b.trim())
+      .split("\n")
+      .map((b) => b.trim())
       .filter(Boolean)
-      .filter(b => !b.includes('HEAD')); // Exclude origin/HEAD
+      .filter((b) => !b.includes("HEAD"))
 
-    return Response.json({
-      current: currentBranch.trim(),
-      upstream,
-      local,
-      remote,
-    });
-  } catch (error) {
-    console.error('Error getting branches:', error);
-    return Response.json(
-      { error: 'Failed to get branches' },
-      { status: 500 }
-    );
-  }
-}
+    return ok({ current: currentBranch.trim(), upstream, local, remote })
+  }).pipe(Effect.withSpan("api.git.branches"))
+)

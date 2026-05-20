@@ -1,77 +1,65 @@
-import * as fs from 'fs/promises';
+/**
+ * /api/terminal/env — P8+ migration
+ */
+import * as fs from "fs/promises"
+import { Effect } from "effect"
+import { getTerminalEnvPath, ensureParentDir } from "@cockpit/shared-utils"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { FSError, ValidationError } from "@cockpit/effect-core"
 
-import { getTerminalEnvPath, ensureParentDir } from '@cockpit/shared-utils';
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
-// GET: Fetch environment variables
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const cwd = searchParams.get('cwd');
-    const tabId = searchParams.get('tabId');
-
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const sp = new URL(req.url).searchParams
+    const cwd = sp.get("cwd")
+    const tabId = sp.get("tabId")
     if (!cwd) {
-      return new Response(JSON.stringify({ error: 'Missing cwd parameter' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return yield* Effect.fail(
+        new ValidationError({ field: "cwd", reason: "missing" })
+      )
     }
+    const envFilePath = getTerminalEnvPath(cwd, tabId || undefined)
+    const env = yield* Effect.tryPromise({
+      try: async () => {
+        const content = await fs.readFile(envFilePath, "utf-8")
+        return JSON.parse(content) as Record<string, string>
+      },
+      catch: () => null,
+    }).pipe(Effect.orElseSucceed(() => ({}) as Record<string, string>))
+    return ok({ env })
+  })
+)
 
-    const envFilePath = getTerminalEnvPath(cwd, tabId || undefined);
-
-    try {
-      const content = await fs.readFile(envFilePath, 'utf-8');
-      const env = JSON.parse(content);
-      return new Response(JSON.stringify({ env }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    } catch {
-      // File does not exist, return empty object
-      return new Response(JSON.stringify({ env: {} }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as {
+      cwd?: string
+      tabId?: string
+      env?: Record<string, string>
     }
-  } catch (error) {
-    console.error('Get env error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-}
-
-// POST: Save environment variables
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { cwd, tabId, env } = body;
-
-    if (!cwd || !env) {
-      return new Response(JSON.stringify({ error: 'Missing cwd or env' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+    if (!body.cwd || !body.env) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.cwd ? "cwd" : "env",
+          reason: "missing",
+        })
+      )
     }
-
-    const envFilePath = getTerminalEnvPath(cwd, tabId);
-    await ensureParentDir(envFilePath);
-
-    // Save environment variables
-    await fs.writeFile(envFilePath, JSON.stringify(env, null, 2), 'utf-8');
-
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (error) {
-    console.error('Save env error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-}
+    const envFilePath = getTerminalEnvPath(body.cwd, body.tabId)
+    yield* Effect.tryPromise({
+      try: async () => {
+        await ensureParentDir(envFilePath)
+        await fs.writeFile(
+          envFilePath,
+          JSON.stringify(body.env, null, 2),
+          "utf-8"
+        )
+      },
+      catch: (cause) =>
+        new FSError({ path: envFilePath, op: "write", cause }),
+    })
+    return ok({ success: true })
+  })
+)

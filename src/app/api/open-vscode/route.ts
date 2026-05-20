@@ -1,23 +1,36 @@
-import { exec } from 'child_process';
+/**
+ * /api/open-vscode — P6 migration
+ *
+ * Trigger the OS `code` command to open a directory (fire-and-forget; failures only logged).
+ */
+import { exec } from "child_process"
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
 
-export async function POST(request: Request) {
-  try {
-    const { cwd } = await request.json();
-
-    if (!cwd) {
-      return Response.json({ error: 'cwd is required' }, { status: 400 });
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as { cwd?: string }
+    if (!body.cwd) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "cwd", reason: "missing" })
+      )
     }
 
-    // Run the code command to open the directory
-    exec(`code "${cwd}"`, (error) => {
-      if (error) {
-        console.error('Failed to open VS Code:', error);
-      }
-    });
+    const cwd = body.cwd
+    yield* Effect.sync(() => {
+      exec(`code "${cwd}"`, (error) => {
+        if (error) {
+          Effect.runFork(
+            Effect.logError("[open-vscode]").pipe(
+              Effect.annotateLogs("cwd", cwd),
+              Effect.annotateLogs("error", String(error))
+            )
+          )
+        }
+      })
+    })
 
-    return Response.json({ success: true });
-  } catch (error) {
-    console.error('Error opening VS Code:', error);
-    return Response.json({ error: 'Failed to open VS Code' }, { status: 500 });
-  }
-}
+    return ok({ success: true })
+  })
+)

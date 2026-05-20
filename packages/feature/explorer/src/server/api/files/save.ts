@@ -1,104 +1,134 @@
-import { writeFile, mkdir, stat, lstat, realpath, rename, unlink, chmod } from 'fs/promises';
-import { join, dirname } from 'path';
-import { randomUUID } from 'crypto';
+/**
+ * /api/files/save — P8+ migration
+ *
+ * Atomic file write: tmp → rename; mtime conflict detection → 409; symlinks write through to the real target.
+ */
+import {
+  writeFile,
+  mkdir,
+  stat,
+  lstat,
+  realpath,
+  rename,
+  unlink,
+  chmod,
+} from "fs/promises"
+import { join, dirname } from "path"
+import { randomUUID } from "crypto"
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { FSError, ValidationError } from "@cockpit/effect-core"
 
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { cwd, path: filePath, content, createDir, expectedMtime } = body;
+interface SaveBody {
+  cwd?: string
+  path?: string
+  content?: string
+  createDir?: boolean
+  expectedMtime?: number
+}
 
-    if (!filePath) {
-      return Response.json(
-        { error: 'File path is required' },
-        { status: 400 }
-      );
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as SaveBody
+    if (!body.path) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "path", reason: "missing" })
+      )
+    }
+    const basePath = body.cwd || process.cwd()
+    const fullPath = join(basePath, body.path)
+
+    if (body.createDir) {
+      yield* Effect.tryPromise({
+        try: () => mkdir(fullPath, { recursive: true }),
+        catch: (cause) =>
+          new FSError({ path: fullPath, op: "mkdir", cause }),
+      })
+      return ok({ success: true })
     }
 
-    const basePath = cwd || process.cwd();
-    const fullPath = join(basePath, filePath);
-
-    // If creating a directory
-    if (createDir) {
-      await mkdir(fullPath, { recursive: true });
-      return Response.json({ success: true });
+    if (body.content === undefined || body.content === null) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "content", reason: "required" })
+      )
     }
+    const content = body.content
 
-    // Create file
-    if (content === undefined || content === null) {
-      return Response.json(
-        { error: 'Content is required' },
-        { status: 400 }
-      );
-    }
+    // Conflict detection (409)
+    if (body.expectedMtime !== undefined && body.expectedMtime !== null) {
+      const currentMtime = yield* Effect.tryPromise({
+        try: () => stat(fullPath).then((s) => s.mtimeMs),
+        catch: () => null,
+      }).pipe(Effect.orElseSucceed(() => null))
 
-    // P0: Conflict detection — check mtime consistency before saving
-    if (expectedMtime !== undefined && expectedMtime !== null) {
-      try {
-        const currentStats = await stat(fullPath);
-        const currentMtime = currentStats.mtimeMs;
-        if (Math.abs(currentMtime - expectedMtime) > 1) {
-          // File was modified externally during editing
-          return Response.json({
+      if (
+        currentMtime !== null &&
+        Math.abs(currentMtime - body.expectedMtime) > 1
+      ) {
+        return new Response(
+          JSON.stringify({
             success: false,
             conflict: true,
             currentMtime,
-            expectedMtime,
-            message: 'File was modified externally',
-          }, { status: 409 });
+            expectedMtime: body.expectedMtime,
+            message: "File was modified externally",
+          }),
+          {
+            status: 409,
+            headers: { "Content-Type": "application/json" },
+          }
+        )
+      }
+    }
+
+    const newMtime = yield* Effect.tryPromise({
+      try: async () => {
+        // Symlink protection
+        let writePath = fullPath
+        try {
+          const lstats = await lstat(fullPath)
+          if (lstats.isSymbolicLink()) {
+            writePath = await realpath(fullPath)
+          }
+        } catch {
+          /* new file */
         }
-      } catch {
-        // File does not exist (possibly deleted), allow creation to proceed
-      }
-    }
 
-    // P2: Symlink protection — if it is a symlink, write to the real target file
-    let writePath = fullPath;
-    try {
-      const lstats = await lstat(fullPath);
-      if (lstats.isSymbolicLink()) {
-        writePath = await realpath(fullPath);
-      }
-    } catch {
-      // File does not exist, create normally
-    }
+        const dir = dirname(writePath)
+        await mkdir(dir, { recursive: true })
 
-    // Ensure directory exists
-    const dir = dirname(writePath);
-    await mkdir(dir, { recursive: true });
+        let originalMode: number | undefined
+        try {
+          const st = await stat(writePath)
+          originalMode = st.mode
+        } catch {
+          /* new file */
+        }
 
-    // Read original file permissions (to restore after writing)
-    let originalMode: number | undefined;
-    try {
-      const st = await stat(writePath);
-      originalMode = st.mode;
-    } catch { /* New file, no permissions to preserve */ }
+        // Atomic write
+        const tmpPath = `${writePath}.${randomUUID()}.tmp`
+        try {
+          await writeFile(tmpPath, content, "utf-8")
+          if (originalMode !== undefined) {
+            await chmod(tmpPath, originalMode)
+          }
+          await rename(tmpPath, writePath)
+        } catch (error) {
+          try {
+            await unlink(tmpPath)
+          } catch {
+            /* ignore */
+          }
+          throw error
+        }
 
-    // P1: Atomic write — write to temp file first, then rename
-    const tmpPath = `${writePath}.${randomUUID()}.tmp`;
-    try {
-      await writeFile(tmpPath, content, 'utf-8');
-      // Restore original file permissions (writeFile defaults to 0o644, losing +x and other permissions)
-      if (originalMode !== undefined) {
-        await chmod(tmpPath, originalMode);
-      }
-      await rename(tmpPath, writePath);
-    } catch (error) {
-      // Clean up temp file
-      try { await unlink(tmpPath); } catch { /* ignore */ }
-      throw error;
-    }
+        const newStats = await stat(fullPath)
+        return newStats.mtimeMs
+      },
+      catch: (cause) =>
+        new FSError({ path: fullPath, op: "write", cause }),
+    })
 
-    // Return new mtime
-    const newStats = await stat(fullPath);
-    return Response.json({
-      success: true,
-      mtime: newStats.mtimeMs,
-    });
-  } catch (error) {
-    console.error('Error saving file:', error);
-    return Response.json(
-      { error: 'Failed to save file' },
-      { status: 500 }
-    );
-  }
-}
+    return ok({ success: true, mtime: newMtime })
+  })
+)

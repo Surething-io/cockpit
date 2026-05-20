@@ -1,16 +1,37 @@
-import { neo4jManager } from '@cockpit/feature-console/server';
+/**
+ * /api/neo4j/query — P9 round 2 (Service Tag migration)
+ */
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
+import { Neo4jService } from "@cockpit/effect-services"
 
-export async function POST(req: Request) {
-  try {
-    const { id, connectionString, cypher, params } = await req.json();
-    if (!id || !connectionString || !cypher) {
-      return Response.json({ error: 'Missing id, connectionString, or cypher' }, { status: 400 });
-    }
-
-    const result = await neo4jManager.runCypher(id, connectionString, cypher, params);
-    return Response.json(result);
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return Response.json({ error: msg }, { status: 500 });
-  }
+interface QueryRequest {
+  id?: string
+  connectionString?: string
+  cypher?: string
+  params?: Record<string, unknown>
 }
+
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as QueryRequest
+    if (!body.id || !body.connectionString || !body.cypher) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.id
+            ? "id"
+            : !body.connectionString
+              ? "connectionString"
+              : "cypher",
+          reason: "missing",
+        })
+      )
+    }
+    const { id, connectionString, cypher, params } = body
+
+    const neo4j = yield* Neo4jService
+    const result = yield* neo4j.runWithMeta(id, connectionString, cypher, params)
+    return ok(result)
+  }).pipe(Effect.withSpan("api.neo4j.query"))
+)

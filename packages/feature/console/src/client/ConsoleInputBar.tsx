@@ -6,6 +6,8 @@ import { Zap, Variable, LayoutGrid, List } from 'lucide-react';
 import { QuickCommandsPopover, useQuickCommands } from './QuickCommandsPopover';
 import { matchInput } from './useConsoleState';
 import type { CustomCommand } from '@/app/api/services/config/route';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { fetchAutocomplete } from './effect/consoleClient';
 
 interface TaggedCommand extends CustomCommand {
   scope: 'project' | 'global';
@@ -124,38 +126,34 @@ export function ConsoleInputBar({
     if (!inputRef.current) return;
     const cursorPosition = inputRef.current.selectionStart || 0;
 
-    try {
-      const response = await fetch('/api/terminal/autocomplete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd: currentCwd, input: inputValue, cursorPosition }),
-      });
+    const exit = await BrowserRuntime.runPromiseExit(
+      fetchAutocomplete({ cwd: currentCwd, input: inputValue, cursorPosition })
+    );
+    if (exit._tag === 'Success') {
+      const data = exit.value;
+      const suggestions = data.suggestions;
+      if (suggestions && suggestions.length > 0) {
+        setAutocompleteSuggestions(suggestions as string[]);
+        setAutocompleteIndex(0);
+        setShowAutocomplete(true);
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.suggestions && data.suggestions.length > 0) {
-          setAutocompleteSuggestions(data.suggestions);
-          setAutocompleteIndex(0);
-          setShowAutocomplete(true);
+        if (suggestions.length === 1) {
+          const before = inputValue.substring(0, data.replaceStart ?? 0);
+          const after = inputValue.substring(data.replaceEnd ?? cursorPosition);
+          const newValue = before + suggestions[0] + after;
+          setInputValue(newValue);
+          setShowAutocomplete(false);
 
-          if (data.suggestions.length === 1) {
-            const before = inputValue.substring(0, data.replaceStart);
-            const after = inputValue.substring(data.replaceEnd);
-            const newValue = before + data.suggestions[0] + after;
-            setInputValue(newValue);
-            setShowAutocomplete(false);
-
-            setTimeout(() => {
-              if (inputRef.current) {
-                const newPos = data.replaceStart + data.suggestions[0].length;
-                inputRef.current.setSelectionRange(newPos, newPos);
-              }
-            }, 0);
-          }
+          setTimeout(() => {
+            if (inputRef.current) {
+              const newPos = (data.replaceStart ?? 0) + suggestions[0].length;
+              inputRef.current.setSelectionRange(newPos, newPos);
+            }
+          }, 0);
         }
       }
-    } catch (error) {
-      console.error('Autocomplete error:', error);
+    } else {
+      console.error('Autocomplete error:', exit.cause);
     }
   }, [currentCwd, inputValue]);
 

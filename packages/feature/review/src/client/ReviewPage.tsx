@@ -12,6 +12,18 @@ import { useReviewIdentity } from './hooks/useReviewIdentity';
 import { useTheme } from '@cockpit/shared-ui';
 import { ReviewData } from '../server/lib/reviewUtils';
 import { toast } from '@cockpit/shared-ui';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  loadReviewUsers,
+  loadReviewById,
+  loadShareInfo,
+  addReviewComment,
+  patchReviewComment,
+  deleteReviewComment,
+  addReviewReply,
+  patchReviewReply,
+  deleteReviewReply,
+} from './effect/reviewClient';
 
 interface ReviewPageProps {
   reviewId: string;
@@ -33,17 +45,15 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
 
   // Fetch user name map
   const fetchUserMap = useCallback(async () => {
-    try {
-      const res = await fetch('/api/review/users');
-      if (res.ok) {
-        const data = await res.json();
-        const map: UserNameMap = {};
-        for (const [id, record] of Object.entries(data.users)) {
-          map[id] = (record as { name: string }).name;
-        }
-        setUserNameMap(map);
+    const exit = await BrowserRuntime.runPromiseExit(loadReviewUsers());
+    if (exit._tag === 'Success') {
+      const map: UserNameMap = {};
+      for (const [id, record] of Object.entries(exit.value.users)) {
+        map[id] = record.name;
       }
-    } catch { /* ignore */ }
+      setUserNameMap(map);
+    }
+    // silent — v1 try/catch ignored errors
   }, []);
 
   // Load user map on mount
@@ -84,25 +94,23 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
 
   // Fetch review data
   const fetchReview = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/review/${currentId}`);
-      if (!res.ok) {
-        if (res.status === 404) {
-          setError(t('review.reviewNotExist'));
-        } else {
-          setError(t('review.loadFailed'));
-        }
-        return;
-      }
-      const data = await res.json();
-      setReview(data.review);
+    const exit = await BrowserRuntime.runPromiseExit(loadReviewById(currentId));
+    if (exit._tag === 'Success') {
+      setReview(exit.value.review as unknown as ReviewData);
       setError(null);
-    } catch {
-      setError(t('review.networkError'));
-    } finally {
-      setLoading(false);
+    } else {
+      // exit.cause carries Fail with AppError or NotFoundError
+      const failure = exit.cause._tag === 'Fail' ? exit.cause.error : null;
+      if (failure && failure._tag === 'NotFoundError') {
+        setError(t('review.reviewNotExist'));
+      } else if (failure && failure._tag === 'AppError') {
+        setError(t('review.loadFailed'));
+      } else {
+        setError(t('review.networkError'));
+      }
     }
-  }, [currentId]);
+    setLoading(false);
+  }, [currentId, t]);
 
   // Initial load + switch
   useEffect(() => {
@@ -118,144 +126,126 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
     return () => clearInterval(interval);
   }, [fetchReview, fetchUserMap]);
 
+  // Shared helper: run a mutation Effect; refetch on success, toast on failure.
+  const runMutation = useCallback(
+    async (
+      eff: ReturnType<typeof addReviewComment>,
+      failToastKey: string,
+    ) => {
+      const exit = await BrowserRuntime.runPromiseExit(eff);
+      if (exit._tag === 'Success') {
+        await fetchReview();
+      } else {
+        toast(t(failToastKey), 'error');
+      }
+    },
+    [fetchReview, t],
+  );
+
   // Add comment
-  const handleAddComment = useCallback(async (
-    content: string,
-    anchor: { startOffset: number; endOffset: number; selectedText: string }
-  ) => {
-    if (!identity.authorId) return;
-    try {
-      const res = await fetch(`/api/review/${currentId}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+  const handleAddComment = useCallback(
+    async (
+      content: string,
+      anchor: { startOffset: number; endOffset: number; selectedText: string },
+    ) => {
+      if (!identity.authorId) return;
+      await runMutation(
+        addReviewComment(currentId, {
           author: identity.name,
           authorId: identity.authorId,
           content,
           anchor,
         }),
-      });
-      if (res.ok) {
-        await fetchReview();
-      }
-    } catch {
-      toast(t('toast.addCommentFailed'), 'error');
-    }
-  }, [currentId, identity, fetchReview]);
+        'toast.addCommentFailed',
+      );
+    },
+    [currentId, identity, runMutation],
+  );
 
   // Delete comment
-  const handleDeleteComment = useCallback(async (commentId: string) => {
-    try {
-      const res = await fetch(`/api/review/${currentId}/comments?commentId=${commentId}`, {
-        method: 'DELETE',
-      });
-      if (res.ok) {
-        await fetchReview();
-      }
-    } catch {
-      toast(t('toast.deleteCommentFailed'), 'error');
-    }
-  }, [currentId, fetchReview]);
+  const handleDeleteComment = useCallback(
+    (commentId: string) =>
+      runMutation(
+        deleteReviewComment(currentId, commentId),
+        'toast.deleteCommentFailed',
+      ),
+    [currentId, runMutation],
+  );
 
   // Edit comment
-  const handleEditComment = useCallback(async (commentId: string, content: string) => {
-    try {
-      const res = await fetch(`/api/review/${currentId}/comments`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commentId, content }),
-      });
-      if (res.ok) {
-        await fetchReview();
-      }
-    } catch {
-      toast(t('toast.editCommentFailed'), 'error');
-    }
-  }, [currentId, fetchReview]);
+  const handleEditComment = useCallback(
+    (commentId: string, content: string) =>
+      runMutation(
+        patchReviewComment(currentId, { commentId, content }),
+        'toast.editCommentFailed',
+      ),
+    [currentId, runMutation],
+  );
 
   // Toggle comment closed
-  const handleToggleCommentClosed = useCallback(async (commentId: string, closed: boolean) => {
-    try {
-      const res = await fetch(`/api/review/${currentId}/comments`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commentId, closed }),
-      });
-      if (res.ok) {
-        await fetchReview();
-      }
-    } catch {
-      toast(t('toast.operationFailed'), 'error');
-    }
-  }, [currentId, fetchReview, t]);
+  const handleToggleCommentClosed = useCallback(
+    (commentId: string, closed: boolean) =>
+      runMutation(
+        patchReviewComment(currentId, { commentId, closed }),
+        'toast.operationFailed',
+      ),
+    [currentId, runMutation],
+  );
 
   // Add reply
-  const handleAddReply = useCallback(async (commentId: string, content: string) => {
-    if (!identity.authorId) return;
-    try {
-      const res = await fetch(`/api/review/${currentId}/replies`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+  const handleAddReply = useCallback(
+    async (commentId: string, content: string) => {
+      if (!identity.authorId) return;
+      await runMutation(
+        addReviewReply(currentId, {
           commentId,
           author: identity.name,
           authorId: identity.authorId,
           content,
         }),
-      });
-      if (res.ok) {
-        await fetchReview();
-      }
-    } catch {
-      toast(t('toast.addReplyFailed'), 'error');
-    }
-  }, [currentId, identity, fetchReview]);
+        'toast.addReplyFailed',
+      );
+    },
+    [currentId, identity, runMutation],
+  );
 
   // Delete reply
-  const handleDeleteReply = useCallback(async (commentId: string, replyId: string) => {
-    try {
-      const res = await fetch(
-        `/api/review/${currentId}/replies?commentId=${commentId}&replyId=${replyId}`,
-        { method: 'DELETE' }
-      );
-      if (res.ok) {
-        await fetchReview();
-      }
-    } catch {
-      toast(t('toast.deleteReplyFailed'), 'error');
-    }
-  }, [currentId, fetchReview]);
+  const handleDeleteReply = useCallback(
+    (commentId: string, replyId: string) =>
+      runMutation(
+        deleteReviewReply(currentId, commentId, replyId),
+        'toast.deleteReplyFailed',
+      ),
+    [currentId, runMutation],
+  );
 
   // Edit reply
-  const handleEditReply = useCallback(async (commentId: string, replyId: string, content: string) => {
-    try {
-      const res = await fetch(`/api/review/${currentId}/replies`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commentId, replyId, content }),
-      });
-      if (res.ok) {
-        await fetchReview();
-      }
-    } catch {
-      toast(t('toast.editReplyFailed'), 'error');
-    }
-  }, [currentId, fetchReview]);
+  const handleEditReply = useCallback(
+    (commentId: string, replyId: string, content: string) =>
+      runMutation(
+        patchReviewReply(currentId, { commentId, replyId, content }),
+        'toast.editReplyFailed',
+      ),
+    [currentId, runMutation],
+  );
 
   // Copy share URL (use LAN IP + share port)
   const handleCopyLink = useCallback(async () => {
-    try {
-      const res = await fetch('/api/review/share-info');
-      const info = await res.json();
-      const shareUrl = info.shareBase
-        ? `${info.shareBase}/review/${currentId}`
+    const exit = await BrowserRuntime.runPromiseExit(loadShareInfo());
+    if (exit._tag === 'Success') {
+      const shareUrl = exit.value.shareBase
+        ? `${exit.value.shareBase}/review/${currentId}`
         : window.location.href;
-      await navigator.clipboard.writeText(shareUrl);
-      toast(t('toast.linkCopied'), 'success');
-    } catch {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        toast(t('toast.linkCopied'), 'success');
+      } catch {
+        toast(t('toast.copyFailed'), 'error');
+      }
+    } else {
       toast(t('toast.copyFailed'), 'error');
     }
-  }, [currentId]);
+  }, [currentId, t]);
 
 
   // Click comment in right panel -> scroll to highlight in left panel

@@ -3,6 +3,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
 import type { DeepseekModel } from './types';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { loadAgentSettings, saveAgentSettings } from './effect/agentClient';
 
 // Migrated from src/components/project/DeepseekConfigPicker.tsx.
 
@@ -54,45 +56,42 @@ export function DeepseekConfigPicker({ currentModel, onModelChange }: DeepseekCo
   const loadSettings = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await fetch('/api/settings');
-      if (!res.ok) {
-        setError('Failed to load settings');
-        return;
-      }
-      const data = await res.json();
-      const key: string = data?.engines?.deepseek?.apiKey || '';
-      setSavedKey(key);
-      setKeyInput('');
-      setEditing(false);
-      // If parent didn't pass a model and settings has one, sync upward
-      const savedModel: DeepseekModel | undefined = data?.engines?.deepseek?.model;
-      if (!currentModel && savedModel && MODELS.some(m => m.value === savedModel)) {
-        onModelChange(savedModel);
-      }
-    } catch {
-      setError('Connection error');
-    } finally {
+    const exit = await BrowserRuntime.runPromiseExit(
+      loadAgentSettings<{
+        engines?: { deepseek?: { apiKey?: string; model?: DeepseekModel } };
+      }>()
+    );
+    if (exit._tag === 'Failure') {
+      setError('Failed to load settings');
       setLoading(false);
+      return;
     }
+    const data = exit.value;
+    const key: string = data?.engines?.deepseek?.apiKey || '';
+    setSavedKey(key);
+    setKeyInput('');
+    setEditing(false);
+    // If parent didn't pass a model and settings has one, sync upward
+    const savedModel = data?.engines?.deepseek?.model;
+    if (!currentModel && savedModel && MODELS.some(m => m.value === savedModel)) {
+      onModelChange(savedModel);
+    }
+    setLoading(false);
   }, [currentModel, onModelChange]);
 
   const persistSettings = useCallback(async (patch: { apiKey?: string; model?: DeepseekModel }) => {
     // PUT /api/settings is a shallow merge — we only need to send the engines diff.
-    const cur: Record<string, unknown> = await fetch('/api/settings')
-      .then(r => r.ok ? r.json() : {})
-      .catch(() => ({}));
-    const curEngines = (cur.engines as Record<string, Record<string, unknown>> | undefined) || {};
+    const curExit = await BrowserRuntime.runPromiseExit(
+      loadAgentSettings<{ engines?: Record<string, Record<string, unknown>> }>()
+    );
+    const cur = curExit._tag === 'Success' ? curExit.value : {};
+    const curEngines = cur.engines || {};
     const engines = {
       ...curEngines,
       deepseek: { ...(curEngines.deepseek || {}), ...patch },
     };
-    const res = await fetch('/api/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ engines }),
-    });
-    if (!res.ok) throw new Error('Failed to save settings');
+    const saveExit = await BrowserRuntime.runPromiseExit(saveAgentSettings({ engines }));
+    if (saveExit._tag === 'Failure') throw new Error('Failed to save settings');
   }, []);
 
   const toggle = () => {

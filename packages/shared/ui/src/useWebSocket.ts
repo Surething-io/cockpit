@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+// Shared backoff schedule — keeps client reconnect curve in sync with the server.
+import { wsReconnectDelayMs } from '@cockpit/effect-core';
 
 interface UseWebSocketOptions {
   /** WebSocket URL path, e.g. '/ws/watch?cwd=...' */
@@ -55,7 +57,7 @@ function getOrCreateConnection(url: string): SharedConnection {
 
       ws.onclose = () => {
         if (conn.listeners.size === 0) return; // No subscribers left, skip reconnect
-        const delay = Math.min(1000 * Math.pow(1.5, conn.retryCount), 10000);
+        const delay = wsReconnectDelayMs(conn.retryCount);
         conn.retryCount++;
         conn.retryTimer = setTimeout(() => conn.connect(), delay);
       };

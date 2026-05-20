@@ -3,6 +3,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { Location, HoverInfo } from '@cockpit/feature-explorer/server/lsp/types';
 import { getLanguageForFile } from '@cockpit/feature-explorer/server/lsp/types';
+import { Effect } from 'effect';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { lspDefinition, lspHover, lspReferences, lspWarmup } from './effect/lspClient';
 
 // ============================================
 // LSP Definition Hook
@@ -17,20 +20,15 @@ export function useLSPDefinition(cwd: string) {
     column: number,
   ): Promise<Location[]> => {
     setLoading(true);
-    try {
-      const res = await fetch('/api/lsp/definition', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, filePath, line, column }),
-      });
-      const data = await res.json();
-      return data.definitions || [];
-    } catch (err) {
-      console.error('[useLSP] definition error:', err);
-      return [];
-    } finally {
-      setLoading(false);
+    const exit = await BrowserRuntime.runPromiseExit(
+      lspDefinition({ cwd, filePath, line, column })
+    );
+    setLoading(false);
+    if (exit._tag === 'Success') {
+      return (exit.value.definitions ?? []) as Location[];
     }
+    console.error('[useLSP] definition error:', exit.cause);
+    return [];
   }, [cwd]);
 
   return { goToDefinition, loading };
@@ -119,28 +117,21 @@ export function useLSPHover(cwd: string) {
     const requestId = ++activeRequestRef.current;
 
     timerRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch('/api/lsp/hover', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cwd, filePath, line, column }),
+      const exit = await BrowserRuntime.runPromiseExit(
+        lspHover({ cwd, filePath, line, column })
+      );
+      if (requestId !== activeRequestRef.current) return;
+      if (exit._tag !== 'Success') return; // ignore errors (v1 .catch silently)
+      const hover = exit.value.hover;
+      if (hover && hover.displayString) {
+        setHoverInfo({
+          ...hover,
+          x: rect.x,
+          y: rect.y,
+          filePath,
+          line,
+          column,
         });
-        const data = await res.json();
-
-        if (requestId !== activeRequestRef.current) return;
-
-        if (data.hover && data.hover.displayString) {
-          setHoverInfo({
-            ...data.hover,
-            x: rect.x,
-            y: rect.y,
-            filePath,
-            line,
-            column,
-          });
-        }
-      } catch {
-        // ignore
       }
     }, HOVER_DELAY);
   }, [cwd]);
@@ -214,20 +205,16 @@ export function useLSPReferences(cwd: string) {
   ) => {
     setLoading(true);
     setVisible(true);
-    try {
-      const res = await fetch('/api/lsp/references', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, filePath, line, column }),
-      });
-      const data = await res.json();
-      setReferences(data.references || []);
-    } catch (err) {
-      console.error('[useLSP] references error:', err);
+    const exit = await BrowserRuntime.runPromiseExit(
+      lspReferences({ cwd, filePath, line, column })
+    );
+    if (exit._tag === 'Success') {
+      setReferences((exit.value.references ?? []) as Location[]);
+    } else {
+      console.error('[useLSP] references error:', exit.cause);
       setReferences([]);
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   }, [cwd]);
 
   const closeReferences = useCallback(() => {
@@ -252,10 +239,10 @@ export function useLSPWarmup(cwd: string, selectedPath: string | null) {
     warmedRef.current = selectedPath;
 
     // fire-and-forget, does not block the UI
-    fetch('/api/lsp/warmup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cwd, filePath: selectedPath }),
-    }).catch(() => {});
+    BrowserRuntime.runFork(
+      lspWarmup({ cwd, filePath: selectedPath }).pipe(
+        Effect.orElse(() => Effect.void)
+      )
+    );
   }, [cwd, selectedPath]);
 }

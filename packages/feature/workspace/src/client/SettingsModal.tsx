@@ -6,6 +6,14 @@ import { useTheme } from '@cockpit/shared-ui';
 import { toast } from '@cockpit/shared-ui';
 import { isMacClient } from '@cockpit/shared-utils';
 import { useCockpitBridge } from '@cockpit/feature-console';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { Effect } from 'effect';
+import {
+  loadSettings,
+  saveSettings,
+  loadCockpitVersion,
+  loadExtensionVersion,
+} from './effect/workspaceClient';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -25,20 +33,19 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   // Fetch current language setting from backend on open
   useEffect(() => {
     if (!isOpen) return;
-    fetch('/api/settings')
-      .then(r => r.json())
-      .then(data => { if (data.language) setLanguageState(data.language); })
-      .catch(() => {});
+    BrowserRuntime.runPromiseExit(loadSettings()).then((exit) => {
+      if (exit._tag === 'Success' && exit.value.language) {
+        setLanguageState(exit.value.language);
+      }
+    });
   }, [isOpen]);
 
   const handleLanguageChange = useCallback((lang: string) => {
     setLanguageState(lang);
-    // Save to backend
-    fetch('/api/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ language: lang }),
-    }).catch(() => {});
+    // Save to backend (fire-and-forget)
+    BrowserRuntime.runFork(
+      saveSettings({ language: lang }).pipe(Effect.orElse(() => Effect.void))
+    );
     // Apply immediately
     const effective = lang === 'auto'
       ? (navigator.language.startsWith('zh') ? 'zh' : 'en')
@@ -52,19 +59,21 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   // Fetch app version
   useEffect(() => {
     if (!isOpen) return;
-    fetch('/api/version')
-      .then(r => r.json())
-      .then(d => { if (d.version) setAppVersion(d.version); })
-      .catch(() => {});
+    BrowserRuntime.runPromiseExit(loadCockpitVersion()).then((exit) => {
+      if (exit._tag === 'Success' && exit.value.version) {
+        setAppVersion(exit.value.version);
+      }
+    });
   }, [isOpen]);
 
   // Fetch extension directory path
   useEffect(() => {
     if (!isOpen) return;
-    fetch('/api/extension/version')
-      .then(r => r.json())
-      .then(d => { if (d.path) setExtensionPath(d.path); })
-      .catch(() => {});
+    BrowserRuntime.runPromiseExit(loadExtensionVersion()).then((exit) => {
+      if (exit._tag === 'Success' && exit.value.path) {
+        setExtensionPath(exit.value.path);
+      }
+    });
   }, [isOpen]);
 
   if (!isOpen) return null;

@@ -4,6 +4,14 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWebSocket } from '@cockpit/shared-ui';
 import { ReviewCommentsListModal, type UserNameMap, type ReviewComment } from '@cockpit/feature-review';
+import { Effect } from 'effect';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  loadReviews,
+  loadReviewById,
+  loadReviewUsers,
+  reorderReviews,
+} from './effect/reviewClient';
 
 interface ReviewSummary {
   id: string;
@@ -89,13 +97,10 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
   // Fetch the review list
   const fetchList = useCallback(async () => {
     setLoading(true);
-    try {
-      const res = await fetch('/api/review');
-      if (res.ok) {
-        const data = await res.json();
-        setReviews(data.reviews || []);
-      }
-    } catch { /* ignore */ }
+    const exit = await BrowserRuntime.runPromiseExit(loadReviews());
+    if (exit._tag === 'Success') {
+      setReviews(((exit.value.reviews ?? []) as unknown) as ReviewSummary[]);
+    }
     setLoading(false);
   }, []);
 
@@ -139,27 +144,24 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
   // View comments: fetch review details + user map, show modal on current page
   const handleViewComments = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    try {
-      const [reviewRes, usersRes] = await Promise.all([
-        fetch(`/api/review/${id}`),
-        fetch('/api/review/users'),
-      ]);
-      if (!reviewRes.ok) return;
-      const { review } = await reviewRes.json();
-      const userNameMap: UserNameMap = {};
-      if (usersRes.ok) {
-        const { users } = await usersRes.json();
-        for (const [uid, record] of Object.entries(users)) {
-          userNameMap[uid] = (record as { name: string }).name;
-        }
+    const [reviewExit, usersExit] = await Promise.all([
+      BrowserRuntime.runPromiseExit(loadReviewById(id)),
+      BrowserRuntime.runPromiseExit(loadReviewUsers()),
+    ]);
+    if (reviewExit._tag !== 'Success') return;
+    const review = reviewExit.value.review;
+    const userNameMap: UserNameMap = {};
+    if (usersExit._tag === 'Success') {
+      for (const [uid, record] of Object.entries(usersExit.value.users)) {
+        userNameMap[uid] = record.name;
       }
-      setCommentsModal({
-        open: true,
-        comments: review.comments || [],
-        title: review.title,
-        userNameMap,
-      });
-    } catch { /* ignore */ }
+    }
+    setCommentsModal({
+      open: true,
+      comments: (review.comments as ReviewComment[] | undefined) || [],
+      title: (review.title as string) ?? '',
+      userNameMap,
+    });
   }, []);
 
   // Drag & drop
@@ -202,11 +204,9 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
       list.splice(toIdx, 0, item);
 
       const order = list.map(r => r.id);
-      fetch('/api/review/order', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order }),
-      }).catch(() => {});
+      BrowserRuntime.runFork(
+        reorderReviews(order).pipe(Effect.orElse(() => Effect.void))
+      );
 
       return list;
     });

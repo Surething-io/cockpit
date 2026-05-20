@@ -3,6 +3,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Plus, Trash2 } from 'lucide-react';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  loadTerminalEnv,
+  saveTerminalEnv,
+} from './effect/consoleClient';
 
 interface EnvManagerProps {
   cwd: string;
@@ -20,20 +25,13 @@ export function EnvManager({ cwd, tabId, onClose, onSave }: EnvManagerProps) {
 
   const loadEnv = useCallback(async () => {
     setIsLoading(true);
-    try {
-      const params = new URLSearchParams({ cwd });
-      if (tabId) params.set('tabId', tabId);
-
-      const response = await fetch(`/api/terminal/env?${params}`);
-      if (response.ok) {
-        const data = await response.json();
-        setEnv(data.env || {});
-      }
-    } catch (error) {
-      console.error('Failed to load env:', error);
-    } finally {
-      setIsLoading(false);
+    const exit = await BrowserRuntime.runPromiseExit(loadTerminalEnv(cwd, tabId));
+    if (exit._tag === 'Success') {
+      setEnv(exit.value);
+    } else {
+      console.error('Failed to load env:', exit.cause);
     }
+    setIsLoading(false);
   }, [cwd, tabId]);
 
   // Load environment variables
@@ -68,19 +66,12 @@ export function EnvManager({ cwd, tabId, onClose, onSave }: EnvManagerProps) {
   };
 
   const handleSave = async () => {
-    try {
-      const response = await fetch('/api/terminal/env', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, tabId, env }),
-      });
-
-      if (response.ok) {
-        onSave(env);
-        onClose();
-      }
-    } catch (error) {
-      console.error('Failed to save env:', error);
+    const exit = await BrowserRuntime.runPromiseExit(saveTerminalEnv({ cwd, tabId, env }));
+    if (exit._tag === 'Success') {
+      onSave(env);
+      onClose();
+    } else {
+      console.error('Failed to save env:', exit.cause);
     }
   };
 

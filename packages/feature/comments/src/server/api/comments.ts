@@ -1,64 +1,104 @@
-import { getCommentsFilePath, readJsonFile, writeJsonFile } from '@cockpit/shared-utils';
+/**
+ * /api/comments — P8+ migration
+ *
+ * Code-comment CRUD (GET/POST/PUT/DELETE).
+ */
+import { Effect } from "effect"
+import {
+  getCommentsFilePath,
+  readJsonFile,
+  writeJsonFile,
+} from "@cockpit/shared-utils"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import {
+  FSError,
+  NotFoundError,
+  ValidationError,
+} from "@cockpit/effect-core"
 
 export interface CodeComment {
-  id: string;
-  filePath: string;
-  startLine: number;
-  endLine: number;
-  content: string;
-  selectedText?: string; // Selected original text (for scenarios without a real file, e.g. AI message bubbles)
-  createdAt: number;
-  updatedAt?: number;
+  id: string
+  filePath: string
+  startLine: number
+  endLine: number
+  content: string
+  selectedText?: string
+  createdAt: number
+  updatedAt?: number
 }
 
 interface CommentsData {
-  comments: CodeComment[];
+  comments: CodeComment[]
 }
 
-// GET - Retrieve file comments
-// ?cwd=xxx&filePath=xxx (filePath optional; omit to return all)
-export async function GET(request: Request) {
-  const cwd = new URL(request.url).searchParams.get('cwd');
-  const filePath = new URL(request.url).searchParams.get('filePath');
+const readComments = (
+  cwd: string
+): Effect.Effect<CommentsData, FSError> =>
+  Effect.tryPromise({
+    try: () =>
+      readJsonFile<CommentsData>(getCommentsFilePath(cwd), {
+        comments: [],
+      }),
+    catch: (cause) =>
+      new FSError({ path: getCommentsFilePath(cwd), op: "read", cause }),
+  })
 
-  if (!cwd) {
-    return Response.json({ error: 'cwd is required' }, { status: 400 });
-  }
+const writeComments = (
+  cwd: string,
+  data: CommentsData
+): Effect.Effect<void, FSError> =>
+  Effect.tryPromise({
+    try: () => writeJsonFile(getCommentsFilePath(cwd), data),
+    catch: (cause) =>
+      new FSError({ path: getCommentsFilePath(cwd), op: "write", cause }),
+  })
 
-  try {
-    const dataPath = getCommentsFilePath(cwd);
-    const data = await readJsonFile<CommentsData>(dataPath, { comments: [] });
-
-    // If filePath is specified, return only comments for that file
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const sp = new URL(req.url).searchParams
+    const cwd = sp.get("cwd")
+    const filePath = sp.get("filePath")
+    if (!cwd) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "cwd", reason: "missing" })
+      )
+    }
+    const data = yield* readComments(cwd)
     if (filePath) {
-      const fileComments = data.comments.filter(c => c.filePath === filePath);
-      return Response.json({ comments: fileComments });
+      return ok({
+        comments: data.comments.filter((c) => c.filePath === filePath),
+      })
     }
+    return ok(data)
+  })
+)
 
-    return Response.json(data);
-  } catch (error) {
-    console.error('Error reading comments:', error);
-    return Response.json({ error: 'Failed to read comments' }, { status: 500 });
-  }
-}
-
-// POST - Add comment
-// body: { cwd, filePath, startLine, endLine, content }
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { cwd, filePath, startLine, endLine, content, selectedText } = body;
-
-    if (!cwd || !filePath || startLine === undefined || endLine === undefined || content === undefined) {
-      return Response.json(
-        { error: 'cwd, filePath, startLine, endLine, and content are required' },
-        { status: 400 }
-      );
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as {
+      cwd?: string
+      filePath?: string
+      startLine?: number
+      endLine?: number
+      content?: string
+      selectedText?: string
     }
-
-    const dataPath = getCommentsFilePath(cwd);
-    const data = await readJsonFile<CommentsData>(dataPath, { comments: [] });
-
+    if (
+      !body.cwd ||
+      !body.filePath ||
+      body.startLine === undefined ||
+      body.endLine === undefined ||
+      body.content === undefined
+    ) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: "cwd|filePath|startLine|endLine|content",
+          reason: "missing",
+        })
+      )
+    }
+    const { cwd, filePath, startLine, endLine, content, selectedText } = body
+    const data = yield* readComments(cwd)
     const newComment: CodeComment = {
       id: `comment-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       filePath,
@@ -67,94 +107,75 @@ export async function POST(request: Request) {
       content,
       ...(selectedText ? { selectedText } : {}),
       createdAt: Date.now(),
-    };
-
-    data.comments.push(newComment);
-    await writeJsonFile(dataPath, data);
-
-    return Response.json({ comment: newComment });
-  } catch (error) {
-    console.error('Error adding comment:', error);
-    return Response.json({ error: 'Failed to add comment' }, { status: 500 });
-  }
-}
-
-// PUT - Update comment
-// body: { cwd, id, content }
-export async function PUT(request: Request) {
-  try {
-    const body = await request.json();
-    const { cwd, id, content } = body;
-
-    if (!cwd || !id || content === undefined) {
-      return Response.json(
-        { error: 'cwd, id, and content are required' },
-        { status: 400 }
-      );
     }
+    data.comments.push(newComment)
+    yield* writeComments(cwd, data)
+    return ok({ comment: newComment })
+  })
+)
 
-    const dataPath = getCommentsFilePath(cwd);
-    const data = await readJsonFile<CommentsData>(dataPath, { comments: [] });
-
-    const commentIndex = data.comments.findIndex(c => c.id === id);
-    if (commentIndex === -1) {
-      return Response.json({ error: 'Comment not found' }, { status: 404 });
+export const PUT = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as {
+      cwd?: string
+      id?: string
+      content?: string
     }
-
-    data.comments[commentIndex] = {
-      ...data.comments[commentIndex],
+    if (!body.cwd || !body.id || body.content === undefined) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: "cwd|id|content",
+          reason: "missing",
+        })
+      )
+    }
+    const { cwd, id, content } = body
+    const data = yield* readComments(cwd)
+    const idx = data.comments.findIndex((c) => c.id === id)
+    if (idx === -1) {
+      return yield* Effect.fail(
+        new NotFoundError({ resource: "comment", id })
+      )
+    }
+    data.comments[idx] = {
+      ...data.comments[idx],
       content,
       updatedAt: Date.now(),
-    };
-
-    await writeJsonFile(dataPath, data);
-
-    return Response.json({ comment: data.comments[commentIndex] });
-  } catch (error) {
-    console.error('Error updating comment:', error);
-    return Response.json({ error: 'Failed to update comment' }, { status: 500 });
-  }
-}
-
-// DELETE - Delete comment
-// ?cwd=xxx&id=xxx deletes a single comment
-// ?cwd=xxx&all=true clears all comments
-export async function DELETE(request: Request) {
-  const cwd = new URL(request.url).searchParams.get('cwd');
-  const id = new URL(request.url).searchParams.get('id');
-  const all = new URL(request.url).searchParams.get('all');
-
-  if (!cwd) {
-    return Response.json({ error: 'cwd is required' }, { status: 400 });
-  }
-
-  try {
-    const dataPath = getCommentsFilePath(cwd);
-
-    // Clear all comments
-    if (all === 'true') {
-      await writeJsonFile(dataPath, { comments: [] });
-      return Response.json({ success: true });
     }
+    yield* writeComments(cwd, data)
+    return ok({ comment: data.comments[idx] })
+  })
+)
 
-    // Delete single comment
+export const DELETE = handler((req) =>
+  Effect.gen(function* () {
+    const sp = new URL(req.url).searchParams
+    const cwd = sp.get("cwd")
+    const id = sp.get("id")
+    const all = sp.get("all")
+    if (!cwd) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "cwd", reason: "missing" })
+      )
+    }
+    if (all === "true") {
+      yield* writeComments(cwd, { comments: [] })
+      return ok({ success: true })
+    }
     if (!id) {
-      return Response.json({ error: 'id is required' }, { status: 400 });
+      return yield* Effect.fail(
+        new ValidationError({ field: "id", reason: "missing" })
+      )
     }
-
-    const data = await readJsonFile<CommentsData>(dataPath, { comments: [] });
-
-    const commentIndex = data.comments.findIndex(c => c.id === id);
-    if (commentIndex === -1) {
-      return Response.json({ error: 'Comment not found' }, { status: 404 });
+    const data = yield* readComments(cwd)
+    const idx = data.comments.findIndex((c) => c.id === id)
+    if (idx === -1) {
+      return yield* Effect.fail(
+        new NotFoundError({ resource: "comment", id })
+      )
     }
-
-    data.comments.splice(commentIndex, 1);
-    await writeJsonFile(dataPath, data);
-
-    return Response.json({ success: true });
-  } catch (error) {
-    console.error('Error deleting comment:', error);
-    return Response.json({ error: 'Failed to delete comment' }, { status: 500 });
-  }
-}
+    data.comments.splice(idx, 1)
+    yield* writeComments(cwd, data)
+    return ok({ success: true })
+  })
+)

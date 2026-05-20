@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { fetchFileStat } from '../effect/filesClient';
 
 /**
  * Preview an image file. Two addressing modes:
@@ -72,38 +74,46 @@ export function FileImagePreview(props: FileImagePreviewProps) {
         return;
       }
 
-      try {
-        const url = `/api/files/stat?cwd=${encodeURIComponent(cwd!)}&path=${encodeURIComponent(relPath!)}`;
-        const res = await fetch(url, { cache: 'no-store' });
-        if (id !== reqIdRef.current) return;
-        if (!res.ok) {
-          setState({ kind: 'error', message: `stat failed (${res.status})` });
-          return;
-        }
-        const data = await res.json();
-        if (id !== reqIdRef.current) return;
-        if (!data.exists) {
-          setState({ kind: 'missing' });
-          return;
-        }
-        if (data.category === 'too-large') {
-          setState({ kind: 'too-large', size: data.size ?? 0 });
-          return;
-        }
-        if (data.category !== 'image') {
-          setState({ kind: 'error', message: `Not an image (${data.category})` });
-          return;
-        }
-        // Fall back to mtime-derived value if etag is somehow missing.
-        const etag: string = data.etag || `t-${data.mtimeMs ?? Date.now()}`;
-        setState({ kind: 'ready', etag, size: data.size ?? 0 });
-      } catch (err) {
-        if (id !== reqIdRef.current) return;
+      const exit = await BrowserRuntime.runPromiseExit(fetchFileStat(cwd!, relPath!));
+      if (id !== reqIdRef.current) return;
+      if (exit._tag === 'Failure') {
+        const failure = exit.cause._tag === 'Fail' ? exit.cause.error : null;
+        const inner = failure?.cause;
         setState({
           kind: 'error',
-          message: err instanceof Error ? err.message : 'Unknown error',
+          message: inner instanceof Error ? inner.message : 'Unknown error',
         });
+        return;
       }
+      const result = exit.value;
+      if (!result.ok) {
+        setState({ kind: 'error', message: `stat failed (${result.status})` });
+        return;
+      }
+      const data = result.data as
+        | {
+            exists?: boolean;
+            category?: string;
+            size?: number;
+            etag?: string;
+            mtimeMs?: number;
+          }
+        | null;
+      if (!data || !data.exists) {
+        setState({ kind: 'missing' });
+        return;
+      }
+      if (data.category === 'too-large') {
+        setState({ kind: 'too-large', size: data.size ?? 0 });
+        return;
+      }
+      if (data.category !== 'image') {
+        setState({ kind: 'error', message: `Not an image (${data.category})` });
+        return;
+      }
+      // Fall back to mtime-derived value if etag is somehow missing.
+      const etag: string = data.etag || `t-${data.mtimeMs ?? Date.now()}`;
+      setState({ kind: 'ready', etag, size: data.size ?? 0 });
     };
     run();
 

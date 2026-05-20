@@ -1,5 +1,9 @@
 import type { CodeComment } from '../server/api/comments';
 import i18n from '@cockpit/shared-i18n';
+import { Effect } from 'effect';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { AppError } from '@cockpit/effect-core';
+import { loadComments, deleteAllComments } from './effect/commentsClient';
 
 // ============================================
 // Comment change event system
@@ -35,17 +39,29 @@ export interface CodeReference {
   note?: string; // Optional comment text
 }
 
+// Effect wrapper for /api/files/text (used locally in this file to avoid depending on the explorer package)
+const readFileTextEff = (cwd: string, filePath: string) =>
+  Effect.tryPromise({
+    try: async () => {
+      const fileResponse = await fetch(
+        `/api/files/text?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`
+      );
+      if (!fileResponse.ok) return null;
+      return (await fileResponse.json()) as { content?: string };
+    },
+    catch: (cause) => new AppError({ message: `read file text ${filePath} failed`, cause }),
+  });
+
 /**
  * Fetch all comments and read the corresponding code
  */
 export async function fetchAllCommentsWithCode(cwd: string): Promise<CommentWithCode[]> {
   // 1. Fetch all comments
-  const response = await fetch(`/api/comments?cwd=${encodeURIComponent(cwd)}`);
-  if (!response.ok) {
+  const listExit = await BrowserRuntime.runPromiseExit(loadComments(cwd));
+  if (listExit._tag !== 'Success') {
     throw new Error('Failed to fetch comments');
   }
-  const data = await response.json();
-  const comments: CodeComment[] = data.comments || [];
+  const comments: CodeComment[] = (listExit.value.comments ?? []) as CodeComment[];
 
   if (comments.length === 0) {
     return [];
@@ -61,22 +77,15 @@ export async function fetchAllCommentsWithCode(cwd: string): Promise<CommentWith
     commentsByFile.get(comment.filePath)!.push(comment);
   }
 
-  // 3. Read the content of each file
+  // 3. Read the content of each file in parallel (mirrors the v1 Promise.all behavior)
   const fileContents = new Map<string, string[]>();
   await Promise.all(
     Array.from(commentsByFile.keys()).map(async (filePath) => {
-      try {
-        const fileResponse = await fetch(
-          `/api/files/text?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(filePath)}`
-        );
-        if (fileResponse.ok) {
-          const fileData = await fileResponse.json();
-          if (typeof fileData.content === 'string') {
-            fileContents.set(filePath, fileData.content.split('\n'));
-          }
-        }
-      } catch (err) {
-        console.error(`Failed to read file ${filePath}:`, err);
+      const exit = await BrowserRuntime.runPromiseExit(readFileTextEff(cwd, filePath));
+      if (exit._tag === 'Success' && exit.value && typeof exit.value.content === 'string') {
+        fileContents.set(filePath, exit.value.content.split('\n'));
+      } else if (exit._tag === 'Failure') {
+        console.error(`Failed to read file ${filePath}:`, exit.cause);
       }
     })
   );
@@ -106,21 +115,14 @@ export async function fetchAllCommentsWithCode(cwd: string): Promise<CommentWith
  * Clear all comments
  */
 export async function clearAllComments(cwd: string): Promise<boolean> {
-  try {
-    const response = await fetch(
-      `/api/comments?cwd=${encodeURIComponent(cwd)}&all=true`,
-      { method: 'DELETE' }
-    );
-    if (response.ok) {
-      // Emit global refresh event
-      emitCommentsChange();
-      return true;
-    }
-    return false;
-  } catch (err) {
-    console.error('Failed to clear comments:', err);
-    return false;
+  const exit = await BrowserRuntime.runPromiseExit(deleteAllComments(cwd));
+  if (exit._tag === 'Success') {
+    // Emit global refresh event
+    emitCommentsChange();
+    return true;
   }
+  console.error('Failed to clear comments:', exit.cause);
+  return false;
 }
 
 /**

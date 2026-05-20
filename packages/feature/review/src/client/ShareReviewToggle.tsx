@@ -3,6 +3,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@cockpit/shared-ui';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  loadReviews,
+  loadShareInfo,
+  createReview,
+  updateReview,
+} from './effect/reviewClient';
 
 interface ReviewInfo {
   id: string;
@@ -34,16 +41,22 @@ export function ShareReviewToggle({ content, sourceFile }: ShareReviewToggleProp
   useEffect(() => {
     if (!sourceFile) { setLoading(false); return; }
     let cancelled = false;
-    fetch('/api/review')
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => {
-        if (cancelled) return;
-        const match = (data.reviews as Array<{ id: string; active: boolean; updatedAt?: number; sourceFile?: string }>)
-          .find(r => r.sourceFile === sourceFile);
-        setReviewInfo(match ? { id: match.id, active: match.active, updatedAt: match.updatedAt } : null);
-      })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setLoading(false); });
+    BrowserRuntime.runPromiseExit(loadReviews()).then((exit) => {
+      if (cancelled) return;
+      if (exit._tag === 'Success') {
+        const reviews = (exit.value.reviews ?? []) as Array<{
+          id: string;
+          active: boolean;
+          updatedAt?: number;
+          sourceFile?: string;
+        }>;
+        const match = reviews.find(r => r.sourceFile === sourceFile);
+        setReviewInfo(
+          match ? { id: match.id, active: match.active, updatedAt: match.updatedAt } : null
+        );
+      }
+      setLoading(false);
+    });
     return () => { cancelled = true; };
   }, [sourceFile]);
 
@@ -52,55 +65,59 @@ export function ShareReviewToggle({ content, sourceFile }: ShareReviewToggleProp
   // Enable sharing: create/update review
   const enableShare = useCallback(async () => {
     setToggling(true);
-    try {
-      const title = sourceFile.split('/').pop() || sourceFile;
-      const res = await fetch('/api/review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content, sourceFile }),
-      });
-      if (!res.ok) throw new Error('Failed');
-      const data = await res.json();
-      const review = data.review;
-      setReviewInfo({ id: review.id, active: true, updatedAt: review.updatedAt || review.createdAt });
-
-      // Copy share link
-      try {
-        const infoRes = await fetch('/api/review/share-info');
-        const info = await infoRes.json();
-        const shareUrl = info.shareBase
-          ? `${info.shareBase}/review/${review.id}`
-          : `${window.location.origin}/review/${review.id}`;
-        await navigator.clipboard.writeText(shareUrl);
-      } catch { /* ignore */ }
-
-      toast(review.existing ? t('toast.reviewUpdated') : t('toast.reviewCreated'), 'success');
-    } catch {
+    const title = sourceFile.split('/').pop() || sourceFile;
+    const createExit = await BrowserRuntime.runPromiseExit(
+      createReview({ title, content, sourceFile })
+    );
+    if (createExit._tag !== 'Success' || !createExit.value.review) {
       toast(t('toast.reviewCreateFailed'), 'error');
-    } finally {
       setToggling(false);
+      return;
     }
-  }, [content, sourceFile]);
+    const review = createExit.value.review as {
+      id: string;
+      updatedAt?: number;
+      createdAt?: number;
+      existing?: boolean;
+    };
+    setReviewInfo({
+      id: review.id,
+      active: true,
+      updatedAt: review.updatedAt || review.createdAt,
+    });
+
+    // Copy share link (best-effort)
+    const infoExit = await BrowserRuntime.runPromiseExit(loadShareInfo());
+    const shareUrl =
+      infoExit._tag === 'Success' && infoExit.value.shareBase
+        ? `${infoExit.value.shareBase}/review/${review.id}`
+        : `${window.location.origin}/review/${review.id}`;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+    } catch { /* ignore */ }
+
+    toast(
+      review.existing ? t('toast.reviewUpdated') : t('toast.reviewCreated'),
+      'success'
+    );
+    setToggling(false);
+  }, [content, sourceFile, t]);
 
   // Disable sharing
   const disableShare = useCallback(async () => {
     if (!reviewInfo) return;
     setToggling(true);
-    try {
-      const res = await fetch(`/api/review/${reviewInfo.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ active: false }),
-      });
-      if (!res.ok) throw new Error('Failed');
+    const exit = await BrowserRuntime.runPromiseExit(
+      updateReview(reviewInfo.id, { active: false })
+    );
+    if (exit._tag === 'Success') {
       setReviewInfo(prev => prev ? { ...prev, active: false } : null);
       toast(t('toast.sharingClosed'), 'success');
-    } catch {
+    } else {
       toast(t('toast.sharingCloseFailed'), 'error');
-    } finally {
-      setToggling(false);
     }
-  }, [reviewInfo]);
+    setToggling(false);
+  }, [reviewInfo, t]);
 
   const handleToggle = useCallback(() => {
     if (toggling) return;

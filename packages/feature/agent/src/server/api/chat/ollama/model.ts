@@ -34,6 +34,9 @@ const ollamaFetch: typeof fetch = async (input, init) => {
 
 export function createOllamaModel(modelName: string): LanguageModelV3 {
   const provider = createOpenAI({
+    // EFFECT.md §0 exemption: third-party plugin API key in the same category as
+    // OPENAI_API_KEY / ANTHROPIC_API_KEY; not pulled into CockpitConfig (would over-couple
+    // cockpit configuration with third-party authentication).
     apiKey: process.env.OLLAMA_API_KEY || 'ollama',
     baseURL: getOllamaOpenAIBaseURL(),
     fetch: ollamaFetch,

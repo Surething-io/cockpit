@@ -1,6 +1,13 @@
 import * as fs from 'fs';
 import * as readline from 'readline';
+import { Effect } from 'effect';
 import { getClaudeSessionPath } from '@cockpit/shared-utils';
+import { dynamicHandler, ok } from '@cockpit/effect-runtime/server';
+import {
+  AppError,
+  NotFoundError,
+  ValidationError,
+} from '@cockpit/effect-core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -55,47 +62,31 @@ interface ChatMessage {
   }>;
 }
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ sessionId: string }> }
-) {
-  try {
-    const { sessionId } = await params;
-
+export const GET = dynamicHandler<
+  { sessionId: string },
+  AppError | NotFoundError | ValidationError
+>((_req, { sessionId }) =>
+  Effect.gen(function* () {
     if (!sessionId) {
-      return new Response(JSON.stringify({ error: 'Missing sessionId' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return yield* Effect.fail(
+        new ValidationError({ field: 'sessionId', reason: 'missing' })
+      );
     }
-
-    // Dynamically get the current working directory and construct the transcript file path
     const cwd = process.cwd();
     const transcriptPath = getClaudeSessionPath(cwd, sessionId);
-
-    // Check if the file exists
     if (!fs.existsSync(transcriptPath)) {
-      return new Response(JSON.stringify({ error: 'Session not found', messages: [] }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return yield* Effect.fail(
+        new NotFoundError({ resource: 'session', id: sessionId })
+      );
     }
-
-    // Read and parse the JSONL file
-    const messages = await parseTranscriptFile(transcriptPath);
-
-    return new Response(JSON.stringify({ messages }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
+    const messages = yield* Effect.tryPromise({
+      try: () => parseTranscriptFile(transcriptPath),
+      catch: (cause) =>
+        new AppError({ message: 'parseTranscriptFile failed', cause }),
     });
-  } catch (error) {
-    console.error('History API error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-}
+    return ok({ messages });
+  })
+);
 
 async function parseTranscriptFile(filePath: string): Promise<ChatMessage[]> {
   const fileStream = fs.createReadStream(filePath);

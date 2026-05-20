@@ -1,53 +1,81 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import fs from 'fs/promises';
-import path from 'path';
+/**
+ * /api/git/discard
+ *
+ * Discard changes:
+ *  - tracked:   `git restore <file>`
+ *  - untracked: fs.unlink directly
+ *
+ * Fault-tolerance: each file is tried independently and outcomes are
+ * aggregated into the `results` array.
+ */
+import { exec } from "child_process"
+import { promisify } from "util"
+import fs from "fs/promises"
+import path from "path"
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
 
-const execAsync = promisify(exec);
+const execAsync = promisify(exec)
 
-// POST - Discard changes
-// body: { cwd, files: string[], isUntracked?: boolean }
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { cwd, files, isUntracked } = body;
-
-    if (!cwd || !files || !Array.isArray(files) || files.length === 0) {
-      return Response.json(
-        { error: 'cwd and files are required' },
-        { status: 400 }
-      );
-    }
-
-    const results: { file: string; success: boolean; error?: string }[] = [];
-
-    for (const file of files) {
-      try {
-        if (isUntracked) {
-          // Delete untracked file
-          const filePath = path.join(cwd, file);
-          await fs.unlink(filePath);
-          results.push({ file, success: true });
-        } else {
-          // git restore tracked file
-          await execAsync(`git restore "${file}"`, { cwd });
-          results.push({ file, success: true });
-        }
-      } catch (err) {
-        results.push({
-          file,
-          success: false,
-          error: err instanceof Error ? err.message : 'Unknown error',
-        });
-      }
-    }
-
-    return Response.json({ results });
-  } catch (error) {
-    console.error('Error discarding changes:', error);
-    return Response.json(
-      { error: 'Failed to discard changes' },
-      { status: 500 }
-    );
-  }
+interface DiscardRequest {
+  cwd?: string
+  files?: string[]
+  isUntracked?: boolean
 }
+
+interface FileResult {
+  file: string
+  success: boolean
+  error?: string
+}
+
+const discardOne = (
+  cwd: string,
+  file: string,
+  isUntracked: boolean
+): Effect.Effect<FileResult> =>
+  Effect.tryPromise({
+    try: async () => {
+      if (isUntracked) {
+        await fs.unlink(path.join(cwd, file))
+      } else {
+        await execAsync(`git restore "${file}"`, { cwd })
+      }
+      return { file, success: true } satisfies FileResult
+    },
+    catch: (err) => ({
+      file,
+      success: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    }),
+  }).pipe(Effect.merge) // Failure is folded into the result object, so the Effect is always a success
+
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as DiscardRequest
+
+    if (
+      !body.cwd ||
+      !body.files ||
+      !Array.isArray(body.files) ||
+      body.files.length === 0
+    ) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.cwd ? "cwd" : "files",
+          reason: "missing or empty",
+        })
+      )
+    }
+
+    const cwd = body.cwd
+    const isUntracked = !!body.isUntracked
+    const results = yield* Effect.all(
+      body.files.map((f) => discardOne(cwd, f, isUntracked)),
+      { concurrency: 4 }
+    )
+
+    return ok({ results })
+  }).pipe(Effect.withSpan("api.git.discard"))
+)

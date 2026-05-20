@@ -1,5 +1,6 @@
 import { registerBubble, type BubbleComponentProps, type PluginItemBase } from '../../bubblePlugins';
 import { Neo4jBubble } from './Neo4jBubble';
+import { disconnectPluginBubble } from '../../effect/pluginDisconnect';
 
 export interface Neo4jPluginItem extends PluginItemBase {
   connectionString: string;
@@ -60,12 +61,6 @@ registerBubble({
   Component: Neo4jAdapter,
 
   async onClose(item) {
-    try {
-      await fetch('/api/neo4j/disconnect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: item.id }),
-      });
-    } catch { /* ignore */ }
+    await disconnectPluginBubble('neo4j', item.id);
   },
 });

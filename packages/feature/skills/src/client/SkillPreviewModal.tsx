@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { MarkdownRenderer } from '@cockpit/shared-ui';
 import { SimpleCodeBlock } from '@cockpit/feature-explorer';
 import { toast } from '@cockpit/shared-ui';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { loadSkillContent } from './effect/skillsClient';
 
 interface SkillPreviewData {
   id: string;
@@ -30,15 +32,15 @@ export function SkillPreviewModal({ skillId, onClose }: SkillPreviewModalProps) 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/skills/content?id=${encodeURIComponent(skillId)}`)
-      .then((res) => res.json())
-      .then((d: SkillPreviewData) => {
-        if (!cancelled) setData(d);
-      })
-      .catch((err) => console.error('Failed to load skill content', err))
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    BrowserRuntime.runPromiseExit(loadSkillContent<SkillPreviewData>(skillId)).then((exit) => {
+      if (cancelled) return;
+      if (exit._tag === 'Success') {
+        setData(exit.value);
+      } else {
+        console.error('Failed to load skill content', exit.cause);
+      }
+      setLoading(false);
+    });
     return () => {
       cancelled = true;
     };

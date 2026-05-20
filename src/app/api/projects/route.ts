@@ -1,59 +1,44 @@
-import { COCKPIT_DIR, readJsonFile, writeJsonFile } from '@cockpit/shared-utils';
-import { join } from 'path';
+/**
+ * /api/projects — list and persist the user's project workspace.
+ *
+ * Implementation contract (see EFFECT.md §3):
+ * - No bare try/catch — failures flow as Tagged Errors (FSError).
+ * - No bare fs IO — file access goes through the ProjectService Tag.
+ * - `handler` maps FSError → 503 and ValidationError → 400 automatically.
+ * - Signature is the contract: Effect<Response, FSError | ValidationError, ProjectService>.
+ */
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import {
+  ProjectService,
+  ProjectServiceLive,
+  type ProjectsData,
+} from "@cockpit/feature-workspace/server"
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
-const PROJECTS_FILE = join(COCKPIT_DIR, 'projects.json');
+// ─────────────────────────────────────────────────────────
+// GET — read the project list
+// ─────────────────────────────────────────────────────────
 
-export interface ProjectInfo {
-  cwd: string;
-  sessionId?: string;
-}
+export const GET = handler(() =>
+  Effect.gen(function* () {
+    const service = yield* ProjectService
+    const data = yield* service.read
+    return ok(data)
+  }).pipe(Effect.provide(ProjectServiceLive))
+)
 
-export interface ProjectsData {
-  projects: ProjectInfo[];
-  activeIndex: number;
-  collapsed: boolean;
-}
+// ─────────────────────────────────────────────────────────
+// POST — save the project list
+// ─────────────────────────────────────────────────────────
 
-const DEFAULT_DATA: ProjectsData = {
-  projects: [],
-  activeIndex: 0,
-  collapsed: false,
-};
-
-// GET - Read project list
-export async function GET() {
-  try {
-    const data = await readJsonFile<ProjectsData>(PROJECTS_FILE, DEFAULT_DATA);
-    return new Response(JSON.stringify(data), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (error) {
-    console.error('Projects API GET error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-}
-
-// POST - Save project list
-export async function POST(request: Request) {
-  try {
-    const data = await request.json() as ProjectsData;
-    await writeJsonFile(PROJECTS_FILE, data);
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (error) {
-    console.error('Projects API POST error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-}
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as ProjectsData
+    const service = yield* ProjectService
+    yield* service.write(body)
+    return ok({ success: true })
+  }).pipe(Effect.provide(ProjectServiceLive))
+)

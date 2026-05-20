@@ -2,6 +2,24 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { ChatMessage, TokenUsage } from './types';
+import { Effect } from 'effect';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { AppError } from '@cockpit/effect-core';
+
+// Shared: POST /api/session-by-path — returns null on failure (matches `!response.ok`).
+const postSessionByPath = (body: Record<string, unknown>) =>
+  Effect.tryPromise({
+    try: async () => {
+      const response = await fetch('/api/session-by-path', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) return null;
+      return (await response.json()) as Record<string, unknown>;
+    },
+    catch: (cause) => new AppError({ message: 'session-by-path failed', cause }),
+  });
 
 // Migrated from src/components/project/useChatHistory.ts. Self-contained:
 // only depends on React and on agent types (now local to this package).
@@ -98,13 +116,18 @@ export function useChatHistory(
         requestBody.ifFingerprint = fingerprintRef.current;
       }
 
-      const response = await fetch('/api/session-by-path', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-      });
-      if (response.ok) {
-        const data = await response.json();
+      const exit = await BrowserRuntime.runPromiseExit(postSessionByPath(requestBody));
+      if (exit._tag === 'Success' && exit.value) {
+        const data = exit.value as {
+          notModified?: boolean;
+          fingerprint?: string;
+          totalTurns?: number;
+          hasMore?: boolean;
+          messages?: ChatMessage[];
+          sessionId?: string;
+          title?: string;
+          usage?: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
+        };
 
         // Direction 3: file unchanged, skip all processing
         if (data.notModified) {
@@ -197,22 +220,24 @@ export function useChatHistory(
         ? currentTurnIndex
         : totalTurns - Math.ceil(messages.filter(m => m.role === 'user').length);
 
-      const response = await fetch('/api/session-by-path', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const exit = await BrowserRuntime.runPromiseExit(
+        postSessionByPath({
           cwd,
           sessionId,
           limit: TURNS_PER_PAGE,
-          beforeTurnIndex: beforeIndex > 0 ? beforeIndex : undefined
-        }),
-      });
+          beforeTurnIndex: beforeIndex > 0 ? beforeIndex : undefined,
+        })
+      );
 
-      if (response.ok) {
-        const data = await response.json();
+      if (exit._tag === 'Success' && exit.value) {
+        const data = exit.value as {
+          messages?: ChatMessage[];
+          hasMore?: boolean;
+          fingerprint?: string;
+        };
         if (data.messages && data.messages.length > 0) {
           // Prepend new messages to existing messages
-          setMessages(prev => [...data.messages, ...prev]);
+          setMessages(prev => [...data.messages!, ...prev]);
           // Update current turn index
           const loadedTurns = data.messages.filter((m: ChatMessage) => m.role === 'user').length;
           setCurrentTurnIndex(beforeIndex - loadedTurns);
@@ -224,9 +249,9 @@ export function useChatHistory(
         if (data.fingerprint) {
           fingerprintRef.current = data.fingerprint;
         }
+      } else if (exit._tag === 'Failure') {
+        console.error('Failed to load more history:', exit.cause);
       }
-    } catch (error) {
-      console.error('Failed to load more history:', error);
     } finally {
       setIsLoadingMore(false);
     }
@@ -235,19 +260,21 @@ export function useChatHistory(
   // Load history messages (by sessionId)
   const loadHistory = useCallback(async (sid: string) => {
     setIsLoadingHistory(true);
-    try {
-      const response = await fetch(`/api/session/${sid}/history`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.messages && data.messages.length > 0) {
-          setMessages(data.messages);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load history:', error);
-    } finally {
-      setIsLoadingHistory(false);
+    const historyEff = Effect.tryPromise({
+      try: async () => {
+        const response = await fetch(`/api/session/${sid}/history`);
+        if (!response.ok) return null;
+        return (await response.json()) as { messages?: ChatMessage[] };
+      },
+      catch: (cause) => new AppError({ message: 'load session history failed', cause }),
+    });
+    const exit = await BrowserRuntime.runPromiseExit(historyEff);
+    if (exit._tag === 'Success' && exit.value?.messages && exit.value.messages.length > 0) {
+      setMessages(exit.value.messages);
+    } else if (exit._tag === 'Failure') {
+      console.error('Failed to load history:', exit.cause);
     }
+    setIsLoadingHistory(false);
   }, [setMessages]);
 
   // Load history messages on page load (runs once only)

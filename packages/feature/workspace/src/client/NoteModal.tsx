@@ -17,6 +17,9 @@ import { Markdown } from 'tiptap-markdown';
 import { getMarkdown } from '@cockpit/feature-agent';
 import { SlashCommandMenu } from '@cockpit/feature-agent';
 import { NoteToolbar } from './NoteToolbar';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { Effect } from 'effect';
+import { loadNote, saveNote as saveNoteEff } from './effect/workspaceClient';
 
 // ============================================
 // NoteModal main component
@@ -40,27 +43,21 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
   const [slashMenu, setSlashMenu] = useState<{ query: string; position: { top: number; left: number } } | null>(null);
   const slashStartPos = useRef<number | null>(null);
 
-  // API URL (global note vs project note)
-  const noteApiUrl = projectCwd
-    ? `/api/note?cwd=${encodeURIComponent(projectCwd)}`
-    : '/api/note';
-
   // Save note
   const saveNote = useCallback(async (content: string) => {
     setIsSaving(true);
-    try {
-      await fetch(noteApiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
-      });
+    const exit = await BrowserRuntime.runPromiseExit(
+      saveNoteEff(projectCwd, content).pipe(
+        Effect.tapError((err) =>
+          Effect.sync(() => console.error('Failed to save note:', err))
+        )
+      )
+    );
+    if (exit._tag === 'Success') {
       hasUnsavedChanges.current = false;
-    } catch (error) {
-      console.error('Failed to save note:', error);
-    } finally {
-      setIsSaving(false);
     }
-  }, [noteApiUrl]);
+    setIsSaving(false);
+  }, [projectCwd]);
 
   // Debounced save with 5-second delay
   const debouncedSave = useCallback((content: string) => {
@@ -190,15 +187,16 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
     setIsLoading(true);
     setSlashMenu(null);
     slashStartPos.current = null;
-    fetch(noteApiUrl)
-      .then(res => res.json())
-      .then(data => {
-        editor.commands.setContent(data.content || '');
+    BrowserRuntime.runPromiseExit(loadNote(projectCwd)).then((exit) => {
+      if (exit._tag === 'Success') {
+        editor.commands.setContent(exit.value.content || '');
         hasUnsavedChanges.current = false;
-      })
-      .catch(err => console.error('Failed to load note:', err))
-      .finally(() => setIsLoading(false));
-  }, [isOpen, editor, noteApiUrl]);
+      } else {
+        console.error('Failed to load note:', exit.cause);
+      }
+      setIsLoading(false);
+    });
+  }, [isOpen, editor, projectCwd]);
 
   // Save on close
   const handleClose = useCallback(() => {

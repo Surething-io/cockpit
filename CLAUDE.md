@@ -17,6 +17,21 @@
   - z-index levels must be managed consistently
   - Prevent components from overflowing into adjacent panels
 
+## Effect Conventions
+
+All IO / side-effects / dependencies / errors go through the
+`Effect<A, E, R>` paradigm. See **`EFFECT.md`** for the full contract:
+- Tagged Error types (DBError / WSError / FSError / AgentError / ...)
+- Service Tag + Layer.scoped templates for connection pools / subprocesses
+- API route / WebSocket handler templates
+- React bridging (`useEffectQuery` / `BrowserRuntime.runPromise`)
+- `Effect.withSpan` / `CockpitConfig` / Logger conventions
+- Server vs Browser bundle boundary rules
+
+When adding any new IO operation (HTTP route, DB query, WS handler,
+client-side fetch), **first match a template in EFFECT.md §3-§7**; do not
+write raw `fetch` / `try-catch` / `setInterval` in business code.
+
 ## Project Structure
 
 Business code lives in `packages/`; `src/` is intentionally minimal

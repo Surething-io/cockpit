@@ -1,42 +1,64 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
+/**
+ * /api/git/stage — P8+ migration
+ *
+ * `git add <files>`
+ */
+import { exec } from "child_process"
+import { promisify } from "util"
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { AppError, ValidationError } from "@cockpit/effect-core"
 
-const execAsync = promisify(exec);
+const execAsync = promisify(exec)
 
 export interface GitStageRequest {
-  cwd?: string;
-  files: string[]; // List of file paths, supports single or multiple
+  cwd?: string
+  files: string[]
 }
 
-export async function POST(request: Request) {
-  try {
-    const body = await request.json() as GitStageRequest;
-    const { cwd = process.cwd(), files } = body;
+const runGit = (
+  cmd: string,
+  cwd: string
+): Effect.Effect<void, AppError> =>
+  Effect.tryPromise({
+    try: () => execAsync(cmd, { cwd }).then(() => undefined),
+    catch: (cause) =>
+      new AppError({ message: `git command failed: ${cmd}`, cause }),
+  })
+
+const checkIsRepo = (cwd: string): Effect.Effect<void, ValidationError> =>
+  runGit("git rev-parse --git-dir", cwd).pipe(
+    Effect.mapError(
+      () =>
+        new ValidationError({ field: "cwd", reason: "not a git repository" })
+    )
+  )
+
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as Partial<GitStageRequest>
+    const cwd = body.cwd || process.cwd()
+    const files = body.files
 
     if (!files || !Array.isArray(files) || files.length === 0) {
-      return Response.json({ error: 'Missing or invalid files parameter' }, { status: 400 });
+      return yield* Effect.fail(
+        new ValidationError({ field: "files", reason: "missing or empty" })
+      )
     }
 
-    // Check if this is a git repository
-    await execAsync('git rev-parse --git-dir', { cwd });
+    yield* checkIsRepo(cwd)
 
-    // Escape file paths to handle spaces and special characters
-    const escapedFiles = files.map(f => `"${f.replace(/"/g, '\\"')}"`).join(' ');
+    // Escape file paths (spaces / special chars)
+    const escaped = files
+      .map((f) => `"${f.replace(/"/g, '\\"')}"`)
+      .join(" ")
 
-    // Run git add
-    await execAsync(`git add ${escapedFiles}`, { cwd });
+    yield* runGit(`git add ${escaped}`, cwd)
 
-    return Response.json({
+    return ok({
       success: true,
       files,
       message: `Staged ${files.length} file(s)`,
-    });
-  } catch (error) {
-    const err = error as Error & { code?: string };
-    if (err.message?.includes('not a git repository')) {
-      return Response.json({ error: 'Not a git repository' }, { status: 400 });
-    }
-    console.error('Error staging files:', error);
-    return Response.json({ error: 'Failed to stage files' }, { status: 500 });
-  }
-}
+    })
+  }).pipe(Effect.withSpan("api.git.stage"))
+)

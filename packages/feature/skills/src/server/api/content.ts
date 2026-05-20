@@ -1,41 +1,54 @@
-import { SKILLS_FILE, readJsonFile } from '@cockpit/shared-utils';
-import { parseSkillMd } from '../lib/parseSkillMd';
+/**
+ * /api/skills/content — P8+ migration
+ */
+import { Effect } from "effect"
+import { SKILLS_FILE, readJsonFile } from "@cockpit/shared-utils"
+import { handler, ok } from "@cockpit/effect-runtime/server"
+import {
+  FSError,
+  NotFoundError,
+  ValidationError,
+} from "@cockpit/effect-core"
+import { parseSkillMd } from "../lib/parseSkillMd"
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
 interface SkillRecord {
-  id: string;
-  path: string;
-  addedAt: string;
+  id: string
+  path: string
+  addedAt: string
 }
-
 interface SkillsFile {
-  skills: SkillRecord[];
+  skills: SkillRecord[]
 }
+const DEFAULT: SkillsFile = { skills: [] }
 
-const DEFAULT: SkillsFile = { skills: [] };
-
-/**
- * GET /api/skills/content?id=xxx
- * Return the raw SKILL.md content (plus parsed metadata) for preview.
- */
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const id = new URL(req.url).searchParams.get("id")
     if (!id) {
-      return Response.json({ error: 'id is required' }, { status: 400 });
+      return yield* Effect.fail(
+        new ValidationError({ field: "id", reason: "missing" })
+      )
     }
-
-    const data = await readJsonFile<SkillsFile>(SKILLS_FILE, DEFAULT);
-    const record = data.skills.find((s) => s.id === id);
+    const data = yield* Effect.tryPromise({
+      try: () => readJsonFile<SkillsFile>(SKILLS_FILE, DEFAULT),
+      catch: (cause) =>
+        new FSError({ path: SKILLS_FILE, op: "read", cause }),
+    })
+    const record = data.skills.find((s) => s.id === id)
     if (!record) {
-      return Response.json({ error: 'Not found' }, { status: 404 });
+      return yield* Effect.fail(
+        new NotFoundError({ resource: "skill", id })
+      )
     }
-
-    const parsed = await parseSkillMd(record.path);
-    return Response.json({
+    const parsed = yield* Effect.tryPromise({
+      try: () => parseSkillMd(record.path),
+      catch: (cause) =>
+        new FSError({ path: record.path, op: "read", cause }),
+    })
+    return ok({
       id: record.id,
       path: record.path,
       name: parsed.name,
@@ -44,9 +57,6 @@ export async function GET(request: Request) {
       argumentHint: parsed.argumentHint,
       valid: parsed.valid,
       content: parsed.content,
-    });
-  } catch (error) {
-    console.error('Failed to load skill content:', error);
-    return Response.json({ error: 'Failed to load content' }, { status: 500 });
-  }
-}
+    })
+  })
+)

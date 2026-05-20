@@ -1,63 +1,81 @@
-import { readFile, writeFile } from 'fs/promises';
-import { join, isAbsolute } from 'path';
+/**
+ * /api/jupyter/save — P8+ migration
+ */
+import { readFile, writeFile } from "fs/promises"
+import { join, isAbsolute } from "path"
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { FSError, ValidationError } from "@cockpit/effect-core"
 
-export async function POST(req: Request) {
-  try {
-    const { filePath, cwd, cells } = await req.json();
-
-    if (!filePath || !cells) {
-      return Response.json({ error: 'filePath and cells are required' }, { status: 400 });
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as {
+      filePath?: string
+      cwd?: string
+      cells?: Record<string, unknown>[]
     }
-
-    const fullPath = isAbsolute(filePath) ? filePath : join(cwd || process.cwd(), filePath);
-
-    // Read original notebook to preserve metadata, nbformat, etc.
-    let notebook: Record<string, unknown>;
-    try {
-      const content = await readFile(fullPath, 'utf-8');
-      notebook = JSON.parse(content);
-    } catch {
-      // If file doesn't exist, create a minimal notebook
-      notebook = {
-        nbformat: 4,
-        nbformat_minor: 2,
-        metadata: {
-          kernelspec: {
-            display_name: 'Python 3',
-            language: 'python',
-            name: 'python3',
-          },
-          language_info: { name: 'python' },
-        },
-        cells: [],
-      };
+    if (!body.filePath || !body.cells) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.filePath ? "filePath" : "cells",
+          reason: "missing",
+        })
+      )
     }
+    const { filePath, cwd, cells } = body
+    const fullPath = isAbsolute(filePath)
+      ? filePath
+      : join(cwd || process.cwd(), filePath)
 
-    // Update cells — convert back to ipynb format
-    notebook.cells = cells.map((cell: Record<string, unknown>) => {
-      const source = cell.source as string || '';
-      const cellType = cell.cell_type as string;
-      const base: Record<string, unknown> = {
-        cell_type: cellType,
-        source: source.split('\n').map((line: string, i: number, arr: string[]) =>
-          i < arr.length - 1 ? line + '\n' : line
-        ),
-        metadata: cell.metadata || {},
-      };
+    yield* Effect.tryPromise({
+      try: async () => {
+        let notebook: Record<string, unknown>
+        try {
+          const content = await readFile(fullPath, "utf-8")
+          notebook = JSON.parse(content)
+        } catch {
+          notebook = {
+            nbformat: 4,
+            nbformat_minor: 2,
+            metadata: {
+              kernelspec: {
+                display_name: "Python 3",
+                language: "python",
+                name: "python3",
+              },
+              language_info: { name: "python" },
+            },
+            cells: [],
+          }
+        }
 
-      if (cellType === 'code') {
-        base.execution_count = cell.execution_count ?? null;
-        base.outputs = cell.outputs || [];
-      }
+        notebook.cells = cells.map((cell) => {
+          const source = (cell.source as string) || ""
+          const cellType = cell.cell_type as string
+          const base: Record<string, unknown> = {
+            cell_type: cellType,
+            source: source.split("\n").map((line, i, arr) =>
+              i < arr.length - 1 ? line + "\n" : line
+            ),
+            metadata: cell.metadata || {},
+          }
+          if (cellType === "code") {
+            base.execution_count = cell.execution_count ?? null
+            base.outputs = cell.outputs || []
+          }
+          return base
+        })
 
-      return base;
-    });
+        await writeFile(
+          fullPath,
+          JSON.stringify(notebook, null, 1) + "\n",
+          "utf-8"
+        )
+      },
+      catch: (cause) =>
+        new FSError({ path: fullPath, op: "write", cause }),
+    })
 
-    await writeFile(fullPath, JSON.stringify(notebook, null, 1) + '\n', 'utf-8');
-
-    return Response.json({ ok: true });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Unknown error';
-    return Response.json({ error: msg }, { status: 500 });
-  }
-}
+    return ok({ ok: true })
+  })
+)

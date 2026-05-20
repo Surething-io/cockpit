@@ -2,6 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { publishTopic } from '@cockpit/effect-react';
+import { Topics } from '@cockpit/effect-services';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { loadSessionsByProject } from './effect/agentClient';
 
 interface SessionInfo {
   path: string;
@@ -34,20 +38,15 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
     setIsLoading(true);
     setError(null);
 
-    try {
-      // Encode cwd as directory name format
-      const encodedPath = cwd.replace(/\//g, '-');
-      const response = await fetch(`/api/sessions/projects/${encodeURIComponent(encodedPath)}`);
-      if (!response.ok) {
-        throw new Error('Failed to load sessions');
-      }
-      const data = await response.json();
-      setSessions(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    } finally {
-      setIsLoading(false);
+    // Encode cwd as directory name format
+    const encodedPath = cwd.replace(/\//g, '-');
+    const exit = await BrowserRuntime.runPromiseExit(loadSessionsByProject<SessionInfo>(encodedPath));
+    if (exit._tag === 'Success') {
+      setSessions(exit.value as SessionInfo[]);
+    } else {
+      setError('Failed to load sessions');
     }
+    setIsLoading(false);
   }, [cwd]);
 
   useEffect(() => {
@@ -82,11 +81,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
       onClose();
     } else {
       // Otherwise notify parent Workspace to open
-      window.parent.postMessage({
-        type: 'OPEN_PROJECT',
-        cwd,
-        sessionId,
-      }, '*');
+      publishTopic(Topics.OpenProject, { cwd, sessionId });
     }
   };
 

@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Portal } from '@cockpit/shared-ui';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { fetchFileByPath } from './effect/filesClient';
 import { DiffView, DiffUnifiedView } from './index';
 import { CodeViewer } from './index';
 import { MarkdownRenderer } from '@cockpit/shared-ui';
@@ -50,19 +52,16 @@ function FilePreview({ filePath }: FilePreviewProps) {
     const loadFile = async () => {
       setIsLoading(true);
       setError(null);
-      try {
-        const response = await fetch(`/api/file?path=${encodeURIComponent(filePath)}`);
-        if (!response.ok) {
-          throw new Error(`Failed to load file: ${response.statusText}`);
-        }
-        const data = await response.json();
-        setFileContent(data.content);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-      } finally {
-        setIsLoading(false);
-        fetchingRef.current = false;
+      const exit = await BrowserRuntime.runPromiseExit(fetchFileByPath(filePath));
+      if (exit._tag === 'Success') {
+        setFileContent(exit.value.content ?? null);
+      } else {
+        const failure = exit.cause._tag === 'Fail' ? exit.cause.error : null;
+        const inner = failure?.cause;
+        setError(inner instanceof Error ? inner.message : 'Failed to load file');
       }
+      setIsLoading(false);
+      fetchingRef.current = false;
     };
     loadFile();
   }, [filePath, isImage]);

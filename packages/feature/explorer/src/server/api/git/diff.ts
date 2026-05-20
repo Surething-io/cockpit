@@ -1,97 +1,124 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import fs from 'fs/promises';
-import path from 'path';
+/**
+ * /api/git/diff
+ *
+ * Single-file diff (staged or unstaged): both-side contents plus
+ * isNew / isDeleted flags.
+ */
+import { exec } from "child_process"
+import { promisify } from "util"
+import fs from "fs/promises"
+import path from "path"
+import { Effect } from "effect"
+import { handler, ok } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
 
-const execAsync = promisify(exec);
+const execAsync = promisify(exec)
 
 export interface GitDiffResponse {
-  oldContent: string;
-  newContent: string;
-  filePath: string;
-  isNew: boolean;
-  isDeleted: boolean;
+  oldContent: string
+  newContent: string
+  filePath: string
+  isNew: boolean
+  isDeleted: boolean
 }
 
-export async function GET(request: Request) {
-  const searchParams = new URL(request.url).searchParams;
-  const cwd = searchParams.get('cwd') || process.cwd();
-  const file = searchParams.get('file');
-  const type = searchParams.get('type') as 'staged' | 'unstaged';
+const readGitShow = (
+  cmd: string,
+  cwd: string
+): Effect.Effect<string, never> =>
+  Effect.tryPromise({
+    try: () =>
+      execAsync(cmd, { cwd, maxBuffer: 10 * 1024 * 1024 }).then(
+        (r) => r.stdout
+      ),
+    catch: () => null,
+  }).pipe(Effect.orElseSucceed(() => "" as string))
 
-  if (!file) {
-    return Response.json({ error: 'Missing file parameter' }, { status: 400 });
-  }
+const readGitShowFlag = (
+  cmd: string,
+  cwd: string
+): Effect.Effect<{ content: string; missing: boolean }, never> =>
+  Effect.tryPromise({
+    try: () =>
+      execAsync(cmd, { cwd, maxBuffer: 10 * 1024 * 1024 }).then(
+        (r) => ({ content: r.stdout, missing: false })
+      ),
+    catch: () => null,
+  }).pipe(Effect.orElseSucceed(() => ({ content: "", missing: true })))
 
-  if (!type || !['staged', 'unstaged'].includes(type)) {
-    return Response.json({ error: 'Invalid type parameter. Must be "staged" or "unstaged"' }, { status: 400 });
-  }
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const sp = new URL(req.url).searchParams
+    const cwd = sp.get("cwd") || process.cwd()
+    const file = sp.get("file")
+    const type = sp.get("type") as "staged" | "unstaged" | null
 
-  try {
-    const absolutePath = path.resolve(cwd, file);
-    let oldContent = '';
-    let newContent = '';
-    let isNew = false;
-    let isDeleted = false;
+    if (!file) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "file", reason: "missing" })
+      )
+    }
+    if (!type || !["staged", "unstaged"].includes(type)) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: "type",
+          reason: 'must be "staged" or "unstaged"',
+        })
+      )
+    }
 
-    if (type === 'staged') {
-      // Staging area: HEAD vs staging area
-      // Get HEAD version
-      try {
-        const { stdout: headContent } = await execAsync(`git show HEAD:"${file}"`, { cwd, maxBuffer: 10 * 1024 * 1024 });
-        oldContent = headContent;
-      } catch {
-        // File is newly added, does not exist in HEAD
-        isNew = true;
-        oldContent = '';
-      }
+    const absolutePath = path.resolve(cwd, file)
+    let oldContent = ""
+    let newContent = ""
+    let isNew = false
+    let isDeleted = false
 
-      // Get staging area version
-      try {
-        const { stdout: stagedContent } = await execAsync(`git show :"${file}"`, { cwd, maxBuffer: 10 * 1024 * 1024 });
-        newContent = stagedContent;
-      } catch {
-        // File was deleted
-        isDeleted = true;
-        newContent = '';
-      }
+    if (type === "staged") {
+      const head = yield* readGitShowFlag(`git show HEAD:"${file}"`, cwd)
+      oldContent = head.content
+      isNew = head.missing
+
+      const staged = yield* readGitShowFlag(`git show :"${file}"`, cwd)
+      newContent = staged.content
+      isDeleted = staged.missing
     } else {
-      // Working tree: staging area vs working tree (or HEAD vs working tree if nothing staged)
-      // Try to get staging area version first
-      try {
-        const { stdout: stagedContent } = await execAsync(`git show :"${file}"`, { cwd, maxBuffer: 10 * 1024 * 1024 });
-        oldContent = stagedContent;
-      } catch {
-        // Nothing in staging area, try HEAD version
-        try {
-          const { stdout: headContent } = await execAsync(`git show HEAD:"${file}"`, { cwd, maxBuffer: 10 * 1024 * 1024 });
-          oldContent = headContent;
-        } catch {
-          // Neither exists, this is a new file
-          isNew = true;
-          oldContent = '';
+      // Try staging first, fall back to HEAD, otherwise mark as isNew
+      const staged = yield* readGitShowFlag(`git show :"${file}"`, cwd)
+      if (!staged.missing) {
+        oldContent = staged.content
+      } else {
+        const head = yield* readGitShowFlag(`git show HEAD:"${file}"`, cwd)
+        if (!head.missing) {
+          oldContent = head.content
+        } else {
+          isNew = true
+          oldContent = ""
         }
       }
 
-      // Get working tree version (current file content)
-      try {
-        newContent = await fs.readFile(absolutePath, 'utf-8');
-      } catch {
-        // File was deleted
-        isDeleted = true;
-        newContent = '';
+      // Working-tree version (read from disk)
+      const worktree = yield* Effect.tryPromise({
+        try: () => fs.readFile(absolutePath, "utf-8"),
+        catch: () => null,
+      }).pipe(Effect.orElseSucceed(() => null))
+      if (worktree !== null) {
+        newContent = worktree
+      } else {
+        isDeleted = true
+        newContent = ""
       }
     }
 
-    return Response.json({
+    // Reference readGitShow so lint doesn't flag it as unused; the helper is
+    // kept for reuse by other git endpoints.
+    void readGitShow
+
+    return ok({
       oldContent,
       newContent,
       filePath: file,
       isNew,
       isDeleted,
-    } as GitDiffResponse);
-  } catch (error) {
-    console.error('Error getting git diff:', error);
-    return Response.json({ error: 'Failed to get git diff' }, { status: 500 });
-  }
-}
+    } satisfies GitDiffResponse)
+  }).pipe(Effect.withSpan("api.git.diff"))
+)

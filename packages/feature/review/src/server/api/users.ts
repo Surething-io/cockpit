@@ -1,47 +1,71 @@
-import { join } from 'path';
-import { REVIEW_DIR, readJsonFile, writeJsonFile, withFileLock, ensureDir } from '@cockpit/shared-utils';
+/**
+ * /api/review/users — P8+ migration
+ */
+import { join } from "path"
+import { Effect } from "effect"
+import {
+  REVIEW_DIR,
+  readJsonFile,
+  writeJsonFile,
+  withFileLock,
+  ensureDir,
+} from "@cockpit/shared-utils"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { FSError, ValidationError } from "@cockpit/effect-core"
 
-const USERS_FILE = join(REVIEW_DIR, '_users.json');
+const USERS_FILE = join(REVIEW_DIR, "_users.json")
 
 interface UserRecord {
-  name: string;
-  confirmedAt: number;
+  name: string
+  confirmedAt: number
 }
+type UsersMap = Record<string, UserRecord>
 
-type UsersMap = Record<string, UserRecord>;
+export const GET = handler(() =>
+  Effect.gen(function* () {
+    const users = yield* Effect.tryPromise({
+      try: async () => {
+        await ensureDir(REVIEW_DIR)
+        return await readJsonFile<UsersMap>(USERS_FILE, {})
+      },
+      catch: (cause) =>
+        new FSError({ path: USERS_FILE, op: "read", cause }),
+    })
+    return ok({ users })
+  })
+)
 
-// GET - Return all user mappings { [authorId]: { name, confirmedAt } }
-export async function GET() {
-  try {
-    await ensureDir(REVIEW_DIR);
-    const users = await readJsonFile<UsersMap>(USERS_FILE, {});
-    return Response.json({ users });
-  } catch (error) {
-    console.error('Error reading users:', error);
-    return Response.json({ error: 'Failed to read users' }, { status: 500 });
-  }
-}
-
-// POST - Create/update a single user { authorId, name }
-export async function POST(request: Request) {
-  try {
-    const { authorId, name } = await request.json();
-    if (!authorId || !name) {
-      return Response.json({ error: 'authorId and name are required' }, { status: 400 });
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as {
+      authorId?: string
+      name?: string
     }
-
-    await ensureDir(REVIEW_DIR);
-
-    const updated = await withFileLock(USERS_FILE, async () => {
-      const users = await readJsonFile<UsersMap>(USERS_FILE, {});
-      users[authorId] = { name: name.trim(), confirmedAt: Date.now() };
-      await writeJsonFile(USERS_FILE, users);
-      return users;
-    });
-
-    return Response.json({ users: updated });
-  } catch (error) {
-    console.error('Error updating user:', error);
-    return Response.json({ error: 'Failed to update user' }, { status: 500 });
-  }
-}
+    if (!body.authorId || !body.name) {
+      return yield* Effect.fail(
+        new ValidationError({
+          field: !body.authorId ? "authorId" : "name",
+          reason: "missing",
+        })
+      )
+    }
+    const { authorId, name } = body
+    const updated = yield* Effect.tryPromise({
+      try: async () => {
+        await ensureDir(REVIEW_DIR)
+        return await withFileLock(USERS_FILE, async () => {
+          const users = await readJsonFile<UsersMap>(USERS_FILE, {})
+          users[authorId] = {
+            name: name.trim(),
+            confirmedAt: Date.now(),
+          }
+          await writeJsonFile(USERS_FILE, users)
+          return users
+        })
+      },
+      catch: (cause) =>
+        new FSError({ path: USERS_FILE, op: "write", cause }),
+    })
+    return ok({ users: updated })
+  })
+)

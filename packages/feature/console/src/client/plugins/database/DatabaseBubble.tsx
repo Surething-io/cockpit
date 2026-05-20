@@ -6,6 +6,11 @@ import { BUBBLE_CONTENT_HEIGHT } from '../../CommandBubble';
 import { useToast } from '@cockpit/shared-ui';
 import { modKey } from '@cockpit/shared-utils';
 import { useTranslation } from 'react-i18next';
+import {
+  pluginApiPost as apiPost,
+  pluginApiGet as apiGet,
+  pluginApiPostBlob,
+} from '../../effect/pluginDisconnect';
 
 // ============================================================================
 // Types
@@ -246,24 +251,7 @@ function CellTooltip({ text }: { text: string }) {
 // API helpers
 // ============================================================================
 
-async function apiPost(path: string, body: Record<string, unknown>) {
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-  return data;
-}
-
-async function apiGet(path: string, params: Record<string, string>) {
-  const sp = new URLSearchParams(params);
-  const res = await fetch(`${path}?${sp}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-  return data;
-}
+// apiPost / apiGet imported from effect/pluginDisconnect (Effect-wrapped)
 
 // ============================================================================
 // DatabaseBubble
@@ -580,13 +568,12 @@ export function DatabaseBubble({
     // No selection: download full table
     const sql = `SELECT * FROM ${quoteIdent(activeSchema)}.${quoteIdent(selectedTable)}`;
     try {
-      const res = await fetch('/api/db/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, connectionString, sql, format }),
+      const blob = await pluginApiPostBlob('/api/db/export', {
+        id,
+        connectionString,
+        sql,
+        format,
       });
-      if (!res.ok) throw new Error('Export failed');
-      const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

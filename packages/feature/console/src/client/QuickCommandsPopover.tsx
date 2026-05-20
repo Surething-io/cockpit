@@ -6,6 +6,12 @@ import { Plus, X, Play } from 'lucide-react';
 import { Tooltip } from '@cockpit/shared-ui';
 import type { CustomCommand } from '@/app/api/services/config/route';
 import { matchInput } from './useConsoleState';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  loadGlobalServicesConfig,
+  loadProjectServicesConfig,
+  saveServicesConfig,
+} from './effect/consoleClient';
 
 interface QuickCommandsPopoverProps {
   cwd: string;
@@ -131,21 +137,17 @@ export function QuickCommandsPopover({ cwd, show, onClose, onExecute, onAddPlugi
   const ref = useRef<HTMLDivElement>(null);
 
   const loadCommands = useCallback(async () => {
-    try {
-      const [globalRes, projectRes] = await Promise.all([
-        fetch('/api/services/config?scope=global'),
-        fetch(`/api/services/config?cwd=${encodeURIComponent(cwd)}`),
-      ]);
-      if (globalRes.ok) {
-        const data = await globalRes.json();
-        setGlobalCommands(data.customCommands || []);
-      }
-      if (projectRes.ok) {
-        const data = await projectRes.json();
-        setProjectCommands(data.customCommands || []);
-      }
-    } catch (error) {
-      console.error('Failed to load commands:', error);
+    const [globalExit, projectExit] = await Promise.all([
+      BrowserRuntime.runPromiseExit(loadGlobalServicesConfig()),
+      BrowserRuntime.runPromiseExit(loadProjectServicesConfig(cwd)),
+    ]);
+    if (globalExit._tag === 'Success') {
+      const data = globalExit.value as { customCommands?: CustomCommand[] };
+      setGlobalCommands(data.customCommands || []);
+    }
+    if (projectExit._tag === 'Success') {
+      const data = projectExit.value as { customCommands?: CustomCommand[] };
+      setProjectCommands(data.customCommands || []);
     }
   }, [cwd]);
 
@@ -169,27 +171,21 @@ export function QuickCommandsPopover({ cwd, show, onClose, onExecute, onAddPlugi
 
   const saveGlobalCommands = useCallback(async (commands: CustomCommand[]) => {
     setGlobalCommands(commands);
-    try {
-      await fetch('/api/services/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scope: 'global', customCommands: commands }),
-      });
-    } catch (error) {
-      console.error('Failed to save global commands:', error);
+    const exit = await BrowserRuntime.runPromiseExit(
+      saveServicesConfig({ scope: 'global', customCommands: commands })
+    );
+    if (exit._tag === 'Failure') {
+      console.error('Failed to save global commands:', exit.cause);
     }
   }, []);
 
   const saveProjectCommands = useCallback(async (commands: CustomCommand[]) => {
     setProjectCommands(commands);
-    try {
-      await fetch('/api/services/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, customCommands: commands }),
-      });
-    } catch (error) {
-      console.error('Failed to save project commands:', error);
+    const exit = await BrowserRuntime.runPromiseExit(
+      saveServicesConfig({ cwd, customCommands: commands })
+    );
+    if (exit._tag === 'Failure') {
+      console.error('Failed to save project commands:', exit.cause);
     }
   }, [cwd]);
 
@@ -244,20 +240,18 @@ export function useQuickCommands(cwd: string) {
   const [globalCommands, setGlobalCommands] = useState<CustomCommand[]>([]);
 
   const loadQuickCommands = useCallback(async () => {
-    try {
-      const [projectRes, globalRes] = await Promise.all([
-        fetch(`/api/services/config?cwd=${encodeURIComponent(cwd)}`),
-        fetch('/api/services/config?scope=global'),
-      ]);
-      if (projectRes.ok) {
-        const data = await projectRes.json();
-        setProjectCommands(data.customCommands || []);
-      }
-      if (globalRes.ok) {
-        const data = await globalRes.json();
-        setGlobalCommands(data.customCommands || []);
-      }
-    } catch { /* ignore */ }
+    const [projectExit, globalExit] = await Promise.all([
+      BrowserRuntime.runPromiseExit(loadProjectServicesConfig(cwd)),
+      BrowserRuntime.runPromiseExit(loadGlobalServicesConfig()),
+    ]);
+    if (projectExit._tag === 'Success') {
+      const data = projectExit.value as { customCommands?: CustomCommand[] };
+      setProjectCommands(data.customCommands || []);
+    }
+    if (globalExit._tag === 'Success') {
+      const data = globalExit.value as { customCommands?: CustomCommand[] };
+      setGlobalCommands(data.customCommands || []);
+    }
   }, [cwd]);
 
   useEffect(() => {

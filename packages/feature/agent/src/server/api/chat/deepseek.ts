@@ -1,7 +1,10 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { Effect } from 'effect';
 import { updateGlobalState, getSessionTitle } from '../../state/globalState';
 import { resolveCommandPrompt } from '../../lib/slashCommands';
 import { DEEPSEEK_DIR, SETTINGS_FILE, readJsonFile } from '@cockpit/shared-utils';
+import { handler, parseJsonRaw } from '@cockpit/effect-runtime/server';
+import { ValidationError } from '@cockpit/effect-core';
 
 // DeepSeek's Anthropic-compatible endpoint.
 // See: https://api-docs.deepseek.com/zh-cn/guides/anthropic_api
@@ -41,32 +44,57 @@ interface CockpitSettings {
   [key: string]: unknown;
 }
 
-export async function POST(request: Request) {
-  try {
-    const { prompt: rawPrompt, sessionId, images, cwd, language, model: requestedModel } = await request.json();
+export const POST = handler((request) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(request)) as {
+      prompt?: unknown;
+      sessionId?: string;
+      images?: ImageData[];
+      cwd?: string;
+      language?: string;
+      model?: string;
+    };
+    const {
+      prompt: rawPrompt,
+      sessionId,
+      images,
+      cwd,
+      language,
+      model: requestedModel,
+    } = body;
 
     // Resolve built-in slash commands (/qa, /fx, etc.) based on language
-    const prompt = typeof rawPrompt === 'string' ? resolveCommandPrompt(rawPrompt, language) : rawPrompt;
+    const prompt =
+      typeof rawPrompt === 'string'
+        ? resolveCommandPrompt(rawPrompt, language)
+        : rawPrompt;
 
     // Allow sending images only (no text)
-    const hasContent = (prompt && typeof prompt === 'string') || (images && images.length > 0);
+    const hasContent =
+      (prompt && typeof prompt === 'string') ||
+      (images && images.length > 0);
     if (!hasContent) {
-      return new Response(JSON.stringify({ error: 'Missing prompt or images' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return yield* Effect.fail(
+        new ValidationError({
+          field: 'prompt|images',
+          reason: 'Missing prompt or images',
+        })
+      );
     }
 
     // Load DeepSeek API key + model from ~/.cockpit/settings.json
-    const settings = await readJsonFile<CockpitSettings>(SETTINGS_FILE, {});
+    const settings = yield* Effect.promise(() =>
+      readJsonFile<CockpitSettings>(SETTINGS_FILE, {})
+    );
     const apiKey = settings.engines?.deepseek?.apiKey?.trim();
     if (!apiKey) {
-      return new Response(JSON.stringify({
-        error: 'DeepSeek API key is not configured. Open the DeepSeek picker in the chat header to set one.',
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return yield* Effect.fail(
+        new ValidationError({
+          field: 'apiKey',
+          reason:
+            'DeepSeek API key is not configured. Open the DeepSeek picker in the chat header to set one.',
+        })
+      );
     }
 
     const savedModel = settings.engines?.deepseek?.model;
@@ -178,7 +206,7 @@ export async function POST(request: Request) {
           const options = {
             ...(sessionId && { resume: sessionId }),
             ...(cwd && { cwd }),
-            settingSources: ['user', 'project', 'local'],
+            settingSources: ['user', 'project', 'local'] as Array<'user' | 'project' | 'local'>,
             allowedTools: [
               'Read',
               'Write',
@@ -311,11 +339,5 @@ export async function POST(request: Request) {
         Connection: 'keep-alive',
       },
     });
-  } catch (error) {
-    console.error('DeepSeek API error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-}
+  })
+);

@@ -1,6 +1,19 @@
-import { createReadStream } from 'fs';
-import { Readable } from 'stream';
-import path from 'path';
+/**
+ * /api/files/read — P8+ migration
+ *
+ * Streams image bytes (supports Range 206 / conditional GET 304 / multiple HTTP statuses).
+ * Non-image paths return 409 to hint the caller toward /text or /stat.
+ */
+import { createReadStream } from "fs"
+import { Readable } from "stream"
+import path from "path"
+import { Effect } from "effect"
+import { handler } from "@cockpit/effect-runtime/server"
+import {
+  PermissionError,
+  ValidationError,
+  NotFoundError,
+} from "@cockpit/effect-core"
 import {
   resolveSafePath,
   statWithSymlink,
@@ -10,93 +23,90 @@ import {
   ifNoneMatch,
   getMimeType,
   MAX_IMAGE_SIZE,
-} from '@cockpit/feature-explorer/server/files/shared';
+} from "@cockpit/feature-explorer/server/files/shared"
 
-/**
- * GET /api/files/read
- *
- * Streams the raw bytes of a file. Designed for direct use in `<img src>` /
- * `<video src>` / `<a href>`, never wrapped in JSON, never base64-encoded.
- *
- * - Always sets `ETag` + `Last-Modified` + `Cache-Control: no-cache,
- *   must-revalidate`, so the browser revalidates via conditional GET on
- *   every access (304 when unchanged, fresh body when bytes change).
- * - Supports `Range` requests for large media.
- * - Streams from disk; never reads the full body into memory.
- *
- * Categories:
- *   - image  → 200 stream
- *   - text   → 409 (callers should use `/api/files/text` instead)
- *   - binary → 409 (no inline preview supported)
- *
- * Status codes:
- *   200, 206, 304, 400, 403, 404, 409, 413, 416, 500
- */
-export async function GET(request: Request) {
-  const searchParams = new URL(request.url).searchParams;
-  const cwd = searchParams.get('cwd') || process.cwd();
-  const filePath = searchParams.get('path');
+const jsonResp = (body: unknown, status: number): Response =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  })
 
-  if (!filePath) {
-    return Response.json({ error: 'File path is required' }, { status: 400 });
-  }
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const sp = new URL(req.url).searchParams
+    const cwd = sp.get("cwd") || process.cwd()
+    const filePath = sp.get("path")
 
-  const fullPath = resolveSafePath(cwd, filePath);
-  if (!fullPath) {
-    return Response.json({ error: 'Path escapes cwd' }, { status: 403 });
-  }
-
-  try {
-    const info = await statWithSymlink(fullPath);
-    if (info.isDirectory) {
-      return Response.json({ error: 'Path is a directory' }, { status: 409 });
+    if (!filePath) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "path", reason: "missing" })
+      )
     }
 
-    const ext = path.extname(filePath).toLowerCase();
-    const category = classify(ext, info.size);
+    const fullPath = resolveSafePath(cwd, filePath)
+    if (!fullPath) {
+      return yield* Effect.fail(
+        new PermissionError({ action: "read", resource: filePath })
+      )
+    }
 
-    if (category === 'too-large') {
-      return Response.json(
+    const info = yield* Effect.tryPromise({
+      try: () => statWithSymlink(fullPath),
+      catch: (cause) => {
+        const code = (cause as NodeJS.ErrnoException)?.code
+        return code === "ENOENT"
+          ? new NotFoundError({ resource: "file", id: filePath })
+          : new ValidationError({ field: "path", reason: String(cause) })
+      },
+    })
+
+    if (info.isDirectory) {
+      return jsonResp({ error: "Path is a directory" }, 409)
+    }
+
+    const ext = path.extname(filePath).toLowerCase()
+    const category = classify(ext, info.size)
+
+    if (category === "too-large") {
+      return jsonResp(
         {
           error: `File too large (over ${Math.floor(MAX_IMAGE_SIZE / 1024 / 1024)}MB)`,
           size: info.size,
         },
-        { status: 413 },
-      );
+        413
+      )
     }
-    if (category !== 'image') {
-      return Response.json(
+    if (category !== "image") {
+      return jsonResp(
         {
           error: `This endpoint streams images only (category: ${category}). Use /api/files/text for text.`,
           category,
         },
-        { status: 409 },
-      );
+        409
+      )
     }
 
-    const etag = computeETag(info.size, info.mtimeMs);
+    const etag = computeETag(info.size, info.mtimeMs)
 
-    // Conditional GET — short-circuit when nothing changed.
-    if (ifNoneMatch(request.headers.get('if-none-match'), etag)) {
+    if (ifNoneMatch(req.headers.get("if-none-match"), etag)) {
       return new Response(null, {
         status: 304,
         headers: buildCacheHeaders(etag, info.mtimeMs),
-      });
+      })
     }
 
     const baseHeaders = {
       ...buildCacheHeaders(etag, info.mtimeMs),
-      'Content-Type': getMimeType(ext),
-      'Accept-Ranges': 'bytes',
-    };
+      "Content-Type": getMimeType(ext),
+      "Accept-Ranges": "bytes",
+    }
 
-    // Range support for large media.
-    const range = request.headers.get('range');
+    const range = req.headers.get("range")
     if (range) {
-      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range)
       if (match) {
-        const start = match[1] ? parseInt(match[1], 10) : 0;
-        const end = match[2] ? parseInt(match[2], 10) : info.size - 1;
+        const start = match[1] ? parseInt(match[1], 10) : 0
+        const end = match[2] ? parseInt(match[2], 10) : info.size - 1
         if (
           Number.isFinite(start) &&
           Number.isFinite(end) &&
@@ -104,38 +114,33 @@ export async function GET(request: Request) {
           end < info.size &&
           start <= end
         ) {
-          const stream = createReadStream(fullPath, { start, end });
-          return new Response(Readable.toWeb(stream) as ReadableStream, {
-            status: 206,
-            headers: {
-              ...baseHeaders,
-              'Content-Length': String(end - start + 1),
-              'Content-Range': `bytes ${start}-${end}/${info.size}`,
-            },
-          });
+          const stream = createReadStream(fullPath, { start, end })
+          return new Response(
+            Readable.toWeb(stream) as ReadableStream,
+            {
+              status: 206,
+              headers: {
+                ...baseHeaders,
+                "Content-Length": String(end - start + 1),
+                "Content-Range": `bytes ${start}-${end}/${info.size}`,
+              },
+            }
+          )
         }
         return new Response(null, {
           status: 416,
-          headers: { 'Content-Range': `bytes */${info.size}` },
-        });
+          headers: { "Content-Range": `bytes */${info.size}` },
+        })
       }
     }
 
-    // Full body, streamed from disk — large images never enter Node's heap.
-    const stream = createReadStream(fullPath);
+    const stream = createReadStream(fullPath)
     return new Response(Readable.toWeb(stream) as ReadableStream, {
       status: 200,
       headers: {
         ...baseHeaders,
-        'Content-Length': String(info.size),
+        "Content-Length": String(info.size),
       },
-    });
-  } catch (error) {
-    console.error('Error reading file:', error);
-    const code = (error as NodeJS.ErrnoException)?.code;
-    if (code === 'ENOENT') {
-      return Response.json({ error: 'File not found' }, { status: 404 });
-    }
-    return Response.json({ error: 'Failed to read file' }, { status: 500 });
-  }
-}
+    })
+  })
+)

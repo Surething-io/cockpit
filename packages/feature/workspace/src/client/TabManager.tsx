@@ -16,6 +16,15 @@ import { ChatPanel } from '@cockpit/feature-agent';
 import { useWebSocket } from '@cockpit/shared-ui';
 import { usePinnedSessions } from '@cockpit/feature-agent';
 import { useScheduledTasks } from '@cockpit/feature-agent';
+import { Effect } from 'effect';
+import { IframeBus, Topics } from '@cockpit/effect-services';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  loadProjectSettings,
+  saveProjectSettings,
+  loadGitWorktrees,
+} from './effect/workspaceClient';
+import { updateSessionStatus } from './effect/stateClient';
 
 interface TabManagerProps {
   initialCwd?: string;
@@ -89,12 +98,12 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   // Restore activeView from project-settings
   useEffect(() => {
     if (!initialCwd) return;
-    fetch(`/api/project-settings?cwd=${encodeURIComponent(initialCwd)}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data?.settings?.activeView) setActiveView(data.settings.activeView);
-      })
-      .catch(() => {});
+    BrowserRuntime.runPromiseExit(loadProjectSettings(initialCwd)).then((exit) => {
+      if (exit._tag === 'Success') {
+        const settings = exit.value.settings as { activeView?: ViewType } | undefined;
+        if (settings?.activeView) setActiveView(settings.activeView);
+      }
+    });
   }, [initialCwd]);
 
   // Screenshot state: auto-switch to console view + top banner + restore after screenshot completes
@@ -126,31 +135,37 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   const handleViewChange = useCallback((view: ViewType) => {
     setActiveView(view);
     if (!initialCwd) return;
-    fetch('/api/project-settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cwd: initialCwd, settings: { activeView: view } }),
-    }).catch(() => {});
-    window.parent.postMessage({ type: 'VIEW_CHANGE', cwd: initialCwd, view }, '*');
+    BrowserRuntime.runFork(
+      saveProjectSettings({ cwd: initialCwd, settings: { activeView: view } }).pipe(
+        Effect.orElse(() => Effect.void)
+      )
+    );
+    // v2: publish via IframeBus; automatically emits both v1-compat and v2 formats.
+    BrowserRuntime.runFork(
+      Effect.flatMap(IframeBus, (bus) =>
+        bus.publish(Topics.ViewChange, { cwd: initialCwd, view })
+      )
+    );
   }, [initialCwd]);
 
   // Load Git repository info (branch)
   const loadGitInfo = useCallback(async () => {
     if (!initialCwd) return;
-    try {
-      const response = await fetch(`/api/git/worktree?cwd=${encodeURIComponent(initialCwd)}`);
-      if (response.ok) {
-        const data = await response.json();
-        setIsGitRepo(data.isGitRepo);
-        if (data.isGitRepo && data.worktrees.length > 0) {
-          const currentWorktree = data.worktrees.find((w: { path: string }) => w.path === initialCwd);
-          if (currentWorktree) {
-            setCurrentBranch(currentWorktree.branch);
-          }
+    const exit = await BrowserRuntime.runPromiseExit(loadGitWorktrees(initialCwd));
+    if (exit._tag === 'Success') {
+      const data = exit.value as {
+        isGitRepo?: boolean;
+        worktrees?: Array<{ path: string; branch: string }>;
+      };
+      setIsGitRepo(!!data.isGitRepo);
+      if (data.isGitRepo && data.worktrees && data.worktrees.length > 0) {
+        const currentWorktree = data.worktrees.find((w) => w.path === initialCwd);
+        if (currentWorktree) {
+          setCurrentBranch(currentWorktree.branch);
         }
       }
-    } catch (error) {
-      console.error('Failed to load git info:', error);
+    } else {
+      console.error('Failed to load git info:', exit.cause);
     }
   }, [initialCwd]);
 
@@ -205,11 +220,11 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           // User viewed this session → write state.json as normal (skip sessions still loading to avoid clearing the unread indicator prematurely)
           const targetTab = tabs.find(t => t.sessionId === sessionId);
           if (initialCwd && !targetTab?.isLoading) {
-            fetch('/api/global-state', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ cwd: initialCwd, sessionId, status: 'normal' }),
-            }).catch(() => {});
+            BrowserRuntime.runFork(
+              updateSessionStatus(initialCwd, sessionId, 'normal').pipe(
+                Effect.orElse(() => Effect.void)
+              )
+            );
           }
         }
       }
@@ -236,7 +251,11 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
   // Open note
   const handleOpenNote = useCallback(() => {
     if (!initialCwd) return;
-    window.parent.postMessage({ type: 'OPEN_NOTE', cwd: initialCwd }, '*');
+    BrowserRuntime.runFork(
+      Effect.flatMap(IframeBus, (bus) =>
+        bus.publish(Topics.OpenNote, { cwd: initialCwd })
+      )
+    );
   }, [initialCwd]);
 
   return (

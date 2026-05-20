@@ -2,6 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { publishTopic } from '@cockpit/effect-react';
+import { Topics } from '@cockpit/effect-services';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import {
+  loadSessionProjects,
+  loadSessionsByProject,
+  pickFolder,
+} from './effect/workspaceClient';
 
 interface SessionInfo {
   path: string;
@@ -49,18 +57,13 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
     setError(null);
     // Reset all project states (collapse all)
     setProjectStates({});
-    try {
-      const response = await fetch('/api/sessions/projects');
-      if (!response.ok) {
-        throw new Error('Failed to load projects');
-      }
-      const data = await response.json();
-      setProjects(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    } finally {
-      setIsLoadingProjects(false);
+    const exit = await BrowserRuntime.runPromiseExit(loadSessionProjects<ProjectInfo>());
+    if (exit._tag === 'Success') {
+      setProjects(exit.value as ProjectInfo[]);
+    } else {
+      setError('Failed to load projects');
     }
+    setIsLoadingProjects(false);
   }, []);
 
   // Load session list for a specific project
@@ -76,27 +79,23 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
       },
     }));
 
-    try {
-      const response = await fetch(`/api/sessions/projects/${encodeURIComponent(encodedPath)}`);
-      if (!response.ok) {
-        throw new Error('Failed to load sessions');
-      }
-      const sessions = await response.json();
+    const exit = await BrowserRuntime.runPromiseExit(loadSessionsByProject<SessionInfo>(encodedPath));
+    if (exit._tag === 'Success') {
       setProjectStates(prev => ({
         ...prev,
         [encodedPath]: {
           ...prev[encodedPath],
           isLoading: false,
-          sessions,
+          sessions: exit.value as SessionInfo[],
         },
       }));
-    } catch (err) {
+    } else {
       setProjectStates(prev => ({
         ...prev,
         [encodedPath]: {
           ...prev[encodedPath],
           isLoading: false,
-          error: err instanceof Error ? err.message : 'Unknown error',
+          error: 'Failed to load sessions',
         },
       }));
     }
@@ -145,18 +144,12 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
   const handlePickFolder = useCallback(async () => {
     if (isPickingFolder) return;
     setIsPickingFolder(true);
-    try {
-      const res = await fetch('/api/pick-folder');
-      const data = await res.json();
-      if (data.folder && onAddProject) {
-        onAddProject(data.folder);
-        onClose();
-      }
-    } catch {
-      // Ignore errors
-    } finally {
-      setIsPickingFolder(false);
+    const exit = await BrowserRuntime.runPromiseExit(pickFolder());
+    if (exit._tag === 'Success' && exit.value.folder && onAddProject) {
+      onAddProject(exit.value.folder);
+      onClose();
     }
+    setIsPickingFolder(false);
   }, [isPickingFolder, onAddProject, onClose]);
 
   // Close on ESC key
@@ -179,11 +172,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
     if (onSelectSession) {
       onSelectSession(cwd, sessionId);
     } else {
-      window.parent.postMessage({
-        type: 'OPEN_PROJECT',
-        cwd,
-        sessionId,
-      }, '*');
+      publishTopic(Topics.OpenProject, { cwd, sessionId });
     }
   };
 

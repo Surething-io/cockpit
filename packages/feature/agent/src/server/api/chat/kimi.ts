@@ -3,8 +3,11 @@ import { createInterface } from 'readline';
 import { readdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { Effect } from 'effect';
 import { updateGlobalState } from '../../state/globalState';
 import { resolveCommandPrompt } from '../../lib/slashCommands';
+import { handler, parseJsonRaw } from '@cockpit/effect-runtime/server';
+import { ValidationError } from '@cockpit/effect-core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -78,17 +81,25 @@ function findNewKimiSessionId(before: Set<string>): string | null {
   return null;
 }
 
-export async function POST(request: Request) {
-  try {
-    const { prompt: rawPrompt, sessionId, cwd, language } = await request.json();
+export const POST = handler((request) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(request)) as {
+      prompt?: unknown;
+      sessionId?: string;
+      cwd?: string;
+      language?: string;
+    };
+    const { prompt: rawPrompt, sessionId, cwd, language } = body;
 
-    const prompt = typeof rawPrompt === 'string' ? resolveCommandPrompt(rawPrompt, language) : rawPrompt;
+    const prompt =
+      typeof rawPrompt === 'string'
+        ? resolveCommandPrompt(rawPrompt, language)
+        : rawPrompt;
 
     if (!prompt || typeof prompt !== 'string') {
-      return new Response(JSON.stringify({ error: 'Missing prompt' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return yield* Effect.fail(
+        new ValidationError({ field: 'prompt', reason: 'missing' })
+      );
     }
 
     const encoder = new TextEncoder();
@@ -305,10 +316,5 @@ export async function POST(request: Request) {
         Connection: 'keep-alive',
       },
     });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: String(error) }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-}
+  })
+);

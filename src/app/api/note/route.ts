@@ -1,44 +1,68 @@
-import { readFile, writeFile } from 'fs/promises';
-import { COCKPIT_DIR, NOTE_FILE, ensureDir, getProjectNotePath, getCockpitProjectDir } from '@cockpit/shared-utils';
-
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 /**
- * Resolve the note file path
- * - With cwd param: project-level note ~/.cockpit/projects/<encoded-cwd>/note.md
- * - Without cwd param: global note ~/.cockpit/note.md
+ * /api/note — P6 migration
+ *
+ * Note CRUD (two scopes: project-level / global).
  */
-function getNotePaths(url: string) {
-  const { searchParams } = new URL(url);
-  const cwd = searchParams.get('cwd');
+import { readFile, writeFile } from "fs/promises"
+import { Effect } from "effect"
+import {
+  COCKPIT_DIR,
+  NOTE_FILE,
+  ensureDir,
+  getProjectNotePath,
+  getCockpitProjectDir,
+} from "@cockpit/shared-utils"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { FSError } from "@cockpit/effect-core"
+
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
+
+interface NotePaths {
+  readonly filePath: string
+  readonly dir: string
+}
+
+const resolvePaths = (url: string): NotePaths => {
+  const { searchParams } = new URL(url)
+  const cwd = searchParams.get("cwd")
   if (cwd) {
-    return { filePath: getProjectNotePath(cwd), dir: getCockpitProjectDir(cwd) };
+    return {
+      filePath: getProjectNotePath(cwd),
+      dir: getCockpitProjectDir(cwd),
+    }
   }
-  return { filePath: NOTE_FILE, dir: COCKPIT_DIR };
+  return { filePath: NOTE_FILE, dir: COCKPIT_DIR }
 }
 
-// GET - Read note content
-export async function GET(request: Request) {
-  try {
-    const { filePath, dir } = getNotePaths(request.url);
-    await ensureDir(dir);
-    const content = await readFile(filePath, 'utf-8').catch(() => '');
-    return Response.json({ content });
-  } catch {
-    return Response.json({ content: '' });
-  }
-}
+const ensureDirEff = (dir: string): Effect.Effect<void, FSError> =>
+  Effect.tryPromise({
+    try: () => ensureDir(dir),
+    catch: (cause) => new FSError({ path: dir, op: "mkdir", cause }),
+  })
 
-// POST - Save note content
-export async function POST(request: Request) {
-  try {
-    const { filePath, dir } = getNotePaths(request.url);
-    const { content } = await request.json();
-    await ensureDir(dir);
-    await writeFile(filePath, content ?? '', 'utf-8');
-    return Response.json({ success: true });
-  } catch {
-    return Response.json({ error: 'Failed to save note' }, { status: 500 });
-  }
-}
+export const GET = handler((req) =>
+  Effect.gen(function* () {
+    const { filePath, dir } = resolvePaths(req.url)
+    yield* ensureDirEff(dir)
+    // On read failure (file missing) fall back to empty string, matching v1
+    const content = yield* Effect.tryPromise({
+      try: () => readFile(filePath, "utf-8"),
+      catch: () => null,
+    }).pipe(Effect.orElseSucceed(() => ""))
+    return ok({ content })
+  })
+)
+
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const { filePath, dir } = resolvePaths(req.url)
+    const body = (yield* parseJsonRaw(req)) as { content?: string }
+    yield* ensureDirEff(dir)
+    yield* Effect.tryPromise({
+      try: () => writeFile(filePath, body.content ?? "", "utf-8"),
+      catch: (cause) => new FSError({ path: filePath, op: "write", cause }),
+    })
+    return ok({ success: true })
+  })
+)

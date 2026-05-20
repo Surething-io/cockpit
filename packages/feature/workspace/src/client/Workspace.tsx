@@ -10,6 +10,8 @@ import { TokenStatsModal } from '@cockpit/feature-agent';
 import { NoteModal } from './NoteModal';
 import { SkillsModal } from '@cockpit/feature-skills';
 import { SessionCompleteToastContainer, showSessionCompleteToast } from '@cockpit/feature-agent';
+import { useEffectQuery } from '@cockpit/effect-react';
+import { fetchProjects, saveProjects as saveProjectsEffect } from './effect/projectClient';
 
 interface ProjectsData {
   projects: ProjectInfo[];
@@ -44,39 +46,46 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   // Project index saved before screenshot; restored when screenshot completes
   const preScreenshotIndexRef = useRef<number | null>(null);
 
-  // Load project list
-  const loadProjects = useCallback(async () => {
-    try {
-      const response = await fetch('/api/projects');
-      if (response.ok) {
-        const data: ProjectsData = await response.json();
-        setProjects(data.projects || []);
-        setActiveIndex(data.activeIndex || 0);
-        setCollapsed(data.collapsed || false);
-      }
-    } catch (error) {
-      console.error('Failed to load projects:', error);
-    } finally {
+  // useEffectQuery interrupts the Fiber on unmount (equivalent to AbortController) and
+  // funnels all errors into AppError.
+  const projectsQuery = useEffectQuery(fetchProjects, []);
+
+  // Mirror the Effect result into local state; render layer stays in plain React.
+  useEffect(() => {
+    if (projectsQuery.status === 'success') {
+      const data = projectsQuery.data;
+      setProjects([...(data.projects || [])]);
+      setActiveIndex(data.activeIndex || 0);
+      setCollapsed(data.collapsed || false);
+      setIsLoaded(true);
+    } else if (projectsQuery.status === 'error') {
+      console.error('Failed to load projects:', projectsQuery.error);
       setIsLoaded(true);
     }
-  }, []);
+  }, [projectsQuery]);
 
-  // Save project list
-  const saveProjects = useCallback(async (newProjects: ProjectInfo[], newActiveIndex: number, newCollapsed: boolean) => {
-    try {
-      await fetch('/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+  // Save project list — fire-and-forget; failures only logged.
+  const saveProjects = useCallback(
+    async (
+      newProjects: ProjectInfo[],
+      newActiveIndex: number,
+      newCollapsed: boolean,
+    ) => {
+      const { Effect } = await import('effect');
+      const { BrowserRuntime } = await import('@cockpit/effect-runtime');
+      const exit = await BrowserRuntime.runPromise(
+        saveProjectsEffect({
           projects: newProjects,
           activeIndex: newActiveIndex,
           collapsed: newCollapsed,
-        }),
-      });
-    } catch (error) {
-      console.error('Failed to save projects:', error);
-    }
-  }, []);
+        }).pipe(Effect.either)
+      );
+      if (exit._tag === 'Left') {
+        console.error('Failed to save projects:', exit.left);
+      }
+    },
+    []
+  );
 
   // When activeIndex changes, add the corresponding project to the loaded set
   useEffect(() => {
@@ -97,10 +106,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
     }
   }, [activeIndex, projects]);
 
-  // Initial load
-  useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
+  // (Initial load moved to useEffectQuery + sync useEffect above)
 
   // Utility function to update the browser address bar URL
   const updateUrl = useCallback((cwd: string, sessionId?: string) => {

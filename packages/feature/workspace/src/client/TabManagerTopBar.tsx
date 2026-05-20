@@ -6,6 +6,12 @@ import { ViewSwitcherBar } from '@cockpit/shared-ui';
 import { ReviewDropdown } from '@cockpit/feature-review';
 import { toast } from '@cockpit/shared-ui';
 import { useTranslation } from 'react-i18next';
+import { publishTopic } from '@cockpit/effect-react';
+import { Topics } from '@cockpit/effect-services';
+import { Effect } from 'effect';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { fetchBranches } from '@cockpit/feature-explorer';
+import { createGitWorktree, openInVscode, openInCursor } from './effect/workspaceClient';
 
 // ============================================
 // TopBar
@@ -42,22 +48,21 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
 
   const loadBranches = useCallback(async () => {
     setLoading(true);
-    try {
-      const res = await fetch(`/api/git/branches?cwd=${encodeURIComponent(cwd)}`);
-      if (res.ok) {
-        const data = await res.json();
-        const all = [
-          ...(data.local || []),
-          ...(data.remote || []).filter((b: string) => !data.local.includes(b.replace(/^origin\//, ''))),
-        ];
-        setBranches(all);
-      }
-    } catch {
+    const exit = await BrowserRuntime.runPromiseExit(fetchBranches(cwd));
+    if (exit._tag === 'Success') {
+      const data = exit.value;
+      const local = data.local ?? [];
+      const remote = data.remote ?? [];
+      const all = [
+        ...local,
+        ...remote.filter((b: string) => !local.includes(b.replace(/^origin\//, ''))),
+      ];
+      setBranches(all);
+    } else {
       toast(t('toast.loadBranchFailed'), 'error');
-    } finally {
-      setLoading(false);
     }
-  }, [cwd]);
+    setLoading(false);
+  }, [cwd, t]);
 
   const handleOpen = useCallback(() => {
     setOpen(true);
@@ -90,31 +95,28 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
 
   const handleCheckout = async (branch: string) => {
     setSwitching(true);
-    try {
-      const response = await fetch('/api/git/worktree', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'checkout',
-          cwd,
-          path: cwd,
-          branch,
-        }),
-      });
-      if (response.ok) {
-        const localBranch = branch.replace(/^origin\//, '');
-        toast(t('toast.switchedToBranch', { branch: localBranch }), 'success');
-        handleClose();
-        onSwitched();
-      } else {
-        const data = await response.json();
-        toast(data.error || t('toast.switchBranchFailed'), 'error');
-      }
-    } catch {
-      toast(t('toast.switchBranchFailed'), 'error');
-    } finally {
-      setSwitching(false);
+    const exit = await BrowserRuntime.runPromiseExit(
+      createGitWorktree({
+        action: 'checkout',
+        cwd,
+        path: cwd,
+        branch,
+      })
+    );
+    if (exit._tag === 'Success') {
+      const localBranch = branch.replace(/^origin\//, '');
+      toast(t('toast.switchedToBranch', { branch: localBranch }), 'success');
+      handleClose();
+      onSwitched();
+    } else {
+      // Extract the innermost cause.message (if it is an HTTP error)
+      const failure = exit.cause._tag === 'Fail' ? exit.cause.error : null;
+      const inner = failure?.cause;
+      const msg =
+        inner instanceof Error ? inner.message : t('toast.switchBranchFailed');
+      toast(msg, 'error');
     }
+    setSwitching(false);
   };
 
   const filtered = branches.filter(b =>
@@ -293,17 +295,11 @@ export function TabManagerTopBar({
           )}
           {/* Open in VS Code button */}
           <button
-            onClick={async () => {
+            onClick={() => {
               if (activeTab?.cwd) {
-                try {
-                  await fetch('/api/open-vscode', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cwd: activeTab.cwd }),
-                  });
-                } catch {
-                  // Ignore errors
-                }
+                BrowserRuntime.runFork(
+                  openInVscode(activeTab.cwd).pipe(Effect.orElse(() => Effect.void))
+                );
               }
             }}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
@@ -315,17 +311,11 @@ export function TabManagerTopBar({
           </button>
           {/* Open in Cursor button */}
           <button
-            onClick={async () => {
+            onClick={() => {
               if (activeTab?.cwd) {
-                try {
-                  await fetch('/api/open-cursor', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cwd: activeTab.cwd }),
-                  });
-                } catch {
-                  // Ignore errors
-                }
+                BrowserRuntime.runFork(
+                  openInCursor(activeTab.cwd).pipe(Effect.orElse(() => Effect.void))
+                );
               }
             }}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
@@ -364,7 +354,7 @@ export function TabManagerTopBar({
           </button>
           {/* Token stats */}
           <button
-            onClick={() => window.parent.postMessage({ type: 'OPEN_TOKEN_STATS' }, '*')}
+            onClick={() => publishTopic(Topics.OpenTokenStats, {})}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
             title={t('tabManagerTopBar.tokenStats')}
           >

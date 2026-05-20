@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { loadClaudeStats } from './effect/agentClient';
 
 interface TokenStatsModalProps {
   isOpen: boolean;
@@ -377,11 +379,13 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
   useEffect(() => {
     if (!isOpen) return;
     queueMicrotask(() => setLoading(true));
-    fetch(`/api/claude-stats?engine=${statsEngine}`)
-      .then(r => r.json())
-      .then(data => { if (!data.error) queueMicrotask(() => setStats(data)); })
-      .catch(() => {})
-      .finally(() => queueMicrotask(() => setLoading(false)));
+    BrowserRuntime.runPromiseExit(loadClaudeStats(statsEngine)).then((exit) => {
+      if (exit._tag === 'Success') {
+        const data = exit.value as { error?: unknown } & Record<string, unknown>;
+        if (!data.error) queueMicrotask(() => setStats(data as unknown as StatsData));
+      }
+      queueMicrotask(() => setLoading(false));
+    });
   }, [isOpen, statsEngine]);
 
   // Model cost breakdown table

@@ -1,15 +1,21 @@
-import { mysqlPoolManager } from '@cockpit/feature-console/server';
+/**
+ * /api/mysql/disconnect — P9 round 2 (Service Tag migration)
+ */
+import { Effect } from "effect"
+import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { ValidationError } from "@cockpit/effect-core"
+import { MySQLService } from "@cockpit/effect-services"
 
-export async function POST(req: Request) {
-  try {
-    const { id } = await req.json();
-    if (!id) {
-      return Response.json({ error: 'Missing id' }, { status: 400 });
+export const POST = handler((req) =>
+  Effect.gen(function* () {
+    const body = (yield* parseJsonRaw(req)) as { id?: string }
+    if (!body.id) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "id", reason: "missing" })
+      )
     }
-    await mysqlPoolManager.disconnect(id);
-    return Response.json({ success: true });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return Response.json({ error: msg }, { status: 500 });
-  }
-}
+    const mysql = yield* MySQLService
+    yield* mysql.disconnect(body.id)
+    return ok({ success: true })
+  }).pipe(Effect.withSpan("api.mysql.disconnect"))
+)

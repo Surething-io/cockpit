@@ -1,5 +1,6 @@
 import { registerBubble, type BubbleComponentProps, type PluginItemBase } from '../../bubblePlugins';
 import { RedisBubble } from './RedisBubble';
+import { disconnectPluginBubble } from '../../effect/pluginDisconnect';
 
 /** Redis bubble data */
 export interface RedisPluginItem extends PluginItemBase {
@@ -62,12 +63,6 @@ registerBubble({
   Component: RedisAdapter,
 
   async onClose(item) {
-    try {
-      await fetch('/api/redis/disconnect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: item.id }),
-      });
-    } catch { /* ignore */ }
+    await disconnectPluginBubble('redis', item.id);
   },
 });

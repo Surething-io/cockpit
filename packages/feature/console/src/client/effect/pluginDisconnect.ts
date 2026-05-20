@@ -91,6 +91,44 @@ const reThrowInnerError = <A>(eff: Effect.Effect<A, AppError>): Promise<A> =>
   )
 
 /**
+ * Extract a string error message from a parsed `{ error?: ... }` body.
+ *
+ * Server contract (post-fix in `effect-runtime/src/next.ts`): `data.error`
+ * is a human-readable string and `data.tag` is the `CockpitError._tag` for
+ * structured categorisation. Returning `data.error` directly is the happy
+ * path.
+ *
+ * BUT this helper still handles the older "raw object" shape that
+ * `errorToResponse` produced before the fix — `{ error: { _tag, db, op,
+ * cause: {…} } }`. Going through `new Error(<object>)` there would set
+ * `.message = String(<object>) === '[object Object]'`, which is exactly
+ * the UI symptom this whole defence layer exists to suppress.
+ *
+ * Resolution order (forward AND backward compatible):
+ *   1. `data.error` is a string → use it (current server contract).
+ *   2. `data.error.message` is a string → use it (legacy/regression form
+ *      where some route forgot to unwrap; matches `errorToResponse`'s
+ *      pre-fix shape so we never display `[object Object]` again even if
+ *      a future regression brings it back).
+ *   3. `data.error._tag` is a string → fall back to the tag so the user
+ *      sees *something* useful.
+ *   4. Final fallback: HTTP status line.
+ */
+const extractErrorMessage = (data: unknown, status: number): string => {
+  if (data && typeof data === "object" && "error" in data) {
+    const err = (data as { error: unknown }).error
+    if (typeof err === "string" && err.length > 0) return err
+    if (err && typeof err === "object") {
+      const msg = (err as { message?: unknown }).message
+      if (typeof msg === "string" && msg.length > 0) return msg
+      const tag = (err as { _tag?: unknown })._tag
+      if (typeof tag === "string" && tag.length > 0) return tag
+    }
+  }
+  return `HTTP ${status}`
+}
+
+/**
  * Note: `A = any` is intentional — the original `apiPost` returned any-like data
  * (callers access `data.error / data.rows / data.fields` directly). The Effect-wrapped
  * version preserves the same call-site ergonomics so Bubble code doesn't need wholesale
@@ -110,10 +148,7 @@ export const pluginApiPost = <A = any>(
           body: JSON.stringify(body),
         })
         const data = await res.json()
-        if (!res.ok)
-          throw new Error(
-            (data as { error?: string })?.error || `HTTP ${res.status}`
-          )
+        if (!res.ok) throw new Error(extractErrorMessage(data, res.status))
         return data as A
       },
       catch: (cause) => new AppError({ message: `POST ${path} failed`, cause }),
@@ -134,10 +169,7 @@ export const pluginApiGet = <A = any>(
         const sp = new URLSearchParams(params)
         const res = await fetch(`${path}?${sp}`)
         const data = await res.json()
-        if (!res.ok)
-          throw new Error(
-            (data as { error?: string })?.error || `HTTP ${res.status}`
-          )
+        if (!res.ok) throw new Error(extractErrorMessage(data, res.status))
         return data as A
       },
       catch: (cause) => new AppError({ message: `GET ${path} failed`, cause }),

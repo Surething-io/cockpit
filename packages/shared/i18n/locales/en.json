@@ -328,6 +328,8 @@
     "allLoaded": "All {{count}} records loaded",
     "locateInTree": "Locate in directory tree",
     "unsaved": "Unsaved",
+    "saveBeforeSwitch": "Current file has unsaved changes. Save before switching?",
+    "saveAndSwitch": "Save and switch",
     "closeEdit": "Close edit (ESC)",
     "closeBtn": "Close",
     "copyFileContent": "Copy file content",

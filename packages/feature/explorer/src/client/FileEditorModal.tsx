@@ -9,6 +9,9 @@ import { saveFile, fetchFileText } from './effect/filesClient';
 export interface FileEditorHandle {
   save: () => void;
   close: () => void;
+  /** Force-mark the editor as dirty (used when content was mutated outside the
+   *  contentEditable, e.g. by vi normal-mode commands that auto-enter edit mode). */
+  markDirty: () => void;
   isDirty: boolean;
   isSaving: boolean;
 }
@@ -223,6 +226,7 @@ export const FileEditorInline = forwardRef<FileEditorHandle, FileEditorInlinePro
   useImperativeHandle(ref, () => ({
     save: handleSave,
     close: handleClose,
+    markDirty: () => { /* legacy: not wired; CodeViewer is the active edit surface */ },
     get isDirty() { return isDirty; },
     get isSaving() { return isSaving; },
   }), [handleSave, handleClose, isDirty, isSaving]);

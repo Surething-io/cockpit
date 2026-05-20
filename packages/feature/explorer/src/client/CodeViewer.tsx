@@ -230,11 +230,17 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   const viSearchInputRef = useRef<HTMLInputElement>(null);
   // Record cursor target position (line + col) when entering Insert mode, used by edit mode init effect
   const viInsertPosRef = useRef({ line: 0, col: 0 });
+  // Live mirror of vi cursor — readable inside `onContentChange` (where `vi` itself is still in TDZ).
+  // Lags by one render relative to vi.state, which is acceptable for "land cursor near the mutation".
+  const viCursorRef = useRef({ line: 0, col: 0 });
 
   const vi = useViMode({
     lines,
     enabled: viModeEnabled && !editable,
     onContentChange: (newContent) => {
+      // Carry the pre-mutation cursor into the edit-mode init effect so auto-enter
+      // (triggered by the parent on vi mutation) lands the caret near where the user was.
+      viInsertPosRef.current = { line: viCursorRef.current.line, col: viCursorRef.current.col };
       onContentMutate?.(newContent);
     },
     onEnterInsert: (line, col, variant) => {
@@ -271,10 +277,12 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
   });
 
   // Continuously sync vi cursor position to external ref (read by FileBrowserModal, saved to recent visits)
+  // and to the local cursor ref consumed by `onContentChange` above.
   useEffect(() => {
     if (viStateRef) {
       viStateRef.current = { cursorLine: vi.state.cursorLine, cursorCol: vi.state.cursorCol };
     }
+    viCursorRef.current = { line: vi.state.cursorLine, col: vi.state.cursorCol };
   }, [viStateRef, vi.state.cursorLine, vi.state.cursorCol]);
 
   // Restore cursor position when switching back to this file
@@ -835,13 +843,24 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     return () => document.removeEventListener('keydown', handler, true);
   }, [editable, viModeEnabled, handleEditorClose, viExitInsert]);
 
-  // Expose imperative handle
+  // Idempotently flip dirty on (e.g. when vi mutated content before edit mode opened).
+  const markDirty = useCallback(() => {
+    if (!isDirtyRef.current) {
+      isDirtyRef.current = true;
+      setIsDirty(true);
+    }
+  }, []);
+
+  // Expose imperative handle.
+  // `isDirty` reads through the ref so callers that check it immediately after
+  // `await save()` see the synchronous flag flip (React state lags by one render).
   useImperativeHandle(ref, () => ({
     save: handleSave,
     close: handleEditorClose,
-    get isDirty() { return isDirty; },
+    markDirty,
+    get isDirty() { return isDirtyRef.current; },
     get isSaving() { return isSaving; },
-  }), [handleSave, handleEditorClose, isDirty, isSaving]);
+  }), [handleSave, handleEditorClose, markDirty, isSaving]);
 
   // ========== Blame state ==========
   const hasBlame = !!(blameLines && blameLines.length > 0);

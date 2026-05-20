@@ -328,6 +328,8 @@
     "allLoaded": "已加载全部 {{count}} 条记录",
     "locateInTree": "在目录树中定位",
     "unsaved": "未保存",
+    "saveBeforeSwitch": "当前文件有未保存的修改，是否保存后切换？",
+    "saveAndSwitch": "保存并切换",
     "closeEdit": "关闭编辑 (ESC)",
     "closeBtn": "关闭",
     "copyFileContent": "复制文件内容",

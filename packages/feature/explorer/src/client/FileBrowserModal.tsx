@@ -21,7 +21,7 @@ import {
 } from './effect/gitClient';
 import { CommitDetailPanel } from './CommitDetailPanel';
 import { DiffView } from '@cockpit/feature-explorer';
-import { toast } from '@cockpit/shared-ui';
+import { toast, confirm } from '@cockpit/shared-ui';
 import { FileTree, type GitStatusMap, type GitStatusCode } from './FileTree';
 import { GitFileTree, buildGitFileTree, collectFilesUnderNode } from './GitFileTree';
 import { MenuContainerProvider } from '@cockpit/shared-ui';
@@ -137,11 +137,33 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const gitHistory = useGitHistory({ cwd, addToRecentFiles: fileTree.addToRecentFiles });
 
   // ========== Vi Mode Callbacks ==========
+  /** True when the next entry into edit mode was caused by a vi normal-mode
+   *  mutation (yyp / dd / x / …) — the editor should open already-dirty since
+   *  the in-memory buffer differs from disk. */
+  const viMutationPendingDirtyRef = useRef(false);
+
   const handleViContentMutate = useCallback((newContent: string) => {
     fileTree.setFileContent(prev =>
       prev?.type === 'text' ? { ...prev, content: newContent } : prev
     );
+    // Vi commands that change content auto-promote the viewer into edit mode so
+    // the change is treated as an unsaved edit (Save button, switch-prompt, …).
+    if (!fileTree.showEditor) {
+      viMutationPendingDirtyRef.current = true;
+      fileTree.setShowEditor(true);
+    }
   }, [fileTree]);
+
+  // After auto-entering edit mode from a vi mutation, flip the editor's dirty
+  // flag (CodeViewer's enter-edit effect would otherwise reset it to false).
+  // Parent useEffects run after child useEffects, so by the time this fires the
+  // editor handle has been set up and its own init effect has already run.
+  useEffect(() => {
+    if (fileTree.showEditor && viMutationPendingDirtyRef.current) {
+      editorHandleRef.current?.markDirty();
+      viMutationPendingDirtyRef.current = false;
+    }
+  }, [fileTree.showEditor]);
 
   const handleViEnterInsert = useCallback((_cursorLine: number) => {
     // Don't overwrite visibleLineRef — keep the current viewport scroll position.
@@ -190,13 +212,32 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     }
   }, [fileTree]);
 
-  /** Wrap handleSelectFile: auto-save current file position before switching */
-  const handleSelectFileWithSave = useCallback((path: string, lineNumber?: number) => {
-    if (path !== fileTree.selectedPath) {
+  /** Wrap handleSelectFile: when switching to a different file while in edit
+   *  mode, prompt to save if the editor is dirty, otherwise exit edit mode and
+   *  continue with the switch. Always saves the current file's scroll position. */
+  const handleSelectFileWithSave = useCallback(async (path: string, lineNumber?: number) => {
+    const isDifferent = path !== fileTree.selectedPath;
+
+    if (isDifferent && fileTree.showEditor) {
+      if (editorState.isDirty) {
+        const ok = await confirm(t('fileBrowser.saveBeforeSwitch'), {
+          confirmText: t('fileBrowser.saveAndSwitch'),
+          cancelText: t('common.cancel'),
+        });
+        if (!ok) return; // stay on current file, keep edit mode
+        await editorHandleRef.current?.save();
+        // Save may have failed (conflict / network) — CodeViewer keeps isDirty=true; bail out.
+        if (editorHandleRef.current?.isDirty) return;
+      }
+      // Clean (or just saved) → exit edit mode before switching.
+      fileTree.setShowEditor(false);
+    }
+
+    if (isDifferent) {
       saveCurrentFilePosition();
     }
     fileTree.handleSelectFile(path, lineNumber);
-  }, [fileTree, saveCurrentFilePosition]);
+  }, [fileTree, saveCurrentFilePosition, editorState.isDirty, t]);
 
   // ========== Search results: build an independent tree from search result paths (no lazy-loaded dir tree) ==========
   const searchData = useMemo(() => {

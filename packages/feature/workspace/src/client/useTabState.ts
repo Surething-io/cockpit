@@ -199,8 +199,11 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     });
   }, [activeTabId, tabs, initialCwd]);
 
-  // Add new tab (insert to the right of current tab)
-  const addTab = useCallback((cwd?: string, sessionId?: string, title?: string, engine?: ChatEngine, ollamaModel?: string, deepseekModel?: DeepseekModel) => {
+  // Add new tab
+  // - appendToEnd=true (new chats from "+" menu, opening existing sessions from sidebar):
+  //   append to the end of all tabs
+  // - appendToEnd=false (forked chats): insert to the right of current tab
+  const addTab = useCallback((cwd?: string, sessionId?: string, title?: string, engine?: ChatEngine, ollamaModel?: string, deepseekModel?: DeepseekModel, appendToEnd: boolean = false) => {
     const newTab: TabInfo = {
       id: `tab-${Date.now()}`,
       cwd,
@@ -211,6 +214,9 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       deepseekModel,
     };
     setTabs((prev) => {
+      if (appendToEnd) {
+        return [...prev, newTab];
+      }
       const currentIndex = prev.findIndex((t) => t.id === activeTabId);
       if (currentIndex === -1) {
         return [...prev, newTab];
@@ -242,39 +248,39 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     });
   }, [activeTabId, initialCwd]);
 
-  // Handle sidebar session click - add new tab
+  // Handle sidebar session click - add new tab (appended to end)
   const handleSelectSession = useCallback((sid: string, title?: string) => {
     const existingTab = tabs.find((t) => t.sessionId === sid);
     if (existingTab) {
       setActiveTabId(existingTab.id);
     } else {
-      addTab(initialCwd, sid, title);
+      addTab(initialCwd, sid, title, undefined, undefined, undefined, true);
     }
   }, [tabs, initialCwd, addTab]);
 
-  // Create new blank tab
+  // Create new blank tab (Claude Code, appended to end)
   const handleNewTab = useCallback(() => {
-    addTab(initialCwd);
+    addTab(initialCwd, undefined, undefined, undefined, undefined, undefined, true);
   }, [initialCwd, addTab]);
 
-  // Create new Claude 2 tab
+  // Create new Claude 2 tab (appended to end)
   const handleNewClaude2Tab = useCallback(() => {
-    addTab(initialCwd, undefined, 'New Claude 2 Chat', 'claude2');
+    addTab(initialCwd, undefined, 'New Claude 2 Chat', 'claude2', undefined, undefined, true);
   }, [initialCwd, addTab]);
 
-  // Create new Codex tab
+  // Create new Codex tab (appended to end)
   const handleNewCodexTab = useCallback(() => {
-    addTab(initialCwd, undefined, 'New Codex Chat', 'codex');
+    addTab(initialCwd, undefined, 'New Codex Chat', 'codex', undefined, undefined, true);
   }, [initialCwd, addTab]);
 
-  // Create new Kimi tab
+  // Create new Kimi tab (appended to end)
   const handleNewKimiTab = useCallback(() => {
-    addTab(initialCwd, undefined, 'New Kimi Chat', 'kimi');
+    addTab(initialCwd, undefined, 'New Kimi Chat', 'kimi', undefined, undefined, true);
   }, [initialCwd, addTab]);
 
-  // Create new Ollama tab
+  // Create new Ollama tab (appended to end)
   const handleNewOllamaTab = useCallback((model?: string) => {
-    addTab(initialCwd, undefined, model ? `New Ollama (${model})` : 'New Ollama Chat', 'ollama', model);
+    addTab(initialCwd, undefined, model ? `New Ollama (${model})` : 'New Ollama Chat', 'ollama', model, undefined, true);
   }, [initialCwd, addTab]);
 
   // Update Ollama model for a tab
@@ -286,9 +292,9 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     );
   }, []);
 
-  // Create new DeepSeek tab (defaults to v4-flash; picker in chat header lets user switch later)
+  // Create new DeepSeek tab (defaults to v4-flash; picker in chat header lets user switch later) (appended to end)
   const handleNewDeepseekTab = useCallback(() => {
-    addTab(initialCwd, undefined, 'New DeepSeek Chat', 'deepseek', undefined, 'deepseek-v4-flash');
+    addTab(initialCwd, undefined, 'New DeepSeek Chat', 'deepseek', undefined, 'deepseek-v4-flash', true);
   }, [initialCwd, addTab]);
 
   // Update DeepSeek model for a tab

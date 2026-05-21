@@ -20,7 +20,21 @@ interface UseCommentsReturn {
   comments: CodeComment[];
   isLoading: boolean;
   error: string | null;
-  addComment: (startLine: number, endLine: number, content: string, selectedText?: string) => Promise<CodeComment | null>;
+  /**
+   * Add a comment. `selectedText` is REQUIRED — it's the literal user
+   * selection captured from `window.getSelection().toString()` at
+   * toolbar-open time, and persists into the comment record as a
+   * standalone snapshot independent of file edits.
+   *
+   * Required (not optional) on purpose: it lets the type system catch
+   * any toolbar call site that forgets to thread the field through,
+   * which was the silent-data-loss bug across CodeViewer / DiffView /
+   * MarkdownPreview before this was tightened.
+   *
+   * On-disk records from before this change may still have `undefined`
+   * here — the server still tolerates that on read-back.
+   */
+  addComment: (startLine: number, endLine: number, content: string, selectedText: string) => Promise<CodeComment | null>;
   updateComment: (id: string, content: string) => Promise<boolean>;
   deleteComment: (id: string) => Promise<boolean>;
   refresh: () => Promise<void>;
@@ -67,7 +81,7 @@ export function useComments({ cwd, filePath }: UseCommentsOptions): UseCommentsR
     startLine: number,
     endLine: number,
     content: string,
-    selectedText?: string
+    selectedText: string
   ): Promise<CodeComment | null> => {
     const exit = await BrowserRuntime.runPromiseExit(
       addCommentEff({
@@ -76,6 +90,9 @@ export function useComments({ cwd, filePath }: UseCommentsOptions): UseCommentsR
         startLine,
         endLine,
         content,
+        // Empty string is allowed (e.g. degenerate selections collapsed
+        // to whitespace). The wire payload omits it in that case so the
+        // server's "no field" branch wins over a stored empty string.
         ...(selectedText ? { selectedText } : {}),
       })
     );

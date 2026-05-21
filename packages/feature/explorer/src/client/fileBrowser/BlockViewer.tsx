@@ -64,11 +64,10 @@ import {
   type HistoryEntry,
 } from './FunctionHistoryDrawer';
 import { FileTOCSection } from './FileTOCSection';
-import { useBlockSelection } from './useBlockSelection';
+import { useSelectionToolbar } from '../useSelectionToolbar';
 import { BlockCommentBubbles } from './BlockCommentBubbles';
 import { BlockDiffMinimap } from './BlockDiffMinimap';
-import { FloatingToolbar } from '@cockpit/shared-ui';
-import { AddCommentInput, SendToAIInput } from '@cockpit/shared-ui';
+import { AddCommentInput, SendToAIInput, ToolbarRenderer } from '@cockpit/shared-ui';
 import { ViewCommentCard } from '../ViewCommentCard';
 
 // ============================================================================
@@ -156,7 +155,7 @@ function CodeBlock({
           .map((line, i) => {
             const lineNo = symbol.startLine + i;
             // data-line carries the absolute file line number — used by
-            // useBlockSelection to resolve a drag-selection to a line
+            // useSelectionToolbar to resolve a drag-selection to a line
             // range, and by BlockCommentBubbles to anchor existing
             // comment markers next to their target lines.
             //
@@ -1330,7 +1329,7 @@ export function BlockViewer({
   // by changing scrollTop.
   //
   // Held as STATE (callback ref) rather than a useRef so that mounting
-  // the element triggers a re-render: useBlockSelection's effect deps
+  // the element triggers a re-render: useSelectionToolbar's effect deps
   // include this value, so the listeners only attach once the element
   // actually exists. (Important because the early-return JSX paths for
   // loading / notFound / error don't include this div — a plain useRef
@@ -1338,9 +1337,30 @@ export function BlockViewer({
   // the effect.)
   const [reviewAnchor, setReviewAnchor] = useState<HTMLDivElement | null>(null);
 
-  const { toolbar: selectionToolbar, clearToolbar } = useBlockSelection({
+  const { toolbarRef: floatingToolbarRef, bumpRef: bumpToolbarRef, clearToolbar } = useSelectionToolbar({
     enabled: commentsEnabled,
     container: reviewAnchor,
+    // BlockViewer's chip rows carry absolute file line numbers in
+    // [data-line]; each endpoint collapses to a single line, and the
+    // hook takes outer min/max across both endpoints.
+    resolveLineRange: (node) => {
+      if (!document.contains(node)) return null;
+      const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as Element);
+      const carrier = el?.closest('[data-line]');
+      if (!carrier || !reviewAnchor || !reviewAnchor.contains(carrier)) return null;
+      const v = carrier.getAttribute('data-line');
+      if (!v) return null;
+      const n = parseInt(v, 10);
+      return Number.isFinite(n) ? { start: n, end: n } : null;
+    },
+    // Slice the focal file's source by absolute line range. The lookup
+    // is keyed on `fileSource` (state above) so it stays in sync with
+    // whichever file the focal pin is currently on.
+    buildLineSnapshot: ({ start, end }) => {
+      const src = fileSource?.content;
+      if (!src) return '';
+      return src.split('\n').slice(start - 1, end).join('\n');
+    },
   });
 
   // Three popover states — at most one is shown at a time, but we
@@ -1351,13 +1371,15 @@ export function BlockViewer({
     x: number;
     y: number;
     range: { start: number; end: number };
-    codeContent: string;
+    selectedText: string;
+    lineSnapshot: string;
   } | null>(null);
   const [sendToAIInput, setSendToAIInput] = useState<{
     x: number;
     y: number;
     range: { start: number; end: number };
-    codeContent: string;
+    selectedText: string;
+    lineSnapshot: string;
   } | null>(null);
   const [viewingComment, setViewingComment] = useState<{
     comment: CodeComment;
@@ -1366,38 +1388,42 @@ export function BlockViewer({
   } | null>(null);
 
   const handleToolbarAddComment = useCallback(() => {
-    if (!selectionToolbar) return;
+    const tb = floatingToolbarRef.current;
+    if (!tb) return;
     setAddCommentInput({
-      x: selectionToolbar.x,
-      y: selectionToolbar.y,
-      range: selectionToolbar.range,
-      codeContent: selectionToolbar.selectedText,
+      x: tb.x,
+      y: tb.y,
+      range: tb.range,
+      selectedText: tb.selectedText,
+      lineSnapshot: tb.lineSnapshot,
     });
     clearToolbar();
-  }, [selectionToolbar, clearToolbar]);
+  }, [clearToolbar, floatingToolbarRef]);
 
   const handleToolbarSendToAI = useCallback(() => {
-    if (!selectionToolbar) return;
+    const tb = floatingToolbarRef.current;
+    if (!tb) return;
     setSendToAIInput({
-      x: selectionToolbar.x,
-      y: selectionToolbar.y,
-      range: selectionToolbar.range,
-      codeContent: selectionToolbar.selectedText,
+      x: tb.x,
+      y: tb.y,
+      range: tb.range,
+      selectedText: tb.selectedText,
+      lineSnapshot: tb.lineSnapshot,
     });
     clearToolbar();
-  }, [selectionToolbar, clearToolbar]);
+  }, [clearToolbar, floatingToolbarRef]);
 
-  // Search button: hand the trimmed selection off to the host
-  // (typically wires to project-wide content search). Empty selections
-  // are ignored — the toolbar's just been dismissed at that point so
-  // pushing an empty query into search would clobber whatever the
-  // user had there.
+  // Search button: hand the trimmed literal selection off to the host
+  // (project-wide content search). Empty selections are ignored —
+  // the toolbar's just been dismissed at that point so pushing an empty
+  // query would clobber whatever the user had there.
   const handleToolbarSearch = useCallback(() => {
-    if (!selectionToolbar || !onContentSearch) return;
-    const query = selectionToolbar.selectedText.trim();
+    const tb = floatingToolbarRef.current;
+    if (!tb || !onContentSearch) return;
+    const query = tb.selectedText.trim();
     clearToolbar();
     if (query) onContentSearch(query);
-  }, [selectionToolbar, onContentSearch, clearToolbar]);
+  }, [onContentSearch, clearToolbar, floatingToolbarRef]);
 
   const handleCommentSubmit = useCallback(
     async (content: string) => {
@@ -1406,7 +1432,7 @@ export function BlockViewer({
         addCommentInput.range.start,
         addCommentInput.range.end,
         content,
-        addCommentInput.codeContent,
+        addCommentInput.selectedText,
       );
       setAddCommentInput(null);
     },
@@ -1433,7 +1459,7 @@ export function BlockViewer({
           filePath: focalFile,
           startLine: sendToAIInput.range.start,
           endLine: sendToAIInput.range.end,
-          codeContent: sendToAIInput.codeContent,
+          codeContent: sendToAIInput.lineSnapshot,
         });
         const message = buildAIMessage(references, question);
         aiBridge.sendMessage(message);
@@ -1839,7 +1865,7 @@ export function BlockViewer({
           FloatingToolbar / popovers compute positions against a
           non-scrolling reference frame; otherwise their `clientX -
           container.left` math drifts the moment the user scrolls.
-          Callback ref keeps the value as state so useBlockSelection's
+          Callback ref keeps the value as state so useSelectionToolbar's
           effect re-runs the moment the element mounts.
 
           Layout is a flex ROW: FileTOCSection on the LEFT (file
@@ -1905,12 +1931,13 @@ export function BlockViewer({
         </div>
         {/* Selection toolbar + comment popovers. All four are anchored
             to reviewAnchor so positions are computed against the
-            stable non-scrolling viewport frame. */}
-        {commentsEnabled && selectionToolbar && reviewAnchor && (
-          <FloatingToolbar
-            x={selectionToolbar.x}
-            y={selectionToolbar.y}
-            visible
+            stable non-scrolling viewport frame. ToolbarRenderer reads
+            `floatingToolbarRef.current` via `bumpRef.current()`, so the
+            BlockViewer body doesn't re-render on every selection change. */}
+        {commentsEnabled && reviewAnchor && (
+          <ToolbarRenderer
+            floatingToolbarRef={floatingToolbarRef}
+            bumpRef={bumpToolbarRef}
             container={reviewAnchor}
             onAddComment={handleToolbarAddComment}
             onSendToAI={handleToolbarSendToAI}
@@ -1923,7 +1950,7 @@ export function BlockViewer({
             x={addCommentInput.x}
             y={addCommentInput.y}
             range={addCommentInput.range}
-            codeContent={addCommentInput.codeContent}
+            lineSnapshot={addCommentInput.lineSnapshot}
             container={reviewAnchor}
             onSubmit={handleCommentSubmit}
             onClose={() => setAddCommentInput(null)}
@@ -1935,7 +1962,7 @@ export function BlockViewer({
             y={sendToAIInput.y}
             range={sendToAIInput.range}
             filePath={focalFile}
-            codeContent={sendToAIInput.codeContent}
+            lineSnapshot={sendToAIInput.lineSnapshot}
             container={reviewAnchor}
             onSubmit={handleSendToAISubmit}
             onClose={() => setSendToAIInput(null)}

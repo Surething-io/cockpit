@@ -102,11 +102,15 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       bumpToolbarRef.current();
       return;
     }
+    // Chat selections aren't line-structured — there's no "whole line
+    // expansion" concept, so `lineSnapshot` just mirrors `selectedText`.
+    // The required-field shape on ToolbarData is what enforces this.
     floatingToolbarRef.current = {
       x: e.clientX,
       y: e.clientY,
       range: { start: 0, end: 0 },
       selectedText: text,
+      lineSnapshot: text,
     };
     bumpToolbarRef.current();
   }, [commentInput, sendAIInput]);
@@ -493,7 +497,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
           x={commentInput.x}
           y={commentInput.y}
           range={{ start: 0, end: 0 }}
-          codeContent={commentInput.text}
+          lineSnapshot={commentInput.text}
           container={outerEl}
           onSubmit={handleCommentSubmit}
           onClose={() => setCommentInput(null)}
@@ -506,7 +510,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
           x={sendAIInput.x}
           y={sendAIInput.y}
           range={{ start: 0, end: 0 }}
-          codeContent={sendAIInput.text}
+          lineSnapshot={sendAIInput.text}
           container={outerEl}
           onSubmit={handleSendAISubmit}
           onClose={() => setSendAIInput(null)}

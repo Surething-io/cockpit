@@ -7,6 +7,7 @@ import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, type CodeRe
 import { useAIBridge } from '@cockpit/shared-ui';
 import { useLineHighlight } from './index';
 import { escapeHtml, findMatches } from '@cockpit/shared-ui';
+import { useSelectionToolbar } from './useSelectionToolbar';
 import type { BlameLine } from './index';
 import type { CommitInfo } from './index';
 
@@ -75,18 +76,17 @@ export interface CodeViewerProps {
   onContentSearch?: (query: string) => void;
 }
 
-export interface FloatingToolbarData {
-  x: number;
-  y: number;
-  range: { start: number; end: number };
-  selectedText: string;
-}
-
 export interface InputCardData {
   x: number;
   y: number;
   range: { start: number; end: number };
-  codeContent: string;
+  /** Literal user selection — flows to `addComment(..., selectedText)` and to
+   *  the SendToAI "exact phrase the user picked" reference. */
+  selectedText: string;
+  /** Whole-line / source-block expansion of the selection — drives the
+   *  preview block inside AddCommentInput / SendToAIInput, and feeds
+   *  SendToAI's `CodeReference.codeContent` for richer AI context. */
+  lineSnapshot: string;
 }
 
 export interface ViewingCommentData {
@@ -181,11 +181,6 @@ export function useCodeViewerLogic({
   // Comment UI state
   const [viewingComment, setViewingComment] = useState<ViewingCommentData | null>(null);
 
-  // Floating toolbar - store data in ref to avoid triggering CodeViewer re-render
-  const floatingToolbarRef = useRef<FloatingToolbarData | null>(null);
-  // bumpToolbarRef: injected by ToolbarRenderer in CodeViewer; calling it triggers only a ToolbarRenderer re-render
-  const bumpToolbarRef = useRef<() => void>(() => {});
-
   // Suppress hover and cmd+click when float layer (toolbar / addComment / sendToAI) is active
   const suppressHoverRef = useRef(false);
 
@@ -195,18 +190,44 @@ export function useCodeViewerLogic({
   const [addCommentInput, setAddCommentInput] = useState<InputCardData | null>(null);
   const [sendToAIInput, setSendToAIInput] = useState<InputCardData | null>(null);
 
+  // The lines split (declared here so the selection-toolbar hook below can capture it
+  // by closure for line-snapshot construction).
+  const lines = useMemo(() => content.split('\n'), [content]);
+
+  // Floating toolbar — owned by the shared selection hook (ref+bump pattern
+  // so virtual-list rows don't re-render on every selection change). The
+  // `parentEl` state mirror is needed because parentRef alone wouldn't
+  // re-trigger the hook's effect when the element mounts.
+  const [parentEl, setParentEl] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (parentRef.current !== parentEl) setParentEl(parentRef.current);
+  });
+  const commentsEnabled = enableComments && !!cwd;
+  const { toolbarRef: floatingToolbarRef, bumpRef: bumpToolbarRef, clearToolbar } = useSelectionToolbar({
+    enabled: commentsEnabled,
+    container: parentEl,
+    resolveLineRange: (node) => {
+      if (!document.contains(node)) return null;
+      const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as Element);
+      const lineRow = el?.closest('[data-line]');
+      if (!lineRow) return null;
+      const n = parseInt(lineRow.getAttribute('data-line') || '0', 10);
+      if (!Number.isFinite(n) || n <= 0) return null;
+      return { start: n, end: n };
+    },
+    buildLineSnapshot: ({ start, end }) => lines.slice(start - 1, end).join('\n'),
+  });
+
   // Inline blame annotation — line number at current mouseup
   const inlineBlameLineRef = useRef<number | null>(null);
   const [inlineBlameVersion, setInlineBlameVersion] = useState(0);
 
-  // Comments hook
-  const commentsEnabled = enableComments && !!cwd;
+  // Comments hook (commentsEnabled + lines already declared above for the selection-toolbar hook)
   const { comments, addComment, updateComment, deleteComment, refresh: refreshComments } = useComments({
     cwd: cwd || '',
     filePath,
   });
 
-  const lines = useMemo(() => content.split('\n'), [content]);
   const highlightedLines = useLineHighlight(lines, filePath);
 
   // Group comments by their end line
@@ -333,8 +354,7 @@ export function useCodeViewerLogic({
         } else if (addCommentInput) {
           setAddCommentInput(null);
         } else if (floatingToolbarRef.current) {
-          floatingToolbarRef.current = null;
-          bumpToolbarRef.current();
+          clearToolbar();
         } else if (viewingComment) {
           setViewingComment(null);
         }
@@ -431,131 +451,75 @@ export function useCodeViewerLogic({
     if (!commentsEnabled) return;
     e.stopPropagation();
     setViewingComment({ comment, x: e.clientX, y: e.clientY });
-    floatingToolbarRef.current = null;
-    bumpToolbarRef.current();
+    clearToolbar();
     setAddCommentInput(null);
     setSendToAIInput(null);
-  }, [commentsEnabled]);
+  }, [commentsEnabled, clearToolbar]);
 
-  // Text selection handler - show floating toolbar
+  // Selection side-effects that the shared `useSelectionToolbar` hook does
+  // NOT cover: LSP hover suppression while dragging / while a toolbar is
+  // open, and logical-coordinate snapshotting so we can restore the
+  // selection after virtual-list row re-renders rebuild the DOM under it.
+  //
+  // The toolbar lifecycle itself is owned by `useSelectionToolbar` above.
+  // We just listen to the same DOM events here for these orthogonal
+  // concerns — multiple listeners on `mouseup` are fine.
   useEffect(() => {
     if (!commentsEnabled) return;
 
     const codeArea = parentRef.current;
     let isDragging = false;
-    let downX = 0, downY = 0;
 
-    // mousedown: mark drag-select start, suppress hover, clear old toolbar + saved selection
-    const handleMouseDown = (e: MouseEvent) => {
+    const handleMouseDown = () => {
       isDragging = true;
-      downX = e.clientX;
-      downY = e.clientY;
       savedSelectionRef.current = null;
-      suppressHoverRef.current = true; // Suppress hover during drag to prevent LSP hover triggering parent re-render
-      if (floatingToolbarRef.current) {
-        floatingToolbarRef.current = null;
-        bumpToolbarRef.current();
-      }
+      // Suppress hover during drag to prevent LSP hover triggering parent re-render.
+      suppressHoverRef.current = true;
     };
 
-    // mouseup: mark drag-select end, compute selection and show toolbar
-    const handleMouseUp = (e: MouseEvent) => {
+    const handleMouseUp = () => {
       isDragging = false;
 
-      // When clicking FloatingToolbar button, don't clear toolbar, let onClick fire normally
-      const target = e.target as HTMLElement;
-      if (target.closest?.('.floating-toolbar')) return;
-
-      // Movement ≤ 5px treated as click (including double/triple click), do not show toolbar
-      const moved = Math.abs(e.clientX - downX) > 5 || Math.abs(e.clientY - downY) > 5;
-
       const selection = window.getSelection();
-      if (!selection || selection.isCollapsed) {
+      if (!selection || selection.isCollapsed || !selection.toString().trim()) {
         suppressHoverRef.current = false;
-        if (floatingToolbarRef.current) {
-          floatingToolbarRef.current = null;
-          bumpToolbarRef.current();
-        }
-        return;
-      }
-
-      const selectedText = selection.toString();
-      if (!selectedText.trim() || !moved) {
-        suppressHoverRef.current = false;
-        if (floatingToolbarRef.current) {
-          floatingToolbarRef.current = null;
-          bumpToolbarRef.current();
-        }
         return;
       }
 
       const range = selection.getRangeAt(0);
       const container = parentRef.current;
-      if (!container) return;
-
-      if (!container.contains(range.commonAncestorContainer)) {
-        return;
-      }
+      if (!container || !container.contains(range.commonAncestorContainer)) return;
 
       const startNode = range.startContainer;
       const endNode = range.endContainer;
+      const startLineEl = (startNode.nodeType === Node.TEXT_NODE
+        ? startNode.parentElement
+        : (startNode as Element))?.closest('[data-line]');
+      const endLineEl = (endNode.nodeType === Node.TEXT_NODE
+        ? endNode.parentElement
+        : (endNode as Element))?.closest('[data-line]');
+      if (!startLineEl || !endLineEl) return;
 
-      const getLineFromNode = (node: Node): number | null => {
-        if (!document.contains(node)) return null;
-        const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node as Element;
-        if (!el) return null;
-        const lineRow = el.closest('[data-line]');
-        if (lineRow) {
-          return parseInt(lineRow.getAttribute('data-line') || '0', 10);
-        }
-        return null;
+      const startLine = parseInt(startLineEl.getAttribute('data-line') || '0', 10);
+      const endLine = parseInt(endLineEl.getAttribute('data-line') || '0', 10);
+      if (!startLine || !endLine) return;
+
+      // Keep hover suppressed while the toolbar is visible.
+      suppressHoverRef.current = true;
+      savedSelectionRef.current = {
+        startLine,
+        startOffset: charOffsetInLine(startLineEl, range.startContainer, range.startOffset),
+        endLine,
+        endOffset: charOffsetInLine(endLineEl, range.endContainer, range.endOffset),
       };
-
-      const startLine = getLineFromNode(startNode);
-      const endLine = getLineFromNode(endNode);
-
-      if (startLine && endLine) {
-        const minLine = Math.min(startLine, endLine);
-        const maxLine = Math.max(startLine, endLine);
-
-        floatingToolbarRef.current = {
-          x: e.clientX,
-          y: e.clientY,
-          range: { start: minLine, end: maxLine },
-          selectedText,
-        };
-        suppressHoverRef.current = true;
-        bumpToolbarRef.current();
-
-        // Save selection logical coordinates: used to restore when DOM is replaced after re-render
-        const startLineEl = startNode.nodeType === Node.TEXT_NODE
-          ? startNode.parentElement?.closest('[data-line]')
-          : (startNode as Element).closest('[data-line]');
-        const endLineEl = endNode.nodeType === Node.TEXT_NODE
-          ? endNode.parentElement?.closest('[data-line]')
-          : (endNode as Element).closest('[data-line]');
-        if (startLineEl && endLineEl) {
-          savedSelectionRef.current = {
-            startLine,
-            startOffset: charOffsetInLine(startLineEl, range.startContainer, range.startOffset),
-            endLine,
-            endOffset: charOffsetInLine(endLineEl, range.endContainer, range.endOffset),
-          };
-        }
-      }
     };
 
-    // selectionchange: hide toolbar when selection disappears
-    // Skip during drag-select to avoid high-frequency unnecessary re-renders
     const handleSelectionChange = () => {
       if (isDragging) return;
-      if (!floatingToolbarRef.current) return;
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-        floatingToolbarRef.current = null;
         savedSelectionRef.current = null;
         suppressHoverRef.current = false;
-        bumpToolbarRef.current();
       }
     };
 
@@ -617,7 +581,8 @@ export function useCodeViewerLogic({
     return () => document.removeEventListener('mouseup', handleMouseUp);
   }, []);
 
-  // Click "add comment" in toolbar
+  // Click "add comment" in toolbar — capture both literal selection (for
+  // DB snapshot) and line snapshot (for the preview card).
   const handleToolbarAddComment = useCallback(() => {
     const toolbar = floatingToolbarRef.current;
     if (!toolbar) return;
@@ -625,46 +590,53 @@ export function useCodeViewerLogic({
       x: toolbar.x,
       y: toolbar.y,
       range: toolbar.range,
-      codeContent: toolbar.selectedText,
+      selectedText: toolbar.selectedText,
+      lineSnapshot: toolbar.lineSnapshot,
     });
-    floatingToolbarRef.current = null;
-    bumpToolbarRef.current();
-  }, []);
+    clearToolbar();
+  }, [clearToolbar, floatingToolbarRef]);
 
-  // Click "send to AI" in toolbar
+  // Click "send to AI" in toolbar.
   const handleToolbarSendToAI = useCallback(() => {
     const toolbar = floatingToolbarRef.current;
     if (!toolbar) return;
-    const codeContent = toolbar.selectedText;
-
     setSendToAIInput({
       x: toolbar.x,
       y: toolbar.y,
       range: toolbar.range,
-      codeContent,
+      selectedText: toolbar.selectedText,
+      lineSnapshot: toolbar.lineSnapshot,
     });
-    floatingToolbarRef.current = null;
-    bumpToolbarRef.current();
-  }, []);
+    clearToolbar();
+  }, [clearToolbar, floatingToolbarRef]);
 
-  // Click "search" in toolbar → trigger content search
+  // Click "search" in toolbar → trigger content search with the LITERAL
+  // selection (never the line-expanded snapshot — that was the old
+  // DiffView bug source).
   const handleToolbarSearch = useCallback(() => {
     const toolbar = floatingToolbarRef.current;
     if (!toolbar || !onContentSearch) return;
     const query = toolbar.selectedText.trim();
-    floatingToolbarRef.current = null;
-    bumpToolbarRef.current();
+    clearToolbar();
     if (query) onContentSearch(query);
-  }, [onContentSearch]);
+  }, [onContentSearch, clearToolbar, floatingToolbarRef]);
 
-  // Submit new comment
+  // Submit new comment — pass `selectedText` so the DB snapshot equals
+  // what the user actually picked (used by full-text search etc).
   const handleCommentSubmit = useCallback(async (content: string) => {
     if (!addCommentInput) return;
-    await addComment(addCommentInput.range.start, addCommentInput.range.end, content);
+    await addComment(
+      addCommentInput.range.start,
+      addCommentInput.range.end,
+      content,
+      addCommentInput.selectedText,
+    );
     setAddCommentInput(null);
   }, [addCommentInput, addComment]);
 
-  // Submit question to AI
+  // Submit question to AI — `lineSnapshot` is what flows into the
+  // CodeReference so the AI sees full lines of context, not a truncated
+  // mid-line slice.
   const handleSendToAISubmit = useCallback(async (question: string) => {
     if (!sendToAIInput || !aiBridge || !cwd) return;
 
@@ -686,7 +658,7 @@ export function useCodeViewerLogic({
         filePath,
         startLine: sendToAIInput.range.start,
         endLine: sendToAIInput.range.end,
-        codeContent: sendToAIInput.codeContent,
+        codeContent: sendToAIInput.lineSnapshot,
       });
 
       const message = buildAIMessage(references, question);

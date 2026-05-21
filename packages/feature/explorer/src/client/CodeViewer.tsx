@@ -1196,7 +1196,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
               x={addCommentInput.x}
               y={addCommentInput.y}
               range={addCommentInput.range}
-              codeContent={addCommentInput.codeContent}
+              lineSnapshot={addCommentInput.lineSnapshot}
               container={menuContainer}
               onSubmit={handleCommentSubmit}
               onClose={() => setAddCommentInput(null)}
@@ -1210,7 +1210,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
               y={sendToAIInput.y}
               range={sendToAIInput.range}
               filePath={filePath}
-              codeContent={sendToAIInput.codeContent}
+              lineSnapshot={sendToAIInput.lineSnapshot}
               container={menuContainer}
               onSubmit={handleSendToAISubmit}
               onClose={() => setSendToAIInput(null)}

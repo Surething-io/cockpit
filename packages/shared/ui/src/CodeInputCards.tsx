@@ -20,13 +20,18 @@ export interface AddCommentInputProps {
   x: number;
   y: number;
   range: LineRange;
-  codeContent?: string;
+  /** Whole-line / source-block expansion of the selection — what to show
+   *  in the preview block. The literal selection (`selectedText`) is
+   *  intentionally NOT what we preview here: code/diff comments are
+   *  anchored to line ranges, so a full-line snapshot reads more
+   *  naturally than a half-line literal selection. */
+  lineSnapshot?: string;
   container?: HTMLElement | null;
   onSubmit: (content: string) => void;
   onClose: () => void;
 }
 
-export function AddCommentInput({ x, y, range, codeContent, container, onSubmit, onClose }: AddCommentInputProps) {
+export function AddCommentInput({ x, y, range, lineSnapshot, container, onSubmit, onClose }: AddCommentInputProps) {
   const { t } = useTranslation();
   const [content, setContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -35,8 +40,8 @@ export function AddCommentInput({ x, y, range, codeContent, container, onSubmit,
   const [position, setPosition] = useState({ x: 0, y: 0 });
 
   // Truncate code content (show only first few lines if too long)
-  const displayCode = codeContent?.split('\n').slice(0, 5).join('\n');
-  const hasMoreLines = codeContent ? codeContent.split('\n').length > 5 : false;
+  const displayCode = lineSnapshot?.split('\n').slice(0, 5).join('\n');
+  const hasMoreLines = lineSnapshot ? lineSnapshot.split('\n').length > 5 : false;
 
   // Position adjustment relative to container
   useEffect(() => {
@@ -93,7 +98,7 @@ export function AddCommentInput({ x, y, range, codeContent, container, onSubmit,
         </div>
       </div>
       {/* Code preview */}
-      {codeContent && (
+      {lineSnapshot && (
         <div className="px-3 py-2 bg-secondary/50 border-b border-border max-h-24 overflow-hidden">
           <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all">
             {displayCode}
@@ -137,7 +142,12 @@ export interface SendToAIInputProps {
   y: number;
   range: LineRange;
   filePath?: string;
-  codeContent?: string;
+  /** Whole-line / source-block expansion of the selection — what to show
+   *  in the preview block and (downstream) what to send to the AI as
+   *  `CodeReference.codeContent`. See `ToolbarData.lineSnapshot` for the
+   *  full rationale on why this is the line-expanded version rather than
+   *  the literal selection. */
+  lineSnapshot?: string;
   container?: HTMLElement | null;
   onSubmit: (question: string) => void;
   onClose: () => void;
@@ -149,7 +159,7 @@ export function SendToAIInput({
   y,
   range,
   filePath,
-  codeContent,
+  lineSnapshot,
   container,
   onSubmit,
   onClose,
@@ -201,8 +211,8 @@ export function SendToAIInput({
   };
 
   // Truncate code content (show only first few lines if too long)
-  const displayCode = codeContent?.split('\n').slice(0, 5).join('\n');
-  const hasMoreLines = codeContent ? codeContent.split('\n').length > 5 : false;
+  const displayCode = lineSnapshot?.split('\n').slice(0, 5).join('\n');
+  const hasMoreLines = lineSnapshot ? lineSnapshot.split('\n').length > 5 : false;
 
   return (
     <div
@@ -220,7 +230,7 @@ export function SendToAIInput({
         {filePath && <div className="mt-1 text-xs text-muted-foreground truncate">{filePath}</div>}
       </div>
       {/* Code preview */}
-      {codeContent && (
+      {lineSnapshot && (
         <div className="px-3 py-2 bg-secondary/50 border-b border-border max-h-24 overflow-hidden">
           <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all">
             {displayCode}

@@ -70,7 +70,7 @@ export {
 } from './fileBrowser/utils';
 export * from './fileBrowser/symbolIcon';
 export * from './fileBrowser/blockDiffProjection';
-export * from './fileBrowser/useBlockSelection';
+export * from './useSelectionToolbar';
 export * from './fileBrowser/BranchSelector';
 export * from './fileBrowser/BlockCommentBubbles';
 export * from './fileBrowser/BlockDiffMinimap';

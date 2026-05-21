@@ -73,7 +73,21 @@ export interface ToolbarData {
   x: number;
   y: number;
   range: { start: number; end: number };
+  /** The literal user selection — `window.getSelection().toString()`.
+   *  Used by:
+   *  - Search action (so the search query equals what the user sees highlighted)
+   *  - `addComment(..., selectedText)` DB snapshot
+   *  - SendToAI reference quoting (when the prompt wants "the exact phrase the user picked"). */
   selectedText: string;
+  /** The selection's range expanded to whole lines / source blocks of the
+   *  underlying data:
+   *  - Code views: `lines.slice(start-1, end).join('\n')`
+   *  - Diff views: matching `diffLines[i].content` joined
+   *  - Markdown preview: `sourceLines.slice(start-1, end).join('\n')`
+   *  Used by AddCommentInput / SendToAIInput preview cards and by
+   *  SendToAI as `CodeReference.codeContent` (where "full lines" gives AI
+   *  better context than the truncated literal selection). */
+  lineSnapshot: string;
 }
 
 interface ToolbarRendererProps {

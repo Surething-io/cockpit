@@ -135,6 +135,28 @@ If any returns a non-2xx, the published tarball is broken — typically because 
 
 If your release introduces a new feature, **manually exercise it** in the running prod cockpit too. The probes above only cover the existing known paths.
 
+#### 2c. Cleanup — kill the smoke process and remove the tarball/install dir
+
+The single `kill $COCK_PID` above only signals the wrapper process; the underlying `node` server (the actual port listener) often survives and keeps listening on `$SMOKE_PORT`. A leftover smoke instance on 3458 will silently absorb the **next** release's probes and make `/api/version` look broken (the stale instance is on old code where `/api/version` returns `{"version":""}` because it reads `process.cwd()/package.json` from outside the repo) — costing 10+ minutes of confused debugging. Kill the whole process tree:
+
+```bash
+# Kill the node child + the wrapper, then verify the port is free.
+pkill -P $COCK_PID 2>/dev/null
+kill    $COCK_PID 2>/dev/null
+sleep 2
+lsof -i :$SMOKE_PORT -sTCP:LISTEN -P -n >/dev/null && {
+  echo "❌ $SMOKE_PORT still bound — leftover smoke process. Investigate before next release."
+  lsof -i :$SMOKE_PORT -sTCP:LISTEN -P -n
+  exit 1
+}
+
+# Drop the install dir and the local tarball — they're 39 MB / 8 MB respectively,
+# and the tarball name collides with the next bump if left behind.
+rm -rf "$SMOKE_DIR" surething-cockpit-*.tgz
+```
+
+If `$SMOKE_PORT` is unexpectedly already bound when you START step 2b, that's almost always a leftover from a previous release that wasn't cleaned up. Check `ps -o pid,lstart,command -p <pid>` to confirm it's a smoke leftover (started today, command is `cockpit`, `/api/version` returns `{"version":""}`) before killing — don't blow away an unrelated cockpit the human is actively using.
+
 🛑 **Confirm with human before pushing.**
 
 ### Step 3 — Push commit + tag (triggers npm publish, IRREVERSIBLE)

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, memo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -8,7 +8,7 @@ import { useComments, type CodeComment } from '@cockpit/feature-comments';
 import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, type CodeReference } from '@cockpit/feature-comments';
 import { useMenuContainer } from '@cockpit/shared-ui';
 import { useAIBridge } from '@cockpit/shared-ui';
-import { AddCommentInput, SendToAIInput } from '@cockpit/shared-ui';
+import { AddCommentInput, SendToAIInput, ToolbarRenderer } from '@cockpit/shared-ui';
 import { computeLineDiff } from './index';
 import {
   buildCompactRows,
@@ -22,8 +22,8 @@ import { toast } from '@cockpit/shared-ui';
 import { useLineHighlight } from './index';
 import { escapeHtml } from '@cockpit/shared-ui';
 import { DiffMinimap } from './index';
-import { FloatingToolbar } from '@cockpit/shared-ui';
 import { ViewCommentCard } from './index';
+import { useSelectionToolbar } from './useSelectionToolbar';
 
 // computeLineDiff / DiffLine moved to @cockpit/feature-explorer; callers
 // should import them directly from there. (Previously re-exported here for
@@ -104,50 +104,15 @@ function formatSignature(s: SymbolInfo): string {
 }
 
 // ============================================
-// ToolbarRenderer - independent state, avoids DiffView re-renders.
-// Only toolbar's own show/hide triggers this component's re-render;
-// DiffView's virtual list is completely unaffected → selection is preserved.
-// ============================================
-interface ToolbarRendererProps {
-  floatingToolbarRef: React.RefObject<{ x: number; y: number; range: { start: number; end: number }; codeContent: string } | null>;
-  bumpRef: React.MutableRefObject<() => void>;
-  container: HTMLElement;
-  onAddComment: () => void;
-  onSendToAI: () => void;
-  onSearch?: () => void;
-  isChatLoading: boolean;
-}
-
-function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddComment, onSendToAI, onSearch, isChatLoading }: ToolbarRendererProps) {
-  const [version, forceRender] = useState(0);
-
-  // Let parent (DiffView) trigger re-render via bumpRef
-  // Placed in useEffect to comply with React Compiler rules (no ref writes during render)
-  useEffect(() => {
-    bumpRef.current = () => forceRender(v => v + 1);
-  }, [bumpRef]);
-
-   
-  const toolbar = useMemo(() => floatingToolbarRef.current, [version]);
-
-  return (
-    <FloatingToolbar
-      x={toolbar?.x ?? 0}
-      y={toolbar?.y ?? 0}
-      visible={!!toolbar}
-      container={container}
-      onAddComment={onAddComment}
-      onSendToAI={onSendToAI}
-      onSearch={onSearch}
-      isChatLoading={isChatLoading}
-    />
-  );
-}
-const ToolbarRenderer = memo(ToolbarRendererInner);
-
-// ============================================
 // Main DiffView Component (Split View)
 // ============================================
+//
+// Floating toolbar / selection plumbing lives in the shared
+// `useSelectionToolbar` hook (see useSelectionToolbar.ts). DiffView's
+// only diff-specific contribution is the `data-new-line` line resolver
+// and the `lineSnapshot` builder that walks `diffLines` filtering for
+// new-side rows. The hook+ToolbarRenderer combination is what keeps the
+// toolbar's show/hide isolated from DiffView's virtual list re-renders.
 
 export function DiffView({ oldContent, newContent, filePath, isNew = false, isDeleted = false, cwd, enableComments = false, onPreview, previewLabel, onContentSearch, targetLine, compact = false, symbols }: DiffViewProps) {
   const { t } = useTranslation();
@@ -178,28 +143,60 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
     y: number;
   } | null>(null);
 
-  // Floating toolbar - ref stores data + bumpToolbarRef triggers ToolbarRenderer re-render
-  // Key: don't hold state on DiffView to avoid virtual list reconciliation losing selection
-  const floatingToolbarRef = useRef<{
-    x: number;
-    y: number;
-    range: { start: number; end: number };
-    codeContent: string;
-  } | null>(null);
-  const bumpToolbarRef = useRef<() => void>(() => {});
+  // Floating toolbar plumbing — owned by the shared selection hook.
+  // Storing in a ref (rather than state) is what keeps DiffView's virtual
+  // list from re-reconciling on every selection change and losing the
+  // browser selection out from under the user.
+  //
+  // The `rightPanelEl` state mirror exists because passing rightPanelRef
+  // alone to the hook wouldn't re-trigger its effect when the element
+  // first mounts — state changes do.
+  const [rightPanelEl, setRightPanelEl] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (rightPanelRef.current !== rightPanelEl) setRightPanelEl(rightPanelRef.current);
+  });
+  const { toolbarRef: floatingToolbarRef, bumpRef: bumpToolbarRef, clearToolbar } = useSelectionToolbar({
+    enabled: commentsEnabled,
+    container: rightPanelEl,
+    resolveLineRange: (node) => {
+      if (!document.contains(node)) return null;
+      const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as Element);
+      const lineRow = el?.closest('[data-new-line]');
+      if (!lineRow) return null;
+      const n = parseInt(lineRow.getAttribute('data-new-line') || '0', 10);
+      if (!Number.isFinite(n) || n <= 0) return null;
+      return { start: n, end: n };
+    },
+    // Walk diffLines and pull `content` for rows that appear in the new
+    // file (unchanged + added). `diffLines` is captured by closure; the
+    // hook re-reads this callback via a ref so it never gets stale.
+    buildLineSnapshot: ({ start, end }) => {
+      const out: string[] = [];
+      let n = 0;
+      for (const dl of diffLines) {
+        if (dl.type === 'unchanged' || dl.type === 'added') {
+          n++;
+          if (n >= start && n <= end) out.push(dl.content);
+        }
+      }
+      return out.join('\n');
+    },
+  });
 
   const [addCommentInput, setAddCommentInput] = useState<{
     x: number;
     y: number;
     range: { start: number; end: number };
-    codeContent: string;
+    selectedText: string;
+    lineSnapshot: string;
   } | null>(null);
 
   const [sendToAIInput, setSendToAIInput] = useState<{
     x: number;
     y: number;
     range: { start: number; end: number };
-    codeContent: string;
+    selectedText: string;
+    lineSnapshot: string;
   } | null>(null);
 
   // Track mount state for Portal
@@ -229,124 +226,13 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
     return map;
   }, [comments]);
 
-  // Handle text selection in right panel
-  // Three-phase event flow (aligned with useCodeViewerLogic): mousedown / mouseup / selectionchange
-  useEffect(() => {
-    if (!commentsEnabled) return;
-
-    const codeArea = rightPanelRef.current;
-    let isDragging = false;
-    let downX = 0, downY = 0;
-
-    // mousedown: mark drag-select start, clear old toolbar
-    const handleMouseDown = (e: MouseEvent) => {
-      isDragging = true;
-      downX = e.clientX;
-      downY = e.clientY;
-      if (floatingToolbarRef.current) {
-        floatingToolbarRef.current = null;
-        bumpToolbarRef.current();
-      }
-    };
-
-    // mouseup: mark drag-select end, compute selection and show toolbar
-    const handleMouseUp = (e: MouseEvent) => {
-      isDragging = false;
-
-      // When clicking a FloatingToolbar button, don't clear toolbar so onClick fires normally
-      const target = e.target as HTMLElement;
-      if (target.closest?.('.floating-toolbar')) return;
-
-      // Movement ≤ 5px is treated as click (including double/triple click), don't show toolbar
-      const moved = Math.abs(e.clientX - downX) > 5 || Math.abs(e.clientY - downY) > 5;
-
-      const selection = window.getSelection();
-      if (!selection || selection.isCollapsed || !selection.toString().trim() || !moved) {
-        if (floatingToolbarRef.current) {
-          floatingToolbarRef.current = null;
-          bumpToolbarRef.current();
-        }
-        return;
-      }
-
-      const range = selection.getRangeAt(0);
-      const container = rightPanelRef.current;
-      if (!container || !container.contains(range.commonAncestorContainer)) return;
-
-      // Find line numbers from DOM
-      const getLineFromNode = (node: Node): number | null => {
-        if (!document.contains(node)) return null;
-        let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node as Element;
-        while (el && el !== container) {
-          const lineRow = el.closest('[data-new-line]');
-          if (lineRow) {
-            return parseInt(lineRow.getAttribute('data-new-line') || '0', 10);
-          }
-          el = el.parentElement;
-        }
-        return null;
-      };
-
-      const startLine = getLineFromNode(range.startContainer);
-      const endLine = getLineFromNode(range.endContainer);
-
-      if (startLine && endLine) {
-        const minLine = Math.min(startLine, endLine);
-        const maxLine = Math.max(startLine, endLine);
-
-        // Extract code content from new file lines in diffLines
-        const codeLines: string[] = [];
-        let lineNum = 0;
-        for (const dl of diffLines) {
-          if (dl.type === 'unchanged' || dl.type === 'added') {
-            lineNum++;
-            if (lineNum >= minLine && lineNum <= maxLine) {
-              codeLines.push(dl.content);
-            }
-          }
-        }
-        const codeContent = codeLines.join('\n');
-
-        floatingToolbarRef.current = {
-          x: e.clientX,
-          y: e.clientY,
-          range: { start: minLine, end: maxLine },
-          codeContent,
-        };
-        bumpToolbarRef.current();
-      }
-    };
-
-    // selectionchange: hide toolbar when selection disappears
-    // Skip during drag-select to avoid high-frequency unnecessary re-renders
-    const handleSelectionChange = () => {
-      if (isDragging) return;
-      if (!floatingToolbarRef.current) return;
-      const sel = window.getSelection();
-      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-        floatingToolbarRef.current = null;
-        bumpToolbarRef.current();
-      }
-    };
-
-    codeArea?.addEventListener('mousedown', handleMouseDown);
-    document.addEventListener('mouseup', handleMouseUp);
-    document.addEventListener('selectionchange', handleSelectionChange);
-    return () => {
-      codeArea?.removeEventListener('mousedown', handleMouseDown);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.removeEventListener('selectionchange', handleSelectionChange);
-    };
-  }, [commentsEnabled, diffLines]);
-
   const handleCommentBubbleClick = useCallback((comment: CodeComment, e: React.MouseEvent) => {
     e.stopPropagation();
     setViewingComment({ comment, x: e.clientX, y: e.clientY });
-    floatingToolbarRef.current = null;
-    bumpToolbarRef.current();
+    clearToolbar();
     setAddCommentInput(null);
     setSendToAIInput(null);
-  }, []);
+  }, [clearToolbar]);
 
   const handleToolbarAddComment = useCallback(() => {
     const toolbar = floatingToolbarRef.current;
@@ -355,11 +241,11 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
       x: toolbar.x,
       y: toolbar.y,
       range: toolbar.range,
-      codeContent: toolbar.codeContent,
+      selectedText: toolbar.selectedText,
+      lineSnapshot: toolbar.lineSnapshot,
     });
-    floatingToolbarRef.current = null;
-    bumpToolbarRef.current();
-  }, []);
+    clearToolbar();
+  }, [clearToolbar, floatingToolbarRef]);
 
   const handleToolbarSendToAI = useCallback(() => {
     const toolbar = floatingToolbarRef.current;
@@ -368,20 +254,22 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
       x: toolbar.x,
       y: toolbar.y,
       range: toolbar.range,
-      codeContent: toolbar.codeContent,
+      selectedText: toolbar.selectedText,
+      lineSnapshot: toolbar.lineSnapshot,
     });
-    floatingToolbarRef.current = null;
-    bumpToolbarRef.current();
-  }, []);
+    clearToolbar();
+  }, [clearToolbar, floatingToolbarRef]);
 
+  // Search the LITERAL selection — not the line-expanded snapshot. Using
+  // the snapshot was the source of the long-standing "DiffView search
+  // mysteriously expands to the whole line" bug.
   const handleToolbarSearch = useCallback(() => {
     const toolbar = floatingToolbarRef.current;
     if (!toolbar || !onContentSearch) return;
-    const query = toolbar.codeContent.trim();
-    floatingToolbarRef.current = null;
-    bumpToolbarRef.current();
+    const query = toolbar.selectedText.trim();
+    clearToolbar();
     if (query) onContentSearch(query);
-  }, [onContentSearch]);
+  }, [onContentSearch, clearToolbar, floatingToolbarRef]);
 
   const handleSendToAISubmit = useCallback(async (question: string) => {
     if (!sendToAIInput || !aiBridge || !cwd) return;
@@ -404,7 +292,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
         filePath,
         startLine: sendToAIInput.range.start,
         endLine: sendToAIInput.range.end,
-        codeContent: sendToAIInput.codeContent,
+        codeContent: sendToAIInput.lineSnapshot,
       });
 
       const message = buildAIMessage(references, question);
@@ -420,7 +308,12 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
 
   const handleCommentSubmit = useCallback(async (content: string) => {
     if (!addCommentInput) return;
-    await addComment(addCommentInput.range.start, addCommentInput.range.end, content);
+    await addComment(
+      addCommentInput.range.start,
+      addCommentInput.range.end,
+      content,
+      addCommentInput.selectedText,
+    );
     setAddCommentInput(null);
   }, [addCommentInput, addComment]);
 
@@ -1083,7 +976,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
               x={addCommentInput.x}
               y={addCommentInput.y}
               range={addCommentInput.range}
-              codeContent={addCommentInput.codeContent}
+              lineSnapshot={addCommentInput.lineSnapshot}
               container={menuContainer}
               onSubmit={handleCommentSubmit}
               onClose={() => setAddCommentInput(null)}
@@ -1094,9 +987,12 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
               x={sendToAIInput.x}
               y={sendToAIInput.y}
               range={sendToAIInput.range}
+              filePath={filePath}
+              lineSnapshot={sendToAIInput.lineSnapshot}
               container={menuContainer}
               onSubmit={handleSendToAISubmit}
               onClose={() => setSendToAIInput(null)}
+              isChatLoading={aiBridge?.isLoading}
             />
           )}
           {viewingComment && (

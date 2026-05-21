@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { useMenuContainer } from '@cockpit/shared-ui';
-import { ToolbarRenderer, type ToolbarData } from '@cockpit/shared-ui';
+import { ToolbarRenderer } from '@cockpit/shared-ui';
 import { AddCommentInput, SendToAIInput } from '@cockpit/shared-ui';
 import { ViewCommentCard } from './index';
 import { useComments } from '@cockpit/feature-comments';
@@ -15,6 +15,7 @@ import { rehypeSourceLines } from '@cockpit/shared-ui';
 import type { CodeComment } from '@cockpit/feature-comments';
 import { TocSidebar } from '@cockpit/shared-ui';
 import { ShareReviewToggle } from '@cockpit/feature-review';
+import { useSelectionToolbar } from './useSelectionToolbar';
 
 // ============================================
 // InteractiveMarkdownPreview
@@ -35,7 +36,14 @@ interface InputCardData {
   x: number;
   y: number;
   range: { start: number; end: number };
-  codeContent: string;
+  /** Literal user selection (rendered HTML text) — used as the
+   *  `addComment(..., selectedText)` snapshot. */
+  selectedText: string;
+  /** Slice of the raw markdown SOURCE covering the selected
+   *  data-source-line range — used by AI references (so the AI sees
+   *  the original markdown, not the rendered DOM text) and by the
+   *  preview block inside AddCommentInput / SendToAIInput. */
+  lineSnapshot: string;
 }
 
 interface ViewingCommentData {
@@ -70,11 +78,6 @@ export function InteractiveMarkdownPreview({
   const sourceFile = sourceFileProp
     || (cwd && filePath.startsWith(cwd) ? filePath.slice(cwd.endsWith('/') ? cwd.length : cwd.length + 1) : filePath);
   const { t } = useTranslation();
-  // === Refs ===
-  const containerRef = useRef<HTMLDivElement>(null);
-  const floatingToolbarRef = useRef<ToolbarData | null>(null);
-  const bumpToolbarRef = useRef<() => void>(() => {});
-
   // === Hooks ===
   const menuContainer = useMenuContainer();
   const aiBridge = useAIBridge();
@@ -91,88 +94,36 @@ export function InteractiveMarkdownPreview({
 
   useEffect(() => { queueMicrotask(() => setIsMounted(true)); }, []);
 
-  // ============================================
-  // Selection detection → FloatingToolbar
-  // Same ref pattern as useCodeViewerLogic
-  // ============================================
+  // === Floating toolbar / selection plumbing ===
+  // Mirror containerRef into state so the shared hook's effect re-runs
+  // when the element mounts (refs alone don't trigger re-renders).
+  const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const area = containerRef.current;
-    if (!area) return;
-    let isDragging = false;
-    let downX = 0, downY = 0;
-
-    const handleMouseDown = (e: MouseEvent) => {
-      isDragging = true;
-      downX = e.clientX;
-      downY = e.clientY;
-      // Clear previous toolbar
-      if (floatingToolbarRef.current) {
-        floatingToolbarRef.current = null;
-        bumpToolbarRef.current();
-      }
-    };
-
-    const handleMouseUp = (e: MouseEvent) => {
-      isDragging = false;
-
-      // Ignore clicks on the toolbar/input card itself
-      const target = e.target as HTMLElement;
-      if (target.closest?.('.floating-toolbar') || target.closest?.('[data-comment-card]')) return;
-
-      const moved = Math.abs(e.clientX - downX) > 5 || Math.abs(e.clientY - downY) > 5;
-      const selection = window.getSelection();
-      if (!selection || selection.isCollapsed) {
-        floatingToolbarRef.current = null;
-        bumpToolbarRef.current();
-        return;
-      }
-
-      const selectedText = selection.toString();
-      if (!selectedText.trim() || !moved) {
-        floatingToolbarRef.current = null;
-        bumpToolbarRef.current();
-        return;
-      }
-
-      const range = selection.getRangeAt(0);
-      if (!area.contains(range.commonAncestorContainer)) return;
-
-      // Find data-source-* attributes from both ends of the selection
-      const startRange = getSourceRange(range.startContainer);
-      const endRange = getSourceRange(range.endContainer);
-
-      if (startRange && endRange) {
-        const minStart = Math.min(startRange.start, endRange.start);
-        const maxEnd = Math.max(startRange.end, endRange.end);
-        floatingToolbarRef.current = {
-          x: e.clientX,
-          y: e.clientY,
-          range: { start: minStart, end: maxEnd },
-          selectedText,
-        };
-        bumpToolbarRef.current();
-      }
-    };
-
-    const handleSelectionChange = () => {
-      if (isDragging) return;
-      if (!floatingToolbarRef.current) return;
-      const sel = window.getSelection();
-      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-        floatingToolbarRef.current = null;
-        bumpToolbarRef.current();
-      }
-    };
-
-    area.addEventListener('mousedown', handleMouseDown);
-    document.addEventListener('mouseup', handleMouseUp);
-    document.addEventListener('selectionchange', handleSelectionChange);
-    return () => {
-      area.removeEventListener('mousedown', handleMouseDown);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.removeEventListener('selectionchange', handleSelectionChange);
-    };
-  }, []);
+    if (containerRef.current !== containerEl) setContainerEl(containerRef.current);
+  });
+  const { toolbarRef: floatingToolbarRef, bumpRef: bumpToolbarRef, clearToolbar } = useSelectionToolbar({
+    enabled: true,
+    container: containerEl,
+    // Each markdown block carries a `data-source-start`/`data-source-end`
+    // range mapping back to the original markdown source (set by the
+    // rehypeSourceLines plugin). A selection that spans paragraphs takes
+    // the outer envelope, so a 2-paragraph selection still pulls in both
+    // blocks' full source ranges.
+    resolveLineRange: (node) => {
+      const r = getSourceRange(node);
+      return r ? { start: r.start, end: r.end } : null;
+    },
+    // Snapshot the RAW markdown source for the selected line range —
+    // the rendered DOM text (= `selectedText`) is post-formatting and
+    // would round-trip lossily through the AI. We want the AI to see
+    // the original markdown.
+    buildLineSnapshot: ({ start, end }) => {
+      const startIdx = Math.max(0, start - 1);
+      const endIdx = Math.min(sourceLines.length, end);
+      return sourceLines.slice(startIdx, endIdx).join('\n');
+    },
+  });
 
   // ============================================
   // Toolbar action handlers
@@ -185,11 +136,11 @@ export function InteractiveMarkdownPreview({
       x: toolbar.x,
       y: toolbar.y,
       range: toolbar.range,
-      codeContent: toolbar.selectedText,
+      selectedText: toolbar.selectedText,
+      lineSnapshot: toolbar.lineSnapshot,
     });
-    floatingToolbarRef.current = null;
-    bumpToolbarRef.current();
-  }, []);
+    clearToolbar();
+  }, [clearToolbar, floatingToolbarRef]);
 
   const handleToolbarSendToAI = useCallback(() => {
     const toolbar = floatingToolbarRef.current;
@@ -198,20 +149,28 @@ export function InteractiveMarkdownPreview({
       x: toolbar.x,
       y: toolbar.y,
       range: toolbar.range,
-      codeContent: toolbar.selectedText,
+      selectedText: toolbar.selectedText,
+      lineSnapshot: toolbar.lineSnapshot,
     });
-    floatingToolbarRef.current = null;
-    bumpToolbarRef.current();
-  }, []);
+    clearToolbar();
+  }, [clearToolbar, floatingToolbarRef]);
 
-  // Submit comment
+  // Submit comment — pass `selectedText` so the DB snapshot equals what
+  // the user actually highlighted.
   const handleCommentSubmit = useCallback(async (commentContent: string) => {
     if (!addCommentInput) return;
-    await addComment(addCommentInput.range.start, addCommentInput.range.end, commentContent);
+    await addComment(
+      addCommentInput.range.start,
+      addCommentInput.range.end,
+      commentContent,
+      addCommentInput.selectedText,
+    );
     setAddCommentInput(null);
   }, [addCommentInput, addComment]);
 
-  // Submit to AI — same logic as useCodeViewerLogic
+  // Submit to AI — use the markdown SOURCE snapshot (lineSnapshot)
+  // rather than the rendered selection so the AI sees the original
+  // markdown syntax.
   const handleSendToAISubmit = useCallback(async (question: string) => {
     if (!sendToAIInput || !aiBridge) return;
 
@@ -229,16 +188,11 @@ export function InteractiveMarkdownPreview({
         });
       }
 
-      // Current selection: extract corresponding lines from the raw Markdown source
-      const startIdx = Math.max(0, sendToAIInput.range.start - 1);
-      const endIdx = Math.min(sourceLines.length, sendToAIInput.range.end);
-      const selectedSourceContent = sourceLines.slice(startIdx, endIdx).join('\n');
-
       references.push({
         filePath,
         startLine: sendToAIInput.range.start,
         endLine: sendToAIInput.range.end,
-        codeContent: selectedSourceContent,
+        codeContent: sendToAIInput.lineSnapshot,
       });
 
       const message = buildAIMessage(references, question);
@@ -250,7 +204,7 @@ export function InteractiveMarkdownPreview({
     } catch (err) {
       console.error('Failed to send to AI:', err);
     }
-  }, [sendToAIInput, aiBridge, filePath, cwd, sourceLines, refreshComments]);
+  }, [sendToAIInput, aiBridge, filePath, cwd, refreshComments]);
 
   // ============================================
   // Existing comment indicator positioning
@@ -415,7 +369,7 @@ export function InteractiveMarkdownPreview({
               x={addCommentInput.x}
               y={addCommentInput.y}
               range={addCommentInput.range}
-              codeContent={addCommentInput.codeContent}
+              lineSnapshot={addCommentInput.lineSnapshot}
               container={menuContainer}
               onSubmit={handleCommentSubmit}
               onClose={() => setAddCommentInput(null)}
@@ -427,7 +381,7 @@ export function InteractiveMarkdownPreview({
               y={sendToAIInput.y}
               range={sendToAIInput.range}
               filePath={filePath}
-              codeContent={sendToAIInput.codeContent}
+              lineSnapshot={sendToAIInput.lineSnapshot}
               container={menuContainer}
               onSubmit={handleSendToAISubmit}
               onClose={() => setSendToAIInput(null)}

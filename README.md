@@ -80,6 +80,7 @@ Cockpit is the instrument panel. It does **not** replace Claude Code; it stands 
 - Git **blame**, diff view, branch switching, **worktree** management
 - **LSP integration** — go to definition, find references, hover info
 - **Code Map** — every function as a chip with caller / callee pins; click to walk the call graph. Multi-language: TS/JS, Python, Go, Rust. No LSP, no project setup, works offline.
+- **CodeGraph** — a **code graph** for the agent: same tree-sitter index exposed as 6 HTTP endpoints (`search` / `callers` / `callees` / `impact` / `file` / `coedit`) so the agent queries coordinates instead of grepping text; trigger with `/cg` from chat. Coordinates only, never source — precise, cheap, and catches the conventional coupling no regex can.
 - Fuzzy file search (Cmd+F), JSON viewer, Markdown preview
 
 ### Console — Terminal & smart Bubbles
@@ -104,6 +105,7 @@ Cockpit is the instrument panel. It does **not** replace Claude Code; it stands 
 - `/fx` — **Diagnose-only**: bug evidence chain, never edit
 - `/review` — read the diff, write notes, no rewrites
 - `/commit` — stage + draft a message in your repo's style + commit
+- `/cg` — **CodeGraph** project exploration: 6 HTTP endpoints for symbol / callers / impact / co-edit queries (precise where grep is fuzzy)
 - **Custom**: drop any `*.md` into `~/.claude/commands/` or `./.claude/commands/` → instant slash command
 
 ### Scheduled tasks — Cron for AI
@@ -189,7 +191,8 @@ cockpit terminal <id> output       # get terminal output
 | Cross-project search | grep | per-window | local | **Cmd+K** |
 | Browser / DB control | ❌ | usually ❌ | ❌ | **✅ Bubbles** |
 | Code review surface | git tools | PR provider | git | **LAN-shared** |
-| Slash modes | manual | per-plugin | yes | **`/qa /fx /review /commit` + custom** |
+| Slash modes | manual | per-plugin | yes | **`/qa /fx /review /commit /cg` + custom** |
+| Project-graph API for agent | ❌ | LSP (per-IDE) | ❌ | **✅ CodeGraph — 6 endpoints, AI-first, coordinates only** |
 | Local-only / no cloud relay | ✅ | varies | ✅ | **✅** |
 | Open source | ✅ | mostly ❌ | ✅ | **✅ MIT** |
 
@@ -197,6 +200,7 @@ Read the long version: [Claude Code GUI: CLI vs Cockpit vs IDE plugins](https://
 
 ## Read more
 
+- 📖 [What is a Code Graph (and why your AI needs one)](https://cocking.cc/en/blog/code-graph-for-ai-agents/)
 - 📖 [Read code as a map, not a tree](https://cocking.cc/en/blog/read-code-as-a-map/)
 - 📖 [How to run 5 Claude Code sessions in parallel](https://cocking.cc/en/blog/parallel-claude-code-sessions/)
 - 📖 [Slash modes in Claude Code: /qa /fx /review /commit](https://cocking.cc/en/blog/slash-modes-claude-code/)

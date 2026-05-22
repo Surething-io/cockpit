@@ -8,6 +8,7 @@ import { PanelSection } from '@/components/sections/PanelSection';
 import { Bubbles } from '@/components/sections/Bubbles';
 import { Engines } from '@/components/sections/Engines';
 import { CodeMap } from '@/components/sections/CodeMap';
+import { CodeGraph } from '@/components/sections/CodeGraph';
 import { Modes } from '@/components/sections/Modes';
 import { Extras } from '@/components/sections/Extras';
 import { BuiltOn } from '@/components/sections/BuiltOn';
@@ -116,10 +117,11 @@ export default async function HomePage({
       'Chrome browser automation',
       'PostgreSQL / MySQL / Redis bubbles',
       'LAN-shared code review',
-      'Slash modes: /qa, /fx, /review, /commit',
+      'Slash modes: /qa, /fx, /review, /commit, /cg',
       'Custom skills via SKILL.md',
       'Scheduled tasks (one-time, interval, cron)',
       'Code Map — onboard new codebases by walking the call graph (TS/JS/Python/Go/Rust)',
+      'CodeGraph — a code graph for AI agents: 6 HTTP endpoints expose the project graph (symbol / callers / impact / co-edit); /cg slash command primes graph-first exploration',
     ],
   };
 
@@ -171,6 +173,7 @@ export default async function HomePage({
       <Bubbles t={t} />
       <Engines t={t} />
       <CodeMap t={t} />
+      <CodeGraph t={t} />
       <Modes t={t} />
       <PanelSection
         tag={t.panels.review.tag}

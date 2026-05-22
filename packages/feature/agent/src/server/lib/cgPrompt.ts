@@ -1,10 +1,10 @@
 /**
- * /cg slash command — project graph (codegraph) exploration mode prompt.
+ * /cg slash command — project graph (CodeGraph) exploration mode prompt.
  *
  * Split out of slashCommands.ts because the cg content is ~2500 chars vs the
  * ~100 chars of qa/fx. Co-locating it there made the registry hard to read
  * and made the file's purpose ambiguous (is it the slash-command dispatcher,
- * or the codegraph documentation?). Keeping the bulk here lets
+ * or the CodeGraph documentation?). Keeping the bulk here lets
  * slashCommands.ts stay a thin registry.
  *
  * `{{BASE_URL}}` placeholder is resolved at expansion time by
@@ -17,9 +17,9 @@
  * `labelFor` in slashCommands.ts.
  */
 
-export const CG_PROMPT_ZH = `进入项目图谱探索模式（codegraph）
+export const CG_PROMPT_ZH = `进入项目图谱探索模式（CodeGraph）
 
-codegraph = 项目预建的符号 + 调用图索引 + git 协同视图。6 个接口各回答一类问题：
+CodeGraph = 项目预建的符号 + 调用图索引 + git 协同视图。6 个接口各回答一类问题：
 
 | 问题 | 接口 |
 |---|---|
@@ -56,9 +56,9 @@ curl -fsS "{{BASE_URL}}/api/projectGraph/coedit?cwd=$PWD&filePath=<REL_PATH>"
 - qname 用 \`Parent>Child\` 形式（不是 \`.\`），直接复用 search 返回的 \`qualifiedName\`
 - 同名符号跨多文件时响应里 \`ambiguousIn\` 列出，加 \`&filePath=<rel>\` 消歧`;
 
-export const CG_PROMPT_EN = `Enter project graph exploration mode (codegraph).
+export const CG_PROMPT_EN = `Enter project graph exploration mode (CodeGraph).
 
-codegraph = pre-built symbol + call-graph index + git co-edit view. Six endpoints, each answers one class of question:
+CodeGraph = pre-built symbol + call-graph index + git co-edit view. Six endpoints, each answers one class of question:
 
 | Question | Endpoint |
 |---|---|

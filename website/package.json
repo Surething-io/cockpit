@@ -4,8 +4,8 @@
   "private": true,
   "description": "Marketing site for Cockpit (cocking.cc)",
   "scripts": {
-    "dev": "TURBOPACK= next dev -p 3458",
-    "build": "node scripts/fetch-changelog.mjs && node scripts/generate-og.mjs && NODE_ENV=production TURBOPACK= COCKPIT_VERSION=$(node -p \"require('../package.json').version\") next build",
+    "dev": "env -u TURBOPACK next dev --webpack -p 3458",
+    "build": "node scripts/fetch-changelog.mjs && node scripts/generate-og.mjs && NODE_ENV=production COCKPIT_VERSION=$(node -p \"require('../package.json').version\") env -u TURBOPACK next build --webpack",
     "start": "next start -p 3458",
     "lint": "next lint",
     "og": "node scripts/generate-og.mjs",

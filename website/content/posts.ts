@@ -32,6 +32,207 @@ export interface Post {
 
 export const posts: Post[] = [
   {
+    slug: 'code-graph-for-ai-agents',
+    date: '2026-05-22',
+    keywords: [
+      'code graph',
+      'code knowledge graph',
+      'AI code agent',
+      'AI code intelligence',
+      'code graph for AI',
+      'tree-sitter',
+      'project graph',
+      'code navigation AI',
+      'conventional coupling',
+      'Claude Code GUI',
+      'Cockpit',
+    ],
+    content: {
+      en: {
+        title: 'What is a Code Graph (and why your AI needs one)',
+        description:
+          "A code graph is the structured map of your project's symbols and their relationships — who calls whom, what depends on what, which files always get edited together. It is exactly the missing layer between an AI agent and your codebase, and the reason `grep` is the agent's ceiling on the questions that matter most.",
+        readingTime: '6 min read',
+        body: `A **code graph** is a structured map of your project's symbols and the relationships between them — who calls whom, what depends on what, which files always get edited together. It is the kind of mental model a human builds before refactoring. For an AI agent still doing \`grep -r\` to find anything, it is the missing layer.
+
+Here is why that matters in practice.
+
+## A small disaster
+
+Last week I added a new slash command to Cockpit. Code change was four lines. I tested it. Worked. Committed. Pushed.
+
+Next morning a teammate messaged: *"I can't see it in the autocomplete menu though?"*
+
+The new command had to be registered in **two** files. One for the prompt expansion, one for the menu listing. They don't import each other. They don't share a function. They just have to stay in sync — a convention nobody documents, that the codebase enforces nowhere.
+
+Before I made that change, I had asked the agent: *"If I change this function, what else needs updating?"* It ran \`grep\`, found five callers, summarized them confidently. The menu file wasn't a caller. \`grep\` couldn't see the relationship. Neither could the agent.
+
+## Why grep is the agent's ceiling
+
+When an AI agent is just driving \`grep\`, it inherits \`grep\`'s blind spots:
+
+- **Relationships are invisible.** \`grep\` knows the string \`createOrder\` shows up 12 times. It does not know which of those are *calls* and which are comments, tests, or unrelated strings.
+- **Conventions are invisible.** Two files with the same constant — one defines it, one mirrors it — look like two unrelated occurrences. \`grep\` cannot encode "these must stay in sync."
+
+Most AI exploration runs on \`grep\` because most code questions are simple lookups. The 10% that aren't are exactly where you needed the help most.
+
+## What a code graph gives the agent
+
+\`/cg\` is the slash command. Type it in any Cockpit chat:
+
+\`\`\`
+/cg if I rename createOrder, what breaks?
+\`\`\`
+
+You did not learn a new tool. You did not install anything. You typed three letters. The agent now answers as if it had just spent an hour reading the codebase.
+
+Six question shapes get sharper answers:
+
+| You ask | The agent now actually knows |
+|---|---|
+| "Where is \`X\` defined?" | the file and line range, in one query |
+| "Who uses \`X\`?" | real callers, not string matches |
+| "What does \`X\` depend on?" | the downstream chain |
+| **"What does changing \`X\` affect?"** | not just direct callers — the ripple two hops out |
+| "What's in this file?" | the symbol outline, without reading the whole file |
+| **"What files always get edited alongside this one?"** | the *convention* couplings \`grep\` can never see |
+
+The last one is the one that would have saved me.
+
+## The story, replayed
+
+I redo the change with \`/cg\`:
+
+> *"If I add a new slash command in this file, what else do I need to touch?"*
+
+The agent ran the usual call-graph queries, then ran one more — "what files commonly get edited together with this one?" — and came back with:
+
+> *"Direct callers are five chat routes; signature is stable. **One caveat: \`commands.ts\` in the same module gets edited together with this file in most recent commits. If your change adds a new command verb, you probably need to register it in \`commands.ts\` too — looks like a parallel menu list.**"*
+
+Three lines. The whole future-bug fix.
+
+## Code Map for your eyes, CodeGraph for the agent
+
+If you have used Cockpit's [Code Map](/en/blog/read-code-as-a-map/), you have already seen the human side of this. Code Map renders the same project structure as clickable chips — function callers on the left, callees on the right — so *you* can walk the call graph in five clicks.
+
+CodeGraph is the same idea, made queryable. Same tree-sitter index, same call graph, same git history. Code Map serves it to your eyes; CodeGraph serves it to your agent.
+
+Same fact, two consumers.
+
+## What it doesn't do
+
+\`/cg\` is not a fixer. It does not reach into config files, JSON, or unstructured docs — for those, regular \`grep\` is still the right tool. And if you already know which file to edit, just \`Edit\` it; you don't need an exploration mode.
+
+But the moment your question contains the words "what else" or "who depends on" — that is when the gap between \`grep\` and a code graph shows up.
+
+## Try it
+
+In any Cockpit chat:
+
+\`\`\`
+/cg
+\`\`\`
+
+That is the entire onboarding. Try it on a function whose impact you don't fully understand. The agent will tell you something you would not have found on your own.
+
+---
+
+\`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [Try Online](/try)`,
+      },
+      zh: {
+        title: 'Code Graph：给 AI 一张项目图谱',
+        description:
+          '代码图谱（code graph）是你项目里所有符号和它们之间关系的结构化地图——谁调用谁、谁依赖谁、哪些文件总是一起被改。这正是 AI Agent 和你代码库之间缺失的那一层，也是 grep 在最重要的问题上成为 Agent 天花板的原因。',
+        readingTime: '6 min read',
+        body: `**代码图谱（code graph）**是你项目里所有符号和它们之间关系的结构化地图——谁调用谁、谁依赖谁、哪些文件总是一起被改。这本就是人在重构前画在白板上的那张图。但对一个还在 \`grep -r\` 找东西的 AI Agent 来说，这一层是缺失的。
+
+下面讲为什么这件事在实际工作里很要命。
+
+## 一个小翻车
+
+上周我给 Cockpit 加了一个新的斜杠命令。代码改了四行。本地测了。能跑。提交。推送。
+
+第二天同事消息：*"补全菜单里看不到啊？"*
+
+原来这个新命令需要在**两个文件**登记——一个负责 prompt 展开，一个负责出现在菜单。它们不互相 import，不共用函数，**只是约定要同名同步**。没人文档化这件事，代码里也没编译时检查。
+
+我改之前问过 Agent："如果改这个函数，还要动哪些地方？" 它 \`grep\` 一通，找出 5 个调用方，自信满满总结了一遍。菜单文件不是调用方。\`grep\` 看不见这种关系，Agent 也看不见。
+
+## 为什么 grep 是 Agent 的天花板
+
+当 AI 只能驱动 \`grep\`，它就继承了 \`grep\` 的所有盲区：
+
+- **关系是看不见的。** \`grep\` 知道字符串 \`createOrder\` 出现 12 次，但不知道哪些是真调用、哪些是注释、测试或巧合同名。
+- **约定是看不见的。** 两个文件用了同一个常量——一个定义、一个镜像——在 \`grep\` 眼里就是两个无关的出现。它没法表达"这俩必须同步改"。
+
+大多数 AI 探索靠 \`grep\` 也能跑——因为大多数问题确实只是简单查找。但剩下 10% 不能跑的，恰恰是你最需要帮手的时候。
+
+## Code Graph 给 Agent 什么
+
+\`/cg\` 是斜杠模式。Cockpit 任意聊天里输入：
+
+\`\`\`
+/cg 如果重命名 createOrder 会牵连什么？
+\`\`\`
+
+你没学新工具，没装东西，就敲了三个字符。Agent 现在回答问题的方式，就像它刚花了一小时把代码库读完。
+
+六种问题答得更准：
+
+| 你问 | Agent 现在真的知道 |
+|---|---|
+| "X 在哪定义？" | 文件 + 行号，一次拿到 |
+| "谁用了 X？" | 真实调用方，不混杂字符串巧合 |
+| "X 依赖什么？" | 下游链 |
+| **"改 X 会影响什么？"** | 不止直接调用方——连两跳传递性影响也展开 |
+| "这个文件里有啥？" | 符号大纲，不用读全文 |
+| **"哪些文件总和这个一起被改？"** | grep 永远看不到的**约定耦合** |
+
+最后一行就是当初能救我的那条。
+
+## 故事重演
+
+我用 \`/cg\` 重做一次：
+
+> *"我要在这个文件加一个新的斜杠命令，还需要动哪些地方？"*
+
+Agent 跑了常规的调用图查询，又多跑了一个——"这个文件在最近的提交里通常和哪些文件一起改"——回我：
+
+> *"直接调用方是 5 个 chat 路由；签名稳定。**额外注意：同模块的 \`commands.ts\` 最近几次相关提交都和这个文件一起改。如果你加了新 verb，多半也得在 \`commands.ts\` 里登记——看起来是个并行的菜单列表。**"*
+
+三行话。一个本来会发版后才发现的 bug，提前抓住了。
+
+## Code Map 给眼睛，CodeGraph 给 Agent
+
+用过 Cockpit [Code Map](/zh/blog/read-code-as-a-map/) 的人，已经见过这件事的人类版——把同一份项目结构渲染成可点击的代码 chip，左边是调用者，右边是被调用，你五次点击就能走完一条调用链。
+
+CodeGraph 是同一个想法，换成可查询接口。**同一份 tree-sitter 索引、同一张调用图、同一段 git history**——Code Map 端给你眼睛，CodeGraph 端给你的 Agent。
+
+同一个事实，两种消费方式。
+
+## 它不做什么
+
+\`/cg\` 不修代码，不读 JSON / yaml / 文档——那些场景普通 \`grep\` 还是对的工具。如果你已经知道要改哪个文件，直接 Edit 就好，不需要进探索模式。
+
+但当你的问题里出现"还会影响什么""谁依赖"这种字眼——这就是 \`grep\` 和 code graph 差距显形的时候。
+
+## 试一下
+
+任意 Cockpit chat 里：
+
+\`\`\`
+/cg
+\`\`\`
+
+这就是全部上手成本。挑一个你不完全确定影响范围的函数试试——Agent 会告诉你一些你自己找不到的东西。
+
+---
+
+\`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [在线体验](/try)`,
+      },
+    },
+  },
+  {
     slug: 'vibe-coding-needs-taste',
     date: '2026-05-12',
     keywords: [

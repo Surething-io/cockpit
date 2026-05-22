@@ -146,6 +146,19 @@ export const messages = {
       ],
       footnote: 'Open any file in Explorer → switch to Code Map view.',
     },
+    codeGraph: {
+      tag: 'Agent · /cg Mode',
+      headline: 'Give the AI a query graph, not a grep',
+      desc: 'A code graph is the missing layer between your AI agent and your codebase. Code Map is for your eyes; CodeGraph is for the agent. The same tree-sitter index that powers Code Map is exposed as 6 HTTP endpoints — symbol search, callers, callees, impact, file tree, co-edit history — so the agent queries coordinates instead of grepping text and Reading whole files.',
+      bullets: [
+        '6 endpoints answer 6 question shapes: "where is X" / "who calls X" / "X calls what" / "changing X affects what" / "what symbols in F" / "what files are edited with F".',
+        'Returns coordinates only (file / line range / qname) — agent uses Read with precise offset+limit to fetch source, not full files.',
+        'Co-edit endpoint catches "must-edit-together" file pairs that no static analysis can see: parallel registries, double-writes, sibling .md configs.',
+        'Incrementally synced via file watcher — no rebuild step; the index stays current across mid-PR edits and AI bulk changes.',
+        '/cg slash command primes the agent toward graph exploration with a question→endpoint table; existing tools (grep / glob / git log) stay available alongside.',
+      ],
+      footnote: 'Type /cg in any chat to enter exploration mode — the agent picks endpoints based on the question shape.',
+    },
     modes: {
       headline: 'One slash, one AI mindset',
       desc: 'Slash commands flip the agent into a specific posture — talk first, debug only, never touch code. Drop any markdown into ~/.claude/commands/ to define your own.',
@@ -169,6 +182,11 @@ export const messages = {
           cmd: '/commit',
           name: 'Commit',
           desc: 'Stage what changed, draft a message in your repo’s style, commit.',
+        },
+        {
+          cmd: '/cg',
+          name: 'CodeGraph',
+          desc: 'Project graph exploration — six HTTP endpoints answer symbol / callers / impact / co-edit questions. Precise where grep is fuzzy.',
         },
       ],
       customHint: 'Custom: any *.md in ~/.claude/commands/ or ./.claude/commands/ becomes a slash command — auto-loaded into the autocomplete menu.',
@@ -370,6 +388,19 @@ export const messages = {
       ],
       footnote: '在 Explorer 中打开任意文件 → 切换到 Code Map 视图即可使用。',
     },
+    codeGraph: {
+      tag: 'Agent · /cg 模式',
+      headline: '给 AI 一张查询图谱，而不是 grep',
+      desc: '代码图谱（code graph）是 AI Agent 和你代码库之间缺失的那一层。Code Map 是给眼睛看的，CodeGraph 是给 Agent 调用的。同一份 tree-sitter 索引开放为 6 个 HTTP 接口——符号搜索、调用者、被调用、影响范围、文件符号树、协同编辑历史——Agent 直接按坐标精确查询，而不是 grep 字面 + Read 全文。',
+      bullets: [
+        '6 个接口对应 6 类问题形态：「X 在哪定义」「谁调用 X」「X 调用什么」「改 X 影响什么」「文件 F 有哪些符号」「跟 F 一起改的文件」。',
+        '只返坐标（file / line range / qname）——Agent 用 Read 按 offset + limit 精读符号本身，不读整文件。',
+        'coedit 接口抓住任何静态分析都看不见的「必须一起改」的文件对：平行注册表、双写、同名 .md 配置。',
+        'file watcher 增量同步——无须 rebuild；PR 半途的修改和 AI 批量改动都能保持索引新鲜。',
+        '/cg 斜杠模式用「问题 → 接口」对照表把 Agent 锚向图谱探索；原有 grep / glob / git log 一个不少，按需混搭。',
+      ],
+      footnote: '在任意 chat 里输入 /cg 进入探索模式——Agent 会按问题形态自己选接口。',
+    },
     modes: {
       headline: '一行斜杠，切换 AI 的思考姿态',
       desc: '斜杠指令把 Agent 切到指定模式——只问不写、只查不改、只评不动。把任意 markdown 丢进 ~/.claude/commands/ 就能定义自己的模式。',
@@ -393,6 +424,11 @@ export const messages = {
           cmd: '/commit',
           name: '提交',
           desc: '暂存改动、按你仓库的风格起草 message、完成提交。',
+        },
+        {
+          cmd: '/cg',
+          name: 'CodeGraph',
+          desc: '项目图谱探索——6 个 HTTP 接口精确回答符号 / 调用关系 / 影响范围 / 协同编辑问题，比 grep 精确、比 Read 全文省 token。',
         },
       ],
       customHint: '自定义：~/.claude/commands/ 或 ./.claude/commands/ 下任意 *.md 都会成为斜杠指令——自动出现在补全菜单。',

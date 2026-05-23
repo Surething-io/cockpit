@@ -117,7 +117,7 @@ export default async function HomePage({
       'Chrome browser automation',
       'PostgreSQL / MySQL / Redis bubbles',
       'LAN-shared code review',
-      'Slash modes: /qa, /fx, /review, /commit, /cg',
+      'Slash modes: /qa, /fx, /ex, /go, /cg',
       'Custom skills via SKILL.md',
       'Scheduled tasks (one-time, interval, cron)',
       'Code Map — onboard new codebases by walking the call graph (TS/JS/Python/Go/Rust)',

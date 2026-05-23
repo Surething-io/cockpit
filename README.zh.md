@@ -187,7 +187,6 @@ cockpit terminal <id> output       # 获取终端输出
 - 📖 [Code Graph：给 AI 一张项目图谱](https://opencockpit.dev/zh/blog/code-graph-for-ai-agents/)
 - 📖 [把代码读成地图，而不是树](https://opencockpit.dev/zh/blog/read-code-as-a-map/)
 - 📖 [如何同时跑 5 个 Claude Code 会话不疯掉](https://opencockpit.dev/zh/blog/parallel-claude-code-sessions/)
-- 📖 [Claude Code 斜杠模式实战：/qa、/fx、/review、/commit](https://opencockpit.dev/zh/blog/slash-modes-claude-code/)
 - 📖 [完整博客](https://opencockpit.dev/zh/blog/)
 - 📋 [更新日志](https://opencockpit.dev/zh/changelog/)
 

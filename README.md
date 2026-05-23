@@ -187,7 +187,6 @@ cockpit terminal <id> output       # get terminal output
 - 📖 [What is a Code Graph (and why your AI needs one)](https://opencockpit.dev/en/blog/code-graph-for-ai-agents/)
 - 📖 [Read code as a map, not a tree](https://opencockpit.dev/en/blog/read-code-as-a-map/)
 - 📖 [How to run 5 Claude Code sessions in parallel](https://opencockpit.dev/en/blog/parallel-claude-code-sessions/)
-- 📖 [Slash modes in Claude Code: /qa /fx /review /commit](https://opencockpit.dev/en/blog/slash-modes-claude-code/)
 - 📖 [Full blog](https://opencockpit.dev/en/blog/)
 - 📋 [Changelog](https://opencockpit.dev/en/changelog/)
 

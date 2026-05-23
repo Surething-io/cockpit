@@ -123,7 +123,7 @@ const svg = `<?xml version="1.0" encoding="UTF-8"?>
     <text x="320" y="525">▶ Terminal</text>
     <text x="500" y="525">▶ Browser</text>
     <text x="680" y="525">▶ DBs</text>
-    <text x="800" y="525">▶ /qa /fx /review</text>
+    <text x="800" y="525">▶ /qa /fx /cg</text>
   </g>
 
   <!-- bottom row: install + url -->

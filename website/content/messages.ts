@@ -161,7 +161,7 @@ export const messages = {
     },
     modes: {
       headline: 'One slash, one AI mindset',
-      desc: 'Slash commands flip the agent into a specific posture — talk first, debug only, never touch code. Drop any markdown into ~/.claude/commands/ to define your own.',
+      desc: 'Slash commands flip the agent into a specific posture — talk first, debug only, never touch code.',
       items: [
         {
           cmd: '/qa',
@@ -174,14 +174,14 @@ export const messages = {
           desc: 'Bug evidence-chain analysis. The agent reasons through the failure end-to-end and never edits a file.',
         },
         {
-          cmd: '/review',
-          name: 'Review',
-          desc: 'Reads the current diff and writes review notes — line by line, no rewrites.',
+          cmd: '/ex',
+          name: 'Explore',
+          desc: 'Structured discussion mode. 6-step skeleton: problem study → diverge → converge → diverge again → iterate-verify → summarize. Never asks back mid-flow.',
         },
         {
-          cmd: '/commit',
-          name: 'Commit',
-          desc: 'Stage what changed, draft a message in your repo’s style, commit.',
+          cmd: '/go',
+          name: 'Land',
+          desc: 'Landing mode: take a converged plan, slice it into MVP stages, write code + self-verify per stage, no per-stage sign-off, recap at the end.',
         },
         {
           cmd: '/cg',
@@ -189,7 +189,7 @@ export const messages = {
           desc: 'Project graph exploration — six HTTP endpoints answer symbol / callers / impact / co-edit questions. Precise where grep is fuzzy.',
         },
       ],
-      customHint: 'Custom: any *.md in ~/.claude/commands/ or ./.claude/commands/ becomes a slash command — auto-loaded into the autocomplete menu.',
+      customHint: 'Custom: drop any SKILL.md and add it via the Skills sidebar — it auto-appears in the autocomplete menu.',
     },
     extras: {
       schedule: {
@@ -403,7 +403,7 @@ export const messages = {
     },
     modes: {
       headline: '一行斜杠，切换 AI 的思考姿态',
-      desc: '斜杠指令把 Agent 切到指定模式——只问不写、只查不改、只评不动。把任意 markdown 丢进 ~/.claude/commands/ 就能定义自己的模式。',
+      desc: '斜杠指令把 Agent 切到指定模式——只问不写、只查不改、只评不动。',
       items: [
         {
           cmd: '/qa',
@@ -416,14 +416,14 @@ export const messages = {
           desc: 'Bug 证据链分析。Agent 从头到尾推理失败原因，不改任何文件。',
         },
         {
-          cmd: '/review',
-          name: '评审',
-          desc: '读取当前 diff 并写评审意见——逐行点评，不动手重写。',
+          cmd: '/ex',
+          name: '探讨',
+          desc: '结构化讨论模式。6 步骨架：问题研究 → 发散 → 收敛 → 再发散 → 迭代验证 → 总结。不中途反问。',
         },
         {
-          cmd: '/commit',
-          name: '提交',
-          desc: '暂存改动、按你仓库的风格起草 message、完成提交。',
+          cmd: '/go',
+          name: '落地',
+          desc: '落地模式：把收敛后的方案切成 MVP 小阶段、每阶段自运行验证、不停顿继续推进、最后做端到端回看。',
         },
         {
           cmd: '/cg',
@@ -431,7 +431,7 @@ export const messages = {
           desc: '项目图谱探索——6 个 HTTP 接口精确回答符号 / 调用关系 / 影响范围 / 协同编辑问题，比 grep 精确、比 Read 全文省 token。',
         },
       ],
-      customHint: '自定义：~/.claude/commands/ 或 ./.claude/commands/ 下任意 *.md 都会成为斜杠指令——自动出现在补全菜单。',
+      customHint: '自定义：丢入任意 SKILL.md 并通过 Skills 侧边栏添加——自动出现在补全菜单。',
     },
     extras: {
       schedule: {

@@ -79,10 +79,19 @@ jobs:
           workingDirectory: website
           # `--branch=main` triggers a production deployment on Cloudflare Pages.
           # Anything else creates a preview deployment with a unique URL.
+          #
+          # `--commit-message=<sha>` overrides wrangler's auto-derived commit
+          # message. wrangler-action@v4 has a regression where non-ASCII
+          # characters in the message (e.g. em-dash, arrow) get rejected by
+          # the Cloudflare Pages API as "Invalid commit message, it must be
+          # a valid UTF-8 string". Passing the bare SHA sidesteps it — the
+          # dashboard still links back to the commit via --commit-hash which
+          # wrangler also auto-fills.
           command: >-
             pages deploy out
             --project-name=cockpit-website
             --branch=${{ steps.branch.outputs.name }}
+            --commit-message=${{ github.sha }}
 
       - name: Summary
         env:

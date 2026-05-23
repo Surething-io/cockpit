@@ -393,7 +393,7 @@
     "cannotReadStream": "无法读取响应流",
     "errorRetry": "发生错误，请重试",
     "placeholder": "输入消息，Enter 发送 (Shift+Enter 换行，可粘贴图片，/qa /fx /cg /skill-name ... 显示命令)",
-    "placeholderDisabled": "生成中... 可继续输入",
+    "placeholderDisabled": "生成中... 可继续输入 (ESC 取消)",
     "imageSizeLimit": "图片大小超过限制（最大 5MB），当前大小: {{size}}MB",
     "stageAll": "暂存所有文件 (git add -A)",
     "viewGitChanges": "查看 Git 变更",

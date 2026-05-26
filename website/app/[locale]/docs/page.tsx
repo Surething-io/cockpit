@@ -113,6 +113,7 @@ export default async function DocsPage({
         <div className="mt-4 space-y-3">
           <CopyableCommand command="cockpit browser <id> snapshot" />
           <CopyableCommand command="cockpit terminal <id> output" />
+          <CopyableCommand command="cockpit connection list --cwd ." />
         </div>
       </section>
 

@@ -95,10 +95,15 @@ cockpit browser abcd evaluate --js "return document.title"
 cockpit terminal list                   # List all terminal bubbles
 cockpit terminal abcd output            # Read terminal output
 cockpit terminal abcd wait idle         # Block until the terminal goes quiet
+
+# Cross-bubble enumeration with user-set titles (v1.0.217+)
+cockpit connection list --cwd .         # All bubbles in this project (alive only)
+cockpit connection list --cwd . --all   # Include disconnected / exited bubbles
+cockpit connection list --cwd . --json  # Machine-readable for scripting
 ```
 
-Full commands: `cockpit browser --help` / `cockpit terminal --help`
-*(The short alias `cock` works in every example above.)*
+Full commands: `cockpit browser --help` / `cockpit terminal --help` / `cockpit connection --help`
+*(The short alias `cock` works in every example above. For the dev server use `cockpit-dev`.)*
 
 ## Common Keyboard Shortcuts
 

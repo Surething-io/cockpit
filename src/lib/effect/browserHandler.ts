@@ -35,7 +35,9 @@ interface CmdResultMsg {
 export const handleBrowser = (
   conn: WSConnection,
   ws: WebSocket, // Raw ws — registerBrowser needs it so other modules can ws.send
-  fullId: string
+  fullId: string,
+  projectCwd?: string,
+  tabId?: string,
 ): Effect.Effect<void, WSError | ValidationError, Scope.Scope> =>
   Effect.gen(function* () {
     if (!fullId) {
@@ -44,9 +46,11 @@ export const handleBrowser = (
       )
     }
 
-    // Register and notify the client (acquireRelease ensures unregister on close)
+    // Register and notify the client (acquireRelease ensures unregister on close).
+    // projectCwd / tabId forwarded via ws query so the bubble can be scoped to
+    // the project that hosts it (used by /api/connection/list filtering).
     const shortId = yield* Effect.acquireRelease(
-      Effect.sync(() => registerBrowser(fullId, ws)),
+      Effect.sync(() => registerBrowser(fullId, ws, projectCwd, tabId)),
       () => Effect.sync(() => unregisterBrowser(fullId))
     )
 
@@ -79,11 +83,16 @@ export const handleBrowser = (
   )
 
 // Bridge
-export const runBrowserHandler = (ws: WebSocket, fullId: string): void => {
+export const runBrowserHandler = (
+  ws: WebSocket,
+  fullId: string,
+  projectCwd?: string,
+  tabId?: string,
+): void => {
   const program = Effect.scoped(
     Effect.gen(function* () {
       const conn = yield* fromWebSocket(ws, "browser")
-      yield* handleBrowser(conn, ws, fullId)
+      yield* handleBrowser(conn, ws, fullId, projectCwd, tabId)
     })
   ).pipe(
     Effect.catchTag("ValidationError", (e) =>

@@ -962,7 +962,13 @@
   },
   "shortIdBadge": {
     "clickToDisconnect": "点击断开连接",
-    "clickToRegister": "点击注册并复制 CLI 命令"
+    "clickToRegister": "点击注册并复制 CLI 命令",
+    "setTitle": "给这个气泡命名（便于 /cc 通过 connection list 找到它）",
+    "setTitlePlaceholder": "设置标题",
+    "editTitle": "编辑标题",
+    "titleSet": "标题：{{title}}",
+    "dialogTitle": "给气泡命名",
+    "dialogPlaceholder": "例如：alloydb 代理、预发管理后台"
   },
   "api": {
     "pathForbidden": "不允许操作此路径",

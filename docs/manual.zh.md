@@ -8,6 +8,7 @@
 - [4. Console — 终端与气泡](#4-console--终端与气泡)
 - [5. 浏览器自动化（CLI）](#5-浏览器自动化cli)
 - [6. 终端自动化（CLI）](#6-终端自动化cli)
+- [6.5. 跨气泡聚合枚举（CLI）](#65-跨气泡聚合枚举cli)
 - [7. 代码评审系统](#7-代码评审系统)
 - [8. 定时任务](#8-定时任务)
 - [9. 笔记系统](#9-笔记系统)
@@ -85,7 +86,7 @@
 ### 2.3 Shell 命令集成
 
 - 输入 `!命令` 执行 shell 命令，输出自动附加到 AI 消息
-- 输入 `cock ...` 执行 cockpit CLI 命令，输出附加到消息
+- 输入 `cockpit ...`（或 prod 短别名 `cock ...`）执行 Cockpit CLI 命令，输出附加到消息
 
 ### 2.4 AI 消息展示
 
@@ -277,7 +278,7 @@ Git 变更和 Commit 详情中的 Diff 查看器：
 - **iframe 渲染**：加载目标网页，通过 Chrome 插件注入 Cookie
 - **导航栏**：后退、前进、刷新、URL 输入框
 - **ShortID 徽标**：4 位短标识，点击复制 CLI 命令
-- **自动化桥接**：连接后可通过 `cock browser` CLI 控制
+- **自动化桥接**：连接后可通过 `cockpit browser` CLI 控制
 - **链接拦截**：页面内 `target="_blank"` 链接自动创建新气泡而非新标签页
 - **休眠策略**：
   - 不可见且未连接 CLI 时，5 分钟后自动休眠（卸载 iframe 释放资源）
@@ -318,14 +319,15 @@ Git 变更和 Commit 详情中的 Diff 查看器：
 
 ## 5. 浏览器自动化（CLI）
 
-通过 `cock browser` 命令控制 Console 中打开的浏览器气泡。
+通过 `cockpit browser` 命令控制 Console 中打开的浏览器气泡。
+（`cock` 是 `cockpit` 在 prod 下的短别名，行为一致；dev 环境请用 `cockpit-dev`。）
 
 ### 5.1 基本用法
 
 ```bash
-cock browser list                        # 列出所有已连接的浏览器
-cock browser <id>                        # 查看状态和帮助
-cock browser <id> --help                 # 完整命令列表
+cockpit browser list                        # 列出所有已连接的浏览器
+cockpit browser <id>                        # 查看状态和帮助
+cockpit browser <id> --help                 # 完整命令列表
 ```
 
 `<id>` 是气泡标题栏的 4 位短标识。
@@ -333,33 +335,33 @@ cock browser <id> --help                 # 完整命令列表
 ### 5.2 导航
 
 ```bash
-cock browser <id> navigate --url <url>   # 导航到 URL
-cock browser <id> reload                 # 刷新页面
-cock browser <id> reload --noCache       # 忽略缓存刷新
-cock browser <id> back                   # 后退
-cock browser <id> forward                # 前进
-cock browser <id> url                    # 获取当前 URL
-cock browser <id> title                  # 获取页面标题
+cockpit browser <id> navigate --url <url>   # 导航到 URL
+cockpit browser <id> reload                 # 刷新页面
+cockpit browser <id> reload --noCache       # 忽略缓存刷新
+cockpit browser <id> back                   # 后退
+cockpit browser <id> forward                # 前进
+cockpit browser <id> url                    # 获取当前 URL
+cockpit browser <id> title                  # 获取页面标题
 ```
 
 ### 5.3 页面检查
 
 ```bash
-cock browser <id> snapshot               # 获取页面元素树（a11y tree，每个元素有 ref ID）
-cock browser <id> screenshot             # 截图保存到 /tmp，返回路径
+cockpit browser <id> snapshot               # 获取页面元素树（a11y tree，每个元素有 ref ID）
+cockpit browser <id> screenshot             # 截图保存到 /tmp，返回路径
 ```
 
 ### 5.4 交互操作
 
 ```bash
-cock browser <id> click --ref e5         # 点击元素
-cock browser <id> type --ref e3 --text "hello"   # 输入文字
-cock browser <id> fill --ref e3 --value "hello"  # 填充表单
-cock browser <id> hover --ref e5         # 悬浮
-cock browser <id> focus --ref e5         # 聚焦
-cock browser <id> scroll --direction down        # 滚动
-cock browser <id> key Enter              # 按键
-cock browser <id> wait --text "Dashboard"        # 等待文本出现
+cockpit browser <id> click --ref e5         # 点击元素
+cockpit browser <id> type --ref e3 --text "hello"   # 输入文字
+cockpit browser <id> fill --ref e3 --value "hello"  # 填充表单
+cockpit browser <id> hover --ref e5         # 悬浮
+cockpit browser <id> focus --ref e5         # 聚焦
+cockpit browser <id> scroll --direction down        # 滚动
+cockpit browser <id> key Enter              # 按键
+cockpit browser <id> wait --text "Dashboard"        # 等待文本出现
 ```
 
 ref ID 通过 `snapshot` 命令获取。
@@ -367,8 +369,8 @@ ref ID 通过 `snapshot` 命令获取。
 ### 5.5 JavaScript 执行
 
 ```bash
-cock browser <id> evaluate --js "return document.title"
-cock browser <id> evaluate --js "return document.querySelector('.btn').textContent" --all-frames
+cockpit browser <id> evaluate --js "return document.title"
+cockpit browser <id> evaluate --js "return document.querySelector('.btn').textContent" --all-frames
 ```
 
 `--all-frames` 在所有 iframe 中执行。执行上下文继承页面的登录态。
@@ -376,20 +378,20 @@ cock browser <id> evaluate --js "return document.querySelector('.btn').textConte
 ### 5.6 调试工具
 
 ```bash
-cock browser <id> console --level error          # 查看 console 错误
-cock browser <id> network --status 4xx,5xx       # 查看失败的网络请求
-cock browser <id> network_record start           # 开始录制网络请求
-cock browser <id> network_record stop            # 停止录制并输出
-cock browser <id> perf --metric timing           # 页面加载性能
-cock browser <id> cookies                        # 查看 Cookie
-cock browser <id> storage --type local           # 查看 localStorage
-cock browser <id> theme --mode dark              # 切换深色模式
+cockpit browser <id> console --level error          # 查看 console 错误
+cockpit browser <id> network --status 4xx,5xx       # 查看失败的网络请求
+cockpit browser <id> network_record start           # 开始录制网络请求
+cockpit browser <id> network_record stop            # 停止录制并输出
+cockpit browser <id> perf --metric timing           # 页面加载性能
+cockpit browser <id> cookies                        # 查看 Cookie
+cockpit browser <id> storage --type local           # 查看 localStorage
+cockpit browser <id> theme --mode dark              # 切换深色模式
 ```
 
 ### 5.7 断言
 
 ```bash
-cock browser <id> assert --ref e5 --visible true
+cockpit browser <id> assert --ref e5 --visible true
 # 输出 PASS 或 FAIL，失败时 exit code 为 1
 ```
 
@@ -403,15 +405,41 @@ CLI 命令 → HTTP API → WebSocket → BrowserBubble → postMessage → ifra
 
 ## 6. 终端自动化（CLI）
 
-通过 `cock terminal` 命令控制 Console 中的终端气泡。
+通过 `cockpit terminal` 命令控制 Console 中的终端气泡。
+（`cock` 是 `cockpit` 在 prod 下的短别名，行为一致；dev 环境请用 `cockpit-dev`。）
 
 ```bash
-cock terminal list                       # 列出所有终端
-cock terminal <id>                       # 查看状态和帮助
-cock terminal <id> output                # 读取终端缓冲输出
-cock terminal <id> output --grep 'ERROR' # 按 pattern 过滤（服务端过滤）
-cock terminal <id> wait idle             # 阻塞直到终端进入空闲
+cockpit terminal list                       # 列出所有终端
+cockpit terminal <id>                       # 查看状态和帮助
+cockpit terminal <id> output                # 读取终端缓冲输出
+cockpit terminal <id> output --grep 'ERROR' # 按 pattern 过滤（服务端过滤）
+cockpit terminal <id> wait idle             # 阻塞直到终端进入空闲
 ```
+
+---
+
+## 6.5 跨气泡聚合枚举（CLI）
+
+一次列出所有 terminal + browser 气泡，并附带用户在 UI 上**设置过的 title**（badge 旁边的 ✎ 按钮）。设计目标：让 `/cc` 斜杠模式下的 LLM 能根据用户「alloydb 那个 terminal」「看后台」这种语义指代，一次 `cockpit connection list` 就找到对应 short id。
+
+```bash
+cockpit connection list                     # 全部活气泡（跨项目）
+cockpit connection list --cwd .             # 仅当前项目
+cockpit connection list --cwd . --all       # 含断开 / 已退出的气泡
+cockpit connection list --cwd . --json      # 机读输出，给脚本用
+```
+
+输出（TAB 分隔，每个气泡一行）：
+
+```
+<type>  <shortId>  <title-or-(none)>  <projectCwd>  <command-or-url>
+```
+
+退出码：`0`=有结果，`1`=没气泡，`2`=用法错误，`3`=服务端连不上。
+
+**典型用法**：在 `cockpit terminal <id> ...` / `cockpit browser <id> ...` 之前调用 ——
+当用户用"功能描述"（例如「预发管理后台那个浏览器」）而不是 short id 来指代气泡时，
+先 list 出来按 title 匹配，再带着 short id 走对应子命令。
 
 ---
 

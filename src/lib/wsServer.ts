@@ -71,7 +71,12 @@ const wss: WebSocketServer = g_ws.__cockpitWss ?? (() => {
     } else if (pathname === '/ws/terminal') {
       runTerminalHandler(ws, query.projectCwd as string);
     } else if (pathname === '/ws/browser') {
-      runBrowserHandler(ws, query.fullId as string);
+      runBrowserHandler(
+        ws,
+        query.fullId as string,
+        query.projectCwd as string | undefined,
+        query.tabId as string | undefined,
+      );
     } else if (pathname === '/ws/terminal-follow') {
       runTerminalFollowHandler(ws, query.id as string);
     } else if (pathname === '/ws/jupyter') {

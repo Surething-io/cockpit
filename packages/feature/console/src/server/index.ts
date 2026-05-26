@@ -21,3 +21,8 @@ export * from './terminal/TerminalBridge';
 export * from './terminal/RunningCommandRegistry';
 export * from './terminal/writeStdin';
 export * from './terminal/outputQuery';
+
+// Bubble-titles helper (used by /api/connection/list to join titles
+// into the unified bubble listing). The route handlers live in
+// ./api/terminal/bubble-order.ts and are mounted via src/app/api/...
+export { readBubbleTitles } from './api/terminal/bubble-order';

@@ -80,7 +80,7 @@ app.prepare().then(async () => {
   const upgradeHandler = app.getUpgradeHandler();
   // v2 P8: HTTP intercepts (handleTerminalApi / handleBrowserApi) moved to src/lib/httpApi.ts
   const { handleUpgrade, broadcastToGlobalState } = await import(dev ? './src/lib/wsServer.ts' : './dist/wsServer.mjs');
-  const { handleBrowserApi, handleTerminalApi } = await import(dev ? './src/lib/httpApi.ts' : './dist/httpApi.mjs');
+  const { handleBrowserApi, handleTerminalApi, handleConnectionApi } = await import(dev ? './src/lib/httpApi.ts' : './dist/httpApi.mjs');
   const { scheduledTaskManager } = await import(dev ? '@cockpit/feature-agent/server/scheduledTasks' : './dist/scheduledTasks.mjs');
 
   // 初始化定时任务管理器
@@ -97,6 +97,10 @@ app.prepare().then(async () => {
     }
     if (req.url?.startsWith('/api/terminal/') && req.method === 'POST') {
       const handled = await handleTerminalApi(req, res);
+      if (handled) return;
+    }
+    if (req.url?.startsWith('/api/connection/') && req.method === 'POST') {
+      const handled = await handleConnectionApi(req, res);
       if (handled) return;
     }
     handle(req, res);

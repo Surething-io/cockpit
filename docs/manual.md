@@ -8,6 +8,7 @@
 - [4. Console — Terminal & Bubbles](#4-console--terminal--bubbles)
 - [5. Browser Automation (CLI)](#5-browser-automation-cli)
 - [6. Terminal Automation (CLI)](#6-terminal-automation-cli)
+- [6.5. Connection Enumeration (CLI)](#65-connection-enumeration-cli)
 - [7. Code Review System](#7-code-review-system)
 - [8. Scheduled Tasks](#8-scheduled-tasks)
 - [9. Notes System](#9-notes-system)
@@ -85,7 +86,7 @@ Type `/` to trigger the completion menu; use Up/Down arrows to select, Enter/Tab
 ### 2.3 Shell Command Integration
 
 - Type `!command` to execute a shell command; output is automatically attached to the AI message
-- Type `cock ...` to execute Cockpit CLI commands; output is attached to the message
+- Type `cockpit ...` (or the prod-only short alias `cock ...`) to execute Cockpit CLI commands; output is attached to the message
 
 ### 2.4 AI Message Display
 
@@ -277,7 +278,7 @@ Enter a URL (e.g., `https://example.com`) to create:
 - **iframe rendering**: Loads the target webpage; Chrome extension injects cookies
 - **Navigation bar**: Back, forward, refresh, URL input field
 - **ShortID badge**: 4-character identifier; click to copy CLI command
-- **Automation bridge**: Once connected, controllable via `cock browser` CLI
+- **Automation bridge**: Once connected, controllable via `cockpit browser` CLI
 - **Link interception**: `target="_blank"` links within the page automatically create new bubbles instead of new tabs
 - **Sleep strategy**:
   - When not visible and CLI is not connected, auto-sleeps after 5 minutes (unloads iframe to free resources)
@@ -318,14 +319,16 @@ Enter `redis://...` to create:
 
 ## 5. Browser Automation (CLI)
 
-Control browser bubbles opened in Console via the `cock browser` command.
+Control browser bubbles opened in Console via the `cockpit browser` command.
+(`cock` works the same way — it's the prod-only short alias of `cockpit`.
+For the dev server use `cockpit-dev` instead.)
 
 ### 5.1 Basic Usage
 
 ```bash
-cock browser list                        # List all connected browsers
-cock browser <id>                        # View status and help
-cock browser <id> --help                 # Full command list
+cockpit browser list                        # List all connected browsers
+cockpit browser <id>                        # View status and help
+cockpit browser <id> --help                 # Full command list
 ```
 
 `<id>` is the 4-character short identifier shown in the bubble's title bar.
@@ -333,33 +336,33 @@ cock browser <id> --help                 # Full command list
 ### 5.2 Navigation
 
 ```bash
-cock browser <id> navigate --url <url>   # Navigate to URL
-cock browser <id> reload                 # Reload page
-cock browser <id> reload --noCache       # Reload ignoring cache
-cock browser <id> back                   # Go back
-cock browser <id> forward                # Go forward
-cock browser <id> url                    # Get current URL
-cock browser <id> title                  # Get page title
+cockpit browser <id> navigate --url <url>   # Navigate to URL
+cockpit browser <id> reload                 # Reload page
+cockpit browser <id> reload --noCache       # Reload ignoring cache
+cockpit browser <id> back                   # Go back
+cockpit browser <id> forward                # Go forward
+cockpit browser <id> url                    # Get current URL
+cockpit browser <id> title                  # Get page title
 ```
 
 ### 5.3 Page Inspection
 
 ```bash
-cock browser <id> snapshot               # Get page element tree (a11y tree, each element has a ref ID)
-cock browser <id> screenshot             # Take screenshot, save to /tmp, returns path
+cockpit browser <id> snapshot               # Get page element tree (a11y tree, each element has a ref ID)
+cockpit browser <id> screenshot             # Take screenshot, save to /tmp, returns path
 ```
 
 ### 5.4 Interaction
 
 ```bash
-cock browser <id> click --ref e5         # Click element
-cock browser <id> type --ref e3 --text "hello"   # Type text
-cock browser <id> fill --ref e3 --value "hello"  # Fill form field
-cock browser <id> hover --ref e5         # Hover
-cock browser <id> focus --ref e5         # Focus
-cock browser <id> scroll --direction down        # Scroll
-cock browser <id> key Enter              # Press key
-cock browser <id> wait --text "Dashboard"        # Wait for text to appear
+cockpit browser <id> click --ref e5         # Click element
+cockpit browser <id> type --ref e3 --text "hello"   # Type text
+cockpit browser <id> fill --ref e3 --value "hello"  # Fill form field
+cockpit browser <id> hover --ref e5         # Hover
+cockpit browser <id> focus --ref e5         # Focus
+cockpit browser <id> scroll --direction down        # Scroll
+cockpit browser <id> key Enter              # Press key
+cockpit browser <id> wait --text "Dashboard"        # Wait for text to appear
 ```
 
 Ref IDs are obtained via the `snapshot` command.
@@ -367,8 +370,8 @@ Ref IDs are obtained via the `snapshot` command.
 ### 5.5 JavaScript Execution
 
 ```bash
-cock browser <id> evaluate --js "return document.title"
-cock browser <id> evaluate --js "return document.querySelector('.btn').textContent" --all-frames
+cockpit browser <id> evaluate --js "return document.title"
+cockpit browser <id> evaluate --js "return document.querySelector('.btn').textContent" --all-frames
 ```
 
 `--all-frames` executes across all iframes. The execution context inherits the page's authentication state.
@@ -376,20 +379,20 @@ cock browser <id> evaluate --js "return document.querySelector('.btn').textConte
 ### 5.6 Debugging Tools
 
 ```bash
-cock browser <id> console --level error          # View console errors
-cock browser <id> network --status 4xx,5xx       # View failed network requests
-cock browser <id> network_record start           # Start recording network requests
-cock browser <id> network_record stop            # Stop recording and output results
-cock browser <id> perf --metric timing           # Page load performance
-cock browser <id> cookies                        # View cookies
-cock browser <id> storage --type local           # View localStorage
-cock browser <id> theme --mode dark              # Toggle dark mode
+cockpit browser <id> console --level error          # View console errors
+cockpit browser <id> network --status 4xx,5xx       # View failed network requests
+cockpit browser <id> network_record start           # Start recording network requests
+cockpit browser <id> network_record stop            # Stop recording and output results
+cockpit browser <id> perf --metric timing           # Page load performance
+cockpit browser <id> cookies                        # View cookies
+cockpit browser <id> storage --type local           # View localStorage
+cockpit browser <id> theme --mode dark              # Toggle dark mode
 ```
 
 ### 5.7 Assertions
 
 ```bash
-cock browser <id> assert --ref e5 --visible true
+cockpit browser <id> assert --ref e5 --visible true
 # Outputs PASS or FAIL; exit code is 1 on failure
 ```
 
@@ -403,15 +406,45 @@ CLI command → HTTP API → WebSocket → BrowserBubble → postMessage → ifr
 
 ## 6. Terminal Automation (CLI)
 
-Control terminal bubbles in Console via the `cock terminal` command.
+Control terminal bubbles in Console via the `cockpit terminal` command.
+(`cock` works the same way — it's the prod-only short alias of `cockpit`.
+For the dev server use `cockpit-dev` instead.)
 
 ```bash
-cock terminal list                       # List all terminals
-cock terminal <id>                       # View status and help
-cock terminal <id> output                # Read terminal buffer output
-cock terminal <id> output --grep 'ERROR' # Filter output by pattern (server-side)
-cock terminal <id> wait idle             # Block until the terminal goes quiet
+cockpit terminal list                       # List all terminals
+cockpit terminal <id>                       # View status and help
+cockpit terminal <id> output                # Read terminal buffer output
+cockpit terminal <id> output --grep 'ERROR' # Filter output by pattern (server-side)
+cockpit terminal <id> wait idle             # Block until the terminal goes quiet
 ```
+
+---
+
+## 6.5 Connection Enumeration (CLI)
+
+Cross-type bubble listing in one call — terminals + browsers together, each
+with its user-set **title** (set via the ✎ button next to the short id badge).
+Designed for the `/cc` slash mode in chat: an LLM asks "which bubble is the
+alloydb proxy?", runs `cockpit connection list`, and matches by title.
+
+```bash
+cockpit connection list                     # Every alive bubble (across all projects)
+cockpit connection list --cwd .             # Only bubbles in the current project
+cockpit connection list --cwd . --all       # Include disconnected / exited bubbles
+cockpit connection list --cwd . --json      # Machine-readable for scripting
+```
+
+Output (TAB-separated, one line per bubble):
+
+```
+<type>  <shortId>  <title-or-(none)>  <projectCwd>  <command-or-url>
+```
+
+Exit codes: `0`=hits, `1`=no bubbles, `2`=usage, `3`=server unreachable.
+
+Use this **before** picking a `<id>` for `cockpit terminal <id> ...` /
+`cockpit browser <id> ...` when the user describes a bubble by purpose
+("the staging admin browser") rather than by short id.
 
 ---
 

@@ -105,6 +105,7 @@ export function listTerminals(getRunning?: (commandId: string) => { pid: number 
   command: string;
   pid: number;
   running: boolean;
+  projectCwd?: string;
 }> {
   const result: ReturnType<typeof listTerminals> = [];
   for (const [, entry] of getRegistry()) {
@@ -116,6 +117,7 @@ export function listTerminals(getRunning?: (commandId: string) => { pid: number 
       command: entry.command,
       pid: cmd?.pid ?? 0,
       running: !!cmd,
+      projectCwd: entry.projectCwd,
     });
   }
   return result;

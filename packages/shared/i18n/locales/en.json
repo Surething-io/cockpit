@@ -962,7 +962,13 @@
   },
   "shortIdBadge": {
     "clickToDisconnect": "Click to disconnect",
-    "clickToRegister": "Click to register and copy CLI command"
+    "clickToRegister": "Click to register and copy CLI command",
+    "setTitle": "Name this bubble (so /cc can find it later)",
+    "setTitlePlaceholder": "set title",
+    "editTitle": "Edit title",
+    "titleSet": "Title: {{title}}",
+    "dialogTitle": "Name this bubble",
+    "dialogPlaceholder": "e.g. alloydb proxy, staging admin"
   },
   "api": {
     "pathForbidden": "Operation not allowed on this path",

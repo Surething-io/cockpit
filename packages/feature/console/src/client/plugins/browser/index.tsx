@@ -25,6 +25,8 @@ function BrowserAdapter({ item, selected, maximized, expandedHeight, bubbleConte
       initialSleeping={extra?.initialSleeping as boolean | undefined}
       onSleep={extra?.onSleep as ((id: string) => void) | undefined}
       onWake={extra?.onWake as ((id: string) => void) | undefined}
+      projectCwd={extra?.projectCwd as string | undefined}
+      tabId={extra?.tabId as string | undefined}
     />
   );
 }

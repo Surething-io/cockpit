@@ -15,6 +15,7 @@ import { readFile } from "fs/promises"
 import { randomUUID } from "crypto"
 import { WebSocket } from "ws"
 import { getTerminalHistoryPath } from "@cockpit/shared-utils"
+import { resolve as resolvePath } from "path"
 import {
   getTerminalByShortId,
   listTerminals,
@@ -37,6 +38,7 @@ import {
   createPendingRequest,
   sendCommandToBrowser,
   listBrowsers,
+  readBubbleTitles,
 } from "@cockpit/feature-console/server"
 import type { ReadResult } from "@cockpit/feature-console/server"
 
@@ -592,5 +594,115 @@ export async function handleBrowserApi(
   } catch (err) {
     sendJson(504, { ok: false, error: (err as Error).message })
   }
+  return true
+}
+
+// ─────────────────────────────────────────────────────────
+// /api/connection/list — cross-type bubble enumeration with titles
+//
+// Aggregates terminals + browsers from the in-process bridges, joins
+// user-set titles from per-tab bubble-order JSON files, and filters
+// by cwd if requested. Designed for `/cc` slash mode and the
+// `cockpit connection list` CLI subcommand.
+// ─────────────────────────────────────────────────────────
+
+interface ConnectionListItem {
+  type: 'terminal' | 'browser'
+  shortId: string
+  title?: string
+  projectCwd?: string
+  tabId?: string
+  /** Terminal: the shell command. Browser: empty — use /api/browser/info if needed. */
+  command?: string
+  /** Terminal: pid running? Browser: WS connected? */
+  alive: boolean
+}
+
+export async function handleConnectionApi(
+  req: IncomingMessage,
+  res: import("http").ServerResponse
+): Promise<boolean> {
+  const { pathname } = parse(req.url || "", true)
+  const match = pathname?.match(/^\/api\/connection\/([a-z]+)$/)
+  if (!match || req.method !== "POST") return false
+  if (match[1] !== "list") return false
+
+  const chunks: Buffer[] = []
+  for await (const chunk of req) chunks.push(chunk as Buffer)
+  let body: { cwd?: string; all?: boolean } = {}
+  try {
+    body = JSON.parse(Buffer.concat(chunks).toString())
+  } catch { /* empty body == list all alive */ }
+
+  const sendJson = (status: number, data: unknown) => {
+    res.writeHead(status, { "Content-Type": "application/json" })
+    res.end(JSON.stringify(data))
+  }
+
+  const filterCwd = body.cwd ? resolvePath(body.cwd) : undefined
+  const aliveOnly = !body.all
+
+  // Snapshot in-process bridges (cheap, sync).
+  const terms = listTerminals(getRunningCommand)
+  const browsers = listBrowsers()
+
+  // Resolve `projectCwd` from entries for cwd-match comparison.
+  const sameCwd = (entryCwd: string | undefined): boolean =>
+    !filterCwd ? true : !!entryCwd && resolvePath(entryCwd) === filterCwd
+
+  // Gather (cwd, tabId) pairs that actually have bubbles, then read titles
+  // for each pair exactly once. Most projects have 1 tab → 1 file read.
+  // SEP = ASCII Unit Separator (0x1f) — never appears in fs paths or tabIds.
+  const SEP = String.fromCharCode(0x1f)
+  const cwdTabPairs = new Set<string>()
+  for (const t of terms) {
+    if (t.projectCwd && t.tabId) cwdTabPairs.add(`${t.projectCwd}${SEP}${t.tabId}`)
+  }
+  for (const b of browsers) {
+    if (b.projectCwd && b.tabId) cwdTabPairs.add(`${b.projectCwd}${SEP}${b.tabId}`)
+  }
+  const titlesByPair = new Map<string, Record<string, string>>()
+  await Promise.all(
+    Array.from(cwdTabPairs).map(async (pair) => {
+      const [cwd, tabId] = pair.split(SEP)
+      titlesByPair.set(pair, await readBubbleTitles(cwd, tabId))
+    })
+  )
+  const titleOf = (cwd: string | undefined, tabId: string | undefined, key: string): string | undefined => {
+    if (!cwd || !tabId) return undefined
+    const t = titlesByPair.get(`${cwd}${SEP}${tabId}`)?.[key]
+    return t || undefined
+  }
+
+  const out: ConnectionListItem[] = []
+
+  for (const t of terms) {
+    if (!sameCwd(t.projectCwd)) continue
+    if (aliveOnly && !t.running) continue
+    out.push({
+      type: "terminal",
+      shortId: t.shortId,
+      title: titleOf(t.projectCwd, t.tabId, t.commandId),
+      projectCwd: t.projectCwd,
+      tabId: t.tabId,
+      command: t.command,
+      alive: t.running,
+    })
+  }
+
+  for (const b of browsers) {
+    if (!sameCwd(b.projectCwd)) continue
+    if (aliveOnly && !b.connected) continue
+    out.push({
+      type: "browser",
+      shortId: b.shortId,
+      title: titleOf(b.projectCwd, b.tabId, b.fullId),
+      projectCwd: b.projectCwd,
+      tabId: b.tabId,
+      alive: b.connected,
+    })
+  }
+
+  sendJson(200, { ok: true, data: out })
   return true
 }

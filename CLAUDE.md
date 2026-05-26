@@ -77,8 +77,10 @@ npm run dev      # Start dev server on port 3456
 npm run build    # Build for production
 npm run setup    # Build + npm link
 npm run lint     # Run ESLint
-cock             # Start production server (port 3457)
-cock -v          # Show version
+cockpit          # Start production server on port 3457 (prefer this — primary entry)
+cock             # Same as `cockpit`; prod-only short alias
+cockpit-dev      # Start dev server on port 3456 (dev only; no short alias)
+cockpit -v       # Show version
 ```
 
 ## npm Publish

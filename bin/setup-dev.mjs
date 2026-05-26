@@ -27,7 +27,6 @@
 import { existsSync, lstatSync, unlinkSync, symlinkSync, chmodSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execSync } from 'node:child_process';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, '..');
@@ -39,15 +38,18 @@ if (!existsSync(SOURCE)) {
   process.exit(1);
 }
 
-// Resolve global npm bin dir.
-let prefix;
-try {
-  prefix = execSync('npm config get prefix', { encoding: 'utf8' }).trim();
-} catch (err) {
-  console.error('✗ Failed to resolve npm prefix:', err?.message);
-  process.exit(1);
-}
-const TARGET = resolve(prefix, 'bin/cockpit-dev');
+// Resolve the bin dir from process.execPath rather than `npm config get
+// prefix`. Why: `sudo npm run setup-dev` runs npm under root's env, where
+// `npm config get prefix` can resolve to a DIFFERENT path than the user's
+// non-sudo npm (because of /root/.npmrc, HOME differences, or sudo's
+// secure_path stripping). process.execPath is just `node`'s own absolute
+// path — node lives at `<prefix>/bin/node` on every normal install
+// (brew, nvm, manual), so `dirname(dirname(execPath))` gives the right
+// prefix regardless of sudo.
+//
+// Override with COCKPIT_BIN_DIR=... if you've got an exotic layout.
+const BIN_DIR = process.env.COCKPIT_BIN_DIR || dirname(process.execPath);
+const TARGET = resolve(BIN_DIR, 'cockpit-dev');
 
 // Ensure source is executable.
 try {
@@ -72,9 +74,9 @@ try {
 } catch (err) {
   if (err?.code === 'EACCES' || err?.code === 'EPERM') {
     console.error(`✗ Permission denied creating ${TARGET}`);
-    console.error(`  Either: sudo ln -sf ${SOURCE} ${TARGET}`);
-    console.error(`  Or:     configure npm prefix to a user-writable dir`);
-    console.error(`           (e.g. npm config set prefix ~/.npm-global)`);
+    console.error(`  Run with sudo: sudo npm run setup-dev`);
+    console.error(`  Or one-liner:  sudo ln -sf ${SOURCE} ${TARGET}`);
+    console.error(`  Or override:   COCKPIT_BIN_DIR=~/.local/bin npm run setup-dev`);
     process.exit(1);
   }
   console.error(`✗ Failed:`, err?.message);

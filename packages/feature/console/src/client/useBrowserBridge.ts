@@ -26,6 +26,10 @@ export function useBrowserBridge(
   fullId: string,
   iframeRef: React.RefObject<HTMLIFrameElement | null>,
   iframeReady: boolean,
+  /** Forwarded to the server registry so `/api/connection/list?cwd=...` can filter this bubble. */
+  projectCwd?: string,
+  /** Forwarded so bubble-titles lookup can use the right per-tab JSON. */
+  tabId?: string,
 ) {
   const shortId = useMemo(() => toShortId(fullId), [fullId]);
   const [connected, setConnected] = useState(false);
@@ -155,7 +159,10 @@ export function useBrowserBridge(
       if (disposed || !shouldConnectRef.current) return;
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(`${protocol}//${window.location.host}/ws/browser?fullId=${encodeURIComponent(fullId)}`);
+      const params = new URLSearchParams({ fullId });
+      if (projectCwd) params.set('projectCwd', projectCwd);
+      if (tabId) params.set('tabId', tabId);
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws/browser?${params.toString()}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -206,7 +213,7 @@ export function useBrowserBridge(
       }
       connectResolversRef.current = [];
     };
-  }, [connected, fullId, iframeRef, sendToIframe]);
+  }, [connected, fullId, iframeRef, sendToIframe, projectCwd, tabId]);
 
   // Flush pending commands after iframe is ready
   useEffect(() => {

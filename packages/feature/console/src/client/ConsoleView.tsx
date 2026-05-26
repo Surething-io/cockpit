@@ -339,6 +339,11 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
                       initialSleeping: sleepingBubbles.has(pluginData.id),
                       onSleep: handleBubbleSleep,
                       onWake: handleBubbleWake,
+                      // Forwarded to plugin bubbles (e.g. BrowserBubble) so they can scope
+                      // their bridge registration to the right project / tab — used by
+                      // /api/connection/list filtering and per-tab bubble-titles JSON lookup.
+                      projectCwd: cwd,
+                      tabId,
                     }}
                   />
                 </div>

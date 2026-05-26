@@ -130,6 +130,10 @@ interface BrowserBubbleProps {
   initialSleeping?: boolean;
   onSleep?: (id: string) => void;
   onWake?: (id: string) => void;
+  /** Forwarded to useBrowserBridge so /ws/browser register attaches projectCwd to the BrowserEntry. */
+  projectCwd?: string;
+  /** Forwarded to useBrowserBridge so the server can scope bubble-titles lookups per-tab. */
+  tabId?: string;
 }
 
 export function BrowserBubble({
@@ -148,6 +152,8 @@ export function BrowserBubble({
   initialSleeping,
   onSleep,
   onWake,
+  projectCwd,
+  tabId,
 }: BrowserBubbleProps) {
   const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
@@ -182,7 +188,7 @@ export function BrowserBubble({
   // Browser automation bridge (CLI → WS → postMessage → content script)
   // WS connects on demand: connect when clicking the shortId badge, disconnect on sleep
   const iframeReady = !!readyUrl && !isSleeping && !isLoading;
-  const { shortId, connected: bridgeConnected, connect: bridgeConnect, disconnect: bridgeDisconnect } = useBrowserBridge(id, iframeRef, iframeReady);
+  const { shortId, connected: bridgeConnected, connect: bridgeConnect, disconnect: bridgeDisconnect } = useBrowserBridge(id, iframeRef, iframeReady, projectCwd, tabId);
 
   // bridgeConnectedRef: lets IntersectionObserver callbacks read the latest value
   const bridgeConnectedRef = useRef(bridgeConnected);
@@ -431,6 +437,9 @@ export function BrowserBubble({
                   bridgeDisconnect();
                   await unregisterBrowserBridge(shortId);
                 }}
+                fullId={id}
+                projectCwd={projectCwd}
+                tabId={tabId}
               />
             )}
             <span className="text-xs text-muted-foreground truncate font-mono">
@@ -502,6 +511,9 @@ export function BrowserBubble({
                   bridgeDisconnect();
                   await unregisterBrowserBridge(shortId);
                 }}
+                fullId={id}
+                projectCwd={projectCwd}
+                tabId={tabId}
               />
             )}
             <span className="font-mono text-foreground truncate">

@@ -22,6 +22,7 @@ Commands:
   browser <id> <action>          Control browser bubbles
   terminal <id> <action>         Control terminal bubbles
   codegraph <subcmd> [...]       Query the project code graph (search/risk/affected/...)
+  connection list [--cwd …]      List all bubbles (term + browser) with user-set titles
   update                         Update to latest version
 
 Options:
@@ -101,6 +102,16 @@ if (process.argv[2] === 'codegraph') {
   await flushAndExit(0);
 }
 
+if (process.argv[2] === 'connection') {
+  process.argv.splice(2, 1);
+  // cock-connection.mjs handles flow + exit itself (single subcmd, simple).
+  await import('./cock-connection.mjs');
+  // import() resolves when the module finishes top-level await; that script
+  // already calls process.exit() on its own paths, so this fallback only
+  // fires for the 0-exit happy path that finished normally.
+  await flushAndExit(0);
+}
+
 if (process.argv[2] === 'update') {
   console.log('Updating @surething/cockpit...');
   const result = spawnSync('npm', ['install', '-g', '@surething/cockpit@latest'], { stdio: 'inherit' });
@@ -118,7 +129,7 @@ if (process.argv[2] === 'update') {
 const { existsSync, mkdirSync } = await import('fs');
 const { homedir } = await import('os');
 
-const knownCommands = new Set(['browser', 'terminal', 'update', 'help', 'codegraph']);
+const knownCommands = new Set(['browser', 'terminal', 'update', 'help', 'codegraph', 'connection']);
 const arg = process.argv[2];
 let projectDir = null;
 

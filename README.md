@@ -181,6 +181,7 @@ cockpit browser <id> snapshot      # capture accessibility tree
 cockpit browser <id> click <uid>   # click element
 cockpit terminal list              # list terminal bubbles
 cockpit terminal <id> output       # read terminal output (filter, cursor)
+cockpit connection list --cwd .    # list ALL bubbles (term + browser) with user-set titles
 ```
 
 ## Read more

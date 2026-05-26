@@ -181,6 +181,7 @@ cockpit browser <id> snapshot      # 获取页面元素树
 cockpit browser <id> click <uid>   # 点击元素
 cockpit terminal list              # 列出终端气泡
 cockpit terminal <id> output       # 读取终端输出（支持过滤、游标）
+cockpit connection list --cwd .    # 列出当前项目所有气泡（terminal + browser）含用户起的 title
 ```
 
 ## 阅读更多

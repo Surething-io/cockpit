@@ -16,6 +16,10 @@ interface BrowserEntry {
   fullId: string;
   ws: WebSocket | null;
   lastSeen: number;
+  /** Project cwd the browser bubble belongs to (forwarded via WS query at register). */
+  projectCwd?: string;
+  /** Tab id the bubble lives in (used to scope bubble-titles JSON lookups). */
+  tabId?: string;
 }
 
 // Registries pinned to globalThis. wsServer is currently the only caller (so
@@ -36,9 +40,9 @@ const registry = g_browser.__cockpitBrowserRegistry ?? (g_browser.__cockpitBrows
 /** fullId → shortId (reverse index) */
 const fullIdToShort = g_browser.__cockpitBrowserFullIdToShort ?? (g_browser.__cockpitBrowserFullIdToShort = new Map<string, string>());
 
-export function registerBrowser(fullId: string, ws: WebSocket): string {
+export function registerBrowser(fullId: string, ws: WebSocket, projectCwd?: string, tabId?: string): string {
   const shortId = toShortId(fullId);
-  registry.set(shortId, { fullId, ws, lastSeen: Date.now() });
+  registry.set(shortId, { fullId, ws, lastSeen: Date.now(), projectCwd, tabId });
   fullIdToShort.set(fullId, shortId);
   return shortId;
 }
@@ -66,13 +70,21 @@ export function updateBrowserWs(fullId: string, ws: WebSocket | null): void {
   }
 }
 
-export function listBrowsers(): Array<{ shortId: string; fullId: string; connected: boolean }> {
-  const result: Array<{ shortId: string; fullId: string; connected: boolean }> = [];
+export function listBrowsers(): Array<{
+  shortId: string;
+  fullId: string;
+  connected: boolean;
+  projectCwd?: string;
+  tabId?: string;
+}> {
+  const result: ReturnType<typeof listBrowsers> = [];
   for (const [shortId, entry] of registry) {
     result.push({
       shortId,
       fullId: entry.fullId,
       connected: entry.ws !== null && entry.ws.readyState === WebSocket.OPEN,
+      projectCwd: entry.projectCwd,
+      tabId: entry.tabId,
     });
   }
   return result;

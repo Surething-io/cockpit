@@ -492,6 +492,9 @@ export const CommandBubble = memo(function CommandBubble({
                       )
                     );
                   }}
+                  fullId={commandId}
+                  projectCwd={projectCwd}
+                  tabId={tabId}
                 />
               )}
               <span className="font-mono text-foreground truncate">{command}</span>

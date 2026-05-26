@@ -95,10 +95,15 @@ cockpit browser abcd evaluate --js "return document.title"
 cockpit terminal list                   # 列出所有终端气泡
 cockpit terminal abcd output            # 读取终端输出
 cockpit terminal abcd wait idle         # 阻塞直到终端进入空闲
+
+# 跨类型气泡聚合（v1.0.217+）：含用户起的 title，给 LLM 看
+cockpit connection list --cwd .         # 当前项目所有活的气泡
+cockpit connection list --cwd . --all   # 含断开 / 已退出的气泡
+cockpit connection list --cwd . --json  # 机读输出，给脚本用
 ```
 
-完整命令：`cockpit browser --help` / `cockpit terminal --help`
-*（短别名 `cock` 在以上每条命令里都能直接替换。）*
+完整命令：`cockpit browser --help` / `cockpit terminal --help` / `cockpit connection --help`
+*（短别名 `cock` 在以上每条命令里都能直接替换；dev 环境请用 `cockpit-dev`。）*
 
 ## 常用快捷键
 

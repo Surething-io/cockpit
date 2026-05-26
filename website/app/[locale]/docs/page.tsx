@@ -112,7 +112,7 @@ export default async function DocsPage({
         <h2 className="text-xl font-semibold">{t.docs.sections.cli}</h2>
         <div className="mt-4 space-y-3">
           <CopyableCommand command="cockpit browser <id> snapshot" />
-          <CopyableCommand command='cockpit terminal <id> exec "ls"' />
+          <CopyableCommand command="cockpit terminal <id> output" />
         </div>
       </section>
 

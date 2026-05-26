@@ -179,8 +179,8 @@ npm run setup       # build + npm link (registers `cockpit` and `cock`)
 ```bash
 cockpit browser <id> snapshot      # capture accessibility tree
 cockpit browser <id> click <uid>   # click element
-cockpit terminal <id> exec "ls"    # execute command
-cockpit terminal <id> output       # get terminal output
+cockpit terminal list              # list terminal bubbles
+cockpit terminal <id> output       # read terminal output (filter, cursor)
 ```
 
 ## Read more

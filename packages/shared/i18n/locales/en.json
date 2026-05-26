@@ -392,7 +392,7 @@
     "requestFailed": "Request failed",
     "cannotReadStream": "Cannot read response stream",
     "errorRetry": "An error occurred, please retry",
-    "placeholder": "Type a message, Enter to send (Shift+Enter for new line, paste images, /qa /fx /ex /go /cg /skill-name ... for commands)",
+    "placeholder": "Type a message, Enter to send (Shift+Enter for new line, paste images, /qa /fx /ex /go /cg /cc /skill-name ... for commands)",
     "placeholderDisabled": "Generating... you can keep typing (ESC to cancel)",
     "imageSizeLimit": "Image size exceeds limit (max 5MB), current: {{size}}MB",
     "stageAll": "Stage all files (git add -A)",

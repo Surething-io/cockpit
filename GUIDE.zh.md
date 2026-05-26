@@ -91,10 +91,10 @@ cockpit browser abcd snapshot           # 获取页面元素树
 cockpit browser abcd click --ref e5     # 点击元素
 cockpit browser abcd evaluate --js "return document.title"
 
-# 终端自动化
+# 终端观察（只读：v1.0.214 起 write side 已移除）
 cockpit terminal list                   # 列出所有终端气泡
 cockpit terminal abcd output            # 读取终端输出
-cockpit terminal abcd stdin "npm test"  # 发送命令
+cockpit terminal abcd wait idle         # 阻塞直到终端进入空闲
 ```
 
 完整命令：`cockpit browser --help` / `cockpit terminal --help`

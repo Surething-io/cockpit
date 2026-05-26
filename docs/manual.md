@@ -409,8 +409,8 @@ Control terminal bubbles in Console via the `cock terminal` command.
 cock terminal list                       # List all terminals
 cock terminal <id>                       # View status and help
 cock terminal <id> output                # Read terminal buffer output
-cock terminal <id> stdin "npm test"      # Send command to terminal
-cock terminal <id> follow                # Stream output in real-time (Ctrl+C to exit)
+cock terminal <id> output --grep 'ERROR' # Filter output by pattern (server-side)
+cock terminal <id> wait idle             # Block until the terminal goes quiet
 ```
 
 ---

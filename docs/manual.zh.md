@@ -409,8 +409,8 @@ CLI 命令 → HTTP API → WebSocket → BrowserBubble → postMessage → ifra
 cock terminal list                       # 列出所有终端
 cock terminal <id>                       # 查看状态和帮助
 cock terminal <id> output                # 读取终端缓冲输出
-cock terminal <id> stdin "npm test"      # 发送命令到终端
-cock terminal <id> follow                # 实时流式输出（Ctrl+C 退出）
+cock terminal <id> output --grep 'ERROR' # 按 pattern 过滤（服务端过滤）
+cock terminal <id> wait idle             # 阻塞直到终端进入空闲
 ```
 
 ---

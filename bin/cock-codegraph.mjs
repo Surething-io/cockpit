@@ -181,11 +181,17 @@ async function cmdSearch() {
   const pos = positional(subArgs);
   const q = pos[0];
   const limit = getInt(subArgs, '--limit') ?? 15;
+  // v1.0.216+: opt-in flag to also surface identifier-shaped string literals
+  // (tool names / event names / config keys / route paths) that only exist
+  // in source as strings, never as identifiers.
+  const includeLiterals = subArgs.includes('--include-literals');
   if (!q) {
     stderr.write('codegraph search: missing <query>\n');
     exit(2);
   }
-  const resp = await get('/api/projectGraph/search', { q, limit });
+  const params = { q, limit };
+  if (includeLiterals) params.includeLiterals = 'true';
+  const resp = await get('/api/projectGraph/search', params);
   const data = await resp.json();
   if (wantJson) { emitJson(data); exit(0); }
 
@@ -616,15 +622,22 @@ Examples:
 // call (which runs before this declaration is reached in module order)
 // doesn't hit a const TDZ.
 function getSubHelp() { return {
-  search: `Usage: cock codegraph search <query> [--limit N=15] [--json]
+  search: `Usage: cock codegraph search <query> [--limit N=15] [--include-literals] [--json]
 
 Purpose:  Find symbols (and files) matching a name fragment. Tokenised
-          match across name + qualifiedName + filePath. Use this when
-          you know the symbol's name but not its location.
+          match across name + qualifiedName + filePath, with case +
+          word-separator folding (so 'build_code_index' ↔ 'buildCodeIndex'
+          ↔ 'BUILD-CODE-INDEX' all collide). Use this when you know the
+          symbol's name but not its location.
 
 Flags:
-  --limit N        Max symbol hits to return (default 15)
-  --json           Emit raw JSON {files: [...], symbols: [...]}
+  --limit N            Max symbol hits to return (default 15)
+  --include-literals   Also search identifier-shaped string literals
+                       in source (tool names / event names / config
+                       keys / route paths). Off by default to keep
+                       results lean. Surfaces names that never appear
+                       as identifiers, only as strings.
+  --json               Emit raw JSON {files: [...], symbols: [...]}
 
 Output (plain, TAB-separated):
   sym <TAB> <file>:<line> <TAB> <kind> <TAB> <qname>
@@ -636,7 +649,9 @@ Exit: 0=hits, 1=no hits, 2=usage, 3=server unreachable
 
 Examples:
   cock codegraph search getCodeIndex
+  cock codegraph search build_code_index             # snake-case query, still finds buildCodeIndex
   cock codegraph search useChatStore --limit 5
+  cock codegraph search 'agent.fork' --include-literals    # find a name hiding in a literal
   cock codegraph search authenticate --json | jq '.symbols[].target'`,
 
   callers: `Usage: cock codegraph callers <qname> [--file PATH] [--json]

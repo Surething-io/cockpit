@@ -91,10 +91,10 @@ cockpit browser abcd snapshot           # Get page element tree
 cockpit browser abcd click --ref e5     # Click an element
 cockpit browser abcd evaluate --js "return document.title"
 
-# Terminal automation
+# Terminal observation (read-only: write side intentionally removed in v1.0.214)
 cockpit terminal list                   # List all terminal bubbles
 cockpit terminal abcd output            # Read terminal output
-cockpit terminal abcd stdin "npm test"  # Send command to terminal
+cockpit terminal abcd wait idle         # Block until the terminal goes quiet
 ```
 
 Full commands: `cockpit browser --help` / `cockpit terminal --help`

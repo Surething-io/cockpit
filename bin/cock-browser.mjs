@@ -40,6 +40,32 @@ Usage: cockpit browser ${prefix} <action>`);
   }
 
   console.log(`
+── React / SPA gotchas ────────────────────────────────
+On modern SPAs (React, Vue, tiptap, ProseMirror, Lexical, Slate, …)
+\`type\` / \`click\` via CDP often silently no-op because the framework
+ignores raw key/mouse events and reacts only to its own synthetic
+event flow. When typing into a contenteditable / controlled input,
+or clicking a button rendered by a portal, **prefer \`evaluate\`**.
+
+Three templates that always work:
+
+  # 1) Fill a contenteditable (tiptap / ProseMirror / Lexical):
+  evaluate "(() => { const el = document.querySelector('[contenteditable=\\"true\\"]'); el.focus(); document.execCommand('insertText', false, 'hello'); return el.innerText; })()"
+
+  # 2) Set a React-controlled <input> via the native setter + input event:
+  evaluate "(() => { const el = document.querySelector('input[name=foo]'); const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; set.call(el, 'hello'); el.dispatchEvent(new Event('input', { bubbles: true })); return el.value; })()"
+
+  # 3) Click a button by aria-label / text (refs go stale after re-render):
+  evaluate "(() => { const btn = Array.from(document.querySelectorAll('button')).find(b => b.getAttribute('aria-label') === 'Send message' || b.textContent.trim() === 'Send'); if (!btn) return 'not-found'; btn.click(); return 'clicked'; })()"
+
+Refs (e5, e23, …) returned by \`snapshot\` are valid only for the
+DOM at snapshot time. Any re-render / route change / focus shift
+invalidates them — \`Element ref "eN" not found or disconnected\`
+means you need a fresh \`snapshot\` (or just use \`evaluate\` with
+CSS selectors).
+
+──────────────────────────────────────────────────────
+
 Navigation:
   navigate <url>              Navigate to URL
   reload [--noCache]          Reload page
@@ -52,9 +78,9 @@ Inspection:
   screenshot                  Take a screenshot
 
 Interaction (use ref from snapshot):
-  click <ref>                 Click element
-  type <ref> <text>           Type text into element
-  fill <ref> <value>          Fill input value
+  click <ref>                 Click element  ⚠ React/SPA: may silently miss; use evaluate
+  type <ref> <text>           Type text  ⚠ React/SPA: may silently miss; use evaluate (template 1/2)
+  fill <ref> <value>          Fill input value  ⚠ Same — prefer template 2
   hover <ref>                 Hover element
   focus <ref>                 Focus element
   scroll --direction D        Scroll page (up/down/left/right)
@@ -336,6 +362,70 @@ async function run() {
     // 大结果由 extension 端自动 stash 并返回 chunked descriptor;
     // 这里透明地把完整内容拉回来，调用方看不到 chunking 细节。
     const resolved = await autoResolveChunked(baseUrl, id, data.data, timeout);
+
+    // Post-`type` verification — `type` via CDP dispatchKeyEvent silently no-ops
+    // on React-controlled / contenteditable inputs (tiptap, ProseMirror, Lexical,
+    // Slate, etc.) because those frameworks update state from synthetic
+    // InputEvents rather than physical key events. The CLI used to return
+    // `{typed, ref}` regardless, lying about the result. Now we read back the
+    // currently-focused element's value/textContent and compare; mismatches
+    // exit 1 with a pointer to the evaluate workaround. Session 0a975cff
+    // burned 4 extra bash calls discovering this silently.
+    //
+    // We use document.activeElement because `type` focuses the target as its
+    // first step — so right after a successful type, activeElement IS the
+    // target. The Playwright "ref" (e555 etc.) has no DOM-side equivalent, so
+    // we can't query for it directly.
+    if (action === 'type' && params.ref && typeof params.text === 'string') {
+      const expected = String(params.text);
+      let actual = '';
+      let kind = 'unknown';
+      try {
+        const verifyJs =
+          '(() => { const el = document.activeElement; ' +
+          'if (!el || el === document.body) return { kind: "no-active", text: "" }; ' +
+          'const tag = el.tagName ? el.tagName.toLowerCase() : ""; ' +
+          'if (tag === "input" || tag === "textarea") return { kind: tag, text: el.value || "" }; ' +
+          'if (el.isContentEditable) return { kind: "contenteditable", text: el.innerText || el.textContent || "" }; ' +
+          'return { kind: tag || "unknown", text: (el.textContent || "").slice(0, 500) }; })()';
+        const v = await fetch(`${baseUrl}/api/browser/evaluate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, params: { js: verifyJs }, timeout: 3000 }),
+          signal: AbortSignal.timeout(5000),
+        });
+        const vj = await v.json();
+        const out = vj.ok && vj.data;
+        if (out && typeof out === 'object') {
+          kind = out.kind;
+          actual = String(out.text || '');
+        }
+      } catch {
+        // verification optional — fall through to printing the original result
+      }
+
+      // Only warn on KNOWN editable types whose value/text doesn't contain what
+      // we typed. "no-active" / "unknown" we can't reliably verify, so we skip
+      // (no false positives).
+      const verifiable = kind === 'input' || kind === 'textarea' || kind === 'contenteditable';
+      if (verifiable && !actual.includes(expected)) {
+        // Type "succeeded" per CDP but the target didn't pick up the text.
+        // Almost always a React-controlled / contenteditable input.
+        process.stderr.write(
+          `\n⚠️  type succeeded per CDP but the target's value/textContent does NOT contain "${expected}".\n` +
+          `   target kind: ${kind}, current text: ${JSON.stringify(actual).slice(0, 200)}\n` +
+          `   This is usually a React-controlled or contenteditable input (tiptap / ProseMirror / Lexical / Slate)\n` +
+          `   where CDP key events don't trigger framework state updates.\n` +
+          `\n` +
+          `   Fix: use \`evaluate\` to drive the framework's own event flow, e.g.\n` +
+          `     cockpit browser ${id} evaluate "(() => { const el = document.querySelector('[contenteditable=\\\"true\\\"]'); el.focus(); document.execCommand('insertText', false, ${JSON.stringify(expected)}); return el.innerText; })()"\n` +
+          `\n   For a plain <input>, set value via property setter + dispatch an 'input' event:\n` +
+          `     evaluate "(() => { const el = document.querySelector('input[name=foo]'); const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; set.call(el, ${JSON.stringify(expected)}); el.dispatchEvent(new Event('input', { bubbles: true })); return el.value; })()"\n`
+        );
+        await formatOutput(action, resolved);
+        process.exit(1);
+      }
+    }
 
     // Format output
     await formatOutput(action, resolved);

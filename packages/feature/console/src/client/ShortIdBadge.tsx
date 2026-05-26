@@ -4,10 +4,11 @@ import { useState, useCallback, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@cockpit/shared-ui';
 
-/** Use cock-dev on the dev port; use cock for all others (prod port is auto-detected from ~/.cockpit/server.json) */
+/** Use `cockpit-dev` on the dev port; `cockpit` (the recommended long-name
+ *  entry) everywhere else. Prod port is auto-detected from ~/.cockpit/server.json. */
 function getCockBin(): string {
   const port = typeof window !== 'undefined' ? window.location.port : '3457';
-  return port === '3456' ? 'cock-dev' : 'cock';
+  return port === '3456' ? 'cockpit-dev' : 'cockpit';
 }
 
 interface ShortIdBadgeProps {

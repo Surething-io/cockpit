@@ -21,7 +21,7 @@ Commands:
   cockpit <path>                 Start server, open specified directory
   browser <id> <action>          Control browser bubbles
   terminal <id> <action>         Control terminal bubbles
-  affected [files…|--stdin]      Find test files affected by changed source files
+  codegraph <subcmd> [...]       Query the project code graph (search/risk/affected/...)
   update                         Update to latest version
 
 Options:
@@ -94,9 +94,9 @@ if (process.argv[2] === 'terminal') {
   await flushAndExit(0);
 }
 
-if (process.argv[2] === 'affected') {
+if (process.argv[2] === 'codegraph') {
   process.argv.splice(2, 1);
-  const mod = await import('./cock-affected.mjs');
+  const mod = await import('./cock-codegraph.mjs');
   await mod.done;
   await flushAndExit(0);
 }
@@ -118,7 +118,7 @@ if (process.argv[2] === 'update') {
 const { existsSync, mkdirSync } = await import('fs');
 const { homedir } = await import('os');
 
-const knownCommands = new Set(['browser', 'terminal', 'update', 'help', 'affected']);
+const knownCommands = new Set(['browser', 'terminal', 'update', 'help', 'codegraph']);
 const arg = process.argv[2];
 let projectDir = null;
 

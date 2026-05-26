@@ -246,6 +246,11 @@ Common workflows:
 }
 
 async function cmdMeta(id, rest) {
+  // `<id> --help` / `<id> -h` is the same as `<id>` itself — the meta page
+  // already IS the cheat sheet for that bubble (it lists every available
+  // action). Strip the flag here so parseFlags doesn't reject it as
+  // "Unknown flag: --help".
+  rest = rest.filter((a) => a !== '--help' && a !== '-h');
   const { flags } = parseFlags(rest, { json: 'boolean' });
   const meta = await post('/api/terminal/meta', { id });
   if (flags.json) {

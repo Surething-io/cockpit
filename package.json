@@ -62,7 +62,7 @@
   "bin": {
     "cockpit": "./bin/cockpit.mjs",
     "cock": "./bin/cock.mjs",
-    "cock-dev": "./bin/cock-dev.mjs"
+    "cockpit-dev": "./bin/cockpit-dev.mjs"
   },
   "files": [
     "bin",
@@ -85,6 +85,7 @@
     "build": "next build --webpack",
     "build:server": "tsup --config tsup.server.ts",
     "setup": "npm run build && npm run build:server && npm link",
+    "setup-dev": "node bin/setup-dev.mjs",
     "lint": "eslint",
     "generate-icons": "node scripts/generate-icons.js",
     "copy-wasms": "node scripts/copy-tree-sitter-wasms.mjs",

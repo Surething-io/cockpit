@@ -644,7 +644,7 @@ Now you can do all of that with **DeepSeek** instead — usually at a fraction o
 3. **Paste the key.** A blue **Set API key** pill appears in the chat header. Click it, paste, hit **Save**.
 4. **Send a message.** That's it.
 
-Your key stays on your laptop, in \`~/.cockpit/settings.json\`. Cockpit has no server — nothing leaves your machine except the request to DeepSeek itself.
+Everything runs locally. Nothing leaves your machine except the request to DeepSeek itself.
 
 ## Pick a model from the same pill
 
@@ -718,7 +718,7 @@ Open the app, pick **DeepSeek** from the new-tab menu, paste your key, ask it to
 3. **贴 Key。** 聊天面板顶部会出现一颗蓝色胶囊 **Set API key**，点它，把 Key 粘上去，**Save**。
 4. **发消息。** 就这样。
 
-你的 Key 只留在本机的 \`~/.cockpit/settings.json\` 里。Cockpit 没有服务器 —— 除了你发给 DeepSeek 的那次请求，没有任何东西会离开你的电脑。
+一切都在本地完成。除了发给 DeepSeek 的那次请求，没有任何东西会离开你的电脑。
 
 ## 模型在同一颗胶囊里切换
 

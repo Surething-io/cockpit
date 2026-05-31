@@ -61,7 +61,7 @@ import { useSwipeContext } from '@cockpit/shared-ui';
 
 export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchTrigger, initialSearchQuery, searchQueryTrigger }: FileBrowserModalProps) {
   const { t } = useTranslation();
-  const { activeView } = useSwipeContext();
+  const { activeView, onViewChange } = useSwipeContext();
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   // Editor mode in the right panel of tree / search / recent tabs:
   //   'code' = the usual CodeViewer for the selected file
@@ -466,8 +466,10 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
       // Ctrl+- → Go Back / Ctrl+Shift+- → Go Forward
       // Use e.code to detect the physical key, avoiding Shift turning '-' into '_'
-      if (isExplorerActive && e.ctrlKey && !e.metaKey && e.code === 'Minus') {
+      // Intercept on all panels to keep behavior consistent; only act when Explorer is active.
+      if (e.ctrlKey && !e.metaKey && e.code === 'Minus') {
         e.preventDefault();
+        if (!isExplorerActive) return;
         if (e.shiftKey) {
           handleNavForward();
         } else {
@@ -477,9 +479,16 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
       }
 
       // Cmd+P / Ctrl+P → Quick file open
-      if (isExplorerActive && (e.metaKey || e.ctrlKey) && e.key === 'p') {
+      // Works from any panel: switch to Explorer if needed, then open Quick Open.
+      // Prevents the browser print dialog from leaking through on Agent/Console panels.
+      if ((e.metaKey || e.ctrlKey) && e.key === 'p' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        setShowQuickOpen(prev => !prev);
+        if (!isExplorerActive) {
+          onViewChange('explorer');
+          setShowQuickOpen(true);
+        } else {
+          setShowQuickOpen(prev => !prev);
+        }
         return;
       }
 
@@ -562,7 +571,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, fileTree.showBlame, fileTree.blameSelectedCommit, fileTree, showQuickOpen, lspReferences.visible, lspReferences.closeReferences, showSearchPanel, handleNavBack, handleNavForward, jsonReadable, jsonSearch, jsonPreview, jsonPreviewSearch, activeTab, handleCopyFile, handlePaste, activeView]);
+  }, [onClose, fileTree.showBlame, fileTree.blameSelectedCommit, fileTree, showQuickOpen, lspReferences.visible, lspReferences.closeReferences, showSearchPanel, handleNavBack, handleNavForward, jsonReadable, jsonSearch, jsonPreview, jsonPreviewSearch, activeTab, handleCopyFile, handlePaste, activeView, onViewChange]);
 
   // ========== Initial Data Load (once on mount) ==========
   useEffect(() => {

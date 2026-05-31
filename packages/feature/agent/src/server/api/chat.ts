@@ -144,9 +144,14 @@ export const POST = handler((request) =>
               'Grep',
               'WebFetch',
               'WebSearch',
-              'Task',      // Sub-agent for complex tasks
-              'TodoWrite', // Task management
-              'mcp__*',    // Allow all MCP tools
+              'Task',        // Sub-agent for complex tasks
+              // Task management — claude-agent-sdk@0.3.142 replaced TodoWrite
+              // with per-task TaskCreate/Update/Get/List events.
+              'TaskCreate',
+              'TaskUpdate',
+              'TaskGet',
+              'TaskList',
+              'mcp__*',      // Allow all MCP tools
             ],
             // Permission mode: skip all permission checks
             permissionMode: 'bypassPermissions' as const,

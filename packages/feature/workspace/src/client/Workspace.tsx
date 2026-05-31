@@ -251,6 +251,33 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
     return () => window.removeEventListener('message', handleMessage);
   }, [projects, activeIndex, collapsed, updateUrl, saveProjects]);
 
+  // Parent-window keyboard safety net.
+  // iframes don't bubble keydown to the parent window, so the per-panel
+  // listeners inside TabManager / FileBrowserModal don't run when focus is in
+  // the left ProjectSidebar or one of the parent-window modals
+  // (SessionBrowser / SettingsModal / NoteModal / SkillsModal / TokenStatsModal).
+  // Without this, Cmd+P pops the browser print dialog, Cmd+S triggers "Save
+  // Page As...", Cmd+F shows the native find bar, etc. We swallow them at the
+  // parent root as a no-op; any parent-window component that wants to react
+  // to these keys can still register its own listener and run alongside.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      // Cmd/Ctrl + P / F / S (no Shift) — block browser defaults.
+      if (!e.shiftKey && (e.key === 'p' || e.key === 'f' || e.key === 's')) {
+        e.preventDefault();
+        return;
+      }
+      // Ctrl+- / Ctrl+Shift+- — keep parity with the in-iframe behavior
+      // (intercepted everywhere; no action at the parent level).
+      if (e.ctrlKey && !e.metaKey && e.code === 'Minus') {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // Select project
   const handleSelectProject = useCallback((index: number) => {
     setActiveIndex(index);

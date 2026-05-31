@@ -126,6 +126,24 @@
 
 html {
   scroll-behavior: smooth;
+  /* Sticky Nav is `h-14` (3.5rem). Anything scrolled into view by the
+     browser / Next.js App Router segment-aligner would otherwise be tucked
+     under the Nav — `scroll-padding-top` reserves a buffer so the aligned
+     element's top sits below the Nav. Extra 0.5rem gives the article title
+     a small visual gap instead of sitting flush against the Nav. */
+  scroll-padding-top: 4rem;
+}
+
+/* Hide scrollbars while preserving scroll behaviour. Applied only where we
+   explicitly want chrome to disappear (currently the docs sidebar). The
+   window scrollbar is kept untouched on purpose: long docs pages still
+   benefit from showing reading position to mouse users. */
+.scrollbar-hide {
+  scrollbar-width: none;       /* Firefox */
+  -ms-overflow-style: none;    /* legacy Edge / IE */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;               /* Chrome / Safari / WebKit */
 }
 
 body {

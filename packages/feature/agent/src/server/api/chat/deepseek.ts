@@ -217,7 +217,12 @@ export const POST = handler((request) =>
               'WebFetch',
               'WebSearch',
               'Task',
-              'TodoWrite',
+              // Task management — claude-agent-sdk@0.3.142 replaced TodoWrite
+              // with per-task TaskCreate/Update/Get/List events.
+              'TaskCreate',
+              'TaskUpdate',
+              'TaskGet',
+              'TaskList',
               'mcp__*',
             ],
             permissionMode: 'bypassPermissions' as const,

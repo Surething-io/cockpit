@@ -117,7 +117,11 @@ export const sendChatMessageEff = (task: ScheduledTask): Effect.Effect<boolean, 
     settingSources: ['user' as const, 'project' as const, 'local' as const],
     allowedTools: [
       'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep',
-      'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'mcp__*',
+      'WebFetch', 'WebSearch', 'Task',
+      // Task management — claude-agent-sdk@0.3.142 replaced TodoWrite
+      // with per-task TaskCreate/Update/Get/List events.
+      'TaskCreate', 'TaskUpdate', 'TaskGet', 'TaskList',
+      'mcp__*',
     ],
     permissionMode: 'bypassPermissions' as const,
     allowDangerouslySkipPermissions: true,

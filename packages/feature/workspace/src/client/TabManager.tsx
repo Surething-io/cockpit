@@ -185,7 +185,11 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     enabled: !!initialCwd,
   });
 
-  // Keyboard shortcuts: Cmd+1/2/3 to switch views
+  // Keyboard shortcuts: Cmd+1/2/3 to switch views;
+  // also globally swallow Cmd+S so the browser's "Save Page As..." never leaks
+  // through on panels without an active editor. When a CodeViewer/FileEditorModal
+  // is mounted, it registers its own document-level listener and still receives
+  // the event to actually save.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
@@ -198,6 +202,10 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
         } else if (e.key === '3') {
           e.preventDefault();
           handleViewChange('console');
+        } else if (e.key === 's') {
+          // no-op: prevent browser "Save Page As..." default.
+          // Editors (CodeViewer/FileEditorModal) handle Cmd+S themselves when open.
+          e.preventDefault();
         }
       }
     };

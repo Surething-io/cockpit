@@ -176,12 +176,22 @@ export interface BlameResponse<TBlameLine> {
   error?: string
 }
 
+/**
+ * Blame is best-effort: some paths (e.g. `.env.local`, paths outside the
+ * worktree, server-side path guards) legitimately have no blame info. We
+ * soften the failure into a `{ error }` response so it never surfaces as an
+ * unhandled error in the dev console. Callers already branch on `data.error`.
+ */
 export const loadBlame = <TBlameLine>(
   cwd: string,
   path: string
-): Effect.Effect<BlameResponse<TBlameLine>, AppError> =>
+): Effect.Effect<BlameResponse<TBlameLine>, never> =>
   httpGet<BlameResponse<TBlameLine>>(
     `/api/files/blame?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(path)}`
+  ).pipe(
+    Effect.catchAll((err) =>
+      Effect.succeed({ error: err.message } as BlameResponse<TBlameLine>)
+    )
   )
 
 // ─────────────────────────────────────────────────────────

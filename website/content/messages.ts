@@ -32,7 +32,7 @@ export const messages = {
         },
         {
           title: 'Local-first, BYOK for the rest',
-          desc: '`claude` CLI works out of the box. For Codex, DeepSeek, Kimi or Ollama, paste a key (or none for Ollama). No cloud relay, no telemetry — keys stay in `~/.cockpit/settings.json`.',
+          desc: '`claude` CLI works out of the box. For Codex, DeepSeek, Kimi or Ollama, paste a key (or none for Ollama). Everything runs locally.',
         },
         {
           title: 'Beyond chat: terminal, browser, DBs',
@@ -113,7 +113,7 @@ export const messages = {
           desc: 'Full Claude Agent SDK — tools, plans, slash modes. Zero setup if your `claude` CLI is already configured.',
         },
         {
-          name: 'OpenAI Codex',
+          name: 'Codex',
           tagline: 'Bring your account',
           desc: 'Reuses your `~/.codex` config. Same chat, same shell, same bubbles — just a different tab.',
         },
@@ -133,7 +133,7 @@ export const messages = {
           desc: 'Auto-starts the daemon, pick any pulled model from the chat header. No key, no internet required.',
         },
       ],
-      footnote: 'Keys (Codex / DeepSeek / Kimi) are stored locally in `~/.cockpit/settings.json`. No cloud relay.',
+      footnote: 'Everything runs locally.',
     },
     codeMap: {
       tag: 'Explorer · Code Map',
@@ -213,7 +213,7 @@ export const messages = {
     },
     builtOn: {
       headline: 'Built on the official Claude Agent SDK',
-      desc: 'Cockpit\u2019s core uses Anthropic\u2019s official Claude Agent SDK. If your `claude` CLI is configured, Cockpit works — no extra setup. Other engines (Codex, DeepSeek, Kimi, Ollama) ride on the Vercel AI SDK and the same agent loop, with keys stored locally in `~/.cockpit/settings.json`.',
+      desc: 'Cockpit\u2019s core uses Anthropic\u2019s official Claude Agent SDK. If your `claude` CLI is configured, Cockpit works — no extra setup. Other engines (Codex, DeepSeek, Kimi, Ollama) ride on the Vercel AI SDK and the same agent loop. Everything runs locally.',
     },
     finalCta: {
       headline: 'Ready to fly?',
@@ -231,13 +231,63 @@ export const messages = {
       // SEO description: ≤160 chars, used by docs page metadata + OG.
       description:
         'OpenCockpit docs — install with one npm command, run anywhere. Cockpit CLI: codegraph, terminal, browser subcommands, each self-documenting via --help.',
-      comingSoon: 'Full documentation is coming soon. Meanwhile, see the README on GitHub.',
       readOnGithub: 'Read on GitHub',
-      sections: {
-        prereq: 'Prerequisites',
-        install: 'Install',
-        firstRun: 'First run',
-        cli: 'CLI',
+      comingSoon: 'Coming soon',
+      onThisPage: 'On this page',
+      prevPage: 'Previous',
+      nextPage: 'Next',
+      editOnGithub: 'Edit this page on GitHub',
+      sidebar: {
+        // Five top-level sections: Get Started → the three swipeable panels
+        // (Agent / Explorer / Console) → Reference. The "Workspace shell"
+        // section is folded into Agent now that its members (notes, skills,
+        // sessions, scheduled tasks) were all really chat-adjacent.
+        sections: {
+          getStarted: 'Get Started',
+          agent: 'Agent',
+          explorer: 'Explorer',
+          console: 'Console',
+          reference: 'Reference',
+        },
+        // Sub-group headings — currently no section uses groups (after the
+        // big sidebar flattening pass), but the type/render path is left
+        // in place for future growth.
+        groups: {},
+        pages: {
+          // Get Started
+          introduction: 'Introduction',
+          quickstart: 'Quickstart',
+
+          // Agent panel (chat)
+          messageInput: 'Message Input',
+          sessions: 'Sessions',
+          skills: 'Skills',
+          engines: 'AI Engines',
+          scheduledTasks: 'Scheduled Tasks',
+          notes: 'Notes',
+
+          // Explorer panel (5 modules mirroring the panel's top tabs)
+          fileTree: 'File Tree',
+          search: 'Search',
+          recent: 'Recent',
+          changes: 'Changes',
+          history: 'History',
+
+          // Console panel
+          inputBar: 'Command Input',
+          terminalBubble: 'Terminal',
+          browserBubble: 'Browser',
+          databases: 'Database Bubbles',
+          jupyterBubble: 'Jupyter',
+          aliasesEnv: 'Aliases & Env Vars',
+
+          // Reference
+          cli: 'Cockpit CLI',
+          chromeExtension: 'Chrome Extension',
+          reviews: 'Tech Plan Review',
+          keyboardShortcuts: 'Keyboard Shortcuts',
+          faq: 'FAQ & Troubleshooting',
+        },
       },
     },
     changelog: {
@@ -286,7 +336,7 @@ export const messages = {
         },
         {
           title: '本地优先，其他引擎 BYOK',
-          desc: '`claude` CLI 已配好即开箱即用。Codex / DeepSeek / Kimi / Ollama 各自粘 Key（Ollama 无需）。无云端中转、无遥测，Key 只存在本机 `~/.cockpit/settings.json`。',
+          desc: '`claude` CLI 已配好即开箱即用。Codex / DeepSeek / Kimi / Ollama 各自粘 Key（Ollama 无需）。一切都在本地完成。',
         },
         {
           title: '不止聊天：终端、浏览器、数据库',
@@ -367,7 +417,7 @@ export const messages = {
           desc: '完整的 Claude Agent SDK —— 工具、计划、斜杠模式。`claude` CLI 已配好则零额外设置。',
         },
         {
-          name: 'OpenAI Codex',
+          name: 'Codex',
           tagline: '复用你的账号',
           desc: '直接读 `~/.codex` 配置。聊天、Shell、气泡都不变 —— 只是换了个 tab。',
         },
@@ -387,7 +437,7 @@ export const messages = {
           desc: '自动拉起守护进程，从聊天头部下拉任意已 pull 的模型。无需 Key、无需联网。',
         },
       ],
-      footnote: 'Codex / DeepSeek / Kimi 的 API Key 仅保存在本机 `~/.cockpit/settings.json`，无云端中转。',
+      footnote: '一切都在本地完成。',
     },
     codeMap: {
       tag: 'Explorer · 代码地图',
@@ -467,7 +517,7 @@ export const messages = {
     },
     builtOn: {
       headline: '基于官方 Claude Agent SDK',
-      desc: 'Cockpit 的核心使用 Anthropic 官方 Claude Agent SDK。本机 `claude` CLI 已配置即可使用，无需额外配置。Codex / DeepSeek / Kimi / Ollama 复用同一套 Agent loop（通过 Vercel AI SDK 适配），API Key 仅保存在本机 `~/.cockpit/settings.json`。',
+      desc: 'Cockpit 的核心使用 Anthropic 官方 Claude Agent SDK。本机 `claude` CLI 已配置即可使用，无需额外配置。Codex / DeepSeek / Kimi / Ollama 复用同一套 Agent loop（通过 Vercel AI SDK 适配）。一切都在本地完成。',
     },
     finalCta: {
       headline: '起飞吧',
@@ -485,13 +535,60 @@ export const messages = {
       // SEO description：≤160 字符，用于 docs 页 metadata + OG。
       description:
         'OpenCockpit 文档 —— 一行 npm 命令安装，任意目录启动。Cockpit CLI 参考：codegraph / terminal / browser 子命令，均通过 --help 自我说明。',
-      comingSoon: '完整文档即将上线。在此之前请参考 GitHub 上的 README。',
       readOnGithub: '在 GitHub 阅读',
-      sections: {
-        prereq: '前置依赖',
-        install: '安装',
-        firstRun: '首次运行',
-        cli: 'CLI',
+      comingSoon: '即将上线',
+      onThisPage: '本页内容',
+      prevPage: '上一页',
+      nextPage: '下一页',
+      editOnGithub: '在 GitHub 编辑此页',
+      sidebar: {
+        // 五个一级 section：入门 → 三个左右滑动的面板 → 参考。原本的"工作区"
+        // section 已经折叠进 Agent —— notes/skills/sessions/scheduled-tasks 本质都是
+        // 对话邻近功能。
+        sections: {
+          getStarted: '开始使用',
+          agent: 'Agent 面板',
+          explorer: 'Explorer 面板',
+          console: 'Console 面板',
+          reference: '参考',
+        },
+        // 二级分组标题 —— 大扁平化之后已无 group 使用，但类型与渲染保留以备未来扩展。
+        groups: {},
+        pages: {
+          // Get Started
+          introduction: '简介',
+          quickstart: '快速开始',
+
+          // Agent 面板（对话）
+          messageInput: '消息输入',
+          sessions: '会话管理',
+          skills: 'Skills',
+          engines: 'AI 引擎',
+          scheduledTasks: '定时任务',
+          notes: '笔记',
+
+          // Explorer 面板（5 个模块对应面板顶栏的 5 个 tab）
+          fileTree: '目录树',
+          search: '搜索',
+          recent: '最近',
+          changes: '变更',
+          history: '历史',
+
+          // Console 面板
+          inputBar: '命令输入',
+          terminalBubble: '终端气泡',
+          browserBubble: '浏览器气泡',
+          databases: '数据库气泡',
+          jupyterBubble: 'Jupyter',
+          aliasesEnv: '别名与环境变量',
+
+          // Reference
+          cli: 'Cockpit CLI',
+          chromeExtension: 'Chrome 扩展',
+          reviews: '技术方案评审',
+          keyboardShortcuts: '键盘快捷键',
+          faq: '常见问题与排查',
+        },
       },
     },
     changelog: {

@@ -1,7 +1,7 @@
 {
   "name": "@surething/cockpit",
   "version": "1.0.217",
-  "description": "Claude Code GUI for parallel AI coding — drive Claude (default), OpenAI Codex, DeepSeek, Kimi, or local Ollama in tabs. Multi-project sessions, terminal, browser & DB bubbles, code review, slash modes. Local-first, MIT.",
+  "description": "Claude Code GUI for parallel AI coding — drive Claude (default), Codex, DeepSeek, Kimi, or local Ollama in tabs. Multi-project sessions, terminal, browser & DB bubbles, code review, slash modes. Local-first, MIT.",
   "author": "Robert",
   "license": "MIT",
   "repository": {
@@ -19,7 +19,6 @@
     "claude-code-client",
     "claude-agent-sdk",
     "anthropic",
-    "openai-codex",
     "codex",
     "deepseek",
     "deepseek-gui",
@@ -93,7 +92,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.52",
-    "@anthropic-ai/claude-agent-sdk": "^0.2.112",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.158",
     "@dagrejs/dagre": "^3.0.0",
     "@tanstack/react-virtual": "^3.13.18",
     "@tiptap/extension-link": "^3.19.0",
@@ -168,7 +167,6 @@
     "typescript": "5.9.3"
   },
   "overrides": {
-    "@anthropic-ai/sdk": "^0.91.1",
     "postcss": "^8.5.10"
   }
 }

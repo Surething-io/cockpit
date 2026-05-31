@@ -26,7 +26,7 @@
 
 ---
 
-> **OpenCockpit is the open-source Claude Code GUI** — and a single canvas for whatever agent you bring next. Run multi-project Claude sessions out of the box; pop open a tab for **OpenAI Codex, DeepSeek, Kimi, or local Ollama** whenever you need. Built-in terminal, Chrome control, PostgreSQL / MySQL / Redis bubbles, code review, and slash modes — all local.
+> **OpenCockpit is the open-source Claude Code GUI** — and a single canvas for whatever agent you bring next. Run multi-project Claude sessions out of the box; pop open a tab for **Codex, DeepSeek, Kimi, or local Ollama** whenever you need. Built-in terminal, Chrome control, PostgreSQL / MySQL / Redis bubbles, code review, and slash modes — all local.
 
 https://github.com/user-attachments/assets/18f1a5dc-64f3-4ff6-b9fc-9cd08181fbb8
 
@@ -42,7 +42,7 @@ Cockpit is the instrument panel. It does **not** replace Claude Code; it stands 
 
 | Pain with raw Claude Code | What Cockpit adds |
 |---|---|
-| Stuck on one model | **5 engines side by side** in tabs: Claude (default), OpenAI Codex, DeepSeek, Kimi, local Ollama — each its own session |
+| Stuck on one model | **5 engines side by side** in tabs: Claude (default), Codex, DeepSeek, Kimi, local Ollama — each its own session |
 | One session at a time, terminal chaos at 3+ projects | **Multi-project tabs**, parallel agent sessions, red-dot inbox, desktop notifications |
 | Image attachments are awkward | Drop / paste images straight into chat |
 | "What was I debugging yesterday?" | Cmd+K cross-project session browser, pinning, forking |
@@ -58,7 +58,7 @@ Cockpit is the instrument panel. It does **not** replace Claude Code; it stands 
 ### Engines — Claude by default, bring any agent you want
 
 - **Claude** *(default)* — full official Agent SDK; zero setup if `claude` CLI is already configured
-- **OpenAI Codex** — reuses your `~/.codex` config; same chat, same shell + bubbles
+- **Codex** — reuses your `~/.codex` config; same chat, same shell + bubbles
 - **DeepSeek** — Anthropic-compatible endpoint via the Claude SDK; paste a key, pick `v4-pro` or `v4-flash`
 - **Kimi** *(Moonshot)* — tool calls render in chat just like Claude's
 - **Ollama** — auto-starts the daemon; pick any pulled model from the chat header; fully offline
@@ -146,7 +146,7 @@ No install, no AI chat (read-only sandbox, 5 min):
 
 ### Optional, per non-Claude engine
 
-- **OpenAI Codex** — log in once with `codex login` to populate `~/.codex`
+- **Codex** — log in once with `codex login` to populate `~/.codex`
 - **DeepSeek** — get an API key at [api-docs.deepseek.com](https://api-docs.deepseek.com/); paste it into the engine picker
 - **Kimi (Moonshot)** — get an API key at [platform.moonshot.cn](https://platform.moonshot.cn/); paste it into the engine picker
 - **Ollama** — install [ollama.com](https://ollama.com/) and `ollama pull <model>`; Cockpit auto-starts the daemon

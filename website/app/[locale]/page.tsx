@@ -121,7 +121,7 @@ export default async function HomePage({
       'Aider alternative',
     ].join(', '),
     featureList: [
-      'Multi-engine chat: Claude (default) / OpenAI Codex / Kimi / DeepSeek / Ollama — each tab a separate session',
+      'Multi-engine chat: Claude (default) / Codex / Kimi / DeepSeek / Ollama — each tab a separate session',
       'Multi-project parallel agent sessions',
       'Built-in xterm.js terminal',
       'Chrome browser automation',

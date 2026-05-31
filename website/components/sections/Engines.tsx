@@ -2,7 +2,7 @@ import type { Messages } from '@/content/messages';
 
 const ICONS: Record<string, string> = {
   Claude: '🟣',
-  'OpenAI Codex': '🔵',
+  'Codex': '🔵',
   DeepSeek: '🐳',
   Kimi: '🌙',
   Ollama: '🦙',

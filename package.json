@@ -1,6 +1,6 @@
 {
   "name": "@surething/cockpit",
-  "version": "1.0.217",
+  "version": "1.0.218",
   "description": "Claude Code GUI for parallel AI coding — drive Claude (default), Codex, DeepSeek, Kimi, or local Ollama in tabs. Multi-project sessions, terminal, browser & DB bubbles, code review, slash modes. Local-first, MIT.",
   "author": "Robert",
   "license": "MIT",

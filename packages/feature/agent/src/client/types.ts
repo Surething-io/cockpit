@@ -69,3 +69,11 @@ export interface RateLimitInfo {
 // the agent feature instead of a generic tab-state hook.
 export type ChatEngine = 'claude' | 'claude2' | 'codex' | 'kimi' | 'ollama' | 'deepseek';
 export type DeepseekModel = 'deepseek-v4-flash' | 'deepseek-v4-pro';
+/**
+ * Execution mode for the Claude/Claude2 engines:
+ * - `sdk`: invoked via `@anthropic-ai/claude-agent-sdk`'s `query()` (headless). Counts toward the Agent SDK billing bucket.
+ * - `pty`: spawns the interactive `claude` CLI (pseudo-terminal driven), classified as interactive Claude Code → uses the subscription quota.
+ * Switchable dynamically at any time; resuming a session that has SDK edit history via PTY may crash upstream rendering — the driver's
+ * crash detection covers that (errors instead of hanging), so the user can switch back to SDK.
+ */
+export type ChatMode = 'sdk' | 'pty';

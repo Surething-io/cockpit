@@ -413,7 +413,16 @@
     "copyCommandTooltip": "复制命令: claude -r {{sessionId}}",
     "executedCommand": "执行了 `{{command}}`{{exitInfo}}，输出：\n```\n{{output}}\n```",
     "executedCommandFailed": "执行 `{{command}}` 失败：{{error}}",
-    "skillExpansionPrompt": "请读取这个 skill 文件："
+    "skillExpansionPrompt": "请读取这个 skill 文件：",
+    "executionMode": "执行模式",
+    "ptyModeHint": "订阅计费模式：用交互式 claude CLI 驱动",
+    "ptyTerminal": "PTY 终端",
+    "ptyRunning": "运行中",
+    "ptyCollapse": "收起",
+    "ptyExpand": "展开",
+    "ptyStuck": "PTY 似乎卡住（可能在等待对话框输入），请在 PTY 终端手动处理。",
+    "ptyTimedOut": "PTY 超时未人工处理，已结束该回合。",
+    "ptyCrash": "Claude CLI 渲染崩溃（上游 bug）：{{error}}。该会话历史可能含无法渲染的编辑记录。"
   },
   "console": {
     "enterCommandOrUrl": "输入命令或网址开始使用",

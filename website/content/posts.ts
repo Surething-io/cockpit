@@ -32,6 +32,141 @@ export interface Post {
 
 export const posts: Post[] = [
   {
+    slug: 'claude-code-cli-execution-mode',
+    date: '2026-06-10',
+    keywords: [
+      'Claude Code CLI',
+      'Claude Agent SDK',
+      'Claude Agent SDK billing',
+      'Claude Agent SDK usage limits',
+      'claude -p',
+      'Claude Code subscription',
+      'Claude plan usage limits',
+      'Claude Code billing change',
+      'June 15 2026 Claude billing',
+      'interactive Claude Code',
+      'Claude 订阅计费',
+      'Claude Code 订阅额度',
+      'Claude 用量限制',
+      'PTY mode',
+      'execution mode',
+      'Claude Code GUI',
+      'OpenCockpit',
+      'Cockpit',
+    ],
+    content: {
+      en: {
+        title: 'Cockpit now has a Claude Code CLI execution mode',
+        description:
+          'Every Claude chat tab in Cockpit can now run in one of two ways: the Claude Agent SDK (headless `query()`), or a real interactive `claude` session driven in a PTY. Both share the same conversation, so you can switch per tab, mid-conversation, one click away. Here is what the new CLI mode is and how it works.',
+        readingTime: '5 min read',
+        body: `Cockpit drives Claude Code through the Claude Agent SDK — \`query()\`, headless, programmatic. That is still the default. As of this release, each Claude / Claude2 chat tab also has a second execution mode you can flip to: **Claude Code CLI**.
+
+Here is what the two modes are, and how the new one works.
+
+## Two ways to run the same conversation
+
+The toggle sits right above the message list:
+
+| Mode | What actually runs |
+|---|---|
+| **Claude Agent SDK** | \`query()\` — headless, programmatic |
+| **Claude Code CLI** | a real interactive \`claude\` session in a PTY |
+
+Same Claude, same project, same tools. The only difference is *how* the turn is driven.
+
+In **Claude Code CLI** mode, every message spawns an interactive \`claude\` in a pseudo-terminal, types your prompt into the live REPL exactly like a human at a keyboard would, watches the session transcript to know when the turn is done, and exits. It is ephemeral — no daemon, no resident process — but for the duration of a turn it is, by every observable signal, an interactive Claude Code session.
+
+Different invocation paths can be metered differently over time. We will leave you to decide which one fits; the point here is that you now have the choice, per tab, one click away.
+
+## Same session, seamless switching
+
+The detail that makes this painless: **both modes read and write the same session file.**
+
+The SDK's \`query({ resume })\` and the CLI's \`claude -r\` operate on the *same* \`~/.claude/projects/.../<id>.jsonl\` transcript — they are the same underlying \`claude-code\` binary. So:
+
+- One continuous conversation, one history. No "SDK history" vs "CLI history."
+- You can flip a tab between **Claude Agent SDK** and **Claude Code CLI** mid-conversation and the next turn just continues.
+- The chat panel always renders from that one transcript, so the UI does not change between modes.
+
+You are not choosing between two products. You are choosing how the *next message* runs.
+
+## A real terminal you can actually see
+
+Driving an interactive TUI from code is the kind of thing that works in a demo and then quietly wedges on a dialog at 2am. So CLI mode is not a black box — it ships with a small floating terminal in the corner of the chat.
+
+- It shows the **live, character-by-character** output of the real \`claude\` session. (The chat panel, rendered from the transcript, is block-level — the floating window is where you get the typewriter feel.)
+- It **auto-expands** while a turn is running and collapses when it is done.
+- If a turn ever gets stuck — say Claude is waiting on a prompt the driver did not anticipate — you get a notice in the chat bubble *and* you can **type directly into that terminal** to nudge it through by hand. Human-in-the-loop, exactly where you would want it.
+
+Press \`ESC\` to interrupt at any time; the session is reaped cleanly, with no orphan processes left behind.
+
+## Try it
+
+Update Cockpit, open a Claude or Claude2 chat, and look for the **Claude Agent SDK / Claude Code CLI** toggle above the message list. Flip it to **Claude Code CLI**, send a message, and watch the floating terminal drive a real interactive session.
+
+---
+
+**Try it:** \`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [Try Online](/try)`,
+      },
+      zh: {
+        title: 'Cockpit 新增 Claude Code CLI 执行模式',
+        description:
+          'Cockpit 里每个 Claude 聊天标签现在都能用两种方式跑：Claude Agent SDK（无头 `query()`），或在 PTY 里驱动一个真·交互式 `claude` 会话。两者共享同一份对话，所以你可以 per-tab、在对话中途、一键切换。这篇讲讲新增的 CLI 模式是什么、怎么工作。',
+        readingTime: '阅读约 5 分钟',
+        body: `Cockpit 一直是通过 Claude Agent SDK 来驱动 Claude Code 的——\`query()\`、无头、程序化。这仍然是默认。从这个版本起，每个 Claude / Claude2 聊天标签多了一个可切换的执行模式：**Claude Code CLI**。
+
+下面讲讲这两种模式是什么，以及新的那个怎么工作。
+
+## 同一段对话的两种跑法
+
+切换条就在消息列表上方：
+
+| 模式 | 实际跑什么 |
+|---|---|
+| **Claude Agent SDK** | \`query()\`——无头、程序化 |
+| **Claude Code CLI** | PTY 里一个真·交互式 \`claude\` 会话 |
+
+同一个 Claude、同一个项目、同一套工具。唯一的区别是这一轮**怎么被驱动**。
+
+**Claude Code CLI** 模式下，每条消息都会在伪终端里 spawn 一个交互式 \`claude\`，像一个人坐在键盘前那样把 prompt 敲进活着的 REPL，盯着会话的 transcript 判断本轮何时结束，然后退出。它是临时的——没有守护进程、没有常驻进程——但在这一轮的整个过程里，从每一个可观测信号看，它就是一个交互式 Claude Code 会话。
+
+不同的调用路径，未来可能被以不同方式计量。具体选哪个，留给你自己判断；这里要说的是：你现在有了这个选择，per-tab、一键即达。
+
+## 同一份会话，无缝切换
+
+让这一切不痛苦的关键细节是：**两种模式读写的是同一个会话文件。**
+
+SDK 的 \`query({ resume })\` 和 CLI 的 \`claude -r\` 操作的是**同一份** \`~/.claude/projects/.../<id>.jsonl\` transcript——它们底层就是同一个 \`claude-code\` 二进制。于是：
+
+- 一条连续的对话、一份历史。不存在「SDK 历史」和「CLI 历史」两套。
+- 你可以在对话中途把某个标签在 **Claude Agent SDK** 和 **Claude Code CLI** 之间来回切，下一轮直接续上。
+- 聊天面板永远从那一份 transcript 渲染，所以 UI 在两种模式间不会有任何变化。
+
+你不是在两个产品之间做选择。你是在选**下一条消息**怎么跑。
+
+## 一个你真能看见的终端
+
+用代码驱动一个交互式 TUI，是那种 demo 里跑得好好的、然后凌晨两点悄悄卡在一个对话框上的活儿。所以 CLI 模式不是个黑盒——它在聊天角落带了一个小小的浮动终端。
+
+- 它显示真 \`claude\` 会话的**逐字实时**输出。（聊天面板从 transcript 渲染、是块级的——逐字打字机的体感由浮动窗提供。）
+- 它在一轮运行时**自动展开**，结束后自动折叠。
+- 万一某轮卡住了——比如 Claude 在等一个驱动没预料到的对话框——你会在聊天气泡里收到提示，*而且*可以**直接在那个终端里打字**，手动把它推过去。Human-in-the-loop，正好在你想要它的地方。
+
+任何时候按 \`ESC\` 都能中断；会话会被干净回收，不留孤儿进程。
+
+## 试一下
+
+更新 Cockpit，打开一个 Claude 或 Claude2 聊天，在消息列表上方找到 **Claude Agent SDK / Claude Code CLI** 切换条。切到 **Claude Code CLI** 发一条消息——看着浮动终端去驱动一个真正的交互式会话。
+
+---
+
+**试试看：** \`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [在线体验](/try)`,
+      },
+    },
+  },
+
+  {
     slug: 'code-graph-for-ai-agents',
     date: '2026-05-22',
     keywords: [

@@ -57,6 +57,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
     updateTabState,
     updateTabOllamaModel,
     updateTabDeepseekModel,
+    updateTabChatMode,
     handleTabDragStart,
     handleTabDragOver,
     handleTabDrop,
@@ -335,6 +336,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                           onOllamaModelChange={updateTabOllamaModel}
                           deepseekModel={tab.deepseekModel}
                           onDeepseekModelChange={updateTabDeepseekModel}
+                          chatMode={tab.chatMode}
+                          onChatModeChange={updateTabChatMode}
                           isActive={tab.id === activeTabId && activeView === 'agent'}
                           onStateChange={updateTabState}
                           onShowGitStatus={handleShowGitStatus}
@@ -409,6 +412,8 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                     onOllamaModelChange={updateTabOllamaModel}
                     deepseekModel={tab.deepseekModel}
                     onDeepseekModelChange={updateTabDeepseekModel}
+                    chatMode={tab.chatMode}
+                    onChatModeChange={updateTabChatMode}
                     isActive={tab.id === activeTabId}
                     onStateChange={updateTabState}
                     onCreateScheduledTask={createScheduledTask}

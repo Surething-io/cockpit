@@ -53,4 +53,5 @@ export type {
   RateLimitInfo,
   ChatEngine,
   DeepseekModel,
+  ChatMode,
 } from './types';

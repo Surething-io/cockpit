@@ -413,7 +413,16 @@
     "copyCommandTooltip": "Copy command: claude -r {{sessionId}}",
     "executedCommand": "Executed `{{command}}`{{exitInfo}}, output:\n```\n{{output}}\n```",
     "executedCommandFailed": "Failed to execute `{{command}}`: {{error}}",
-    "skillExpansionPrompt": "Please read this skill file:"
+    "skillExpansionPrompt": "Please read this skill file:",
+    "executionMode": "Execution Mode",
+    "ptyModeHint": "Subscription billing mode: uses interactive claude CLI",
+    "ptyTerminal": "PTY Terminal",
+    "ptyRunning": "running",
+    "ptyCollapse": "Collapse",
+    "ptyExpand": "Expand",
+    "ptyStuck": "PTY seems stuck (waiting for a dialog?). Please handle it in the terminal below.",
+    "ptyTimedOut": "PTY timed out without manual handling; the turn was terminated.",
+    "ptyCrash": "Claude CLI render crash (upstream bug): {{error}}. This session's history may contain edits that fail to render."
   },
   "console": {
     "enterCommandOrUrl": "Enter a command or URL to start",

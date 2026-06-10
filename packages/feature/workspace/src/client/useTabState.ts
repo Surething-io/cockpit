@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { usePageVisible } from '@cockpit/shared-ui';
-import type { ChatEngine, DeepseekModel } from '@cockpit/feature-agent';
+import type { ChatEngine, DeepseekModel, ChatMode } from '@cockpit/feature-agent';
 import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
 import { Effect } from 'effect';
@@ -27,6 +27,7 @@ export interface TabInfo {
   engine?: ChatEngine;
   ollamaModel?: string;
   deepseekModel?: DeepseekModel;
+  chatMode?: ChatMode;
 }
 
 // ============================================
@@ -100,6 +101,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         const savedEngines: Record<string, string> = data.engines || {};
         const savedOllamaModels: Record<string, string> = data.ollamaModels || {};
         const savedDeepseekModels: Record<string, string> = data.deepseekModels || {};
+        const savedChatModes: Record<string, string> = data.chatModes || {};
 
         // Merge URL sessionId with sessions in session.json (deduplicate)
         let allSessions = [...savedSessions];
@@ -116,6 +118,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
             engine: (savedEngines[sessionId] as ChatEngine) || undefined,
             ollamaModel: savedOllamaModels[sessionId] || undefined,
             deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || undefined,
+            chatMode: (savedChatModes[sessionId] as ChatMode) || undefined,
           }));
 
           // Activation priority: URL sessionId > session.json activeSessionId > first
@@ -157,6 +160,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     const engines: Record<string, string> = {};
     const ollamaModels: Record<string, string> = {};
     const deepseekModels: Record<string, string> = {};
+    const chatModes: Record<string, string> = {};
     for (const tab of tabs) {
       if (tab.sessionId && tab.engine) {
         engines[tab.sessionId] = tab.engine;
@@ -166,6 +170,10 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       }
       if (tab.sessionId && tab.deepseekModel) {
         deepseekModels[tab.sessionId] = tab.deepseekModel;
+      }
+      // only persist non-default values (pty); 'sdk' is the default and isn't written
+      if (tab.sessionId && tab.chatMode === 'pty') {
+        chatModes[tab.sessionId] = tab.chatMode;
       }
     }
 
@@ -177,6 +185,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         engines,
         ollamaModels,
         deepseekModels,
+        chatModes,
       }).pipe(
         Effect.tapError((e) =>
           Effect.sync(() => console.error('Failed to save sessions:', e))
@@ -302,6 +311,15 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     setTabs((prev) =>
       prev.map((tab) =>
         tab.id === tabId ? { ...tab, deepseekModel: model } : tab
+      )
+    );
+  }, []);
+
+  // Update execution mode (sdk/pty) for a tab
+  const updateTabChatMode = useCallback((tabId: string, chatMode: ChatMode) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, chatMode } : tab
       )
     );
   }, []);
@@ -440,6 +458,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     updateTabState,
     updateTabOllamaModel,
     updateTabDeepseekModel,
+    updateTabChatMode,
 
     // Drag operations
     handleTabDragStart,

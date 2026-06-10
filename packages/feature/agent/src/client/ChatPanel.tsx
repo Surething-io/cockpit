@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { Chat } from './Chat';
-import type { ChatEngine, DeepseekModel } from './types';
+import type { ChatEngine, DeepseekModel, ChatMode } from './types';
 
 // Migrated from src/components/project/ChatPanel.tsx.
 
@@ -19,6 +19,8 @@ interface ChatPanelProps {
   onOllamaModelChange?: (tabId: string, model: string) => void;
   deepseekModel?: DeepseekModel;
   onDeepseekModelChange?: (tabId: string, model: DeepseekModel) => void;
+  chatMode?: ChatMode;
+  onChatModeChange?: (tabId: string, chatMode: ChatMode) => void;
   isActive?: boolean;
   onStateChange: (tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string }) => void;
   onShowGitStatus?: () => void;
@@ -39,7 +41,7 @@ interface ChatPanelProps {
   onContentSearch?: (query: string) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, isActive, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode, onChatModeChange, isActive, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -60,6 +62,10 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllama
     onDeepseekModelChange?.(tabId, model);
   }, [tabId, onDeepseekModelChange]);
 
+  const handleChatModeChange = useCallback((m: ChatMode) => {
+    onChatModeChange?.(tabId, m);
+  }, [tabId, onChatModeChange]);
+
   return (
     <Chat
       tabId={tabId}
@@ -70,6 +76,8 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllama
       onOllamaModelChange={handleOllamaModelChange}
       deepseekModel={deepseekModel}
       onDeepseekModelChange={handleDeepseekModelChange}
+      chatMode={chatMode}
+      onChatModeChange={handleChatModeChange}
       hideHeader
       hideSidebar
       isActive={isActive}

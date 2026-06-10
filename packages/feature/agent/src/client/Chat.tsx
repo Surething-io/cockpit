@@ -17,7 +17,8 @@ import { useChatHistory } from './useChatHistory';
 import { useChatStream } from './useChatStream';
 import { MessageList, MessageListHandle } from './MessageList';
 import { ChatInput } from './ChatInput';
-import type { ChatMessage, TokenUsage, ImageInfo, ChatEngine, DeepseekModel } from './types';
+import { XtermFloatingWindow, XtermFloatingHandle } from './XtermFloatingWindow';
+import type { ChatMessage, TokenUsage, ImageInfo, ChatEngine, DeepseekModel, ChatMode } from './types';
 // In-package siblings (chat-only)
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { OllamaModelPicker } from './OllamaModelPicker';
@@ -36,6 +37,8 @@ interface ChatProps {
   onOllamaModelChange?: (model: string) => void;
   deepseekModel?: DeepseekModel;
   onDeepseekModelChange?: (model: DeepseekModel) => void;
+  chatMode?: ChatMode;
+  onChatModeChange?: (chatMode: ChatMode) => void;
   hideHeader?: boolean;
   hideSidebar?: boolean;
   isActive?: boolean; // Whether the tab is active (used to handle scroll issues for hidden tabs)
@@ -62,7 +65,7 @@ interface ChatProps {
   onOpenSettings?: () => void; // Host-handled: open the app settings modal
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode: chatModeProp, onChatModeChange, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -72,6 +75,29 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
   const [isCommentsListOpen, setIsCommentsListOpen] = useState(false);
   const [isUserMessagesOpen, setIsUserMessagesOpen] = useState(false);
   const [historyTokenUsage, setHistoryTokenUsage] = useState<TokenUsage | null>(null);
+  // Execution mode (per-tab): controlled by TabInfo.chatMode (persisted); falls back to local state when no prop (standalone use)
+  const [localChatMode, setLocalChatMode] = useState<ChatMode>('sdk');
+  const chatMode = chatModeProp ?? localChatMode;
+  const setChatMode = useCallback((m: ChatMode) => {
+    setLocalChatMode(m);
+    onChatModeChange?.(m);
+  }, [onChatModeChange]);
+  const isClaudeEngine = !engine || engine === 'claude' || engine === 'claude2';
+  // PTY floating window: receives raw terminal output
+  const ptyWindowRef = useRef<XtermFloatingHandle>(null);
+  const handlePtyOutput = useCallback((data: string) => {
+    ptyWindowRef.current?.write(data);
+  }, []);
+  // Manual fallback: floating-window keys → written into the running PTY's stdin
+  const handlePtyInput = useCallback((data: string) => {
+    if (!sessionId) return;
+    fetch('/api/chat/pty-input', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, data }),
+    }).catch(() => {});
+  }, [sessionId]);
+  const prevPtyLoadingRef = useRef(false);
   const messageListRef = useRef<MessageListHandle>(null);
   const handleSendRef = useRef<((message: string) => void) | null>(null);
 
@@ -94,16 +120,19 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
     tokenUsage: streamTokenUsage,
     rateLimitInfo,
     apiRetryInfo,
+    ptyNotice,
     handleSend,
     handleStop,
   } = useChatStream(messages, setMessages, {
     sessionId,
     cwd: initialCwd,
     engine,
+    chatMode,
     ollamaModel,
     deepseekModel,
     onSessionId: setSessionId,
     onFetchTitle: fetchSessionTitle,
+    onPtyOutput: handlePtyOutput,
   });
 
   // ! prefix: first line is command, subsequent lines are user notes, supports images
@@ -159,6 +188,14 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
     }
     prevActiveRef.current = isActive;
   }, [isActive, sessionId, initialCwd, isLoading, loadHistoryByCwdAndSessionId]);
+
+  // PTY floating window: clear the screen at the start of a new turn (isLoading rising edge)
+  useEffect(() => {
+    if (chatMode === 'pty' && isLoading && !prevPtyLoadingRef.current) {
+      ptyWindowRef.current?.clear();
+    }
+    prevPtyLoadingRef.current = isLoading;
+  }, [isLoading, chatMode]);
 
   // Merge token usage: stream takes priority, fallback to history
   const tokenUsage = streamTokenUsage || historyTokenUsage;
@@ -317,6 +354,35 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
           />
         )}
 
+        {/* Execution mode (claude/claude2 only): SDK ↔ PTY (subscription billing). Switchable dynamically at any time.
+            After switching to PTY, subsequent messages resume via `claude -r`; if the session contains SDK edit history,
+            upstream rendering may crash — covered by the driver's crash detection (errors instead of hanging), and the
+            user can switch back to SDK. */}
+        {isClaudeEngine && (
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card/50">
+            <span className="text-xs text-muted-foreground">{t('chat.executionMode', { defaultValue: 'Execution mode' })}</span>
+            <div className="inline-flex rounded-md border border-border overflow-hidden text-xs" role="group" data-testid="chatmode-toggle">
+              <button
+                type="button"
+                data-testid="chatmode-sdk"
+                onClick={() => setChatMode('sdk')}
+                className={`px-2 py-0.5 ${chatMode === 'sdk' ? 'bg-brand text-white' : 'bg-transparent text-muted-foreground hover:bg-accent'}`}
+              >
+                Claude Agent SDK
+              </button>
+              <button
+                type="button"
+                data-testid="chatmode-pty"
+                onClick={() => setChatMode('pty')}
+                className={`px-2 py-0.5 ${chatMode === 'pty' ? 'bg-brand text-white' : 'bg-transparent text-muted-foreground hover:bg-accent'}`}
+                title={t('chat.ptyModeHint', { defaultValue: 'Subscription-billing mode: driven by the interactive claude CLI' })}
+              >
+                Claude Code CLI
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Ollama model picker */}
         {engine === 'ollama' && onOllamaModelChange && (
           <div className="flex items-center px-3 py-1.5 border-b border-border bg-card/50">
@@ -345,6 +411,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
             sessionId={sessionId}
             engine={engine}
             apiRetryInfo={apiRetryInfo}
+            ptyNotice={ptyNotice}
             hasMoreHistory={hasMoreHistory}
             isLoadingMore={isLoadingMore}
             onLoadMore={loadMoreHistory}
@@ -368,6 +435,14 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
           onShowUserMessages={handleShowUserMessages}
           onOpenNote={onOpenNote}
           onCreateScheduledTask={handleCreateScheduledTask}
+        />
+
+        {/* PTY-mode floating window (dual-view: live terminal) */}
+        <XtermFloatingWindow
+          ref={ptyWindowRef}
+          visible={isClaudeEngine && chatMode === 'pty'}
+          running={isLoading}
+          onInput={handlePtyInput}
         />
       </div>
 

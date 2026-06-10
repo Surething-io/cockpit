@@ -11,8 +11,10 @@ import type {
   ApiRetryInfo,
   ChatEngine,
   DeepseekModel,
+  ChatMode,
 } from './types';
 import i18n from '@cockpit/shared-i18n';
+import { PTY_COLS, PTY_ROWS } from './XtermFloatingWindow';
 
 // Migrated from src/components/project/useChatStream.ts.
 
@@ -24,10 +26,14 @@ interface UseChatStreamOptions {
   sessionId: string | null;
   cwd?: string;
   engine?: ChatEngine;
+  /** 'pty' → subscription-billing mode (interactive claude CLI); defaults to 'sdk'. Only effective for claude/claude2 */
+  chatMode?: ChatMode;
   ollamaModel?: string;
   deepseekModel?: DeepseekModel;
   onSessionId: (sid: string) => void;
   onFetchTitle: (sid: string) => void;
+  /** PTY mode: raw terminal output (forwarded to the floating-window xterm) */
+  onPtyOutput?: (data: string) => void;
 }
 
 interface UseChatStreamReturn {
@@ -35,6 +41,7 @@ interface UseChatStreamReturn {
   tokenUsage: TokenUsage | null;
   rateLimitInfo: RateLimitInfo | null;
   apiRetryInfo: ApiRetryInfo | null;
+  ptyNotice: string | null;
   handleSend: (content: string, images?: ImageInfo[]) => Promise<void>;
   handleStop: () => void;
   abortControllerRef: React.RefObject<AbortController | null>;
@@ -47,12 +54,14 @@ interface UseChatStreamReturn {
 export function useChatStream(
   messages: ChatMessage[],
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  { sessionId, cwd, engine, ollamaModel, deepseekModel, onSessionId, onFetchTitle }: UseChatStreamOptions
+  { sessionId, cwd, engine, chatMode, ollamaModel, deepseekModel, onSessionId, onFetchTitle, onPtyOutput }: UseChatStreamOptions
 ): UseChatStreamReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const [rateLimitInfo, setRateLimitInfo] = useState<RateLimitInfo | null>(null);
   const [apiRetryInfo, setApiRetryInfo] = useState<ApiRetryInfo | null>(null);
+  // PTY notice (stuck / timed-out): shown in the loading bubble, like apiRetryInfo
+  const [ptyNotice, setPtyNotice] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Used to get latest sessionId in handleStreamEvent
@@ -91,6 +100,29 @@ export function useChatStream(
   // SSE event handling
   const handleStreamEvent = useCallback((event: Record<string, unknown>, messageId: string) => {
     const eventType = event.type as string;
+
+    // PTY mode: raw terminal output → floating window (does not enter the message stream)
+    if (eventType === 'pty_output') {
+      onPtyOutput?.(event.data as string);
+      return;
+    }
+
+    // PTY notice: easy-to-notice, in the message area (not a corner toast).
+    // - transient (stuck): shown in the loading bubble (like apiRetryInfo); user can take over in the terminal.
+    // - terminal (timed-out): written as the assistant message content so it persists after the turn ends.
+    if (eventType === 'pty_notice') {
+      // Server sends a messageKey (+ optional params); resolve via i18n on the client.
+      const m = event.messageKey
+        ? i18n.t(event.messageKey as string, (event.params as Record<string, unknown>) || {})
+        : (event.message as string | undefined);
+      if (!m) return;
+      if (event.terminal) {
+        setMessages((prev) => prev.map((msg) => (msg.id === messageId ? { ...msg, content: m, isStreaming: false } : msg)));
+      } else {
+        setPtyNotice(m);
+      }
+      return;
+    }
 
     // Handle session_id
     if (eventType === 'system' && event.subtype === 'init') {
@@ -134,8 +166,9 @@ export function useChatStream(
 
     // Handle streaming text chunk (typewriter effect) - use buffer throttle
     if (eventType === 'stream_event') {
-      // Any actual stream content means the retry (if any) succeeded
+      // Any actual stream content means the retry / stuck state (if any) has cleared
       setApiRetryInfo(prev => prev ? null : prev);
+      setPtyNotice(prev => prev ? null : prev);
       const streamEvent = event.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
       if (streamEvent?.type === 'content_block_delta' && streamEvent.delta?.type === 'text_delta') {
         const deltaText = streamEvent.delta.text || '';
@@ -284,7 +317,7 @@ export function useChatStream(
         )
       );
     }
-  }, [setMessages, flushStreamBuffer, onSessionId, onFetchTitle, cwd, engine]);
+  }, [setMessages, flushStreamBuffer, onSessionId, onFetchTitle, cwd, engine, onPtyOutput]);
 
   // Send message
   const handleSend = useCallback(
@@ -305,8 +338,9 @@ export function useChatStream(
       };
       setMessages((prev) => [...prev, userMessage]);
       setIsLoading(true);
-      // Fresh send: clear stale retry indicator from a previous turn
+      // Fresh send: clear stale retry / pty notice from a previous turn
       setApiRetryInfo(null);
+      setPtyNotice(null);
 
       // Create assistant message placeholder
       const assistantMessageId = `assistant-${Date.now()}`;
@@ -318,6 +352,10 @@ export function useChatStream(
         isStreaming: true,
       };
       setMessages((prev) => [...prev, assistantMessage]);
+
+      // PTY mode (claude/claude2 only). Images are written to temp files by the backend driver + the prompt carries the paths for claude to read.
+      const isClaudeEngine = !engine || engine === 'claude' || engine === 'claude2';
+      const usePty = chatMode === 'pty' && isClaudeEngine;
 
       // Create AbortController for interrupting request
       abortControllerRef.current = new AbortController();
@@ -341,6 +379,7 @@ export function useChatStream(
             ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
             ...(engine === 'deepseek' && deepseekModel && { model: deepseekModel }),
             ...(engine === 'claude2' && { engine: 'claude2' }),
+            ...(usePty && { mode: 'pty', ptyCols: PTY_COLS, ptyRows: PTY_ROWS }),
           }),
           signal: abortControllerRef.current.signal,
         });
@@ -412,7 +451,7 @@ export function useChatStream(
         );
       }
     },
-    [cwd, engine, ollamaModel, deepseekModel, setMessages, handleStreamEvent]
+    [cwd, engine, chatMode, ollamaModel, deepseekModel, setMessages, handleStreamEvent]
   );
 
   return {
@@ -420,6 +459,7 @@ export function useChatStream(
     tokenUsage,
     rateLimitInfo,
     apiRetryInfo,
+    ptyNotice,
     handleSend,
     handleStop,
     abortControllerRef,

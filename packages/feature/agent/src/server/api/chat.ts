@@ -5,6 +5,9 @@ import { resolveCommandPrompt } from '../lib/slashCommands';
 import { CLAUDE2_DIR } from '@cockpit/shared-utils';
 import { handler, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import { ValidationError } from '@cockpit/effect-core';
+import { runClaudeTurn } from '../pty/claudePtyDriver';
+import { mapLineToEvents, initEvent, resultEvent } from '../pty/ptySseMapper';
+import { randomUUID } from 'crypto';
 
 interface ImageData {
   type: 'base64';
@@ -32,6 +35,9 @@ export const POST = handler((request) =>
       cwd?: string;
       language?: string;
       engine?: string;
+      mode?: string;
+      ptyCols?: number;
+      ptyRows?: number;
     };
     const {
       prompt: rawPrompt,
@@ -40,6 +46,9 @@ export const POST = handler((request) =>
       cwd,
       language,
       engine,
+      mode,
+      ptyCols,
+      ptyRows,
     } = body;
 
     // Resolve built-in slash commands (/qa, /fx, etc.) based on language
@@ -120,6 +129,63 @@ export const POST = handler((request) =>
         const userMessage = typeof prompt === 'string' ? prompt : undefined;
         if (cwd && sessionId) {
           updateGlobalState(cwd, sessionId, 'loading', undefined, userMessage).catch(() => {});
+        }
+
+        // ---- PTY mode (subscription billing): driven by the interactive claude CLI, via jsonl → SSE mapping ----
+        // Applies only to claude/claude2; an additive branch — when mode!=='pty' the SDK path is completely unchanged.
+        if (mode === 'pty' && (!engine || engine === 'claude' || engine === 'claude2')) {
+          const isResume = !!sessionId;
+          const sid = sessionId || randomUUID();
+          const promptText = typeof prompt === 'string' ? prompt : '';
+          try {
+            safeEnqueue(`data: ${JSON.stringify(initEvent(sid))}\n\n`);
+            if (cwd) updateGlobalState(cwd, sid, 'loading', undefined, userMessage).catch(() => {});
+            const turn = await runClaudeTurn({
+              cwd: cwd || process.cwd(),
+              prompt: promptText,
+              sessionId: sid,
+              resume: isResume,
+              ...(images && images.length > 0 && { images: images.map((img) => ({ media_type: img.media_type, data: img.data })) }),
+              ...(ptyCols && { cols: ptyCols }),
+              ...(ptyRows && { rows: ptyRows }),
+              signal: queryAbortController.signal,
+              onJsonlLine: (line) => {
+                for (const ev of mapLineToEvents(line, sid)) {
+                  safeEnqueue(`data: ${JSON.stringify(ev)}\n\n`);
+                }
+              },
+              // floating-window dual-view: raw PTY output is forwarded to the frontend xterm over the same SSE channel
+              onPtyData: (data) => {
+                safeEnqueue(`data: ${JSON.stringify({ type: 'pty_output', data })}\n\n`);
+              },
+              // Startup stuck (REPL not ready for a while, likely waiting on a dialog):
+              // prompt the user to handle it manually in the terminal. i18n resolved on the client.
+              onStuck: () => {
+                safeEnqueue(`data: ${JSON.stringify({ type: 'pty_notice', level: 'warning', messageKey: 'chat.ptyStuck' })}\n\n`);
+              },
+            });
+            // claude-code itself crashed (upstream bug, e.g. rendering edit history on resume).
+            // Terminal notice → shown as the assistant message content.
+            if (turn.crashed) {
+              safeEnqueue(`data: ${JSON.stringify({ type: 'pty_notice', level: 'error', terminal: true, messageKey: 'chat.ptyCrash', params: { error: turn.crashError } })}\n\n`);
+            }
+            // Stuck past the grace window without manual handling → terminated (terminal notice).
+            if (turn.timedOut) {
+              safeEnqueue(`data: ${JSON.stringify({ type: 'pty_notice', level: 'warning', terminal: true, messageKey: 'chat.ptyTimedOut' })}\n\n`);
+            }
+            safeEnqueue(`data: ${JSON.stringify(resultEvent(sid))}\n\n`);
+            if (cwd) {
+              const title = await getSessionTitle(cwd, sid);
+              await updateGlobalState(cwd, sid, 'unread', title);
+            }
+            safeEnqueue('data: [DONE]\n\n');
+          } catch (err) {
+            if (!queryAbortController.signal.aborted) {
+              safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: String(err) })}\n\n`);
+            }
+          }
+          safeClose();
+          return;
         }
 
         try {

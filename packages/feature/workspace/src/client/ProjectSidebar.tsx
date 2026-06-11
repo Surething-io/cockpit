@@ -59,7 +59,12 @@ export function ProjectSidebar({
   const { latest: latestVersion, hasUpdate } = useLatestVersion();
   const [updatePopoverOpen, setUpdatePopoverOpen] = useState(false);
   const updatePopoverRef = useRef<HTMLDivElement | null>(null);
-  // Close popover when clicking anywhere outside it.
+  // Close popover when clicking anywhere outside it. The entire right
+  // content area is a per-project <iframe> (see Workspace.tsx), so clicks
+  // there never reach this document — but they do steal the parent
+  // window's focus, hence the blur listener (same pattern as
+  // GlobalSessionMonitor). Capture phase on mousedown so in-document
+  // components that stopPropagation (e.g. xterm) can't swallow it.
   useEffect(() => {
     if (!updatePopoverOpen) return;
     const onDocClick = (e: MouseEvent) => {
@@ -67,8 +72,13 @@ export function ProjectSidebar({
         setUpdatePopoverOpen(false);
       }
     };
-    document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
+    const onBlur = () => setUpdatePopoverOpen(false);
+    document.addEventListener('mousedown', onDocClick, true);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick, true);
+      window.removeEventListener('blur', onBlur);
+    };
   }, [updatePopoverOpen]);
   const copyUpgradeCmd = useCallback(() => {
     navigator.clipboard.writeText('cockpit update');

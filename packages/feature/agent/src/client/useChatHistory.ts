@@ -7,7 +7,8 @@ import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { AppError } from '@cockpit/effect-core';
 
 // Shared: POST /api/session-by-path — returns null on failure (matches `!response.ok`).
-const postSessionByPath = (body: Record<string, unknown>) =>
+// Also used by SubagentTranscript to fetch subagent transcripts (via toolUseId).
+export const postSessionByPath = (body: Record<string, unknown>) =>
   Effect.tryPromise({
     try: async () => {
       const response = await fetch('/api/session-by-path', {

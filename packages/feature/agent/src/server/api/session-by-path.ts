@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as readline from 'readline';
+import { join } from 'path';
 import { Effect } from 'effect';
 import { getClaudeSessionPath, getClaude2SessionPath, findCodexSessionPath, findKimiSessionPath, getOllamaSessionPath, getDeepseekSessionPath } from '@cockpit/shared-utils';
 import { handler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
@@ -80,15 +81,50 @@ function getFileFingerprint(filePath: string): string {
 interface SessionByPathBody {
   cwd?: string;
   sessionId?: string;
+  // When set, return the transcript of the subagent spawned by this Agent/Task
+  // tool call instead of the main session (new-format `<sessionId>/subagents/` dir).
+  toolUseId?: string;
   limit?: number;
   beforeTurnIndex?: number;
   ifFingerprint?: string;
 }
 
+// Subagent meta sidecar (agent-<id>.meta.json next to agent-<id>.jsonl)
+interface SubagentMeta {
+  agentType?: string;
+  description?: string;
+  toolUseId?: string;
+}
+
+// Locate the subagent transcript spawned by a given tool_use id.
+// Subagents live in `<sessionDir>/<sessionId>/subagents/agent-<id>.jsonl`
+// with a meta sidecar carrying the spawning toolUseId.
+function findSubagentTranscript(
+  sessionPath: string,
+  toolUseId: string
+): { transcriptPath: string; meta: SubagentMeta } | null {
+  const subagentsDir = join(sessionPath.replace(/\.jsonl$/, ''), 'subagents');
+  if (!fs.existsSync(subagentsDir)) return null;
+  for (const file of fs.readdirSync(subagentsDir)) {
+    if (!file.endsWith('.meta.json')) continue;
+    try {
+      const meta = JSON.parse(
+        fs.readFileSync(join(subagentsDir, file), 'utf-8')
+      ) as SubagentMeta;
+      if (meta.toolUseId !== toolUseId) continue;
+      const transcriptPath = join(subagentsDir, file.replace(/\.meta\.json$/, '.jsonl'));
+      if (fs.existsSync(transcriptPath)) return { transcriptPath, meta };
+    } catch {
+      // Skip unreadable meta files
+    }
+  }
+  return null;
+}
+
 export const POST = handler((req) =>
   Effect.gen(function* () {
     const body = (yield* parseJsonRaw(req)) as SessionByPathBody;
-    const { cwd, sessionId, limit, beforeTurnIndex, ifFingerprint } = body;
+    const { cwd, sessionId, toolUseId, limit, beforeTurnIndex, ifFingerprint } = body;
     if (!cwd || !sessionId) {
       return yield* Effect.fail(
         new ValidationError({
@@ -106,6 +142,35 @@ export const POST = handler((req) =>
       );
     }
     const { sessionPath, engine } = resolved;
+
+    // Subagent transcript branch: same parser/fingerprint flow on the agent jsonl
+    if (toolUseId) {
+      if (!/^[A-Za-z0-9_-]+$/.test(toolUseId)) {
+        return yield* Effect.fail(
+          new ValidationError({ field: 'toolUseId', reason: 'invalid' })
+        );
+      }
+      const sub = yield* Effect.sync(() => findSubagentTranscript(sessionPath, toolUseId));
+      if (!sub) {
+        return yield* Effect.fail(
+          new NotFoundError({ resource: 'subagent', id: toolUseId })
+        );
+      }
+      const subFingerprint = getFileFingerprint(sub.transcriptPath);
+      if (ifFingerprint && ifFingerprint === subFingerprint) {
+        return ok({ notModified: true, fingerprint: subFingerprint });
+      }
+      const subResult = yield* Effect.tryPromise({
+        try: () => parseTranscriptFile(sub.transcriptPath),
+        catch: (cause) =>
+          new AppError({ message: 'parseTranscriptFile failed', cause }),
+      });
+      return ok({
+        messages: subResult.messages,
+        subagent: { agentType: sub.meta.agentType, description: sub.meta.description },
+        fingerprint: subFingerprint,
+      });
+    }
 
     const fingerprint = getFileFingerprint(sessionPath);
     if (ifFingerprint && ifFingerprint === fingerprint) {

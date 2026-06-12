@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@cockpit/shared-ui';
+import { SubagentTranscriptModal } from './SubagentTranscriptModal';
 import type { ToolCallInfo } from './types';
 // Tech debt: PreviewModal is a heavy main-shell component (depends on
 // DiffView/CodeViewer/MarkdownRenderer/...). Pulling it cleanly would mean
@@ -35,14 +36,19 @@ const TOOL_ICONS: Record<string, string> = {
 interface ToolCallProps {
   toolCall: ToolCallInfo;
   cwd?: string;
+  // Enables the subagent transcript entry on Agent/Task tool calls
+  sessionId?: string | null;
 }
 
-export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
+export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [previewContent, setPreviewContent] = useState<{ title: string; content: string; toolName: string } | null>(null);
+  const [showSubagent, setShowSubagent] = useState(false);
 
   const toolIcon = TOOL_ICONS[toolCall.name] || '🔧';
+  const isSubagentCall =
+    (toolCall.name === 'Agent' || toolCall.name === 'Task') && !!cwd && !!sessionId;
 
   // Extract file path or key info from input
   const getDisplayInfo = () => {
@@ -142,6 +148,18 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
         )}
         {/* Right action area */}
         <span className="ml-auto flex items-center gap-2">
+          {isSubagentCall && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); setShowSubagent(true); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setShowSubagent(true); } }}
+              className="text-xs text-brand hover:text-teal-10 cursor-pointer"
+              title={t('chat.subagentViewTitle')}
+            >
+              {t('chat.subagent')}
+            </span>
+          )}
           {expanded && !toolCall.isLoading && (
             <>
               <span
@@ -209,6 +227,16 @@ export function ToolCallModal({ toolCall, cwd }: ToolCallProps) {
           content={previewContent.content}
           toolName={previewContent.toolName}
           onClose={() => setPreviewContent(null)}
+        />
+      )}
+
+      {/* Subagent transcript modal */}
+      {showSubagent && cwd && sessionId && (
+        <SubagentTranscriptModal
+          cwd={cwd}
+          sessionId={sessionId}
+          toolCall={toolCall}
+          onClose={() => setShowSubagent(false)}
         />
       )}
     </div>

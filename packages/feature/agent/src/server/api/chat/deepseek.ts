@@ -207,24 +207,11 @@ export const POST = handler((request) =>
             ...(sessionId && { resume: sessionId }),
             ...(cwd && { cwd }),
             settingSources: ['user', 'project', 'local'] as Array<'user' | 'project' | 'local'>,
-            allowedTools: [
-              'Read',
-              'Write',
-              'Edit',
-              'Bash',
-              'Glob',
-              'Grep',
-              'WebFetch',
-              'WebSearch',
-              'Task',
-              // Task management — claude-agent-sdk@0.3.142 replaced TodoWrite
-              // with per-task TaskCreate/Update/Get/List events.
-              'TaskCreate',
-              'TaskUpdate',
-              'TaskGet',
-              'TaskList',
-              'mcp__*',
-            ],
+            // No allowedTools whitelist: tool availability is decided by the `tools`
+            // option (unset → all built-in tools registered by default). allowedTools
+            // only pre-approves the permission prompt, which bypassPermissions skips.
+            // (Native bun-compiled builds would need Grep/Glob listed explicitly; we
+            // run via the node CLI, so it doesn't apply.)
             permissionMode: 'bypassPermissions' as const,
             allowDangerouslySkipPermissions: true,
             includePartialMessages: true,

@@ -205,25 +205,12 @@ export const POST = handler((request) =>
             ...(cwd && { cwd }),
             // Load user and project level settings
             settingSources: ['user', 'project', 'local'] as Array<'user' | 'project' | 'local'>,
-            // Allowed tools - includes all MCP tools
-            allowedTools: [
-              'Read',
-              'Write',
-              'Edit',
-              'Bash',
-              'Glob',
-              'Grep',
-              'WebFetch',
-              'WebSearch',
-              'Task',        // Sub-agent for complex tasks
-              // Task management — claude-agent-sdk@0.3.142 replaced TodoWrite
-              // with per-task TaskCreate/Update/Get/List events.
-              'TaskCreate',
-              'TaskUpdate',
-              'TaskGet',
-              'TaskList',
-              'mcp__*',      // Allow all MCP tools
-            ],
+            // No allowedTools whitelist: tool availability is decided by the `tools`
+            // option (unset here → all built-in tools registered by default, incl. any
+            // added by future SDK versions); allowedTools only pre-approves the
+            // permission prompt, which bypassPermissions already skips. Caveat: on a
+            // bun-compiled native build, Grep/Glob must be listed in `tools`/allowedTools
+            // to stay registered — not a concern here since we run via the node CLI.
             // Permission mode: skip all permission checks
             permissionMode: 'bypassPermissions' as const,
             // Allow skipping permission checks (must be used with bypassPermissions)

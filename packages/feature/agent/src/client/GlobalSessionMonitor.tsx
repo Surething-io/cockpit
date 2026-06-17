@@ -10,6 +10,8 @@ export interface GlobalSession {
   status: string;
   title?: string;
   lastUserMessage?: string;
+  firstMessages?: string[];
+  lastMessages?: string[];
 }
 
 interface GlobalSessionMonitorProps {
@@ -24,6 +26,25 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
   const [isOpen, setIsOpen] = useState(false);
   const [now, setNow] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  // Rich tooltip: which session is hovered + where to anchor it (fixed positioning
+  // escapes the dropdown's overflow-y-auto clipping)
+  const [tooltip, setTooltip] = useState<{ session: GlobalSession; top: number; left: number } | null>(null);
+
+  const showTooltip = useCallback((session: GlobalSession, e: React.MouseEvent<HTMLElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const TOOLTIP_MAX_H = 260;
+    let top = rect.top;
+    if (top + TOOLTIP_MAX_H > window.innerHeight) {
+      top = Math.max(8, window.innerHeight - TOOLTIP_MAX_H - 8);
+    }
+    setTooltip({ session, top, left: rect.right + 8 });
+  }, []);
+  const hideTooltip = useCallback(() => setTooltip(null), []);
+
+  // Drop the tooltip whenever the dropdown closes (e.g. outside click / blur)
+  useEffect(() => {
+    if (!isOpen) setTooltip(null);
+  }, [isOpen]);
 
   // Close on outside click (including clicking into an iframe)
   useEffect(() => {
@@ -52,6 +73,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
   const handleSessionClick = useCallback((session: GlobalSession) => {
     onSwitchProject(session.cwd, session.sessionId);
     setIsOpen(false);
+    setTooltip(null);
   }, [onSwitchProject]);
 
   const loadingCount = sessions.filter(s => s.status === 'loading').length;
@@ -124,6 +146,8 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
                 <button
                   key={`${session.cwd}-${session.sessionId}`}
                   onClick={() => handleSessionClick(session)}
+                  onMouseEnter={(e) => showTooltip(session, e)}
+                  onMouseLeave={hideTooltip}
                   className={`w-full px-3 py-2 text-left hover:bg-accent transition-colors flex items-start gap-2 ${
                     index !== sessions.length - 1 ? 'border-b border-border/50' : ''
                   } ${currentCwd === session.cwd ? 'bg-accent/50' : ''}`}
@@ -136,7 +160,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
                         ? 'bg-red-500'
                         : 'bg-muted-foreground/30'
                   }`} />
-                  <div className="flex-1 min-w-0" title={session.cwd}>
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm truncate">
                         {getProjectName(session.cwd)}
@@ -161,6 +185,40 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
               ))
             )}
           </div>
+        </div>
+      )}
+
+      {/* Rich hover tooltip: cwd path + first/last user-message preview (mirrors ProjectSessionsModal cards) */}
+      {tooltip && (
+        <div
+          className="fixed z-[60] w-72 max-h-[260px] overflow-y-auto bg-popover border border-border rounded-lg shadow-lg p-3 pointer-events-none"
+          style={{ top: tooltip.top, left: tooltip.left }}
+        >
+          <div className="text-xs font-medium text-foreground truncate">{getProjectName(tooltip.session.cwd)}</div>
+          {((tooltip.session.firstMessages?.length ?? 0) > 0 || (tooltip.session.lastMessages?.length ?? 0) > 0) ? (
+            <div className="space-y-0.5 text-xs border-t border-border/50 mt-2 pt-2">
+              {tooltip.session.firstMessages?.map((msg, idx) => (
+                <div key={`f-${idx}`} className="text-foreground/90 truncate">
+                  <span className="text-slate-9 mr-1">•</span>
+                  {msg}
+                </div>
+              ))}
+              {(tooltip.session.lastMessages?.length ?? 0) > 0 && (
+                <div className="text-slate-9 text-center py-0.5">···</div>
+              )}
+              {tooltip.session.lastMessages?.map((msg, idx) => (
+                <div key={`l-${idx}`} className="text-foreground/90 truncate">
+                  <span className="text-slate-9 mr-1">•</span>
+                  {msg}
+                </div>
+              ))}
+            </div>
+          ) : (tooltip.session.lastUserMessage || tooltip.session.title) ? (
+            /* Fallback (e.g. running sessions skipped on the WS path): show whatever message the item already has */
+            <div className="text-xs text-foreground/90 border-t border-border/50 mt-2 pt-2 line-clamp-3 break-words">
+              {tooltip.session.lastUserMessage || tooltip.session.title}
+            </div>
+          ) : null}
         </div>
       )}
     </div>

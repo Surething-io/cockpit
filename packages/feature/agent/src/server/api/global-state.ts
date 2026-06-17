@@ -7,7 +7,7 @@ import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { FSError, ValidationError } from "@cockpit/effect-core"
 import {
   updateGlobalState,
-  getLastUserMessage,
+  getSessionPreview,
   type SessionStatus,
 } from "../state/globalState"
 
@@ -18,6 +18,8 @@ interface GlobalSession {
   status: SessionStatus
   title?: string
   lastUserMessage?: string
+  firstMessages?: string[]
+  lastMessages?: string[]
 }
 
 interface GlobalState {
@@ -43,13 +45,15 @@ export const GET = handler(() =>
     const sessions = yield* Effect.promise(() =>
       Promise.all(
         recent.map(async (session) => {
-          const lastUserMessage = await getLastUserMessage(
+          const preview = await getSessionPreview(
             session.cwd,
             session.sessionId
           )
           return {
             ...session,
-            lastUserMessage: lastUserMessage ?? session.lastUserMessage,
+            lastUserMessage: preview.lastUserMessage ?? session.lastUserMessage,
+            firstMessages: preview.firstMessages,
+            lastMessages: preview.lastMessages,
           }
         })
       )

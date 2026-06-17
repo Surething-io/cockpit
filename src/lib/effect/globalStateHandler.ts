@@ -17,7 +17,7 @@ import {
   GLOBAL_STATE_FILE,
   readJsonFile,
 } from "@cockpit/shared-utils"
-import { getLastUserMessage } from "@cockpit/feature-agent/server/state/globalState"
+import { getSessionPreview } from "@cockpit/feature-agent/server/state/globalState"
 
 interface GlobalSession {
   cwd: string
@@ -26,6 +26,8 @@ interface GlobalSession {
   status: string
   title?: string
   lastUserMessage?: string
+  firstMessages?: string[]
+  lastMessages?: string[]
 }
 
 interface GlobalState {
@@ -64,10 +66,15 @@ const sendGlobalState = (
         session.status === "loading" && session.lastUserMessage
           ? Effect.succeed(session)
           : Effect.tryPromise({
-              try: () => getLastUserMessage(session.cwd, session.sessionId),
+              try: () => getSessionPreview(session.cwd, session.sessionId),
               catch: () => undefined as never,
             }).pipe(
-              Effect.map((lastUserMessage) => ({ ...session, lastUserMessage })),
+              Effect.map((preview) => ({
+                ...session,
+                lastUserMessage: preview.lastUserMessage ?? session.lastUserMessage,
+                firstMessages: preview.firstMessages,
+                lastMessages: preview.lastMessages,
+              })),
               Effect.orElseSucceed(() => session)
             ),
       { concurrency: "unbounded" }

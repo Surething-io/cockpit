@@ -134,35 +134,73 @@ export async function getSessionTitle(cwd: string, sessionId: string): Promise<s
 }
 
 /**
- * Read the last user message from a transcript file.
+ * Collect every valid user message from a transcript file, in order,
+ * dispatching by engine format (Claude-style / Codex / Kimi).
  */
-export async function getLastUserMessage(cwd: string, sessionId: string): Promise<string | undefined> {
+async function collectUserMessages(cwd: string, sessionId: string): Promise<string[]> {
   const claudePath = getClaudeSessionPath(cwd, sessionId);
   if (existsSync(claudePath)) {
-    return await getClaudeStyleLastUserMessage(claudePath);
+    return await getClaudeStyleUserMessages(claudePath);
   }
 
   const claude2Path = getClaude2SessionPath(cwd, sessionId);
   if (existsSync(claude2Path)) {
-    return await getClaudeStyleLastUserMessage(claude2Path);
+    return await getClaudeStyleUserMessages(claude2Path);
   }
 
   const ollamaPath = getOllamaSessionPath(cwd, sessionId);
   if (existsSync(ollamaPath)) {
-    return await getClaudeStyleLastUserMessage(ollamaPath);
+    return await getClaudeStyleUserMessages(ollamaPath);
   }
 
   const codexPath = findCodexSessionPath(sessionId);
   if (codexPath && existsSync(codexPath)) {
-    return await getCodexLastUserMessage(codexPath);
+    return await getCodexUserMessages(codexPath);
   }
 
   const kimiPath = findKimiSessionPath(sessionId);
   if (kimiPath && existsSync(kimiPath)) {
-    return await getKimiLastUserMessage(kimiPath);
+    return await getKimiUserMessages(kimiPath);
   }
 
-  return undefined;
+  return [];
+}
+
+/**
+ * Read the last user message from a transcript file.
+ */
+export async function getLastUserMessage(cwd: string, sessionId: string): Promise<string | undefined> {
+  const messages = await collectUserMessages(cwd, sessionId);
+  return messages[messages.length - 1];
+}
+
+const SUMMARY_THRESHOLD = 10; // ≤ this many messages → all go into firstMessages
+const SUMMARY_HEAD = 5;
+const SUMMARY_TAIL = 5;
+
+export interface SessionPreview {
+  lastUserMessage?: string;
+  firstMessages: string[];
+  lastMessages: string[];
+}
+
+/**
+ * Read a session preview in a single pass: the last user message plus a
+ * first/last message summary, mirroring the ProjectSessionsModal cards
+ * (≤10 messages → all in firstMessages; otherwise first 5 + last 5). Each
+ * summary message is truncated to MAX_TEXT_LEN chars.
+ */
+export async function getSessionPreview(cwd: string, sessionId: string): Promise<SessionPreview> {
+  const messages = await collectUserMessages(cwd, sessionId);
+  const lastUserMessage = messages[messages.length - 1];
+  if (messages.length <= SUMMARY_THRESHOLD) {
+    return { lastUserMessage, firstMessages: messages.map((m) => truncate(m)!), lastMessages: [] };
+  }
+  return {
+    lastUserMessage,
+    firstMessages: messages.slice(0, SUMMARY_HEAD).map((m) => truncate(m)!),
+    lastMessages: messages.slice(-SUMMARY_TAIL).map((m) => truncate(m)!),
+  };
 }
 
 /**
@@ -231,12 +269,11 @@ async function getClaudeStyleTitle(filePath: string): Promise<string> {
   }
 }
 
-async function getClaudeStyleLastUserMessage(filePath: string): Promise<string | undefined> {
+async function getClaudeStyleUserMessages(filePath: string): Promise<string[]> {
+  const messages: string[] = [];
   try {
     const fileStream = createReadStream(filePath);
     const rl = createInterface({ input: fileStream, crlfDelay: Infinity });
-
-    let lastUserMessage: string | undefined;
 
     for await (const line of rl) {
       if (!line.trim()) continue;
@@ -262,25 +299,23 @@ async function getClaudeStyleLastUserMessage(filePath: string): Promise<string |
         if (!text) continue;
         const filtered = filterCommandTags(text);
         if (filtered && isValidUserMessage(filtered)) {
-          lastUserMessage = filtered;
+          messages.push(filtered);
         }
       } catch {
         // ignore
       }
     }
-
-    return lastUserMessage;
   } catch {
-    return undefined;
+    // ignore
   }
+  return messages;
 }
 
-async function getCodexLastUserMessage(filePath: string): Promise<string | undefined> {
+async function getCodexUserMessages(filePath: string): Promise<string[]> {
+  const messages: string[] = [];
   try {
     const fileStream = createReadStream(filePath);
     const rl = createInterface({ input: fileStream, crlfDelay: Infinity });
-
-    let last: string | undefined;
 
     for await (const line of rl) {
       if (!line.trim()) continue;
@@ -305,14 +340,13 @@ async function getCodexLastUserMessage(filePath: string): Promise<string | undef
 
       const filtered = filterCommandTags(text);
       if (filtered && isValidUserMessage(filtered)) {
-        last = filtered;
+        messages.push(filtered);
       }
     }
-
-    return last;
   } catch {
-    return undefined;
+    // ignore
   }
+  return messages;
 }
 
 async function getCodexTitle(filePath: string): Promise<string | undefined> {
@@ -349,12 +383,11 @@ async function getCodexTitle(filePath: string): Promise<string | undefined> {
   }
 }
 
-async function getKimiLastUserMessage(filePath: string): Promise<string | undefined> {
+async function getKimiUserMessages(filePath: string): Promise<string[]> {
+  const messages: string[] = [];
   try {
     const fileStream = createReadStream(filePath);
     const rl = createInterface({ input: fileStream, crlfDelay: Infinity });
-
-    let last: string | undefined;
 
     for await (const line of rl) {
       if (!line.trim()) continue;
@@ -389,14 +422,13 @@ async function getKimiLastUserMessage(filePath: string): Promise<string | undefi
 
       const filtered = filterCommandTags(text);
       if (filtered && isValidUserMessage(filtered)) {
-        last = filtered;
+        messages.push(filtered);
       }
     }
-
-    return last;
   } catch {
-    return undefined;
+    // ignore
   }
+  return messages;
 }
 
 async function getKimiTitle(filePath: string): Promise<string | undefined> {

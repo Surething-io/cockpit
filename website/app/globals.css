@@ -125,12 +125,20 @@
 }
 
 html {
-  scroll-behavior: smooth;
-  /* Sticky Nav is `h-14` (3.5rem). Anything scrolled into view by the
-     browser / Next.js App Router segment-aligner would otherwise be tucked
-     under the Nav — `scroll-padding-top` reserves a buffer so the aligned
-     element's top sits below the Nav. Extra 0.5rem gives the article title
-     a small visual gap instead of sitting flush against the Nav. */
+  /* No global `scroll-behavior: smooth` here, on purpose. It silently breaks
+     Next.js App Router's scroll reset on client navigation: the router's
+     scroll-to-top competes with the CSS smooth animation (and with the docs
+     sidebar's active-item `scrollIntoView`), leaving a freshly-navigated page
+     stuck at the previous scroll position. Removing it makes every
+     programmatic navigation scroll instant and deterministic. Smooth
+     scrolling for in-page TOC anchors is reintroduced explicitly, per-click,
+     in `components/SmoothAnchors.tsx`. */
+
+  /* Sticky Nav is `h-14` (3.5rem). Anything scrolled into view by the browser
+     / Next.js App Router segment-aligner / SmoothAnchors would otherwise be
+     tucked under the Nav — `scroll-padding-top` reserves a buffer so the
+     aligned element's top sits below the Nav. Extra 0.5rem gives the article
+     title a small visual gap instead of sitting flush against the Nav. */
   scroll-padding-top: 4rem;
 }
 

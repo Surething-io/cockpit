@@ -89,6 +89,17 @@ export const fetchBranches = (
   )
 
 /**
+ * Lightweight current-branch lookup (only `git rev-parse --abbrev-ref HEAD`).
+ * Returns `{ branch: null }` for non-git dirs / detached HEAD.
+ */
+export const fetchCurrentBranch = (
+  cwd: string
+): Effect.Effect<{ branch: string | null }, AppError> =>
+  httpGet<{ branch: string | null }>(
+    `/api/git/current-branch?cwd=${encodeURIComponent(cwd)}`
+  )
+
+/**
  * Fetch commit history for a branch (supports paginated offset).
  */
 export const fetchCommits = (

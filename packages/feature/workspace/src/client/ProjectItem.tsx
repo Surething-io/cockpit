@@ -1,7 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { useWebSocket } from '@cockpit/shared-ui';
+import { fetchCurrentBranch } from '@cockpit/feature-explorer';
 
 interface ProjectItemProps {
   index: number;
@@ -56,6 +59,43 @@ export function ProjectItem({
 }: ProjectItemProps) {
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
+  // Current git branch for this project (null = not a git repo / detached HEAD).
+  const [branch, setBranch] = useState<string | null>(null);
+
+  // Fetch via the lightweight /api/git/current-branch (just `rev-parse`).
+  const loadBranch = useCallback(() => {
+    BrowserRuntime.runPromiseExit(fetchCurrentBranch(cwd)).then((exit) => {
+      if (exit._tag === 'Success') setBranch(exit.value.branch);
+    });
+  }, [cwd]);
+
+  useEffect(() => {
+    loadBranch();
+  }, [loadBranch]);
+
+  // Dynamic refresh: the per-cwd file watcher already emits a debounced/throttled
+  // `git` event on .git/HEAD or refs changes (branch switch, checkout, commit).
+  // Re-fetch only this project's branch — no polling, no full-list refresh.
+  const onWatchMessage = useCallback((msg: unknown) => {
+    const m = msg as { type?: string; data?: Array<{ type?: string }> };
+    if (m?.type === 'watch' && Array.isArray(m.data) && m.data.some((e) => e.type === 'git')) {
+      loadBranch();
+    }
+  }, [loadBranch]);
+
+  useWebSocket({
+    url: `/ws/watch?cwd=${encodeURIComponent(cwd)}`,
+    onMessage: onWatchMessage,
+  });
+
+  // Tooltip text. With a branch: expanded shows just the branch (the name is
+  // already visible in the row), collapsed shows "name / branch" (the row is
+  // icon-only). No branch (not a git repo / detached HEAD) → the cwd path.
+  const tooltipText = branch
+    ? collapsed
+      ? `${name} · ${branch}`
+      : branch
+    : cwd;
 
   return (
     <div
@@ -69,7 +109,7 @@ export function ProjectItem({
       onClick={onClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      title={cwd}
+      data-tooltip={tooltipText}
     >
       <div className="relative flex-shrink-0">
         <NumberIcon number={index + 1} isActive={isActive} />

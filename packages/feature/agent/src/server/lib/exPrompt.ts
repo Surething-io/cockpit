@@ -14,8 +14,8 @@
  *   /cc  — Cockpit CLI operation (drive bubbles / codegraph via the CLI)
  *   /cr  — full code review (static triangulation + dynamic modelling)
  *
- * Source: /Users/ka/Cherry/07-Skills/ex/SKILL.md — kept verbatim including the
- * YAML frontmatter so nothing about the skill is lost on the way in.
+ * Snapshotted verbatim from the source `ex` skill — including the YAML
+ * frontmatter so nothing about the skill is lost on the way in.
  */
 
 export const EX_PROMPT_ZH = `---

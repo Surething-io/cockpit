@@ -26,11 +26,12 @@ SKILL.md by default. You register the absolute path once:
 
 1. Open Cockpit's Skills sidebar (the ⭐ icon in the workspace sidebar).
 2. Click **+ Add Skill**.
-3. Paste the absolute path to the SKILL.md, e.g. on this machine:
+3. Paste the absolute path to the SKILL.md, e.g. (replace `/path/to/cockpit`
+   with your clone location):
 
    ```
-   /Users/ka/Work/continic/Run/cockpit/skills/cockpit-release/SKILL.md
-   /Users/ka/Work/continic/Run/cockpit/skills/cockpit-changelog/SKILL.md
+   /path/to/cockpit/skills/cockpit-release/SKILL.md
+   /path/to/cockpit/skills/cockpit-changelog/SKILL.md
    ```
 
 4. Repeat for each skill.

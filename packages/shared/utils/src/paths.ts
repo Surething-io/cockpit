@@ -46,7 +46,7 @@ export const DEEPSEEK_PROJECTS_DIR = join(DEEPSEEK_DIR, 'projects');
 /**
  * Encode a path to a safe directory name
  * Must match Claude CLI's encoding: replace both / and . with -
- * e.g., /Users/ka/Work -> -Users-ka-Work
+ * e.g., /Users/you/Work -> -Users-you-Work
  * e.g., /foo/bar.worktrees/baz -> -foo-bar-worktrees-baz
  */
 export function encodePath(path: string): string {

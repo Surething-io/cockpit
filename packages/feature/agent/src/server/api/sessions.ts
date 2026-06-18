@@ -184,12 +184,12 @@ async function loadProjectGroups(): Promise<ProjectGroup[]> {
       const projectPath = path.join(projectsDir, projectDirName);
 
       // Decode project name (last path component)
-      // e.g. -Users-ka-Work-continic-ai-assistant -> ai-assistant
+      // e.g. -Users-you-Work-my-project -> my-project
       const pathParts = projectDirName.split('-').filter(Boolean);
       const projectName = pathParts[pathParts.length - 1] || projectDirName;
 
       // Decode the full path
-      // e.g. -Users-ka-Work-continic-ai-assistant -> /Users/ka/Work/continic/ai-assistant
+      // e.g. -Users-you-Work-my-project -> /Users/you/Work/my-project
       const fullPath = '/' + projectDirName.slice(1).replace(/-/g, '/');
 
       // Read all .jsonl files (exclude subprocess files starting with agent-)

@@ -1,9 +1,8 @@
 /**
  * /cr slash command — full code-review (static + dynamic) methodology prompt.
  *
- * Verbatim snapshot of the user's `cr` skill — INCLUDING its YAML frontmatter
- * (originally authored at /Users/ka/Cherry/07-Skills/cr/SKILL.md). Each export
- * is a complete SKILL.md, matching the cgPrompt / exPrompt / goPrompt shape, so
+ * Verbatim snapshot of the user's `cr` skill — INCLUDING its YAML frontmatter.
+ * Each export is a complete SKILL.md, matching the cgPrompt / exPrompt / goPrompt shape, so
  * dispatch can write it to disk verbatim. Hardcoded here — rather than read at
  * runtime — because builtin commands ship in the npm package and must work on
  * machines that don't have that user-specific path. If the source skill changes,

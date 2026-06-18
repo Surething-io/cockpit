@@ -17,6 +17,12 @@ import { CR_PROMPT_EN, CR_PROMPT_ZH } from './crPrompt';
 import { EX_PROMPT_EN, EX_PROMPT_ZH } from './exPrompt';
 import { FX_PROMPT_EN, FX_PROMPT_ZH } from './fxPrompt';
 import { GO_PROMPT_EN, GO_PROMPT_ZH } from './goPrompt';
+import {
+  NEW_BRANCH_LABEL_EN,
+  NEW_BRANCH_LABEL_ZH,
+  NEW_BRANCH_PROMPT_EN,
+  NEW_BRANCH_PROMPT_ZH,
+} from './newBranchPrompt';
 import { QA_PROMPT_EN, QA_PROMPT_ZH } from './qaPrompt';
 
 interface CommandEntry {
@@ -38,6 +44,12 @@ export const COMMAND_CONTENT: Record<string, CommandEntry> = {
   cg: { zh: CG_PROMPT_ZH, en: CG_PROMPT_EN, labelZh: CG_LABEL_ZH, labelEn: CG_LABEL_EN },
   cc: { zh: CC_PROMPT_ZH, en: CC_PROMPT_EN, labelZh: CC_LABEL_ZH, labelEn: CC_LABEL_EN },
   cr: { zh: CR_PROMPT_ZH, en: CR_PROMPT_EN },
+  'new-branch': {
+    zh: NEW_BRANCH_PROMPT_ZH,
+    en: NEW_BRANCH_PROMPT_EN,
+    labelZh: NEW_BRANCH_LABEL_ZH,
+    labelEn: NEW_BRANCH_LABEL_EN,
+  },
 };
 
 /** Directory holding the on-disk copies of builtin slash commands, written as
@@ -97,7 +109,10 @@ export function resolveCommandPrompt(
   req?: Request,
 ): string {
   const trimmed = prompt.trimStart();
-  const match = trimmed.match(/^\/([a-zA-Z]+)(?:\s+|$)/);
+  // Verb is letters, optionally with hyphens (e.g. /qa, /new-branch). Must start
+  // with a letter so a bare "/-x" doesn't match; the captured verb doubles as the
+  // COMMAND_CONTENT key and the ~/.cockpit/skills/<verb>/ dir name.
+  const match = trimmed.match(/^\/([a-zA-Z][a-zA-Z-]*)(?:\s+|$)/);
   if (!match) return prompt;
 
   const cmd = match[1];

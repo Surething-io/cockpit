@@ -31,6 +31,7 @@ const BUILTIN_COMMANDS: CommandInfo[] = [
   { name: "/cg", description: "Enter project graph (codegraph) exploration mode", source: "builtin" },
   { name: "/cc", description: "Enter Cockpit CLI (cock subcommands) operation mode", source: "builtin" },
   { name: "/cr", description: "Full code review: static triangulation + dynamic modelling", source: "builtin" },
+  { name: "/new-branch", description: "Create a clean new branch off the latest origin/main", source: "builtin" },
 ]
 
 export const GET = handler(() =>

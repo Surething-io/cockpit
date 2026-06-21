@@ -419,6 +419,12 @@
     "executedCommandFailed": "Failed to execute `{{command}}`: {{error}}",
     "executionMode": "Execution Mode",
     "ptyModeHint": "Subscription billing mode: uses interactive claude CLI",
+    "planMode": "Plan mode",
+    "planModeDesc": "read-only · plan first, no edits",
+    "planModeOn": "Plan mode on — read-only; send a task to get a plan",
+    "planModeOff": "Plan mode off",
+    "planModeHint": "Plan mode: read-only exploration that produces a plan without editing. Uncheck and resend to implement.",
+    "planTitle": "Plan (awaiting your review)",
     "ptyTerminal": "PTY Terminal",
     "ptyRunning": "running",
     "ptyCollapse": "Collapse",
@@ -760,7 +766,8 @@
     "fx": "Enter bug evidence-chain analysis mode",
     "ex": "Enter structured analysis & discussion mode",
     "go": "Enter landing mode: MVP staged implementation",
-    "cg": "Enter CodeGraph exploration mode"
+    "cg": "Enter CodeGraph exploration mode",
+    "plan": "Enable plan mode · /plan <task> to plan it · /plan off to disable"
   },
   "review": {
     "reviewManagement": "Review Management",

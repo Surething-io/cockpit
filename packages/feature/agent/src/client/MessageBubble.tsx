@@ -129,6 +129,27 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     return message.toolCalls.filter(tc => tc.name === 'AskUserQuestion');
   }, [message.toolCalls]);
 
+  // Last ExitPlanMode call → render its plan as a card (plan mode). The plan markdown
+  // lives in the tool-use input (`input.plan`); the tool result is an auto-deny in
+  // plan-only mode, so we surface the plan here instead of as a failed tool entry.
+  const planCard = useMemo(() => {
+    if (!message.toolCalls) return null;
+    for (let i = message.toolCalls.length - 1; i >= 0; i--) {
+      if (message.toolCalls[i].name === 'ExitPlanMode') {
+        const plan = (message.toolCalls[i].input as { plan?: string })?.plan;
+        return typeof plan === 'string' && plan ? plan : null;
+      }
+    }
+    return null;
+  }, [message.toolCalls]);
+
+  // Tool calls shown in the generic list — ExitPlanMode is surfaced as a plan card
+  // above instead of a (failed-looking) tool entry.
+  const displayToolCalls = useMemo(
+    () => message.toolCalls?.filter(tc => tc.name !== 'ExitPlanMode') ?? [],
+    [message.toolCalls]
+  );
+
   // Extract deduplicated .md file paths from Read/Edit/Write tool calls
   const mdFiles = useMemo(() => {
     if (!message.toolCalls) return [];
@@ -340,6 +361,24 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             );
           })()}
 
+          {/* Inline plan card (plan mode — ExitPlanMode). Plan-only: read this, then
+              uncheck Plan mode and resend to implement. */}
+          {planCard && (
+            <div className={`${message.content || hasImages || lastTodoWrite ? 'mt-2' : ''}`}>
+              <div className="border border-brand/40 rounded-lg overflow-hidden bg-secondary/50">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-border bg-brand/10">
+                  <span className="text-sm">📋</span>
+                  <span className="text-xs font-medium text-foreground">
+                    {t('chat.planTitle', { defaultValue: 'Plan (awaiting your review)' })}
+                  </span>
+                </div>
+                <div className="px-3 py-2">
+                  <MarkdownRenderer content={planCard} isUser={false} enableMath={false} />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* MD file list */}
           {mdFiles.length > 0 && (
             <div className={`${message.content || hasImages || lastTodoWrite ? 'mt-2' : ''}`}>
@@ -391,7 +430,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
           )}
 
           {/* Tool calls */}
-          {message.toolCalls && message.toolCalls.length > 0 && (
+          {displayToolCalls.length > 0 && (
             <div className={`${message.content || hasImages ? 'mt-2' : ''}`}>
               {shouldCollapseToolCalls ? (
                 // Collapsed mode: show summary and expand button
@@ -403,7 +442,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                     >
                       <span className="text-lg">🔧</span>
                       <span className="font-medium text-foreground">
-                        {t('chat.toolCalls', { count: toolCallsCount })}
+                        {t('chat.toolCalls', { count: displayToolCalls.length })}
                       </span>
                       <span className="ml-auto text-muted-foreground text-sm">
                         {toolCallsExpanded ? t('chat.collapse') : t('chat.expand')}
@@ -430,7 +469,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                   </div>
                   {toolCallsExpanded && (
                     <div className="border-t border-border p-2 space-y-1">
-                      {message.toolCalls.map((toolCall, index) => (
+                      {displayToolCalls.map((toolCall, index) => (
                         <ToolCallModal key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} sessionId={sessionId} />
                       ))}
                     </div>
@@ -438,7 +477,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                 </div>
               ) : (
                 // Normal mode: show all tool calls directly
-                message.toolCalls.map((toolCall, index) => (
+                displayToolCalls.map((toolCall, index) => (
                   <ToolCallModal key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} sessionId={sessionId} />
                 ))
               )}

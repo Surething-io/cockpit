@@ -21,6 +21,8 @@ interface ChatPanelProps {
   onDeepseekModelChange?: (tabId: string, model: DeepseekModel) => void;
   chatMode?: ChatMode;
   onChatModeChange?: (tabId: string, chatMode: ChatMode) => void;
+  planMode?: boolean;
+  onPlanModeChange?: (tabId: string, planMode: boolean) => void;
   isActive?: boolean;
   onStateChange: (tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string }) => void;
   onShowGitStatus?: () => void;
@@ -43,7 +45,7 @@ interface ChatPanelProps {
   onContentSearch?: (query: string) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode, onChatModeChange, isActive, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode, onChatModeChange, planMode, onPlanModeChange, isActive, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -68,6 +70,10 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllama
     onChatModeChange?.(tabId, m);
   }, [tabId, onChatModeChange]);
 
+  const handlePlanModeChange = useCallback((p: boolean) => {
+    onPlanModeChange?.(tabId, p);
+  }, [tabId, onPlanModeChange]);
+
   return (
     <Chat
       tabId={tabId}
@@ -80,6 +86,8 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllama
       onDeepseekModelChange={handleDeepseekModelChange}
       chatMode={chatMode}
       onChatModeChange={handleChatModeChange}
+      planMode={planMode}
+      onPlanModeChange={handlePlanModeChange}
       hideHeader
       hideSidebar
       isActive={isActive}

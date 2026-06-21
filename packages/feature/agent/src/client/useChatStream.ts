@@ -28,6 +28,8 @@ interface UseChatStreamOptions {
   engine?: ChatEngine;
   /** 'pty' → subscription-billing mode (interactive claude CLI); defaults to 'sdk'. Only effective for claude/claude2 */
   chatMode?: ChatMode;
+  /** Plan mode (SDK + claude engine only): read-only exploration that produces a plan without editing */
+  planMode?: boolean;
   ollamaModel?: string;
   deepseekModel?: DeepseekModel;
   onSessionId: (sid: string) => void;
@@ -54,7 +56,7 @@ interface UseChatStreamReturn {
 export function useChatStream(
   messages: ChatMessage[],
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  { sessionId, cwd, engine, chatMode, ollamaModel, deepseekModel, onSessionId, onFetchTitle, onPtyOutput }: UseChatStreamOptions
+  { sessionId, cwd, engine, chatMode, planMode, ollamaModel, deepseekModel, onSessionId, onFetchTitle, onPtyOutput }: UseChatStreamOptions
 ): UseChatStreamReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
@@ -391,6 +393,9 @@ export function useChatStream(
             ...(engine === 'deepseek' && deepseekModel && { model: deepseekModel }),
             ...(engine === 'claude2' && { engine: 'claude2' }),
             ...(usePty && { mode: 'pty', ptyCols: PTY_COLS, ptyRows: PTY_ROWS }),
+            // Plan mode: only meaningful in SDK mode on a claude engine (PTY has its own
+            // Shift+Tab plan). When unchecked, omit → server defaults to bypassPermissions.
+            ...(planMode && !usePty && isClaudeEngine && { permissionMode: 'plan' }),
           }),
           signal: abortControllerRef.current.signal,
         });
@@ -462,7 +467,7 @@ export function useChatStream(
         );
       }
     },
-    [cwd, engine, chatMode, ollamaModel, deepseekModel, setMessages, handleStreamEvent]
+    [cwd, engine, chatMode, planMode, ollamaModel, deepseekModel, setMessages, handleStreamEvent]
   );
 
   return {

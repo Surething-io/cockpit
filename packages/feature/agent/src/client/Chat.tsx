@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { ClipboardList } from 'lucide-react';
+import { toast } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
   querySessionByPath,
@@ -39,6 +41,8 @@ interface ChatProps {
   onDeepseekModelChange?: (model: DeepseekModel) => void;
   chatMode?: ChatMode;
   onChatModeChange?: (chatMode: ChatMode) => void;
+  planMode?: boolean;
+  onPlanModeChange?: (planMode: boolean) => void;
   hideHeader?: boolean;
   hideSidebar?: boolean;
   isActive?: boolean; // Whether the tab is active (used to handle scroll issues for hidden tabs)
@@ -67,7 +71,7 @@ interface ChatProps {
   onOpenSettings?: () => void; // Host-handled: open the app settings modal
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode: chatModeProp, onChatModeChange, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode: chatModeProp, onChatModeChange, planMode: planModeProp, onPlanModeChange, hideHeader, hideSidebar, isActive = true, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -85,6 +89,15 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
     setLocalChatMode(m);
     onChatModeChange?.(m);
   }, [onChatModeChange]);
+  // Plan mode (per-tab): controlled by TabInfo.planMode (persisted); falls back to
+  // local state when no prop (standalone use). Read-only exploration that produces a
+  // plan without editing — only meaningful in SDK mode on a claude engine.
+  const [localPlanMode, setLocalPlanMode] = useState(false);
+  const planMode = planModeProp ?? localPlanMode;
+  const setPlanMode = useCallback((p: boolean) => {
+    setLocalPlanMode(p);
+    onPlanModeChange?.(p);
+  }, [onPlanModeChange]);
   const isClaudeEngine = !engine || engine === 'claude' || engine === 'claude2';
   // PTY floating window: receives raw terminal output
   const ptyWindowRef = useRef<XtermFloatingHandle>(null);
@@ -131,6 +144,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
     cwd: initialCwd,
     engine,
     chatMode,
+    planMode,
     ollamaModel,
     deepseekModel,
     onSessionId: setSessionId,
@@ -141,6 +155,31 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
   // ! prefix: first line is command, subsequent lines are user notes, supports images
   const wrappedHandleSend = useCallback(async (content: string, images?: ImageInfo[]) => {
     const firstLine = content.split('\n')[0];
+
+    // /plan [task] — client-side plan-mode control (mirrors Claude Code's /plan).
+    // Consumed locally; never sent to the agent as literal text. Only meaningful in
+    // SDK mode on a claude engine (where the plan checkbox lives).
+    //   /plan        → enable plan mode (no send)
+    //   /plan off    → disable plan mode (no send; cockpit convenience — Claude Code uses Shift+Tab)
+    //   /plan <task> → enable plan mode AND send <task> (runs in plan mode)
+    if (isClaudeEngine && chatMode === 'sdk') {
+      const planCmd = /^\/plan(?:\s+([\s\S]*))?$/.exec(content.trim());
+      if (planCmd) {
+        const rest = (planCmd[1] ?? '').trim();
+        if (rest.toLowerCase() === 'off') {
+          setPlanMode(false);
+          toast(t('chat.planModeOff', { defaultValue: 'Plan mode off' }), 'info');
+        } else if (rest === '') {
+          setPlanMode(true);
+          toast(t('chat.planModeOn', { defaultValue: 'Plan mode on' }), 'success');
+        } else {
+          setPlanMode(true);
+          handleSend(rest, images);
+        }
+        return;
+      }
+    }
+
     const isBangCmd = firstLine.startsWith('!') && firstLine.length > 1;
     if (isBangCmd) {
       const command = firstLine.slice(1).trim();
@@ -164,7 +203,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
       return;
     }
     handleSend(content, images);
-  }, [handleSend, initialCwd, t]);
+  }, [handleSend, initialCwd, t, isClaudeEngine, chatMode, setPlanMode]);
 
   // History hook
   const {
@@ -386,6 +425,27 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
                 Claude Code CLI
               </button>
             </div>
+            {/* Plan mode (SDK only): read-only exploration → produces a plan without editing.
+                Plan-only — uncheck and resend to actually implement. */}
+            {chatMode === 'sdk' && (
+              <label
+                className="flex items-center gap-1.5 ml-2 pl-3 border-l border-border text-xs cursor-pointer select-none"
+                title={t('chat.planModeHint', { defaultValue: 'Plan mode: read-only exploration that produces a plan without editing. Uncheck and resend to implement.' })}
+              >
+                <input
+                  type="checkbox"
+                  data-testid="planmode-toggle"
+                  checked={planMode}
+                  onChange={(e) => setPlanMode(e.target.checked)}
+                  className="accent-brand"
+                />
+                <span className="flex items-center gap-1 text-foreground">
+                  <ClipboardList className="w-3.5 h-3.5" />
+                  {t('chat.planMode', { defaultValue: 'Plan mode' })}
+                </span>
+                <span className="text-muted-foreground">{t('chat.planModeDesc', { defaultValue: 'read-only · plan first, no edits' })}</span>
+              </label>
+            )}
           </div>
         )}
 

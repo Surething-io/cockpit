@@ -19,6 +19,7 @@ interface ProjectState {
   ollamaModels?: Record<string, string>
   deepseekModels?: Record<string, string>
   chatModes?: Record<string, string>
+  planModes?: Record<string, boolean>
 }
 
 export const GET = handler((req) =>
@@ -64,6 +65,7 @@ export const POST = handler((req) =>
       ...(body.ollamaModels && { ollamaModels: body.ollamaModels }),
       ...(body.deepseekModels && { deepseekModels: body.deepseekModels }),
       ...(body.chatModes && { chatModes: body.chatModes }),
+      ...(body.planModes && { planModes: body.planModes }),
     }
     const filePath = getSessionFilePath(body.cwd)
     yield* Effect.tryPromise({

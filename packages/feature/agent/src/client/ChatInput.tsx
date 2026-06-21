@@ -149,12 +149,25 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
 
   // Command filtering: useMemo derived computation, eliminates setState churn per keystroke.
   // Commands first, then skills — grouped display preserves the two sections.
+  // Client-side commands that perform a UI action instead of expanding to a prompt.
+  // `/plan` toggles plan mode (consumed in Chat.wrappedHandleSend) — only on claude engines.
+  const localCommands = useMemo<CommandInfo[]>(() => {
+    const isClaude = !_engine || _engine === 'claude' || _engine === 'claude2';
+    if (!isClaude) return [];
+    return [{
+      name: '/plan',
+      description: 'Enable plan mode (read-only). /plan <task> to plan a task; /plan off to disable.',
+      source: 'builtin',
+      argumentHint: '[task|off]',
+    }];
+  }, [_engine]);
+
   const filteredCommands = useMemo(() => {
     if (!commandQuery) return [];
     const { verb } = commandQuery;
     const match = (cmd: CommandInfo) => cmd.name.slice(1).toLowerCase().startsWith(verb);
-    return [...commands.filter(match), ...skills.filter(match)];
-  }, [commandQuery, commands, skills]);
+    return [...localCommands.filter(match), ...commands.filter(match), ...skills.filter(match)];
+  }, [commandQuery, localCommands, commands, skills]);
 
   const showCommands = !commandsDismissed && !!commandQuery && filteredCommands.length > 0;
 

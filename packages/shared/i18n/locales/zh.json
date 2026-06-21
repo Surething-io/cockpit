@@ -419,6 +419,12 @@
     "executedCommandFailed": "执行 `{{command}}` 失败：{{error}}",
     "executionMode": "执行模式",
     "ptyModeHint": "订阅计费模式：用交互式 claude CLI 驱动",
+    "planMode": "计划模式",
+    "planModeDesc": "只读·先出计划不改代码",
+    "planModeOn": "已开启计划模式——只读;发一个任务即可拿到计划",
+    "planModeOff": "已关闭计划模式",
+    "planModeHint": "计划模式：只读探索、产出计划但不改文件。取消勾选后重发才会实现。",
+    "planTitle": "计划（待你确认）",
     "ptyTerminal": "PTY 终端",
     "ptyRunning": "运行中",
     "ptyCollapse": "收起",
@@ -760,7 +766,8 @@
     "fx": "进入 bug 证据链分析模式",
     "ex": "进入结构化分析讨论模式",
     "go": "进入连续落地（MVP）模式",
-    "cg": "进入 CodeGraph 探索模式"
+    "cg": "进入 CodeGraph 探索模式",
+    "plan": "开启计划模式 · /plan <任务> 直接规划该任务 · /plan off 关闭"
   },
   "review": {
     "reviewManagement": "评审管理",

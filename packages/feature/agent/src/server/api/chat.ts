@@ -36,6 +36,7 @@ export const POST = handler((request) =>
       language?: string;
       engine?: string;
       mode?: string;
+      permissionMode?: string;
       ptyCols?: number;
       ptyRows?: number;
     };
@@ -47,6 +48,7 @@ export const POST = handler((request) =>
       language,
       engine,
       mode,
+      permissionMode,
       ptyCols,
       ptyRows,
     } = body;
@@ -211,10 +213,17 @@ export const POST = handler((request) =>
             // permission prompt, which bypassPermissions already skips. Caveat: on a
             // bun-compiled native build, Grep/Glob must be listed in `tools`/allowedTools
             // to stay registered — not a concern here since we run via the node CLI.
-            // Permission mode: skip all permission checks
-            permissionMode: 'bypassPermissions' as const,
-            // Allow skipping permission checks (must be used with bypassPermissions)
-            allowDangerouslySkipPermissions: true,
+            // Permission mode: 'plan' (read-only planning, no edits) when the client
+            // requests it; otherwise skip all permission checks. Plan mode has no
+            // canUseTool wired up — the SDK auto-denies ExitPlanMode and ends the turn
+            // cleanly ("plan-only"): the user reads the plan, then unchecks plan mode
+            // and resends to implement.
+            permissionMode: (permissionMode === 'plan' ? 'plan' : 'bypassPermissions') as
+              | 'plan'
+              | 'bypassPermissions',
+            // allowDangerouslySkipPermissions only applies to bypassPermissions; it must
+            // NOT be set in plan mode or it would defeat the read-only enforcement.
+            ...(permissionMode !== 'plan' && { allowDangerouslySkipPermissions: true as const }),
             // Enable streaming text blocks
             includePartialMessages: true,
             // Enable 1M token context window (beta) - resolves "Prompt is too long"

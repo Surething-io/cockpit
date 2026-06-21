@@ -28,6 +28,7 @@ export interface TabInfo {
   ollamaModel?: string;
   deepseekModel?: DeepseekModel;
   chatMode?: ChatMode;
+  planMode?: boolean;
 }
 
 // ============================================
@@ -102,6 +103,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         const savedOllamaModels: Record<string, string> = data.ollamaModels || {};
         const savedDeepseekModels: Record<string, string> = data.deepseekModels || {};
         const savedChatModes: Record<string, string> = data.chatModes || {};
+        const savedPlanModes: Record<string, boolean> = data.planModes || {};
 
         // Merge URL sessionId with sessions in session.json (deduplicate)
         let allSessions = [...savedSessions];
@@ -119,6 +121,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
             ollamaModel: savedOllamaModels[sessionId] || undefined,
             deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || undefined,
             chatMode: (savedChatModes[sessionId] as ChatMode) || undefined,
+            planMode: savedPlanModes[sessionId] || undefined,
           }));
 
           // Activation priority: URL sessionId > session.json activeSessionId > first
@@ -161,6 +164,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     const ollamaModels: Record<string, string> = {};
     const deepseekModels: Record<string, string> = {};
     const chatModes: Record<string, string> = {};
+    const planModes: Record<string, boolean> = {};
     for (const tab of tabs) {
       if (tab.sessionId && tab.engine) {
         engines[tab.sessionId] = tab.engine;
@@ -175,6 +179,10 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       if (tab.sessionId && tab.chatMode === 'pty') {
         chatModes[tab.sessionId] = tab.chatMode;
       }
+      // only persist when enabled; default (false/unset) isn't written
+      if (tab.sessionId && tab.planMode) {
+        planModes[tab.sessionId] = true;
+      }
     }
 
     BrowserRuntime.runFork(
@@ -186,6 +194,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         ollamaModels,
         deepseekModels,
         chatModes,
+        planModes,
       }).pipe(
         Effect.tapError((e) =>
           Effect.sync(() => console.error('Failed to save sessions:', e))
@@ -320,6 +329,15 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     setTabs((prev) =>
       prev.map((tab) =>
         tab.id === tabId ? { ...tab, chatMode } : tab
+      )
+    );
+  }, []);
+
+  // Update plan mode (read-only planning) for a tab
+  const updateTabPlanMode = useCallback((tabId: string, planMode: boolean) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, planMode } : tab
       )
     );
   }, []);
@@ -459,6 +477,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     updateTabOllamaModel,
     updateTabDeepseekModel,
     updateTabChatMode,
+    updateTabPlanMode,
 
     // Drag operations
     handleTabDragStart,

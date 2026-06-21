@@ -25,6 +25,7 @@ export interface LoadedProjectState {
   ollamaModels?: Record<string, string>
   deepseekModels?: Record<string, string>
   chatModes?: Record<string, string>
+  planModes?: Record<string, boolean>
 }
 
 export const loadProjectState = (
@@ -50,6 +51,7 @@ export interface ProjectStateSave {
   ollamaModels?: Record<string, string>
   deepseekModels?: Record<string, string>
   chatModes?: Record<string, string>
+  planModes?: Record<string, boolean>
 }
 
 export const saveProjectState = (

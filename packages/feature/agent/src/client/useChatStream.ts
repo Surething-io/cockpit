@@ -190,11 +190,15 @@ export function useChatStream(
 
     // Handle text content (complete message)
     if (eventType === 'assistant') {
-      const message = event.message as { content?: Array<{ type?: string; text?: string; name?: string; id?: string; input?: Record<string, unknown> }> } | undefined;
+      const message = event.message as { model?: string; content?: Array<{ type?: string; text?: string; name?: string; id?: string; input?: Record<string, unknown> }> } | undefined;
       if (message?.content) {
-        // Extract text blocks (Codex sends complete text via assistant messages, not stream_event)
-        // For Claude engine, text is already handled by stream_event deltas — skip to avoid duplication
-        if (engine === 'codex' || engine === 'kimi' || engine === 'ollama') {
+        // Extract text blocks (Codex sends complete text via assistant messages, not stream_event).
+        // For Claude engine, normal text is handled by stream_event deltas — skip to avoid duplication.
+        // BUT synthetic messages (model === '<synthetic>') — e.g. "/foo isn't available in this
+        // environment", unknown slash commands, startup rejections — are delivered whole with NO
+        // accompanying deltas, so they must be read here or the text vanishes into an empty bubble.
+        const isSynthetic = message.model === '<synthetic>';
+        if (engine === 'codex' || engine === 'kimi' || engine === 'ollama' || isSynthetic) {
           const textParts = message.content
             .filter(block => block.type === 'text' && block.text)
             .map(block => block.text!);
@@ -302,11 +306,18 @@ export function useChatStream(
         });
       }
 
+      // Fallback: if the bubble is still empty when the turn ends, surface whatever text the
+      // result event carries (result.result). Covers synthetic errors that never streamed deltas
+      // — note these arrive as subtype:'success'/is_error:false, so we can't gate on the error flag —
+      // and result-only turns with no assistant message at all. Without this it renders as an empty bubble.
+      const resultText = typeof event.result === 'string' ? (event.result as string).trim() : '';
+
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === messageId
             ? {
                 ...msg,
+                content: (!msg.content && resultText) ? resultText : msg.content,
                 isStreaming: false,
                 toolCalls: msg.toolCalls?.map((tc) => ({
                   ...tc,

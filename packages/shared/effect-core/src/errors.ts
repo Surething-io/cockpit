@@ -37,6 +37,7 @@ export type WSProto =
   | "global-state"
   | "jupyter"
   | "terminal-follow"
+  | "session-stream"
 
 export type WSErrorKind = "send" | "recv" | "upgrade" | "closed"
 

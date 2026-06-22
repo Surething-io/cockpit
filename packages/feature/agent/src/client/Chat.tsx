@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { ClipboardList } from 'lucide-react';
 import { toast } from '@cockpit/shared-ui';
+import { useLiveStream } from './useLiveStream';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
   querySessionByPath,
@@ -206,6 +207,14 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
   }, [handleSend, initialCwd, t, isClaudeEngine, chatMode, setPlanMode]);
 
   // History hook
+  // #10: whether useLiveStream is actively rendering a live run for this tab. Declared
+  // before useChatHistory so the initial history load can DEFER to the live stream — a viewer
+  // that joins mid-run (auto-created tab for a new session) must not also disk-load the
+  // in-flight turn, or it renders twice.
+  const [liveRunning, setLiveRunning] = useState(false);
+  const liveRunningRef = useRef(false);
+  useEffect(() => { liveRunningRef.current = liveRunning; }, [liveRunning]);
+
   const {
     isLoadingHistory,
     isLoadingMore,
@@ -219,17 +228,42 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
     onSessionId: setSessionId,
     onTitleChange,
     onTokenUsage: setHistoryTokenUsage,
+    liveRunningRef,
   });
+
+  // #10: live session sync.
+  const liveSessionId = loadedSessionId || sessionId;
+  // #10: connect the live tail whenever this tab is VIEWING the session (active, not the
+  // originator currently sending). The session-stream snapshot's `status` — not the racy
+  // global-state broadcast — decides whether a run is live. This is what lets a refreshed
+  // originator (or any tab) reliably resume an in-flight run.
+  const liveViewerEnabled = isActive && !isLoading && !!liveSessionId;
+  useLiveStream(liveSessionId, setMessages, liveViewerEnabled, engine, {
+    // Update the ref synchronously (not just via the effect on liveRunning) so the initial
+    // history load, resolving moments later, reliably sees that the live stream owns this run.
+    onRunningChange: (r) => { liveRunningRef.current = r; setLiveRunning(r); },
+    onComplete: () => {
+      // Turn finished → reconcile from disk (replaces temp `live-…` bubbles with canonical
+      // real-uuid messages).
+      if (initialCwd && liveSessionId) loadHistoryByCwdAndSessionId(initialCwd, liveSessionId, true);
+    },
+  });
+  // When not viewing live, clear the running flag.
+  useEffect(() => {
+    if (!liveViewerEnabled) setLiveRunning(false);
+  }, [liveViewerEnabled]);
 
   // Incrementally fetch messages when becoming active (handles external writes like scheduled tasks)
   // With limit to fetch only the last N rounds + fingerprint check + time throttle (inside useChatHistory)
   const prevActiveRef = useRef(isActive);
   useEffect(() => {
-    if (isActive && !prevActiveRef.current && sessionId && initialCwd && !isLoading) {
+    // Skip while a live run is in progress — the live stream owns the tail; a lagging
+    // disk fetch would momentarily regress it. Reconcile happens on completion instead.
+    if (isActive && !prevActiveRef.current && sessionId && initialCwd && !isLoading && !liveRunning) {
       loadHistoryByCwdAndSessionId(initialCwd, sessionId, true, 10);
     }
     prevActiveRef.current = isActive;
-  }, [isActive, sessionId, initialCwd, isLoading, loadHistoryByCwdAndSessionId]);
+  }, [isActive, sessionId, initialCwd, isLoading, liveRunning, loadHistoryByCwdAndSessionId]);
 
   // PTY floating window: clear the screen at the start of a new turn (isLoading rising edge)
   useEffect(() => {
@@ -306,17 +340,20 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
     handleSendRef.current = wrappedHandleSend;
   }, [wrappedHandleSend]);
 
-  // ESC key listener: stop generation when mouse hovers over chat area and ESC is pressed
+  // ESC key listener: stop generation when hovering the chat area. Tabs are symmetric —
+  // works whether THIS tab is the originator (isLoading) or a viewer of a run that's live
+  // elsewhere (liveRunning). handleStop hits /api/chat/stop, which aborts the detached run
+  // and emits a terminal event so every tab finalizes.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isHovered && isLoading) {
+      if (e.key === 'Escape' && isHovered && (isLoading || liveRunning)) {
         handleStop();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isHovered, isLoading, handleStop]);
+  }, [isHovered, isLoading, liveRunning, handleStop]);
 
   // Fork session from a specified message point.
   //
@@ -470,9 +507,10 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
           </div>
         ) : (
           <MessageList
+            // #10: as a viewer, drive the "thinking" bubble from the live run status too.
             ref={messageListRef}
             messages={messages}
-            isLoading={isLoading}
+            isLoading={isLoading || liveRunning}
             cwd={initialCwd}
             sessionId={sessionId}
             engine={engine}
@@ -493,7 +531,9 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
         {/* Input */}
         <ChatInput
           onSend={wrappedHandleSend}
-          disabled={isLoading}
+          // #10: disable while THIS tab streams, or while the session is running elsewhere
+          // (viewer) — one active run per session; a concurrent send would 409.
+          disabled={isLoading || liveRunning}
           cwd={initialCwd}
           engine={engine}
           onShowGitStatus={onShowGitStatus}

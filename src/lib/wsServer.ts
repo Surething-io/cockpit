@@ -17,7 +17,14 @@ import { runTerminalFollowHandler } from './effect/terminalFollowHandler';
 import { runBrowserHandler } from './effect/browserHandler';
 import { runJupyterHandler } from './effect/jupyterHandler';
 import { runTerminalHandler } from './effect/terminalHandler';
+import { runSessionStreamHandler } from './effect/sessionStreamHandler';
 import { wireCodeIndexToFileWatcher } from './codeIndexSync';
+// globalStateClients + broadcastToGlobalState live in a side-effect-free module so API
+// routes can broadcast without importing this server.
+import { globalStateClients, broadcastToGlobalState } from './globalStateBroadcast';
+
+// Re-exported for existing callers that import it from here.
+export { broadcastToGlobalState };
 
 // Wire fileWatcher → codeIndex lazy sync. wsServer is on the guaranteed
 // server-boot path, so calling this at module top-level runs it exactly once
@@ -36,21 +43,7 @@ wireCodeIndexToFileWatcher();
 
 const g_ws = globalThis as unknown as {
   __cockpitWss?: WebSocketServer;
-  __cockpitGlobalStateClients?: Set<WebSocket>;
 };
-
-const globalStateClients: Set<WebSocket> = g_ws.__cockpitGlobalStateClients
-  ?? (g_ws.__cockpitGlobalStateClients = new Set<WebSocket>());
-
-/** Broadcast a message to all /ws/global-state clients */
-export function broadcastToGlobalState(msg: Record<string, unknown>): void {
-  const data = JSON.stringify(msg);
-  for (const ws of globalStateClients) {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(data);
-    }
-  }
-}
 
 const wss: WebSocketServer = g_ws.__cockpitWss ?? (() => {
   const server = new WebSocketServer({ noServer: true });
@@ -81,6 +74,8 @@ const wss: WebSocketServer = g_ws.__cockpitWss ?? (() => {
       runTerminalFollowHandler(ws, query.id as string);
     } else if (pathname === '/ws/jupyter') {
       runJupyterHandler(ws, query.bubbleId as string, query.cwd as string);
+    } else if (pathname === '/ws/session-stream') {
+      runSessionStreamHandler(ws, query.sessionId as string);
     }
   });
 
@@ -100,7 +95,8 @@ export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer
     pathname === '/ws/terminal' ||
     pathname === '/ws/browser' ||
     pathname === '/ws/terminal-follow' ||
-    pathname === '/ws/jupyter'
+    pathname === '/ws/jupyter' ||
+    pathname === '/ws/session-stream'
   ) {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws, req);

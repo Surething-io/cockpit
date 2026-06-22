@@ -46,6 +46,10 @@ interface UseChatHistoryOptions {
   onSessionId: (sid: string) => void;
   onTitleChange?: (title: string) => void;
   onTokenUsage?: (usage: TokenUsage) => void;
+  // #10: when the live stream is already rendering this run (viewer joined mid-run), the
+  // initial (non-incremental) disk load must NOT overwrite the live bubbles — that double-
+  // renders the in-flight turn. The live stream + onComplete reconcile own it.
+  liveRunningRef?: React.RefObject<boolean>;
 }
 
 interface UseChatHistoryReturn {
@@ -77,7 +81,7 @@ export function useChatHistory(
   messages: ChatMessage[],
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
   sessionId: string | null,
-  { cwd, initialSessionId, onSessionId, onTitleChange, onTokenUsage }: UseChatHistoryOptions
+  { cwd, initialSessionId, onSessionId, onTitleChange, onTokenUsage, liveRunningRef }: UseChatHistoryOptions
 ): UseChatHistoryReturn {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -189,7 +193,10 @@ export function useChatHistory(
               // Has updates or deletions, need to replace
               return newMessages;
             });
-          } else {
+          } else if (!liveRunningRef?.current) {
+            // #10: full (initial) load — but if the live stream is already rendering this
+            // run (viewer joined mid-run), don't overwrite its bubbles. loadedSessionId is
+            // still set below so liveSessionId resolves; live + onComplete reconcile own it.
             setMessages(data.messages);
           }
           // Track which file the rendered messages came from. Use the sid

@@ -1,11 +1,11 @@
 import { existsSync } from 'fs';
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import {
-  SCHEDULED_TASKS_FILE, CLAUDE2_DIR, readJsonFile, writeJsonFile,
+  SCHEDULED_TASKS_FILE, readJsonFile, writeJsonFile,
   getClaudeSessionPath, getClaude2SessionPath, getOllamaSessionPath,
   getDeepseekSessionPath, findCodexSessionPath, findKimiSessionPath,
 } from '@cockpit/shared-utils';
-import { updateGlobalState, getSessionTitle } from './state/globalState';
+import { updateGlobalState } from './state/globalState';
+import { isRunActive, getRunSnapshot, requestStop } from './sessionRunHub';
 import { Effect } from 'effect';
 import { AgentError, CockpitConfig, type AgentProvider } from '@cockpit/effect-core';
 import { AppRuntime } from '@cockpit/effect-runtime/server';
@@ -104,111 +104,94 @@ export function getNextCronTime(cronExpr: string, after: Date = new Date()): num
 }
 
 // ============================================
-// Send Chat Message (invokes SDK directly, bypasses HTTP)
+// Send Chat Message — unified loopback-HTTP execution (#10 ws-converge)
 // ============================================
 
 /**
- * Claude / Claude2 execution path.
+ * Single execution path for ALL engines (claude / claude2 / ollama / codex / kimi /
+ * deepseek). Since #10 ws-converge every engine's /api/chat[/<engine>] route only STARTS a
+ * detached run and returns its runKey as JSON (no SSE to drain); the route owns session
+ * persistence, 'loading'/'unread' global state, the run registry and the 409 concurrent-run
+ * guard. We POST to start the run, then poll the registry until it leaves "running".
  *
- * 1. updateGlobalState 'loading' (silent; failure does not block)
- * 2. Claude SDK query() stream iteration, with up to 1 compaction retry
- * 3. On completion, updateGlobalState 'unread' + refresh title
+ * claude/claude2 used to bypass the route with a direct SDK query(), which left them OUT of
+ * the run registry — so the 409 guard couldn't see them and two writers could corrupt the
+ * jsonl. Routing them through /api/chat closes that hole and makes scheduled claude runs
+ * stream live to viewers like every other engine. The route covers everything the old
+ * direct path did (resume, cwd, bypassPermissions, claude2 CLAUDE_CONFIG_DIR via `engine`,
+ * settingSources, the 1-compaction retry) and additionally expands slash commands.
  *
- * Failures are uniformly mapped to AgentError (sessionId / cwd context preserved).
- */
-const sendClaudeMessageEff = (task: ScheduledTask): Effect.Effect<boolean, AgentError> => {
-  const options = {
-    resume: task.sessionId,
-    cwd: task.cwd,
-    settingSources: ['user' as const, 'project' as const, 'local' as const],
-    // No allowedTools whitelist: tool availability is decided by the `tools` option
-    // (unset → all built-in tools registered by default). allowedTools only pre-approves
-    // the permission prompt, which bypassPermissions skips. (Native bun-compiled builds
-    // would need Grep/Glob listed explicitly; we run via the node CLI, so it doesn't apply.)
-    permissionMode: 'bypassPermissions' as const,
-    allowDangerouslySkipPermissions: true,
-    // For claude2 engine, override config directory to ~/.claude2
-    ...(task.engine === 'claude2' && {
-      env: { ...process.env, CLAUDE_CONFIG_DIR: CLAUDE2_DIR },
-    }),
-  };
-
-  const MAX_COMPACTION_RETRIES = 1;
-
-  return Effect.gen(function* () {
-    // 1. Mark loading (silent; failures are swallowed)
-    yield* Effect.tryPromise(() =>
-      updateGlobalState(task.cwd, task.sessionId, 'loading', undefined, task.message),
-    ).pipe(Effect.orElse(() => Effect.void));
-
-    // 2. Compaction-aware iteration
-    yield* Effect.tryPromise({
-      try: async () => {
-        for (let attempt = 0; attempt <= MAX_COMPACTION_RETRIES; attempt++) {
-          let receivedResult = false;
-          const response = query({
-            prompt: attempt === 0 ? task.message : 'continue',
-            options,
-          });
-          for await (const message of response) {
-            const msg = message as { type?: string };
-            if (msg.type === 'result') receivedResult = true;
-          }
-          if (receivedResult) break;
-          console.log(`[ScheduledTask] Stream ended without result, resuming (attempt ${attempt + 1}/${MAX_COMPACTION_RETRIES})`);
-        }
-      },
-      catch: (cause) =>
-        // claude2 is a separate Anthropic credential set; the SDK is still claude. Classify under the 'claude' provider.
-        new AgentError({
-          provider: 'claude',
-          kind: 'unknown',
-          cause,
-        }),
-    });
-
-    // 3. Done -> unread
-    const title = yield* Effect.tryPromise(() => getSessionTitle(task.cwd, task.sessionId)).pipe(
-      Effect.orElseSucceed(() => undefined),
-    );
-    yield* Effect.tryPromise(() =>
-      updateGlobalState(task.cwd, task.sessionId, 'unread', title),
-    ).pipe(Effect.orElse(() => Effect.void));
-
-    return true;
-  });
-};
-
-/**
- * Loopback-HTTP execution path for engines whose execution lives inside their
- * /api/chat/<engine> SSE route (ollama / codex / kimi / deepseek). The route
- * handles session persistence and 'loading'/'unread' global state itself;
- * here we only drain the stream until it ends.
+ * Scheduled tasks always resume an existing session, so the runKey is the task's sessionId.
  */
 const sendHttpEngineMessageEff = (
   task: ScheduledTask,
-  engine: AgentProvider,
+  engine: string,
 ): Effect.Effect<boolean, AgentError> =>
   Effect.tryPromise({
     try: async () => {
-      const res = await fetch(`http://127.0.0.1:${task.port}/api/chat/${engine}`, {
+      // claude/claude2 live at /api/chat (engine selects the credential dir); the rest at
+      // /api/chat/<engine>.
+      const isClaude = engine === 'claude' || engine === 'claude2';
+      const url = isClaude
+        ? `http://127.0.0.1:${task.port}/api/chat`
+        : `http://127.0.0.1:${task.port}/api/chat/${engine}`;
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: task.message,
           sessionId: task.sessionId,
           cwd: task.cwd,
+          engine, // route uses it for claude2's CLAUDE_CONFIG_DIR; no-op for the others
           ...(task.model && { model: task.model }),
         }),
       });
-      if (!res.ok || !res.body) {
+      if (!res.ok) {
+        // 409 = session already running (the guard fired). Per design, surface it as a
+        // task error (recorded in lastResult) rather than silently skipping.
         throw new Error(`${engine} chat route responded ${res.status}`);
       }
-      const reader = res.body.getReader();
-      while (!(await reader.read()).done) { /* drain SSE until route closes */ }
+      const body = (await res.json().catch(() => ({}))) as { runKey?: string };
+      if (!body.runKey) {
+        // A cockpit chat route ALWAYS returns a runKey. Its absence means the loopback hit
+        // something that isn't this route (wrong port after a restart, a non-cockpit service
+        // on 127.0.0.1:port) → the message was never dispatched. Fail closed; the old
+        // `|| task.sessionId` fallback assumed a run had started and would later read the
+        // never-registered key's null status as success.
+        throw new Error(`${engine} chat route returned no runKey (session ${task.sessionId})`);
+      }
+      const key = body.runKey;
+      // The run is detached from this request; wait for it to finish (registry → not running).
+      const deadline = Date.now() + 30 * 60 * 1000;
+      while (isRunActive(key) && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      // Map the run's TERMINAL state to a result instead of always reporting success — the
+      // poll above only knows "not running", which conflates idle/error/timeout. The run
+      // lingers in the registry for a grace window after markRunIdle, so the status read
+      // right after the loop is reliable.
+      if (isRunActive(key)) {
+        // Deadline hit while still running: abort the detached run instead of leaving a
+        // zombie that keeps writing the jsonl and tripping the next round's 409 guard.
+        requestStop(key);
+        throw new Error(`${engine} run timed out after 30m (session ${task.sessionId})`);
+      }
+      const snap = getRunSnapshot(key);
+      if (!snap || snap.status === 'error') {
+        // null = the run isn't in the registry: never started (see runKey check) or evicted
+        // before we read it (impossible inside the 60s grace, since the poll exits within
+        // 500ms of markRunIdle). Treat as failure — fail closed, not a silent success.
+        throw new Error(`${engine} run failed (session ${task.sessionId})`);
+      }
       return true as const;
     },
-    catch: (cause) => new AgentError({ provider: engine, kind: 'unknown', cause }),
+    // claude2 shares the 'claude' provider for error classification (same SDK).
+    catch: (cause) =>
+      new AgentError({
+        provider: (engine === 'claude2' ? 'claude' : engine) as AgentProvider,
+        kind: 'unknown',
+        cause,
+      }),
   });
 
 /**
@@ -257,9 +240,7 @@ export const sendChatMessageEff = (task: ScheduledTask): Effect.Effect<boolean, 
       );
     }
 
-    return engine === 'claude' || engine === 'claude2'
-      ? yield* sendClaudeMessageEff(task)
-      : yield* sendHttpEngineMessageEff(task, engine as AgentProvider);
+    return yield* sendHttpEngineMessageEff(task, engine);
   }).pipe(
     Effect.catchAll((err) =>
       Effect.gen(function* () {
@@ -510,8 +491,8 @@ class ScheduledTaskManager {
   /** Internal implementation for manual trigger; skips paused / activeRange checks. */
   private async fireTaskManual(id: string): Promise<void> {
     // Share the same in-flight Set as fireTask: if the task is mid-flight from a
-    // cron tick, the manual trigger would otherwise launch a second concurrent
-    // SDK query against the same session.
+    // cron tick, the manual trigger would otherwise start a second concurrent run
+    // against the same session (the route's 409 guard is the second line of defense).
     if (this.firing.has(id)) {
       console.warn(`[ScheduledTask] Skipping manual trigger of ${id}: still in flight`);
       return;
@@ -660,8 +641,8 @@ class ScheduledTaskManager {
   private async fireTask(id: string): Promise<void> {
     // Reentrancy guard: sendChatMessage can take minutes; without this, a manual
     // trigger overlapping with cron, an HMR-leaked timer, or any other re-entry
-    // would launch a second SDK query against the same session and likely trip
-    // Anthropic's burst rate limit.
+    // would start a second run against the same session and likely trip the engine's
+    // burst rate limit (the route's 409 guard would also reject it, recorded as error).
     if (this.firing.has(id)) {
       console.warn(`[ScheduledTask] Skipping reentrant fire of ${id}: still in flight`);
       return;

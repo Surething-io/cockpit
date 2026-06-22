@@ -1,10 +1,12 @@
 import { spawn } from 'child_process';
+import { randomUUID } from 'crypto';
 import { createInterface } from 'readline';
 import { writeFileSync, unlinkSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { Effect } from 'effect';
 import { updateGlobalState } from '../../state/globalState';
+import { startRun, appendRun, rekeyRun, markRunIdle, isRunActive, setRunAbort } from '../../sessionRunHub';
 import { resolveCommandPrompt } from '../../lib/slashCommands';
 import { handler, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import { ValidationError } from '@cockpit/effect-core';
@@ -46,8 +48,9 @@ function writeImagesToTemp(images: ImageData[]): string[] {
 
 interface CodexItem {
   id?: string;
-  type?: string;       // 'agent_message' | 'reasoning' | 'command_execution'
+  type?: string;       // 'agent_message' | 'reasoning' | 'command_execution' | 'error'
   text?: string;
+  message?: string;    // error item message
   command?: string;
   aggregated_output?: string;
   exit_code?: number | null;
@@ -55,9 +58,11 @@ interface CodexItem {
 }
 
 interface CodexEvent {
-  type: string;        // 'thread.started' | 'turn.started' | 'item.started' | 'item.completed' | 'turn.completed'
+  type: string;        // 'thread.started' | 'turn.started' | 'item.started' | 'item.completed' | 'turn.completed' | 'turn.failed' | 'error'
   thread_id?: string;
   item?: CodexItem;
+  message?: string;    // top-level 'error' event message
+  error?: { message?: string };  // 'turn.failed' error
   usage?: {
     input_tokens?: number;
     output_tokens?: number;
@@ -70,11 +75,20 @@ export const POST = handler((request) =>
     const body = (yield* parseJsonRaw(request)) as {
       prompt?: unknown;
       sessionId?: string;
+      runId?: string;
       images?: ImageData[];
       cwd?: string;
       language?: string;
     };
     const { prompt: rawPrompt, sessionId, images, cwd, language } = body;
+
+    // #10: one active run per session.
+    if (sessionId && isRunActive(sessionId)) {
+      return new Response(JSON.stringify({ error: 'session is already running' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
     const prompt =
       typeof rawPrompt === 'string'
@@ -93,56 +107,59 @@ export const POST = handler((request) =>
       imageFiles.push(...writeImagesToTemp(images as ImageData[]));
     }
 
-    const encoder = new TextEncoder();
-    let isClosed = false;
+    // #10 ws-converge: detached spawn-based run; consume via /ws/session-stream.
+    const runId = (typeof body.runId === 'string' && body.runId) || randomUUID();
+    let currentKey = sessionId || runId;
     let actualSessionId = sessionId || '';
+    let isClosed = false;
     const userMessage = typeof prompt === 'string' ? prompt.slice(0, 50) : '';
     let childProcess: ReturnType<typeof spawn> | null = null;
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        const safeEnqueue = (data: string) => {
-          if (!isClosed) {
-            try {
-              controller.enqueue(encoder.encode(data));
-            } catch {
-              isClosed = true;
-            }
-          }
-        };
+    // #5 runId idempotency: reject a duplicate submit of the same send (currentKey is the
+    // sessionId on resume, else the provisional runId). Different new chats use different
+    // runIds → not blocked.
+    if (isRunActive(currentKey)) {
+      return new Response(JSON.stringify({ error: 'run already active' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-        const safeClose = () => {
-          if (!isClosed) {
-            isClosed = true;
-            try {
-              controller.close();
-            } catch {
-              // ignore
-            }
-          }
-        };
+    startRun(currentKey, cwd || '', typeof prompt === 'string' ? prompt : undefined);
+    setRunAbort(currentKey, () => { isClosed = true; childProcess?.kill('SIGTERM'); });
 
+    const safeEnqueue = (data: string) => {
+      if (isClosed || data.startsWith('data: [DONE]')) return;
+      try { appendRun(currentKey, JSON.parse(data.slice(6))); } catch { /* ignore */ }
+    };
+    const safeClose = () => { isClosed = true; };
+
+    {
         try {
           // Build codex exec command args
           const args: string[] = ['exec'];
 
+          // codex-cli ≥0.141: --full-auto is deprecated (→ --sandbox workspace-write);
+          // a non-trusted dir needs --skip-git-repo-check. The `resume` subcommand does
+          // NOT accept those flags (exec-only). Prompt is a positional arg for both.
+          const promptStr = typeof prompt === 'string' ? prompt : String(prompt ?? '');
           if (sessionId) {
-            // Resume existing session (resume doesn't accept -C)
-            args.push('resume', sessionId, '--json', '--full-auto');
+            // Resume existing session (resume accepts neither -C nor --sandbox/--skip-git-repo-check)
+            args.push('resume', sessionId, '--json');
             for (const imgPath of imageFiles) {
               args.push('--image', imgPath);
             }
-            args.push(prompt);
+            args.push(promptStr);
           } else {
             // New session
-            args.push('--json', '--full-auto');
+            args.push('--json', '--sandbox', 'workspace-write', '--skip-git-repo-check');
             if (cwd) {
               args.push('-C', cwd);
             }
             for (const imgPath of imageFiles) {
               args.push('--image', imgPath);
             }
-            args.push(prompt);
+            args.push(promptStr);
           }
 
           childProcess = spawn('codex', args, {
@@ -168,7 +185,9 @@ export const POST = handler((request) =>
 
             switch (event.type) {
               case 'thread.started': {
-                actualSessionId = event.thread_id || `codex-${Date.now()}`;
+                actualSessionId = event.thread_id || `codex-${randomUUID()}`;
+                // rekey provisional runId → codex thread id (migrates subscribers)
+                if (currentKey !== actualSessionId) { rekeyRun(currentKey, actualSessionId); currentKey = actualSessionId; }
                 // Emit system init (same shape as Claude SDK)
                 safeEnqueue(`data: ${JSON.stringify({
                   type: 'system',
@@ -194,6 +213,14 @@ export const POST = handler((request) =>
                     message: {
                       content: [{ type: 'text', text: item.text }],
                     },
+                  })}\n\n`);
+                }
+
+                if (item.type === 'error' && (item.message || item.text)) {
+                  // codex emitted an error item (e.g. unsupported model) — surface it
+                  safeEnqueue(`data: ${JSON.stringify({
+                    type: 'error',
+                    error: item.message || item.text,
                   })}\n\n`);
                 }
 
@@ -282,6 +309,30 @@ export const POST = handler((request) =>
                 break;
               }
 
+              case 'turn.failed': {
+                // Surface the failure so the viewer doesn't see a silent init+DONE,
+                // THEN mark the run errored (before close's markRunIdle('idle'), which
+                // terminal-precedence keeps from downgrading). Without this the failed
+                // turn would read as 'idle' → scheduled tasks misreport success.
+                safeEnqueue(`data: ${JSON.stringify({
+                  type: 'error',
+                  error: event.error?.message || 'Codex turn failed',
+                })}\n\n`);
+                markRunIdle(currentKey, 'error');
+                safeClose();
+                break;
+              }
+
+              case 'error': {
+                safeEnqueue(`data: ${JSON.stringify({
+                  type: 'error',
+                  error: event.message || 'Codex error',
+                })}\n\n`);
+                markRunIdle(currentKey, 'error');
+                safeClose();
+                break;
+              }
+
               // 'turn.started' — no action needed
             }
           });
@@ -301,8 +352,7 @@ export const POST = handler((request) =>
             if (cwd && actualSessionId) {
               await updateGlobalState(cwd, actualSessionId, 'unread', undefined).catch(() => {});
             }
-
-            safeEnqueue('data: [DONE]\n\n');
+            markRunIdle(currentKey, 'idle');
             safeClose();
           });
 
@@ -314,6 +364,7 @@ export const POST = handler((request) =>
 
           childProcess.on('error', (err) => {
             console.error('[Codex] spawn error:', err.message);
+            markRunIdle(currentKey, 'error');
             safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
             safeClose();
           });
@@ -324,24 +375,12 @@ export const POST = handler((request) =>
             }
           });
         } catch (error) {
+          markRunIdle(currentKey, 'error');
           safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: String(error) })}\n\n`);
           safeClose();
         }
-      },
-      cancel() {
-        isClosed = true;
-        if (childProcess) {
-          childProcess.kill('SIGTERM');
-        }
-      },
-    });
+    }
 
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
-    });
+    return Response.json({ runKey: currentKey, sessionId: actualSessionId || null });
   })
 );

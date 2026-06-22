@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { usePageVisible } from '@cockpit/shared-ui';
+import { usePageVisible, useWebSocket } from '@cockpit/shared-ui';
 import type { ChatEngine, DeepseekModel, ChatMode } from '@cockpit/feature-agent';
 import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
@@ -59,7 +59,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     cwd: initialCwd,
     title: 'New Chat',
   }]);
-  const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id);
+  const [activeTabId, setActiveTabId] = useState<string>(tabs[0]?.id ?? '');
 
   // Unread tabs (session completed but not yet viewed)
   const [unreadTabs, setUnreadTabs] = useState<Set<string>>(new Set());
@@ -67,6 +67,11 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   // Ref for tabs (avoid stale closures in callbacks)
   const tabsRef = useRef(tabs);
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
+  const activeTabIdRef = useRef(activeTabId);
+  useEffect(() => { activeTabIdRef.current = activeTabId; }, [activeTabId]);
+  // Sessions explicitly closed in THIS tab since the last save. The next save sends them as
+  // closedSessionIds so the server removes them from the shared union (the only removal path).
+  const pendingClosedRef = useRef<Set<string>>(new Set());
 
   // Update session status in state.json (notify Workspace layer)
   const updateSessionStatus = useCallback((sessionId: string, status: string) => {
@@ -185,6 +190,14 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       }
     }
 
+    // Sessions closed in this tab since the last save → the server subtracts them from the
+    // shared union (saves otherwise only ADD, never shrink). Snapshot but do NOT drain yet:
+    // removal is the ONLY shrink path and the union has no memory, so a `closedSessionIds`
+    // lost to a failed POST = a ghost session that re-materializes forever. Clear each id
+    // only AFTER the save succeeds (and only those ids — closes that arrive mid-flight stay
+    // pending for the next save).
+    const closedSessionIds = [...pendingClosedRef.current];
+
     BrowserRuntime.runFork(
       saveProjectState({
         cwd: initialCwd,
@@ -195,7 +208,13 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         deepseekModels,
         chatModes,
         planModes,
+        ...(closedSessionIds.length ? { closedSessionIds } : {}),
       }).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            for (const id of closedSessionIds) pendingClosedRef.current.delete(id);
+          })
+        ),
         Effect.tapError((e) =>
           Effect.sync(() => console.error('Failed to save sessions:', e))
         ),
@@ -216,6 +235,73 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       sessionId: activeTab.sessionId,
     });
   }, [activeTabId, tabs, initialCwd]);
+
+  // #10: keep in-app tabs in sync across browser tabs of the same project. The
+  // /api/project-state route broadcasts `project-state-changed` after every tab open/close.
+  // We do NOT mirror by set-diff (a tab that simply hasn't opened a session must not be read
+  // as "closed it" — that collapsed every tab to the smallest set). Instead:
+  //   • ADD: any session in the shared state.json (a union) we don't have a tab for.
+  //   • REMOVE: only the sessions in the event's `closedSessionIds` (an explicit close).
+  // State is written before the broadcast, so engine/model are already correct (no race).
+  const reconcileTabs = useCallback((closedIds: string[]) => {
+    if (!initialCwd) return;
+    BrowserRuntime.runPromise(
+      loadProjectState(initialCwd).pipe(Effect.catchAll(() => Effect.succeed(null)))
+    ).then((data) => {
+      if (!data) return;
+      const saved: string[] = data.sessions || [];
+      const engines = (data.engines || {}) as Record<string, string>;
+      const ollamaModels = (data.ollamaModels || {}) as Record<string, string>;
+      const deepseekModels = (data.deepseekModels || {}) as Record<string, string>;
+      const chatModes = (data.chatModes || {}) as Record<string, string>;
+      const planModes = (data.planModes || {}) as Record<string, boolean>;
+
+      const prev = tabsRef.current;
+      const closedSet = new Set(closedIds);
+      // remove only explicitly-closed sessions; keep placeholders + everything else
+      const kept = prev.filter((t) => !t.sessionId || !closedSet.has(t.sessionId));
+      const keptIds = new Set(kept.map((t) => t.sessionId).filter(Boolean));
+      // add union sessions we don't have
+      const toAdd = saved.filter((sid) => !keptIds.has(sid));
+
+      // No removal + no add → bail (referential stability avoids a save→broadcast loop).
+      if (kept.length === prev.length && toAdd.length === 0) return;
+
+      const added: TabInfo[] = toAdd.map((sid, i) => ({
+        id: `tab-${Date.now()}-sync-${i}`,
+        cwd: initialCwd,
+        sessionId: sid,
+        title: `Session ${sid.slice(0, 6)}...`,
+        engine: (engines[sid] as ChatEngine) || undefined,
+        ollamaModel: ollamaModels[sid] || undefined,
+        deepseekModel: (deepseekModels[sid] as DeepseekModel) || undefined,
+        chatMode: (chatModes[sid] as ChatMode) || undefined,
+        planMode: planModes[sid] || undefined,
+      }));
+      let next = [...kept, ...added];
+      // never leave the tab bar empty (tabs[0].id is read every render)
+      if (next.length === 0) {
+        next = [{ id: `tab-${Date.now()}`, cwd: initialCwd, title: 'New Chat' }];
+      }
+      setTabs(next);
+      // active tab closed elsewhere → fall back to the last remaining tab
+      if (!next.some((t) => t.id === activeTabIdRef.current)) {
+        setActiveTabId(next[next.length - 1].id);
+      }
+    });
+  }, [initialCwd]);
+
+  useWebSocket({
+    url: '/ws/global-state',
+    enabled: !!initialCwd,
+    onMessage: (raw) => {
+      if (isInitializingRef.current || !initialCwd) return;
+      const p = raw as { type?: string; cwd?: string; closedSessionIds?: string[] };
+      if (p.type === 'project-state-changed' && p.cwd === initialCwd) {
+        reconcileTabs(p.closedSessionIds ?? []);
+      }
+    },
+  });
 
   // Add new tab
   // - appendToEnd=true (new chats from "+" menu, opening existing sessions from sidebar):
@@ -248,6 +334,10 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
 
   // Close tab
   const closeTab = useCallback((tabId: string) => {
+    // Record an explicit close so the next save removes it from the shared union (and the
+    // broadcast tells other browser tabs to remove exactly this session).
+    const closing = tabsRef.current.find((t) => t.id === tabId);
+    if (closing?.sessionId) pendingClosedRef.current.add(closing.sessionId);
     setTabs((prev) => {
       const newTabs = prev.filter((t) => t.id !== tabId);
       if (tabId === activeTabId && newTabs.length > 0) {

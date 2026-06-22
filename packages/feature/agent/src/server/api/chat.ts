@@ -1,6 +1,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { Effect } from 'effect';
 import { updateGlobalState, getSessionTitle } from '../state/globalState';
+import { startRun, appendRun, rekeyRun, markRunIdle, isRunActive, setRunAbort } from '../sessionRunHub';
 import { resolveCommandPrompt } from '../lib/slashCommands';
 import { CLAUDE2_DIR } from '@cockpit/shared-utils';
 import { handler, parseJsonRaw } from '@cockpit/effect-runtime/server';
@@ -31,6 +32,7 @@ export const POST = handler((request) =>
     const body = (yield* parseJsonRaw(request)) as {
       prompt?: unknown;
       sessionId?: string;
+      runId?: string;
       images?: ImageData[];
       cwd?: string;
       language?: string;
@@ -52,6 +54,14 @@ export const POST = handler((request) =>
       ptyCols,
       ptyRows,
     } = body;
+
+    // #10: one active run per session — a second concurrent write would corrupt the jsonl.
+    if (sessionId && isRunActive(sessionId)) {
+      return new Response(JSON.stringify({ error: 'session is already running' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
     // Resolve built-in slash commands (/qa, /fx, etc.) based on language
     const prompt =
@@ -94,53 +104,57 @@ export const POST = handler((request) =>
       content.push({ type: 'text', text: prompt });
     }
 
-    // Create streaming response
-    const encoder = new TextEncoder();
-    let isClosed = false;
-
-    // Create AbortController for cancelling query
+    // #10 ws-converge: the run is fully detached from any HTTP response. We start the
+    // run synchronously (so the client can subscribe by runKey immediately), kick off the
+    // loop in the background, and return the runKey as JSON. Every event goes to the run
+    // registry (appendRun); originator AND viewers consume via /ws/session-stream. With no
+    // SSE bound to the run, a refresh/disconnect can no longer kill it.
     const queryAbortController = new AbortController();
+    const runId = (typeof body.runId === 'string' && body.runId) || randomUUID();
+    // registry key: real sessionId for resume; provisional runId for new sessions (rekeyed
+    // to the engine's sessionId on system.init). currentKey is mutated by the rekey.
+    let currentKey = sessionId || runId;
+    let actualSessionId = sessionId;
+    let isClosed = false;
+    const userMessage = typeof prompt === 'string' ? prompt : undefined;
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        const safeEnqueue = (data: string) => {
-          if (!isClosed) {
-            try {
-              controller.enqueue(encoder.encode(data));
-            } catch {
-              isClosed = true;
-            }
-          }
-        };
+    // #5 runId idempotency: reject a duplicate submit of the SAME send (same client runId
+    // re-POSTed — double-click / retry / strict-mode remount). currentKey is the sessionId on
+    // resume (also covered by the guard above) or the provisional runId on a new session;
+    // either way an active run under it means this exact send is already in flight. Two
+    // DIFFERENT new chats in the same cwd carry different runIds → not blocked.
+    if (isRunActive(currentKey)) {
+      return new Response(JSON.stringify({ error: 'run already active' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-        const safeClose = () => {
-          if (!isClosed) {
-            isClosed = true;
-            try {
-              controller.close();
-            } catch {
-              // ignore
-            }
-          }
-        };
+    startRun(currentKey, cwd || '', userMessage);
+    setRunAbort(currentKey, () => { isClosed = true; queryAbortController.abort(); });
+    if (cwd && sessionId) {
+      updateGlobalState(cwd, sessionId, 'loading', undefined, userMessage).catch(() => {});
+    }
 
-        // Track the actual sessionId (may be obtained from the stream)
-        let actualSessionId = sessionId;
+    // appendRun every event the route used to SSE-emit; '[DONE]' is now just a no-op marker.
+    const safeEnqueue = (data: string) => {
+      if (isClosed || data.startsWith('data: [DONE]')) return;
+      try { appendRun(currentKey, JSON.parse(data.slice(6))); } catch { /* ignore */ }
+    };
+    const safeClose = () => { isClosed = true; };
 
-        // Immediately mark as loading, also pass user message (avoid reading stale messages before transcript is written)
-        const userMessage = typeof prompt === 'string' ? prompt : undefined;
-        if (cwd && sessionId) {
-          updateGlobalState(cwd, sessionId, 'loading', undefined, userMessage).catch(() => {});
-        }
+    void (async () => {
 
         // ---- PTY mode (subscription billing): driven by the interactive claude CLI, via jsonl → SSE mapping ----
         // Applies only to claude/claude2; an additive branch — when mode!=='pty' the SDK path is completely unchanged.
         if (mode === 'pty' && (!engine || engine === 'claude' || engine === 'claude2')) {
           const isResume = !!sessionId;
-          const sid = sessionId || randomUUID();
+          const sid = currentKey; // PTY uses the runKey as the claude session id (no rekey)
           const promptText = typeof prompt === 'string' ? prompt : '';
+          actualSessionId = sid;
           try {
-            safeEnqueue(`data: ${JSON.stringify(initEvent(sid))}\n\n`);
+            const initEv = initEvent(sid);
+            safeEnqueue(`data: ${JSON.stringify(initEv)}\n\n`);
             if (cwd) updateGlobalState(cwd, sid, 'loading', undefined, userMessage).catch(() => {});
             const turn = await runClaudeTurn({
               cwd: cwd || process.cwd(),
@@ -180,13 +194,15 @@ export const POST = handler((request) =>
             if (turn.timedOut) {
               safeEnqueue(`data: ${JSON.stringify({ type: 'pty_notice', level: 'warning', terminal: true, messageKey: 'chat.ptyTimedOut' })}\n\n`);
             }
-            safeEnqueue(`data: ${JSON.stringify(resultEvent(sid))}\n\n`);
+            const resEv = resultEvent(sid);
+            safeEnqueue(`data: ${JSON.stringify(resEv)}\n\n`);
             if (cwd) {
               const title = await getSessionTitle(cwd, sid);
               await updateGlobalState(cwd, sid, 'unread', title);
             }
-            safeEnqueue('data: [DONE]\n\n');
+            markRunIdle(sid, 'idle');
           } catch (err) {
+            markRunIdle(sid, queryAbortController.signal.aborted ? 'idle' : 'error');
             if (!queryAbortController.signal.aborted) {
               safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: String(err) })}\n\n`);
             }
@@ -278,7 +294,14 @@ export const POST = handler((request) =>
                 // Capture sessionId (from system init event) and update global state
                 const msg = message as { type?: string; subtype?: string; session_id?: string };
                 if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
-                  actualSessionId = msg.session_id;
+                  const newSid = msg.session_id;
+                  // New session: rekey the provisional runId to the engine's real sessionId
+                  // (migrates the registry entry + subscribed viewers). Resume: no-op.
+                  if (currentKey !== newSid) {
+                    rekeyRun(currentKey, newSid);
+                    currentKey = newSid;
+                  }
+                  actualSessionId = newSid;
                   if (cwd) {
                     updateGlobalState(cwd, actualSessionId, 'loading', undefined, userMessage).catch(() => {});
                   }
@@ -290,9 +313,9 @@ export const POST = handler((request) =>
                   receivedResult = true;
                 }
 
-                // Send SSE-formatted data
-                const data = `data: ${JSON.stringify(message)}\n\n`;
-                safeEnqueue(data);
+                // All SDK events flow to the run registry via safeEnqueue (appendRun);
+                // ws/session-stream delivers them to originator + viewers alike.
+                safeEnqueue(`data: ${JSON.stringify(message)}\n\n`);
               }
             } catch (streamError) {
               // If user cancelled (abort), stop immediately — do not retry
@@ -325,9 +348,7 @@ export const POST = handler((request) =>
             const title = await getSessionTitle(cwd, actualSessionId);
             await updateGlobalState(cwd, actualSessionId, 'unread', title);
           }
-
-          // Send end marker
-          safeEnqueue('data: [DONE]\n\n');
+          markRunIdle(currentKey, 'idle');
           safeClose();
         } catch (error) {
           // Update global state: end loading (on error or cancel)
@@ -335,37 +356,19 @@ export const POST = handler((request) =>
             const title = await getSessionTitle(cwd, actualSessionId);
             await updateGlobalState(cwd, actualSessionId, 'unread', title);
           }
-
-          // If error was caused by cancellation, handle silently
           if (queryAbortController.signal.aborted) {
-            console.log('Query aborted by user');
+            // explicit stop: requestStop already marked idle
+            markRunIdle(currentKey, 'idle');
             safeClose();
             return;
           }
+          markRunIdle(currentKey, 'error');
           console.error('Stream error:', error);
           safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: String(error) })}\n\n`);
           safeClose();
         }
-      },
-      async cancel() {
-        isClosed = true;
-        // Cancel query execution
-        queryAbortController.abort();
-        // Update global state: end loading (user cancelled)
-        const actualSessionId = sessionId; // Use the passed-in sessionId on cancel
-        if (cwd && actualSessionId) {
-          const title = await getSessionTitle(cwd, actualSessionId);
-          await updateGlobalState(cwd, actualSessionId, 'unread', title);
-        }
-      },
-    });
+      })();
 
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
-    });
+    return Response.json({ runKey: currentKey, sessionId: actualSessionId ?? null });
   })
 );

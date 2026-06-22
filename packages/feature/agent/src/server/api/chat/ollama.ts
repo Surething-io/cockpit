@@ -2,6 +2,7 @@ import { streamText, stepCountIs } from 'ai';
 import type { ModelMessage } from '@ai-sdk/provider-utils';
 import { Effect } from 'effect';
 import { updateGlobalState } from '../../state/globalState';
+import { startRun, appendRun, markRunIdle, isRunActive, setRunAbort } from '../../sessionRunHub';
 import { resolveCommandPrompt } from '../../lib/slashCommands';
 import { createOllamaModel } from './ollama/model';
 import { appendAssistantMessage, appendToolResult, appendUserText, readSessionMessages } from './ollama/session';
@@ -85,6 +86,14 @@ export const POST = handler((request) =>
     const body = (yield* parseJsonRaw(request)) as ChatRequestBody;
     const { prompt: rawPrompt, sessionId, cwd, model, language } = body;
 
+    // #10: one active run per session.
+    if (sessionId && isRunActive(sessionId)) {
+      return new Response(JSON.stringify({ error: 'session is already running' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     const prompt =
       typeof rawPrompt === 'string'
         ? resolveCommandPrompt(rawPrompt, language, request)
@@ -96,7 +105,9 @@ export const POST = handler((request) =>
     }
 
     const actualCwd = cwd || process.cwd();
-    const actualSessionId = sessionId || randomUUID();
+    const runId = ((body as { runId?: string }).runId) || randomUUID();
+    const actualSessionId = sessionId || runId;
+    const currentKey = actualSessionId; // ollama uses runId as its session id (no rekey)
     const actualModel = model || DEFAULT_MODEL;
 
     const context: AgentContext = {
@@ -113,7 +124,9 @@ export const POST = handler((request) =>
     appendUserText(actualCwd, actualSessionId, prompt, { uuid: userUuid, timestamp: userTimestamp });
 
     const abortController = new AbortController();
-    request.signal.addEventListener('abort', () => abortController.abort());
+    // #10 ws-converge: the run is detached from the POST lifecycle (no request.signal
+    // tie — that would abort the moment the short POST response returns). Abort comes
+    // only from the stop endpoint via setRunAbort.
 
     const ollamaModel = createOllamaModel(actualModel);
     const tools = createTools(context);
@@ -128,32 +141,27 @@ export const POST = handler((request) =>
       abortSignal: abortController.signal,
     });
 
-    const encoder = new TextEncoder();
     let isClosed = false;
+    // #5 runId idempotency: reject a duplicate submit of the same send (currentKey is the
+    // sessionId on resume, else the provisional runId). Different new chats use different
+    // runIds → not blocked.
+    if (isRunActive(currentKey)) {
+      return new Response(JSON.stringify({ error: 'run already active' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        const safeEnqueue = (data: string) => {
-          if (!isClosed) {
-            try {
-              controller.enqueue(encoder.encode(data));
-            } catch {
-              isClosed = true;
-            }
-          }
-        };
+    startRun(currentKey, cwd || '', typeof prompt === 'string' ? prompt : undefined);
+    setRunAbort(currentKey, () => { isClosed = true; abortController.abort(); });
 
-        const safeClose = () => {
-          if (!isClosed) {
-            isClosed = true;
-            try {
-              controller.close();
-            } catch {
-              /* ignore */
-            }
-          }
-        };
+    const safeEnqueue = (data: string) => {
+      if (isClosed || data.startsWith('data: [DONE]')) return;
+      try { appendRun(currentKey, JSON.parse(data.slice(6))); } catch { /* ignore */ }
+    };
+    const safeClose = () => { isClosed = true; };
 
+    void (async () => {
         safeEnqueue(
           `data: ${JSON.stringify({
             type: 'system',
@@ -272,17 +280,18 @@ export const POST = handler((request) =>
           if (actualCwd) {
             updateGlobalState(actualCwd, actualSessionId, 'unread', undefined).catch(() => {});
           }
-
-          safeEnqueue('data: [DONE]\n\n');
+          markRunIdle(currentKey, 'idle');
           safeClose();
         } catch (error) {
           if (abortController.signal.aborted) {
             flushPendingToolCallsAsErrors('Tool call cancelled (request aborted).');
+            markRunIdle(currentKey, 'idle');
             safeClose();
             return;
           }
 
           flushPendingToolCallsAsErrors('Tool call failed (stream error).');
+          markRunIdle(currentKey, 'error');
 
           console.error('[Ollama] stream error:', error);
           safeEnqueue(
@@ -293,19 +302,8 @@ export const POST = handler((request) =>
           );
           safeClose();
         }
-      },
-      cancel() {
-        isClosed = true;
-        abortController.abort();
-      },
-    });
+      })();
 
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
-    });
+    return Response.json({ runKey: currentKey, sessionId: actualSessionId });
   })
 );

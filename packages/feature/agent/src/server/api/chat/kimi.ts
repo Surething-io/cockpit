@@ -1,10 +1,12 @@
 import { spawn } from 'child_process';
+import { randomUUID } from 'crypto';
 import { createInterface } from 'readline';
 import { readdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { Effect } from 'effect';
 import { updateGlobalState } from '../../state/globalState';
+import { startRun, appendRun, rekeyRun, markRunIdle, isRunActive, setRunAbort } from '../../sessionRunHub';
 import { resolveCommandPrompt } from '../../lib/slashCommands';
 import { handler, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import { ValidationError } from '@cockpit/effect-core';
@@ -86,10 +88,19 @@ export const POST = handler((request) =>
     const body = (yield* parseJsonRaw(request)) as {
       prompt?: unknown;
       sessionId?: string;
+      runId?: string;
       cwd?: string;
       language?: string;
     };
     const { prompt: rawPrompt, sessionId, cwd, language } = body;
+
+    // #10: one active run per session.
+    if (sessionId && isRunActive(sessionId)) {
+      return new Response(JSON.stringify({ error: 'session is already running' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
     const prompt =
       typeof rawPrompt === 'string'
@@ -102,36 +113,34 @@ export const POST = handler((request) =>
       );
     }
 
-    const encoder = new TextEncoder();
-    let isClosed = false;
+    // #10 ws-converge: detached spawn-based run; consume via /ws/session-stream.
+    const runId = (typeof body.runId === 'string' && body.runId) || randomUUID();
+    let currentKey = sessionId || runId;
     let actualSessionId = sessionId || '';
+    let isClosed = false;
     const userMessage = typeof prompt === 'string' ? prompt.slice(0, 50) : '';
     let childProcess: ReturnType<typeof spawn> | null = null;
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        const safeEnqueue = (data: string) => {
-          if (!isClosed) {
-            try {
-              controller.enqueue(encoder.encode(data));
-            } catch {
-              isClosed = true;
-            }
-          }
-        };
+    // #5 runId idempotency: reject a duplicate submit of the same send (currentKey is the
+    // sessionId on resume, else the provisional runId). Different new chats use different
+    // runIds → not blocked.
+    if (isRunActive(currentKey)) {
+      return new Response(JSON.stringify({ error: 'run already active' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-        const safeClose = () => {
-          if (!isClosed) {
-            isClosed = true;
-            try {
-              controller.close();
-            } catch {
-              // ignore
-            }
-          }
-        };
+    startRun(currentKey, cwd || '', typeof prompt === 'string' ? prompt : undefined);
+    setRunAbort(currentKey, () => { isClosed = true; childProcess?.kill('SIGTERM'); });
 
-        try {
+    const safeEnqueue = (data: string) => {
+      if (isClosed || data.startsWith('data: [DONE]')) return;
+      try { appendRun(currentKey, JSON.parse(data.slice(6))); } catch { /* ignore */ }
+    };
+    const safeClose = () => { isClosed = true; };
+
+    try {
           // Build kimi command args
           const args: string[] = [
             '--print',
@@ -260,6 +269,8 @@ export const POST = handler((request) =>
               const detected = findNewKimiSessionId(sessionsBefore);
               if (detected) {
                 actualSessionId = detected;
+                // rekey provisional runId → real kimi sessionId (migrates subscribers)
+                if (currentKey !== detected) { rekeyRun(currentKey, detected); currentKey = detected; }
                 safeEnqueue(`data: ${JSON.stringify({
                   type: 'system',
                   subtype: 'init',
@@ -283,8 +294,7 @@ export const POST = handler((request) =>
             if (cwd && actualSessionId) {
               await updateGlobalState(cwd, actualSessionId, 'unread', undefined).catch(() => {});
             }
-
-            safeEnqueue('data: [DONE]\n\n');
+            markRunIdle(currentKey, 'idle');
             safeClose();
           });
 
@@ -293,28 +303,16 @@ export const POST = handler((request) =>
 
           childProcess.on('error', (err) => {
             console.error('[Kimi] spawn error:', err.message);
+            markRunIdle(currentKey, 'error');
             safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
             safeClose();
           });
         } catch (error) {
+          markRunIdle(currentKey, 'error');
           safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: String(error) })}\n\n`);
           safeClose();
         }
-      },
-      cancel() {
-        isClosed = true;
-        if (childProcess) {
-          childProcess.kill('SIGTERM');
-        }
-      },
-    });
 
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
-    });
+    return Response.json({ runKey: currentKey, sessionId: actualSessionId || null });
   })
 );

@@ -86,6 +86,8 @@
     "setup": "npm run build && npm run build:server && npm link",
     "setup-dev": "node bin/setup-dev.mjs",
     "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "generate-icons": "node scripts/generate-icons.js",
     "copy-wasms": "node scripts/copy-tree-sitter-wasms.mjs",
     "postinstall": "node bin/postinstall.mjs"
@@ -164,7 +166,8 @@
     "tailwindcss": "^4",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "^4.1.9"
   },
   "overrides": {
     "postcss": "^8.5.10"

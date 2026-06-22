@@ -52,6 +52,9 @@ export interface ProjectStateSave {
   deepseekModels?: Record<string, string>
   chatModes?: Record<string, string>
   planModes?: Record<string, boolean>
+  /** sessions explicitly closed in THIS tab — the server removes them from the shared
+   *  union (the only removal path; plain saves never shrink the set). */
+  closedSessionIds?: string[]
 }
 
 export const saveProjectState = (

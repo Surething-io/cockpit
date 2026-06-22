@@ -1,6 +1,8 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { randomUUID } from 'crypto';
 import { Effect } from 'effect';
 import { updateGlobalState, getSessionTitle } from '../../state/globalState';
+import { startRun, appendRun, rekeyRun, markRunIdle, isRunActive, setRunAbort } from '../../sessionRunHub';
 import { resolveCommandPrompt } from '../../lib/slashCommands';
 import { DEEPSEEK_DIR, SETTINGS_FILE, readJsonFile } from '@cockpit/shared-utils';
 import { handler, parseJsonRaw } from '@cockpit/effect-runtime/server';
@@ -49,6 +51,7 @@ export const POST = handler((request) =>
     const body = (yield* parseJsonRaw(request)) as {
       prompt?: unknown;
       sessionId?: string;
+      runId?: string;
       images?: ImageData[];
       cwd?: string;
       language?: string;
@@ -62,6 +65,14 @@ export const POST = handler((request) =>
       language,
       model: requestedModel,
     } = body;
+
+    // #10: one active run per session.
+    if (sessionId && isRunActive(sessionId)) {
+      return new Response(JSON.stringify({ error: 'session is already running' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
     // Resolve built-in slash commands (/qa, /fx, etc.) based on language
     const prompt =
@@ -124,41 +135,38 @@ export const POST = handler((request) =>
       content.push({ type: 'text', text: prompt });
     }
 
-    // Create streaming response
-    const encoder = new TextEncoder();
-    let isClosed = false;
-
+    // #10 ws-converge: detached run; consume via /ws/session-stream. See chat.ts for the
+    // full rationale. Start synchronously, run in the background, return runKey as JSON.
     const queryAbortController = new AbortController();
+    const runId = (typeof body.runId === 'string' && body.runId) || randomUUID();
+    let currentKey = sessionId || runId;
+    let actualSessionId = sessionId;
+    let isClosed = false;
+    const userMessage = typeof prompt === 'string' ? prompt : undefined;
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        const safeEnqueue = (data: string) => {
-          if (!isClosed) {
-            try {
-              controller.enqueue(encoder.encode(data));
-            } catch {
-              isClosed = true;
-            }
-          }
-        };
+    // #5 runId idempotency: reject a duplicate submit of the same send (currentKey is the
+    // sessionId on resume, else the provisional runId). Different new chats use different
+    // runIds → not blocked.
+    if (isRunActive(currentKey)) {
+      return new Response(JSON.stringify({ error: 'run already active' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-        const safeClose = () => {
-          if (!isClosed) {
-            isClosed = true;
-            try {
-              controller.close();
-            } catch {
-              // ignore
-            }
-          }
-        };
+    startRun(currentKey, cwd || '', userMessage);
+    setRunAbort(currentKey, () => { isClosed = true; queryAbortController.abort(); });
+    if (cwd && sessionId) {
+      updateGlobalState(cwd, sessionId, 'loading', undefined, userMessage).catch(() => {});
+    }
 
-        let actualSessionId = sessionId;
-        const userMessage = typeof prompt === 'string' ? prompt : undefined;
-        if (cwd && sessionId) {
-          updateGlobalState(cwd, sessionId, 'loading', undefined, userMessage).catch(() => {});
-        }
+    const safeEnqueue = (data: string) => {
+      if (isClosed || data.startsWith('data: [DONE]')) return;
+      try { appendRun(currentKey, JSON.parse(data.slice(6))); } catch { /* ignore */ }
+    };
+    const safeClose = () => { isClosed = true; };
 
+    void (async () => {
         try {
           const hasImages = images && images.length > 0;
 
@@ -256,7 +264,9 @@ export const POST = handler((request) =>
 
                 const msg = message as { type?: string; subtype?: string; session_id?: string };
                 if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
-                  actualSessionId = msg.session_id;
+                  const newSid = msg.session_id;
+                  if (currentKey !== newSid) { rekeyRun(currentKey, newSid); currentKey = newSid; }
+                  actualSessionId = newSid;
                   if (cwd) {
                     updateGlobalState(cwd, actualSessionId, 'loading', undefined, userMessage).catch(() => {});
                   }
@@ -266,8 +276,8 @@ export const POST = handler((request) =>
                   receivedResult = true;
                 }
 
-                const data = `data: ${JSON.stringify(message)}\n\n`;
-                safeEnqueue(data);
+                // All events flow to the run registry via safeEnqueue (appendRun).
+                safeEnqueue(`data: ${JSON.stringify(message)}\n\n`);
               }
             } catch (streamError) {
               if (isClosed || queryAbortController.signal.aborted) break;
@@ -294,42 +304,25 @@ export const POST = handler((request) =>
             const title = await getSessionTitle(cwd, actualSessionId);
             await updateGlobalState(cwd, actualSessionId, 'unread', title);
           }
-
-          safeEnqueue('data: [DONE]\n\n');
+          markRunIdle(currentKey, 'idle');
           safeClose();
         } catch (error) {
           if (cwd && actualSessionId) {
             const title = await getSessionTitle(cwd, actualSessionId);
             await updateGlobalState(cwd, actualSessionId, 'unread', title);
           }
-
           if (queryAbortController.signal.aborted) {
-            console.log('DeepSeek query aborted by user');
+            markRunIdle(currentKey, 'idle');
             safeClose();
             return;
           }
+          markRunIdle(currentKey, 'error');
           console.error('DeepSeek stream error:', error);
           safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: String(error) })}\n\n`);
           safeClose();
         }
-      },
-      async cancel() {
-        isClosed = true;
-        queryAbortController.abort();
-        const actualSessionId = sessionId;
-        if (cwd && actualSessionId) {
-          const title = await getSessionTitle(cwd, actualSessionId);
-          await updateGlobalState(cwd, actualSessionId, 'unread', title);
-        }
-      },
-    });
+      })();
 
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
-    });
+    return Response.json({ runKey: currentKey, sessionId: actualSessionId ?? null });
   })
 );

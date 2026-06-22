@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
+import { applyStreamEvent, type StreamEvent } from './applyStreamEvent';
 import type {
   ChatMessage,
-  ToolCallInfo,
   ImageInfo,
   MessageImage,
   TokenUsage,
@@ -14,7 +14,18 @@ import type {
   ChatMode,
 } from './types';
 import i18n from '@cockpit/shared-i18n';
+import { useWebSocket } from '@cockpit/shared-ui';
 import { PTY_COLS, PTY_ROWS } from './XtermFloatingWindow';
+
+// Provisional run id the client generates per send so it can subscribe to the run's
+// /ws/session-stream immediately — before the engine reveals its real sessionId.
+function genRunId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `run-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  }
+}
 
 // Migrated from src/components/project/useChatStream.ts.
 
@@ -66,6 +77,20 @@ export function useChatStream(
   const [ptyNotice, setPtyNotice] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // #10 ws-converge: the active detached run the originator is tailing over
+  // /ws/session-stream (runKey to subscribe by + the assistant bubble its events fill).
+  const [activeRun, setActiveRun] = useState<{ runKey: string; assistantId: string } | null>(null);
+  const activeRunRef = useRef(activeRun);
+  activeRunRef.current = activeRun;
+
+  // #10 R5/#7: connection watchdog. The detached run is driven entirely by /ws/session-stream;
+  // if that socket never connects (ws server down, upgrade rejected), no event ever arrives and
+  // the originator would hang with isLoading=true forever (the old SSE finally that reset it is
+  // gone). A connected socket sends its snapshot within ms, so "no message at all for 15s" ⇒
+  // the connection failed → unstick.
+  const wsAliveRef = useRef(false);
+  const wsWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Used to get latest sessionId in handleStreamEvent
   const sessionIdRef = useRef<string | null>(sessionId);
   sessionIdRef.current = sessionId;
@@ -74,30 +99,53 @@ export function useChatStream(
   const streamBufferRef = useRef<{ messageId: string; text: string } | null>(null);
   const streamFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Flush buffer to state
+  // Flush buffer to state (batched text delta → shared reducer)
   const flushStreamBuffer = useCallback(() => {
     const buffer = streamBufferRef.current;
     if (buffer && buffer.text) {
       const { messageId, text } = buffer;
       setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === messageId
-            ? { ...msg, content: (msg.content || '') + text }
-            : msg
+        applyStreamEvent(
+          prev,
+          { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text } } },
+          { engine, assistantId: messageId }
         )
       );
       streamBufferRef.current = { messageId, text: '' };
     }
     streamFlushTimerRef.current = null;
-  }, [setMessages]);
+  }, [setMessages, engine]);
 
-  // Stop generation
-  const handleStop = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
+  // End the originator's view of the current run (turn finished / stopped / failed).
+  const endRun = useCallback(() => {
+    if (streamFlushTimerRef.current) {
+      clearTimeout(streamFlushTimerRef.current);
+      streamFlushTimerRef.current = null;
     }
-  }, []);
+    if (wsWatchdogRef.current) {
+      clearTimeout(wsWatchdogRef.current);
+      wsWatchdogRef.current = null;
+    }
+    flushStreamBuffer();
+    setIsLoading(false);
+    const ar = activeRunRef.current;
+    if (ar) {
+      setMessages((prev) => prev.map((m) => (m.id === ar.assistantId ? { ...m, isStreaming: false } : m)));
+    }
+    setActiveRun(null);
+  }, [flushStreamBuffer, setMessages]);
+
+  // Stop generation: the run is detached server-side, so closing a socket won't stop it —
+  // hit the explicit stop endpoint. Send both keys (sessionId once known, else runId).
+  const handleStop = useCallback(() => {
+    const ar = activeRunRef.current;
+    fetch('/api/chat/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: sessionIdRef.current, runId: ar?.runKey }),
+    }).catch(() => {});
+    endRun();
+  }, [endRun]);
 
   // SSE event handling
   const handleStreamEvent = useCallback((event: Record<string, unknown>, messageId: string) => {
@@ -166,6 +214,32 @@ export function useChatStream(
       return;
     }
 
+    // Handle in-stream error events ({type:'error', error}) emitted by the
+    // codex/kimi/ollama/deepseek routes. Without this branch they are silently
+    // dropped and the turn ends as an empty bubble.
+    if (eventType === 'error') {
+      const errText = (event.error as string) || i18n.t('chat.errorRetry', { defaultValue: 'An error occurred. Please try again.' });
+      setApiRetryInfo(null);
+      // Flush any buffered text first so the error appears after streamed content.
+      if (streamFlushTimerRef.current) {
+        clearTimeout(streamFlushTimerRef.current);
+        streamFlushTimerRef.current = null;
+      }
+      flushStreamBuffer();
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId
+            ? {
+                ...msg,
+                content: msg.content ? `${msg.content}\n\n⚠️ ${errText}` : `⚠️ ${errText}`,
+                isStreaming: false,
+              }
+            : msg
+        )
+      );
+      return;
+    }
+
     // Handle streaming text chunk (typewriter effect) - use buffer throttle
     if (eventType === 'stream_event') {
       // Any actual stream content means the retry / stuck state (if any) has cleared
@@ -191,85 +265,14 @@ export function useChatStream(
     }
 
     // Handle text content (complete message)
+    // Complete assistant message (codex/kimi/ollama/synthetic text + tool_use blocks)
     if (eventType === 'assistant') {
-      const message = event.message as { model?: string; content?: Array<{ type?: string; text?: string; name?: string; id?: string; input?: Record<string, unknown> }> } | undefined;
-      if (message?.content) {
-        // Extract text blocks (Codex sends complete text via assistant messages, not stream_event).
-        // For Claude engine, normal text is handled by stream_event deltas — skip to avoid duplication.
-        // BUT synthetic messages (model === '<synthetic>') — e.g. "/foo isn't available in this
-        // environment", unknown slash commands, startup rejections — are delivered whole with NO
-        // accompanying deltas, so they must be read here or the text vanishes into an empty bubble.
-        const isSynthetic = message.model === '<synthetic>';
-        if (engine === 'codex' || engine === 'kimi' || engine === 'ollama' || isSynthetic) {
-          const textParts = message.content
-            .filter(block => block.type === 'text' && block.text)
-            .map(block => block.text!);
-          if (textParts.length > 0) {
-            const newText = textParts.join('');
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === messageId
-                  ? { ...msg, content: (msg.content || '') + newText }
-                  : msg
-              )
-            );
-          }
-        }
-
-        for (const block of message.content) {
-          // Handle tool call
-          if ('name' in block && block.name) {
-            const toolCall: ToolCallInfo = {
-              id: (block.id as string) || `tool-${Date.now()}`,
-              name: block.name as string,
-              input: (block.input as Record<string, unknown>) || {},
-              isLoading: true,
-            };
-            setMessages((prev) =>
-              prev.map((msg) => {
-                if (msg.id !== messageId) return msg;
-                // Avoid duplicate additions
-                const exists = msg.toolCalls?.some((tc) => tc.id === toolCall.id);
-                if (exists) return msg;
-                return {
-                  ...msg,
-                  toolCalls: [...(msg.toolCalls || []), toolCall],
-                };
-              })
-            );
-          }
-        }
-      }
+      setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
     }
 
-    // Handle tool result
+    // Tool result (user turn) → merge into the matching toolCall
     if (eventType === 'user') {
-      const message = event.message as { content?: Array<{ tool_use_id?: string; content?: string }> } | undefined;
-      if (message?.content) {
-        for (const block of message.content) {
-          if ('tool_use_id' in block && block.tool_use_id) {
-            const toolUseId = block.tool_use_id;
-            const result = typeof block.content === 'string'
-              ? block.content
-              : JSON.stringify(block.content);
-
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === messageId
-                  ? {
-                      ...msg,
-                      toolCalls: msg.toolCalls?.map((tc) =>
-                        tc.id === toolUseId
-                          ? { ...tc, result, isLoading: false }
-                          : tc
-                      ),
-                    }
-                  : msg
-              )
-            );
-          }
-        }
-      }
+      setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
     }
 
     // Handle final result
@@ -312,25 +315,65 @@ export function useChatStream(
       // result event carries (result.result). Covers synthetic errors that never streamed deltas
       // — note these arrive as subtype:'success'/is_error:false, so we can't gate on the error flag —
       // and result-only turns with no assistant message at all. Without this it renders as an empty bubble.
-      const resultText = typeof event.result === 'string' ? (event.result as string).trim() : '';
-
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === messageId
-            ? {
-                ...msg,
-                content: (!msg.content && resultText) ? resultText : msg.content,
-                isStreaming: false,
-                toolCalls: msg.toolCalls?.map((tc) => ({
-                  ...tc,
-                  isLoading: false,
-                })),
-              }
-            : msg
-        )
-      );
+      // Finalize the assistant bubble (resultText fallback + isStreaming off + toolCalls done)
+      setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
     }
   }, [setMessages, flushStreamBuffer, onSessionId, onFetchTitle, cwd, engine, onPtyOutput]);
+
+  // #10 ws-converge: tail the active detached run over /ws/session-stream and feed every
+  // event through the SAME handleStreamEvent the SSE path used — so token usage, title,
+  // retry/pty indicators, deltas, tools, result and errors are all reused unchanged.
+  // At most one socket per hook (enabled only while a run is active).
+  useWebSocket({
+    url: activeRun
+      ? `/ws/session-stream?sessionId=${encodeURIComponent(activeRun.runKey)}`
+      : '/ws/session-stream',
+    enabled: !!activeRun,
+    onMessage: (data) => {
+      // Any message (snapshot / event / ping) proves the socket connected → cancel the watchdog.
+      wsAliveRef.current = true;
+      if (wsWatchdogRef.current) {
+        clearTimeout(wsWatchdogRef.current);
+        wsWatchdogRef.current = null;
+      }
+      const ar = activeRunRef.current;
+      if (!ar) return;
+      const msg = data as {
+        type?: string;
+        status?: string;
+        events?: unknown[];
+        message?: Record<string, unknown>;
+      };
+      if (msg.type === 'run-snapshot' && Array.isArray(msg.events)) {
+        // A snapshot is an authoritative replay of the ENTIRE in-flight turn. On a mid-turn
+        // ws reconnect (HMR / network blip / server restart) the server re-sends the whole
+        // turn, so reset this assistant bubble before replaying — handleStreamEvent APPENDS
+        // text, and replaying onto an already-populated bubble would duplicate it. Also drop
+        // any buffered delta that belongs to the pre-reconnect content.
+        if (streamFlushTimerRef.current) {
+          clearTimeout(streamFlushTimerRef.current);
+          streamFlushTimerRef.current = null;
+        }
+        streamBufferRef.current = null;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === ar.assistantId ? { ...m, content: '', toolCalls: [] } : m
+          )
+        );
+        for (const ev of msg.events) handleStreamEvent(ev as Record<string, unknown>, ar.assistantId);
+        // Run already finished before we connected (status idle/error in the snapshot).
+        if (msg.status && msg.status !== 'running') endRun();
+      } else if (msg.type === 'run-event' && msg.message) {
+        // 'run-ended' is the single definitive end signal (engines may emit several
+        // intermediate 'result's — codex = one per turn — so we must NOT end on result).
+        if (msg.message.type === 'run-ended') { endRun(); return; }
+        handleStreamEvent(msg.message, ar.assistantId);
+      } else if (msg.type === 'run-idle') {
+        endRun();
+      }
+      // 'ping': ignore
+    },
+  });
 
   // Send message
   const handleSend = useCallback(
@@ -370,8 +413,7 @@ export function useChatStream(
       const isClaudeEngine = !engine || engine === 'claude' || engine === 'claude2';
       const usePty = chatMode === 'pty' && isClaudeEngine;
 
-      // Create AbortController for interrupting request
-      abortControllerRef.current = new AbortController();
+      const runId = genRunId();
 
       try {
         // Ollama requires a model to be selected
@@ -380,12 +422,15 @@ export function useChatStream(
         }
 
         const apiUrl = engine === 'codex' ? '/api/chat/codex' : engine === 'kimi' ? '/api/chat/kimi' : engine === 'ollama' ? '/api/chat/ollama' : engine === 'deepseek' ? '/api/chat/deepseek' : '/api/chat';
+        // POST only STARTS the detached run and returns its runKey — no SSE body to read.
+        // The ws consumer (above) tails /ws/session-stream and drives the UI from here.
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: content,
             sessionId: sessionIdRef.current,
+            runId,
             images: messageImages,
             cwd,
             language: i18n.language,
@@ -397,7 +442,6 @@ export function useChatStream(
             // Shift+Tab plan). When unchecked, omit → server defaults to bypassPermissions.
             ...(planMode && !usePty && isClaudeEngine && { permissionMode: 'plan' }),
           }),
-          signal: abortControllerRef.current.signal,
         });
 
         if (response.status === 400 && engine === 'deepseek') {
@@ -410,64 +454,42 @@ export function useChatStream(
           throw new Error(i18n.t('chat.requestFailed', { defaultValue: 'Request failed' }));
         }
 
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error(i18n.t('chat.cannotReadStream', { defaultValue: 'Cannot read stream' }));
-        }
-
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
-              if (data === '[DONE]') continue;
-
-              try {
-                const event = JSON.parse(data);
-                handleStreamEvent(event, assistantMessageId);
-              } catch {
-                // Ignore parse errors
-              }
-            }
+        const startBody = (await response.json().catch(() => ({}))) as { runKey?: string };
+        // Hand off to the ws consumer; it ends the run on result / run-idle.
+        setActiveRun({ runKey: startBody.runKey || runId, assistantId: assistantMessageId });
+        // Arm the connection watchdog: if /ws/session-stream never delivers a message (it sends
+        // a snapshot immediately on connect), the socket failed to connect → unstick the turn.
+        wsAliveRef.current = false;
+        if (wsWatchdogRef.current) clearTimeout(wsWatchdogRef.current);
+        wsWatchdogRef.current = setTimeout(() => {
+          if (activeRunRef.current && !wsAliveRef.current) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMessageId && !m.content
+                  ? { ...m, content: i18n.t('chat.errorRetry', { defaultValue: 'An error occurred. Please try again.' }) }
+                  : m
+              )
+            );
+            endRun();
           }
-        }
+        }, 15000);
       } catch (error) {
-        // If user actively interrupted, do not show error message
-        if (error instanceof Error && error.name === 'AbortError') {
-          // Keep already-generated content, only end streaming state
-        } else {
-          console.error('Chat error:', error);
-          const errorMsg = error instanceof Error ? error.message : i18n.t('chat.errorRetry', { defaultValue: 'An error occurred. Please try again.' });
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === assistantMessageId
-                ? { ...msg, content: errorMsg, isStreaming: false }
-                : msg
-            )
-          );
-        }
-      } finally {
-        abortControllerRef.current = null;
-        setIsLoading(false);
+        // POST failed to even start the run → surface in the bubble and end the turn.
+        // (Once the run has started, completion/stop/errors all arrive over the ws stream.)
+        console.error('Chat error:', error);
+        const errorMsg = error instanceof Error ? error.message : i18n.t('chat.errorRetry', { defaultValue: 'An error occurred. Please try again.' });
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantMessageId
-              ? { ...msg, isStreaming: false }
+              ? { ...msg, content: errorMsg, isStreaming: false }
               : msg
           )
         );
+        setIsLoading(false);
+        setActiveRun(null);
       }
     },
-    [cwd, engine, chatMode, planMode, ollamaModel, deepseekModel, setMessages, handleStreamEvent]
+    [cwd, engine, chatMode, planMode, ollamaModel, deepseekModel, setMessages, endRun]
   );
 
   return {

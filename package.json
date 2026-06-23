@@ -141,6 +141,7 @@
     "shiki": "^3.21.0",
     "tiptap-markdown": "^0.9.0",
     "unist-util-visit": "^5.1.0",
+    "web-push": "^3.6.7",
     "web-tree-sitter": "^0.26.8",
     "ws": "^8.20.1"
   },
@@ -158,6 +159,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.1",
     "@vscode/tree-sitter-wasm": "^0.3.1",
     "eslint": "^9",

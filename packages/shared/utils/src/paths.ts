@@ -13,6 +13,7 @@ export const COCKPIT_DIR = join(HOME_DIR, '.cockpit');
 export const COCKPIT_PROJECTS_DIR = join(COCKPIT_DIR, 'projects');
 export const GLOBAL_STATE_FILE = join(COCKPIT_DIR, 'state.json');
 export const PINNED_SESSIONS_FILE = join(COCKPIT_DIR, 'pinned-sessions.json');
+export const PUSH_SUBSCRIPTIONS_FILE = join(COCKPIT_DIR, 'push-subscriptions.json');
 export const NOTE_FILE = join(COCKPIT_DIR, 'note.md');
 export const SCHEDULED_TASKS_FILE = join(COCKPIT_DIR, 'scheduled-tasks.json');
 export const SETTINGS_FILE = join(COCKPIT_DIR, 'settings.json');

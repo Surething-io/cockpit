@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Portal } from '@cockpit/shared-ui';
-import { X, ChevronRight, ChevronDown, FileText } from 'lucide-react';
+import { X, ChevronRight, ChevronDown, FileText, PanelLeft } from 'lucide-react';
 // Tech debt: DiffView is a generic diff renderer used by both file-browser
 // and chat domains. Allowed by MODULES.md as transitional reverse import.
 // Clean up: extract DiffView to packages/shared/ui/ when we want a formal
@@ -214,6 +214,11 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
   const [selected, setSelected] = useState<FileChange | null>(changes[0] || null);
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
   const sidebarRef = useRef<HTMLDivElement>(null);
+  // Collapsible file tree — defaults open on desktop, collapsed on narrow
+  // screens (the 224px tree would otherwise crowd out the diff on a phone).
+  const [showSidebar, setShowSidebar] = useState(
+    () => typeof window === 'undefined' || window.innerWidth >= 768,
+  );
 
   // Tooltips for `data-tooltip` are rendered globally by <TooltipProvider />.
 
@@ -232,16 +237,26 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-0 md:p-4"
       onClick={onClose}
     >
       <div
-        className="bg-card rounded-lg shadow-xl w-full max-w-[90%] h-[90vh] flex flex-col transition-all"
+        className="bg-card shadow-xl w-full h-full rounded-none md:max-w-[90%] md:h-[90vh] md:rounded-lg flex flex-col transition-all"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex items-center gap-2">
+            {/* Toggle the file tree — useful on narrow screens to give the diff full width */}
+            <button
+              onClick={() => setShowSidebar((s) => !s)}
+              aria-label={t('diffViewer.toggleFileTree')}
+              className={`p-1 rounded transition-colors ${
+                showSidebar ? 'text-foreground bg-accent' : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+              }`}
+            >
+              <PanelLeft className="w-4 h-4" />
+            </button>
             <h3 className="text-sm font-medium text-foreground">
               {t('diffViewer.fileChanges', { count: changes.length })}
             </h3>
@@ -281,17 +296,23 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
 
         {/* Body: sidebar + diff */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Left file tree */}
-          <div ref={sidebarRef} className="w-56 flex-shrink-0 border-r border-border overflow-y-auto py-2">
-            {tree.map((node, i) => (
-              <TreeNodeItem
-                key={node.isFile && node.change ? node.change.uid : `${node.fullPath}-${i}`}
-                node={node}
-                selectedUid={selected?.uid || ''}
-                onSelect={setSelected}
-              />
-            ))}
-          </div>
+          {/* Left file tree — collapsible */}
+          {showSidebar && (
+            <div ref={sidebarRef} className="w-56 flex-shrink-0 border-r border-border overflow-y-auto py-2">
+              {tree.map((node, i) => (
+                <TreeNodeItem
+                  key={node.isFile && node.change ? node.change.uid : `${node.fullPath}-${i}`}
+                  node={node}
+                  selectedUid={selected?.uid || ''}
+                  onSelect={(c) => {
+                    setSelected(c);
+                    // On narrow screens, auto-collapse after picking a file so the diff gets full width.
+                    if (typeof window !== 'undefined' && window.innerWidth < 768) setShowSidebar(false);
+                  }}
+                />
+              ))}
+            </div>
+          )}
 
           {/* Right Diff */}
           <div className="flex-1 overflow-auto">

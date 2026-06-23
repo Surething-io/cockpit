@@ -17,6 +17,9 @@ export { AskQuestionViewerModal } from './AskQuestionViewerModal';
 export { ToolCallModal } from './ToolCallModal';
 export { DiffViewerModal } from './DiffViewerModal';
 
+// Mobile (/m) — recent-sessions list + single chat, no desktop 3-panel layout
+export { MobileApp } from './mobile/MobileApp';
+
 // Workspace sidebar contributions (chat-domain panels mounted by app's Workspace)
 export { PinnedSessionsPanel } from './PinnedSessionsPanel';
 export { ScheduledTasksPanel } from './ScheduledTasksPanel';
@@ -33,6 +36,7 @@ export { getSlashCommands, slashCommands, getMarkdown, type SlashCommand } from 
 export { ChatProvider, useChatContext, useChatContextOptional } from './ChatContext';
 
 // Hooks
+export { usePushSubscription, type PushPermission } from './usePushSubscription';
 export { useChatHistory } from './useChatHistory';
 export { useChatStream } from './useChatStream';
 export { useChatSearch } from './useChatSearch';

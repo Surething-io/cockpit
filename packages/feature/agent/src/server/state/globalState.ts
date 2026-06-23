@@ -11,6 +11,8 @@ import {
 } from '@cockpit/shared-utils';
 import { createReadStream, existsSync } from 'fs';
 import { createInterface } from 'readline';
+import { basename } from 'path';
+import { sendPushNotification } from '../push/push';
 
 export type SessionStatus = 'normal' | 'loading' | 'unread';
 
@@ -96,6 +98,25 @@ export async function updateGlobalState(
     state.sessions = state.sessions.slice(0, MAX_SESSIONS);
 
     await writeJsonFile(GLOBAL_STATE_FILE, state);
+
+    // Web Push: notify once when a run finishes (status enters 'unread').
+    // Gated on the previous status so repeated 'unread' writes don't re-notify.
+    // Fire-and-forget — never blocks or fails the state write.
+    if (status === 'unread' && existing?.status !== 'unread') {
+      void (async () => {
+        // Read the transcript for the *actual* latest user prompt at completion
+        // time — authoritative even for scheduled-task / failure writes that
+        // don't carry a fresh lastUserMessage. Fall back to the cached value,
+        // then the title. Empty → SW localizes the body.
+        const fresh = await getLastUserMessage(cwd, sessionId).catch(() => undefined);
+        const last = fresh || newSession.lastUserMessage;
+        await sendPushNotification({
+          title: basename(cwd) || 'Cockpit',
+          body: truncate(last) || newSession.title || '',
+          data: { cwd, sessionId },
+        });
+      })().catch(() => {});
+    }
   });
 }
 

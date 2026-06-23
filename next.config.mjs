@@ -11,6 +11,19 @@ const EMPTY_STUB = './src/lib/empty-stub.js';
 const nextConfig = {
   // dev 和 prod 使用不同输出目录，避免 Turbopack 热更新影响 prod
   distDir: dev ? '.next' : '.next-prod',
+  // Allow loading dev resources (HMR, /_next/*) through tunnels — needed to test
+  // the mobile /m route on a real phone via ngrok. Dev-only; wildcards cover the
+  // rotating ngrok hostnames so we don't have to edit this each session.
+  ...(dev
+    ? {
+        allowedDevOrigins: [
+          '*.ngrok-free.dev',
+          '*.ngrok-free.app',
+          '*.ngrok.app',
+          '*.ngrok.io',
+        ],
+      }
+    : {}),
   // Workspace packages ship raw .ts/.tsx (their package.json `main` points
   // straight at source). Next.js needs to compile them like local source.
   // See MODULES.md for the modularization layout.
@@ -72,6 +85,8 @@ const nextConfig = {
     'node-pty',
     'web-tree-sitter',
     '@vscode/ripgrep',
+    // Pure-JS but Node-only (uses node crypto/https); keep it out of any bundle.
+    'web-push',
   ],
   // For webpack (used by `next build --webpack`), use the standard fallback
   // mechanism. `false` = "this module is unavailable, drop the import."

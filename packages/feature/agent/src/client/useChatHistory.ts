@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { ChatMessage, TokenUsage } from './types';
+import type { ChatMessage, TokenUsage, ChatEngine } from './types';
 import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { AppError } from '@cockpit/effect-core';
@@ -71,6 +71,10 @@ interface UseChatHistoryReturn {
   // reference rendered message ids (e.g. fork) MUST use this one so the
   // server reads the same file the client is looking at.
   loadedSessionId: string | null;
+  // Authoritative engine of the loaded session, echoed by /api/session-by-path
+  // (resolved server-side by file location). Used by the mobile chat to send on
+  // the session's native engine. null until the first successful load.
+  loadedEngine: ChatEngine | null;
 }
 
 // ============================================
@@ -91,6 +95,8 @@ export function useChatHistory(
   // sessionId of the file whose contents currently populate `messages`.
   // Updated whenever a load successfully returns messages.
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(null);
+  // Engine echoed by /api/session-by-path for the loaded session.
+  const [loadedEngine, setLoadedEngine] = useState<ChatEngine | null>(null);
 
   // Use ref to ensure callbacks use the latest reference
   const onTitleChangeRef = useRef(onTitleChange);
@@ -140,6 +146,7 @@ export function useChatHistory(
           messages?: ChatMessage[];
           sessionId?: string;
           title?: string;
+          engine?: ChatEngine;
           usage?: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
         };
 
@@ -206,6 +213,9 @@ export function useChatHistory(
         }
         if (data.sessionId) {
           onSessionId(data.sessionId);
+        }
+        if (data.engine) {
+          setLoadedEngine(data.engine);
         }
         // Notify parent component of title change
         if (data.title) {
@@ -318,5 +328,6 @@ export function useChatHistory(
     loadHistory,
     loadHistoryByCwdAndSessionId,
     loadedSessionId,
+    loadedEngine,
   };
 }

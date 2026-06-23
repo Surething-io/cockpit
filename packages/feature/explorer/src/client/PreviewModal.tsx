@@ -221,11 +221,11 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-0 md:p-4"
       onClick={onClose}
     >
       <div
-        className={`bg-card rounded-lg shadow-xl w-full ${modalWidth} h-[90vh] flex flex-col transition-all`}
+        className={`bg-card shadow-xl w-full ${modalWidth} h-full md:h-[90vh] rounded-none md:rounded-lg flex flex-col transition-all`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

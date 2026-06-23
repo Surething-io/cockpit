@@ -203,6 +203,10 @@ export const POST = handler((req) =>
       totalTurns,
       hasMore,
       fingerprint,
+      // Authoritative engine for this session, resolved by file location across
+      // all 6 engines. Mobile (/m) uses this to send on the session's native
+      // engine — more reliable than the optional global-state engine field.
+      engine,
     });
   })
 );

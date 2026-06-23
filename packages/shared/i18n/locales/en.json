@@ -143,6 +143,15 @@
     "projectNotes": "Project Notes",
     "closeProject": "Close project"
   },
+  "mobile": {
+    "useDesktop": "Desktop",
+    "messagePlaceholder": "Message…",
+    "send": "Send",
+    "stop": "Stop",
+    "enableNotifications": "Enable notifications",
+    "disableNotifications": "Disable notifications",
+    "notifyError": "Could not enable notifications"
+  },
   "sessions": {
     "recentSessions": "Recent Sessions",
     "runningCount": "{{count}} running",
@@ -921,6 +930,7 @@
   },
   "diffViewer": {
     "fileChanges": "File Changes ({{count}})",
+    "toggleFileTree": "Toggle file tree",
     "selectFileToView": "Select a file to view changes",
     "sideBySide": "Side by side",
     "unified": "Unified",

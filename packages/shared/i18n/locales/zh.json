@@ -143,6 +143,15 @@
     "projectNotes": "项目笔记",
     "closeProject": "关闭项目"
   },
+  "mobile": {
+    "useDesktop": "桌面版",
+    "messagePlaceholder": "发消息…",
+    "send": "发送",
+    "stop": "停止",
+    "enableNotifications": "开启通知",
+    "disableNotifications": "关闭通知",
+    "notifyError": "无法开启通知"
+  },
   "sessions": {
     "recentSessions": "最近会话",
     "runningCount": "{{count}} 运行中",
@@ -921,6 +930,7 @@
   },
   "diffViewer": {
     "fileChanges": "文件变更 ({{count}} 处)",
+    "toggleFileTree": "切换文件目录",
     "selectFileToView": "选择左侧文件查看变更",
     "sideBySide": "并列对比",
     "unified": "统一对比",

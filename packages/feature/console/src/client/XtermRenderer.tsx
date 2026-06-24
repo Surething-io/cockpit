@@ -271,6 +271,25 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
     return () => observer.disconnect();
   }, [doFit]);
 
+  // Stop wheel scroll from chaining to the outer bubble list once the terminal
+  // hits its top/bottom. xterm only preventDefaults while the buffer can still
+  // scroll, so at the boundary the event would otherwise bubble up and scroll
+  // the bubble list. overscroll-behavior can't cover this, so guard it here.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      const vp = el.querySelector('.xterm-viewport') as HTMLElement | null;
+      if (!vp) return;
+      const max = vp.scrollHeight - vp.clientHeight;
+      const atTop = e.deltaY < 0 && vp.scrollTop <= 0;
+      const atBottom = e.deltaY > 0 && vp.scrollTop >= max - 1;
+      if (max <= 0 || atTop || atBottom) e.preventDefault();
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
   return (
     <div
       ref={containerRef}

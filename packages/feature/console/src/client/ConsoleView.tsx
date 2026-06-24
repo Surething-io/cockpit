@@ -249,7 +249,7 @@ export function ConsoleView({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNo
   return (
     <div ref={terminalRootRef} className="h-full flex flex-col bg-background relative">
       {/* Command history area */}
-      <div ref={stateScrollRef} onScroll={handleScroll} className={`flex-1 overflow-y-auto ${maximizedId ? '' : 'py-4 px-4'}`}>
+      <div ref={stateScrollRef} onScroll={handleScroll} className={`console-scroll-root flex-1 overflow-y-auto ${maximizedId ? '' : 'py-4 px-4'}`}>
         {consoleItems.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             {t('console.enterCommandOrUrl')}

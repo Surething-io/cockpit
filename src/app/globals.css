@@ -763,6 +763,15 @@ mark.chat-search-current { background: rgba(217, 119, 6, 0.6); color: inherit; b
 .xterm-renderer .xterm-viewport {
   background-color: transparent !important;
   overflow-y: auto !important;
+  /* Stop terminal scroll from chaining to the outer bubble list at top/bottom */
+  overscroll-behavior: contain;
+}
+
+/* Keep inner bubble scroll areas from chaining to the outer bubble list at edges */
+.console-scroll-root [class~="overflow-auto"],
+.console-scroll-root [class~="overflow-y-auto"],
+.console-scroll-root [class~="overflow-x-auto"] {
+  overscroll-behavior: contain;
 }
 .xterm-renderer .xterm-screen {
   background-color: transparent !important;

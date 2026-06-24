@@ -12,6 +12,7 @@ import {
 } from "@cockpit/shared-utils"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { FSError, ValidationError } from "@cockpit/effect-core"
+import { reconcileOrphanedRunning } from "../../terminal/RunningCommandRegistry"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -56,6 +57,16 @@ export const GET = handler((req) =>
     }
 
     const historyPath = getTerminalHistoryPath(cwd, tabId)
+
+    // Turn orphaned running:true placeholders (left by a previous server) into
+    // finished bubbles before reading, so a restart doesn't blank the console.
+    if (page === 0) {
+      yield* Effect.tryPromise({
+        try: () => reconcileOrphanedRunning(cwd, tabId),
+        catch: () => null,
+      }).pipe(Effect.catchAll(() => Effect.void))
+    }
+
     const result = yield* Effect.tryPromise({
       try: async () => {
         let content: string

@@ -7,6 +7,8 @@
 import { ChildProcess } from 'child_process';
 import type { IPty } from 'node-pty';
 import fs from 'fs/promises';
+import { writeFileSync, mkdirSync } from 'fs';
+import { dirname } from 'path';
 import { getTerminalHistoryPath, getTerminalOutputPath, ensureParentDir } from '@cockpit/shared-utils';
 import { registerTerminal, finalizeTerminal, notifyOutputListeners, notifyExitListeners } from './TerminalBridge';
 
@@ -461,4 +463,97 @@ export async function finalizeCommand(commandId: string, exitCode: number, pid?:
   }
 
   await fs.writeFile(historyPath, existingLines.join('\n') + '\n', 'utf-8');
+}
+
+/** Sentinel exit code for a PTY/command that was still running when the server died. */
+export const INTERRUPTED_EXIT_CODE = -1;
+
+/**
+ * Synchronously dump every live PTY ring buffer to its output file.
+ *
+ * Called from the process `exit` hook (server.mjs) so a graceful restart
+ * (Ctrl-C / SIGINT / SIGTERM) preserves terminal scrollback on disk. MUST be
+ * synchronous: an `exit` handler cannot await, and async fs writes would not
+ * flush before the process dies. The placeholder JSONL line still says
+ * `running: true`; the next server reconciles it on load (see
+ * reconcileOrphanedRunning). A hard kill (SIGKILL) skips this and loses the
+ * content — by design.
+ */
+export function flushAllRunningSync(): void {
+  const registry = getRegistry();
+  for (const cmd of registry.values()) {
+    const buf = cmd.ptyRingBuffer;
+    if (!buf || buf.length === 0) continue;
+    try {
+      const outputPath = getTerminalOutputPath(cmd.projectCwd, cmd.commandId);
+      mkdirSync(dirname(outputPath), { recursive: true });
+      writeFileSync(outputPath, buf.snapshot(), 'utf-8');
+    } catch { /* best-effort flush; never block shutdown */ }
+  }
+}
+
+/**
+ * Reconcile orphaned `running: true` placeholders left by a previous server.
+ *
+ * A PTY terminal is persisted as a placeholder (running: true) and only cleared
+ * by finalizeCommand inside the owning process. A server restart/crash kills the
+ * PTY without finalizing, so the placeholder is stranded — and loadHistory skips
+ * every running entry, making the bubble vanish. Here we rewrite any running
+ * entry that is NOT live in *this* process into a finished one: drop `running`,
+ * mark it interrupted, and attach its flushed output file if present. Also
+ * collapses duplicate ids (rerun placeholders) keeping the latest.
+ *
+ * Idempotent: rewrites the file only when something actually changed.
+ */
+export async function reconcileOrphanedRunning(projectCwd: string, tabId: string): Promise<void> {
+  const historyPath = getTerminalHistoryPath(projectCwd, tabId);
+
+  let content: string;
+  try {
+    content = await fs.readFile(historyPath, 'utf-8');
+  } catch {
+    return; // no history file yet
+  }
+
+  const lines = content.trim().split('\n').filter(Boolean);
+  if (lines.length === 0) return;
+
+  // Dedup by id, keeping the last occurrence (rerun appends a fresh placeholder).
+  const byId = new Map<string, Record<string, unknown>>();
+  let changed = false;
+  for (const line of lines) {
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      changed = true; // drop unparseable line
+      continue;
+    }
+    const id = entry.id as string | undefined;
+    if (!id) continue;
+    if (byId.has(id)) changed = true; // duplicate collapsed
+    byId.delete(id);
+    byId.set(id, entry);
+  }
+
+  for (const entry of byId.values()) {
+    if (entry.running !== true) continue;
+    const id = entry.id as string;
+    // Still live in this server (same-process refresh) → leave it for reattach.
+    if (getRunningCommand(id)) continue;
+
+    delete entry.running;
+    entry.exitCode = INTERRUPTED_EXIT_CODE;
+    const outputPath = getTerminalOutputPath(projectCwd, id);
+    try {
+      const stat = await fs.stat(outputPath);
+      if (stat.size > 0) entry.outputFile = outputPath;
+    } catch { /* no flushed output → bubble restores empty */ }
+    changed = true;
+  }
+
+  if (!changed) return;
+
+  const rewritten = [...byId.values()].map((e) => JSON.stringify(e)).join('\n') + '\n';
+  await fs.writeFile(historyPath, rewritten, 'utf-8');
 }

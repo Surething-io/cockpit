@@ -65,6 +65,11 @@ async function ensureSingleInstance() {
 //    端口 3000**，然后把后续 `npm run dev` 卡死（Next 通过 .next/dev/logs 检测到
 //    "已有 dev server 在跑"而拒绝再启）。所以父进程退出前必须显式杀掉所有直接子进程。
 // ============================================
+// Assigned once the server-side bundle is loaded (see app.prepare below). Lets the
+// synchronous exit hook flush live PTY scrollback to disk so a graceful restart
+// (Ctrl-C / SIGINT / SIGTERM) keeps terminal bubbles' content. null until ready.
+let flushRunningSync = null;
+
 let _cleanupRan = false;
 function killChildren() {
   if (_cleanupRan) return;
@@ -85,8 +90,13 @@ function killChildren() {
   try { execSync(`pkill -TERM -P ${process.pid}`, { stdio: 'ignore' }); } catch {}
 }
 
-// 正常退出路径（包括所有的 process.exit() 调用）—— Node 保证此 handler 同步执行
-process.on('exit', killChildren);
+// 正常退出路径（包括所有的 process.exit() 调用）—— Node 保证此 handler 同步执行。
+// 所有信号/异常路径最终都走 process.exit() → 触发 'exit' → 这一个点覆盖全部优雅退出。
+// 先把活着的 PTY 滚动缓冲同步落盘，再杀子进程（flush 读的是本进程内存，与子进程无关）。
+process.on('exit', () => {
+  try { flushRunningSync?.(); } catch {}
+  killChildren();
+});
 
 // 信号路径 —— 先杀子进程再退出，并让 shell 看到正确的退出码
 const cleanupAndExit = (code) => () => { killChildren(); process.exit(code); };
@@ -118,7 +128,9 @@ app.prepare().then(async () => {
   const upgradeHandler = app.getUpgradeHandler();
   // v2 P8: HTTP intercepts (handleTerminalApi / handleBrowserApi) moved to src/lib/httpApi.ts
   const { handleUpgrade, broadcastToGlobalState } = await import(dev ? './src/lib/wsServer.ts' : './dist/wsServer.mjs');
-  const { handleBrowserApi, handleTerminalApi, handleConnectionApi } = await import(dev ? './src/lib/httpApi.ts' : './dist/httpApi.mjs');
+  const httpApi = await import(dev ? './src/lib/httpApi.ts' : './dist/httpApi.mjs');
+  const { handleBrowserApi, handleTerminalApi, handleConnectionApi } = httpApi;
+  flushRunningSync = httpApi.flushAllRunningSync || null;
   const { scheduledTaskManager } = await import(dev ? '@cockpit/feature-agent/server/scheduledTasks' : './dist/scheduledTasks.mjs');
 
   // 初始化定时任务管理器

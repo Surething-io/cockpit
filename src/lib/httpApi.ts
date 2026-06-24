@@ -24,6 +24,7 @@ import {
   registerTerminal,
   unregisterTerminal,
   getRunningCommand,
+  flushAllRunningSync,
   getFirstAvailableLine,
   writeStdinToCommand,
   readSince,
@@ -42,6 +43,10 @@ import {
   readBubbleTitles,
 } from "@cockpit/feature-console/server"
 import type { ReadResult } from "@cockpit/feature-console/server"
+
+// Re-exported so the top-level server (server.mjs) can flush live PTY scrollback
+// to disk from its process `exit` hook — same import path in dev and prod.
+export { flushAllRunningSync }
 
 // Silence unused — kept for symmetry with their use inside the legacy wsServer
 void addOutputListener

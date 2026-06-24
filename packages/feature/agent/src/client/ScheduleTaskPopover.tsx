@@ -238,14 +238,14 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
   return (
     <div
       ref={popoverRef}
-      className={`w-80 bg-popover border border-border rounded-lg shadow-lg z-50 ${isEdit ? '' : 'absolute bottom-full left-0 mb-2'}`}
+      className={`w-[28rem] max-w-[calc(100vw-1.5rem)] bg-popover border border-border rounded-lg shadow-lg z-50 ${isEdit ? '' : 'absolute bottom-full left-0 mb-2'}`}
       onKeyDown={handleKeyDown}
     >
       <div className="px-3 py-2 border-b border-border bg-muted/50 rounded-t-lg">
         <span className="text-sm font-medium">{isEdit ? t('scheduledTasks.editTask') : t('scheduledTasks.createTask')}</span>
       </div>
 
-      <div className="p-3 space-y-3">
+      <div className="p-4 space-y-4 max-h-[min(52rem,calc(100vh-3rem))] overflow-y-auto">
         {/* Message content */}
         <div>
           <label className="text-xs text-muted-foreground mb-1 block">{t('scheduledTasks.sendMessage')}</label>
@@ -254,8 +254,8 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder={t('scheduledTasks.messagePlaceholder')}
-            rows={2}
-            className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+            rows={5}
+            className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y min-h-[6rem]"
           />
         </div>
 

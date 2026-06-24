@@ -87,7 +87,6 @@ export function ProjectSidebar({
   }, [t]);
   const { pinnedSessions, unpinSession, updateTitle, reorder } = usePinnedSessions();
   const { tasks: scheduledTasks, unreadCount: scheduledUnread, reload: reloadScheduled, pauseTask, resumeTask, triggerTask, deleteTask: deleteScheduledTask, updateTask: updateScheduledTask, markRead: markScheduledRead, reorderTasks } = useScheduledTasks();
-  const [isHovered, setIsHovered] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [sessions, setSessions] = useState<GlobalSession[]>([]);
@@ -166,11 +165,7 @@ export function ProjectSidebar({
       }`}
     >
       {/* Open project button + collapse button */}
-      <div
-        className="p-2 border-b border-border relative"
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-      >
+      <div className="group p-2 border-b border-border relative">
         <button
           className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
             collapsed ? 'justify-center' : ''
@@ -186,40 +181,38 @@ export function ProjectSidebar({
           </svg>
           {!collapsed && <span className="text-sm">{t('workspace.openProject')}</span>}
         </button>
-        {/* Collapse button */}
-        {isHovered && (
-          collapsed ? (
-            // Collapsed state: overlay the entire button area
-            <button
-              className="absolute inset-0 m-2 flex items-center justify-center px-2 py-2 rounded-lg bg-accent text-foreground transition-colors z-10"
-              onClick={onToggleCollapse}
-              title={t('workspace.expandSidebar')}
+        {/* Collapse button — hidden until hover on pointer devices, always shown on touch (hover: none) */}
+        {collapsed ? (
+          // Collapsed state: overlay the entire button area
+          <button
+            className="absolute inset-0 m-2 flex items-center justify-center px-2 py-2 rounded-lg bg-accent text-foreground transition z-10 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+            onClick={onToggleCollapse}
+            title={t('workspace.expandSidebar')}
+          >
+            <svg
+              className="w-5 h-5 flex-shrink-0 rotate-180"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
             >
-              <svg
-                className="w-5 h-5 flex-shrink-0 rotate-180"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-          ) : (
-            <button
-              className="absolute top-1/2 -translate-y-1/2 right-2 p-2 rounded-lg bg-accent text-foreground transition-colors z-10"
-              onClick={onToggleCollapse}
-              title={t('workspace.collapseSidebar')}
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            className="absolute top-1/2 -translate-y-1/2 right-2 p-2 rounded-lg bg-accent text-foreground transition z-10 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+            onClick={onToggleCollapse}
+            title={t('workspace.collapseSidebar')}
+          >
+            <svg
+              className="w-5 h-5 flex-shrink-0"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
             >
-              <svg
-                className="w-5 h-5 flex-shrink-0"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-          )
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
         )}
       </div>
 

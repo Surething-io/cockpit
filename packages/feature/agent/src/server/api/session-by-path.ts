@@ -84,6 +84,12 @@ interface SessionByPathBody {
   // When set, return the transcript of the subagent spawned by this Agent/Task
   // tool call instead of the main session (new-format `<sessionId>/subagents/` dir).
   toolUseId?: string;
+  // Workflow drill-in. When `workflowId` is set, return the workflow run journal
+  // (`<sessionId>/workflows/<workflowId>.json`); when `workflowAgentId` is also
+  // set, return that workflow subagent's transcript
+  // (`<sessionId>/subagents/workflows/<workflowId>/agent-<workflowAgentId>.jsonl`).
+  workflowId?: string;
+  workflowAgentId?: string;
   limit?: number;
   beforeTurnIndex?: number;
   ifFingerprint?: string;
@@ -94,6 +100,42 @@ interface SubagentMeta {
   agentType?: string;
   description?: string;
   toolUseId?: string;
+}
+
+// One agent's progress entry inside a workflow run journal.
+interface WorkflowAgentEntry {
+  type?: string;
+  index?: number;
+  label?: string;
+  phaseIndex?: number;
+  phaseTitle?: string;
+  agentId?: string;
+  model?: string;
+  state?: string;
+  tokens?: number;
+  toolCalls?: number;
+  durationMs?: number;
+  lastToolName?: string;
+  lastToolSummary?: string;
+  promptPreview?: string;
+  resultPreview?: string;
+}
+
+// Workflow run journal (`workflows/<runId>.json`). Only the fields the
+// drill-in UI needs are typed; the raw file also carries `script`, `logs`,
+// full `result`, etc. which we deliberately do NOT forward to the client.
+interface WorkflowJournal {
+  runId?: string;
+  workflowName?: string;
+  status?: string;
+  durationMs?: number;
+  agentCount?: number;
+  totalTokens?: number;
+  totalToolCalls?: number;
+  startTime?: number;
+  phases?: Array<{ title?: string; detail?: string }>;
+  summary?: string;
+  workflowProgress?: WorkflowAgentEntry[];
 }
 
 // Locate the subagent transcript spawned by a given tool_use id.
@@ -121,10 +163,67 @@ function findSubagentTranscript(
   return null;
 }
 
+// Path of a workflow run journal: `<sessionDir>/workflows/<runId>.json`.
+function workflowJournalPath(sessionPath: string, workflowId: string): string {
+  return join(sessionPath.replace(/\.jsonl$/, ''), 'workflows', `${workflowId}.json`);
+}
+
+// Path of a single workflow subagent transcript:
+// `<sessionDir>/subagents/workflows/<runId>/agent-<agentId>.jsonl`.
+function workflowAgentTranscriptPath(
+  sessionPath: string,
+  workflowId: string,
+  agentId: string
+): string {
+  return join(
+    sessionPath.replace(/\.jsonl$/, ''),
+    'subagents',
+    'workflows',
+    workflowId,
+    `agent-${agentId}.jsonl`
+  );
+}
+
+// Trim a raw journal down to the fields the drill-in UI renders. Drops
+// `script`, `logs`, and the full `result` blob; keeps bounded previews only.
+function trimWorkflowJournal(journal: WorkflowJournal) {
+  const agents = (journal.workflowProgress ?? [])
+    .filter((e) => e.type === 'workflow_agent')
+    .map((e) => ({
+      index: e.index,
+      label: e.label,
+      phaseIndex: e.phaseIndex,
+      phaseTitle: e.phaseTitle,
+      agentId: e.agentId,
+      model: e.model,
+      state: e.state,
+      tokens: e.tokens,
+      toolCalls: e.toolCalls,
+      durationMs: e.durationMs,
+      lastToolName: e.lastToolName,
+      lastToolSummary: e.lastToolSummary,
+      promptPreview: e.promptPreview,
+      resultPreview: e.resultPreview,
+    }));
+  return {
+    runId: journal.runId,
+    workflowName: journal.workflowName,
+    status: journal.status,
+    durationMs: journal.durationMs,
+    agentCount: journal.agentCount,
+    totalTokens: journal.totalTokens,
+    totalToolCalls: journal.totalToolCalls,
+    startTime: journal.startTime,
+    phases: journal.phases,
+    summary: journal.summary,
+    agents,
+  };
+}
+
 export const POST = handler((req) =>
   Effect.gen(function* () {
     const body = (yield* parseJsonRaw(req)) as SessionByPathBody;
-    const { cwd, sessionId, toolUseId, limit, beforeTurnIndex, ifFingerprint } = body;
+    const { cwd, sessionId, toolUseId, workflowId, workflowAgentId, limit, beforeTurnIndex, ifFingerprint } = body;
     if (!cwd || !sessionId) {
       return yield* Effect.fail(
         new ValidationError({
@@ -170,6 +269,61 @@ export const POST = handler((req) =>
         subagent: { agentType: sub.meta.agentType, description: sub.meta.description },
         fingerprint: subFingerprint,
       });
+    }
+
+    // Workflow drill-in branch: run journal, or a single workflow subagent's
+    // transcript when workflowAgentId is also supplied. Both ids are
+    // whitelisted to keep the file path inside the session dir.
+    if (workflowId) {
+      if (!/^wf_[A-Za-z0-9_-]+$/.test(workflowId)) {
+        return yield* Effect.fail(
+          new ValidationError({ field: 'workflowId', reason: 'invalid' })
+        );
+      }
+
+      if (workflowAgentId) {
+        if (!/^[A-Za-z0-9_-]+$/.test(workflowAgentId)) {
+          return yield* Effect.fail(
+            new ValidationError({ field: 'workflowAgentId', reason: 'invalid' })
+          );
+        }
+        const agentPath = workflowAgentTranscriptPath(sessionPath, workflowId, workflowAgentId);
+        if (!fs.existsSync(agentPath)) {
+          return yield* Effect.fail(
+            new NotFoundError({ resource: 'workflowAgent', id: workflowAgentId })
+          );
+        }
+        const agentFingerprint = getFileFingerprint(agentPath);
+        if (ifFingerprint && ifFingerprint === agentFingerprint) {
+          return ok({ notModified: true, fingerprint: agentFingerprint });
+        }
+        const agentResult = yield* Effect.tryPromise({
+          try: () => parseTranscriptFile(agentPath),
+          catch: (cause) =>
+            new AppError({ message: 'parseTranscriptFile failed', cause }),
+        });
+        return ok({ messages: agentResult.messages, fingerprint: agentFingerprint });
+      }
+
+      const journalPath = workflowJournalPath(sessionPath, workflowId);
+      if (!fs.existsSync(journalPath)) {
+        return yield* Effect.fail(
+          new NotFoundError({ resource: 'workflow', id: workflowId })
+        );
+      }
+      const journalFingerprint = getFileFingerprint(journalPath);
+      if (ifFingerprint && ifFingerprint === journalFingerprint) {
+        return ok({ notModified: true, fingerprint: journalFingerprint });
+      }
+      const workflow = yield* Effect.try({
+        try: () =>
+          trimWorkflowJournal(
+            JSON.parse(fs.readFileSync(journalPath, 'utf-8')) as WorkflowJournal
+          ),
+        catch: (cause) =>
+          new AppError({ message: 'readWorkflowJournal failed', cause }),
+      });
+      return ok({ workflow, fingerprint: journalFingerprint });
     }
 
     const fingerprint = getFileFingerprint(sessionPath);

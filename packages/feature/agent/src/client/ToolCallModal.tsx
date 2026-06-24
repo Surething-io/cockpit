@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@cockpit/shared-ui';
 import { SubagentTranscriptModal } from './SubagentTranscriptModal';
+import { WorkflowRunModal } from './WorkflowRunModal';
 import type { ToolCallInfo } from './types';
 // Tech debt: PreviewModal is a heavy main-shell component (depends on
 // DiffView/CodeViewer/MarkdownRenderer/...). Pulling it cleanly would mean
@@ -27,7 +28,17 @@ const TOOL_ICONS: Record<string, string> = {
   Grep: '🔎',
   WebFetch: '🌐',
   WebSearch: '🔍',
+  Workflow: '🧩',
+  Skill: '🛠️',
 };
+
+// Extract the workflow run id (wf_xxx) from a Workflow tool call result. The
+// launch text carries `Transcript dir: .../subagents/workflows/wf_<id>` even
+// for background runs, so the id is available as soon as the call returns.
+function parseWorkflowRunId(result?: string): string | null {
+  if (!result) return null;
+  return result.match(/subagents\/workflows\/(wf_[A-Za-z0-9_-]+)/)?.[1] ?? null;
+}
 
 // ============================================
 // ToolCallModal - tool call display component
@@ -45,10 +56,20 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
   const [expanded, setExpanded] = useState(false);
   const [previewContent, setPreviewContent] = useState<{ title: string; content: string; toolName: string } | null>(null);
   const [showSubagent, setShowSubagent] = useState(false);
+  const [showWorkflow, setShowWorkflow] = useState(false);
 
   const toolIcon = TOOL_ICONS[toolCall.name] || '🔧';
   const isAgentTool = toolCall.name === 'Agent' || toolCall.name === 'Task';
   const isSubagentCall = isAgentTool && !!cwd && !!sessionId;
+  const isWorkflow = toolCall.name === 'Workflow';
+  const workflowRunId = isWorkflow ? parseWorkflowRunId(toolCall.result) : null;
+  // Workflow drill-in needs the run id plus the session coordinates to locate
+  // the journal under `<sessionId>/workflows/`.
+  const isWorkflowCall = isWorkflow && !!workflowRunId && !!cwd && !!sessionId;
+  const isSkill = toolCall.name === 'Skill';
+  // The header text slot carries a description (Agent) / name (Workflow/Skill),
+  // not a path — skip relative-path conversion and the copy-path icon for these.
+  const hideCopyIcon = isAgentTool || isWorkflow || isSkill;
 
   // Extract file path or key info from input
   const getDisplayInfo = () => {
@@ -58,6 +79,21 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
     }
     if (isAgentTool && input.description && typeof input.description === 'string') {
       return input.description;
+    }
+    if (isWorkflow) {
+      const name = typeof input.name === 'string' ? input.name : '';
+      const detail =
+        typeof input.args === 'string'
+          ? input.args
+          : typeof input.resumeFromRunId === 'string'
+            ? input.resumeFromRunId
+            : '';
+      const label = [name, detail].filter(Boolean).join(' · ');
+      if (label) return label;
+    }
+    if (isSkill && typeof input.skill === 'string') {
+      const detail = typeof input.args === 'string' ? input.args : '';
+      return [input.skill, detail].filter(Boolean).join(' · ');
     }
     if (toolCall.name === 'Glob' && input.pattern && typeof input.pattern === 'string') {
       return input.pattern;
@@ -88,7 +124,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
   };
 
   const displayInfo = getDisplayInfo();
-  const skipRelativePath = toolCall.name === 'Glob' || toolCall.name === 'Grep' || toolCall.name === 'Bash' || isAgentTool;
+  const skipRelativePath = toolCall.name === 'Glob' || toolCall.name === 'Grep' || toolCall.name === 'Bash' || isAgentTool || isWorkflow || isSkill;
   const displayPath = displayInfo ? (skipRelativePath ? displayInfo : getRelativePath(displayInfo)) : null;
 
   const openPreview = (type: 'input' | 'result') => {
@@ -121,7 +157,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
             >
               {displayPath}
             </span>
-            {!isAgentTool && (
+            {!hideCopyIcon && (
               <span
                 role="button"
                 tabIndex={0}
@@ -163,6 +199,18 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
               title={t('chat.subagentViewTitle')}
             >
               {t('chat.subagent')}
+            </span>
+          )}
+          {isWorkflowCall && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); setShowWorkflow(true); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setShowWorkflow(true); } }}
+              className="text-xs text-brand hover:text-teal-10 cursor-pointer"
+              title={t('chat.workflowViewTitle')}
+            >
+              {t('chat.workflowRun')}
             </span>
           )}
           {expanded && !toolCall.isLoading && (
@@ -242,6 +290,17 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
           sessionId={sessionId}
           toolCall={toolCall}
           onClose={() => setShowSubagent(false)}
+        />
+      )}
+
+      {/* Workflow run modal */}
+      {showWorkflow && cwd && sessionId && workflowRunId && (
+        <WorkflowRunModal
+          cwd={cwd}
+          sessionId={sessionId}
+          runId={workflowRunId}
+          isRunning={!!toolCall.isLoading}
+          onClose={() => setShowWorkflow(false)}
         />
       )}
     </div>

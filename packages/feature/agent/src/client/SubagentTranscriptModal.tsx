@@ -8,11 +8,13 @@ import { MessageBubble } from './MessageBubble';
 import { postSessionByPath } from './useChatHistory';
 import type { ChatMessage, ToolCallInfo } from './types';
 
-// Modal transcript of a subagent spawned by an Agent/Task tool call.
-// Reads `<sessionId>/subagents/agent-<id>.jsonl` via /api/session-by-path
-// (toolUseId param) and renders it with the same MessageBubble as the main
-// session. Polls while open and the parent tool call has no result yet;
-// closing the modal unmounts it, which stops the polling.
+// Modal transcript of a subagent spawned by an Agent/Task tool call, or of a
+// single agent inside a Workflow run. Reads via /api/session-by-path —
+// `toolUseId` for the Agent/Task case (`<sessionId>/subagents/agent-<id>.jsonl`),
+// or `workflowId`+`workflowAgentId` for the workflow case
+// (`<sessionId>/subagents/workflows/<runId>/agent-<agentId>.jsonl`) — and renders
+// it with the same MessageBubble as the main session. Polls while open and the
+// transcript is still running; closing the modal unmounts it, stopping polling.
 
 const POLL_INTERVAL_MS = 5_000;
 
@@ -21,14 +23,25 @@ interface SubagentMeta {
   description?: string;
 }
 
+// Identifies one agent inside a Workflow run, used instead of `toolCall`.
+export interface WorkflowAgentRef {
+  runId: string;
+  agentId: string;
+  label?: string;
+  running?: boolean;
+}
+
 interface SubagentTranscriptModalProps {
   cwd: string;
   sessionId: string;
-  toolCall: ToolCallInfo;
+  // Agent/Task tool call path. Mutually exclusive with `workflowRef`.
+  toolCall?: ToolCallInfo;
+  // Workflow run agent path. Mutually exclusive with `toolCall`.
+  workflowRef?: WorkflowAgentRef;
   onClose: () => void;
 }
 
-export function SubagentTranscriptModal({ cwd, sessionId, toolCall, onClose }: SubagentTranscriptModalProps) {
+export function SubagentTranscriptModal({ cwd, sessionId, toolCall, workflowRef, onClose }: SubagentTranscriptModalProps) {
   const { t } = useTranslation();
   // null = not loaded yet (loading or transcript not found)
   const [messages, setMessages] = useState<ChatMessage[] | null>(null);
@@ -36,15 +49,18 @@ export function SubagentTranscriptModal({ cwd, sessionId, toolCall, onClose }: S
   const [loadAttempted, setLoadAttempted] = useState(false);
   const fingerprintRef = useRef<string | undefined>(undefined);
 
-  // Parent Agent tool call still has no result → subagent is (likely) running
-  const isRunning = !toolCall.result;
+  // Still running → keep polling. Agent/Task: parent tool call has no result.
+  // Workflow agent: explicit running flag carried by the ref.
+  const isRunning = workflowRef ? !!workflowRef.running : !toolCall?.result;
 
   const fetchTranscript = useCallback(async () => {
     const exit = await BrowserRuntime.runPromiseExit(
       postSessionByPath({
         cwd,
         sessionId,
-        toolUseId: toolCall.id,
+        ...(workflowRef
+          ? { workflowId: workflowRef.runId, workflowAgentId: workflowRef.agentId }
+          : { toolUseId: toolCall?.id }),
         ifFingerprint: fingerprintRef.current,
       })
     );
@@ -60,7 +76,7 @@ export function SubagentTranscriptModal({ cwd, sessionId, toolCall, onClose }: S
     if (data.notModified) return;
     if (data.messages) setMessages(data.messages);
     if (data.subagent) setMeta(data.subagent);
-  }, [cwd, sessionId, toolCall.id]);
+  }, [cwd, sessionId, toolCall?.id, workflowRef?.runId, workflowRef?.agentId]);
 
   // Fetch on mount; keep polling while the subagent is running. When
   // isRunning flips to false the effect re-runs → one final fetch picks up
@@ -88,8 +104,10 @@ export function SubagentTranscriptModal({ cwd, sessionId, toolCall, onClose }: S
   }, [messages]);
 
   const description =
-    typeof toolCall.input?.description === 'string' ? toolCall.input.description : '';
-  const subtitle = [meta?.agentType, description].filter(Boolean).join(' · ');
+    typeof toolCall?.input?.description === 'string' ? toolCall.input.description : '';
+  const subtitle = workflowRef
+    ? workflowRef.label || ''
+    : [meta?.agentType, description].filter(Boolean).join(' · ');
 
   return (
     <Portal>

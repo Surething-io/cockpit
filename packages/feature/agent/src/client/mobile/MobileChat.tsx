@@ -34,9 +34,13 @@ interface MobileChatProps {
   initialSessionId: string;
   initialTitle?: string;
   onBack: () => void;
+  // Whether this chat screen is the one on-screen. Kept mounted (slid off-screen)
+  // when false so swipe-back/forward never re-fetches history; forwarded to
+  // MessageList, which re-scrolls to bottom when it becomes active again.
+  isActive?: boolean;
 }
 
-export function MobileChat({ cwd, initialSessionId, initialTitle, onBack }: MobileChatProps) {
+export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActive = true }: MobileChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [title, setTitle] = useState<string>(initialTitle ?? '');
@@ -172,7 +176,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack }: Mobi
           hasMoreHistory={hasMoreHistory}
           isLoadingMore={isLoadingMore}
           onLoadMore={loadMoreHistory}
-          isActive
+          isActive={isActive}
         />
       )}
 

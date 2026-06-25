@@ -118,7 +118,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-6xl h-[90vh] mx-4 bg-card rounded-lg shadow-xl flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-7xl h-[90vh] mx-4 bg-card rounded-lg shadow-xl flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex-1 min-w-0">

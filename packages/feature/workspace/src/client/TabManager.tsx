@@ -289,7 +289,6 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
           isGitRepo={isGitRepo}
           currentBranch={currentBranch}
           onOpenWorktree={() => setIsWorktreeOpen(true)}
-          onOpenProjectSessions={() => setIsProjectSessionsOpen(true)}
           onOpenAliasManager={() => setIsAliasManagerOpen(true)}
           onBranchSwitched={loadGitInfo}
         />
@@ -325,6 +324,7 @@ export function TabManager({ initialCwd, initialSessionId }: TabManagerProps) {
                     onNewKimiTab={handleNewKimiTab}
                     onNewOllamaTab={handleNewOllamaTab}
                     onNewDeepseekTab={handleNewDeepseekTab}
+                    onOpenProjectSessions={() => setIsProjectSessionsOpen(true)}
                     onDragStart={handleTabDragStart}
                     onDragOver={handleTabDragOver}
                     onDrop={handleTabDrop}

@@ -175,6 +175,9 @@ interface TabBarProps {
   onNewKimiTab?: () => void;
   onNewOllamaTab?: () => void;
   onNewDeepseekTab?: () => void;
+  /** Open the current project's session list. Only passed when a project
+   *  (cwd) is open — when omitted, the entry button is not rendered. */
+  onOpenProjectSessions?: () => void;
   onDragStart: (index: number) => void;
   onDragOver: (e: React.DragEvent, index: number) => void;
   onDrop: (index: number) => void;
@@ -197,6 +200,7 @@ export function TabBar({
   onNewKimiTab,
   onNewOllamaTab,
   onNewDeepseekTab,
+  onOpenProjectSessions,
   onDragStart,
   onDragOver,
   onDrop,
@@ -300,6 +304,21 @@ export function TabBar({
         ))}
         {/* New tab button with engine picker */}
         <NewTabButton onNewTab={onNewTab} onNewClaude2Tab={onNewClaude2Tab} onNewCodexTab={onNewCodexTab} onNewKimiTab={onNewKimiTab} onNewOllamaTab={onNewOllamaTab} onNewDeepseekTab={onNewDeepseekTab} />
+        {/* Project sessions entry — only when a project (cwd) is open. Sits
+            right after the new-tab button. Chat-bubble icon reads as
+            "conversations" and sizes to match NewTabButton. */}
+        {onOpenProjectSessions && (
+          <button
+            onClick={onOpenProjectSessions}
+            className="flex-shrink-0 p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+            title={t('sessions.projectSessions')}
+            aria-label={t('sessions.projectSessions')}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );

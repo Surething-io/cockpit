@@ -58,7 +58,8 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
   const [blameSelectedCommit, setBlameSelectedCommit] = useState<CommitInfo | null>(null);
 
   // Markdown in-place preview — global toggle (session-level, persists across file switches)
-  const [previewMarkdown, setPreviewMarkdown] = useState(false);
+  // Markdown files default to preview mode (rendered view) when opened.
+  const [previewMarkdown, setPreviewMarkdown] = useState(true);
 
   // Edit modal
   const [showEditor, setShowEditor] = useState(false);

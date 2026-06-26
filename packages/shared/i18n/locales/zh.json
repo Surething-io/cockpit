@@ -353,6 +353,7 @@
     "copyFileContent": "复制文件内容",
     "toggleJsonReadable": "切换 JSON 可读模式",
     "previewMarkdown": "预览 Markdown 渲染效果",
+    "exitPreview": "退出预览",
     "viewBlame": "查看每行代码的修改记录",
     "editFile": "编辑文件",
     "backToPreview": "返回预览",

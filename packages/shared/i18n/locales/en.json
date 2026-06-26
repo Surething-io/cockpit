@@ -353,6 +353,7 @@
     "copyFileContent": "Copy file content",
     "toggleJsonReadable": "Toggle JSON readable mode",
     "previewMarkdown": "Preview Markdown",
+    "exitPreview": "Exit Preview",
     "viewBlame": "View line-by-line change history",
     "editFile": "Edit file",
     "backToPreview": "Back to preview",

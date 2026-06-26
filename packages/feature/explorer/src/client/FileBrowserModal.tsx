@@ -1656,9 +1656,9 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                     ? 'bg-brand text-white'
                                     : 'text-muted-foreground hover:bg-accent'
                                 }`}
-                                title={t('fileBrowser.previewMarkdown')}
+                                title={fileTree.previewMarkdown ? t('fileBrowser.exitPreview') : t('fileBrowser.previewMarkdown')}
                               >
-                                {t('common.preview')}
+                                {fileTree.previewMarkdown ? t('fileBrowser.exitPreview') : t('common.preview')}
                               </button>
                             </>
                           )}

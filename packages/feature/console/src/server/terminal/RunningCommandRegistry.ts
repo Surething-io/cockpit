@@ -152,6 +152,14 @@ export interface RunningCommand {
   totalLinesEverWritten: number;
   /** Last time output was appended (epoch ms). Used by /api/terminal/meta. */
   lastOutputAt?: number;
+  /**
+   * Tombstone: set by killCommand() when the user deletes/closes a bubble.
+   * The process's onExit→finalizeCommand sees this flag and silently
+   * unregisters WITHOUT re-persisting a JSONL entry or broadcasting an
+   * update — otherwise a deleted bubble would resurrect as a "finished"
+   * record on the next refresh.
+   */
+  deleted?: boolean;
 }
 
 const GLOBAL_KEY = Symbol.for('terminal_running_commands');
@@ -342,6 +350,35 @@ export function getRunningCommand(commandId: string): RunningCommand | undefined
 }
 
 /**
+ * Kill a running command's backend process and tombstone it.
+ *
+ * Single authoritative "destroy the process" entry point — used by the
+ * delete/clear paths so closing a bubble actually ends the backend. The
+ * tombstone (`deleted = true`) is set BEFORE killing so the asynchronous
+ * onExit→finalizeCommand callback skips JSONL re-persistence (no resurrection
+ * on refresh). Best-effort + idempotent: unknown id is a no-op.
+ */
+export function killCommand(commandId: string): void {
+  const cmd = getRegistry().get(commandId);
+  if (!cmd) return;
+  cmd.deleted = true;
+  console.log(`[registry] kill: id=${commandId}, pid=${cmd.pid}, pty=${!!cmd.ptyProcess}, server=${getServerId()}`);
+  if (cmd.ptyProcess) {
+    // node-pty kills the whole pty session (process group)
+    try { cmd.ptyProcess.kill(); } catch { /* already exited */ }
+  } else {
+    const pid = cmd.pid;
+    try { process.kill(pid, 'SIGTERM'); } catch { /* already exited */ }
+    setTimeout(() => {
+      try {
+        process.kill(pid, 0);
+        process.kill(pid, 'SIGKILL');
+      } catch { /* exited */ }
+    }, 1000);
+  }
+}
+
+/**
  * Diagnostics: total registry size
  */
 export function getRegistrySize(): number {
@@ -437,6 +474,17 @@ export async function finalizeCommand(commandId: string, exitCode: number, pid?:
   // Notify follow listeners that the process has exited
   notifyExitListeners(commandId, exitCode);
   finalizeTerminal(commandId, exitCode);
+
+  // Tombstoned by killCommand (user deleted/closed the bubble): unregister
+  // silently. We still ran the exit notifications above so any attached tab
+  // closes its live stream, but we MUST NOT re-persist or broadcast an update
+  // here — the JSONL entry was already removed by the delete path, and writing
+  // it back would make the bubble reappear on the next refresh.
+  if (cmd.deleted) {
+    cmd.ptyRingBuffer = undefined;
+    registry.delete(commandId);
+    return;
+  }
 
   const output = getBufferedOutput(cmd);
   // Release the PTY ring buffer — the JSONL/output file written below is the

@@ -12,7 +12,11 @@ import {
 } from "@cockpit/shared-utils"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { FSError, ValidationError } from "@cockpit/effect-core"
-import { reconcileOrphanedRunning } from "../../terminal/RunningCommandRegistry"
+import {
+  reconcileOrphanedRunning,
+  killCommand,
+  getRunningCommands,
+} from "../../terminal/RunningCommandRegistry"
 import { broadcastConsoleDelta } from "../../terminal/consoleBroadcast"
 
 export const runtime = "nodejs"
@@ -160,6 +164,10 @@ export const DELETE = handler((req) =>
               try {
                 const entry = JSON.parse(line)
                 if (entry.id === commandId) {
+                  // Kill the backend process (if still running) so closing a
+                  // bubble actually ends it. Tombstoned inside killCommand so
+                  // the process's onExit won't re-persist this entry.
+                  killCommand(commandId)
                   if (entry.outputFile) {
                     await fs.unlink(entry.outputFile).catch(() => {})
                   }
@@ -183,7 +191,12 @@ export const DELETE = handler((req) =>
             if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e
           }
         } else {
-          // Clear all
+          // Clear all — kill every running backend process for this tab first,
+          // otherwise "clear" leaves orphaned processes that the registry
+          // re-surfaces as bubbles on the next refresh.
+          for (const c of getRunningCommands(cwd)) {
+            if (c.tabId === tabId) killCommand(c.commandId)
+          }
           try {
             const content = await fs.readFile(historyPath, "utf-8")
             const lines = content.trim().split("\n").filter(Boolean)

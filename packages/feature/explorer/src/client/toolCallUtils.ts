@@ -186,6 +186,11 @@ export function isMarkdownFile(filePath: string): boolean {
   return filePath.toLowerCase().endsWith('.md');
 }
 
+export function isHtmlFile(filePath: string): boolean {
+  const lower = filePath.toLowerCase();
+  return lower.endsWith('.html') || lower.endsWith('.htm');
+}
+
 /**
  * Resolve a markdown link target against the directory of the current file,
  * returning a cwd-relative path (the form handleSelectFile / locateInTree use).

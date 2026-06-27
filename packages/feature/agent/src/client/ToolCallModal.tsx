@@ -140,12 +140,12 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
   };
 
   return (
-    <div className="my-2 border border-border rounded-lg overflow-hidden bg-secondary">
+    <div className="my-1 border border-border rounded-lg overflow-hidden bg-secondary">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-accent transition-colors"
+        className="w-full px-3 py-1.5 flex items-center gap-2 text-left hover:bg-accent transition-colors"
       >
-        <span className="text-base">{toolIcon}</span>
+        <span className="text-sm">{toolIcon}</span>
         <span className="font-medium text-sm text-foreground flex-shrink-0">
           {toolCall.name}
         </span>

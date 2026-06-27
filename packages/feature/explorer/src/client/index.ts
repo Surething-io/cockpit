@@ -23,6 +23,7 @@ export * from './ViewCommentCard';
 export * from './DiffView';
 export * from './CodeViewer';
 export * from './InteractiveMarkdownPreview';
+export * from './HtmlPreview';
 export * from './PreviewModal';
 export * from './useLSP';
 

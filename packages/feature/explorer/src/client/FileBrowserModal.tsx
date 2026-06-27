@@ -26,9 +26,10 @@ import { FileTree, type GitStatusMap, type GitStatusCode } from './FileTree';
 import { GitFileTree, buildGitFileTree, collectFilesUnderNode } from './GitFileTree';
 import { MenuContainerProvider } from '@cockpit/shared-ui';
 import { CodeViewer } from '@cockpit/feature-explorer';
-import { isMarkdownFile, formatAsHumanReadable } from './toolCallUtils';
+import { isMarkdownFile, isHtmlFile, formatAsHumanReadable } from './toolCallUtils';
 import { buildTreeFromPaths, collectAllDirPaths, mergeFileTree } from './fileBrowser/utils';
 import { InteractiveMarkdownPreview } from '@cockpit/feature-explorer';
+import { HtmlPreview } from './HtmlPreview';
 import { ShareReviewToggle } from '@cockpit/feature-review';
 import { type FileEditorHandle } from './FileEditorModal';
 import { QuickFileOpen } from './QuickFileOpen';
@@ -760,25 +761,15 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
 
   // ========== Helper: locate in tree ==========
   const locateInTree = useCallback((filePath: string) => {
-    const parts = filePath.split('/');
-    if (parts.length > 1) {
-      const parentPaths: string[] = [];
-      for (let i = 1; i < parts.length; i++) {
-        parentPaths.push(parts.slice(0, i).join('/'));
-      }
-      fileTree.setExpandedPaths(prev => {
-        const next = new Set(prev);
-        for (const p of parentPaths) {
-          next.add(p);
-        }
-        fileTree.saveExpandedPaths(next);
-        return next;
-      });
-    }
-    fileTree.setSelectedPath(filePath);
+    // Select + load content + expand parent dirs (with the edit-mode save guard),
+    // then bring the tree into view. handleSelectFile (via handleSelectFileWithSave)
+    // already sets selectedPath, expands parents AND loads file content — the latter
+    // is the piece the old locate path was missing, which left the right pane showing
+    // a stale file after switching to the tree.
+    handleSelectFileWithSave(filePath);
     fileTree.setShouldScrollToSelected(true);
     setActiveTab('tree');
-  }, [fileTree]);
+  }, [fileTree, handleSelectFileWithSave]);
 
   // One-shot anchor to scroll to after a markdown-link cross-file navigation.
   const [mdLinkAnchor, setMdLinkAnchor] = useState<string | null>(null);
@@ -787,15 +778,14 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   // the file tree, and (if the link had a #anchor) scroll there after render.
   const handleOpenMarkdownLink = useCallback((targetRel: string, anchor: string | null) => {
     fileTree.setPreviewMarkdown(true);     // defensive — ensure in-place preview
-    handleSelectFileWithSave(targetRel);   // load + preview (with edit-save guard)
-    locateInTree(targetRel);               // expand + select + scroll → tree highlight
+    locateInTree(targetRel);               // load + select + expand + scroll → tree highlight
     setMdLinkAnchor(anchor);
     if (anchor) {
       // Clear after the target preview's scroll effect (~80ms) has consumed it,
       // so later re-renders of the same file don't re-scroll.
       setTimeout(() => setMdLinkAnchor(null), 400);
     }
-  }, [fileTree, handleSelectFileWithSave, locateInTree]);
+  }, [fileTree, locateInTree]);
 
   return (
     <MenuContainerProvider container={menuContainer}>
@@ -1644,11 +1634,12 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               {t('common.readable')}
                             </button>
                           )}
-                          {fileTree.fileContent?.type === 'text' && isMarkdownFile(fileTree.selectedPath) && (
+                          {fileTree.fileContent?.type === 'text' && (isMarkdownFile(fileTree.selectedPath) || isHtmlFile(fileTree.selectedPath)) && (
                             <>
                               {/* Global preview toggle: ON → main editor area renders the
-                                  markdown in-place (replacing CodeViewer); state persists
-                                  across file switches. */}
+                                  markdown / html in-place (replacing CodeViewer); state
+                                  persists across file switches. Shared flag (a file is never
+                                  both md and html, so reusing previewMarkdown is safe). */}
                               <button
                                 onClick={() => fileTree.setPreviewMarkdown(v => !v)}
                                 className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
@@ -1656,13 +1647,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                                     ? 'bg-brand text-white'
                                     : 'text-muted-foreground hover:bg-accent'
                                 }`}
-                                title={fileTree.previewMarkdown ? t('fileBrowser.exitPreview') : t('fileBrowser.previewMarkdown')}
+                                title={fileTree.previewMarkdown ? t('fileBrowser.exitPreview') : t('common.preview')}
                               >
                                 {fileTree.previewMarkdown ? t('fileBrowser.exitPreview') : t('common.preview')}
                               </button>
                             </>
                           )}
-                          {fileTree.fileContent?.type === 'text' && !(fileTree.previewMarkdown && isMarkdownFile(fileTree.selectedPath)) && (
+                          {fileTree.fileContent?.type === 'text' && !(fileTree.previewMarkdown && (isMarkdownFile(fileTree.selectedPath) || isHtmlFile(fileTree.selectedPath))) && (
                             <button
                               onClick={fileTree.handleToggleBlame}
                               disabled={fileTree.isLoadingBlame}
@@ -1682,7 +1673,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           )}
                           {/* Edit — semi-stable (hidden only in md-preview submode), so it sits
                               left of the always-present Copy / Code Map right-edge anchors. */}
-                          {fileTree.fileContent?.type === 'text' && !(fileTree.previewMarkdown && isMarkdownFile(fileTree.selectedPath)) && (
+                          {fileTree.fileContent?.type === 'text' && !(fileTree.previewMarkdown && (isMarkdownFile(fileTree.selectedPath) || isHtmlFile(fileTree.selectedPath))) && (
                             <button
                               onClick={() => fileTree.setShowEditor(true)}
                               className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
@@ -1713,7 +1704,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               physically gone when Code Map mode is on.
                               Hidden for markdown — code-structure map is
                               meaningless for prose. */}
-                          {fileTree.fileContent?.type === 'text' && !isMarkdownFile(fileTree.selectedPath) && (
+                          {fileTree.fileContent?.type === 'text' && !isMarkdownFile(fileTree.selectedPath) && !isHtmlFile(fileTree.selectedPath) && (
                             <button
                               onClick={() => setEditorMode('map')}
                               className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
@@ -1772,6 +1763,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               scrollToAnchor={mdLinkAnchor}
                             />
                           </div>
+                        ) : (fileTree.previewMarkdown && isHtmlFile(fileTree.selectedPath) && !fileTree.showBlame) ? (
+                          // In-place HTML preview (single-file, self-contained) — same
+                          // toggle UX as markdown, just rendered in a sandboxed iframe.
+                          <HtmlPreview
+                            content={fileTree.fileContent.content}
+                            filePath={fileTree.selectedPath}
+                          />
                         ) : (
                           <CodeViewer
                             ref={editorHandleRef}

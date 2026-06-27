@@ -12,7 +12,7 @@ import type { ChatMessage, MessageImage } from './types';
 //     hasn't migrated yet.
 //   - MarkdownRenderer: a generic markdown renderer; candidate for shared-ui.
 // Allowed by MODULES.md as transitional reverse imports.
-import { InteractiveMarkdownPreview } from '@cockpit/feature-explorer';
+import { InteractiveMarkdownPreview, HtmlPreview, isMarkdownFile, isHtmlFile } from '@cockpit/feature-explorer';
 import { MenuContainerProvider } from '@cockpit/shared-ui';
 import { MarkdownRenderer } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
@@ -77,6 +77,29 @@ function MdPreviewModal({ filePath, content, cwd, onClose }: {
             onClose={onClose}
           />
         </MenuContainerProvider>
+      </div>
+    </div>
+    </Portal>
+  );
+}
+
+// HTML preview modal — single-file self-contained, rendered in a sandboxed iframe.
+// Mirrors MdPreviewModal's chrome; only the rendered content differs.
+function HtmlPreviewModal({ filePath, content, onClose }: {
+  filePath: string; content: string;
+  onClose: () => void;
+}) {
+  return (
+    <Portal>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-0 md:p-4" onClick={onClose}>
+      <div className="bg-card shadow-xl w-full h-full rounded-none md:max-w-[90%] md:h-[90vh] md:rounded-lg flex flex-col relative overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-2 border-b border-border flex-shrink-0">
+          <span className="text-sm text-muted-foreground truncate">{filePath.split('/').pop()}</span>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors">✕</button>
+        </div>
+        <div className="flex-1 overflow-hidden">
+          <HtmlPreview content={content} filePath={filePath} />
+        </div>
       </div>
     </div>
     </Portal>
@@ -154,15 +177,16 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     [message.toolCalls]
   );
 
-  // Extract deduplicated .md file paths from Read/Edit/Write tool calls
-  const mdFiles = useMemo(() => {
+  // Extract deduplicated previewable doc paths (.md / .html / .htm) from
+  // Read/Edit/Write tool calls. Single-click opens an in-modal preview.
+  const docFiles = useMemo(() => {
     if (!message.toolCalls) return [];
     const seen = new Set<string>();
     const result: string[] = [];
     for (const tc of message.toolCalls) {
       if (tc.name === 'Read' || tc.name === 'Edit' || tc.name === 'Write') {
         const fp = (tc.input as { file_path?: string }).file_path;
-        if (fp && fp.toLowerCase().endsWith('.md') && !seen.has(fp)) {
+        if (fp && (isMarkdownFile(fp) || isHtmlFile(fp)) && !seen.has(fp)) {
           seen.add(fp);
           result.push(fp);
         }
@@ -190,24 +214,24 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     return result;
   }, [message.toolCalls]);
 
-  const [mdPreviewFile, setMdPreviewFile] = useState<string | null>(null);
-  const [mdFileContent, setMdFileContent] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<string | null>(null);
+  const [previewContent, setPreviewContent] = useState<string | null>(null);
 
-  // Fetch content when an md file is selected
+  // Fetch content when a doc file (md / html) is selected
   useEffect(() => {
-    if (!mdPreviewFile) { queueMicrotask(() => setMdFileContent(null)); return; }
+    if (!previewFile) { queueMicrotask(() => setPreviewContent(null)); return; }
     let cancelled = false;
-    BrowserRuntime.runPromiseExit(readFileForPreview(mdPreviewFile)).then((exit) => {
+    BrowserRuntime.runPromiseExit(readFileForPreview(previewFile)).then((exit) => {
       if (cancelled) return;
       if (exit._tag === 'Success' && exit.value.content !== undefined) {
-        setMdFileContent(exit.value.content);
+        setPreviewContent(exit.value.content);
       } else {
         toast(t('toast.readFileFailed'), 'error');
-        setMdPreviewFile(null);
+        setPreviewFile(null);
       }
     });
     return () => { cancelled = true; };
-  }, [mdPreviewFile, t]);
+  }, [previewFile, t]);
 
 
   // Copy message content
@@ -401,19 +425,27 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             </div>
           )}
 
-          {/* MD file list */}
-          {mdFiles.length > 0 && (
+          {/* Previewable doc list (md / html) */}
+          {docFiles.length > 0 && (
             <div className={`${message.content || hasImages || lastTodoWrite ? 'mt-2' : ''}`}>
               <div className="border border-border rounded-lg overflow-hidden bg-secondary/50 px-3 py-2 space-y-0.5">
-                {mdFiles.map((fp) => (
+                {docFiles.map((fp) => (
                   <button
                     key={fp}
-                    onClick={() => setMdPreviewFile(fp)}
+                    onClick={() => setPreviewFile(fp)}
                     className="flex items-center gap-1.5 w-full text-left hover:bg-accent rounded px-1 py-0.5 transition-colors group/md"
                   >
-                    <svg className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                    {isHtmlFile(fp) ? (
+                      // HTML — code/`</>` glyph to distinguish from markdown docs
+                      <svg className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                      </svg>
+                    ) : (
+                      // Markdown — document glyph
+                      <svg className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    )}
                     <span className="text-xs text-muted-foreground group-hover/md:text-foreground truncate">
                       {fp.split('/').pop()}
                     </span>
@@ -425,7 +457,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
 
           {/* Thoughts — extracted from tool call inputs, displayed as table */}
           {thoughts.length > 0 && (
-            <div className={`${message.content || hasImages || lastTodoWrite || mdFiles.length > 0 ? 'mt-2' : ''}`}>
+            <div className={`${message.content || hasImages || lastTodoWrite || docFiles.length > 0 ? 'mt-2' : ''}`}>
               <div className="border border-border rounded-lg overflow-hidden bg-secondary/50">
                 <table className="w-full text-xs">
                   <thead>
@@ -460,9 +492,9 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                   <div className="flex items-center">
                     <button
                       onClick={() => setToolCallsExpanded(!toolCallsExpanded)}
-                      className="flex-1 px-3 py-2 flex items-center gap-2 text-left hover:bg-accent transition-colors active:bg-muted"
+                      className="flex-1 px-3 py-1.5 flex items-center gap-2 text-left hover:bg-accent transition-colors active:bg-muted"
                     >
-                      <span className="text-lg">🔧</span>
+                      <span className="text-sm">🔧</span>
                       <span className="font-medium text-foreground">
                         {t('chat.toolCalls', { count: displayToolCalls.length })}
                       </span>
@@ -473,7 +505,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                     {askQuestionCalls.length > 0 && (
                       <button
                         onClick={() => setShowAskQuestionViewer(true)}
-                        className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border-l border-border"
+                        className="px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border-l border-border"
                         title={t('chat.viewQuestions')}
                       >
                         <MessageCircleQuestion className="w-4 h-4" />
@@ -482,7 +514,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                     {hasFileChanges && (
                       <button
                         onClick={() => setShowDiffViewer(true)}
-                        className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border-l border-border"
+                        className="px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border-l border-border"
                         title={t('chat.viewAllFileChanges')}
                       >
                         <FileDiff className="w-4 h-4" />
@@ -555,14 +587,22 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
         <AskQuestionViewerModal toolCalls={askQuestionCalls} onClose={() => setShowAskQuestionViewer(false)} />
       )}
 
-      {/* MD file interactive preview */}
-      {mdPreviewFile && mdFileContent !== null && (
-        <MdPreviewModal
-          filePath={mdPreviewFile}
-          content={mdFileContent}
-          cwd={cwd || ''}
-          onClose={() => setMdPreviewFile(null)}
-        />
+      {/* Doc interactive preview — html in a sandboxed iframe, md via the rich preview */}
+      {previewFile && previewContent !== null && (
+        isHtmlFile(previewFile) ? (
+          <HtmlPreviewModal
+            filePath={previewFile}
+            content={previewContent}
+            onClose={() => setPreviewFile(null)}
+          />
+        ) : (
+          <MdPreviewModal
+            filePath={previewFile}
+            content={previewContent}
+            cwd={cwd || ''}
+            onClose={() => setPreviewFile(null)}
+          />
+        )
       )}
     </>
   );

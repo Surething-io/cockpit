@@ -62,6 +62,7 @@ cockpit -v
 | `-h`、`--help` | 显示帮助。 |
 | `--port <n>` | 用非默认端口监听。默认 `3457`。 |
 | `--no-open` | 启动后不自动开浏览器。 |
+| `--token <value>` | 要求**远程**访问携带共享令牌(本机 loopback 仍豁免)。会设置 `COCKPIT_TOKEN`;不传则完全关闭。见[共享令牌访问网关](#共享令牌访问网关)。 |
 | `[path]` | 打开的工作目录。默认 `process.cwd()`。 |
 
 ### 默认端口
@@ -114,6 +115,7 @@ cockpit update
 | `COCKPIT_PORT` | 服务端口(同 `--port`);也被 `cock` 子命令与 `/cg` 片段读取。 |
 | `PORT` | `COCKPIT_PORT` 未设时的兜底。 |
 | `COCKPIT_HOST` | 绑定 host。默认 `127.0.0.1`(仅本机);设 `0.0.0.0` 可在局域网 / 云沙盒暴露。 |
+| `COCKPIT_TOKEN` | 共享访问令牌(同 `--token`)。设置后,远程 HTTP/WS 请求必须携带它(cookie / `Authorization: Bearer` / `?token=`);本机 loopback 请求豁免。未设 = 不鉴权(完全开放)。详见[下文](#共享令牌访问网关)。 |
 | `COCKPIT_NO_OPEN` | 启动后不自动开浏览器(同 `--no-open`)。 |
 | `COCKPIT_LOG_LEVEL` | 服务日志级别。 |
 | `COCKPIT_FORCE` | 跳过单实例保护(见下)。 |
@@ -129,6 +131,30 @@ COCKPIT_HOME=~/.cockpit-dev cockpit
 ```
 
 设 `COCKPIT_FORCE=1` 跳过该保护(若是崩溃残留的过期锁,删 `<数据目录>/server.json` 也可)。
+
+#### 共享令牌访问网关
+
+默认 Cockpit **完全开放** —— 任何能连到端口的人都能用。纯本机安装没问题,但当你把 Cockpit 暴露到局域网或云沙盒(`COCKPIT_HOST=0.0.0.0`)时,打开共享令牌网关:
+
+```bash
+cockpit --token 你的密钥        # 或:COCKPIT_TOKEN=你的密钥 cockpit
+```
+
+设置令牌后:
+
+- **本机(loopback)请求仍然豁免** —— CLI、`/cg` 片段、自探测,以及跑在本机上的浏览器都无需令牌照常工作。只信任没有转发头的真正 loopback。
+- **远程请求必须携带令牌**,可用以下任一方式:
+  - `cockpit_token` **cookie**;
+  - `Authorization: Bearer <值>` **请求头**(方便 API / WebSocket 客户端);或
+  - `?token=<值>` **查询参数** —— 首次访问时服务会写入 cookie 并重定向到干净 URL,让密钥不残留在地址栏 / 历史里。
+- 令牌用常数时间比较;错误或缺失一律拒绝。
+- 不设 `--token` / `COCKPIT_TOKEN` 即保持旧的完全开放行为(向后兼容)。
+
+在网络上共享时与 `COCKPIT_HOST=0.0.0.0` 搭配:
+
+```bash
+COCKPIT_HOST=0.0.0.0 cockpit --token 你的密钥
+```
 
 ## cockpit browser
 

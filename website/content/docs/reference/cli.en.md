@@ -62,6 +62,7 @@ cockpit -v
 | `-h`, `--help` | Show inline help. |
 | `--port <n>` | Listen on a non-default port. Default `3457`. |
 | `--no-open` | Don't auto-open the browser after the server starts. |
+| `--token <value>` | Require a shared token for **remote** access (loopback stays exempt). Sets `COCKPIT_TOKEN`; off entirely when omitted. See [Shared-token access gate](#shared-token-access-gate). |
 | `[path]` | Working directory to open. Defaults to `process.cwd()`. |
 
 ### Default port
@@ -114,6 +115,7 @@ Equivalent to `npm install -g @surething/cockpit@latest`. See [`cockpit update`]
 | `COCKPIT_PORT` | Server port (same as `--port`); also read by the `cock` sub-commands and `/cg` snippets. |
 | `PORT` | Fallback when `COCKPIT_PORT` is unset. |
 | `COCKPIT_HOST` | Bind host. Default `127.0.0.1` (local only); set `0.0.0.0` to expose on the LAN / in a cloud sandbox. |
+| `COCKPIT_TOKEN` | Shared access token (same as `--token`). When set, remote HTTP/WS requests must present it (cookie / `Authorization: Bearer` / `?token=`); loopback requests stay exempt. Unset = no auth (fully open). See [below](#shared-token-access-gate). |
 | `COCKPIT_NO_OPEN` | Don't auto-open the browser on start (same as `--no-open`). |
 | `COCKPIT_LOG_LEVEL` | Server log level. |
 | `COCKPIT_FORCE` | Bypass the single-instance guard (see below). |
@@ -129,6 +131,30 @@ COCKPIT_HOME=~/.cockpit-dev cockpit
 ```
 
 Set `COCKPIT_FORCE=1` to skip the guard (or delete `<data-dir>/server.json` if it's a stale lock left by a crash).
+
+#### Shared-token access gate
+
+By default Cockpit is **fully open** — anyone who can reach the port can use it. That's fine for a purely local install, but when you expose Cockpit on a LAN or in a cloud sandbox (`COCKPIT_HOST=0.0.0.0`), turn on the shared-token gate:
+
+```bash
+cockpit --token my-secret-value        # or: COCKPIT_TOKEN=my-secret-value cockpit
+```
+
+With a token set:
+
+- **Local (loopback) requests stay exempt** — the CLI, `/cg` snippets, self-probes, and a browser running on the host itself keep working with no token. Only genuine loopback with no forwarding header is trusted.
+- **Remote requests must present the token**, via any of:
+  - a `cockpit_token` **cookie**;
+  - an `Authorization: Bearer <value>` **header** (handy for API / WebSocket clients); or
+  - a `?token=<value>` **query param** — on first visit the server sets the cookie and redirects to a clean URL, so the secret doesn't linger in the address bar or history.
+- Tokens are compared in constant time; a wrong or missing token is denied.
+- Leave `--token` / `COCKPIT_TOKEN` **unset** to keep the old fully-open behaviour (backward compatible).
+
+Pair it with `COCKPIT_HOST=0.0.0.0` when sharing over the network:
+
+```bash
+COCKPIT_HOST=0.0.0.0 cockpit --token my-secret-value
+```
 
 ## cockpit browser
 

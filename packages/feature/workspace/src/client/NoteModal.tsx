@@ -20,6 +20,8 @@ import { NoteToolbar } from './NoteToolbar';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { Effect } from 'effect';
 import { loadNote, saveNote as saveNoteEff } from './effect/workspaceClient';
+import { normalizeNoteMarkdown } from './noteMarkdown';
+import { MarkdownTaskListFix } from './markdownTaskListFix';
 
 // ============================================
 // NoteModal main component
@@ -45,9 +47,12 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
 
   // Save note
   const saveNote = useCallback(async (content: string) => {
+    // Strip empty-checkbox round-trip artifacts before persisting, so junk
+    // "[ ]" / "\[ \]" lines can never accumulate in the file. See noteMarkdown.ts.
+    const normalized = normalizeNoteMarkdown(content);
     setIsSaving(true);
     const exit = await BrowserRuntime.runPromiseExit(
-      saveNoteEff(projectCwd, content).pipe(
+      saveNoteEff(projectCwd, normalized).pipe(
         Effect.tapError((err) =>
           Effect.sync(() => console.error('Failed to save note:', err))
         )
@@ -96,6 +101,9 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
         },
       }),
       TaskItem.configure({ nested: true }),
+      // Split markdown-it's merged plain-bullet + task-list <ul> before it
+      // reaches the schema, so no phantom empty checkbox is generated on load.
+      MarkdownTaskListFix,
       Markdown.configure({
         html: true,
         transformCopiedText: true,
@@ -189,7 +197,14 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
     slashStartPos.current = null;
     BrowserRuntime.runPromiseExit(loadNote(projectCwd)).then((exit) => {
       if (exit._tag === 'Success') {
-        editor.commands.setContent(exit.value.content || '');
+        // emitUpdate:false so merely opening the note never fires onUpdate /
+        // schedules a save (which would otherwise persist a re-serialized doc).
+        editor.commands.setContent(exit.value.content || '', { emitUpdate: false });
+        // Belt-and-suspenders: clear any save the load might have scheduled.
+        if (saveTimerRef.current) {
+          clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+        }
         hasUnsavedChanges.current = false;
       } else {
         console.error('Failed to load note:', exit.cause);

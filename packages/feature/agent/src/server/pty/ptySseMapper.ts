@@ -36,6 +36,28 @@ export function mapLineToEvents(line: TranscriptLine, sessionId: string): SSEEve
   const out: SSEEvent[] = [];
   const content = line.message?.content;
 
+  // Background task notification (PTY transcript form): a `user` line stamped origin.kind
+  // 'task-notification' carrying the <task-notification> XML as string content. Surface it as the
+  // SAME system/task_notification event the SDK path emits, so the live chat view renders the muted
+  // event row (reload already handles this via the transcript parser).
+  const origin = (line as { origin?: { kind?: string } }).origin;
+  if (line.type === 'user' && origin?.kind === 'task-notification') {
+    const raw =
+      typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+          ? (content as Array<{ type?: string; text?: string }>).filter((b) => b.type === 'text').map((b) => b.text || '').join('')
+          : '';
+    const pick = (tag: string) => raw.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`))?.[1]?.trim();
+    const ev: SSEEvent = { type: 'system', subtype: 'task_notification', session_id: sessionId };
+    const taskId = pick('task-id'); if (taskId) ev.task_id = taskId;
+    const status = pick('status'); if (status) ev.status = status;
+    const summary = pick('summary'); if (summary) ev.summary = summary;
+    const outputFile = pick('output-file'); if (outputFile) ev.output_file = outputFile;
+    out.push(ev);
+    return out;
+  }
+
   if (line.type === 'assistant' && Array.isArray(content)) {
     const blocks = content as Array<{ type?: string; text?: string; name?: string; id?: string; input?: unknown }>;
 

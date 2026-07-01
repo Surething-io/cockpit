@@ -84,6 +84,11 @@ export interface RunTurnOptions {
   onPtyData?: (data: string) => void;
   /** REPL is ready and the prompt has been submitted. */
   onSubmit?: () => void;
+  /** Synthetic turn boundary for a run kept resident across a background task (see the pendingBg
+   *  logic in runClaudeTurn): 'result' finalizes an intermediate turn's bubble at its stop_hook,
+   *  'init' starts a new bubble when the follow-up turn (auto-run after the task reports back)
+   *  begins. The route maps these to the SAME result/init SSE events a normal single turn emits. */
+  onTurnBoundary?: (kind: 'result' | 'init') => void;
   /** Turn completed (via: 'stop_hook_summary' | 'idle' | 'question_esc' | 'question_loop'). */
   onComplete?: (via: string) => void;
   /** AskUserQuestion was auto-cancelled and the turn ended early — either the selector UI got
@@ -191,12 +196,52 @@ export function writeToPtySession(sessionId: string, data: string): boolean {
 }
 
 /**
+ * Update the in-flight background-task set from one transcript line. Pure; exported for testing.
+ *   - START: a tool_result carrying "Command running in background with ID: <id>".
+ *   - DONE:  a user line stamped origin.kind 'task-notification' carrying <task-id><id></task-id>.
+ * Used to keep the PTY claude process resident until every run_in_background shell has reported
+ * back — otherwise the launch turn's stop_hook would kill claude (and the shell with it).
+ */
+export function trackBackgroundLifecycle(line: TranscriptLine, pending: Set<string>): void {
+  const content = line.message?.content;
+  if (line.type === 'user' && Array.isArray(content)) {
+    for (const b of content as Array<{ type?: string; content?: unknown }>) {
+      if (b.type === 'tool_result' && typeof b.content === 'string') {
+        // Match just the id token — a trailing "." (…ID: b7bp62e63. Output is…) must NOT be
+        // captured, or it won't match the notification's <task-id> and the run would never drain.
+        const m = b.content.match(/Command running in background with ID:\s*([A-Za-z0-9_-]+)/);
+        if (m) pending.add(m[1]);
+      }
+    }
+  }
+  const origin = (line as { origin?: { kind?: string } }).origin;
+  if (line.type === 'user' && origin?.kind === 'task-notification') {
+    const raw =
+      typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+          ? (content as Array<{ type?: string; text?: string }>)
+              .filter((b) => b.type === 'text')
+              .map((b) => b.text || '')
+              .join('')
+          : '';
+    const id = raw.match(/<task-id>([\s\S]*?)<\/task-id>/)?.[1]?.trim();
+    if (id) pending.delete(id);
+  }
+}
+
+/**
  * Run a single turn. Resolves once the turn has completed and the process has exited
  * (or was interrupted / timed out).
+ *
+ * Background-task persistence: if the turn launches a `run_in_background` shell, we do NOT kill
+ * claude at the launch turn's stop_hook — we keep it resident (and keep polling the jsonl) until
+ * the shell reports back, so the real completion notification + the auto-run follow-up turn are
+ * captured. See pendingBg / awaitingNewTurn below.
  */
 export function runClaudeTurn(opts: RunTurnOptions): Promise<RunTurnResult> {
   const {
-    cwd, prompt, onJsonlLine, onPtyData, onSubmit, onComplete, onQuestionEsc, signal,
+    cwd, prompt, onJsonlLine, onPtyData, onSubmit, onComplete, onQuestionEsc, onTurnBoundary, signal,
     debug = false, idleMs = 3000, timeoutMs, cols = 80, rows = 24,
     stuckMs = 10_000, graceMs = 30_000, onStuck,
   } = opts;
@@ -279,6 +324,12 @@ export function runClaudeTurn(opts: RunTurnOptions): Promise<RunTurnResult> {
     let crashError = '';
     let timedOut = false;
     const newLines: TranscriptLine[] = [];
+    // Background-task persistence: in-flight `run_in_background` shells (see trackBackgroundLifecycle).
+    // While non-empty, a stop_hook does NOT end the run — we stay resident until they drain.
+    const pendingBg = new Set<string>();
+    // Set after an intermediate turn's stop_hook: the next assistant line is a follow-up turn and
+    // needs its own bubble (emit an 'init' boundary before its content).
+    let awaitingNewTurn = false;
 
     term.onData((d) => {
       rawBuf += d;
@@ -399,6 +450,13 @@ export function runClaudeTurn(opts: RunTurnOptions): Promise<RunTurnResult> {
         try { o = JSON.parse(lines[i]); } catch { continue; }
         newLines.push(o);
         lastJsonlTs = Date.now();
+
+        // Background-task lifecycle — track BEFORE emitting so a follow-up turn's 'init' boundary
+        // is emitted ahead of its content.
+        trackBackgroundLifecycle(o, pendingBg);
+        // A follow-up turn (the auto-run after a background task reports back) opens a NEW bubble.
+        if (awaitingNewTurn && o.type === 'assistant') { awaitingNewTurn = false; onTurnBoundary?.('init'); }
+
         onJsonlLine?.(o);
         const blocks = Array.isArray(o.message?.content)
           ? (o.message!.content as Array<{ type?: string }>).map((b) => b.type).join(',') : '';
@@ -418,7 +476,15 @@ export function runClaudeTurn(opts: RunTurnOptions): Promise<RunTurnResult> {
           }
         }
         if (o.type === 'system' && o.subtype === 'stop_hook_summary' && !completed) {
-          complete('stop_hook_summary');
+          if (pendingBg.size === 0) {
+            complete('stop_hook_summary');
+          } else {
+            // A background task is still running → stay resident. Finalize this turn's bubble and
+            // wait; claude auto-runs a follow-up turn on the same process when the task reports back.
+            log('stop_hook with background task(s) pending → staying resident', [...pendingBg]);
+            onTurnBoundary?.('result');
+            awaitingNewTurn = true;
+          }
         }
       }
       seen = lines.length;
@@ -431,7 +497,15 @@ export function runClaudeTurn(opts: RunTurnOptions): Promise<RunTurnResult> {
     // answer). So we only keep the double-silence fallback.
     const idleCheck = setInterval(() => {
       if (completed || !promptSent) return;
-      if (sawAssistantText && Date.now() - lastJsonlTs > idleMs && Date.now() - lastDataTs > idleMs) {
+      // Suppress the idle-complete while a background task is pending: during the wait both the jsonl
+      // and the PTY are quiet, which would otherwise falsely complete the turn and kill claude (and
+      // the background shell with it) before the task reports back.
+      if (
+        sawAssistantText &&
+        pendingBg.size === 0 &&
+        Date.now() - lastJsonlTs > idleMs &&
+        Date.now() - lastDataTs > idleMs
+      ) {
         complete('idle');
       }
     }, 300);

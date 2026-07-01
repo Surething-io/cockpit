@@ -35,6 +35,12 @@ export async function runPtyTurn(ctx: RunCtx): Promise<void> {
         ctx.emit(ev as { type: string; [k: string]: unknown });
       }
     },
+    // Background-task persistence: the driver stays resident across a background task and signals
+    // synthetic turn boundaries. Map them to the SAME init/result events a normal turn emits, so the
+    // follow-up (auto-run) turn renders in its own bubble and the completion notification's event row
+    // shows (the client keys the row off a turn having ended).
+    onTurnBoundary: (kind) =>
+      ctx.emit((kind === 'init' ? initEvent(sid) : resultEvent(sid)) as { type: string; [k: string]: unknown }),
     // floating-window dual-view: raw PTY output forwarded to the frontend xterm.
     onPtyData: (data) => ctx.emit({ type: 'pty_output', data }),
     // Startup stuck (REPL not ready, likely a dialog) → ask the user to handle it in the terminal.

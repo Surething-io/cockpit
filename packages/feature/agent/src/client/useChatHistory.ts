@@ -37,6 +37,35 @@ const TURNS_PER_PAGE = 10;
 const INCREMENTAL_THROTTLE_MS = 5_000;
 
 // ============================================
+// First-page cache (stale-while-revalidate)
+//
+// A /api/session-by-path first-page response can be hundreds of KB with no
+// HTTP caching — unnoticeable locally (<10ms), but over a tunnel (ngrok)
+// every session open re-downloads it in full. Cache the latest first-page
+// response per (cwd, sessionId): on a hit, paint the cached content
+// immediately and revalidate in the background with ifFingerprint — if the
+// session file is unchanged the server returns just { notModified } (a few
+// dozen bytes); otherwise the full payload comes back and refreshes the
+// cache. Module-level Map: lives as long as the SPA, no persistence (a page
+// reload starts empty).
+// ============================================
+const FIRST_PAGE_CACHE_MAX = 20;
+const firstPageCache = new Map<string, { data: SessionPageData; fingerprint: string }>();
+
+// Shape of a /api/session-by-path response (fields the client consumes).
+interface SessionPageData {
+  notModified?: boolean;
+  fingerprint?: string;
+  totalTurns?: number;
+  hasMore?: boolean;
+  messages?: ChatMessage[];
+  sessionId?: string;
+  title?: string;
+  engine?: ChatEngine;
+  usage?: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
+}
+
+// ============================================
 // Types
 // ============================================
 
@@ -126,35 +155,9 @@ export function useChatHistory(
       lastIncrementalFetchRef.current = now;
     }
 
-    if (!incremental) {
-      setIsLoadingHistory(true);
-    }
-    try {
-      // Direction 3: incremental carries fingerprint, server returns early if file unchanged
-      const requestBody: Record<string, unknown> = { cwd: cwdPath, sessionId: sid, limit, beforeTurnIndex };
-      if (incremental && fingerprintRef.current) {
-        requestBody.ifFingerprint = fingerprintRef.current;
-      }
-
-      const exit = await BrowserRuntime.runPromiseExit(postSessionByPath(requestBody));
-      if (exit._tag === 'Success' && exit.value) {
-        const data = exit.value as {
-          notModified?: boolean;
-          fingerprint?: string;
-          totalTurns?: number;
-          hasMore?: boolean;
-          messages?: ChatMessage[];
-          sessionId?: string;
-          title?: string;
-          engine?: ChatEngine;
-          usage?: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
-        };
-
-        // Direction 3: file unchanged, skip all processing
-        if (data.notModified) {
-          return;
-        }
-
+    // Apply one /api/session-by-path payload to local state. Shared by the
+    // cache-hit fast path and the network response path.
+    const applyPage = (data: SessionPageData, viaIncremental: boolean) => {
         // Save file fingerprint
         if (data.fingerprint) {
           fingerprintRef.current = data.fingerprint;
@@ -169,7 +172,7 @@ export function useChatHistory(
         }
 
         if (data.messages && data.messages.length > 0) {
-          if (incremental) {
+          if (viaIncremental) {
             // Incremental update mode: only update changed messages
             setMessages((prevMessages) => {
               const newMessages = data.messages as ChatMessage[];
@@ -230,6 +233,54 @@ export function useChatHistory(
             cacheReadInputTokens: data.usage.cache_read_input_tokens || 0,
             totalCostUsd: 0, // No cost info in history records
           });
+        }
+    };
+
+    // First-page cache: only the plain initial load shape (no incremental, no
+    // pagination cursor) is cached — that's the request every "open a session"
+    // fires and the one that hurts over high-latency links.
+    const cacheKey = `${cwdPath}::${sid}`;
+    const cacheable = !incremental && beforeTurnIndex === undefined;
+    const cached = cacheable ? firstPageCache.get(cacheKey) : undefined;
+
+    if (!incremental) {
+      if (cached) {
+        // Stale-while-revalidate: paint cached content immediately, then
+        // revalidate below with its fingerprint (no loading spinner).
+        applyPage(cached.data, false);
+      } else {
+        setIsLoadingHistory(true);
+      }
+    }
+    try {
+      // Direction 3: carry a fingerprint so the server can short-circuit with
+      // { notModified } when the session file is unchanged.
+      const requestBody: Record<string, unknown> = { cwd: cwdPath, sessionId: sid, limit, beforeTurnIndex };
+      if (incremental && fingerprintRef.current) {
+        requestBody.ifFingerprint = fingerprintRef.current;
+      } else if (cached) {
+        requestBody.ifFingerprint = cached.fingerprint;
+      }
+
+      const exit = await BrowserRuntime.runPromiseExit(postSessionByPath(requestBody));
+      if (exit._tag === 'Success' && exit.value) {
+        const data = exit.value as SessionPageData;
+
+        // Direction 3: file unchanged, skip all processing
+        if (data.notModified) {
+          return;
+        }
+
+        applyPage(data, incremental);
+
+        // Refresh the first-page cache (LRU: re-insert, evict oldest over cap)
+        if (cacheable && data.fingerprint && data.messages && data.messages.length > 0) {
+          firstPageCache.delete(cacheKey);
+          firstPageCache.set(cacheKey, { data, fingerprint: data.fingerprint });
+          if (firstPageCache.size > FIRST_PAGE_CACHE_MAX) {
+            const oldest = firstPageCache.keys().next().value;
+            if (oldest !== undefined) firstPageCache.delete(oldest);
+          }
         }
       }
     } catch (error) {

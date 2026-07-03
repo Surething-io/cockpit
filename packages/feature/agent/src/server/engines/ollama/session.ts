@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync, appendFileSync } from 'fs';
 import { join } from 'path';
 import type { ModelMessage } from '@ai-sdk/provider-utils';
 import { encodePath, COCKPIT_DIR } from '@cockpit/shared-utils';
@@ -49,20 +49,13 @@ export function readSessionMessages(cwd: string, sessionId: string): ModelMessag
   if (!existsSync(path)) return [];
 
   const lines = readFileSync(path, 'utf-8').split('\n').filter(Boolean);
-  const legacyMessages: ModelMessage[] = [];
   const transcriptEntries: ClaudeTranscriptLine[] = [];
 
   for (const line of lines) {
     try {
       const obj = JSON.parse(line) as Record<string, unknown>;
-
-      // Legacy format: AI SDK ModelMessage JSONL
-      if (typeof obj.role === 'string' && 'content' in obj) {
-        legacyMessages.push(obj as unknown as ModelMessage);
-        continue;
-      }
-
-      // Claude-style transcript format
+      // Claude-style transcript format (the only format written since v1.0.186; the AI SDK
+      // ModelMessage legacy fallback for v1.0.184–185 files was removed).
       if (typeof obj.type === 'string') {
         transcriptEntries.push(obj as unknown as ClaudeTranscriptLine);
       }
@@ -70,9 +63,6 @@ export function readSessionMessages(cwd: string, sessionId: string): ModelMessag
       // skip corrupted lines
     }
   }
-
-  // If this is a legacy file (no Claude-style transcript lines), keep legacy behavior.
-  if (transcriptEntries.length === 0) return legacyMessages;
 
   // First pass: build indices so we can drop dangling tool calls (tool_use without tool_result)
   // which would break AI SDK prompt validation on subsequent turns.
@@ -244,126 +234,3 @@ export function appendToolResult(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Backward-compatible exports (legacy ModelMessage JSONL writer)
-// ---------------------------------------------------------------------------
-
-function modelMessageToTranscriptLines(
-  sessionId: string,
-  m: ModelMessage
-): ClaudeTranscriptLine[] {
-  if (m.role === 'user') {
-    const text =
-      typeof m.content === 'string'
-        ? m.content
-        : Array.isArray(m.content)
-          ? (m.content as Array<{ type?: string; text?: string }>)
-              .filter((p) => p.type === 'text' && typeof p.text === 'string')
-              .map((p) => p.text!)
-              .join('\n')
-          : '';
-    return [
-      {
-        type: 'user',
-        sessionId,
-        message: { role: 'user', content: [{ type: 'text', text }] },
-      },
-    ];
-  }
-
-  if (m.role === 'assistant') {
-    if (typeof m.content === 'string') {
-      return [
-        {
-          type: 'assistant',
-          sessionId,
-          message: { role: 'assistant', content: [{ type: 'text', text: m.content }] },
-        },
-      ];
-    }
-
-    if (Array.isArray(m.content)) {
-      const content: ClaudeContentBlock[] = [];
-      for (const part of m.content as Array<Record<string, unknown>>) {
-        if (part.type === 'text' && typeof part.text === 'string') {
-          content.push({ type: 'text', text: part.text });
-        } else if (part.type === 'tool-call') {
-          content.push({
-            type: 'tool_use',
-            id: typeof part.toolCallId === 'string' ? part.toolCallId : '',
-            name: typeof part.toolName === 'string' ? part.toolName : '',
-            input:
-              (typeof part.input === 'object' && part.input !== null
-                ? (part.input as Record<string, unknown>)
-                : typeof part.args === 'object' && part.args !== null
-                  ? (part.args as Record<string, unknown>)
-                  : {}) as Record<string, unknown>,
-          });
-        }
-      }
-      return [
-        {
-          type: 'assistant',
-          sessionId,
-          message: { role: 'assistant', content },
-        },
-      ];
-    }
-
-    return [{ type: 'assistant', sessionId, message: { role: 'assistant', content: [{ type: 'text', text: '' }] } }];
-  }
-
-  if (m.role === 'tool' && Array.isArray(m.content)) {
-    const lines: ClaudeTranscriptLine[] = [];
-    for (const part of m.content as Array<Record<string, unknown>>) {
-      if (part.type === 'tool-result' && typeof part.toolCallId === 'string') {
-        let value = '';
-        if (typeof part.output === 'object' && part.output !== null) {
-          const output = part.output as { type?: string; value?: unknown };
-          if (output.type === 'text' || output.type === 'error-text') {
-            value = typeof output.value === 'string' ? output.value : String(output.value ?? '');
-          } else {
-            value = JSON.stringify(output.value ?? '');
-          }
-        } else if (typeof part.result === 'string') {
-          value = part.result;
-        } else {
-          value = String(part.result ?? '');
-        }
-
-        lines.push({
-          type: 'user',
-          sessionId,
-          message: {
-            content: [
-              {
-                type: 'tool_result',
-                tool_use_id: part.toolCallId,
-                content: value,
-                is_error: false,
-              },
-            ],
-          },
-        });
-      }
-    }
-    return lines;
-  }
-
-  return [];
-}
-
-// Legacy API: previously wrote AI SDK ModelMessage JSONL. Keep the export to avoid build/runtime breaks,
-// but write Claude-style transcript JSONL instead (so sessions remain compatible with Claude parser).
-export function writeSessionMessages(cwd: string, sessionId: string, messages: ModelMessage[]): void {
-  const dir = getSessionDir(cwd);
-  mkdirSync(dir, { recursive: true });
-  const path = getSessionPath(cwd, sessionId);
-
-  const lines: ClaudeTranscriptLine[] = [];
-  for (const m of messages) {
-    lines.push(...modelMessageToTranscriptLines(sessionId, m));
-  }
-  const content = lines.map((l) => JSON.stringify(l)).join('\n') + '\n';
-  writeFileSync(path, content, 'utf-8');
-}

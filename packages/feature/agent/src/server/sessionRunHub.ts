@@ -37,6 +37,11 @@ interface RunState {
   status: RunStatus;
   seq: number; // monotonic within the run; snapshot/tail dedupe on it
   events: unknown[]; // current in-flight turn only
+  /** Server clock at startRun. The turn's time boundary: every message this run writes to
+   *  disk carries a timestamp >= startedAt, every prior turn's is < startedAt. Sent with the
+   *  run-snapshot so clients can separate the in-flight turn's disk image from real history
+   *  without comparing message text (which breaks on repeated prompts like "继续"). */
+  startedAt: number;
   updatedAt: number;
   evictTimer?: ReturnType<typeof setTimeout>;
   abort?: () => void; // stop endpoint aborts the detached run via this
@@ -83,8 +88,14 @@ function fanout(state: RunState, ev: RunEvent): void {
  * turn's first event so viewers render the new user bubble live (the human prompt is on
  * no engine's stream). `_human` lets useLiveStream tell it apart from tool_result `user`
  * events.
+ *
+ * `runId` is the per-turn unique id (client genRunId() / orchestrator randomUUID). It is
+ * stamped on the `_human` event as `_turnId` so clients dedup the live user bubble by
+ * identity instead of by text — required for repeated identical prompts ("继续"), where
+ * text comparison suppresses the new turn's bubble. `_ts` (= startedAt) rides along for
+ * the disk-copy check on the live-event path (no snapshot in hand there).
  */
-export function startRun(key: string, cwd: string, promptText?: string): boolean {
+export function startRun(key: string, cwd: string, promptText?: string, runId?: string): boolean {
   const prev = registry.get(key);
   // Atomic one-active guard (#10/#5): refuse to start if a turn is already live under `key`.
   // The check and the registry.set below run in one synchronous tick (no await between), so two
@@ -99,18 +110,22 @@ export function startRun(key: string, cwd: string, promptText?: string): boolean
     if (prev.evictTimer) clearTimeout(prev.evictTimer);
     for (const k of prev.keys) registry.delete(k); // drop the prior turn's aliases
   }
+  const startedAt = Date.now();
   registry.set(key, {
     keys: new Set([key]),
     cwd,
     status: 'running',
     seq: prevSeq,
     events: [],
-    updatedAt: Date.now(),
+    startedAt,
+    updatedAt: startedAt,
   });
   if (promptText) {
     appendRun(key, {
       type: 'user',
       _human: true,
+      ...(runId ? { _turnId: runId } : {}),
+      _ts: startedAt,
       message: { role: 'user', content: promptText },
     });
   }
@@ -192,10 +207,10 @@ export function markRunIdle(key: string, status: RunStatus = 'idle'): void {
 /** Snapshot of the current in-flight turn for a freshly connecting client. */
 export function getRunSnapshot(
   key: string
-): { status: RunStatus; seq: number; events: unknown[] } | null {
+): { status: RunStatus; seq: number; events: unknown[]; startedAt: number } | null {
   const r = registry.get(key);
   if (!r) return null;
-  return { status: r.status, seq: r.seq, events: r.events.slice() };
+  return { status: r.status, seq: r.seq, events: r.events.slice(), startedAt: r.startedAt };
 }
 
 /** True while a turn is actively running (used by the 409 concurrent-run guard). */

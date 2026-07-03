@@ -62,7 +62,9 @@ export async function dispatchChat(
   // earlier isRunActive at the top is a fast 409 with a clearer message); because it is atomic
   // it also covers a duplicate submit racing across the preflight await above, where two callers
   // could otherwise both pass a separate check-then-act.
-  if (!startRun(currentKey, cwd || '', promptText)) {
+  // runId doubles as the turn's identity marker on the seeded _human event (`_turnId`),
+  // letting clients dedup the live user bubble without comparing prompt text.
+  if (!startRun(currentKey, cwd || '', promptText, runId)) {
     return { ok: false, status: 409, error: 'run already active' };
   }
   setRunAbort(currentKey, () => {

@@ -73,9 +73,14 @@ export function useLiveStream(
       return;
     }
     // Synthetic human-prompt event → render the new user bubble live. (Seeded by
-    // startRun; the prompt is on no engine's SSE stream.) Dedup against the last
-    // message so an originator that refreshed mid-run — and thus already loaded the
-    // user message from disk — doesn't show it twice.
+    // startRun; the prompt is on no engine's SSE stream.) Two dedup layers, both
+    // identity/time-based — NOT text-based, so repeated identical prompts ("继续")
+    // can never suppress a genuinely new turn's bubble:
+    //   1. `_turnId` (the dispatch runId): this turn's live bubble already exists → skip.
+    //   2. `_ts` (startedAt) vs the most-recent user bubble's disk timestamp: written
+    //      at/after run start ⇒ it IS this turn's disk copy (originator refreshed
+    //      mid-run, or a scheduled task raced the incremental load) → skip.
+    // Text equality remains only as the fallback for untimestamped transcripts (kimi).
     if (ev.type === 'user' && ev._human) {
       const c = ev.message?.content;
       const text = typeof c === 'string'
@@ -83,19 +88,25 @@ export function useLiveStream(
         : Array.isArray(c)
           ? c.map((b) => (b as { text?: string })?.text || '').join('')
           : '';
-      const id = `live-user-${++seq.current}`;
+      const turnId = typeof ev._turnId === 'string' ? ev._turnId : null;
+      const startedAt = typeof ev._ts === 'number' ? ev._ts : null;
+      const id = turnId ? `live-user-${turnId}` : `live-user-${++seq.current}`;
       setMessages((prev) => {
-        // Dedup against the MOST-RECENT user bubble (scanning past trailing assistant
-        // placeholders), not just the strict last item. When this in-flight turn's user
-        // message was already loaded from disk — possibly with an assistant bubble appended
-        // after it — a strict last-only check misses it and renders the prompt twice (seen
-        // when a scheduled task fires on the session you're viewing). Only SUPPRESSES a
-        // duplicate add; never deletes, so it can't wipe real history.
+        // Layer 1 — identity: this turn's live bubble was already rendered.
+        if (turnId && prev.some((m) => m.id === id)) return prev;
+        // Layer 2 — disk copy: check the MOST-RECENT user bubble (scanning past trailing
+        // assistant placeholders). Only SUPPRESSES a duplicate add; never deletes, so it
+        // can't wipe real history.
         for (let i = prev.length - 1; i >= 0; i--) {
-          if (prev[i].role === 'user') {
-            if (prev[i].content === text) return prev; // already shown → skip
-            break; // most-recent user differs → a genuinely new prompt
+          if (prev[i].role !== 'user') continue;
+          const ts = prev[i].timestamp ? Date.parse(prev[i].timestamp as string) : NaN;
+          if (startedAt !== null && !Number.isNaN(ts)) {
+            if (ts >= startedAt) return prev; // this turn's disk copy → skip
+            // older than this run → a prior turn (even if the text matches) → render
+          } else if (prev[i].content === text) {
+            return prev; // no timestamp to classify by → legacy text fallback
           }
+          break;
         }
         return [...prev, { id, role: 'user', content: text } as ChatMessage];
       });
@@ -115,6 +126,7 @@ export function useLiveStream(
       const msg = data as {
         type?: string;
         status?: string;
+        startedAt?: number;
         events?: unknown[];
         message?: Record<string, unknown>;
       };
@@ -151,11 +163,34 @@ export function useLiveStream(
             }
           }
         }
+        const startedAt = typeof msg.startedAt === 'number' ? msg.startedAt : null;
         setMessages((prev) => {
           const base = prev.filter((m) => !(typeof m.id === 'string' && m.id.startsWith('live-')));
           // Drop the in-flight turn's DISK image when a viewer joined mid-run and the initial
           // history load already rendered it — this is what prevents the "2 user + 2 assistant"
           // double-render. The snapshot then re-renders that turn from live events.
+          //
+          // PRIMARY — time boundary: the in-flight turn's disk image is exactly the trailing
+          // messages stamped at/after the run's startedAt (same machine, same clock; the
+          // engine flushes the user line only after startRun). Content-independent, so a
+          // repeated "继续" prompt can never cut a prior turn, and it needs no in-memory ids
+          // — it survives a mid-run refresh. Only applies when the tail is timestamped
+          // (claude/deepseek/codex/new-ollama transcripts all are).
+          const lastMsg = base[base.length - 1];
+          const lastTs = lastMsg?.timestamp ? Date.parse(lastMsg.timestamp) : NaN;
+          if (startedAt !== null && !Number.isNaN(lastTs)) {
+            let cut = base.length;
+            while (cut > 0) {
+              const m = base[cut - 1];
+              const ts = m.timestamp ? Date.parse(m.timestamp) : NaN;
+              if (!Number.isNaN(ts) && ts >= startedAt) cut--;
+              else break;
+            }
+            // cut === base.length ⇒ the in-flight turn isn't on disk → nothing to remove.
+            return cut < base.length ? base.slice(0, cut) : base;
+          }
+          // FALLBACK — untimestamped tail (kimi transcripts): locate by prompt text, confirm
+          // by snapshot fingerprint (pre-startedAt behavior, unchanged).
           if (!humanText) return base;
           // Only the MOST-RECENT user bubble can be this turn's prompt. If it doesn't match the
           // in-flight prompt text, the in-flight user isn't on disk → nothing to cut. (This also

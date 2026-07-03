@@ -51,6 +51,9 @@ export const handleSessionStream = (
         type: "run-snapshot",
         status: snap.status,
         seq: snap.seq,
+        // Turn time-boundary: lets clients cut the in-flight turn's disk image by
+        // message timestamp instead of by prompt text (see useLiveStream).
+        startedAt: snap.startedAt,
         events: snap.events,
       })
     } else {

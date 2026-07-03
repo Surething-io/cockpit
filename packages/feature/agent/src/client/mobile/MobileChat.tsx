@@ -103,6 +103,10 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   const engine: ChatEngine | undefined = resolved.engine ?? loadedEngine ?? undefined;
 
   const noop = useCallback(() => {}, []);
+  // Reconcile-on-run-end (mirrors Chat.tsx): useChatStream is constructed before
+  // loadHistoryByCwdAndSessionId / liveSessionId exist, so the disk-reload closure is
+  // injected into this ref below and invoked via a stable thunk.
+  const reconcileFromDiskRef = useRef<(() => void) | null>(null);
   const {
     isLoading,
     apiRetryInfo,
@@ -119,6 +123,10 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     deepseekModel: resolved.deepseekModel,
     onSessionId: setSessionId,
     onFetchTitle: noop,
+    // Mirrors Chat.tsx: when a run this screen ORIGINATED ends, reconcile from disk so
+    // temp live bubbles converge to canonical uuids — without this the next snapshot /
+    // incremental load can double-render the turn on mobile.
+    onRunComplete: () => reconcileFromDiskRef.current?.(),
   });
 
   // Live viewer: tail the active run whenever we're viewing this session and not
@@ -135,6 +143,14 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   useEffect(() => {
     if (!liveViewerEnabled) setLiveRunning(false);
   }, [liveViewerEnabled]);
+
+  // Keep the originator's reconcile-on-run-end closure current (same disk reload the
+  // viewer's onComplete uses).
+  useEffect(() => {
+    reconcileFromDiskRef.current = () => {
+      if (liveSessionId) loadHistoryByCwdAndSessionId(cwd, liveSessionId, true);
+    };
+  }, [cwd, liveSessionId, loadHistoryByCwdAndSessionId]);
 
   const isRunning = isLoading || liveRunning;
 

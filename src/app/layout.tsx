@@ -9,7 +9,9 @@ import { Providers } from "@cockpit/feature-workspace";
 // cleanup). Inlined from the source file rather than referenced via
 // <script src> so it executes during SSR without the React "script tag inside
 // a component is never executed on the client" warning — the standard
-// FOUC-prevention pattern. Read once at module load.
+// FOUC-prevention pattern. Read once at module load. NOTE: after editing
+// public/boot.js in dev, edit/save this file so the module re-evaluates and
+// re-reads the script (mtime-only touches don't bust Turbopack's cache).
 let bootScript = "";
 try {
   bootScript = readFileSync(join(process.cwd(), "public", "boot.js"), "utf8");

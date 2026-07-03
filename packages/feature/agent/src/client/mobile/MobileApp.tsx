@@ -209,14 +209,33 @@ export function MobileApp({ initialCwd, initialSessionId, initialSessions }: Mob
     };
   }, [enterChat, exitChat]);
 
+  // Defensive scroll guard (belt to overflow-clip's suspenders): positioning is
+  // transform-only, so any non-zero scrollLeft on the track container is pollution
+  // (e.g. a scrollIntoView from chat content racing the 220ms page-slide used to
+  // scroll the old overflow-hidden box and leave the chat half off-screen). With
+  // overflow-clip the box is no longer a scroll container, but keep the reset in
+  // case the overflow style ever regresses — same guard as SwipeablePages.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      if (el.scrollLeft !== 0) el.scrollLeft = 0;
+    };
+    el.addEventListener('scroll', onScroll);
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
   // Track transform: settle at page 0 (list) or -pageWidth (chat), plus live drag.
+  // The container uses overflow-clip (NOT hidden) — a clipped box is not a scroll
+  // container, so scrollIntoView can never inject a phantom scrollLeft that would
+  // shift the track.
   const base = showChat ? -pageWidth : 0;
   const tx = base + dragOffset;
 
   return (
     <div
       ref={containerRef}
-      className="relative h-[100dvh] w-full overflow-hidden"
+      className="relative h-[100dvh] w-full overflow-clip"
       style={{ overscrollBehaviorX: 'none', touchAction: 'pan-y' }}
     >
       <div

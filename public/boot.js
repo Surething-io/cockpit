@@ -14,7 +14,15 @@
     var onMobileRoute = path === '/m' || path.indexOf('/m/') === 0;
     var forceDesktop = false;
     try { forceDesktop = !!localStorage.getItem('cockpit-force-desktop'); } catch (_e) {}
+    // Never redirect inside an iframe: the desktop shell embeds /project in a
+    // frame that is 42px (sidebar) narrower than the window, so a tablet-width
+    // top page (e.g. 768px iPad) would otherwise nest the mobile UI inside the
+    // desktop shell — and drop the sessionId in the process. The media query is
+    // only meaningful for the top-level viewport.
+    var isTopWindow = true;
+    try { isTopWindow = window.self === window.top; } catch (_e) {}
     if (
+      isTopWindow &&
       !onMobileRoute &&
       !forceDesktop &&
       window.matchMedia &&

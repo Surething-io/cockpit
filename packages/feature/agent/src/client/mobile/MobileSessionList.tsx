@@ -2,8 +2,8 @@
 
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pin, Bell, BellOff } from 'lucide-react';
-import { useWebSocket } from '@cockpit/shared-ui';
+import { Pin, Bell, BellOff, Sun, Moon } from 'lucide-react';
+import { useWebSocket, useTheme } from '@cockpit/shared-ui';
 import { usePinnedSessions } from '../usePinnedSessions';
 import { usePushSubscription } from '../usePushSubscription';
 import type { GlobalSession } from '../GlobalSessionMonitor';
@@ -37,6 +37,7 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
   const [now, setNow] = useState(() => Date.now());
   const { pinnedSessions } = usePinnedSessions();
   const { supported: pushSupported, isSubscribed, busy: pushBusy, subscribe, unsubscribe } = usePushSubscription();
+  const { resolvedTheme, setTheme } = useTheme();
 
   const handleMessage = useCallback((msg: unknown) => {
     const parsed = msg as { type?: string; data?: { sessions?: GlobalSession[] } };
@@ -64,8 +65,10 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
     <button
       type="button"
       onClick={() => setTab(key)}
-      className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
-        tab === key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'
+      className={`flex-1 border-b-2 pb-2 pt-1 text-sm font-medium transition-colors ${
+        tab === key
+          ? 'border-brand text-brand'
+          : 'border-transparent text-muted-foreground'
       }`}
     >
       {label}
@@ -76,7 +79,7 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
     <div className="flex h-[100dvh] flex-col bg-card">
       {/* Header: tab switch + desktop escape hatch */}
       <div className="flex flex-shrink-0 items-center gap-3 border-b border-border px-3 py-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
-        <div className="flex flex-1 items-center gap-1 rounded-lg bg-accent p-0.5">
+        <div className="flex flex-1 items-center gap-2">
           {tabBtn('recent', t('sessions.recentSessions'))}
           {tabBtn('pinned', t('sessions.pinnedSessions'))}
         </div>
@@ -95,6 +98,14 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
             {isSubscribed ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+          aria-label={t('mobile.toggleTheme', { defaultValue: 'Toggle theme' })}
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground active:bg-accent"
+        >
+          {resolvedTheme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </button>
         <button
           type="button"
           onClick={onUseDesktop}

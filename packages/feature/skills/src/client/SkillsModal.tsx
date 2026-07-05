@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from '@cockpit/shared-ui';
 import { SkillPreviewModal } from './SkillPreviewModal';
 import { notifySkillsChanged } from './skillsBus';
@@ -31,6 +31,7 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
   const [addPath, setAddPath] = useState('');
   const [adding, setAdding] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -44,7 +45,12 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
   }, []);
 
   useEffect(() => {
-    if (isOpen) reload();
+    if (isOpen) {
+      // Clear the previous search keyword on each open, then focus the input
+      setQuery('');
+      reload();
+      setTimeout(() => searchInputRef.current?.focus(), 100);
+    }
   }, [isOpen, reload]);
 
   // ESC to close
@@ -133,6 +139,7 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
             <h2 className="text-sm font-medium text-foreground">Skills</h2>
             <div className="flex items-center gap-3">
               <input
+                ref={searchInputRef}
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}

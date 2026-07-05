@@ -132,6 +132,8 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
 
   useEffect(() => {
     if (isOpen) {
+      // Clear the previous search keyword on each open
+      setSearchKeyword('');
       loadProjects();
       // Auto-focus the search input
       setTimeout(() => {

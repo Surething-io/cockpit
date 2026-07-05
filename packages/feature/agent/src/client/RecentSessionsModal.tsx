@@ -46,6 +46,8 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject }: Recent
 
   useEffect(() => {
     if (isOpen) {
+      // Clear the previous search keyword on each open
+      setSearchKeyword('');
       loadSessions();
       setTimeout(() => searchInputRef.current?.focus(), 100);
     }

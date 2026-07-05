@@ -53,6 +53,8 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
 
   useEffect(() => {
     if (isOpen) {
+      // Clear the previous search keyword on each open
+      setSearchKeyword('');
       loadSessions();
       // Auto-focus the search input
       setTimeout(() => {

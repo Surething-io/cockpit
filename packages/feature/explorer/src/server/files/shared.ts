@@ -17,14 +17,21 @@ export const MAX_TEXT_SIZE = 10 * 1024 * 1024; // 10 MB
 /** Hard upper bound for image preview via /read (bytes). */
 export const MAX_IMAGE_SIZE = 50 * 1024 * 1024; // 50 MB
 
+/** Hard upper bound for PDF preview via /read (bytes). */
+export const MAX_PDF_SIZE = 100 * 1024 * 1024; // 100 MB
+
 // -------- Extension tables --------
 
 const IMAGE_EXTENSIONS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp', '.avif',
 ]);
 
+// PDFs get their own category so the browser's native viewer can render them
+// via an <iframe> pointing at /api/files/read (streamed bytes, no JS heap).
+const PDF_EXTENSIONS = new Set(['.pdf']);
+
 const BINARY_EXTENSIONS = new Set([
-  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
   '.zip', '.tar', '.gz', '.rar', '.7z',
   '.exe', '.dll', '.so', '.dylib',
   '.mp3', '.mp4', '.avi', '.mov', '.mkv', '.wav', '.flac',
@@ -43,6 +50,7 @@ const MIME_TABLE: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.bmp': 'image/bmp',
   '.avif': 'image/avif',
+  '.pdf': 'application/pdf',
 };
 
 export function getMimeType(ext: string): string {
@@ -125,7 +133,7 @@ export function computeETag(size: number, mtimeMs: number): string {
 
 // -------- Category --------
 
-export type FileCategory = 'image' | 'text' | 'binary' | 'too-large';
+export type FileCategory = 'image' | 'pdf' | 'text' | 'binary' | 'too-large';
 
 /**
  * Classify a file by extension + size. Cheap: never reads bytes.
@@ -143,6 +151,9 @@ export function classify(filePathOrExt: string, size: number): FileCategory {
 
   if (IMAGE_EXTENSIONS.has(ext)) {
     return size > MAX_IMAGE_SIZE ? 'too-large' : 'image';
+  }
+  if (PDF_EXTENSIONS.has(ext)) {
+    return size > MAX_PDF_SIZE ? 'too-large' : 'pdf';
   }
   if (BINARY_EXTENSIONS.has(ext)) {
     return 'binary';

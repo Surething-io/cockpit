@@ -27,22 +27,55 @@ export function formatAsJson(content: string): string {
 // Human-readable formatting
 // ============================================
 
-export function formatAsHumanReadable(content: string): React.ReactNode {
+/** Token color set for the human-readable JSON renderer. */
+export interface JsonColors {
+  key: string;   // property key
+  str: string;   // string value
+  num: string;   // number
+  bool: string;  // boolean / null
+  punct: string; // punctuation
+  fold: string;  // fold toggle hint
+}
+
+/**
+ * Default palette — hardcoded github-dark hex. Used by the tool-call previews
+ * (which render on a fixed dark surface), so leaving this as the default keeps
+ * those views pixel-identical.
+ */
+export const DARK_JSON_COLORS: JsonColors = {
+  key: '#79c0ff',
+  str: '#a5d6ff',
+  num: '#79c0ff',
+  bool: '#ff7b72',
+  punct: '#8b949e',
+  fold: '#6e7681',
+};
+
+/**
+ * Theme-aware palette — Radix `*-11` accent tokens (accessible text on the app
+ * background) that flip automatically between light and dark via CSS variables.
+ * Used by the file-browser JSON preview so it follows the app theme.
+ */
+export const THEME_JSON_COLORS: JsonColors = {
+  key: 'hsl(var(--blue-11))',
+  str: 'hsl(var(--green-11))',
+  num: 'hsl(var(--violet-11))',
+  bool: 'hsl(var(--red-11))',
+  punct: 'hsl(var(--slate-11))',
+  fold: 'hsl(var(--slate-11))',
+};
+
+export function formatAsHumanReadable(
+  content: string,
+  colors: JsonColors = DARK_JSON_COLORS,
+): React.ReactNode {
   try {
     const parsed = JSON.parse(content);
-    return formatValueHumanReadable(parsed, 0);
+    return formatValueHumanReadable(parsed, 0, colors);
   } catch {
     return content;
   }
 }
-
-// github-dark JSON token colors
-const C_KEY = '#79c0ff';   // property key
-const C_STR = '#a5d6ff';   // string value
-const C_NUM = '#79c0ff';   // number
-const C_BOOL = '#ff7b72';  // boolean / null
-const C_PUNCT = '#8b949e'; // punctuation
-const C_FOLD = '#6e7681';  // fold toggle
 
 const s = (color: string, text: string | React.ReactNode) =>
   React.createElement('span', { style: { color } }, text);
@@ -57,8 +90,8 @@ function isMultilineValue(value: unknown): boolean {
 }
 
 /** Collapsible key: value entry, click long text itself to toggle collapse/expand */
-function CollapsibleEntry({ label, labelColor, value, indent }: {
-  label: string; labelColor: string; value: unknown; indent: number;
+function CollapsibleEntry({ label, labelColor, value, indent, colors }: {
+  label: string; labelColor: string; value: unknown; indent: number; colors: JsonColors;
 }) {
   const [collapsed, setCollapsed] = React.useState(false);
   const [downPos, setDownPos] = React.useState({ x: 0, y: 0 });
@@ -78,16 +111,16 @@ function CollapsibleEntry({ label, labelColor, value, indent }: {
     const lineCount = value.replace(/\\n/g, '\n').split('\n').length;
     return React.createElement('span', foldProps,
       s(labelColor, label),
-      s(C_PUNCT, ': '),
-      s(C_STR, firstLine),
-      s(C_FOLD, ` ${i18n.t('toolCall.foldedLines', { count: lineCount })}`)
+      s(colors.punct, ': '),
+      s(colors.str, firstLine),
+      s(colors.fold, ` ${i18n.t('toolCall.foldedLines', { count: lineCount })}`)
     );
   }
 
   const content = React.createElement(React.Fragment, null,
     s(labelColor, label),
-    s(C_PUNCT, ': '),
-    formatValueHumanReadable(value, indent)
+    s(colors.punct, ': '),
+    formatValueHumanReadable(value, indent, colors)
   );
 
   if (canFold) {
@@ -96,48 +129,48 @@ function CollapsibleEntry({ label, labelColor, value, indent }: {
   return content;
 }
 
-function formatValueHumanReadable(value: unknown, indent: number): React.ReactNode {
+function formatValueHumanReadable(value: unknown, indent: number, colors: JsonColors): React.ReactNode {
   const indentStr = '  '.repeat(indent);
 
-  if (value === null) return s(C_BOOL, 'null');
-  if (value === undefined) return s(C_BOOL, 'undefined');
+  if (value === null) return s(colors.bool, 'null');
+  if (value === undefined) return s(colors.bool, 'undefined');
 
   if (typeof value === 'string') {
     const text = value.replace(/\\n/g, '\n').replace(/\n/g, '\n' + indentStr);
-    return s(C_STR, text);
+    return s(colors.str, text);
   }
 
-  if (typeof value === 'number') return s(C_NUM, String(value));
-  if (typeof value === 'boolean') return s(C_BOOL, String(value));
+  if (typeof value === 'number') return s(colors.num, String(value));
+  if (typeof value === 'boolean') return s(colors.bool, String(value));
 
   if (Array.isArray(value)) {
-    if (value.length === 0) return s(C_PUNCT, '[]');
+    if (value.length === 0) return s(colors.punct, '[]');
     return React.createElement(React.Fragment, null,
-      s(C_PUNCT, '['), '\n',
+      s(colors.punct, '['), '\n',
       ...value.map((item, i) =>
         React.createElement('span', { key: i },
           indentStr + '  ',
-          React.createElement(CollapsibleEntry, { label: `[${i}]`, labelColor: C_KEY, value: item, indent: indent + 1 }),
-          i < value.length - 1 ? React.createElement(React.Fragment, null, s(C_PUNCT, ','), '\n') : '\n'
+          React.createElement(CollapsibleEntry, { label: `[${i}]`, labelColor: colors.key, value: item, indent: indent + 1, colors }),
+          i < value.length - 1 ? React.createElement(React.Fragment, null, s(colors.punct, ','), '\n') : '\n'
         )
       ),
-      indentStr, s(C_PUNCT, ']')
+      indentStr, s(colors.punct, ']')
     );
   }
 
   if (typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>);
-    if (entries.length === 0) return s(C_PUNCT, '{}');
+    if (entries.length === 0) return s(colors.punct, '{}');
     return React.createElement(React.Fragment, null,
-      s(C_PUNCT, '{'), '\n',
+      s(colors.punct, '{'), '\n',
       ...entries.map(([k, v], i) =>
         React.createElement('span', { key: k },
           indentStr + '  ',
-          React.createElement(CollapsibleEntry, { label: k, labelColor: C_KEY, value: v, indent: indent + 1 }),
-          i < entries.length - 1 ? React.createElement(React.Fragment, null, s(C_PUNCT, ','), '\n') : '\n'
+          React.createElement(CollapsibleEntry, { label: k, labelColor: colors.key, value: v, indent: indent + 1, colors }),
+          i < entries.length - 1 ? React.createElement(React.Fragment, null, s(colors.punct, ','), '\n') : '\n'
         )
       ),
-      indentStr, s(C_PUNCT, '}')
+      indentStr, s(colors.punct, '}')
     );
   }
 
@@ -189,6 +222,10 @@ export function isMarkdownFile(filePath: string): boolean {
 export function isHtmlFile(filePath: string): boolean {
   const lower = filePath.toLowerCase();
   return lower.endsWith('.html') || lower.endsWith('.htm');
+}
+
+export function isJsonFile(filePath: string): boolean {
+  return filePath.toLowerCase().endsWith('.json');
 }
 
 /**

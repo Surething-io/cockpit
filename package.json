@@ -74,14 +74,15 @@
     "kernels",
     "next.config.mjs",
     "scripts/copy-tree-sitter-wasms.mjs",
+    "scripts/copy-pdfjs-worker.mjs",
     "LICENSE",
     "README.md"
   ],
   "scripts": {
-    "predev": "node scripts/copy-tree-sitter-wasms.mjs",
+    "predev": "node scripts/copy-tree-sitter-wasms.mjs && node scripts/copy-pdfjs-worker.mjs",
     "dev": "COCKPIT_ENV=dev node --import tsx server.mjs",
     "prepublishOnly": "npm run build && npm run build:server && rm -rf .next-prod/cache",
-    "prebuild": "node scripts/copy-tree-sitter-wasms.mjs",
+    "prebuild": "node scripts/copy-tree-sitter-wasms.mjs && node scripts/copy-pdfjs-worker.mjs",
     "build": "next build --webpack",
     "build:server": "tsup --config tsup.server.ts",
     "setup": "npm run build && npm run build:server && npm link",
@@ -91,6 +92,7 @@
     "test:watch": "vitest",
     "generate-icons": "node scripts/generate-icons.js",
     "copy-wasms": "node scripts/copy-tree-sitter-wasms.mjs",
+    "copy-pdfjs-worker": "node scripts/copy-pdfjs-worker.mjs",
     "postinstall": "node bin/postinstall.mjs"
   },
   "dependencies": {
@@ -129,6 +131,7 @@
     "neo4j-driver": "^6.0.1",
     "next": "^16.2.6",
     "node-pty": "^1.1.0",
+    "pdfjs-dist": "^6.1.200",
     "pg": "^8.20.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",

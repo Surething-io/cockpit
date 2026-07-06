@@ -336,6 +336,15 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
             mtime: s.mtimeMs,
             ...(s.isSymlink ? { isSymlink: true, symlinkTarget: s.symlinkTarget } : {}),
           } as FileContent;
+        case 'pdf':
+          // PDF bytes are NEVER pulled into JS heap — the preview renders an
+          // <iframe> that streams /api/files/read via the browser's native viewer.
+          return {
+            type: 'pdf',
+            size: s.size,
+            mtime: s.mtimeMs,
+            ...(s.isSymlink ? { isSymlink: true, symlinkTarget: s.symlinkTarget } : {}),
+          } as FileContent;
         case 'binary':
           return {
             type: 'binary',

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 import { homedir } from 'os';
 import { copyTreeSitterWasms } from '../scripts/copy-tree-sitter-wasms.mjs';
+import { copyPdfjsWorker } from '../scripts/copy-pdfjs-worker.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, '..');
@@ -18,6 +19,13 @@ try {
   copyTreeSitterWasms(projectRoot);
 } catch (err) {
   console.warn('[postinstall] tree-sitter WASM copy failed:', err?.message ?? err);
+}
+
+// pdf.js worker → public/pdfjs/. Same graceful contract as above.
+try {
+  copyPdfjsWorker(projectRoot);
+} catch (err) {
+  console.warn('[postinstall] pdf.js worker copy failed:', err?.message ?? err);
 }
 
 if (process.platform !== 'win32') {

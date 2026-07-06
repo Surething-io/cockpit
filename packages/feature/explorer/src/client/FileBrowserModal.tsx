@@ -26,7 +26,7 @@ import { FileTree, type GitStatusMap, type GitStatusCode } from './FileTree';
 import { GitFileTree, buildGitFileTree, collectFilesUnderNode } from './GitFileTree';
 import { MenuContainerProvider } from '@cockpit/shared-ui';
 import { CodeViewer } from '@cockpit/feature-explorer';
-import { isMarkdownFile, isHtmlFile, formatAsHumanReadable } from './toolCallUtils';
+import { isMarkdownFile, isHtmlFile, isJsonFile, formatAsHumanReadable, THEME_JSON_COLORS } from './toolCallUtils';
 import { buildTreeFromPaths, collectAllDirPaths, mergeFileTree } from './fileBrowser/utils';
 import { InteractiveMarkdownPreview } from '@cockpit/feature-explorer';
 import { HtmlPreview } from './HtmlPreview';
@@ -45,6 +45,7 @@ import { getTargetDirPath, formatDateTime, NOOP, COMMITS_PER_PAGE } from './file
 
 import { BranchSelector } from './fileBrowser/BranchSelector';
 import { FileImagePreview } from './fileBrowser/FileImagePreview';
+import { FilePdfPreview } from './fileBrowser/FilePdfPreview';
 
 import { useFileTree } from './hooks/useFileTree';
 import { useContentSearch } from './hooks/useContentSearch';
@@ -89,7 +90,6 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
   const editorHandleRef = useRef<FileEditorHandle>(null);
   const [editorState, setEditorState] = useState({ isDirty: false, isSaving: false });
   const [showSearchPanel, setShowSearchPanel] = useState(false);
-  const [jsonReadable, setJsonReadable] = useState(false);
   const [jsonPreview, setJsonPreview] = useState<{ content: string; filePath: string } | null>(null);
   const jsonPreRef = useRef<HTMLPreElement>(null);
   const jsonSearch = useJsonSearch(jsonPreRef);
@@ -530,7 +530,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
           jsonPreviewSearch.open();
           return;
         }
-        if (jsonReadable && fileTree.selectedPath?.endsWith('.json')) {
+        if (fileTree.previewMarkdown && fileTree.selectedPath && isJsonFile(fileTree.selectedPath)) {
           e.preventDefault();
           jsonSearch.open();
           return;
@@ -581,7 +581,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, fileTree.showBlame, fileTree.blameSelectedCommit, fileTree, showQuickOpen, lspReferences.visible, lspReferences.closeReferences, showSearchPanel, handleNavBack, handleNavForward, jsonReadable, jsonSearch, jsonPreview, jsonPreviewSearch, activeTab, handleCopyFile, handlePaste, activeView, onViewChange]);
+  }, [onClose, fileTree.showBlame, fileTree.blameSelectedCommit, fileTree, showQuickOpen, lspReferences.visible, lspReferences.closeReferences, showSearchPanel, handleNavBack, handleNavForward, jsonSearch, jsonPreview, jsonPreviewSearch, activeTab, handleCopyFile, handlePaste, activeView, onViewChange]);
 
   // ========== Initial Data Load (once on mount) ==========
   useEffect(() => {
@@ -1621,25 +1621,13 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               }
                             />
                           )}
-                          {fileTree.selectedPath?.endsWith('.json') && fileTree.fileContent?.type === 'text' && (
-                            <button
-                              onClick={() => setJsonReadable(v => !v)}
-                              className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
-                                jsonReadable
-                                  ? 'bg-brand text-white'
-                                  : 'text-muted-foreground hover:bg-accent'
-                              }`}
-                              title={t('fileBrowser.toggleJsonReadable')}
-                            >
-                              {t('common.readable')}
-                            </button>
-                          )}
-                          {fileTree.fileContent?.type === 'text' && (isMarkdownFile(fileTree.selectedPath) || isHtmlFile(fileTree.selectedPath)) && (
+                          {fileTree.fileContent?.type === 'text' && (isMarkdownFile(fileTree.selectedPath) || isHtmlFile(fileTree.selectedPath) || isJsonFile(fileTree.selectedPath)) && (
                             <>
                               {/* Global preview toggle: ON → main editor area renders the
-                                  markdown / html in-place (replacing CodeViewer); state
-                                  persists across file switches. Shared flag (a file is never
-                                  both md and html, so reusing previewMarkdown is safe). */}
+                                  markdown / html / json preview in-place (replacing
+                                  CodeViewer); state persists across file switches. Shared
+                                  flag (a file is never more than one of md/html/json, so
+                                  reusing previewMarkdown is safe). */}
                               <button
                                 onClick={() => fileTree.setPreviewMarkdown(v => !v)}
                                 className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
@@ -1653,7 +1641,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               </button>
                             </>
                           )}
-                          {fileTree.fileContent?.type === 'text' && !(fileTree.previewMarkdown && (isMarkdownFile(fileTree.selectedPath) || isHtmlFile(fileTree.selectedPath))) && (
+                          {fileTree.fileContent?.type === 'text' && !(fileTree.previewMarkdown && (isMarkdownFile(fileTree.selectedPath) || isHtmlFile(fileTree.selectedPath) || isJsonFile(fileTree.selectedPath))) && (
                             <button
                               onClick={fileTree.handleToggleBlame}
                               disabled={fileTree.isLoadingBlame}
@@ -1673,7 +1661,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           )}
                           {/* Edit — semi-stable (hidden only in md-preview submode), so it sits
                               left of the always-present Copy / Code Map right-edge anchors. */}
-                          {fileTree.fileContent?.type === 'text' && !(fileTree.previewMarkdown && (isMarkdownFile(fileTree.selectedPath) || isHtmlFile(fileTree.selectedPath))) && (
+                          {fileTree.fileContent?.type === 'text' && !(fileTree.previewMarkdown && (isMarkdownFile(fileTree.selectedPath) || isHtmlFile(fileTree.selectedPath) || isJsonFile(fileTree.selectedPath))) && (
                             <button
                               onClick={() => fileTree.setShowEditor(true)}
                               className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
@@ -1704,7 +1692,7 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                               physically gone when Code Map mode is on.
                               Hidden for markdown — code-structure map is
                               meaningless for prose. */}
-                          {fileTree.fileContent?.type === 'text' && !isMarkdownFile(fileTree.selectedPath) && !isHtmlFile(fileTree.selectedPath) && (
+                          {fileTree.fileContent?.type === 'text' && !isMarkdownFile(fileTree.selectedPath) && !isHtmlFile(fileTree.selectedPath) && !isJsonFile(fileTree.selectedPath) && (
                             <button
                               onClick={() => setEditorMode('map')}
                               className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
@@ -1740,12 +1728,15 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           <div className="h-full flex items-center justify-center">
                             <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                           </div>
-                        ) : jsonReadable && fileTree.selectedPath?.endsWith('.json') ? (
-                          <div className="h-full flex flex-col bg-[#0d1117]">
+                        ) : (fileTree.previewMarkdown && isJsonFile(fileTree.selectedPath) && !fileTree.showBlame) ? (
+                          // In-place JSON preview — same toggle UX as markdown/html.
+                          // Reuses the tool-list human-readable renderer, but with the
+                          // theme-aware palette so it follows light/dark (bg + tokens).
+                          <div className="h-full flex flex-col bg-background text-foreground">
                             <JsonSearchBar search={jsonSearch} />
                             <div className="flex-1 overflow-auto px-6 py-4">
                               <pre ref={jsonPreRef} className="whitespace-pre-wrap break-words font-mono" style={{ fontSize: '0.8125rem', lineHeight: '1.5' }}>
-                                {formatAsHumanReadable(fileTree.fileContent.content)}
+                                {formatAsHumanReadable(fileTree.fileContent.content, THEME_JSON_COLORS)}
                               </pre>
                             </div>
                           </div>
@@ -1829,6 +1820,16 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                           path={fileTree.selectedPath}
                           refreshKey={fileTree.fileContent.mtime}
                           alt={fileTree.selectedPath}
+                        />
+                      ) : fileTree.fileContent.type === 'pdf' && fileTree.selectedPath ? (
+                        // Themed, virtualized PDF preview (pdf.js). Follows the app
+                        // theme and only renders visible pages for smooth scrolling.
+                        // Bytes stream from /api/files/read; `refreshKey` (mtime)
+                        // reloads on file change and busts the byte cache.
+                        <FilePdfPreview
+                          cwd={cwd}
+                          path={fileTree.selectedPath}
+                          refreshKey={fileTree.fileContent.mtime}
                         />
                       ) : (
                         <div className="h-full flex items-center justify-center text-muted-foreground">

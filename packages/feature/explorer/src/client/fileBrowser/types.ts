@@ -8,7 +8,7 @@ export interface FileNode {
 }
 
 export interface FileContent {
-  type: 'text' | 'image' | 'binary' | 'error';
+  type: 'text' | 'image' | 'pdf' | 'binary' | 'error';
   content?: string;
   message?: string;
   size?: number;

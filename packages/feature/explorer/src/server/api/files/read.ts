@@ -76,10 +76,10 @@ export const GET = handler((req) =>
         413
       )
     }
-    if (category !== "image") {
+    if (category !== "image" && category !== "pdf") {
       return jsonResp(
         {
-          error: `This endpoint streams images only (category: ${category}). Use /api/files/text for text.`,
+          error: `This endpoint streams images/PDFs only (category: ${category}). Use /api/files/text for text.`,
           category,
         },
         409

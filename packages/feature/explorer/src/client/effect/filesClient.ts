@@ -204,7 +204,7 @@ export const loadBlame = <TBlameLine>(
 export interface StatLike {
   exists?: boolean
   kind?: "file" | "dir"
-  category?: "image" | "binary" | "too-large" | "text"
+  category?: "image" | "pdf" | "binary" | "too-large" | "text"
   size?: number
   mtimeMs?: number
   isSymlink?: boolean

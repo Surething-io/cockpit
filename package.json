@@ -75,6 +75,7 @@
     "next.config.mjs",
     "scripts/copy-tree-sitter-wasms.mjs",
     "scripts/copy-pdfjs-worker.mjs",
+    "scripts/claudeBinary.mjs",
     "LICENSE",
     "README.md"
   ],

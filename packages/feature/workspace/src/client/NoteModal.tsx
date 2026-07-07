@@ -209,8 +209,12 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
   });
 
   // Store editor ref for use inside handleKeyDown closure
-  const editorRef = useRef(editor);
+  const editorRef = useRef<typeof editor>(null);
   useEffect(() => {
+    // editorRef is captured by the handleKeyDown closure passed to
+    // useEditor(...) above; the editor instance doesn't exist yet at that
+    // point, so back-filling the ref here is the standard tiptap pattern.
+    // eslint-disable-next-line react-hooks/immutability
     editorRef.current = editor;
   }, [editor]);
 

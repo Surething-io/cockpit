@@ -17,6 +17,8 @@ const eslintConfig = defineConfig([
     // Plain JS — not part of Next.js/TS source
     "chrome-extension/**",
     "scripts/**",
+    // Vendored minified pdf.js assets
+    "public/pdfjs/**",
     // Standalone marketing site with its own toolchain
     "website/**",
   ]),

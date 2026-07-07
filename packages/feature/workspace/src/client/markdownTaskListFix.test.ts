@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupListItems } from './markdownTaskListFix';
+import { groupListItems, isDoingText, stripDoingPrefix } from './markdownTaskListFix';
 
 const kinds = (items: { isTask: boolean }[]) =>
   items.map((i) => (i.isTask ? 'T' : 'B'));
@@ -65,5 +65,23 @@ describe('groupListItems', () => {
     ];
     const flattened = groupListItems(items).flatMap((g) => g.items);
     expect(kinds(flattened)).toEqual(kinds(items));
+  });
+});
+
+describe('doing marker detection', () => {
+  it('recognizes the [/] prefix (with optional leading/trailing space)', () => {
+    expect(isDoingText('[/] 进行中')).toBe(true);
+    expect(isDoingText('  [/] x')).toBe(true);
+    expect(isDoingText('[/]')).toBe(true);
+    expect(isDoingText('[ ] todo')).toBe(false);
+    expect(isDoingText('[x] done')).toBe(false);
+    expect(isDoingText('normal text')).toBe(false);
+  });
+
+  it('strips the [/] prefix and exactly one following space', () => {
+    expect(stripDoingPrefix('[/] 进行中')).toBe('进行中');
+    expect(stripDoingPrefix('[/]写代码')).toBe('写代码');
+    expect(stripDoingPrefix('[/]  double')).toBe(' double');
+    expect(stripDoingPrefix('[/]')).toBe('');
   });
 });

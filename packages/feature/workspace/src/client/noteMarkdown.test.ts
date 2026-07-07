@@ -16,8 +16,14 @@ describe('normalizeNoteMarkdown', () => {
     expect(normalizeNoteMarkdown(input)).toBe('');
   });
 
+  it('removes empty doing ([/]) checkbox lines', () => {
+    expect(normalizeNoteMarkdown('- [/]')).toBe('');
+    expect(normalizeNoteMarkdown('- [/] ')).toBe('');
+    expect(normalizeNoteMarkdown('  * \\[/\\]')).toBe('');
+  });
+
   it('keeps checkboxes that have real content', () => {
-    const input = ['- [ ] 有内容', '- [x] done'].join('\n');
+    const input = ['- [ ] 有内容', '- [/] 进行中', '- [x] done'].join('\n');
     expect(normalizeNoteMarkdown(input)).toBe(input);
   });
 

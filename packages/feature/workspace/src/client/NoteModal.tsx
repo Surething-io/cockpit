@@ -11,7 +11,7 @@ import { TableRow } from '@tiptap/extension-table-row';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TaskList } from '@tiptap/extension-task-list';
-import { TaskItem } from '@tiptap/extension-task-item';
+import { TaskItemTriState } from './taskItemTriState';
 import Link from '@tiptap/extension-link';
 import { Markdown } from 'tiptap-markdown';
 import { CollapsibleHeading } from './CollapsibleHeading';
@@ -123,7 +123,7 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
           rel: 'noopener noreferrer',
         },
       }),
-      TaskItem.configure({ nested: true }),
+      TaskItemTriState.configure({ nested: true }),
       // Split markdown-it's merged plain-bullet + task-list <ul> before it
       // reaches the schema, so no phantom empty checkbox is generated on load.
       MarkdownTaskListFix,

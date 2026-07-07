@@ -62,6 +62,57 @@ function isTaskItem(li: Element): boolean {
   return li.classList.contains('task-list-item');
 }
 
+// ---- "doing" ([/]) promotion (parse-side) -------------------------------
+//
+// markdown-it-task-lists only recognizes `[ ]` / `[x]`; the tri-state `[/]`
+// marker degrades to a plain <li> whose literal text starts with "[/]". We
+// promote those items to real task items carrying `data-status="doing"`
+// BEFORE splitMixedTaskLists runs, so they group with the other task items
+// instead of being demoted back to a bullet list.
+
+const DOING_PREFIX = /^\s*\[\/\]\s?/;
+
+/** Whether a list item's text starts with the doing marker `[/]`. */
+export function isDoingText(text: string): boolean {
+  return /^\s*\[\/\]/.test(text);
+}
+
+/** Strip the leading `[/]` marker (and one trailing space) from item text. */
+export function stripDoingPrefix(text: string): string {
+  return text.replace(DOING_PREFIX, '');
+}
+
+/** Remove the leading `[/]` marker from the item's first non-blank text node. */
+function stripLeadingDoingMarker(li: Element): void {
+  const walker = li.ownerDocument.createTreeWalker(li, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node && !(node.nodeValue && node.nodeValue.trim() !== '')) {
+    node = walker.nextNode();
+  }
+  if (node && node.nodeValue) node.nodeValue = stripDoingPrefix(node.nodeValue);
+}
+
+/**
+ * Promote plain `<li>` items whose text starts with `[/]` into task items
+ * marked `data-status="doing"`, and tag their parent `<ul>` as a task list so
+ * splitMixedTaskLists picks it up.
+ */
+export function promoteDoingItems(root: Element): void {
+  const items = Array.from(root.querySelectorAll('li'));
+  for (const li of items) {
+    if (isTaskItem(li)) continue; // already a real task item
+    const ul = li.parentElement;
+    if (!ul || ul.tagName !== 'UL') continue;
+    if (!isDoingText(li.textContent || '')) continue;
+
+    stripLeadingDoingMarker(li);
+    li.classList.add('task-list-item');
+    li.setAttribute('data-type', 'taskItem');
+    li.setAttribute('data-status', 'doing');
+    ul.classList.add('contains-task-list');
+  }
+}
+
 /**
  * DOM adapter: find every `.contains-task-list` <ul> and, if it mixes task and
  * plain items, replace it with a sequence of pure <ul>s (task runs keep the
@@ -112,6 +163,9 @@ export const MarkdownTaskListFix = Extension.create({
       markdown: {
         parse: {
           updateDOM(element: HTMLElement) {
+            // Promote [/] doing items first so they are classified as tasks,
+            // then split any list that mixes tasks and plain bullets.
+            promoteDoingItems(element);
             splitMixedTaskLists(element);
           },
         },

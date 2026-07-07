@@ -671,24 +671,61 @@ code[class*="language-"] .token {
   margin-bottom: 0.25rem;
 }
 
-.tiptap-editor ul[data-type='taskList'] li > label {
+.tiptap-editor ul[data-type='taskList'] li > label.task-marker {
   flex-shrink: 0;
   margin-top: 0.2rem;
   cursor: pointer;
+  user-select: none;
 }
 
-.tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox'] {
+/* Self-drawn tri-state marker (todo / doing / done). Colors come from the
+   Radix CSS variables in :root / .dark, so both themes work with no dark:
+   overrides. doing uses --orange-9 (the design system's "运行状态" color, the
+   same one ProjectItem/TabBar use for an active session); done uses the brand
+   teal. Both are step-9 colors that pair with white glyphs per Radix. */
+.tiptap-editor ul[data-type='taskList'] li > label.task-marker .task-marker-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Align by the box's top edge, not its baseline: an empty box (todo) and a
+     box with a ::after glyph (doing/done) have different baselines, which would
+     otherwise make the markers sit at different heights. */
+  vertical-align: top;
+  box-sizing: border-box;
   width: 1rem;
   height: 1rem;
-  accent-color: hsl(var(--brand));
-  cursor: pointer;
+  border-radius: 3px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.tiptap-editor ul[data-type='taskList'] li[data-status='todo'] .task-marker-box {
+  border: 1.5px solid hsl(var(--slate-8));
+}
+
+.tiptap-editor ul[data-type='taskList'] li[data-status='doing'] .task-marker-box {
+  background: hsl(var(--orange-9));
+  color: #fff;
+}
+.tiptap-editor ul[data-type='taskList'] li[data-status='doing'] .task-marker-box::after {
+  content: '–';
+}
+
+.tiptap-editor ul[data-type='taskList'] li[data-status='done'] .task-marker-box {
+  background: hsl(var(--brand));
+  color: #fff;
+}
+.tiptap-editor ul[data-type='taskList'] li[data-status='done'] .task-marker-box::after {
+  content: '✓';
 }
 
 .tiptap-editor ul[data-type='taskList'] li > div {
   flex: 1;
 }
 
-.tiptap-editor ul[data-type='taskList'] li[data-checked='true'] > div {
+.tiptap-editor ul[data-type='taskList'] li[data-status='done'] > div {
   text-decoration: line-through;
   color: hsl(var(--muted-foreground));
 }

@@ -25,10 +25,12 @@
 /**
  * A whole-line list item that is *only* an empty checkbox, with optional
  * leading indentation and optional backslash-escaping of the brackets.
- * Matches: "- [ ]", "  * \[ \]", "+ [x]", "- \[X\]", etc. (nothing after the box)
+ * Matches: "- [ ]", "  * \[ \]", "+ [x]", "- \[X\]", "- [/]", etc.
+ * (nothing after the box). The `/` covers the tri-state "doing" marker so an
+ * empty doing item is stripped just like an empty [ ] / [x] one.
  */
 const EMPTY_CHECKBOX_LINE =
-  /^\s*[-*+]\s+(?:\\?\[ \\?\]|\\?\[[xX]\\?\])\s*$/;
+  /^\s*[-*+]\s+(?:\\?\[ \\?\]|\\?\[[xX/]\\?\])\s*$/;
 
 const FENCE = /^\s*(```|~~~)/;
 

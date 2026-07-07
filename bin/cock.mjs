@@ -3,6 +3,7 @@
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { spawnSync } from 'child_process';
+import { hasClaudeBinary } from '../scripts/claudeBinary.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..');
@@ -124,11 +125,27 @@ if (process.argv[2] === 'connection') {
 
 if (process.argv[2] === 'update') {
   console.log('Updating @surething/cockpit...');
-  const result = spawnSync('npm', ['install', '-g', '@surething/cockpit@latest'], { stdio: 'inherit' });
+  const installArgs = ['install', '-g', '@surething/cockpit@latest', '--include=optional'];
+  let result = spawnSync('npm', installArgs, { stdio: 'inherit' });
+
+  // An in-place `npm i -g` can drop the SDK's platform-specific native binary
+  // (an optional dependency) when the SDK version bumps — see
+  // scripts/claudeBinary.mjs. A clean uninstall + reinstall reliably refetches
+  // it. Guard here so `cockpit update` never leaves chat silently broken.
+  if (result.status === 0 && !hasClaudeBinary()) {
+    console.log('Native Claude binary missing after update — reinstalling to repair...');
+    spawnSync('npm', ['uninstall', '-g', '@surething/cockpit'], { stdio: 'inherit' });
+    result = spawnSync('npm', installArgs, { stdio: 'inherit' });
+  }
+
   if (result.status === 0) {
     const { readFileSync } = await import('fs');
     const pkg = JSON.parse(readFileSync(resolve(PROJECT_ROOT, 'package.json'), 'utf8'));
     console.log(`\nUpdated to v${pkg.version}`);
+    if (!hasClaudeBinary()) {
+      console.error('\nWarning: the native Claude CLI binary is still missing; chat will not work.');
+      console.error('Fix manually: npm uninstall -g @surething/cockpit && npm install -g @surething/cockpit');
+    }
   }
   process.exit(result.status ?? 1);
 }
@@ -192,6 +209,14 @@ if (!isDev && !existsSync(resolve(PROJECT_ROOT, '.next-prod', 'BUILD_ID'))) {
   console.error('No production build found.\n');
   console.error('Run: npm run build');
   process.exit(1);
+}
+
+// Warn (don't block) if the SDK's native binary is missing — every panel but
+// the Claude chat still works, but chat would otherwise fail with a cryptic
+// runtime error only once the user sends a message. See scripts/claudeBinary.mjs.
+if (!hasClaudeBinary()) {
+  console.error('Warning: the native Claude CLI binary is missing; chat may not work.');
+  console.error('Fix: npm uninstall -g @surething/cockpit && npm install -g @surething/cockpit\n');
 }
 
 // Hand the project directory to server.mjs so it opens the right URL

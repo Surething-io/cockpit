@@ -862,7 +862,10 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                   />
                   {fileTree.searchQuery && (
                     <button
-                      onClick={() => fileTree.setSearchQuery('')}
+                      onClick={() => {
+                        fileTree.setSearchQuery('');
+                        fileTree.searchInputRef.current?.focus();
+                      }}
                       className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-9 hover:text-foreground rounded-sm transition-colors"
                       title={t('fileBrowser.clear')}
                     >
@@ -929,7 +932,10 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     />
                     {contentSearch.contentSearchQuery && (
                       <button
-                        onClick={() => contentSearch.setContentSearchQuery('')}
+                        onClick={() => {
+                          contentSearch.setContentSearchQuery('');
+                          contentSearch.contentSearchInputRef.current?.focus();
+                        }}
                         className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-9 hover:text-foreground rounded-sm transition-colors"
                         title={t('fileBrowser.clear')}
                       >

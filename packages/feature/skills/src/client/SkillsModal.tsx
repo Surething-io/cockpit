@@ -46,10 +46,12 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
 
   useEffect(() => {
     if (isOpen) {
-      // Clear the previous search keyword on each open, then focus the input
-      setQuery('');
       reload();
-      setTimeout(() => searchInputRef.current?.focus(), 100);
+      // Focus and select the retained keyword so typing replaces it
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }, 100);
     }
   }, [isOpen, reload]);
 
@@ -138,14 +140,30 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
           <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
             <h2 className="text-sm font-medium text-foreground">Skills</h2>
             <div className="flex items-center gap-3">
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search skills..."
-                className="px-2 py-1 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-              />
+              <div className="relative">
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search skills..."
+                  className="px-2 py-1 pr-6 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                />
+                {query && (
+                  <button
+                    onClick={() => {
+                      setQuery('');
+                      searchInputRef.current?.focus();
+                    }}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-slate-9 hover:text-foreground rounded-sm transition-colors"
+                    title="Clear"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
               <button
                 onClick={() => setShowAdd(true)}
                 className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"

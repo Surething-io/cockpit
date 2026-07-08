@@ -53,12 +53,11 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
 
   useEffect(() => {
     if (isOpen) {
-      // Clear the previous search keyword on each open
-      setSearchKeyword('');
       loadSessions();
-      // Auto-focus the search input
+      // Focus and select the retained keyword so typing replaces it
       setTimeout(() => {
         searchInputRef.current?.focus();
+        searchInputRef.current?.select();
       }, 100);
     }
   }, [isOpen, loadSessions]);
@@ -139,14 +138,30 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
             </p>
           </div>
           <div className="flex items-center gap-3 ml-4">
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder={t('sessions.searchSessions')}
-              value={searchKeyword}
-              onChange={(e) => setSearchKeyword(e.target.value)}
-              className="px-2 py-1 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-            />
+            <div className="relative">
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder={t('sessions.searchSessions')}
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                className="px-2 py-1 pr-6 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+              />
+              {searchKeyword && (
+                <button
+                  onClick={() => {
+                    setSearchKeyword('');
+                    searchInputRef.current?.focus();
+                  }}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-slate-9 hover:text-foreground rounded-sm transition-colors"
+                  title={t('fileBrowser.clear')}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
             <button
               onClick={onClose}
               className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"

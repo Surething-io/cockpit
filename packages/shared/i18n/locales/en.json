@@ -955,6 +955,8 @@
     "selectFileToView": "Select a file to view changes",
     "sideBySide": "Side by side",
     "unified": "Unified",
+    "viewSplit": "Split",
+    "viewUnified": "Unified",
     "previewFile": "Preview file",
     "copiedAll": "Full text copied",
     "compact": "Compact",

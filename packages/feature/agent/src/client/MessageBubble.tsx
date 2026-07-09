@@ -5,7 +5,8 @@ import { Portal, toast } from '@cockpit/shared-ui';
 import { FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2 } from 'lucide-react';
 import { ToolCallModal } from './ToolCallModal';
 import { AskQuestionViewerModal } from './AskQuestionViewerModal';
-import { DiffViewerModal } from './DiffViewerModal';
+import { DiffViewerModal, resolveDiffCalls } from './DiffViewerModal';
+import { loadSnapshotsByToolIds } from './effect/snapshotClient';
 import type { ChatMessage, MessageImage } from './types';
 import { isMutatingToolName } from '../shared/toolMutation';
 // Tech debt: cross-package imports into the main shell.
@@ -170,6 +171,58 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   const hasFileChanges = useMemo(() => {
     return message.toolCalls?.some(tc => isMutatingToolName(tc.name)) || false;
   }, [message.toolCalls]);
+
+  // Whether the FileDiff icon should show at all. We resolve emptiness at
+  // RENDER time (not on click) so a message with zero real changes never shows
+  // a dead button. Two cheap signals, no per-file diff fetch:
+  //   1. Edit/Write can be reconstructed straight from tool params (0 requests)
+  //      — resolveDiffCalls([], …) degenerates to that fallback.
+  //   2. Otherwise the shadow-git commit LIST answers it: the snapshot hook
+  //      skips zero-change commits, so any commit for these tool ids ⇒ real
+  //      changes. The list endpoint returns metadata only (no diff bodies).
+  const paramsHaveChanges = useMemo(
+    () => resolveDiffCalls([], message.toolCalls ?? [], cwd).length > 0,
+    [message.toolCalls, cwd],
+  );
+  const [snapshotHasChanges, setSnapshotHasChanges] = useState(false);
+  const showFileDiff = paramsHaveChanges || snapshotHasChanges;
+
+  useEffect(() => {
+    // Params already prove non-empty, or nothing mutating / no cwd to query.
+    if (!hasFileChanges || paramsHaveChanges || !cwd) return;
+    const toolIds = (message.toolCalls ?? []).map(tc => tc.id).filter(Boolean);
+    if (toolIds.length === 0) return;
+    // Edit/Write family declare their target files; if such a writer has no
+    // commit yet the snapshot just hasn't landed (writes are fire-and-forget),
+    // so retry a couple times before settling on "no changes".
+    const declaredWriteIds = (message.toolCalls ?? [])
+      .filter(tc => ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(tc.name))
+      .map(tc => tc.id);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    const check = () => {
+      BrowserRuntime.runPromiseExit(loadSnapshotsByToolIds(cwd, toolIds)).then((exit) => {
+        if (cancelled) return;
+        const commits = exit._tag === 'Success' ? exit.value : [];
+        if (commits.length > 0) {
+          setSnapshotHasChanges(true);
+          return;
+        }
+        const landed = new Set(commits.map(c => c.toolId));
+        const pending = declaredWriteIds.some(id => !landed.has(id));
+        if (pending && attempt < 2) {
+          attempt += 1;
+          timer = setTimeout(check, 2000);
+        }
+      });
+    };
+    check();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [hasFileChanges, paramsHaveChanges, cwd, message.toolCalls]);
 
   // Last TodoWrite call
   const lastTodoWrite = useMemo(() => {
@@ -604,7 +657,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                         <MessageCircleQuestion className="w-4 h-4" />
                       </button>
                     )}
-                    {hasFileChanges && (
+                    {showFileDiff && (
                       <button
                         onClick={() => setShowDiffViewer(true)}
                         className="px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border-l border-border"

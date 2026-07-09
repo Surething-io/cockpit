@@ -950,11 +950,13 @@
     "noAliases": "还没有命令别名，添加一个试试"
   },
   "diffViewer": {
-    "fileChanges": "文件变更 ({{count}} 处)",
+    "fileChanges": "文件变更 ({{count}})",
     "toggleFileTree": "切换文件目录",
     "selectFileToView": "选择左侧文件查看变更",
     "sideBySide": "并列对比",
     "unified": "统一对比",
+    "viewSplit": "双栏",
+    "viewUnified": "单栏",
     "previewFile": "预览文件",
     "copiedAll": "已复制全文",
     "compact": "精简",

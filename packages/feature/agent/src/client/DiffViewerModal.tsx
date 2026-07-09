@@ -11,10 +11,15 @@ import { X, PanelLeft, Wrench } from 'lucide-react';
 // reverse import (agent → explorer is a declared supporting subdomain).
 import {
   DiffView,
+  DiffUnifiedView,
   DiffDensityToggle,
+  DiffViewModeToggle,
   GitFileTree,
   buildGitFileTree,
   collectGitTreeDirPaths,
+  InteractiveMarkdownPreview,
+  isMarkdownFile,
+  formatAsHumanReadable,
   type GitFileNode,
 } from '@cockpit/feature-explorer';
 import { loadSnapshotDiffsForToolIds, type SnapshotDiffDto } from './effect/snapshotClient';
@@ -83,7 +88,11 @@ function callsFromSnapshots(diffs: SnapshotDiffDto[]): CallEntry[] {
   return diffs.map((d) => {
     const declared = new Set(d.commit.toolFiles);
     return {
-      key: d.commit.hash,
+      // Key by tool_use id, not the commit hash: it's stable across refetches
+      // AND identical to the legacy fallback's key, so a snapshot⇄legacy flip
+      // never invalidates the user's selection. (listByToolIds only returns
+      // commits that HAVE a toolId; hash is a defensive fallback.)
+      key: d.commit.toolId ?? d.commit.hash,
       shortHash: d.commit.hash.slice(0, 7),
       toolName: d.commit.toolName ?? 'tool',
       subject: d.commit.subject,
@@ -124,7 +133,7 @@ function callsFromToolParams(toolCalls: ToolCallInfo[], cwd?: string): CallEntry
       if (input.file_path && typeof input.old_string === 'string' && typeof input.new_string === 'string') {
         const path = toRelativePath(input.file_path, cwd);
         calls.push({
-          key: `local-${tc.id}-${calls.length}`,
+          key: tc.id,
           toolName: 'Edit',
           subject: `[Edit] ${path}`,
           legacy: true,
@@ -137,7 +146,7 @@ function callsFromToolParams(toolCalls: ToolCallInfo[], cwd?: string): CallEntry
       if (input.file_path && typeof input.content === 'string') {
         const path = toRelativePath(input.file_path, cwd);
         calls.push({
-          key: `local-${tc.id}-${calls.length}`,
+          key: tc.id,
           toolName: 'Write',
           subject: `[Write] ${path}`,
           legacy: true,
@@ -148,6 +157,48 @@ function callsFromToolParams(toolCalls: ToolCallInfo[], cwd?: string): CallEntry
     }
   }
   return calls;
+}
+
+/**
+ * Resolve the entries a message would actually display: prefer the real
+ * shadow-git snapshots, fall back to Edit/Write parameter reconstruction.
+ * Shared with MessageBubble's render-time emptiness check (called with empty
+ * diffs) so the FileDiff icon and the modal agree on what counts as empty.
+ */
+export function resolveDiffCalls(
+  diffs: SnapshotDiffDto[],
+  toolCalls: ToolCallInfo[],
+  cwd?: string,
+): CallEntry[] {
+  const fromSnapshots = callsFromSnapshots(diffs);
+  return fromSnapshots.length > 0 ? fromSnapshots : callsFromToolParams(toolCalls, cwd);
+}
+
+/**
+ * Sum additions/deletions across a call's files. Returns null when NO file
+ * carries line stats — i.e. legacy parameter-reconstructed calls, where we
+ * show the file count only rather than a misleading +0 -0.
+ */
+function callLineStats(call: CallEntry): { additions: number; deletions: number } | null {
+  let hasStats = false;
+  let additions = 0;
+  let deletions = 0;
+  for (const f of call.files) {
+    if (f.additions !== undefined || f.deletions !== undefined) hasStats = true;
+    additions += f.additions ?? 0;
+    deletions += f.deletions ?? 0;
+  }
+  return hasStats ? { additions, deletions } : null;
+}
+
+/** Compact "+X -Y" line-stat badge (green adds / red dels). */
+function LineStatsBadge({ additions, deletions }: { additions: number; deletions: number }) {
+  return (
+    <span className="flex items-center gap-1 font-mono">
+      <span className="text-green-11">+{additions}</span>
+      <span className="text-red-11">-{deletions}</span>
+    </span>
+  );
 }
 
 /** Subdued chip marking a non-critical (test-only / docs-only) change. */
@@ -221,17 +272,15 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
   const loading = snapshotsQ.status === 'loading' && lastGoodRef.current.length === 0;
   const calls = useMemo<CallEntry[]>(() => {
     if (snapshotsQ.status === 'success') {
-      const fromSnapshots = callsFromSnapshots(snapshotsQ.data);
-      if (fromSnapshots.length > 0) {
-        lastGoodRef.current = fromSnapshots;
-        return fromSnapshots;
-      }
+      const resolved = resolveDiffCalls(snapshotsQ.data, toolCalls, cwd);
+      if (resolved.length > 0) lastGoodRef.current = resolved;
+      return resolved;
     }
     if (snapshotsQ.status === 'loading' && lastGoodRef.current.length > 0) {
       return lastGoodRef.current;
     }
     if (snapshotsQ.status === 'loading') return [];
-    // No snapshots (or query failed) → legacy parameter-based reconstruction.
+    // Query failed → legacy parameter-based reconstruction.
     return callsFromToolParams(toolCalls, cwd);
   }, [snapshotsQ, toolCalls, cwd]);
 
@@ -245,18 +294,34 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
   );
   // 精简/全文 — pane-local, defaults to compact (same as StatusDiffPane).
   const [density, setDensity] = useState<'compact' | 'full'>('compact');
+  // split/unified — pane-local, defaults to split (same non-persisted policy
+  // as density). Unified mode has no compact/preview support (see render).
+  const [viewMode, setViewMode] = useState<'split' | 'unified'>('split');
+  // Rendered previews of the SNAPSHOT's post-change content (not the current
+  // disk state — that's the point). Same overlay pattern as StatusDiffPane.
+  const [showMarkdownPreview, setShowMarkdownPreview] = useState(false);
+  const [jsonPreview, setJsonPreview] = useState<{ content: string; filePath: string } | null>(null);
 
   const selectedCall = useMemo(
     () => calls.find((c) => c.key === selectedCallKey) ?? null,
     [calls, selectedCallKey],
   );
+  // Hold the last resolved selection. A refetch that momentarily can't resolve
+  // the selected key (transient empty / mid-write) must NOT unmount the right
+  // pane — that destroys the DiffView scroll container and loses scrollTop.
+  // We render `displayCall` so the pane stays mounted with the last-good call.
+  const lastSelectedCallRef = useRef<CallEntry | null>(null);
+  useEffect(() => {
+    if (selectedCall) lastSelectedCallRef.current = selectedCall;
+  }, [selectedCall]);
+  const displayCall = selectedCall ?? lastSelectedCallRef.current;
   const tree = useMemo<GitFileNode<CallFile>[]>(
-    () => (selectedCall ? buildGitFileTree(selectedCall.files) : []),
-    [selectedCall],
+    () => (displayCall ? buildGitFileTree(displayCall.files) : []),
+    [displayCall],
   );
   const selectedFile = useMemo(
-    () => selectedCall?.files.find((f) => f.path === selectedFilePath) ?? null,
-    [selectedCall, selectedFilePath],
+    () => displayCall?.files.find((f) => f.path === selectedFilePath) ?? null,
+    [displayCall, selectedFilePath],
   );
 
   const selectCall = useCallback((call: CallEntry) => {
@@ -265,21 +330,35 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
     setExpandedPaths(new Set(collectGitTreeDirPaths(buildGitFileTree(call.files))));
   }, []);
 
-  // Auto-select the first call + its first file once the (async) list arrives.
+  // Initial selection ONLY: pick the first call once the (async) list first
+  // arrives. Deliberately does NOT re-pick when the selected key isn't found —
+  // that used to yank the user off their commit (and reset file + scroll) every
+  // time the list refreshed while the AI kept editing. With stable toolId keys
+  // the selection survives refetches; if it's ever truly gone the pane falls
+  // back to the last-good render (displayCall) instead of jumping to the top.
   useEffect(() => {
-    if (calls.length > 0 && !calls.some((c) => c.key === selectedCallKey)) {
+    if (calls.length > 0 && selectedCallKey == null) {
       selectCall(calls[0]);
     }
   }, [calls, selectedCallKey, selectCall]);
 
-  // ESC to close
+  // ESC closes the innermost layer first: preview overlay → whole modal.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      if (showMarkdownPreview) {
+        setShowMarkdownPreview(false);
+        return;
+      }
+      if (jsonPreview) {
+        setJsonPreview(null);
+        return;
+      }
+      onClose();
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, showMarkdownPreview, jsonPreview]);
 
   const totalFiles = useMemo(() => calls.reduce((n, c) => n + c.files.length, 0), [calls]);
 
@@ -290,12 +369,11 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
   );
 
   const modalContent = (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-0 md:p-4"
-      onClick={onClose}
-    >
+    // Full-bleed: the three-pane layout (call list + file tree + diff) needs
+    // every pixel — no floating-window margins on desktop either.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
-        className="bg-card shadow-xl w-full h-full rounded-none md:max-w-[90%] md:h-[90vh] md:rounded-lg flex flex-col transition-all"
+        className="relative bg-card shadow-xl w-full h-full flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -351,6 +429,15 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
                   <div className="text-sm text-foreground truncate mt-0.5" data-tooltip={call.subject}>
                     {call.subject}
                   </div>
+                  <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
+                    <span>{t('commitDetail.nChanges', { count: call.files.length })}</span>
+                    {(() => {
+                      const stats = callLineStats(call);
+                      return stats && (stats.additions > 0 || stats.deletions > 0) ? (
+                        <LineStatsBadge additions={stats.additions} deletions={stats.deletions} />
+                      ) : null;
+                    })()}
+                  </div>
                 </div>
               ))}
             </div>
@@ -362,25 +449,30 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
               centered(t('diffViewer.loadingSnapshots'))
             ) : calls.length === 0 ? (
               centered(t('diffViewer.noChanges'))
-            ) : selectedCall ? (
+            ) : displayCall ? (
               <>
                 {/* Meta bar */}
                 <div className="flex items-center gap-3 px-4 py-2 border-b border-border text-xs text-muted-foreground">
                   <span className="flex items-center gap-1 text-foreground">
                     <Wrench className="w-3.5 h-3.5" />
-                    {selectedCall.toolName}
+                    {displayCall.toolName}
                   </span>
-                  {selectedCall.shortHash && (
-                    <span className="font-mono text-brand">{selectedCall.shortHash}</span>
+                  {displayCall.shortHash && (
+                    <span className="font-mono text-brand">{displayCall.shortHash}</span>
                   )}
-                  {selectedCall.timestamp !== undefined && (
-                    <span>{formatCallTime(selectedCall.timestamp)}</span>
+                  {displayCall.timestamp !== undefined && (
+                    <span>{formatCallTime(displayCall.timestamp)}</span>
                   )}
-                  <span>{t('commitDetail.nChanges', { count: selectedCall.files.length })}</span>
-                  {selectedCall.truncated && (
+                  {/* Description (commit subject). Takes the flexible middle and
+                      truncates; full text on hover. min-w-0 lets it shrink so
+                      the trailing toggles keep their space. */}
+                  <span className="flex-1 min-w-0 truncate" data-tooltip={displayCall.subject}>
+                    {displayCall.subject}
+                  </span>
+                  {displayCall.truncated && (
                     <span className="text-amber-500">{t('diffViewer.truncated')}</span>
                   )}
-                  {selectedCall.legacy && (
+                  {displayCall.legacy && (
                     <span
                       className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400"
                       data-tooltip={t('diffViewer.reconstructedHint')}
@@ -388,7 +480,11 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
                       {t('diffViewer.reconstructed')}
                     </span>
                   )}
-                  <DiffDensityToggle value={density} onChange={setDensity} className="ml-auto" />
+                  <div className="ml-auto flex items-center gap-2">
+                    {/* 精简/全文 applies to both split and unified views. */}
+                    <DiffDensityToggle value={density} onChange={setDensity} />
+                    <DiffViewModeToggle value={viewMode} onChange={setViewMode} />
+                  </div>
                 </div>
 
                 <div className="flex-1 flex overflow-hidden">
@@ -436,13 +532,21 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
                     </div>
                   )}
 
-                  {/* Diff (split view, aligned with the history tab) */}
+                  {/* Diff: split (side-by-side) or unified — toggled via the
+                      meta bar. Unified has no compact/preview support. */}
                   <div className="flex-1 overflow-hidden">
                     {selectedFile ? (
                       selectedFile.unviewable ? (
                         <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
                           {t('diffViewer.notViewable')}
                         </div>
+                      ) : viewMode === 'unified' ? (
+                        <DiffUnifiedView
+                          oldContent={selectedFile.old_string}
+                          newContent={selectedFile.new_string}
+                          filePath={selectedFile.path}
+                          compact={density === 'compact'}
+                        />
                       ) : (
                         <DiffView
                           oldContent={selectedFile.old_string}
@@ -452,6 +556,18 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
                           isDeleted={selectedFile.status === 'deleted'}
                           cwd={cwd}
                           compact={density === 'compact'}
+                          onPreview={
+                            selectedFile.status === 'deleted'
+                              ? undefined
+                              : isMarkdownFile(selectedFile.path)
+                                ? () => setShowMarkdownPreview(true)
+                                : selectedFile.path.endsWith('.json')
+                                  ? () => setJsonPreview({ content: selectedFile.new_string, filePath: selectedFile.path })
+                                  : undefined
+                          }
+                          previewLabel={
+                            selectedFile.path.endsWith('.json') ? t('common.readable') : t('common.preview')
+                          }
                         />
                       )
                     ) : (
@@ -467,6 +583,55 @@ export function DiffViewerModal({ toolCalls, cwd, onClose }: DiffViewerModalProp
             )}
           </div>
         </div>
+
+        {/* Markdown preview overlay — renders the SNAPSHOT's post-change
+            content (read-only intent), same pattern as StatusDiffPane. */}
+        {showMarkdownPreview && selectedFile && (
+          <div
+            className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 p-2 md:p-4"
+            onClick={() => setShowMarkdownPreview(false)}
+          >
+            <div
+              className="bg-card rounded-lg shadow-xl w-full max-w-[95%] h-full flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <InteractiveMarkdownPreview
+                content={selectedFile.new_string}
+                filePath={selectedFile.path}
+                cwd={cwd || ''}
+                onClose={() => setShowMarkdownPreview(false)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* JSON readable preview overlay. */}
+        {jsonPreview && (
+          <div
+            className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 p-2 md:p-4"
+            onClick={() => setJsonPreview(null)}
+          >
+            <div
+              className="bg-card rounded-lg shadow-xl w-full max-w-[95%] h-full flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-4 py-2 border-b border-border flex-shrink-0">
+                <span className="text-sm text-muted-foreground font-mono truncate">{jsonPreview.filePath}</span>
+                <button
+                  onClick={() => setJsonPreview(null)}
+                  className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto px-6 py-4 bg-[#0d1117]">
+                <pre className="whitespace-pre-wrap break-words font-mono" style={{ fontSize: '0.8125rem', lineHeight: '1.5' }}>
+                  {formatAsHumanReadable(jsonPreview.content)}
+                </pre>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

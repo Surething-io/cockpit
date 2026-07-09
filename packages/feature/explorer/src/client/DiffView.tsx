@@ -13,6 +13,8 @@ import { computeLineDiff } from './index';
 import {
   buildCompactRows,
   COMPACT_EXPAND_STEP,
+  COMPACT_CONTEXT_LINES,
+  type DiffLine,
   type GapState,
   type RenderRow,
   type SymbolInfo,
@@ -1061,28 +1063,87 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
 // Unified Diff View Component (with virtual scrolling)
 // ============================================
 
-export function DiffUnifiedView({ oldContent, newContent, filePath }: Omit<DiffViewProps, 'isNew' | 'isDeleted'>) {
+/** A rendered unified row: either a diff line or a collapsed-gap bar. */
+type UnifiedRow =
+  | { kind: 'line'; line: DiffLine; index: number }
+  | { kind: 'gap'; id: number; count: number };
+
+/**
+ * Simplified single-column compact view: collapse runs of unchanged lines
+ * (keeping COMPACT_CONTEXT_LINES of context around each change) into one
+ * "N lines hidden" bar that expands its WHOLE gap on click. No incremental
+ * up/down reveal or function labels — that richer pipeline is split-view only
+ * (compactDiff.ts); unified deliberately stays lean.
+ *
+ * Gap ids are positional over the fixed visible/hidden partition, so they're
+ * stable across expand/collapse and across re-renders of the same file.
+ */
+function buildUnifiedCompactRows(diffLines: DiffLine[], expandedGaps: Set<number>): UnifiedRow[] {
+  const n = diffLines.length;
+  const visible = new Array<boolean>(n).fill(false);
+  for (let i = 0; i < n; i++) {
+    if (diffLines[i].type === 'unchanged') continue;
+    const lo = Math.max(0, i - COMPACT_CONTEXT_LINES);
+    const hi = Math.min(n - 1, i + COMPACT_CONTEXT_LINES);
+    for (let j = lo; j <= hi; j++) visible[j] = true;
+  }
+  const rows: UnifiedRow[] = [];
+  let gapId = 0;
+  let i = 0;
+  while (i < n) {
+    if (visible[i]) {
+      rows.push({ kind: 'line', line: diffLines[i], index: i });
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < n && !visible[j]) j++;
+    const id = gapId++;
+    if (expandedGaps.has(id)) {
+      for (let k = i; k < j; k++) rows.push({ kind: 'line', line: diffLines[k], index: k });
+    } else {
+      rows.push({ kind: 'gap', id, count: j - i });
+    }
+    i = j;
+  }
+  return rows;
+}
+
+export function DiffUnifiedView({ oldContent, newContent, filePath, compact = false }: Omit<DiffViewProps, 'isNew' | 'isDeleted'>) {
+  const { t } = useTranslation();
   const diffLines = useMemo(() => computeLineDiff(oldContent, newContent), [oldContent, newContent]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const allLines = useMemo(() => diffLines.map(line => line.content), [diffLines]);
   const highlightedLines = useLineHighlight(allLines, filePath);
 
-  // Content-derived row keys — see the comment on the split-view
-  // virtualizer above for the full rationale. Unified mode is
-  // simpler: every row is a `DiffLine`, so type + old/new line
-  // numbers uniquely identify a logical row.
+  // Expanded gaps — reset when the underlying file/diff changes so a gap id
+  // from file A can't persist into file B (its positional id would refer to a
+  // different region). Mirrors the split view's gap-state reset.
+  const [expandedGaps, setExpandedGaps] = useState<Set<number>>(() => new Set());
+  useEffect(() => { setExpandedGaps(new Set()); }, [oldContent, newContent, filePath]);
+
+  const rows = useMemo<UnifiedRow[]>(() => {
+    if (!compact) return diffLines.map((line, index) => ({ kind: 'line', line, index }));
+    return buildUnifiedCompactRows(diffLines, expandedGaps);
+  }, [compact, diffLines, expandedGaps]);
+
+  // Content-derived row keys — see the comment on the split-view virtualizer
+  // for the full rationale. A gap is keyed by its stable positional id; a line
+  // by type + old/new line numbers.
   const getItemKey = useCallback(
     (i: number): number | string => {
-      const dl = diffLines[i];
-      if (!dl) return i;
+      const r = rows[i];
+      if (!r) return i;
+      if (r.kind === 'gap') return `gap:${r.id}`;
+      const dl = r.line;
       return `${dl.type}:${dl.oldLineNum ?? 'x'}:${dl.newLineNum ?? 'x'}`;
     },
-    [diffLines],
+    [rows],
   );
 
   const virtualizer = useVirtualizer({
-    count: diffLines.length,
+    count: rows.length,
     getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => ROW_HEIGHT,
     getItemKey,
@@ -1093,19 +1154,38 @@ export function DiffUnifiedView({ oldContent, newContent, filePath }: Omit<DiffV
     <div ref={scrollContainerRef} className="font-mono text-sm overflow-auto h-full">
       <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
         {virtualizer.getVirtualItems().map((virtualItem) => {
-          const line = diffLines[virtualItem.index];
+          const row = rows[virtualItem.index];
+          if (!row) return null;
+          const style = {
+            position: 'absolute' as const,
+            top: 0,
+            left: 0,
+            minWidth: '100%',
+            width: 'max-content' as const,
+            height: `${virtualItem.size}px`,
+            transform: `translateY(${virtualItem.start}px)`,
+          };
+
+          if (row.kind === 'gap') {
+            const label = t('diffViewer.gap.hidden', { count: row.count });
+            return (
+              <div
+                key={virtualItem.key}
+                style={style}
+                onClick={() => setExpandedGaps((prev) => new Set(prev).add(row.id))}
+                className="flex items-center cursor-pointer bg-slate-2 hover:bg-accent border-y border-border text-xs text-slate-9 select-none"
+                title={label}
+              >
+                <span className="w-full text-center">{label}</span>
+              </div>
+            );
+          }
+
+          const line = row.line;
           return (
             <div
               key={virtualItem.key}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                minWidth: '100%',
-                width: 'max-content',
-                height: `${virtualItem.size}px`,
-                transform: `translateY(${virtualItem.start}px)`,
-              }}
+              style={style}
               className={`flex ${
                 line.type === 'removed'
                   ? 'bg-red-9/15 dark:bg-red-9/25'
@@ -1136,7 +1216,7 @@ export function DiffUnifiedView({ oldContent, newContent, filePath }: Omit<DiffV
               {/* Content with syntax highlighting */}
               <span
                 className="flex-1 whitespace-pre pl-1"
-                dangerouslySetInnerHTML={{ __html: highlightedLines[virtualItem.index] || escapeHtml(line.content || ' ') }}
+                dangerouslySetInnerHTML={{ __html: highlightedLines[row.index] || escapeHtml(line.content || ' ') }}
               />
             </div>
           );

@@ -22,6 +22,7 @@ export * from './DiffMinimap';
 export * from './ViewCommentCard';
 export * from './DiffView';
 export * from './DiffDensityToggle';
+export * from './DiffViewModeToggle';
 export * from './CodeViewer';
 export * from './InteractiveMarkdownPreview';
 export * from './HtmlPreview';

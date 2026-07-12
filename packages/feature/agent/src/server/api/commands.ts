@@ -25,6 +25,7 @@ interface CommandInfo {
 
 const BUILTIN_COMMANDS: CommandInfo[] = [
   { name: "/qa", description: "Enter requirements clarification mode", source: "builtin" },
+  { name: "/ap", description: "Enter apply mode: implement <SPEC> while keeping running apply-notes", source: "builtin" },
   { name: "/fx", description: "Enter bug evidence-chain analysis mode", source: "builtin" },
   { name: "/ex", description: "Enter structured analysis & discussion mode", source: "builtin" },
   { name: "/go", description: "Enter landing mode: MVP staged implementation with self-verify", source: "builtin" },

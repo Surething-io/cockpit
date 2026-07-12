@@ -11,6 +11,7 @@
 import { mkdirSync, writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { COCKPIT_DIR, SKILLS_FILE } from '@cockpit/shared-utils';
+import { AP_PROMPT_EN, AP_PROMPT_ZH } from './apPrompt';
 import { CC_LABEL_EN, CC_LABEL_ZH, CC_PROMPT_EN, CC_PROMPT_ZH } from './ccPrompt';
 import { CG_LABEL_EN, CG_LABEL_ZH, CG_PROMPT_EN, CG_PROMPT_ZH } from './cgPrompt';
 import { CR_PROMPT_EN, CR_PROMPT_ZH } from './crPrompt';
@@ -44,6 +45,7 @@ interface CommandEntry {
 
 export const COMMAND_CONTENT: Record<string, CommandEntry> = {
   qa: { zh: QA_PROMPT_ZH, en: QA_PROMPT_EN },
+  ap: { zh: AP_PROMPT_ZH, en: AP_PROMPT_EN },
   fx: { zh: FX_PROMPT_ZH, en: FX_PROMPT_EN },
   ex: { zh: EX_PROMPT_ZH, en: EX_PROMPT_EN },
   go: { zh: GO_PROMPT_ZH, en: GO_PROMPT_EN },

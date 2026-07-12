@@ -1,6 +1,6 @@
 {
   "name": "@surething/cockpit",
-  "version": "1.0.240",
+  "version": "1.0.241",
   "description": "The open-source Claude Code GUI — an IDE-like workbench for parallel AI coding. Drive Claude (default), Codex, DeepSeek, Kimi, or local Ollama in tabs. Terminal, browser & DB bubbles, code review. Self-host on a shared dev box — a seat for every teammate. Local-first, MIT.",
   "author": "Robert",
   "license": "MIT",

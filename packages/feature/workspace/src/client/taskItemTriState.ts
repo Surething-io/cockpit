@@ -107,12 +107,21 @@ export const TaskItemTriState = TaskItem.extend({
     ];
   },
 
+  // NOTE: renderHTML only drives clipboard/export serialization. The live
+  // editor is rendered by addNodeView() below, and persistence uses the
+  // markdown serializer, so this HTML is never shown in-app.
+  //
+  // Emit a tight `<li data-type data-status><p>…</p></li>`: keep data-type /
+  // data-status so pasting back into the editor reconstructs the todo, but drop
+  // the decorative <label> checkbox and the extra <div> wrapper. External
+  // rich-text targets (Feishu, macOS Notes, Word) don't understand
+  // data-type="taskItem"; the old <label> + block <div> made them render the
+  // bullet and its text on separate lines with a blank line in between.
   renderHTML({ HTMLAttributes }) {
     return [
       'li',
       mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, { 'data-type': this.name }),
-      ['label', { class: 'task-marker' }, ['span', { class: 'task-marker-box' }]],
-      ['div', 0],
+      0,
     ];
   },
 

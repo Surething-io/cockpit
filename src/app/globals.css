@@ -524,18 +524,30 @@ code[class*="language-"] .token {
 .tiptap-editor h1:hover .note-fold-toggle,
 .tiptap-editor h2:hover .note-fold-toggle,
 .tiptap-editor h3:hover .note-fold-toggle,
-.tiptap-editor .note-fold-toggle[data-collapsed='true'] {
+.tiptap-editor .note-fold-toggle[data-fold-state='folded'],
+.tiptap-editor .note-fold-toggle[data-fold-state='children'] {
   color: hsl(var(--foreground));
 }
 
+/* expanded: open (down) triangle */
 .tiptap-editor .note-fold-toggle::before {
   content: '▾';
   font-size: 0.72em;
   line-height: 1;
 }
 
-.tiptap-editor .note-fold-toggle[data-collapsed='true']::before {
+/* folded: closed (right) triangle */
+.tiptap-editor .note-fold-toggle[data-fold-state='folded']::before {
   content: '▸';
+}
+
+/* children: sub-headings shown, bodies folded — hollow right triangle + accent */
+.tiptap-editor .note-fold-toggle[data-fold-state='children'] {
+  color: hsl(var(--brand, var(--foreground)));
+}
+
+.tiptap-editor .note-fold-toggle[data-fold-state='children']::before {
+  content: '▹';
 }
 
 .tiptap-editor .note-folded-hidden {

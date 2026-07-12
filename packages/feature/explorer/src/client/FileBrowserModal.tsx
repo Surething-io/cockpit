@@ -2000,6 +2000,11 @@ export function FileBrowserModal({ onClose, cwd, initialTab = 'tree', tabSwitchT
                     if (fileTree.selectedPath) {
                       navHistory.push({ filePath: fileTree.selectedPath, lineNumber: visibleLineRef.current });
                     }
+                    // Leave Code Map mode so CodeViewer (which owns scrollToLine)
+                    // remounts and jumps to the matched line. In map mode the
+                    // right panel renders BlockViewer, which ignores the target
+                    // line, so the click would otherwise appear to do nothing.
+                    setEditorMode('code');
                     handleSelectFileWithSave(path, lineNumber);
                   }}
                   onClose={() => setShowSearchPanel(false)}

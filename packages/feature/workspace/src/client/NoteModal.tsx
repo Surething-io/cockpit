@@ -14,7 +14,9 @@ import { TaskList } from '@tiptap/extension-task-list';
 import { TaskItemTriState } from './taskItemTriState';
 import Link from '@tiptap/extension-link';
 import { Markdown } from 'tiptap-markdown';
+import { Slice, type Node as PMNode } from '@tiptap/pm/model';
 import { CollapsibleHeading } from './CollapsibleHeading';
+import { NoteOrgKeymap } from './noteOrgKeymap';
 import { getMarkdown } from '@cockpit/feature-agent';
 import { SlashCommandMenu } from '@cockpit/feature-agent';
 import { NoteToolbar } from './NoteToolbar';
@@ -105,6 +107,7 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
       CollapsibleHeading.configure({
         levels: [1, 2, 3],
       }),
+      NoteOrgKeymap,
       Placeholder.configure({
         placeholder: () => i18n.t('editor.placeholder'),
       }),
@@ -132,13 +135,45 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
       DropShellCleanup,
       Markdown.configure({
         html: true,
-        transformCopiedText: true,
+        // Keep ProseMirror's native copy: write both text/html (rich text,
+        // preserves table/todo structure) and text/plain (the visible
+        // selection text). transformCopiedText would override the plain-text
+        // serializer with lossy Markdown that no longer matches the selection.
+        transformCopiedText: false,
         transformPastedText: true,
       }),
     ],
     editorProps: {
       attributes: {
         class: 'tiptap-editor focus:outline-none min-h-[60vh] px-6 py-4',
+      },
+      // ProseMirror's default text/plain serializer joins blocks with '\n\n',
+      // so copying to a plain-text target gains a blank line between blocks and
+      // a trailing newline. Use a single '\n' between blocks and strip trailing
+      // newlines so the pasted text matches the selected line count.
+      clipboardTextSerializer: slice =>
+        slice.content
+          .textBetween(0, slice.content.size, '\n')
+          .replace(/\n+$/, ''),
+      // Trim empty leading/trailing textblocks from the copied slice before it
+      // is serialized. A selection that reaches past the end of a line pulls in
+      // a trailing empty paragraph, which rich-text targets (e.g. macOS Notes)
+      // render as an extra blank line. Runs before both the HTML and plain-text
+      // serializers, so both branches benefit. Internal blank lines are kept.
+      transformCopied: slice => {
+        const isEmptyBlock = (node: PMNode | null) =>
+          !!node && node.isTextblock && node.content.size === 0;
+        let content = slice.content;
+        let { openStart, openEnd } = slice;
+        while (content.childCount > 1 && isEmptyBlock(content.lastChild)) {
+          content = content.cut(0, content.size - content.lastChild!.nodeSize);
+          openEnd = 0;
+        }
+        while (content.childCount > 1 && isEmptyBlock(content.firstChild)) {
+          content = content.cut(content.firstChild!.nodeSize);
+          openStart = 0;
+        }
+        return new Slice(content, openStart, openEnd);
       },
       handleClick: (view, pos, event) => {
         // Cmd/Ctrl + click to open link

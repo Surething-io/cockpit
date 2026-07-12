@@ -288,17 +288,23 @@ body {
 /* ---- Focus indicators ----
  * App-wide keyboard-focus ring using the theme --ring token (teal) instead of
  * the browser default (blue). Only paints on :focus-visible (keyboard / a11y),
- * so mouse clicks never leave a lingering outline. Elements that opt out with
- * Tailwind `focus:outline-none` / `focus-visible:*` win on specificity, so
- * inputs/editors that already manage their own focus ring are untouched (no
- * double ring). Mouse `:focus` without focus-visible is explicitly cleared. */
-:focus-visible {
-  outline: 2px solid hsl(var(--ring));
-  outline-offset: 2px;
-}
+ * so mouse clicks never leave a lingering outline.
+ *
+ * MUST live inside `@layer base` so Tailwind's `@layer utilities` win over it:
+ * unlayered rules beat every layered rule regardless of specificity, which
+ * would force this outline on top of components that already opt out with
+ * `focus:outline-none focus:ring-*` (double / thick ring). Inside `base`,
+ * `focus:outline-none` (utilities layer) properly suppresses it, so
+ * inputs/editors keep their own ring while plain buttons get this one. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
 
-:focus:not(:focus-visible) {
-  outline: none;
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
 }
 
 /* ---- Scrollbar styles ---- */

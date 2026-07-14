@@ -220,6 +220,13 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject }: Recent
                     )}
                   </div>
 
+                  {/* Session title (ai-title / summary / first user message) */}
+                  {session.title && (
+                    <div className="text-xs font-medium text-foreground truncate mb-1" title={session.title}>
+                      {session.title}
+                    </div>
+                  )}
+
                   {/* Session time (absolute, aligned with ProjectSessionsModal) */}
                   <div className="text-xs text-muted-foreground mb-2">
                     {formatDate(session.lastActive)}
@@ -244,10 +251,10 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject }: Recent
                         </div>
                       ))}
                     </div>
-                  ) : (session.lastUserMessage || session.title) ? (
-                    <div className="text-xs text-foreground truncate" title={session.lastUserMessage || session.title}>
+                  ) : session.lastUserMessage ? (
+                    <div className="text-xs text-foreground truncate" title={session.lastUserMessage}>
                       <span className="text-slate-9 mr-1">•</span>
-                      {session.lastUserMessage || session.title}
+                      {session.lastUserMessage}
                     </div>
                   ) : null}
                 </div>

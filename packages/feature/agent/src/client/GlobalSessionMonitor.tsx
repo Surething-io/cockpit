@@ -202,9 +202,14 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
                         {formatTime(session.lastActive)}
                       </span>
                     </div>
-                    {(session.lastUserMessage || session.title) && (
+                    {session.title && (
+                      <div className="text-xs font-medium text-foreground truncate" title={session.title}>
+                        {session.title}
+                      </div>
+                    )}
+                    {session.lastUserMessage && (
                       <div className="text-xs text-foreground/80 truncate">
-                        {session.lastUserMessage || session.title}
+                        {session.lastUserMessage}
                       </div>
                     )}
                   </div>
@@ -222,6 +227,11 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
           style={{ top: tooltip.top, left: tooltip.left }}
         >
           <div className="text-xs font-medium text-foreground truncate">{getProjectName(tooltip.session.cwd)}</div>
+          {tooltip.session.title && (
+            <div className="text-xs font-medium text-foreground truncate mt-0.5" title={tooltip.session.title}>
+              {tooltip.session.title}
+            </div>
+          )}
           {branches[tooltip.session.cwd] && (
             <div className="flex items-center gap-1 text-xs text-muted-foreground font-normal min-w-0">
               {/* git branch icon — signals this is a git branch */}
@@ -252,10 +262,10 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
                 </div>
               ))}
             </div>
-          ) : (tooltip.session.lastUserMessage || tooltip.session.title) ? (
+          ) : tooltip.session.lastUserMessage ? (
             /* Fallback (e.g. running sessions skipped on the WS path): show whatever message the item already has */
             <div className="text-xs text-foreground/90 border-t border-border/50 mt-2 pt-2 line-clamp-3 break-words">
-              {tooltip.session.lastUserMessage || tooltip.session.title}
+              {tooltip.session.lastUserMessage}
             </div>
           ) : null}
         </div>

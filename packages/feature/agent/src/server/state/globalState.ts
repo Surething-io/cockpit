@@ -323,6 +323,16 @@ export async function getGlobalSessionsSnapshot(limit = 15): Promise<GlobalSessi
         const preview = await getSessionPreview(session.cwd, session.sessionId);
         return {
           ...session,
+          // Re-derive the title from disk on every read (aiTitle > summary >
+          // first message) instead of trusting the value persisted in
+          // state.json — that snapshot is only refreshed when a run finishes,
+          // so it goes stale whenever the aiTitle lands after completion.
+          // Fall back to the persisted title only when the transcript is gone
+          // (preview degrades to UNTITLED_SESSION). Mirrors /api/global-state.
+          title:
+            preview.title !== UNTITLED_SESSION
+              ? preview.title
+              : (session.title ?? preview.title),
           lastUserMessage: preview.lastUserMessage ?? session.lastUserMessage,
           firstMessages: preview.firstMessages,
           lastMessages: preview.lastMessages,

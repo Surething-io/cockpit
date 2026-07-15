@@ -27,7 +27,7 @@ interface Params {
 }
 
 export const GET = dynamicHandler<Params, NotFoundError | FSError>(
-  (_req, { id }) =>
+  (req, { id }) =>
     Effect.gen(function* () {
       const filePath = getReviewFilePath(id)
       if (!existsSync(filePath)) {
@@ -49,12 +49,19 @@ export const GET = dynamicHandler<Params, NotFoundError | FSError>(
           new NotFoundError({ resource: "review", id })
         )
       }
-      // Closed sharing must revoke viewing: a deactivated review is treated as
-      // not found, so previously-copied /review/{id} links stop working too.
+      // Closed sharing must revoke viewing for remote/LAN viewers: a deactivated
+      // review is treated as not found, so previously-copied /review/{id} links
+      // stop working too. The LOCAL admin is exempt — the server stamps an
+      // unforgeable `x-cockpit-local: 1` header (loopback peer, no forwarding
+      // header) so the owner can still inspect / re-open a closed review.
       if (review.active === false) {
-        return yield* Effect.fail(
-          new NotFoundError({ resource: "review", id })
-        )
+        const isLocalAdmin =
+          req.headers.get("x-cockpit-local") === "1"
+        if (!isLocalAdmin) {
+          return yield* Effect.fail(
+            new NotFoundError({ resource: "review", id })
+          )
+        }
       }
       return ok({ review })
     })

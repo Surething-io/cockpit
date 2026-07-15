@@ -189,6 +189,24 @@ app.prepare().then(async () => {
   };
 
   // ============================================
+  // Local-admin marker — stamp an internal, client-UNFORGEABLE header telling
+  // the app layer whether this request comes from a trusted LOCAL peer (loopback
+  // socket + no forwarding header), the same "local exempt" notion checkAccess()
+  // uses. Review viewing of a CLOSED review is revoked for everyone except the
+  // local admin; the app can't see the TCP peer, so we decide it here.
+  //
+  // We ALWAYS overwrite any inbound x-cockpit-local first: without this a remote
+  // client could send the header and impersonate a local admin. Mirrors the
+  // share server's x-forwarded-for injection discipline.
+  // ============================================
+  const LOCAL_HEADER = 'x-cockpit-local';
+  const markLocalRequest = (req) => {
+    const gi = gateInput(req, false);
+    const isLocal = !gi.forwarded && auth.isLoopbackAddr(gi.remoteAddr);
+    req.headers[LOCAL_HEADER] = isLocal ? '1' : '0';
+  };
+
+  // ============================================
   // /api/* JSON gzip — Next's built-in compression only runs under
   // `next start`; with this custom server, API JSON goes out uncompressed
   // (fine locally at <10ms, but behind a tunnel like ngrok a 200KB+
@@ -270,6 +288,7 @@ app.prepare().then(async () => {
 
   const server = createServer(async (req, res) => {
     if (applyHttpGate(req, res)) return;
+    markLocalRequest(req);
     if (req.url?.startsWith('/api/')) gzipJsonResponse(req, res);
 
     // /api/browser/* must be handled inside the custom server (it shares
@@ -357,6 +376,11 @@ app.prepare().then(async () => {
     if (applyHttpGate(req, res)) return;
     if (req.url?.startsWith('/api/')) gzipJsonResponse(req, res);
     if (isShareAllowed(req.url || '')) {
+      // The share port is the revocation surface for LAN viewers — never the
+      // local admin. Force the marker to '0' (also strips any forged inbound
+      // value). The admin uses the main port (localhost) to keep access to a
+      // closed review.
+      req.headers['x-cockpit-local'] = '0';
       // Inject the client's real IP for /api/review/identify
       const clientIp = req.socket.remoteAddress || '';
       req.headers['x-forwarded-for'] = clientIp;

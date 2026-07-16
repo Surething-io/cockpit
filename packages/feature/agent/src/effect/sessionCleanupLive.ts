@@ -1,28 +1,28 @@
 /**
- * SessionCleanupLive — retention sweep for Ollama chat session transcripts.
+ * SessionCleanupLive -- retention sweep for Ollama chat session transcripts.
  *
  * Scope: ONLY `<cockpitDir>/ollama-sessions/`. This is the sole session store
  * cockpit writes itself (via appendFileSync) with no cleanup. Every other
  * engine's sessions are cleaned by their own external CLI / Agent SDK:
  *   - claude / claude2 -> ~/.claude(2)/projects (Claude CLI cleanupPeriodDays)
- *   - deepseek         → ~/.cockpit/deepseek/projects (Claude Agent SDK)
- *   - codex / kimi     → ~/.codex, ~/.kimi (external CLI)
+ *   - deepseek         -> ~/.cockpit/deepseek/projects (Claude Agent SDK)
+ *   - codex / kimi     -> ~/.codex, ~/.kimi (external CLI)
  * so this sweep deliberately never touches them.
  *
  * On-disk layout (one dir per project cwd, one file per session):
  *   ollama-sessions/<encoded-cwd>/
- *     ├── <sessionId>.jsonl      ← parent transcript (retention basis)
- *     └── <sessionId>/           ← future attachments (subagents/, tool-results/)
+ *     ├── <sessionId>.jsonl      <- parent transcript (retention basis)
+ *     └── <sessionId>/           <- future attachments (subagents/, tool-results/)
  *
  * Retention: a session is aged out as a WHOLE unit, keyed off the parent
  * `<sessionId>.jsonl` mtime (= last real activity, since every turn appends
  * user + assistant messages to it). When expired, the `.jsonl` AND the sibling
- * `<sessionId>/` directory tree are removed together — structure-agnostic, so
+ * `<sessionId>/` directory tree are removed together -- structure-agnostic, so
  * any future subdirectory type is covered without changing this code.
  *
  * Protection: sessions listed in `pinned-sessions.json` are never auto-deleted.
  * If that file is present but unreadable/corrupt, the ENTIRE pass is skipped
- * (fail-safe — a torn whitelist must never license deleting protected data).
+ * (fail-safe -- a torn whitelist must never license deleting protected data).
  *
  * Trigger: a daily background pass (first run immediately, then every 24h),
  * forked into the layer's Scope so runtime disposal interrupts it. There is no
@@ -48,9 +48,9 @@ const isDirectory = (p: string): Effect.Effect<boolean, never> =>
 
 /**
  * Load the pinned-session id whitelist. Distinguishes three cases:
- *  - missing file  → `{ ok: true, ids: ∅ }` (no pins, cleanup proceeds)
- *  - readable JSON → `{ ok: true, ids }`
- *  - corrupt/unreadable → `{ ok: false }` (caller SKIPS the whole pass)
+ *  - missing file  -> `{ ok: true, ids: {} }` (no pins, cleanup proceeds)
+ *  - readable JSON -> `{ ok: true, ids }`
+ *  - corrupt/unreadable -> `{ ok: false }` (caller SKIPS the whole pass)
  */
 type PinLoad = { ok: true; ids: Set<string> } | { ok: false }
 
@@ -85,7 +85,7 @@ const cleanupSessions = (
     const pins = yield* loadPinnedIds(pinnedFile)
     if (!pins.ok) {
       yield* Effect.logWarning(
-        "session cleanup: pinned-sessions.json is unreadable/corrupt — skipping this pass (refusing to risk deleting protected sessions)"
+        "session cleanup: pinned-sessions.json is unreadable/corrupt -- skipping this pass (refusing to risk deleting protected sessions)"
       )
       return
     }
@@ -121,7 +121,7 @@ const cleanupSessions = (
       }
 
       for (const [stem, s] of sessions) {
-        if (pins.ids.has(stem)) continue // pinned → never auto-delete
+        if (pins.ids.has(stem)) continue // pinned -> never auto-delete
 
         // Basis = parent transcript mtime (last activity). Fall back to the
         // attachment dir only for an orphan `<id>/` with no `.jsonl`.
@@ -129,8 +129,8 @@ const cleanupSessions = (
         if (!basis) continue
         const mtime = yield* fsTry("stat basis", () =>
           stat(basis).then((st) => st.mtimeMs)
-        ).pipe(Effect.orElseSucceed(() => Number.POSITIVE_INFINITY)) // stat fail → keep
-        if (mtime >= cutoff) continue // still fresh → keep whole session
+        ).pipe(Effect.orElseSucceed(() => Number.POSITIVE_INFINITY)) // stat fail -> keep
+        if (mtime >= cutoff) continue // still fresh -> keep whole session
 
         if (s.jsonl) {
           yield* fsTry("rm jsonl", () => rm(s.jsonl!, { force: true })).pipe(

@@ -75,7 +75,7 @@ export function HtmlPreview({ content, filePath, cwd, onContentSearch }: HtmlPre
   //    client-side; single-file only, but keeps preview working.
   const renderSource = useMemo((): { mode: 'url'; url: string } | { mode: 'srcdoc'; html: string } => {
     if (canResolveAbsolute(filePath, cwd)) {
-      return { mode: 'url', url: toPreviewUrl(filePath, cwd, { trusted: true }) };
+      return { mode: 'url', url: toPreviewUrl(filePath, cwd) };
     }
     if (typeof window === 'undefined') return { mode: 'srcdoc', html: content ?? '' };
     const dir = resolveBashCwd(filePath, cwd);

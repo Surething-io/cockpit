@@ -1,3 +1,4 @@
+import { isFileViewerPath } from '@cockpit/shared-utils';
 import { registerBubble, type BubbleComponentProps, type PluginItemBase } from '../../bubblePlugins';
 import { BrowserBubble } from './BrowserBubble';
 
@@ -38,8 +39,10 @@ registerBubble({
   match(input: string) {
     const t = input.trim().toLowerCase();
     if (t.startsWith('http://') || t.startsWith('https://')) return true;
-    // Local HTML file path → rendered in the bubble iframe via /api/preview
-    return t.endsWith('.html') || t.endsWith('.htm');
+    // Local HTML file path → rendered in the bubble iframe via /api/preview;
+    // local md/image/pdf path → rendered by the built-in file-viewer app
+    // (same bubble, BrowserBubble routes it via toFileViewerUrl)
+    return t.endsWith('.html') || t.endsWith('.htm') || isFileViewerPath(t);
   },
 
   parse(input: string) {

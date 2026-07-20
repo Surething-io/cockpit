@@ -1,0 +1,95 @@
+/*
+ * Tailwind entry for /html-lib/markdown.css (built by scripts/build-md-lib.mjs).
+ *
+ * Compiles ONLY the utilities used by MarkdownRenderer (+ the standalone entry),
+ * skipping preflight: html apps are plain pages and a global reset would fight
+ * their own styles. A minimal prose reset scoped to `.cockpit-md` (the wrapper
+ * the widget renders) stands in for preflight inside the widget, in @layer base
+ * so utilities still win.
+ *
+ * Semantic color tokens map to the CSS vars served by /html-lib/theme.css
+ * (same names as the app's globals.css), so light/dark come for free via the
+ * `dark` class on <html>.
+ */
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+@source "../packages/shared/ui/src/MarkdownRenderer.tsx";
+@source "../packages/shared/ui/src/TocSidebar.tsx";
+@source "../packages/shared/ui/src/Tooltip.tsx";
+@source "../packages/shared/ui/src/standalone/cockpitMarkdown.tsx";
+
+/*
+ * NOTE: unlike the app's globals.css (raw HSL triplets, wrapped in hsl() by its
+ * @theme), /html-lib/theme.css semantic vars are COMPLETE colors — map them
+ * directly, no hsl() wrapper (double-wrapping yields an invalid value).
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-destructive: var(--destructive);
+}
+
+/*
+ * Tailwind v4 drops the /alpha modifier when the color token maps to a plain
+ * var() (emits `var(--brand)` for bg-brand/5 — full-strength color). Restore
+ * the intended 5% tint explicitly; unlayered so it beats the layered utility.
+ */
+.bg-brand\/5 {
+  background-color: color-mix(in srgb, var(--brand) 5%, transparent);
+}
+
+@layer base {
+  /* Preflight stand-in for the widget shell (TocSidebar & co. are plain
+     Tailwind components that assume preflight reset their <button>s —
+     without this they render with UA buttonface chrome). Mirrors the
+     .cockpit-pdf reset in pdf-lib.css. */
+  .cockpit-md-widget button {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    text-align: inherit;
+  }
+  .cockpit-md-widget svg {
+    display: block;
+  }
+  .cockpit-md-widget {
+    font-family: var(--font-sans);
+  }
+
+  /* Preflight stand-in, scoped to the widget only. */
+  .cockpit-md :is(h1, h2, h3, h4, h5, h6, p, ul, ol, blockquote, pre, figure, hr) {
+    margin: 0;
+  }
+  .cockpit-md :is(ul, ol) {
+    padding: 0;
+  }
+  .cockpit-md hr {
+    border: 0;
+    border-top: 1px solid;
+  }
+  .cockpit-md {
+    line-height: 1.6;
+    overflow-wrap: break-word;
+    color: var(--foreground);
+  }
+  .cockpit-md :is(code, pre, kbd, samp) {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  }
+  .cockpit-md img {
+    display: block;
+  }
+}

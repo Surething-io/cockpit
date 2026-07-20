@@ -1,0 +1,55 @@
+/*
+ * Tailwind entry for /html-lib/pdf-viewer.css (built by scripts/build-html-lib.mjs).
+ *
+ * Compiles ONLY the utilities used by FilePdfPreview (+ the standalone entry),
+ * skipping preflight — same approach as md-lib.css. The mini-reset scoped to
+ * `.cockpit-pdf` (the widget wrapper) stands in for preflight (mainly native
+ * <button> chrome), in @layer base so utilities still win.
+ *
+ * Token mapping caveat (same as md-lib.css): /html-lib/theme.css SEMANTIC vars
+ * are complete colors → map directly; the RAW scales (--red-11 etc.) are HSL
+ * triplets → wrap in hsl().
+ */
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+@source "../packages/feature/explorer/src/client/fileBrowser/FilePdfPreview.tsx";
+@source "../packages/feature/explorer/src/standalone/cockpitPdf.tsx";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-border: var(--border);
+  --color-brand: var(--brand);
+  --color-destructive: var(--destructive);
+  /* Raw scales are HSL triplets in theme.css — hsl() wrap required */
+  --color-red-11: hsl(var(--red-11));
+}
+
+@layer base {
+  /* Preflight stand-in, scoped to the widget only. */
+  .cockpit-pdf button {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+  .cockpit-pdf canvas,
+  .cockpit-pdf svg {
+    display: block;
+  }
+  .cockpit-pdf {
+    font-family: var(--font-sans);
+  }
+}

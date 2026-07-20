@@ -30,6 +30,7 @@
   --green-9: 151 55% 42%; --green-10: 152 57% 39%; --green-11: 153 67% 28%;
   --amber-9: 39 100% 57%; --amber-10: 36 100% 50%; --amber-11: 24 100% 37%;
   --blue-9: 206 100% 50%; --blue-10: 207 96% 43%;  --blue-11: 208 88% 43%;
+  --violet-9: 252 56% 57%; --violet-10: 251 48% 53%; --violet-11: 250 43% 48%;
 
   /* ---- Semantic tokens (ready-to-use colors) ---- */
   --background: hsl(0 0% 98%);
@@ -79,6 +80,7 @@
   --green-9: 151 55% 42%; --green-10: 150 52% 48%; --green-11: 148 58% 60%;
   --amber-9: 39 100% 57%; --amber-10: 43 100% 64%; --amber-11: 46 100% 74%;
   --blue-9: 206 100% 50%; --blue-10: 209 100% 60%; --blue-11: 210 100% 72%;
+  --violet-9: 252 56% 57%; --violet-10: 251 63% 63%; --violet-11: 252 87% 76%;
 
   /* Semantic overrides that differ from light (the rest auto-adapt via the scales) */
   --background: hsl(var(--slate-1));

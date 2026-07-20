@@ -80,10 +80,10 @@
     "README.md"
   ],
   "scripts": {
-    "predev": "node scripts/copy-tree-sitter-wasms.mjs && node scripts/copy-pdfjs-worker.mjs",
+    "predev": "node scripts/copy-tree-sitter-wasms.mjs && node scripts/copy-pdfjs-worker.mjs && node scripts/build-html-lib.mjs",
     "dev": "COCKPIT_ENV=dev node --import tsx server.mjs",
     "prepublishOnly": "npm run build && npm run build:server && rm -rf .next-prod/cache",
-    "prebuild": "node scripts/copy-tree-sitter-wasms.mjs && node scripts/copy-pdfjs-worker.mjs",
+    "prebuild": "node scripts/copy-tree-sitter-wasms.mjs && node scripts/copy-pdfjs-worker.mjs && node scripts/build-html-lib.mjs",
     "build": "next build --webpack",
     "build:server": "tsup --config tsup.server.ts",
     "setup": "npm run build && npm run build:server && npm link",

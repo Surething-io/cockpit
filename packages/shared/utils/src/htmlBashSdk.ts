@@ -17,10 +17,12 @@
  *     - background (opts.background: true): { kill() }, streams via callbacks
  *   opts = { background?, cwd?, onOutput?, onStderr?, onExit?, onError? }
  *
- * Theme: defaults to LIGHT and does NOT follow the Cockpit host. A floating
- * top-right toggle flips light/dark, remembered per app across reloads (key
- * namespaced by cockpit-name / page path; localStorage is shared) and storing
- * only 'dark' (light = default = key removed). window.cockpit.toggleTheme() too.
+ * Theme: FOLLOWS the Cockpit host by default — the console bubble pushes a
+ * THEME_CHANGE postMessage on iframe load and ThemeProvider broadcasts it on
+ * toggle; outside Cockpit the meta content (auto/light/dark) decides. The
+ * floating top-right toggle flips light/dark, remembered per app across
+ * reloads (key namespaced by cockpit-name / page path; localStorage is
+ * shared); a stored user choice wins over the host. window.cockpit.toggleTheme() too.
  *
  * One lazily-opened WS per iframe; concurrent commands are multiplexed by a
  * client-generated call id. The WS only opens on the first bash() call.
@@ -81,6 +83,19 @@ const SDK_SOURCE = `
       else if (themeSetting === 'auto') initDark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
       else initDark = false; // light / unknown
       setDark(initDark, false);
+      // Follow the Cockpit host theme by default: the console bubble pushes a
+      // THEME_CHANGE on iframe load and ThemeProvider broadcasts it on toggle.
+      // An explicit per-app user choice (stored) always wins over the host.
+      window.addEventListener('message', function (ev) {
+        var d = ev && ev.data;
+        if (!d || d.type !== 'THEME_CHANGE') return;
+        var userChoice = null;
+        try { userChoice = localStorage.getItem(themeKey); } catch (e) {}
+        if (userChoice === 'dark' || userChoice === 'light') return;
+        var hostDark = d.theme === 'dark' || (d.theme === 'system' &&
+          !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+        setDark(hostDark, false);
+      });
       var mountThemeBtn = function () {
         if (themeBtn || !document.body) return;
         themeBtn = document.createElement('button');
@@ -257,11 +272,7 @@ export function canResolveAbsolute(filePath: string, projectRoot?: string): bool
  * all resolve). Relative `filePath` is resolved against `projectRoot`. Single
  * source of truth for both the console browser bubble and the HTML preview.
  */
-export function toPreviewUrl(
-  filePath: string,
-  projectRoot?: string,
-  opts?: { trusted?: boolean }
-): string {
+export function toPreviewUrl(filePath: string, projectRoot?: string): string {
   const trimmed = filePath.trim()
   const abs = isAbsolutePath(trimmed)
     ? trimmed
@@ -277,11 +288,43 @@ export function toPreviewUrl(
     .map(encodeURIComponent)
     .join("/")
     .replace(/^\//, "")
-  // `?bash=1` marks a TRUSTED preview → /api/preview injects the window.cockpit
-  // bash SDK. Untrusted previews omit it (served raw). The real enforcement is
-  // the /ws/bash same-origin gate + the untrusted iframe's opaque sandbox; this
-  // flag just avoids handing a non-functional SDK to untrusted pages.
-  return "/api/preview/" + encoded + (opts?.trusted ? "?bash=1" : "")
+  // `?bash=1` → /api/preview injects the window.cockpit bash SDK. Every
+  // toPreviewUrl caller is a deliberate user gesture (explorer preview button,
+  // console-typed path / `/name` app), so the flag is unconditional here. The
+  // server-side gate still matters: relative sub-resources loaded FROM a
+  // previewed page (./app.jsx, nested html, file-viewer fetches) hit
+  // /api/preview without the query and are served raw — SDK injection stays
+  // scoped to top-level, user-opened documents. The hard enforcement is the
+  // /ws/bash same-origin gate either way.
+  return "/api/preview/" + encoded + "?bash=1"
+}
+
+/**
+ * Extensions handled by the built-in file-viewer app (public/apps/
+ * file-viewer.html): markdown (CockpitMarkdown + TocSidebar), images (themed,
+ * centered, fit/100% toggle), pdf (CockpitPdf, Explorer's themed viewer),
+ * json (pretty-printed + highlighted via the markdown widget).
+ */
+const FILE_VIEWER_EXT_RE = /\.(md|png|jpe?g|gif|webp|svg|pdf|json)$/i
+
+/** True for a local file path the console routes to the file-viewer app. */
+export function isFileViewerPath(filePath: string): boolean {
+  return FILE_VIEWER_EXT_RE.test(filePath.trim())
+}
+
+/**
+ * Map a local file path to the built-in file-viewer html app
+ * (`/apps/file-viewer.html?file=<abs>`, served from public/apps/). Same
+ * relative path resolution as toPreviewUrl; the viewer fetches the raw content
+ * itself via /api/preview and (for markdown) resolves relative images against
+ * the file's directory.
+ */
+export function toFileViewerUrl(filePath: string, projectRoot?: string): string {
+  const trimmed = filePath.trim()
+  const abs = isAbsolutePath(trimmed)
+    ? trimmed
+    : joinPath(projectRoot ?? "", trimmed)
+  return "/apps/file-viewer.html?file=" + encodeURIComponent(abs.replace(/\\/g, "/"))
 }
 
 /**

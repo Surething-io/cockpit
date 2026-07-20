@@ -20,6 +20,15 @@ export function useTheme() {
   return context;
 }
 
+/**
+ * Nullable variant of useTheme for components that must also work OUTSIDE a
+ * ThemeProvider (e.g. MarkdownRenderer bundled into the standalone
+ * /html-lib/markdown.js used by html apps). Returns null when no provider.
+ */
+export function useThemeSafe() {
+  return useContext(ThemeContext);
+}
+
 interface ThemeProviderProps {
   children: React.ReactNode;
 }

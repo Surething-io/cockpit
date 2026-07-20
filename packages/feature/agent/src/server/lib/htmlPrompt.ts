@@ -85,8 +85,9 @@ meta 头（务必写上，供 HTML 面板做卡片、console \`/name\` 打开）
   \`ReactDOM.createRoot(document.getElementById('root')).render(<App/>)\`。
 - 样式默认套 **Cockpit 主题**：\`<link rel="stylesheet" href="/html-lib/theme.css">\`，直接用
   语义变量（\`var(--background)\` / \`--foreground\` / \`--card\` / \`--brand\` / \`--muted-foreground\` /
-  \`--border\` / \`--destructive\`；半透明用 \`hsl(var(--green-9) / .12)\`）。**默认浅色**；上面 meta 头里的
-  \`cockpit-theme\` 让预览带上右上角亮/暗切换按钮，**并按 app 记住选择（跨刷新，不跟随外部）**，也可调
+  \`--border\` / \`--destructive\`；半透明用 \`hsl(var(--green-9) / .12)\`）。上面 meta 头里的
+  \`cockpit-theme\` 让预览带上右上角亮/暗切换按钮；**默认跟随 Cockpit 宿主主题**（Cockpit 外打开时按
+  meta 的 auto/light/dark），手动切换后**按 app 记住选择（跨刷新，优先于跟随）**，也可调
   \`cockpit.toggleTheme()\`。**别自拍调色板、别上 Tailwind**；app 特有细节再补一小段 \`<style>\`。
 
 React 里取数同样走 \`cockpit.bash\`：
@@ -230,8 +231,9 @@ Use this fixed shell, with the logic in a sibling \`./app.jsx\`:
 - Style with the **Cockpit theme** by default: \`<link rel="stylesheet" href="/html-lib/theme.css">\`,
   then use the semantic vars (\`var(--background)\` / \`--foreground\` / \`--card\` / \`--brand\` /
   \`--muted-foreground\` / \`--border\` / \`--destructive\`; translucency via \`hsl(var(--green-9) / .12)\`).
-  **Defaults to light**; the \`cockpit-theme\` meta above gives the preview a top-right light/dark toggle,
-  **remembered per app across reloads** (does not follow the host), or call \`cockpit.toggleTheme()\`
+  The \`cockpit-theme\` meta above gives the preview a top-right light/dark toggle; it **follows the
+  Cockpit host theme by default** (outside Cockpit, the meta's auto/light/dark decides), and a manual
+  toggle is **remembered per app across reloads and overrides the host**, or call \`cockpit.toggleTheme()\`
   from your own UI. Don't invent a palette or add Tailwind; add a small \`<style>\` for app-specific bits.
 
 Fetch data from React the same way, via \`cockpit.bash\`:

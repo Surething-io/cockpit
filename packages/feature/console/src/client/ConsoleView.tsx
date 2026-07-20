@@ -30,7 +30,7 @@ const TOOLBAR_HEIGHT = 41;
 const BUBBLE_GUIDE: { key: string; label: string; triggers: string[]; notes?: string[] }[] = [
   { key: 'command', label: 'console.bubbleCommand', triggers: ['ls', 'git status', 'npm run dev'] },
   { key: 'pty', label: 'console.bubbleInteractive', triggers: ['zsh', 'vim', 'python', 'top'] },
-  { key: 'browser', label: 'console.bubbleBrowser', triggers: ['https://…', '*.html'], notes: ['console.bubbleBrowserNoteIframe', 'console.bubbleBrowserNoteCookie'] },
+  { key: 'browser', label: 'console.bubbleBrowser', triggers: ['https://…', '*.html', '*.md', '*.png', '*.pdf', '*.json'], notes: ['console.bubbleBrowserNoteIframe', 'console.bubbleBrowserNoteCookie'] },
   { key: 'database', label: 'console.bubbleDatabase', triggers: ['postgresql://', 'mysql://', 'redis://', 'neo4j://'] },
   { key: 'notebook', label: 'console.bubbleNotebook', triggers: ['*.ipynb'] },
 ];

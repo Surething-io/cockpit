@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>File Viewer</title>
+<meta name="cockpit-name" content="file-viewer">
+<meta name="description" content="Preview local files: markdown (with TOC), images, pdf">
+<meta name="cockpit-icon" content="📄">
+<link rel="stylesheet" href="/html-lib/theme.css">
+<style>
+  /* Match the cockpit app's rem base (globals.css `html { font-size: 14px }`)
+     so widget typography (Tailwind rem sizes) is identical to the Explorer
+     preview. Page-scoped on purpose: theme.css stays 16px-neutral for
+     user-authored html apps. */
+  html { font-size: 14px; }
+  /* Theme comes from /html-lib/theme.css vars; follow the host via postMessage. */
+  /* ---- Markdown view: CockpitMarkdown widget (TocSidebar + scroll pane, the
+     same composition Explorer's md preview uses) owns its scroll container ---- */
+  .md-view { position: fixed; inset: 0; }
+  .md-view .cockpit-md { max-width: 860px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+  /* ---- JSON readable view (CockpitJson): pre-like themed container,
+     mirroring Explorer's readable pane (font-mono, pre-wrap, 0.8125rem) ---- */
+  .json-view {
+    position: fixed; inset: 0; overflow: auto;
+    padding: 1rem 1.5rem;
+    font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .json-toggle {
+    position: fixed; top: 10px; right: 10px; z-index: 10;
+    padding: 3px 10px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); color: var(--muted-foreground);
+    cursor: pointer; font-size: 12px; line-height: 1.5;
+    font-family: var(--font-sans);
+  }
+  .json-toggle:hover { color: var(--foreground); }
+  .viewer-error {
+    margin: 2rem auto; max-width: 640px; padding: 1rem 1.25rem;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--destructive); background: var(--card); font-family: var(--font-mono);
+    white-space: pre-wrap; word-break: break-all;
+  }
+  /* ---- Image view: centered on the themed background, fit ↔ 100% toggle ---- */
+  .img-view {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 12px;
+  }
+  .img-view img {
+    max-width: 100%; max-height: calc(100vh - 24px);
+    cursor: zoom-in; border-radius: 2px;
+    box-shadow: 0 2px 12px hsl(var(--slate-12) / 0.15);
+  }
+  .img-view.natural { display: block; overflow: auto; }
+  .img-view.natural img { max-width: none; max-height: none; cursor: zoom-out; }
+  /* ---- PDF view: CockpitPdf widget (Explorer's themed viewer), full viewport ---- */
+  .pdf-view { position: fixed; inset: 0; }
+</style>
+<script>
+  // First-paint theme guess (OS); the host pushes the real theme right after
+  // load (THEME_CHANGE postMessage, same shape ThemeProvider broadcasts).
+  document.documentElement.classList.toggle(
+    'dark', matchMedia('(prefers-color-scheme: dark)').matches);
+</script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+(function () {
+  var root = document.getElementById('root');
+  // Assigned BEFORE the extension dispatch below runs: renderMarkdown calls
+  // loadLib synchronously, so a later `var loadedLibs = {}` would still be
+  // undefined at that point (var hoists the declaration, not the assignment).
+  var loadedLibs = {};
+
+  function fail(msg) {
+    root.className = '';
+    root.innerHTML = '';
+    var box = document.createElement('div');
+    box.className = 'viewer-error';
+    box.textContent = msg;
+    root.appendChild(box);
+  }
+
+  // Follow the Cockpit host theme. ThemeProvider broadcasts THEME_CHANGE with
+  // theme = 'light' | 'dark' | 'system'; the console bubble pushes the current
+  // resolved value on iframe load. CockpitMarkdown re-renders via its own
+  // MutationObserver on the class flip.
+  window.addEventListener('message', function (e) {
+    var d = e && e.data;
+    if (!d || d.type !== 'THEME_CHANGE') return;
+    var dark = d.theme === 'dark' ||
+      (d.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.classList.toggle('dark', dark);
+  });
+
+  var file = new URLSearchParams(location.search).get('file');
+  if (!file) {
+    fail('file-viewer: missing ?file=<absolute path> (.md / image / .pdf)');
+    return;
+  }
+
+  // Per-segment encoding, mirroring toPreviewUrl (shared-utils htmlBashSdk).
+  function encodePath(p) {
+    return p.replace(/\\/g, '/').split('/')
+      .map(encodeURIComponent).join('/').replace(/^\//, '');
+  }
+
+  document.title = file.split(/[/\\]/).pop() || 'File Viewer';
+  var previewUrl = '/api/preview/' + encodePath(file);
+  var extMatch = /\.([a-z0-9]+)$/i.exec(file);
+  var ext = extMatch ? extMatch[1].toLowerCase() : '';
+
+  if (ext === 'md') renderMarkdown();
+  else if (ext === 'json') renderJson();
+  else if (ext === 'pdf') renderPdf();
+  else if (/^(png|jpe?g|gif|webp|svg)$/.test(ext)) renderImage();
+  else fail('file-viewer: unsupported file type .' + ext + '\n' + file);
+
+  // ---- Image: centered on themed background, click toggles fit ↔ 100% ----
+  function renderImage() {
+    root.className = 'img-view';
+    var img = document.createElement('img');
+    img.src = previewUrl;
+    img.alt = document.title;
+    img.onerror = function () { fail('file-viewer: failed to load image\n' + file); };
+    img.onclick = function () { root.classList.toggle('natural'); };
+    root.appendChild(img);
+  }
+
+  // ---- PDF: the same themed, virtualized viewer the Explorer uses
+  // (CockpitPdf widget — pdf.js pages + thumbnail rail + zoom toolbar),
+  // loaded on demand like the markdown lib ----
+  function renderPdf() {
+    root.className = 'pdf-view';
+    var dir = file.replace(/\\/g, '/').replace(/\/[^/]*$/, '') || '/';
+    var name = file.split(/[/\\]/).pop();
+
+    var css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = '/html-lib/pdf-viewer.css';
+    document.head.appendChild(css);
+
+    var script = document.createElement('script');
+    script.src = '/html-lib/pdf-viewer.js';
+    script.onerror = function () { fail('file-viewer: failed to load /html-lib/pdf-viewer.js'); };
+    script.onload = function () {
+      window.CockpitPdf.render(root, { cwd: dir, path: name });
+    };
+    document.head.appendChild(script);
+  }
+
+  // ---- Markdown & JSON: CockpitMarkdown widget (MarkdownRenderer + TocSidebar,
+  // identical to Explorer's md preview); lib loaded on demand so image/pdf
+  // previews don't parse the 1.5MB bundle ----
+  function renderMarkdown() {
+    // Relative image/link refs in the markdown resolve into the file's
+    // directory under /api/preview (static-site style), via a <base> tag.
+    var dir = file.replace(/\\/g, '/').replace(/\/[^/]*$/, '');
+    var base = document.createElement('base');
+    base.href = '/api/preview/' + encodePath(dir) + '/';
+    document.head.appendChild(base);
+
+    root.className = 'md-view';
+    loadLib('/html-lib/markdown.js', '/html-lib/markdown.css', function () {
+      fetch(previewUrl)
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status + ' loading ' + file);
+          return res.text();
+        })
+        .then(function (text) {
+          window.CockpitMarkdown.render(root, text);
+        })
+        .catch(function (err) {
+          fail('file-viewer: failed to load file\n' + file + '\n\n' + (err && err.message));
+        });
+    });
+  }
+
+  // Lazy script(+css) loader with de-dup: cb fires immediately when already loaded.
+  function loadLib(src, cssHref, cb) {
+    if (loadedLibs[src]) { cb(); return; }
+    if (cssHref) {
+      var css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = cssHref;
+      document.head.appendChild(css);
+    }
+    var script = document.createElement('script');
+    script.src = src;
+    script.onerror = function () { fail('file-viewer: failed to load ' + src); };
+    script.onload = function () { loadedLibs[src] = true; cb(); };
+    document.head.appendChild(script);
+  }
+
+  // ---- JSON: default = the Explorer "readable" view (CockpitJson widget —
+  // colorized keys/values, \n unescaped, long strings click-to-collapse);
+  // the floating top-right button toggles to the raw pretty-printed source
+  // (CockpitMarkdown json fence). The two widgets are SEPARATE React copies,
+  // so the active one must be unmounted before the other renders into root.
+  var jsonText = null;
+  var jsonToggleBtn = null;
+  var jsonMode = 'readable';
+
+  // App-local dictionary — apps own their strings and only PERCEIVE the
+  // language type from the host (initial push on iframe load + live
+  // cockpit:language-change broadcast, same protocol the widgets follow).
+  var L = {
+    zh: { readable: '可读', raw: '原文' },
+    en: { readable: 'Readable', raw: 'Raw' },
+  };
+  var uiLang = navigator.language.indexOf('zh') === 0 ? 'zh' : 'en';
+  window.addEventListener('message', function (e) {
+    var d = e && e.data;
+    if (!d || d.type !== 'cockpit:language-change' || !d.lang) return;
+    uiLang = String(d.lang).indexOf('zh') === 0 ? 'zh' : 'en';
+    updateJsonToggleLabel();
+  });
+
+  // Label shows the mode the click switches TO.
+  function updateJsonToggleLabel() {
+    if (!jsonToggleBtn) return;
+    jsonToggleBtn.textContent = jsonMode === 'readable' ? L[uiLang].raw : L[uiLang].readable;
+  }
+
+  function renderJson() {
+    fetch(previewUrl)
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status + ' loading ' + file);
+        return res.text();
+      })
+      .then(function (text) {
+        jsonText = text;
+        jsonToggleBtn = document.createElement('button');
+        jsonToggleBtn.type = 'button';
+        jsonToggleBtn.className = 'json-toggle';
+        document.body.appendChild(jsonToggleBtn);
+        showJsonReadable();
+      })
+      .catch(function (err) {
+        fail('file-viewer: failed to load file\n' + file + '\n\n' + (err && err.message));
+      });
+  }
+
+  function showJsonReadable() {
+    loadLib('/html-lib/json-viewer.js', null, function () {
+      if (window.CockpitMarkdown) window.CockpitMarkdown.unmount(root);
+      root.className = 'json-view';
+      window.CockpitJson.render(root, jsonText);
+      jsonMode = 'readable';
+      updateJsonToggleLabel();
+      jsonToggleBtn.onclick = showJsonRaw;
+    });
+  }
+
+  function showJsonRaw() {
+    loadLib('/html-lib/markdown.js', '/html-lib/markdown.css', function () {
+      if (window.CockpitJson) window.CockpitJson.unmount(root);
+      root.className = 'md-view';
+      window.CockpitMarkdown.render(root, jsonToMarkdown(jsonText), { toc: false });
+      jsonMode = 'raw';
+      updateJsonToggleLabel();
+      jsonToggleBtn.onclick = showJsonReadable;
+    });
+  }
+
+  function jsonToMarkdown(text) {
+    var body = text;
+    try { body = JSON.stringify(JSON.parse(text), null, 2); } catch (e) { /* show raw */ }
+    // Fence must be longer than any backtick run inside the content.
+    var fence = '```';
+    var runs = body.match(/`+/g);
+    if (runs) {
+      var longest = Math.max.apply(null, runs.map(function (s) { return s.length; }));
+      while (fence.length <= longest) fence += '`';
+    }
+    return fence + 'json\n' + body + '\n' + fence;
+  }
+
+})();
+</script>
+</body>
+</html>

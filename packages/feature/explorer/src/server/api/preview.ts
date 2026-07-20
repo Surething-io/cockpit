@@ -39,6 +39,7 @@ const PREVIEW_MIME: Record<string, string> = {
   ".json": "application/json; charset=utf-8",
   ".map": "application/json; charset=utf-8",
   ".txt": "text/plain; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
   ".xml": "application/xml; charset=utf-8",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
@@ -51,10 +52,12 @@ export const GET = handler((req) =>
   Effect.gen(function* () {
     const reqUrl = new URL(req.url)
     const pathname = reqUrl.pathname
-    // Inject the bash SDK ONLY for TRUSTED previews (marked `?bash=1` by the
-    // host). Untrusted previews are served raw. The hard enforcement is the
-    // /ws/bash same-origin gate + the untrusted iframe's opaque sandbox; this
-    // just avoids shipping a live RCE bridge inside every previewed .html.
+    // Inject the bash SDK ONLY for top-level, user-opened previews (marked
+    // `?bash=1` by toPreviewUrl — every caller is a deliberate gesture).
+    // Relative sub-resources loaded FROM a previewed page (./app.jsx, nested
+    // html, file-viewer fetches) arrive without the query and are served raw.
+    // The hard enforcement is the /ws/bash same-origin gate; this gate just
+    // avoids shipping a live RCE bridge inside every referenced .html.
     const wantBash = reqUrl.searchParams.get("bash") === "1"
     if (!pathname.startsWith(PREFIX)) {
       return yield* Effect.fail(

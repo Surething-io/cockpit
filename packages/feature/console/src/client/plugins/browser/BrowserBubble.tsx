@@ -6,7 +6,7 @@ import { toast } from '@cockpit/shared-ui';
 import { BUBBLE_CONTENT_HEIGHT } from '../../CommandBubble';
 import { useBrowserBridge } from '../../useBrowserBridge';
 import { ShortIdBadge } from '../../ShortIdBadge';
-import { modKey, toPreviewUrl } from '@cockpit/shared-utils';
+import { modKey, toPreviewUrl, isFileViewerPath, toFileViewerUrl } from '@cockpit/shared-utils';
 import { unregisterBrowserBridge } from '../../effect/pluginDisconnect';
 
 // ============================================================================
@@ -163,7 +163,7 @@ export function BrowserBubble({
   projectCwd,
   tabId,
 }: BrowserBubbleProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentUrl, setCurrentUrl] = useState(url);
@@ -254,9 +254,10 @@ export function BrowserBubble({
     // Reload the iframe
     if (!isHttpUrl(url)) {
       // Local file path → served by /api/preview, no cookie prep needed
-      // Console bubbles are opened intentionally (typed path / `/name` registered
-      // app) → trusted, so /api/preview injects the bash SDK.
-      setReadyUrl(toPreviewUrl(url, projectCwd, { trusted: true }));
+      // md/image/pdf paths route to the built-in file-viewer app; other local
+      // paths (html) get the bash-SDK preview (unconditional — console bubbles
+      // are always opened intentionally: typed path / `/name` registered app).
+      setReadyUrl(isFileViewerPath(url) ? toFileViewerUrl(url, projectCwd) : toPreviewUrl(url, projectCwd));
       return;
     }
     const cockpitUrl = addCockpitParam(url);
@@ -273,9 +274,10 @@ export function BrowserBubble({
 
     // Local file path → served by /api/preview, no cookie prep needed
     if (!isHttpUrl(url)) {
-      // Console bubbles are opened intentionally (typed path / `/name` registered
-      // app) → trusted, so /api/preview injects the bash SDK.
-      setReadyUrl(toPreviewUrl(url, projectCwd, { trusted: true }));
+      // md/image/pdf paths route to the built-in file-viewer app; other local
+      // paths (html) get the bash-SDK preview (unconditional — console bubbles
+      // are always opened intentionally: typed path / `/name` registered app).
+      setReadyUrl(isFileViewerPath(url) ? toFileViewerUrl(url, projectCwd) : toPreviewUrl(url, projectCwd));
       return;
     }
 
@@ -295,7 +297,18 @@ export function BrowserBubble({
     return () => { cancelled = true; };
   }, [url, isSleeping, projectCwd]);
 
-  const handleIframeLoad = useCallback(() => setIsLoading(false), []);
+  const handleIframeLoad = useCallback(() => {
+    setIsLoading(false);
+    // Push the host's current (resolved) theme and language to the just-loaded
+    // document — html apps and the file-viewer follow both by default; later
+    // changes arrive via the global THEME_CHANGE / cockpit:language-change
+    // broadcasts to all iframes (ThemeProvider / I18nProvider).
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    const dark = document.documentElement.classList.contains('dark');
+    win.postMessage({ type: 'THEME_CHANGE', theme: dark ? 'dark' : 'light' }, '*');
+    win.postMessage({ type: 'cockpit:language-change', lang: i18n.language }, '*');
+  }, [i18n]);
 
   // Prevent iframe interactions from scrolling the parent scroll container.
   // Two sources: (1) cross-origin iframe wheel scroll chaining (compositor-layer propagation)
@@ -404,7 +417,15 @@ export function BrowserBubble({
   const handleOpenExternal = useCallback(() => {
     if (!currentUrl) return;
     // File paths can't open directly in a browser tab — route through /api/preview
-    window.open(isHttpUrl(currentUrl) ? currentUrl : toPreviewUrl(currentUrl, projectCwd, { trusted: true }), '_blank');
+    // (md/image/pdf through the file-viewer app, same as the bubble itself)
+    window.open(
+      isHttpUrl(currentUrl)
+        ? currentUrl
+        : isFileViewerPath(currentUrl)
+          ? toFileViewerUrl(currentUrl, projectCwd)
+          : toPreviewUrl(currentUrl, projectCwd),
+      '_blank',
+    );
   }, [currentUrl, projectCwd]);
 
   // ESC to exit maximize / Cmd+M to toggle maximize

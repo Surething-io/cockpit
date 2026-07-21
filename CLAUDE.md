@@ -99,13 +99,26 @@ Two address spaces, one route
 - `/apps/local/<abs path>` — any file on this machine; this is also the
   plain local-file server (relative sub-resources, images, css)
 
-**SDK injection has exactly one rule** (`wantsSdk`): an `.html` document
-explicitly marked `?bash=1`. That marker is only ever set by `toLocalAppUrl` /
-`toFileViewerUrl`, i.e. a deliberate user gesture opening a top-level document.
-Relative sub-resources — including a nested `.html` — arrive without it and are
-served raw, so the live bash bridge is not shipped inside every referenced file.
-Built-in apps get no exemption: being first-party earns trust for the entry
-point, not for everything it references.
+**SDK injection has no marker**: every `.html` served by this route gets
+`window.cockpit`. Nothing to opt into, nothing to forget. `cockpit-name` is
+purely a registry concern (panel card + `/name`) and has no bearing on what
+runs.
+
+**Do not add a marker back.** Two earlier designs gated injection on one (a URL
+flag, then a meta tag) and both failed silently — the header comment in
+`apps.ts` records how, so the mistake isn't repeated.
+
+Making it unconditional is free because **injection was never a security
+boundary**: any page served here is same-origin and can open its own WebSocket
+to `/ws/bash` regardless. **The real gate is the same-origin check on that
+upgrade** (`src/lib/wsServer.ts`), which means the security decision is *what
+you choose to preview*, not what we inject.
+
+Say the consequence out loud when working here: **previewing any local `.html`
+runs it**, with full shell access. The iframe carries no `sandbox` attribute
+(matching the console browser bubble), so a previewed page can also navigate
+the whole Cockpit window away. Surfaces that preview unreviewed content — e.g.
+a `.html` straight out of a git diff — are making that call for the user.
 
 When working in this area:
 

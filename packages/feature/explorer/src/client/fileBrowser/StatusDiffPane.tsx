@@ -443,12 +443,16 @@ export function StatusDiffPane({
         </div>
       )}
 
-      {/* Git changes HTML preview modal. Trusted only for registered html.json
-          apps; an arbitrary changed .html renders in an opaque sandbox. Its own
-          Portal overlay, so no wrapper needed. onContentSearch is omitted: an
-          untrusted preview has no selection toolbar, and even a trusted one would
-          jump the FileBrowserModal to its search tab, which the host already
-          wires via onContentSearch on the diff view. */}
+      {/* Git changes HTML preview modal.
+          ⚠ There is no opaque-sandbox tier any more (an earlier version of this
+          comment claimed one): HtmlPreview renders every document same-origin
+          with the bash SDK injected, so previewing a changed .html from this
+          pane RUNS IT — including a .html an agent just wrote and nobody has
+          reviewed. Clicking preview here is the trust decision; treat it as
+          running the file, not viewing it.
+          Its own Portal overlay, so no wrapper needed. onContentSearch is
+          omitted because it would jump the FileBrowserModal to its search tab,
+          which the host already wires via onContentSearch on the diff view. */}
       {showHtmlPreview && (
         <HtmlPreviewModal
           filePath={htmlAbs}

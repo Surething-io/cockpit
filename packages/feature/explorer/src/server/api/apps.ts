@@ -16,15 +16,28 @@
  * not JSON) and "preview" undersold what it does — with the bash SDK injected
  * this is an execution environment with a shell bridge, not a passive viewer.
  *
- * SDK INJECTION is decided in ONE place (`wantsSdk`) for both address spaces:
- * an .html document explicitly marked `?bash=1`. That marker is only ever set
- * by toLocalAppUrl / toFileViewerUrl, i.e. a deliberate user gesture opening a
- * top-level document. Relative sub-resources loaded FROM a page — including a
- * nested .html — arrive without it and are served raw, so the live bash bridge
- * is not shipped inside every referenced file. Built-in apps get no exemption:
- * being first-party earns trust for the entry point, not for everything the
- * entry point happens to reference. The hard enforcement is the /ws/bash
- * same-origin gate either way.
+ * SDK INJECTION has no marker at all: every .html this route serves gets
+ * window.cockpit. There is deliberately nothing to opt into and nothing to
+ * forget.
+ *
+ * Both earlier designs failed the same way — they made injection depend on
+ * something that could silently go missing:
+ *  - `?bash=1` on the URL did not survive navigation. A form GET with an empty
+ *    action rewrites the whole query string, so the reloaded page lost
+ *    window.cockpit and every button threw.
+ *  - `<meta name="cockpit-name">` in the document survived navigation, but that
+ *    tag also registers the panel card / `/name` command, and the registry
+ *    happily falls back to the filename when it is absent. So a document could
+ *    register as an app and still get no SDK — the two readers disagreed.
+ *
+ * Making it unconditional costs nothing real: injection was never a security
+ * boundary. Any page served here is same-origin and can hand-roll its own
+ * WebSocket to /ws/bash with or without our help; the hard enforcement is, and
+ * always was, the same-origin check on that upgrade (see wsServer.ts). A page
+ * that does not use the SDK is simply unaffected by its presence.
+ *
+ * `cockpit-name` is therefore purely a registry concern again (parseHtmlMeta),
+ * with no bearing on what runs.
  */
 import { createReadStream } from "fs"
 import { readFile } from "fs/promises"
@@ -83,11 +96,17 @@ const mimeFor = (ext: string) => EXTRA_MIME[ext] ?? getMimeType(ext)
 const isHtml = (ext: string) => ext === ".html" || ext === ".htm"
 
 /**
- * The single SDK-injection decision, shared by both address spaces.
- * See the `SDK INJECTION` note at the top of this file.
+ * Above this size an .html is streamed raw instead of being read in to have the
+ * SDK injected. Real apps are documents; anything past this is a generated
+ * report being viewed, which wants bytes on screen, not a shell bridge.
  */
-const wantsSdk = (ext: string, params: URLSearchParams) =>
-  isHtml(ext) && params.get("bash") === "1"
+const MAX_INJECTABLE_HTML_BYTES = 8 * 1024 * 1024
+
+/**
+ * The single SDK-injection decision, shared by both address spaces: being an
+ * .html document is the whole rule. See the `SDK INJECTION` note at the top.
+ */
+const wantsSdk = (ext: string) => isHtml(ext)
 
 /** Purely local app — no caching (see CLAUDE.md), always serve fresh bytes. */
 const NO_STORE = { "Cache-Control": "no-store" } as const
@@ -140,7 +159,9 @@ export const GET = handler((req) =>
       const ext = path.extname(target).toLowerCase()
       const contentType = mimeFor(ext)
 
-      if (wantsSdk(ext, url.searchParams)) {
+      // Decode only for html — a png/woff2/wasm must not pay a full UTF-8
+      // decode just to be told it is not a document.
+      if (wantsSdk(ext)) {
         // `?file=<abs>` points the SDK cwd at the file the app was opened for,
         // so the app can address its target with a bare basename. It must be
         // absolute: a relative value would silently resolve the app's shell
@@ -205,7 +226,14 @@ export const GET = handler((req) =>
     const ext = path.extname(fullPath).toLowerCase()
     const contentType = mimeFor(ext)
 
-    if (wantsSdk(ext, url.searchParams)) {
+    // An .html document is read in full because injection rewrites it;
+    // everything else (images, pdfs, video) still streams. `/apps/local` serves
+    // arbitrary paths, not just small app files, so cap the read rather than
+    // assume documents are small — a multi-hundred-MB generated report (nyc,
+    // pytest-html, heap dump) would otherwise be buffered whole, and Cockpit is
+    // a single process. Past the cap, serve it as a plain stream with no SDK:
+    // degrading to "no bridge" beats an OOM that takes every panel down.
+    if (isHtml(ext) && info.size <= MAX_INJECTABLE_HTML_BYTES) {
       const html = yield* Effect.tryPromise({
         try: () => readFile(fullPath, "utf-8"),
         catch: (cause) =>

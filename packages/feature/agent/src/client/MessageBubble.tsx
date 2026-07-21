@@ -735,7 +735,8 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
         <AskQuestionViewerModal toolCalls={askQuestionCalls} onClose={() => setShowAskQuestionViewer(false)} />
       )}
 
-      {/* File preview — image via raw <img src>, html in a sandboxed iframe, md via the rich preview */}
+      {/* File preview — image via raw <img src>, html in a same-origin iframe
+          with the bash SDK (i.e. previewing it runs it), md via the rich preview */}
       {previewFile && isImageFile(previewFile) && (
         <ImageFilePreviewModal filePath={previewFile} onClose={() => setPreviewFile(null)} />
       )}

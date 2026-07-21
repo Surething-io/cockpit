@@ -473,14 +473,11 @@ export function toLocalAppUrl(filePath: string, projectRoot?: string): string {
     .map(encodeURIComponent)
     .join("/")
     .replace(/^\//, "")
-  // `?bash=1` → the /apps route injects the window.cockpit bash SDK. Every
-  // caller here is a deliberate user gesture (explorer preview button,
-  // console-typed path / `/name` app), so the flag is unconditional. The
-  // server-side gate still matters: relative sub-resources loaded FROM a page
-  // (./app.jsx, nested html) arrive without the query and are served raw — SDK
-  // injection stays scoped to top-level, user-opened documents. The hard
-  // enforcement is the /ws/bash same-origin gate either way.
-  return LOCAL_APP_PREFIX + encoded + "?bash=1"
+  // No SDK marker in the URL: the document declares it itself via
+  // <meta name="cockpit-name"> (see apps.ts). A query flag did not survive
+  // navigation — a form GET with an empty action rewrites the query string,
+  // so the page came back without window.cockpit and every button then threw.
+  return LOCAL_APP_PREFIX + encoded
 }
 
 /**
@@ -513,12 +510,15 @@ export function toFileViewerUrl(filePath: string, projectRoot?: string): string 
   const abs = isAbsolutePath(trimmed)
     ? trimmed
     : joinPath(projectRoot ?? "", trimmed)
-  // `bash=1` is the SAME marker local files use — the /apps route has a single
-  // injection rule and built-in apps get no exemption, so the entry point must
-  // carry it explicitly (a nested .html it references will not).
+  // No SDK marker here either — file-viewer/index.html declares
+  // <meta name="cockpit-name"> like any other app; built-in gets no exemption.
+  // `file` stays a query param: it is per-open context (which file this viewer
+  // was launched for), not a property of the document, so it cannot live in the
+  // head. It is therefore still lost across an in-app navigation, after which
+  // the SDK cwd falls back to the app's own directory.
   return (
     BUILTIN_APP_PREFIX +
-    "file-viewer/index.html?bash=1&file=" +
+    "file-viewer/index.html?file=" +
     encodeURIComponent(abs.replace(/\\/g, "/"))
   )
 }

@@ -33,9 +33,8 @@ interface HtmlPreviewProps {
 }
 
 /**
- * In-place HTML preview in a sandboxed iframe. Mirrors the markdown in-place
- * preview UX (the host toolbar owns the Preview toggle); only the rendered
- * content differs.
+ * In-place HTML preview in an iframe. Mirrors the markdown in-place preview UX
+ * (the host toolbar owns the Preview toggle); only the rendered content differs.
  *
  * Renders via `src="/apps/local/<abs>"` (a real same-origin URL served off
  * disk), so the page behaves like a static site — relative sibling js/css,
@@ -43,16 +42,27 @@ interface HtmlPreviewProps {
  * absolute path is derivable (relative filePath + no cwd) does it fall back to
  * inline `srcDoc` (single-file only).
  *
- * SECURITY MODEL: rendering an interactive preview is ALWAYS an explicit user
- * gesture (clicking a "Preview" button/toggle, opening a modal, selecting a file
- * after enabling HTML preview). That gesture IS the trust decision, so every
- * preview gets the bash SDK + `allow-same-origin`. The single guard lives at the
- * entry points, not here: nothing auto-previews HTML — the Explorer file browser
- * shows source for .html until the user clicks Preview. (Purely-local app; the
- * accepted trade-off is that previewing any local .html can run host commands.)
+ * SECURITY MODEL — state it plainly: PREVIEWING ANY LOCAL .html RUNS ARBITRARY
+ * SHELL COMMANDS ON THIS MACHINE, at the previewed page's discretion. There is
+ * no sandbox attribute on this iframe (matching the console browser bubble) and
+ * no injection marker; every previewed document gets the bash SDK. Even without
+ * injection it could reach /ws/bash itself, since it is same-origin — so the
+ * only real gate is the same-origin check on that upgrade (src/lib/wsServer.ts).
  *
- * Selection toolbar: needs `allow-same-origin` (always granted now), so the host
- * can listen inside the iframe document and read its selection. Rendered DOM has no
+ * What keeps that acceptable is the ENTRY POINT, not this component: rendering a
+ * preview is always an explicit user gesture (a Preview button/toggle, opening a
+ * modal). Nothing auto-previews HTML — the Explorer file browser shows source
+ * for .html until the user clicks Preview. Callers that render UNREVIEWED
+ * content (e.g. a .html out of a git diff) are therefore making a real trust
+ * decision on the user's behalf, and should say so at their own call site.
+ *
+ * Note the cost of having no sandbox: the page can navigate the whole Cockpit
+ * window away (`top.location`, `<a target="_top">`) and trigger downloads. That
+ * was a deliberate trade for consistency with the console bubble and for making
+ * ordinary web idioms (forms, alert/confirm, window.open) work.
+ *
+ * Selection toolbar: relies on the iframe being same-origin, so the host can
+ * listen inside its document and read the selection. Rendered DOM has no
  * mapping back to source lines, so comments are anchored by the selected-text
  * snapshot (range 0-0) — same model as chat-bubble comments: no in-preview
  * markers, the comment carries the quoted text and shows up in the comments
@@ -73,15 +83,21 @@ export function HtmlPreview({ content, filePath, cwd, onContentSearch }: HtmlPre
   //  - FALLBACK (mode 'srcdoc'): only when no absolute path is derivable
   //    (relative filePath + no cwd). Inline the content with the SDK injected
   //    client-side; single-file only, but keeps preview working.
+  // Injection is unconditional in both modes, matching the /apps route: there
+  // is no marker to check, so the two paths cannot disagree. (They briefly
+  // gated on a meta tag, but url mode reads the file from disk while srcdoc
+  // mode gets `content` — a diff/history buffer that may differ from disk — so
+  // "same predicate" would still have produced different answers per path.)
   const renderSource = useMemo((): { mode: 'url'; url: string } | { mode: 'srcdoc'; html: string } => {
     if (canResolveAbsolute(filePath, cwd)) {
       return { mode: 'url', url: toLocalAppUrl(filePath, cwd) };
     }
-    if (typeof window === 'undefined') return { mode: 'srcdoc', html: content ?? '' };
+    const html = content ?? '';
+    if (typeof window === 'undefined') return { mode: 'srcdoc', html };
     const dir = resolveBashCwd(filePath, cwd);
     const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${wsProto}//${window.location.host}/ws/bash?cwd=${encodeURIComponent(dir)}`;
-    return { mode: 'srcdoc', html: injectBashSdk(content ?? '', { cwd: dir, wsUrl }) };
+    return { mode: 'srcdoc', html: injectBashSdk(html, { cwd: dir, wsUrl }) };
   }, [content, filePath, cwd]);
   const { addComment, refresh: refreshComments } = useComments({ cwd: cwd || '', filePath });
 
@@ -242,9 +258,15 @@ export function HtmlPreview({ content, filePath, cwd, onContentSearch }: HtmlPre
           ? { src: renderSource.url }
           : { srcDoc: renderSource.html })}
         title={filePath}
-        // Previewing is a user gesture → trusted: allow-same-origin gives the
-        // SDK its same-origin /ws/bash and lets the host read the selection.
-        sandbox="allow-scripts allow-same-origin"
+        // No sandbox — deliberately matching the console browser bubble, which
+        // has never set one. `allow-scripts allow-same-origin` was never a
+        // security boundary anyway (a same-origin frame can strip its own
+        // sandbox attribute via parent.document, and the page is handed
+        // cockpit.bash = arbitrary shell regardless); all it did was silently
+        // break ordinary web idioms — forms, alert/confirm, downloads,
+        // window.open — in this surface but not the other, so the same app
+        // behaved differently depending on where the user opened it.
+        // The real gate is the same-origin check on the /ws/bash upgrade.
         className="h-full w-full border-0"
         onLoad={handleIframeLoad}
       />

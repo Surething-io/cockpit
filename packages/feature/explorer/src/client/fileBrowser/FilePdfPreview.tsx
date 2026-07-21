@@ -33,7 +33,13 @@ export interface FilePdfPreviewProps {
 const PAGE_GAP = 16;
 /** Horizontal padding (px, both sides) + rough scrollbar allowance. */
 const H_PAD = 32;
-/** Zoom bounds and step. */
+/**
+ * CSS px per PDF point (PDF is 72dpi, CSS is 96dpi). A render scale of exactly
+ * CSS_UNITS is what every PDF viewer calls "100%" — the page at physical size.
+ * Zoom factors below are expressed relative to that, NOT to raw pdf.js scale 1.
+ */
+const CSS_UNITS = 96 / 72;
+/** Zoom bounds and step, as multiples of 100% (== CSS_UNITS). */
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 1.2;
@@ -55,10 +61,27 @@ export function FilePdfPreview({ cwd, path, refreshKey }: FilePdfPreviewProps) {
   const [docState, setDocState] = useState<DocState>({ kind: 'loading' });
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState(0);
-  /** First page size in PDF points (scale 1); slide decks are uniform, so this drives layout. */
-  const [base, setBase] = useState<{ w: number; h: number } | null>(null);
+  /**
+   * EVERY page's size in PDF points (scale 1), indexed by page-1.
+   *
+   * Page sizes are not uniform in general: a very common book layout is
+   * single-width cover/back pages wrapping double-width landscape spreads.
+   * Sizing all pages from page 1 squashes every page whose aspect ratio differs
+   * from the cover's — a 792pt spread forced into a 396pt-wide box renders at
+   * exactly 2x horizontal compression, which reads as "the font looks wrong"
+   * rather than as a layout bug.
+   */
+  const [sizes, setSizes] = useState<{ w: number; h: number }[] | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
-  const [zoom, setZoom] = useState(1); // 1 == fit-width
+  /**
+   * 'auto' == fit width, but never magnified past 100%. Fitting width alone
+   * would blow a portrait page up to ~230% in a wide panel (A4 is 595pt vs a
+   * ~1370px panel), which reads as "the font is huge"; landscape slide decks
+   * (960pt) sit near the cap anyway, so they still fill the width as before.
+   */
+  const [zoomMode, setZoomMode] = useState<
+    { kind: 'auto' } | { kind: 'fixed'; factor: number }
+  >({ kind: 'auto' });
   const [currentPage, setCurrentPage] = useState(1);
   const [showThumbs, setShowThumbs] = useState(true);
 
@@ -68,7 +91,7 @@ export function FilePdfPreview({ cwd, path, refreshKey }: FilePdfPreviewProps) {
     setDocState({ kind: 'loading' });
     setDoc(null);
     setNumPages(0);
-    setBase(null);
+    setSizes(null);
     setCurrentPage(1);
 
     // The loading task owns the worker + document; destroying it tears both down.
@@ -88,12 +111,23 @@ export function FilePdfPreview({ cwd, path, refreshKey }: FilePdfPreviewProps) {
         loadingTask = pdfjs.getDocument({ url });
         const loaded = await loadingTask.promise;
         if (cancelled) return;
-        const first = await loaded.getPage(1);
-        const vp = first.getViewport({ scale: 1 });
+
+        // Measure every page up front so the virtualizer's offsets are correct
+        // from the first paint. This only reads each page's dictionary (no
+        // content parsing or rasterizing), which is cheap next to rendering.
+        const measured = await Promise.all(
+          Array.from({ length: loaded.numPages }, (_, i) =>
+            loaded.getPage(i + 1).then((p) => {
+              const v = p.getViewport({ scale: 1 });
+              return { w: v.width, h: v.height };
+            }),
+          ),
+        );
+        if (cancelled) return;
 
         setDoc(loaded);
         setNumPages(loaded.numPages);
-        setBase({ w: vp.width, h: vp.height });
+        setSizes(measured);
         setDocState({ kind: 'ready' });
       } catch (err) {
         if (!cancelled) {
@@ -127,36 +161,64 @@ export function FilePdfPreview({ cwd, path, refreshKey }: FilePdfPreviewProps) {
   }, []);
 
   // ---- Derived layout ----
-  const fitScale = base && containerWidth > 0 ? containerWidth / base.w : 1;
-  const renderScale = fitScale * zoom;
-  const pageW = base ? base.w * renderScale : 0;
-  const pageH = base ? base.h * renderScale : 0;
-  const rowSize = pageH + PAGE_GAP;
+  /** Fit the WIDEST page, so a mixed-size document never overflows horizontally. */
+  const maxPageW = useMemo(
+    () => (sizes?.length ? Math.max(...sizes.map((s) => s.w)) : 0),
+    [sizes],
+  );
+  const fitScale = maxPageW > 0 && containerWidth > 0 ? containerWidth / maxPageW : CSS_UNITS;
+  /** Auto = fit width, clamped so a page is never magnified beyond 100%. */
+  const autoScale = Math.min(fitScale, CSS_UNITS);
+  const renderScale = zoomMode.kind === 'auto' ? autoScale : zoomMode.factor * CSS_UNITS;
+  /** What the toolbar shows: the TRUE zoom, so the label can't drift from what's on screen. */
+  const zoomPercent = Math.round((renderScale / CSS_UNITS) * 100);
+  /** Per-page row heights — pages may differ, so a single rowSize can't describe them. */
+  const rowHeights = useMemo(
+    () => (sizes ? sizes.map((s) => s.h * renderScale + PAGE_GAP) : []),
+    [sizes, renderScale],
+  );
+  const contentW = maxPageW * renderScale;
+
+  // Stepping from 'auto' needs the factor auto currently resolves to. A ref
+  // keeps zoomIn/zoomOut referentially stable despite this changing on resize.
+  const autoFactorRef = useRef(1);
+  autoFactorRef.current = autoScale / CSS_UNITS;
 
   // ---- Virtualize pages ----
+  const rowHeightsRef = useRef(rowHeights);
+  rowHeightsRef.current = rowHeights;
+
   const rowVirtualizer = useVirtualizer({
     count: numPages,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => rowSize,
+    estimateSize: (i) => rowHeightsRef.current[i] ?? 0,
     overscan: 2,
   });
 
-  // Recompute slot heights whenever the page size (zoom / width) changes.
+  // Recompute slot heights whenever page sizes or the zoom change.
   useEffect(() => {
-    if (rowSize > 0) rowVirtualizer.measure();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowSize]);
+    if (rowHeights.length > 0) rowVirtualizer.measure();
+  }, [rowHeights, rowVirtualizer]);
 
+  // Rows have different heights now, so the current page can't be divided out
+  // of the scroll offset — ask the virtualizer which row the viewport top is in.
   const handleScroll = useCallback(() => {
-    if (rowSize <= 0) return;
-    const top = scrollRef.current?.scrollTop ?? 0;
-    const page = Math.min(numPages, Math.max(1, Math.floor(top / rowSize) + 1));
-    setCurrentPage(page);
-  }, [rowSize, numPages]);
+    const el = scrollRef.current;
+    if (!el || numPages === 0) return;
+    const top = el.scrollTop;
+    const hit = rowVirtualizer.getVirtualItems().find((vi) => vi.end > top);
+    setCurrentPage((hit ? hit.index : numPages - 1) + 1);
+  }, [rowVirtualizer, numPages]);
 
-  const zoomIn = useCallback(() => setZoom((z) => Math.min(MAX_ZOOM, z * ZOOM_STEP)), []);
-  const zoomOut = useCallback(() => setZoom((z) => Math.max(MIN_ZOOM, z / ZOOM_STEP)), []);
-  const zoomReset = useCallback(() => setZoom(1), []);
+  const stepZoom = useCallback((step: number) => {
+    setZoomMode((m) => {
+      const cur = m.kind === 'auto' ? autoFactorRef.current : m.factor;
+      return { kind: 'fixed', factor: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cur * step)) };
+    });
+  }, []);
+  const zoomIn = useCallback(() => stepZoom(ZOOM_STEP), [stepZoom]);
+  const zoomOut = useCallback(() => stepZoom(1 / ZOOM_STEP), [stepZoom]);
+  const zoomReset = useCallback(() => setZoomMode({ kind: 'auto' }), []);
   const toggleThumbs = useCallback(() => setShowThumbs((v) => !v), []);
 
   // Jump the main view to a page (0-based index) — used by thumbnail clicks.
@@ -203,10 +265,12 @@ export function FilePdfPreview({ cwd, path, refreshKey }: FilePdfPreviewProps) {
           </button>
           <button
             onClick={zoomReset}
-            className="px-1.5 py-0.5 rounded hover:bg-accent transition-colors tabular-nums min-w-[3.5rem]"
-            title="Fit width"
+            className={`px-1.5 py-0.5 rounded hover:bg-accent transition-colors tabular-nums min-w-[3.5rem] ${
+              zoomMode.kind === 'auto' ? '' : 'text-foreground'
+            }`}
+            title="Reset to automatic zoom"
           >
-            {Math.round(zoom * 100)}%
+            {zoomPercent}%
           </button>
           <button
             onClick={zoomIn}
@@ -219,7 +283,17 @@ export function FilePdfPreview({ cwd, path, refreshKey }: FilePdfPreviewProps) {
         </div>
       </div>
     ),
-    [numPages, currentPage, zoom, zoomIn, zoomOut, zoomReset, showThumbs, toggleThumbs],
+    [
+      numPages,
+      currentPage,
+      zoomPercent,
+      zoomMode.kind,
+      zoomIn,
+      zoomOut,
+      zoomReset,
+      showThumbs,
+      toggleThumbs,
+    ],
   );
 
   if (docState.kind === 'error') {
@@ -237,22 +311,33 @@ export function FilePdfPreview({ cwd, path, refreshKey }: FilePdfPreviewProps) {
     <div className="h-full flex flex-col bg-secondary">
       {toolbar}
       <div className="flex-1 flex min-h-0">
-        {showThumbs && doc && base && (
+        {showThumbs && doc && sizes && (
           <ThumbnailSidebar
             doc={doc}
             numPages={numPages}
-            base={base}
+            sizes={sizes}
+            maxPageW={maxPageW}
             currentPage={currentPage}
             onSelect={handleSelectPage}
           />
         )}
         <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-auto px-4 py-4">
-          {docState.kind === 'loading' || !doc || pageW <= 0 ? (
+          {docState.kind === 'loading' || !doc || !sizes || contentW <= 0 ? (
             <div className="h-full flex items-center justify-center">
               <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
             </div>
           ) : (
-            <div style={{ height: totalSize, width: '100%', position: 'relative' }}>
+            // Width tracks the page once zoomed past the viewport: at width:100%
+            // a wider centered page overflows both sides and its left half
+            // becomes unreachable, since scrolling can't reveal overflow that
+            // starts left of the origin.
+            <div
+              style={{
+                height: totalSize,
+                width: Math.max(contentW, containerWidth),
+                position: 'relative',
+              }}
+            >
               {virtualItems.map((vi) => (
                 <div
                   key={vi.key}
@@ -264,8 +349,8 @@ export function FilePdfPreview({ cwd, path, refreshKey }: FilePdfPreviewProps) {
                     doc={doc}
                     pageNumber={vi.index + 1}
                     scale={renderScale}
-                    width={pageW}
-                    height={pageH}
+                    width={sizes[vi.index].w * renderScale}
+                    height={sizes[vi.index].h * renderScale}
                   />
                 </div>
               ))}
@@ -286,28 +371,40 @@ export function FilePdfPreview({ cwd, path, refreshKey }: FilePdfPreviewProps) {
 function ThumbnailSidebar({
   doc,
   numPages,
-  base,
+  sizes,
+  maxPageW,
   currentPage,
   onSelect,
 }: {
   doc: PDFDocumentProxy;
   numPages: number;
-  base: { w: number; h: number };
+  sizes: { w: number; h: number }[];
+  maxPageW: number;
   currentPage: number;
   onSelect: (index: number) => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
 
-  const thumbScale = THUMB_W / base.w;
-  const thumbH = base.h * thumbScale;
-  const rowSize = thumbH + THUMB_LABEL_H + THUMB_GAP;
+  // Scale off the widest page so the rail's width bounds every thumbnail; each
+  // thumbnail then keeps its OWN aspect ratio (narrow covers stay narrow).
+  const thumbScale = maxPageW > 0 ? THUMB_W / maxPageW : 0;
+  const thumbHeights = useMemo(
+    () => sizes.map((s) => s.h * thumbScale + THUMB_LABEL_H + THUMB_GAP),
+    [sizes, thumbScale],
+  );
+  const thumbHeightsRef = useRef(thumbHeights);
+  thumbHeightsRef.current = thumbHeights;
 
   const virtualizer = useVirtualizer({
     count: numPages,
     getScrollElement: () => listRef.current,
-    estimateSize: () => rowSize,
+    estimateSize: (i) => thumbHeightsRef.current[i] ?? 0,
     overscan: 3,
   });
+
+  useEffect(() => {
+    if (thumbHeights.length > 0) virtualizer.measure();
+  }, [thumbHeights, virtualizer]);
 
   // Keep the active thumbnail visible as the main view scrolls.
   useEffect(() => {
@@ -344,8 +441,8 @@ function ThumbnailSidebar({
                   doc={doc}
                   pageNumber={vi.index + 1}
                   scale={thumbScale}
-                  width={THUMB_W}
-                  height={thumbH}
+                  width={sizes[vi.index].w * thumbScale}
+                  height={sizes[vi.index].h * thumbScale}
                 />
               </button>
               <span
@@ -369,6 +466,11 @@ function ThumbnailSidebar({
  * virtual window. The wrapper has an explicit CSS size so the row height is
  * stable before the canvas paints (no scroll jump), and the canvas backing
  * store is scaled by devicePixelRatio (capped at 2) for crisp text.
+ *
+ * `width`/`height` size the WRAPPER only. The canvas sizes itself from the
+ * viewport it actually rendered, so a caller that miscomputes the wrapper can
+ * never scale the page anisotropically — it would leave a visible gap or
+ * overhang instead of silently squashing the glyphs.
  */
 function PdfPage({
   doc,
@@ -400,8 +502,10 @@ function PdfPage({
 
       canvas.width = Math.floor(viewport.width);
       canvas.height = Math.floor(viewport.height);
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
+      // Derive the CSS size from the backing store so the ratio is exactly dpr
+      // on both axes: no anisotropic squash, and no fractional resampling.
+      canvas.style.width = `${canvas.width / dpr}px`;
+      canvas.style.height = `${canvas.height / dpr}px`;
 
       renderTask = page.render({ canvas, viewport });
       try {
@@ -419,7 +523,8 @@ function PdfPage({
         /* noop */
       }
     };
-  }, [doc, pageNumber, scale, width, height]);
+    // width/height are wrapper-only now; re-rasterizing depends on scale alone.
+  }, [doc, pageNumber, scale]);
 
   return (
     <div className="bg-white shadow-md" style={{ width, height }}>

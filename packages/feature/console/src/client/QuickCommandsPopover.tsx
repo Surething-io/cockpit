@@ -169,6 +169,10 @@ export function QuickCommandsPopover({ cwd, show, onClose, onExecute, onAddPlugi
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [show, onClose]);
 
+  // Optimistic update, then RECONCILE with what the server actually persisted:
+  // it normalizes on write (renames duplicates, drops unusable entries), so
+  // keeping the optimistic array would leave the UI disagreeing with disk — and
+  // slash completion would resolve names that no longer exist.
   const saveGlobalCommands = useCallback(async (commands: CustomCommand[]) => {
     setGlobalCommands(commands);
     const exit = await BrowserRuntime.runPromiseExit(
@@ -176,7 +180,9 @@ export function QuickCommandsPopover({ cwd, show, onClose, onExecute, onAddPlugi
     );
     if (exit._tag === 'Failure') {
       console.error('Failed to save global commands:', exit.cause);
+      return;
     }
+    if (exit.value?.customCommands) setGlobalCommands(exit.value.customCommands);
   }, []);
 
   const saveProjectCommands = useCallback(async (commands: CustomCommand[]) => {
@@ -186,7 +192,9 @@ export function QuickCommandsPopover({ cwd, show, onClose, onExecute, onAddPlugi
     );
     if (exit._tag === 'Failure') {
       console.error('Failed to save project commands:', exit.cause);
+      return;
     }
+    if (exit.value?.customCommands) setProjectCommands(exit.value.customCommands);
   }, [cwd]);
 
   const handleExecute = useCallback((command: string) => {

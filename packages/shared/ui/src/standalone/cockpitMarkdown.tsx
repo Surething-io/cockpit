@@ -30,7 +30,8 @@
  * bundle-private i18next instance — cockpit's global dictionary is not
  * involved (the build aliases `@cockpit/shared-i18n` → `i18next`, so bundled
  * components resolve to this same instance). The host app only signals the
- * LANGUAGE TYPE: initial guess from navigator, live changes via the
+ * LANGUAGE TYPE: initial value from <html data-cockpit-lang> (parked there by
+ * the injected bash SDK) falling back to navigator, live changes via the
  * `cockpit:language-change` postMessage broadcast; wording is overridable per
  * render via opts.labels.
  *
@@ -69,9 +70,16 @@ if (!i18n.isInitialized) {
   });
 }
 
-// Match the app's language resolution (workspace I18nProvider): navigator for
-// the initial guess, then follow the host's broadcast on change.
-i18n.changeLanguage(navigator.language.startsWith('zh') ? 'zh' : 'en');
+// Initial language: the host's value when it has already been pushed (the
+// injected bash SDK parks it on <html data-cockpit-lang> — see htmlBashSdk),
+// else the navigator guess. This bundle is lazily fetched, so it always
+// registers its listener AFTER the host's one-shot push on iframe load; reading
+// the attribute is what makes the initial value order-independent. Later
+// changes still arrive by broadcast.
+const hostLang = document.documentElement.getAttribute('data-cockpit-lang');
+i18n.changeLanguage(
+  hostLang || (navigator.language.startsWith('zh') ? 'zh' : 'en')
+);
 window.addEventListener('message', (e) => {
   if (e.data?.type === 'cockpit:language-change' && e.data.lang) {
     if (i18n.language !== e.data.lang) i18n.changeLanguage(e.data.lang);

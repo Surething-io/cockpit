@@ -5,8 +5,8 @@
  *   - HtmlPreview (client, srcDoc iframe): explorer file preview + chat preview.
  *     A srcDoc document's URL is `about:srcdoc` (no origin), so the host MUST
  *     bake an absolute `wsUrl`.
- *   - /api/preview (server, real-URL iframe): the console browser bubble loads
- *     local HTML over `http://host/api/preview/...`. There the page has a real
+ *   - /apps/local (server, real-URL iframe): the console browser bubble loads
+ *     local HTML over `http://host/apps/local/...`. There the page has a real
  *     same-origin URL, so `wsUrl` can be left empty and the SDK derives it from
  *     `window.location` at runtime.
  *
@@ -34,6 +34,32 @@
 const SDK_SOURCE = `
 (function () {
   if (window.cockpit) return;
+
+  // Language — parked on <html data-cockpit-lang>, NOT delivered by listener
+  // alone. The host pushes cockpit:language-change once, on the iframe's load
+  // event. Anything registering a listener later misses it forever, and the
+  // widget bundles (/html-lib markdown / json / pdf) are lazily fetched — they
+  // always register after load, so they used to fall back to navigator.language
+  // and disagree with the Cockpit setting until the user toggled it. This script
+  // is injected at the very start of <head>, so it is guaranteed to be listening
+  // first; parking the value turns a one-shot message into order-independent
+  // state any later reader can just read.
+  //
+  // A DEDICATED attribute, not <html lang>: pages ship their own lang="en" (the
+  // built-in file-viewer does), so <html lang> cannot distinguish "the host told
+  // us" from "the document's own default" — reading it would pin every reader to
+  // the page's hardcoded value and silently kill the navigator fallback.
+  var applyLang = function (lang) {
+    if (!lang) return;
+    try {
+      document.documentElement.setAttribute('data-cockpit-lang', lang);
+      document.documentElement.lang = lang;   // keep the document honest for a11y
+    } catch (e) {}
+  };
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (d && d.type === 'cockpit:language-change') applyLang(d.lang);
+  });
 
   // Theme — OPT-IN. The floating top-right toggle + any .dark class management
   // happen ONLY when the page declares <meta name="cockpit-theme" content="...">.
@@ -125,9 +151,10 @@ const SDK_SOURCE = `
 
   var ws = null;
   var ready = false;
-  var queue = [];
-  var handlers = {};
+  var queue = [];          // [{ id, s }] — pending frames, drained on open
+  var handlers = {};       // id -> { onStdout, onStderr, onExit, onError, gen }
   var seq = 0;
+  var gen = 0;             // connection generation; see ensureWs
 
   function resolveWsUrl() {
     if (WS_URL) return WS_URL;
@@ -144,17 +171,50 @@ const SDK_SOURCE = `
     }
   }
 
+  /**
+   * Fail only the commands carried by ONE connection. Handlers are tagged with
+   * the generation of the socket that actually wrote them, so a socket that has
+   * been replaced can report its own losses without touching its successor's
+   * in-flight work.
+   */
+  function failGen(g, reason) {
+    var ids = Object.keys(handlers);
+    for (var i = 0; i < ids.length; i++) {
+      var h = handlers[ids[i]];
+      if (!h || h.gen !== g) continue;
+      delete handlers[ids[i]];
+      if (h.onError) h.onError(reason);
+    }
+  }
+
   function ensureWs() {
     if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
-    try { ws = new WebSocket(resolveWsUrl()); }
+    // A socket in CLOSING(2) is replaced here rather than waited on, so two
+    // sockets can briefly coexist. Shared state (\`ready\`, \`queue\`) may only
+    // be touched by the CURRENT socket — otherwise a replaced socket's late
+    // onclose flips \`ready\` to false while its successor is already open, and
+    // since the successor's onopen has long since fired nothing ever sets it
+    // back: every later bash() then queues forever with no error at all.
+    var myGen = ++gen;
+    var sock;
+    try { sock = new WebSocket(resolveWsUrl()); }
     catch (e) { failAll(String(e)); return; }
+    ws = sock;
     ready = false;
-    ws.onopen = function () {
+    sock.onopen = function () {
+      if (ws !== sock) return;
       ready = true;
       var q = queue; queue = [];
-      for (var i = 0; i < q.length; i++) ws.send(q[i]);
+      for (var i = 0; i < q.length; i++) {
+        // Re-tag: this socket, not the one queued them, is the carrier.
+        if (handlers[q[i].id]) handlers[q[i].id].gen = myGen;
+        sock.send(q[i].s);
+      }
     };
-    ws.onmessage = function (ev) {
+    // NOT generation-guarded: ids are globally unique, so a late frame can only
+    // belong to the command this very socket carried. Dropping it would leave
+    // that command's promise unsettled forever.
+    sock.onmessage = function (ev) {
       var msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
       if (msg.type === 'ping') return;
@@ -165,15 +225,36 @@ const SDK_SOURCE = `
       else if (msg.type === 'exit') { delete handlers[msg.id]; if (h.onExit) h.onExit(msg.code); }
       else if (msg.type === 'error') { delete handlers[msg.id]; if (h.onError) h.onError(msg.message); }
     };
-    ws.onclose = function () { ready = false; failAll('connection closed'); };
-    ws.onerror = function () { /* onclose follows */ };
+    sock.onclose = function () {
+      if (ws === sock) {
+        ready = false;
+        // Drop anything still queued and fail it here. These are shell commands
+        // with side effects: letting a later reconnect drain this queue would
+        // re-run them with their handlers already gone, so the output would go
+        // nowhere and the caller would never learn it ran twice.
+        var q = queue; queue = [];
+        for (var i = 0; i < q.length; i++) {
+          var qh = handlers[q[i].id];
+          if (!qh) continue;
+          delete handlers[q[i].id];
+          if (qh.onError) qh.onError('connection closed');
+        }
+      }
+      // Always report THIS connection's own losses, current or replaced — a
+      // replaced socket still owes an answer to whatever it was carrying.
+      failGen(myGen, 'connection closed');
+    };
+    sock.onerror = function () { /* onclose follows */ };
   }
 
   function send(obj) {
     var s = JSON.stringify(obj);
     ensureWs();
+    // Tag AFTER ensureWs — it may have opened a new connection, and what
+    // matters is which socket ends up carrying this command.
+    if (obj.id && handlers[obj.id]) handlers[obj.id].gen = gen;
     if (ready && ws && ws.readyState === 1) ws.send(s);
-    else queue.push(s);
+    else queue.push({ id: obj.id, s: s });
   }
 
   function run(command, opts) {
@@ -215,7 +296,17 @@ const SDK_SOURCE = `
 
   // toggleTheme is reassigned by the deferred initTheme — forward lazily so the
   // exported function always calls the current implementation, not the no-op.
-  window.cockpit = { cwd: CWD, bash: bash, toggleTheme: function () { toggleTheme(); } };
+  window.cockpit = {
+    cwd: CWD,
+    bash: bash,
+    toggleTheme: function () { toggleTheme(); },
+    // Current host language ('' until the host's first push, so apps can fall
+    // back to navigator themselves). Apps PERCEIVE the language and own their
+    // own strings — this is not an i18n runtime.
+    get lang() {
+      return document.documentElement.getAttribute('data-cockpit-lang') || '';
+    }
+  };
   window.addEventListener('beforeunload', function () {
     try { if (ws) ws.close(); } catch (e) {}
   });
@@ -227,7 +318,7 @@ const SDK_SOURCE = `
 // helper, so the "make it absolute" logic can never drift:
 //   - HtmlPreview (client): filePath is project-root-relative (explorer) or
 //     absolute (chat); passes the absolute project root as `projectRoot`.
-//   - /api/preview (server): passes its already-normalized absolute fullPath;
+//   - the /apps route (server): passes its already-normalized absolute fullPath;
 //     the isAbsolute branch degenerates to a plain dirname.
 // Hand-rolled (no node `path`) so it stays importable from the browser bundle.
 
@@ -266,44 +357,48 @@ export function canResolveAbsolute(filePath: string, projectRoot?: string): bool
   return isAbsolutePath(filePath) || !!projectRoot
 }
 
+/** Address space for local files inside the unified /apps runtime. */
+export const LOCAL_APP_PREFIX = "/apps/local/"
+/** Address space for apps shipped in the package's `apps/` directory. */
+export const BUILTIN_APP_PREFIX = "/apps/builtin/"
+
 /**
- * Map a local file path to the `/api/preview/<encoded-abs-path>` URL served by
- * the local server (static-site style: relative siblings, images, and CDN refs
- * all resolve). Relative `filePath` is resolved against `projectRoot`. Single
- * source of truth for both the console browser bubble and the HTML preview.
+ * Map a local file path to its `/apps/local/<encoded-abs-path>` URL (static-site
+ * style: relative siblings, images, and CDN refs all resolve). Relative
+ * `filePath` is resolved against `projectRoot`. Single source of truth for both
+ * the console browser bubble and the HTML preview.
  */
-export function toPreviewUrl(filePath: string, projectRoot?: string): string {
+export function toLocalAppUrl(filePath: string, projectRoot?: string): string {
   const trimmed = filePath.trim()
   const abs = isAbsolutePath(trimmed)
     ? trimmed
     : joinPath(projectRoot ?? "", trimmed)
   // Normalize Windows separators to `/` so the URL is properly segmented. A
   // Windows absolute path (C:\Users\x) has no `/` — without this the whole path
-  // becomes one blob-encoded segment and loses the `/api/preview/` separator.
-  // Always emit exactly one slash between the prefix and the (possibly
-  // drive-lettered) path, so both `/Users/x` and `C:/Users/x` are well-formed.
+  // becomes one blob-encoded segment and loses the prefix separator. Always
+  // emit exactly one slash between the prefix and the (possibly drive-lettered)
+  // path, so both `/Users/x` and `C:/Users/x` are well-formed.
   const encoded = abs
     .replace(/\\/g, "/")
     .split("/")
     .map(encodeURIComponent)
     .join("/")
     .replace(/^\//, "")
-  // `?bash=1` → /api/preview injects the window.cockpit bash SDK. Every
-  // toPreviewUrl caller is a deliberate user gesture (explorer preview button,
-  // console-typed path / `/name` app), so the flag is unconditional here. The
-  // server-side gate still matters: relative sub-resources loaded FROM a
-  // previewed page (./app.jsx, nested html, file-viewer fetches) hit
-  // /api/preview without the query and are served raw — SDK injection stays
-  // scoped to top-level, user-opened documents. The hard enforcement is the
-  // /ws/bash same-origin gate either way.
-  return "/api/preview/" + encoded + "?bash=1"
+  // `?bash=1` → the /apps route injects the window.cockpit bash SDK. Every
+  // caller here is a deliberate user gesture (explorer preview button,
+  // console-typed path / `/name` app), so the flag is unconditional. The
+  // server-side gate still matters: relative sub-resources loaded FROM a page
+  // (./app.jsx, nested html) arrive without the query and are served raw — SDK
+  // injection stays scoped to top-level, user-opened documents. The hard
+  // enforcement is the /ws/bash same-origin gate either way.
+  return LOCAL_APP_PREFIX + encoded + "?bash=1"
 }
 
 /**
- * Extensions handled by the built-in file-viewer app (public/apps/
- * file-viewer.html): markdown (CockpitMarkdown + TocSidebar), images (themed,
- * centered, fit/100% toggle), pdf (CockpitPdf, Explorer's themed viewer),
- * json (pretty-printed + highlighted via the markdown widget).
+ * Extensions handled by the built-in file-viewer app (apps/file-viewer/):
+ * markdown (CockpitMarkdown + TocSidebar), images (themed, centered, fit/100%
+ * toggle), pdf (CockpitPdf, Explorer's themed viewer), json (readable widget
+ * with a raw-source toggle).
  */
 const FILE_VIEWER_EXT_RE = /\.(md|png|jpe?g|gif|webp|svg|pdf|json)$/i
 
@@ -313,33 +408,53 @@ export function isFileViewerPath(filePath: string): boolean {
 }
 
 /**
- * Map a local file path to the built-in file-viewer html app
- * (`/apps/file-viewer.html?file=<abs>`, served from public/apps/). Same
- * relative path resolution as toPreviewUrl; the viewer fetches the raw content
- * itself via /api/preview and (for markdown) resolves relative images against
- * the file's directory.
+ * Map a local file path to the built-in file-viewer app
+ * (`/apps/builtin/file-viewer/index.html?file=<abs>`). Same relative path
+ * resolution as toLocalAppUrl. The `file` query param also tells the route
+ * which directory to use as the injected SDK cwd; the viewer then reads the
+ * content through cockpit.bash like any user-authored app.
+ *
+ * `index.html` is spelled out on purpose: a directory URL would hit Next's
+ * trailingSlash redirect (`/apps/builtin/file-viewer/` -> no trailing slash),
+ * after which the shell's relative `./app.jsx` fetch resolves one level too
+ * high and 404s.
  */
 export function toFileViewerUrl(filePath: string, projectRoot?: string): string {
   const trimmed = filePath.trim()
   const abs = isAbsolutePath(trimmed)
     ? trimmed
     : joinPath(projectRoot ?? "", trimmed)
-  return "/apps/file-viewer.html?file=" + encodeURIComponent(abs.replace(/\\/g, "/"))
+  // `bash=1` is the SAME marker local files use — the /apps route has a single
+  // injection rule and built-in apps get no exemption, so the entry point must
+  // carry it explicitly (a nested .html it references will not).
+  return (
+    BUILTIN_APP_PREFIX +
+    "file-viewer/index.html?bash=1&file=" +
+    encodeURIComponent(abs.replace(/\\/g, "/"))
+  )
 }
 
 /**
- * Reverse of toPreviewUrl: `/api/preview/<encoded-abs>` → the absolute file path
+ * Reverse of toLocalAppUrl: `/apps/local/<encoded-abs>` → the absolute file path
  * (with `/` separators; node `path` on the server accepts `/` on Windows too).
  * Returns null on a path-traversal attempt or a NUL byte. The caller still runs
  * path.normalize + a filesystem stat.
  */
-export function fromPreviewUrl(pathname: string): string | null {
-  const PREFIX = "/api/preview/"
-  const rest = pathname.startsWith(PREFIX)
-    ? pathname.slice(PREFIX.length)
+export function fromLocalAppUrl(pathname: string): string | null {
+  const rest = pathname.startsWith(LOCAL_APP_PREFIX)
+    ? pathname.slice(LOCAL_APP_PREFIX.length)
     : pathname.replace(/^\/+/, "")
-  // toPreviewUrl encodes per-segment, so a single decode restores the path.
-  let raw = "/" + decodeURIComponent(rest)
+  // toLocalAppUrl encodes per-segment, so a single decode restores the path.
+  // A malformed escape (bare `%`) makes decodeURIComponent throw — report it
+  // through the same null channel as a traversal attempt rather than letting it
+  // escape as a defect and surface as a 500.
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(rest)
+  } catch {
+    return null
+  }
+  let raw = "/" + decoded
   // Windows drive path arrives as `/C:/Users/..`; drop the leading slash the
   // posix scheme prepends, else path.win32.normalize yields an invalid `\C:\..`.
   raw = raw.replace(/^\/([A-Za-z]:)/, "$1")

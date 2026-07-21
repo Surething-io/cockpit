@@ -67,6 +67,9 @@
   "files": [
     "bin",
     "chrome-extension",
+    "apps",
+    "!**/*.test.*",
+    "!**/*.spec.*",
     "public",
     "server.mjs",
     "dist",

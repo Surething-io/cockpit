@@ -52,10 +52,15 @@ if (!i18n.isInitialized) {
   });
 }
 
-// Same language handling as cockpitMarkdown: navigator guess + host broadcast.
+// Same language handling as cockpitMarkdown: <html data-cockpit-lang> (parked
+// there by the injected bash SDK from the host's push) when present, else the
+// navigator guess, then the host broadcast for later changes.
 // (The folded-lines hint inside CollapsibleEntry goes through i18n.t directly,
 // but wrap with the Provider anyway so any hook-based consumer works too.)
-i18n.changeLanguage(navigator.language.startsWith('zh') ? 'zh' : 'en');
+i18n.changeLanguage(
+  document.documentElement.getAttribute('data-cockpit-lang') ||
+    (navigator.language.startsWith('zh') ? 'zh' : 'en')
+);
 window.addEventListener('message', (e) => {
   if (e.data?.type === 'cockpit:language-change' && e.data.lang) {
     if (i18n.language !== e.data.lang) i18n.changeLanguage(e.data.lang);

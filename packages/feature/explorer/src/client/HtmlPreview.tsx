@@ -8,7 +8,7 @@ import {
   SendToAIInput,
   useAIBridge,
 } from '@cockpit/shared-ui';
-import { injectBashSdk, resolveBashCwd, toPreviewUrl, canResolveAbsolute } from '@cockpit/shared-utils';
+import { injectBashSdk, resolveBashCwd, toLocalAppUrl, canResolveAbsolute } from '@cockpit/shared-utils';
 import {
   useComments,
   fetchAllCommentsWithCode,
@@ -37,7 +37,7 @@ interface HtmlPreviewProps {
  * preview UX (the host toolbar owns the Preview toggle); only the rendered
  * content differs.
  *
- * Renders via `src="/api/preview/<abs>"` (a real same-origin URL served off
+ * Renders via `src="/apps/local/<abs>"` (a real same-origin URL served off
  * disk), so the page behaves like a static site — relative sibling js/css,
  * images and CDN refs all resolve, and multi-file pages work. Only when no
  * absolute path is derivable (relative filePath + no cwd) does it fall back to
@@ -66,16 +66,16 @@ export function HtmlPreview({ content, filePath, cwd, onContentSearch }: HtmlPre
   const commentsEnabled = !!cwd;
 
   // How to render the page:
-  //  - PRIMARY (mode 'url'): serve the file through /api/preview so it behaves
+  //  - PRIMARY (mode 'url'): serve the file through /apps/local so it behaves
   //    like a real static site — relative sibling js/css, images and CDN refs
   //    all resolve (a srcDoc document has no base URL and can't). The window.
-  //    cockpit bash SDK is injected server-side by the /api/preview route.
+  //    cockpit bash SDK is injected server-side by the /apps route.
   //  - FALLBACK (mode 'srcdoc'): only when no absolute path is derivable
   //    (relative filePath + no cwd). Inline the content with the SDK injected
   //    client-side; single-file only, but keeps preview working.
   const renderSource = useMemo((): { mode: 'url'; url: string } | { mode: 'srcdoc'; html: string } => {
     if (canResolveAbsolute(filePath, cwd)) {
-      return { mode: 'url', url: toPreviewUrl(filePath, cwd) };
+      return { mode: 'url', url: toLocalAppUrl(filePath, cwd) };
     }
     if (typeof window === 'undefined') return { mode: 'srcdoc', html: content ?? '' };
     const dir = resolveBashCwd(filePath, cwd);

@@ -8,6 +8,7 @@
  */
 import { Effect } from "effect"
 import { AppError } from "@cockpit/effect-core"
+import type { CustomCommand } from "@/app/api/services/config/route"
 
 const httpGet = <A>(url: string): Effect.Effect<A, AppError> =>
   Effect.tryPromise({
@@ -41,6 +42,24 @@ const httpPostJson = (
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  })
+
+/** POST variant that parses the response body (for endpoints that echo state). */
+const httpPostJsonFor = <A>(
+  url: string,
+  body: unknown
+): Effect.Effect<A, AppError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return (await res.json()) as A
+    },
+    catch: (cause) => new AppError({ message: `POST ${url} failed`, cause }),
   })
 
 const httpPatchJson = (
@@ -273,7 +292,12 @@ export const loadProjectServicesConfig = (
 ): Effect.Effect<ServicesConfigResponse, AppError> =>
   httpGet(`/api/services/config?cwd=${encodeURIComponent(cwd)}`)
 
+/**
+ * Returns the commands as actually PERSISTED — the server normalizes on write
+ * (renames duplicates, drops unusable entries), so callers must adopt this
+ * instead of keeping their optimistic array.
+ */
 export const saveServicesConfig = (
   body: Record<string, unknown>
-): Effect.Effect<void, AppError> =>
-  httpPostJson("/api/services/config", body)
+): Effect.Effect<{ customCommands?: CustomCommand[] }, AppError> =>
+  httpPostJsonFor("/api/services/config", body)

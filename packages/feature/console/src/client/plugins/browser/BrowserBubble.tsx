@@ -6,7 +6,7 @@ import { toast } from '@cockpit/shared-ui';
 import { BUBBLE_CONTENT_HEIGHT } from '../../CommandBubble';
 import { useBrowserBridge } from '../../useBrowserBridge';
 import { ShortIdBadge } from '../../ShortIdBadge';
-import { modKey, toPreviewUrl, isFileViewerPath, toFileViewerUrl } from '@cockpit/shared-utils';
+import { modKey, toLocalAppUrl, isFileViewerPath, toFileViewerUrl } from '@cockpit/shared-utils';
 import { unregisterBrowserBridge } from '../../effect/pluginDisconnect';
 
 // ============================================================================
@@ -253,11 +253,11 @@ export function BrowserBubble({
     onWake?.(id);
     // Reload the iframe
     if (!isHttpUrl(url)) {
-      // Local file path → served by /api/preview, no cookie prep needed
+      // Local file path → served by /apps/local, no cookie prep needed
       // md/image/pdf paths route to the built-in file-viewer app; other local
       // paths (html) get the bash-SDK preview (unconditional — console bubbles
       // are always opened intentionally: typed path / `/name` registered app).
-      setReadyUrl(isFileViewerPath(url) ? toFileViewerUrl(url, projectCwd) : toPreviewUrl(url, projectCwd));
+      setReadyUrl(isFileViewerPath(url) ? toFileViewerUrl(url, projectCwd) : toLocalAppUrl(url, projectCwd));
       return;
     }
     const cockpitUrl = addCockpitParam(url);
@@ -272,12 +272,12 @@ export function BrowserBubble({
   useEffect(() => {
     if (!url || isSleeping) { if (!url) setReadyUrl(null); return; }
 
-    // Local file path → served by /api/preview, no cookie prep needed
+    // Local file path → served by /apps/local, no cookie prep needed
     if (!isHttpUrl(url)) {
       // md/image/pdf paths route to the built-in file-viewer app; other local
       // paths (html) get the bash-SDK preview (unconditional — console bubbles
       // are always opened intentionally: typed path / `/name` registered app).
-      setReadyUrl(isFileViewerPath(url) ? toFileViewerUrl(url, projectCwd) : toPreviewUrl(url, projectCwd));
+      setReadyUrl(isFileViewerPath(url) ? toFileViewerUrl(url, projectCwd) : toLocalAppUrl(url, projectCwd));
       return;
     }
 
@@ -416,14 +416,14 @@ export function BrowserBubble({
   // Open in a new window
   const handleOpenExternal = useCallback(() => {
     if (!currentUrl) return;
-    // File paths can't open directly in a browser tab — route through /api/preview
+    // File paths can't open directly in a browser tab — route through /apps/local
     // (md/image/pdf through the file-viewer app, same as the bubble itself)
     window.open(
       isHttpUrl(currentUrl)
         ? currentUrl
         : isFileViewerPath(currentUrl)
           ? toFileViewerUrl(currentUrl, projectCwd)
-          : toPreviewUrl(currentUrl, projectCwd),
+          : toLocalAppUrl(currentUrl, projectCwd),
       '_blank',
     );
   }, [currentUrl, projectCwd]);

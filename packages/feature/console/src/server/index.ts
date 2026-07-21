@@ -26,3 +26,7 @@ export * from './terminal/outputQuery';
 // into the unified bubble listing). The route handlers live in
 // ./api/terminal/bubble-order.ts and are mounted via src/app/api/...
 export { readBubbleTitles } from './api/terminal/bubble-order';
+
+// Services config — legacy `string[]` → `{name, command}[]` upgrade, consumed
+// by src/app/api/services/config/route.ts.
+export { normalizeCustomCommands, type CustomCommand } from './api/services-config';

@@ -7,14 +7,16 @@ import {
   getGlobalServicesConfigPath,
   readJsonFile,
   writeJsonFile,
+  withFileLock,
 } from "@cockpit/shared-utils"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { FSError, ValidationError } from "@cockpit/effect-core"
+import {
+  normalizeCustomCommands,
+  type CustomCommand,
+} from "@cockpit/feature-console/server"
 
-export interface CustomCommand {
-  name: string
-  command: string
-}
+export type { CustomCommand }
 
 interface ServicesConfig {
   customCommands: CustomCommand[]
@@ -42,13 +44,22 @@ export const GET = handler((req) =>
         })
       )
     }
-    const config = yield* Effect.tryPromise({
+    const raw = yield* Effect.tryPromise({
       try: () =>
-        readJsonFile<ServicesConfig>(configPath, { customCommands: [] }),
+        readJsonFile<Partial<ServicesConfig>>(configPath, {
+          customCommands: [],
+        }),
       catch: (cause) =>
         new FSError({ path: configPath, op: "read", cause }),
     })
-    return ok(config)
+    // Legacy/corrupt entries are upgraded in memory on every read, which is
+    // what actually defuses them for consumers. This GET deliberately does NOT
+    // write the normalized result back to disk: a read with a write side effect
+    // raced against a concurrent POST (neither takes the file lock) and could
+    // resurrect commands the user had just deleted, and a second reader landing
+    // in the truncate window would parse a half-written file. Whatever the user
+    // edits next persists the normalized shape through POST anyway.
+    return ok({ customCommands: normalizeCustomCommands(raw?.customCommands) })
   })
 )
 
@@ -71,14 +82,21 @@ export const POST = handler((req) =>
         })
       )
     }
+    // withFileLock (not a bare writeJsonFile) because writeJsonFile is
+    // non-atomic by design — it truncates then writes, so an unserialized
+    // concurrent reader can observe a half-written file.
     const config: ServicesConfig = {
-      customCommands: body.customCommands || [],
+      customCommands: normalizeCustomCommands(body.customCommands),
     }
     yield* Effect.tryPromise({
-      try: () => writeJsonFile(configPath, config),
+      try: () => withFileLock(configPath, () => writeJsonFile(configPath, config)),
       catch: (cause) =>
         new FSError({ path: configPath, op: "write", cause }),
     })
-    return ok({ success: true })
+    // Return what was actually persisted, not just `{success:true}`. This POST
+    // is the authoritative normalization point — it may rename duplicates and
+    // drop unusable entries — so a caller that keeps its optimistic array would
+    // silently disagree with disk until the next full reload.
+    return ok({ success: true, customCommands: config.customCommands })
   })
 )

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>File Viewer</title>
+<meta name="cockpit-name" content="file-viewer">
+<meta name="description" content="Preview local files: markdown (with TOC), json, images, pdf">
+<meta name="cockpit-icon" content="📄">
+<!-- Opt into the SDK's theme handling: follows the Cockpit host, falls back to
+     the OS outside it, and mounts the top-right light/dark toggle. -->
+<meta name="cockpit-theme" content="auto">
+<link rel="stylesheet" href="/html-lib/theme.css">
+<style>
+  /* ---- Markdown view: CockpitMarkdown widget (TocSidebar + scroll pane) owns
+     its own scroll container ---- */
+  .md-view { position: fixed; inset: 0; }
+  .md-view .cockpit-md { padding: 1.5rem; }
+  /* ---- JSON readable view (CockpitJson): pre-like themed container ---- */
+  .json-view {
+    position: fixed; inset: 0; overflow: auto;
+    padding: 1rem 1.5rem;
+    font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  /* right: 48px clears the SDK's own theme toggle, which sits at right: 10px. */
+  .json-toggle {
+    position: fixed; top: 10px; right: 48px; z-index: 10;
+    padding: 3px 10px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); color: var(--muted-foreground);
+    cursor: pointer; font-size: 12px; line-height: 1.5;
+    font-family: var(--font-sans);
+  }
+  .json-toggle:hover { color: var(--foreground); }
+  .viewer-status {
+    margin: 2rem auto; max-width: 640px; padding: 1rem 1.25rem;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--card); font-family: var(--font-mono);
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .viewer-status.error { color: var(--destructive); }
+  .viewer-status.loading { color: var(--muted-foreground); }
+  /* ---- Image view: centered on the themed background, fit <-> 100% toggle ---- */
+  .img-view {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 12px;
+  }
+  .img-view img {
+    max-width: 100%; max-height: calc(100vh - 24px);
+    cursor: zoom-in; border-radius: 2px;
+    box-shadow: 0 2px 12px hsl(var(--slate-12) / 0.15);
+  }
+  .img-view.natural { display: block; overflow: auto; }
+  .img-view.natural img { max-width: none; max-height: none; cursor: zoom-out; }
+  /* ---- PDF view: CockpitPdf widget, full viewport ---- */
+  .pdf-view { position: fixed; inset: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="/html-lib/react.production.min.js"></script>
+<script src="/html-lib/react-dom.production.min.js"></script>
+<script src="/html-lib/babel.min.js"></script>
+<script>
+  (async () => {
+    const src = await (await fetch('./app.jsx')).text();
+    // Must be the classic runtime: the default (automatic) injects an
+    // `import react/jsx-runtime`, which throws "Cannot use import statement
+    // outside a module" once this is appended as a plain script.
+    const { code } = Babel.transform(src, { presets: [['react', { runtime: 'classic' }]] });
+    const s = document.createElement('script'); s.textContent = code; document.body.appendChild(s);
+  })();
+</script>
+</body>
+</html>

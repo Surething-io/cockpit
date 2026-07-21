@@ -46,9 +46,13 @@ The list is **hard-coded** — your favourite REPL not on it won't be auto-detec
 
 Anything else gets treated as a one-shot command (`ls`, `make build`, `pytest …`) — runs once, prints its output, exits.
 
-## Quick commands (⚡ button left of the input)
+## HTML apps (leading window icon in the row)
 
-The ⚡ icon to the left of the text input opens the **Quick Commands** popover — save long command lines once, fire them with a single click. The popover has two sections:
+The **first** icon in the row left of the input opens the **HTML panel** — a card grid of the HTML apps you've bookmarked; click one to run it in a Console bubble. For the panel itself (bookmarking, preview, the `~/.cockpit/html.json` registry) see [HTML apps](/en/docs/agent/html-apps/).
+
+## Quick commands (⚡ button in the row left of the input)
+
+The ⚡ icon in the row of buttons left of the text input opens the **Quick Commands** popover — save long command lines once, fire them with a single click. The popover has two sections:
 
 | Scope | Where it's stored |
 |---|---|

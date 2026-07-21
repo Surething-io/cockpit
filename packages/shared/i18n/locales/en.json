@@ -479,6 +479,7 @@
     "dualColumn": "Dual column",
     "envVars": "Environment Variables",
     "launchZsh": "Launch zsh terminal",
+    "htmlApps": "HTML apps",
     "inputPlaceholder": "Enter command or URL and press Enter... (↑↓ history, Tab complete)",
     "scopeProject": "Project",
     "scopeGlobal": "Global",

@@ -555,7 +555,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
         />
       )}
 
-      {/* HTML apps launcher (opened from the console input bar's "HTML" button) */}
+      {/* HTML apps launcher (opened from the console input bar's leading AppWindow button) */}
       <HtmlAppsModal
         isOpen={isHtmlAppsOpen}
         onClose={() => setIsHtmlAppsOpen(false)}

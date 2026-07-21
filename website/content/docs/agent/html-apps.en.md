@@ -54,7 +54,7 @@ Once generated, you have a few entry points:
 
 ### The HTML panel
 
-The **HTML** button on the left of the Console input bar opens the panel: a card grid of every app you've bookmarked (each card's name / description / icon come from the page's `<head>` meta). Each card can **preview**, **delete**, and **copy path**; click the card body to open it in a Console bubble. Invalid entries (file deleted / moved) are greyed out and marked `Invalid`.
+The **window icon** button at the far left of the Console input bar opens the panel: a card grid of every app you've bookmarked (each card's name / description / icon come from the page's `<head>` meta). Each card can **preview**, **delete**, and **copy path**; click the card body to open it in a Console bubble. Invalid entries (file deleted / moved) are greyed out and marked `Invalid`.
 
 The panel records **absolute paths** only; the registry lives in `~/.cockpit/html.json` (same mechanism as `skills.json`). The HTML files themselves stay in your project — the panel is just a bookmark folder.
 

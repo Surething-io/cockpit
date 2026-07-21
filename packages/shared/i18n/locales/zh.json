@@ -479,6 +479,7 @@
     "dualColumn": "双列布局",
     "envVars": "环境变量",
     "launchZsh": "启动 zsh 交互终端",
+    "htmlApps": "HTML 应用",
     "inputPlaceholder": "输入命令或网址并按 Enter... (↑↓ 历史, Tab 补全)",
     "scopeProject": "项目",
     "scopeGlobal": "全局",

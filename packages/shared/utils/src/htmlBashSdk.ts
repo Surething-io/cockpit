@@ -20,9 +20,11 @@
  * Theme: FOLLOWS the Cockpit host by default — the console bubble pushes a
  * THEME_CHANGE postMessage on iframe load and ThemeProvider broadcasts it on
  * toggle; outside Cockpit the meta content (auto/light/dark) decides. The
- * floating top-right toggle flips light/dark, remembered per app across
+ * floating toggle flips light/dark, remembered per app across
  * reloads (key namespaced by cockpit-name / page path; localStorage is
- * shared); a stored user choice wins over the host. window.cockpit.toggleTheme() too.
+ * shared); a stored user choice wins over the host. window.cockpit.toggleTheme()
+ * too. The button is draggable and snaps to the nearest of the 4 corners, so it
+ * can be moved off whatever the app puts under it; the corner is global.
  *
  * One lazily-opened WS per iframe; concurrent commands are multiplexed by a
  * client-generated call id. The WS only opens on the first bash() call.
@@ -122,17 +124,104 @@ const SDK_SOURCE = `
           !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
         setDark(hostDark, false);
       });
+      // The button is DRAGGABLE and snaps to whichever of the 4 viewport corners
+      // it was released nearest to. A fixed corner is unworkable: the host picks
+      // the spot, the app owns the content, and any app with its own top-right
+      // affordance (close button, toolbar, TOC) had it permanently covered with
+      // no escape. The chosen corner is remembered GLOBALLY (not per app) — one
+      // gesture then holds for every HTML app, which is the common case since
+      // apps tend to crowd the same corner.
+      var CORNER_KEY = 'htmlapp-theme-corner';   // 'tl' | 'tr' | 'bl' | 'br'
+      var CORNER_MARGIN = 10;
+      var corner = 'tr';                          // default = the historic position
+      try {
+        var storedCorner = localStorage.getItem(CORNER_KEY);
+        if (storedCorner === 'tl' || storedCorner === 'tr' ||
+            storedCorner === 'bl' || storedCorner === 'br') corner = storedCorner;
+      } catch (e) {}
+      // Only the CORNER is persisted, never pixels: on resize/rotate a remembered
+      // coordinate can land off-screen, while a corner is always re-derivable.
+      var applyCorner = function () {
+        if (!themeBtn) return;
+        var s = themeBtn.style;
+        var atTop = corner.charAt(0) === 't';
+        var atLeft = corner.charAt(1) === 'l';
+        s.top = atTop ? CORNER_MARGIN + 'px' : 'auto';
+        s.bottom = atTop ? 'auto' : CORNER_MARGIN + 'px';
+        s.left = atLeft ? CORNER_MARGIN + 'px' : 'auto';
+        s.right = atLeft ? 'auto' : CORNER_MARGIN + 'px';
+      };
       var mountThemeBtn = function () {
         if (themeBtn || !document.body) return;
         themeBtn = document.createElement('button');
         themeBtn.type = 'button';
         themeBtn.setAttribute('aria-label', 'Toggle theme');
         themeBtn.textContent = document.documentElement.classList.contains('dark') ? '☀️' : '\u{1F319}';
-        themeBtn.style.cssText = 'position:fixed;top:10px;right:10px;z-index:2147483647;width:30px;height:30px;' +
+        // touch-action:none — the drag is pointer-driven, so the browser must not
+        // also treat the gesture as a scroll. Without it a touch-drag inside an
+        // iframe can scroll-chain to the Cockpit shell behind it.
+        themeBtn.style.cssText = 'position:fixed;z-index:2147483647;width:36px;height:36px;' +
           'border-radius:8px;border:1px solid rgba(128,128,128,.3);background:rgba(128,128,128,.14);' +
           'color:inherit;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;' +
-          'justify-content:center;padding:0';
-        themeBtn.onclick = toggleTheme;
+          'justify-content:center;padding:0;touch-action:none';
+        applyCorner();
+
+        var dragging = false;   // past the slop threshold for THIS gesture
+        var didDrag = false;    // a drag happened -> swallow the trailing click
+        var startX = 0, startY = 0, grabX = 0, grabY = 0;
+
+        themeBtn.addEventListener('pointerdown', function (ev) {
+          if (ev.button) return;                 // primary button / touch / pen only
+          dragging = false;
+          didDrag = false;                       // reset here, so a swallowed click
+                                                 // can never leak into the next press
+          startX = ev.clientX; startY = ev.clientY;
+          var r = themeBtn.getBoundingClientRect();
+          grabX = ev.clientX - r.left; grabY = ev.clientY - r.top;
+          try { themeBtn.setPointerCapture(ev.pointerId); } catch (e) {}
+        });
+
+        themeBtn.addEventListener('pointermove', function (ev) {
+          if (!themeBtn.hasPointerCapture || !themeBtn.hasPointerCapture(ev.pointerId)) return;
+          if (!dragging) {
+            // Slop before a press becomes a drag: a finger never holds as still as
+            // a mouse, so touch needs the looser threshold or taps turn into drags.
+            var slop = ev.pointerType === 'touch' ? 8 : 5;
+            if (Math.abs(ev.clientX - startX) < slop &&
+                Math.abs(ev.clientY - startY) < slop) return;
+            dragging = true; didDrag = true;
+          }
+          ev.preventDefault();
+          var s = themeBtn.style;
+          s.right = 'auto'; s.bottom = 'auto';   // free-float while held
+          s.left = (ev.clientX - grabX) + 'px';
+          s.top = (ev.clientY - grabY) + 'px';
+        });
+
+        var endDrag = function (ev) {
+          try { themeBtn.releasePointerCapture(ev.pointerId); } catch (e) {}
+          if (!dragging) return;
+          dragging = false;
+          var r = themeBtn.getBoundingClientRect();
+          corner = ((r.top + r.height / 2) < window.innerHeight / 2 ? 't' : 'b') +
+                   ((r.left + r.width / 2) < window.innerWidth / 2 ? 'l' : 'r');
+          try { localStorage.setItem(CORNER_KEY, corner); } catch (e) {}
+          applyCorner();
+        };
+        themeBtn.addEventListener('pointerup', endDrag);
+        themeBtn.addEventListener('pointercancel', function (ev) {
+          dragging = false;
+          try { themeBtn.releasePointerCapture(ev.pointerId); } catch (e) {}
+          applyCorner();                         // snap back rather than strand it
+        });
+
+        // Kept as a click handler rather than firing on pointerup so keyboard
+        // activation (Enter/Space on the focused button) still toggles.
+        themeBtn.onclick = function () {
+          if (didDrag) { didDrag = false; return; }
+          toggleTheme();
+        };
+        window.addEventListener('resize', applyCorner);
         document.body.appendChild(themeBtn);
       };
       if (document.body) mountThemeBtn();

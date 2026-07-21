@@ -57,7 +57,7 @@ meta 头（务必写上，供 HTML 面板做卡片、console \`/name\` 打开）
 <meta name="cockpit-name" content="short-name">   <!-- /name 短名，唯一、只用字母数字-_ -->
 <meta name="description" content="一句话说明">
 <meta name="cockpit-icon" content="🔍">           <!-- emoji 或图标 url，可选 -->
-<meta name="cockpit-theme" content="auto">        <!-- 启用右上角亮/暗切换；auto=首次跟随系统，可填 light/dark -->
+<meta name="cockpit-theme" content="auto">        <!-- 启用可拖动的亮/暗切换按钮；auto=首次跟随系统，可填 light/dark -->
 \`\`\`
 
 ## 默认：React（本地零构建栈）
@@ -86,7 +86,8 @@ meta 头（务必写上，供 HTML 面板做卡片、console \`/name\` 打开）
 - 样式默认套 **Cockpit 主题**：\`<link rel="stylesheet" href="/html-lib/theme.css">\`，直接用
   语义变量（\`var(--background)\` / \`--foreground\` / \`--card\` / \`--brand\` / \`--muted-foreground\` /
   \`--border\` / \`--destructive\`；半透明用 \`hsl(var(--green-9) / .12)\`）。上面 meta 头里的
-  \`cockpit-theme\` 让预览带上右上角亮/暗切换按钮；**默认跟随 Cockpit 宿主主题**（Cockpit 外打开时按
+  \`cockpit-theme\` 让预览带上一个浮动亮/暗切换按钮（默认右上角，用户可拖动吸附到任意一角，
+  所以不必为它在右上角留空位）；**默认跟随 Cockpit 宿主主题**（Cockpit 外打开时按
   meta 的 auto/light/dark），手动切换后**按 app 记住选择（跨刷新，优先于跟随）**，也可调
   \`cockpit.toggleTheme()\`。**别自拍调色板、别上 Tailwind**；app 特有细节再补一小段 \`<style>\`。
 
@@ -201,7 +202,7 @@ Meta head (always include — the HTML panel renders cards from it, the console 
 <meta name="cockpit-name" content="short-name">   <!-- unique short name for /name; letters/digits/-_ only -->
 <meta name="description" content="one line about the page">
 <meta name="cockpit-icon" content="🔍">           <!-- emoji or icon url, optional -->
-<meta name="cockpit-theme" content="auto">        <!-- enable the top-right light/dark toggle; auto = first load follows the OS, or light/dark -->
+<meta name="cockpit-theme" content="auto">        <!-- enable the draggable light/dark toggle; auto = first load follows the OS, or light/dark -->
 \`\`\`
 
 ## Default: React (local zero-build stack)
@@ -231,7 +232,8 @@ Use this fixed shell, with the logic in a sibling \`./app.jsx\`:
 - Style with the **Cockpit theme** by default: \`<link rel="stylesheet" href="/html-lib/theme.css">\`,
   then use the semantic vars (\`var(--background)\` / \`--foreground\` / \`--card\` / \`--brand\` /
   \`--muted-foreground\` / \`--border\` / \`--destructive\`; translucency via \`hsl(var(--green-9) / .12)\`).
-  The \`cockpit-theme\` meta above gives the preview a top-right light/dark toggle; it **follows the
+  The \`cockpit-theme\` meta above gives the preview a floating light/dark toggle (top-right by
+  default, draggable to any corner — so don't reserve top-right space for it); it **follows the
   Cockpit host theme by default** (outside Cockpit, the meta's auto/light/dark decides), and a manual
   toggle is **remembered per app across reloads and overrides the host**, or call \`cockpit.toggleTheme()\`
   from your own UI. Don't invent a palette or add Tailwind; add a small \`<style>\` for app-specific bits.

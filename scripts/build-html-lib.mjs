@@ -9,9 +9,17 @@
  * Each bundle is SELF-CONTAINED (own React copy; widgets expose imperative
  * APIs precisely so the host page's React version never matters). Per bundle:
  *   1. esbuild bundles the entry + any css it imports (katex fonts copied to
- *      public/html-lib/fonts/ with absolute /html-lib/ URLs).
+ *      public/html-lib/fonts/ with absolute /html-lib/ URLs). It runs with
+ *      `write: false` so the css it emits (possibly none) stays in memory.
  *   2. Tailwind v4 (postcss plugin) compiles just the utilities the widget
- *      uses (scripts/{md,pdf}-lib.css) and is appended to the css output.
+ *      uses (scripts/{md,pdf}-lib.css) and is concatenated with that in-memory
+ *      css, then written ONCE.
+ *
+ * Step 2 must never read the previous build's css back off disk: a bundle
+ * whose entry imports no css (pdf-viewer) gets nothing written by esbuild, so
+ * the stale file would survive and each build would append another copy of the
+ * Tailwind block to it forever. Keeping stage 1 in memory makes every output a
+ * pure function of the inputs.
  *
  * Wired into prebuild/predev; outputs are generated artifacts (gitignored) and
  * ship to npm via the `public` entry in package.json files.
@@ -19,7 +27,7 @@
 import { build } from "esbuild"
 import postcss from "postcss"
 import tailwindcss from "@tailwindcss/postcss"
-import { readFile, writeFile, mkdir, access } from "fs/promises"
+import { readFile, writeFile, mkdir } from "fs/promises"
 import path from "path"
 import { fileURLToPath } from "url"
 
@@ -52,10 +60,12 @@ for (const { name, entry, twEntry } of BUNDLES) {
   const outJs = path.join(outDir, `${name}.js`)
   const outCss = path.join(outDir, `${name}.css`)
 
-  // Stage 1: JS bundle (+ any imported css / font assets)
-  await build({
+  // Stage 1: JS bundle (+ any imported css / font assets). `write: false` keeps
+  // the results in memory so stage 2 never has to read outCss back off disk.
+  const result = await build({
     entryPoints: [path.join(root, entry)],
     bundle: true,
+    write: false,
     minify: true,
     format: "iife",
     platform: "browser",
@@ -75,9 +85,21 @@ for (const { name, entry, twEntry } of BUNDLES) {
     logLevel: "warning",
   })
 
-  // Stage 2: Tailwind utilities for the widget, appended to the css output
-  // (created first if the entry imported no css of its own). Skipped for
-  // inline-styled widgets (twEntry: null).
+  // Flush stage 1 to disk, holding back the css (if any) for stage 2 to
+  // compose. Fonts and any other emitted assets are written as-is.
+  let esbuildCss = ""
+  for (const file of result.outputFiles) {
+    if (twEntry && file.path === outCss) {
+      esbuildCss = file.text
+      continue
+    }
+    await mkdir(path.dirname(file.path), { recursive: true })
+    await writeFile(file.path, file.contents)
+  }
+
+  // Stage 2: Tailwind utilities for the widget, concatenated with the css
+  // esbuild produced (empty string when the entry imported none) and written in
+  // one shot. Skipped for inline-styled widgets (twEntry: null).
   if (!twEntry) {
     console.log(`[build-html-lib] wrote html-lib/${name}.js (no css stage)`)
     continue
@@ -88,13 +110,6 @@ for (const { name, entry, twEntry } of BUNDLES) {
     map: false,
   })
 
-  let esbuildCss = ""
-  try {
-    await access(outCss)
-    esbuildCss = await readFile(outCss, "utf8")
-  } catch {
-    /* no css emitted by esbuild for this bundle */
-  }
   await writeFile(
     outCss,
     `${esbuildCss}\n/* ---- Tailwind utilities (generated from ${twEntry}) ---- */\n${twResult.css}`,

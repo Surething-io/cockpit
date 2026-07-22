@@ -51,6 +51,16 @@ cockpit ~/code/my-project
 
 The server starts on port 3457 and opens `http://localhost:3457` in your browser automatically. Use `--no-open` to suppress the auto-open.
 
+### Install as a desktop app (PWA)
+
+Cockpit ships a Web App Manifest, so Chrome / Edge treat `http://localhost:3457` as an installable PWA. Install it once and it runs in its own window — no address bar or tabs — feeling like a native desktop app.
+
+1. Click the **install icon** on the right of the address bar (or menu → Install OpenCockpit) to install it once.
+2. After installing, visiting `http://localhost:3457` again shows an **Open in app** button in the address bar — click it to open in the standalone app window.
+3. Clicking that button while the app window is already open reuses the existing window instead of spawning a new one (`launch_handler: navigate-existing`).
+
+A narrow screen (phone/tablet) install lands on the `/m` mobile view, while a desktop install lands on the full three-panel workspace — one install adapts to both.
+
 ## Your first chat
 
 The UI loads on the **Agent** panel with a default Claude tab.

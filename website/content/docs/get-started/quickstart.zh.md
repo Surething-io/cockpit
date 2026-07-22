@@ -51,6 +51,16 @@ cockpit ~/code/my-project
 
 服务在 3457 端口启动，并自动打开 `http://localhost:3457`。加 `--no-open` 阻止自动开浏览器。
 
+### 装成桌面应用（PWA）
+
+Cockpit 自带 Web App Manifest，Chrome / Edge 会把 `http://localhost:3457` 当成可安装的 PWA。装一次，之后就能在独立窗口里跑，没有浏览器地址栏和标签页干扰，更像一个原生桌面应用。
+
+1. 在地址栏右侧点**安装图标**（或菜单 → 安装 OpenCockpit）装一次。
+2. 装好后，再访问 `http://localhost:3457` 时地址栏会出现 **在应用中打开** 的按钮 —— 点它就在独立应用窗口里打开。
+3. 已经开着应用窗口时点这个按钮，会复用现有窗口而不是新开一个（`launch_handler: navigate-existing`）。
+
+窄屏（手机/平板）安装后会自动进入 `/m` 移动版，桌面安装则落在完整三面板工作台 —— 同一个安装适配两端。
+
 ## 开始聊天
 
 UI 加载完会落在 **Agent** 面板，默认是 Claude tab。

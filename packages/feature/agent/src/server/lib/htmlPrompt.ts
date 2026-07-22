@@ -163,7 +163,7 @@ function App() {
 - 用户没给 → 存到**当前聊天工作目录**（本次会话的 cwd）下的 \`<name>/\`
 
 别把文件散落到别处或自造 \`.cockpit-apps\` 之类目录。定好目录后用 \`Write\` 写出，用户点击
-即可预览并交互。\`
+即可预览并交互。`
 
 export const HTML_PROMPT_EN = `---
 name: html
@@ -324,4 +324,4 @@ name it. Resolve the target directory as follows:
 - The user gave none → store under the **current chat working directory** (this session's cwd), i.e. \`<cwd>/<name>/\`.
 
 Don't scatter files elsewhere or invent a directory like \`.cockpit-apps\`. Once the
-directory is set, \`Write\` the files; the user clicks to preview and interact.\`
+directory is set, \`Write\` the files; the user clicks to preview and interact.`

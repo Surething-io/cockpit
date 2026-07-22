@@ -3,45 +3,26 @@
 // `<CMD>_PROMPT_ZH` and `<CMD>_PROMPT_EN`, then wire it here AND register a
 // matching entry in `packages/feature/agent/src/server/api/commands.ts` so the
 // autocomplete dropdown also lists it.
-//
-// `labelZh` / `labelEn` are OPTIONAL per command. Set them only when the
-// command wants to override the default neutral "问题：" / "Question: "
-// prefix attached to the user's trailing text — see `/cg` which uses
-// "探索问题：" / "Exploration: " to prime a stronger model mindset.
 import { mkdirSync, writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { COCKPIT_DIR, SKILLS_FILE } from '@cockpit/shared-utils';
 import { AP_PROMPT_EN, AP_PROMPT_ZH } from './apPrompt';
-import { CC_LABEL_EN, CC_LABEL_ZH, CC_PROMPT_EN, CC_PROMPT_ZH } from './ccPrompt';
-import { CG_LABEL_EN, CG_LABEL_ZH, CG_PROMPT_EN, CG_PROMPT_ZH } from './cgPrompt';
+import { CC_PROMPT_EN, CC_PROMPT_ZH } from './ccPrompt';
+import { CG_PROMPT_EN, CG_PROMPT_ZH } from './cgPrompt';
 import { CR_PROMPT_EN, CR_PROMPT_ZH } from './crPrompt';
 import { EX_PROMPT_EN, EX_PROMPT_ZH } from './exPrompt';
 import { FX_PROMPT_EN, FX_PROMPT_ZH } from './fxPrompt';
 import { GO_PROMPT_EN, GO_PROMPT_ZH } from './goPrompt';
 import { HTML_PROMPT_EN, HTML_PROMPT_ZH } from './htmlPrompt';
-import {
-  NEW_BRANCH_LABEL_EN,
-  NEW_BRANCH_LABEL_ZH,
-  NEW_BRANCH_PROMPT_EN,
-  NEW_BRANCH_PROMPT_ZH,
-} from './newBranchPrompt';
+import { NEW_BRANCH_PROMPT_EN, NEW_BRANCH_PROMPT_ZH } from './newBranchPrompt';
 import { QA_PROMPT_EN, QA_PROMPT_ZH } from './qaPrompt';
-import {
-  SKILLIFY_LABEL_EN,
-  SKILLIFY_LABEL_ZH,
-  SKILLIFY_PROMPT_EN,
-  SKILLIFY_PROMPT_ZH,
-} from './skillifyPrompt';
+import { SKILLIFY_PROMPT_EN, SKILLIFY_PROMPT_ZH } from './skillifyPrompt';
 
 interface CommandEntry {
   /** Prompt content for each language — a COMPLETE SKILL.md (YAML frontmatter +
    *  body), same shape as a user-defined skill. Written to disk verbatim. */
   zh: string;
   en: string;
-  /** Optional override for the "問題：" / "Question: " prefix prepended to the
-   *  user's trailing text. When omitted, dispatch falls back to the default. */
-  labelZh?: string;
-  labelEn?: string;
 }
 
 export const COMMAND_CONTENT: Record<string, CommandEntry> = {
@@ -51,21 +32,11 @@ export const COMMAND_CONTENT: Record<string, CommandEntry> = {
   ex: { zh: EX_PROMPT_ZH, en: EX_PROMPT_EN },
   go: { zh: GO_PROMPT_ZH, en: GO_PROMPT_EN },
   html: { zh: HTML_PROMPT_ZH, en: HTML_PROMPT_EN },
-  cg: { zh: CG_PROMPT_ZH, en: CG_PROMPT_EN, labelZh: CG_LABEL_ZH, labelEn: CG_LABEL_EN },
-  cc: { zh: CC_PROMPT_ZH, en: CC_PROMPT_EN, labelZh: CC_LABEL_ZH, labelEn: CC_LABEL_EN },
+  cg: { zh: CG_PROMPT_ZH, en: CG_PROMPT_EN },
+  cc: { zh: CC_PROMPT_ZH, en: CC_PROMPT_EN },
   cr: { zh: CR_PROMPT_ZH, en: CR_PROMPT_EN },
-  'new-branch': {
-    zh: NEW_BRANCH_PROMPT_ZH,
-    en: NEW_BRANCH_PROMPT_EN,
-    labelZh: NEW_BRANCH_LABEL_ZH,
-    labelEn: NEW_BRANCH_LABEL_EN,
-  },
-  skillify: {
-    zh: SKILLIFY_PROMPT_ZH,
-    en: SKILLIFY_PROMPT_EN,
-    labelZh: SKILLIFY_LABEL_ZH,
-    labelEn: SKILLIFY_LABEL_EN,
-  },
+  'new-branch': { zh: NEW_BRANCH_PROMPT_ZH, en: NEW_BRANCH_PROMPT_EN },
+  skillify: { zh: SKILLIFY_PROMPT_ZH, en: SKILLIFY_PROMPT_EN },
 };
 
 /** Directory holding the on-disk copies of builtin slash commands, written as
@@ -115,7 +86,7 @@ const COMMAND_LINE_RE = /^\s*([/@])([a-zA-Z][a-zA-Z0-9-]*)(?:\s+|$)/;
 // the SAME flow user-defined skills use, keeping the first message compact.
 //
 // A single `/verb` command (no preamble, no `@`) keeps the original compact
-// "pointer + label + body" output. Two+ commands, or any `@`, or leading
+// "pointer + body" output. Two+ commands, or any `@`, or leading
 // preamble text, switch to a numbered step list framed for sequential dispatch.
 //
 // `{{BASE_URL}}` placeholders are substituted at WRITE time with the loopback
@@ -157,17 +128,23 @@ export function resolveCommandPrompt(
   const baseUrl = deriveBaseUrl();
   const resolved = steps.map((s) => resolveStep(s, lang, baseUrl, userSkills));
 
+  // A single, role-agnostic connective glueing "read the skill" to the user's
+  // trailing text: it asserts SEQUENCE ("read this, THEN do that"), not the
+  // text's role, so it is true for every command (question / spec / task /
+  // target) and never mislabels. Applied uniformly to builtins and user skills.
+  const then = lang === 'zh' ? '然后：' : 'Then: ';
+
   // ── Single `/command`, no preamble → original compact output ──
   if (resolved.length === 1 && resolved[0].marker === '/' && !preamble) {
     const r = resolved[0];
-    return r.body ? `${r.pointer}\n\n${r.label}${r.body}` : r.pointer;
+    return r.body ? `${r.pointer}\n\n${then}${r.body}` : r.pointer;
   }
 
   // ── Otherwise: numbered, locus-annotated step list ──
   const intro = lang === 'zh' ? '请按以下步骤依次完成：' : 'Complete the following steps in order:';
   const blocks = resolved.map((r, idx) => {
     const where = stepHeader(idx + 1, r.marker, lang);
-    const bodyPart = r.body ? `\n${r.label}${r.body}` : '';
+    const bodyPart = r.body ? `\n${then}${r.body}` : '';
     return `${where}\n${r.pointer}${bodyPart}`;
   });
   const parts: string[] = [];
@@ -179,13 +156,12 @@ export function resolveCommandPrompt(
 interface ResolvedStep {
   marker: StepMarker;
   body: string;
-  label: string;
   /** The pointer text injected for this step (read-the-SKILL.md, or, if the
    *  builtin write failed, the inlined content as a fallback). */
   pointer: string;
 }
 
-// Resolve one parsed step to its pointer text + label. (Callers only pass known
+// Resolve one parsed step to its pointer text. (Callers only pass known
 // verbs.) A user skill takes PRECEDENCE over a builtin of the same name —
 // restoring the pre-server-resolution behavior where the client expanded the
 // user's own skill first. So a user skill named `cr`/`new-branch` shadows the
@@ -198,16 +174,14 @@ function resolveStep(
 ): ResolvedStep {
   const skill = userSkills.find((s) => s.name === step.cmd);
   if (skill) {
-    // User-skill invocations carry no mindset-primer label — matches the old
-    // client expansion, which appended the trailing text with no prefix.
-    return { marker: step.marker, body: step.body, label: '', pointer: readSkillPointer(skill.path, lang) };
+    return { marker: step.marker, body: step.body, pointer: readSkillPointer(skill.path, lang) };
   }
   const entry = COMMAND_CONTENT[step.cmd]!;
   const content = entry[lang].replaceAll('{{BASE_URL}}', baseUrl);
   const skillPath = writeBuiltinSkill(step.cmd, content);
   // On write failure, inline the content so the command never silently no-ops.
   const pointer = skillPath ? readSkillPointer(skillPath, lang) : content;
-  return { marker: step.marker, body: step.body, label: labelFor(entry, lang), pointer };
+  return { marker: step.marker, body: step.body, pointer };
 }
 
 /** "Please read this skill file: <path>" pointer in the active language. */
@@ -291,13 +265,4 @@ function writeBuiltinSkill(cmd: string, content: string): string | null {
   } catch {
     return null;
   }
-}
-
-/** Pick the "label:" prefix for a command's trailing user text. Uses the
- *  entry's per-command override when set, otherwise falls back to a neutral
- *  question label. */
-function labelFor(entry: CommandEntry, lang: 'zh' | 'en'): string {
-  const custom = lang === 'zh' ? entry.labelZh : entry.labelEn;
-  if (custom) return custom;
-  return lang === 'zh' ? '问题：' : 'Question: ';
 }

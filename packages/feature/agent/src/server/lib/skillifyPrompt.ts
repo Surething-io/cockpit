@@ -7,14 +7,8 @@
  * recent conversation holds knowledge worth distilling; the placement directory is
  * only needed at the SAVE step, so we never front-load a "where to put it?" question.
  *
- * Label primes the trailing text as the TARGET to skillify (an object / lead),
- * not a neutral "question".
- *
  * EN is a faithful translation of the ZH body.
  */
-
-export const SKILLIFY_LABEL_ZH = '目标：';
-export const SKILLIFY_LABEL_EN = 'Target: ';
 
 export const SKILLIFY_PROMPT_ZH = `---
 name: skillify
@@ -35,7 +29,7 @@ argument-hint: "[放置目录] [要 skillify 的对象]"
 
 ## 参数（都可选，保存时才用）
 
-- **尾随文本**（\`目标：\`后面那段）= 想 skillify 的对象 / 线索；不给就从最近上下文里自动提炼。
+- **尾随文本**（\`/skillify\` 后面那段）= 想 skillify 的对象 / 线索；不给就从最近上下文里自动提炼。
 - **放置目录 \`<skills-dir>\`** = skill 落盘位置，canonical source 写到 \`<skills-dir>/<slug>/SKILL.md\`。**到"保存"那一步才需要**；用户没给再问，不要在分析前就先问。
 
 ## 第 1 步：分析 —— 有没有值得沉淀的知识（扫描 → 闸门）
@@ -222,7 +216,7 @@ Core goal: **turn a one-time success into a stable procedure, not copy a transie
 
 ## Arguments (all optional; used only at save time)
 
-- **Trailing text** (after \`Target: \`) = the object / lead to skillify; if omitted, distil from recent context.
+- **Trailing text** (after \`/skillify\`) = the object / lead to skillify; if omitted, distil from recent context.
 - **Placement directory \`<skills-dir>\`** = where the skill lands; the canonical source goes to \`<skills-dir>/<slug>/SKILL.md\`. **Only needed at the "save" step**; ask only if the user hasn't provided it — never ask before analysis.
 
 ## Step 1: Analyze — is there knowledge worth capturing (scan → gate)

@@ -7,10 +7,9 @@
  * share one contract: fetch/update data through `cockpit.bash('curl ...')`,
  * never `fetch(externalURL)` (the same-origin sandbox blocks it via CORS).
  *
- * Structure: intro (+ mode choice) → shared window.cockpit contract (stated
+ * Structure: intro (+ mode choice) → align-then-confirm flow (no write until the
+ * user OKs the requirement + directory) → shared window.cockpit contract (stated
  * once) → React default → CGI backend → HTML fallback (holds the plain examples).
- *
- * Trailing user text keeps the neutral "问题：/Question:" label (no override).
  */
 
 export const HTML_PROMPT_ZH = `---
@@ -27,6 +26,21 @@ argument-hint: "描述你想要的小应用"
 **默认用 React 写**（下面的本地零构建栈，productized、AI 最熟，适合有状态 / 多视图 /
 表单）；只有**极简单的单视图、或纯静态一次性页**才退回单文件内联 HTML。两种模式共用下面
 这套契约。
+
+## 流程：先对齐，确认后再写（重要）
+
+**别一上来就写文件**，分三步：
+
+1. **对齐需求** —— 先复述你对这个小应用的理解（做什么、用 React 还是单文件、数据从哪来、
+   关键功能与交互）。仅当需求有歧义或存在多种合理解读时才回问；已经清楚就直接给一段简短
+   的理解摘要，不必逐条追问。
+2. **告知存放目录** —— 按下面「存放位置」规则定出 \`<目录>/<name>/\`，明确告诉用户准备存哪、
+   叫什么名；用户可否决或改目录 / 改名。
+3. **确认后才写** —— 等用户明确同意（确认 / 开始 / 写吧 / go 等任意肯定表示）再 \`Write\`
+   落盘。确认之前只讨论、不写文件。
+
+即便用户在 \`/html\` 后已经把需求和目录都写清楚了，也要先停一轮，给出「理解 + 目录 + 一句
+『确认就开始写?』」等待确认——但这一轮要**轻量**，别反复追问。
 
 ## 契约：window.cockpit（两模式共用，只此一处）
 
@@ -162,7 +176,7 @@ function App() {
 - 用户在需求里给了目录 → 存到 \`<用户给的目录>/<name>/\`
 - 用户没给 → 存到**当前聊天工作目录**（本次会话的 cwd）下的 \`<name>/\`
 
-别把文件散落到别处或自造 \`.cockpit-apps\` 之类目录。定好目录后用 \`Write\` 写出，用户点击
+别把文件散落到别处或自造 \`.cockpit-apps\` 之类目录。这个目录就是上面「流程」第 2 步要告知用户的；**用户确认后**再用 \`Write\` 写出，用户点击
 即可预览并交互。`
 
 export const HTML_PROMPT_EN = `---
@@ -181,6 +195,25 @@ A small app that can fetch/update data: the preview injects a global
 ideal for stateful / multi-view / form apps); fall back to single-file inline HTML only
 for a **trivial single view or a purely static one-off**. Both modes share the one
 contract below.
+
+## Flow: align first, write only after confirmation (important)
+
+**Don't write files up front.** Three steps:
+
+1. **Align on the requirement** — restate your understanding of the app (what it does,
+   React vs single-file, where data comes from, key features/interactions). Ask back only
+   when the requirement is ambiguous or has several reasonable readings; if it's already
+   clear, just give a short understanding summary — don't interrogate.
+2. **Tell the storage directory** — resolve \`<dir>/<name>/\` per the "Where to store" rules
+   below and tell the user exactly where it'll go and what it's named; the user may reject
+   or change the directory / name.
+3. **Write only after confirmation** — \`Write\` the files only once the user clearly agrees
+   (confirm / start / go / "write it" — any affirmative). Until then, only discuss — write
+   nothing to disk.
+
+Even if the user already spelled out the requirement and directory in the \`/html\` call,
+still stop once to present "understanding + directory + a 'shall I start writing?'" and
+wait — but keep this round **lightweight**, don't re-interrogate.
 
 ## Contract: window.cockpit (shared by both modes, stated once)
 
@@ -323,5 +356,5 @@ name it. Resolve the target directory as follows:
 - The user gave a directory in the request → store under \`<the given directory>/<name>/\`.
 - The user gave none → store under the **current chat working directory** (this session's cwd), i.e. \`<cwd>/<name>/\`.
 
-Don't scatter files elsewhere or invent a directory like \`.cockpit-apps\`. Once the
-directory is set, \`Write\` the files; the user clicks to preview and interact.`
+Don't scatter files elsewhere or invent a directory like \`.cockpit-apps\`. This directory is what step 2 of the flow above tells the user; **after the user confirms**,
+\`Write\` the files; the user clicks to preview and interact.`

@@ -13,9 +13,6 @@
  * pointer. That on-disk copy also satisfies the methodology's own instruction
  * for subagents to "读本 skill (cr/SKILL.md)".
  *
- * Trailing user text keeps the neutral "问题：" / "Question:" label (no custom
- * label export), so cr runs straight against the current diff.
- *
  * Positioning vs siblings:
  *   /qa  — lightweight requirement clarification, ASKS the user back
  *   /fx  — bug evidence-chain analysis (analysis only)

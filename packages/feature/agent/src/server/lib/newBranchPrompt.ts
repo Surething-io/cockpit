@@ -5,12 +5,8 @@
  * Unlike the analysis-only commands (/qa, /fx, /ex), this one ACTUALLY runs git
  * (fetch → checkout -b → rev-list verify), closer in spirit to /go.
  *
- * EN is a faithful translation of the ZH body. Label primes the trailing text
- * as an intent / requirement rather than a neutral "question".
+ * EN is a faithful translation of the ZH body.
  */
-
-export const NEW_BRANCH_LABEL_ZH = '需求：';
-export const NEW_BRANCH_LABEL_EN = 'Intent: ';
 
 export const NEW_BRANCH_PROMPT_ZH = `---
 name: new-branch

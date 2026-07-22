@@ -8,11 +8,6 @@
  * so they stay co-located with the implementation — repeating them here
  * would create a second source of truth that drifts.
  *
- * Trailing user text is labeled "任务：" / "Task: " (vs the neutral
- * "问题：" / "Question: ") so the model treats follow-on text as an
- * action to execute via the CLI rather than a question to answer in
- * prose. `labelFor` in slashCommands.ts picks these up automatically.
- *
  * Positioning vs siblings:
  *   /qa  — lightweight requirement clarification, ASKS the user back
  *   /fx  — bug evidence-chain analysis (analysis only)
@@ -22,9 +17,6 @@
  *   /cc  — Cockpit CLI operation (drive bubbles / codegraph via the CLI)
  *   /cr  — full code review (static triangulation + dynamic modelling)
  */
-
-export const CC_LABEL_ZH = '任务：';
-export const CC_LABEL_EN = 'Task: ';
 
 export const CC_PROMPT_ZH = `---
 name: cc

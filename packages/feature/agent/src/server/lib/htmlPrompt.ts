@@ -22,7 +22,7 @@ argument-hint: "描述你想要的小应用"
 # 生成 Cockpit 小应用
 
 一个能取/改数据的小应用：预览时注入了全局 \`window.cockpit\` SDK —— 本质就是 Bash
-工具暴露给页面，页面按钮能 \`curl\`、读写文件、跑脚本。用 \`Write\` 生成文件。
+工具暴露给页面，页面按钮能 \`curl\`、读写文件、跑脚本。
 
 **默认用 React 写**（下面的本地零构建栈，productized、AI 最熟，适合有状态 / 多视图 /
 表单）；只有**极简单的单视图、或纯静态一次性页**才退回单文件内联 HTML。两种模式共用下面
@@ -153,7 +153,17 @@ function App() {
 </script>
 \`\`\`
 
-生成后用 \`Write\` 写成 \`.html\`，用户点击即可预览并交互。`
+## 存放位置
+
+一个 app 的所有文件（\`index.html\` + \`app.jsx\` + \`api.mjs\` …）放进同一个 \`<name>/\`
+子目录。\`<name>\` **一律由你按需求起名**（短横线小写，与 \`cockpit-name\` 一致），用户只
+描述需求、不负责起名。目标目录按下面规则确定：
+
+- 用户在需求里给了目录 → 存到 \`<用户给的目录>/<name>/\`
+- 用户没给 → 存到**当前聊天工作目录**（本次会话的 cwd）下的 \`<name>/\`
+
+别把文件散落到别处或自造 \`.cockpit-apps\` 之类目录。定好目录后用 \`Write\` 写出，用户点击
+即可预览并交互。\`
 
 export const HTML_PROMPT_EN = `---
 name: html
@@ -165,7 +175,7 @@ argument-hint: "describe the small app you want"
 
 A small app that can fetch/update data: the preview injects a global
 \`window.cockpit\` SDK — essentially the Bash tool exposed to the page, so buttons can
-\`curl\`, read/write files, and run scripts. Use \`Write\` to create the file.
+\`curl\`, read/write files, and run scripts.
 
 **Default to React** (the local zero-build stack below — productized, most AI-familiar,
 ideal for stateful / multi-view / form apps); fall back to single-file inline HTML only
@@ -303,4 +313,15 @@ Background (live log):
 </script>
 \`\`\`
 
-Write the result to a \`.html\` file with \`Write\`; the user clicks it to preview and interact.`
+## Where to store it
+
+Put all of an app's files (\`index.html\` + \`app.jsx\` + \`api.mjs\` …) in a single
+\`<name>/\` subdirectory. **You always pick \`<name>\`** from the request (lowercase
+kebab-case, matching \`cockpit-name\`) — the user only describes the app, they don't
+name it. Resolve the target directory as follows:
+
+- The user gave a directory in the request → store under \`<the given directory>/<name>/\`.
+- The user gave none → store under the **current chat working directory** (this session's cwd), i.e. \`<cwd>/<name>/\`.
+
+Don't scatter files elsewhere or invent a directory like \`.cockpit-apps\`. Once the
+directory is set, \`Write\` the files; the user clicks to preview and interact.\`

@@ -169,6 +169,7 @@ interface TabBarProps {
   onTogglePin?: (tabId: string) => void;
   onSwitchTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
+  onCloseAllTabs?: () => void;
   onNewTab: () => void;
   onNewClaude2Tab?: () => void;
   onNewCodexTab?: () => void;
@@ -194,6 +195,7 @@ export function TabBar({
   onTogglePin,
   onSwitchTab,
   onCloseTab,
+  onCloseAllTabs,
   onNewTab,
   onNewClaude2Tab,
   onNewCodexTab,
@@ -285,25 +287,37 @@ export function TabBar({
               {tab.engine === 'deepseek' && (
                 <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-sky-500/15 text-sky-400 font-medium leading-relaxed">DS</span>
               )}
-              {tabs.length > 1 && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCloseTab(tab.id);
-                  }}
-                  className="ml-1 p-0.5 rounded hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
-                  title={t('tabBar.closeTab')}
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCloseTab(tab.id);
+                }}
+                className="ml-1 p-0.5 rounded hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
+                title={t('tabBar.closeTab')}
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
           </Tooltip>
         ))}
         {/* New tab button with engine picker */}
         <NewTabButton onNewTab={onNewTab} onNewClaude2Tab={onNewClaude2Tab} onNewCodexTab={onNewCodexTab} onNewKimiTab={onNewKimiTab} onNewOllamaTab={onNewOllamaTab} onNewDeepseekTab={onNewDeepseekTab} />
+        {/* Close-all button — one click closes every tab (resets to a single
+            blank tab). Only shown when more than one tab exists. */}
+        {onCloseAllTabs && tabs.length > 1 && (
+          <button
+            onClick={onCloseAllTabs}
+            className="flex-shrink-0 p-1.5 text-muted-foreground hover:text-destructive hover:bg-accent rounded transition-colors"
+            title={t('tabBar.closeAll')}
+            aria-label={t('tabBar.closeAll')}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
         {/* Project sessions entry — only when a project (cwd) is open. Sits
             right after the new-tab button. Chat-bubble icon reads as
             "conversations" and sizes to match NewTabButton. */}

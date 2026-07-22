@@ -363,6 +363,22 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     });
   }, [activeTabId, initialCwd]);
 
+  // Close every tab at once, then reset to a single blank tab. Mirrors closeTab's
+  // shared-union bookkeeping: record all sessionIds so the next save removes them
+  // from the shared set and broadcasts the removals to other browser tabs.
+  const closeAllTabs = useCallback(() => {
+    tabsRef.current.forEach((t) => {
+      if (t.sessionId) pendingClosedRef.current.add(t.sessionId);
+    });
+    const newTab: TabInfo = {
+      id: `tab-${Date.now()}`,
+      cwd: initialCwd,
+      title: 'New Chat',
+    };
+    setActiveTabId(newTab.id);
+    setTabs([newTab]);
+  }, [initialCwd]);
+
   // Handle sidebar session click - add new tab (appended to end)
   const handleSelectSession = useCallback((sid: string, title?: string) => {
     const existingTab = tabs.find((t) => t.sessionId === sid);
@@ -561,6 +577,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     // Tab operations
     addTab,
     closeTab,
+    closeAllTabs,
     switchTab,
     handleSelectSession,
     handleNewTab,

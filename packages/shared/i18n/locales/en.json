@@ -1013,6 +1013,7 @@
     "unpin": "Unpin",
     "pin": "Pin to favorites",
     "closeTab": "Close tab",
+    "closeAll": "Close all tabs",
     "newTab": "New tab"
   },
   "tabManagerTopBar": {

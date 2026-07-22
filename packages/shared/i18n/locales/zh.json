@@ -1013,6 +1013,7 @@
     "unpin": "取消固定",
     "pin": "固定到常用会话",
     "closeTab": "关闭标签",
+    "closeAll": "关闭所有标签",
     "newTab": "新建标签"
   },
   "tabManagerTopBar": {

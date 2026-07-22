@@ -49,6 +49,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     dragTabIndex,
     dragOverTabIndex,
     closeTab,
+    closeAllTabs,
     switchTab,
     handleSelectSession,
     handleNewTab,
@@ -387,6 +388,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                     onTogglePin={handleTogglePin}
                     onSwitchTab={switchTab}
                     onCloseTab={closeTab}
+                    onCloseAllTabs={closeAllTabs}
                     onNewTab={handleNewTab}
                     onNewClaude2Tab={handleNewClaude2Tab}
                     onNewCodexTab={handleNewCodexTab}
@@ -486,6 +488,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
               onTogglePin={handleTogglePin}
               onSwitchTab={switchTab}
               onCloseTab={closeTab}
+              onCloseAllTabs={closeAllTabs}
               onNewTab={handleNewTab}
               onNewClaude2Tab={handleNewClaude2Tab}
               onNewCodexTab={handleNewCodexTab}

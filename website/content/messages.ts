@@ -449,7 +449,7 @@ export const messages = {
       badge: 'Claude · Codex · DeepSeek · Kimi · Ollama',
       installLabel: '安装',
       tryOnline: '在线体验',
-      githubStar: 'GitHub 点亮 Star',
+      githubStar: '去 GitHub 点 Star',
       videoNotice: '观看 24 秒演示',
     },
     valueProp: {

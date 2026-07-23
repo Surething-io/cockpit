@@ -74,6 +74,7 @@
     "server.mjs",
     "dist",
     ".next-prod",
+    "!.next-prod/cache",
     "kernels",
     "next.config.mjs",
     "scripts/copy-tree-sitter-wasms.mjs",

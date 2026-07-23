@@ -42,14 +42,10 @@ function formatTime(timestamp: number): string {
   });
 }
 
-// Truncate message content
-function truncateContent(content: string, maxLength: number = 50): string {
-  // Remove extra whitespace and newlines
-  const cleaned = content.replace(/\s+/g, ' ').trim();
-  if (cleaned.length <= maxLength) {
-    return cleaned;
-  }
-  return cleaned.slice(0, maxLength) + '...';
+// Collapse whitespace/newlines so the summary stays on a single line;
+// CSS handles the actual truncation dynamically based on available width.
+function cleanContent(content: string): string {
+  return content.replace(/\s+/g, ' ').trim();
 }
 
 export function UserMessagesModal({ isOpen, onClose, messages, onSelectMessage }: UserMessagesModalProps) {
@@ -74,7 +70,7 @@ export function UserMessagesModal({ isOpen, onClose, messages, onSelectMessage }
       onClick={onClose}
     >
       <div
-        className="bg-card rounded-lg shadow-xl w-full max-w-lg max-h-[70vh] flex flex-col"
+        className="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -115,8 +111,8 @@ export function UserMessagesModal({ isOpen, onClose, messages, onSelectMessage }
                       </span>
                       {/* Content */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-foreground break-words">
-                          {truncateContent(message.content)}
+                        <p className="text-sm text-foreground truncate">
+                          {cleanContent(message.content)}
                         </p>
                       </div>
                       {/* Time */}

@@ -59,14 +59,7 @@ function deriveBaseUrl(): string {
   return `http://localhost:${port}`;
 }
 
-// A single parsed command step: its marker, verb, and the body text that
-// belongs to it (everything up to the next command line).
 type StepMarker = '/' | '@';
-interface ParsedStep {
-  marker: StepMarker;
-  cmd: string;
-  body: string;
-}
 
 // One command line: `/verb …` or `@verb …` at the start of a line (leading
 // whitespace allowed). Verb starts with a letter, then letters/digits/hyphens
@@ -74,20 +67,33 @@ interface ParsedStep {
 // autocomplete (ChatInput's commandQuery).
 const COMMAND_LINE_RE = /^\s*([/@])([a-zA-Z][a-zA-Z0-9-]*)(?:\s+|$)/;
 
-// Resolves slash/at commands before the prompt is sent to the model. Supports:
-//   - multiple commands, one per line — each line starting with `/verb` or
-//     `@verb` begins a step; its body runs until the next command line
-//     (multi-line + blank lines included).
+// Resolves slash/at commands before the prompt is sent to the model.
+//
+// Design: IN-PLACE ANNOTATION, not reorganization. The message keeps the user's
+// original layout (line order, blank lines, trailing global remarks) verbatim.
+// Each recognized command line is rewritten into a compact `[locus·skill]` tag
+// carrying its execution locus and skill name; the full SKILL.md path is hoisted
+// out to a single reference list appended at the very end (footnote style), so a
+// long absolute path never clutters the content line and appears exactly once.
+// Everything else — the user's own prose, before/between/after commands — is left
+// untouched. This leaves sequencing/parallelism to the agent (which reads the
+// whole message and the skills), instead of the wrapper over-scripting a
+// "步骤 N … 依次完成" order it can't honor (`@` delegations run independently, and
+// mode-skills like `/qa` are behaviors, not sequential steps).
+//
 //   - `/verb` runs in the main session; `@verb` is delegated to a subagent.
-//   - builtin commands (COMMAND_CONTENT) AND user-registered skills, mixed.
-//
-// Each command resolves to a "read this SKILL.md" pointer (builtins are written
-// to ~/.cockpit/skills/<verb>/SKILL.md; user skills use their registered path) —
-// the SAME flow user-defined skills use, keeping the first message compact.
-//
-// A single `/verb` command (no preamble, no `@`) keeps the original compact
-// "pointer + body" output. Two+ commands, or any `@`, or leading
-// preamble text, switch to a numbered step list framed for sequential dispatch.
+//   - builtin commands (COMMAND_CONTENT) AND user-registered skills, mixed. A
+//     user skill shadows a builtin of the same name.
+//   - A command's body = its inline text on the SAME line, PLUS the contiguous
+//     non-blank lines directly below it (up to the first blank line or the next
+//     command line). A blank line is the HARD boundary, so a trailing global
+//     remark (a paragraph after a blank line) is never absorbed — it stays put,
+//     applying to everything. The body follows the tag: `[locus·skill] <body>`.
+//   - Locus is shown only when it disambiguates: 2+ commands, or any `@`. A lone
+//     `/verb` renders as just `[skill]`.
+//   - Reference list: builtins are written to ~/.cockpit/skills/<verb>/SKILL.md;
+//     user skills use their registered path — the SAME flow user-defined skills
+//     use. On a builtin write failure the content is inlined (never a no-op).
 //
 // `{{BASE_URL}}` placeholders are substituted at WRITE time with the loopback
 // base URL (http://localhost:<port>) — /cg's curl recipes are executed by the
@@ -107,100 +113,122 @@ export function resolveCommandPrompt(
   const isKnown = (cmd: string) =>
     !!COMMAND_CONTENT[cmd] || userSkills.some((s) => s.name === cmd);
 
-  // ── Parse: find known command lines, split bodies between them ──
+  // ── Find command lines; leave every other line exactly as written ──
   const lines = prompt.split('\n');
-  const marks: Array<{ i: number; marker: StepMarker; cmd: string; rest: string }> = [];
+  const cmds: Array<{ i: number; marker: StepMarker; cmd: string; rest: string }> = [];
   lines.forEach((line, i) => {
     const m = line.match(COMMAND_LINE_RE);
     if (m && isKnown(m[2])) {
-      marks.push({ i, marker: m[1] as StepMarker, cmd: m[2], rest: line.slice(m[0].length) });
+      cmds.push({ i, marker: m[1] as StepMarker, cmd: m[2], rest: line.slice(m[0].length).trim() });
     }
   });
-  if (marks.length === 0) return prompt;
+  if (cmds.length === 0) return prompt;
 
-  const preamble = lines.slice(0, marks[0].i).join('\n').trim();
-  const steps: ParsedStep[] = marks.map((mk, idx) => {
-    const end = idx + 1 < marks.length ? marks[idx + 1].i : lines.length;
-    const body = [mk.rest, ...lines.slice(mk.i + 1, end)].join('\n').trim();
-    return { marker: mk.marker, cmd: mk.cmd, body };
-  });
-
+  // Show the execution locus only when it disambiguates: multiple commands, or
+  // any subagent delegation. A lone main-session command renders as just `[skill]`.
+  const showLocus = cmds.length >= 2 || cmds.some((c) => c.marker === '@');
   const baseUrl = deriveBaseUrl();
-  const resolved = steps.map((s) => resolveStep(s, lang, baseUrl, userSkills));
 
-  // A single, role-agnostic connective glueing "read the skill" to the user's
-  // trailing text: it asserts SEQUENCE ("read this, THEN do that"), not the
-  // text's role, so it is true for every command (question / spec / task /
-  // target) and never mislabels. Applied uniformly to builtins and user skills.
-  const then = lang === 'zh' ? '然后：' : 'Then: ';
-
-  // ── Single `/command`, no preamble → original compact output ──
-  if (resolved.length === 1 && resolved[0].marker === '/' && !preamble) {
-    const r = resolved[0];
-    return r.body ? `${r.pointer}\n\n${then}${r.body}` : r.pointer;
-  }
-
-  // ── Otherwise: numbered, locus-annotated step list ──
-  const intro = lang === 'zh' ? '请按以下步骤依次完成：' : 'Complete the following steps in order:';
-  const blocks = resolved.map((r, idx) => {
-    const where = stepHeader(idx + 1, r.marker, lang);
-    const bodyPart = r.body ? `\n${then}${r.body}` : '';
-    return `${where}\n${r.pointer}${bodyPart}`;
+  // Rewrite each command line into its `[locus·skill] body` tag; fold its body
+  // (inline rest + the contiguous non-blank lines below it, up to a blank line or
+  // the next command) into the tag line and drop those consumed lines; collect
+  // each skill's path (deduped, first-seen order) for the appended reference list.
+  const rendered = new Map<number, string>();
+  const consumed = new Set<number>();
+  const listed: Array<{ name: string; path: string }> = [];
+  const seen = new Set<string>();
+  cmds.forEach((c, k) => {
+    const nextCmd = k + 1 < cmds.length ? cmds[k + 1].i : lines.length;
+    const bodyLines: string[] = [];
+    if (c.rest) bodyLines.push(c.rest);
+    for (let j = c.i + 1; j < nextCmd; j++) {
+      if (lines[j].trim() === '') break; // blank line = hard body boundary
+      bodyLines.push(lines[j].trim());
+      consumed.add(j);
+    }
+    const ref = resolveSkillRef(c.cmd, lang, baseUrl, userSkills);
+    rendered.set(c.i, renderCommandLine(c.marker, ref, bodyLines.join('\n'), lang, showLocus));
+    if (ref.path && !seen.has(ref.name)) {
+      seen.add(ref.name);
+      listed.push({ name: ref.name, path: ref.path });
+    }
   });
-  const parts: string[] = [];
-  if (preamble) parts.push(preamble);
-  parts.push(intro, blocks.join('\n\n'));
-  return parts.join('\n\n');
+
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (consumed.has(i)) continue;
+    out.push(rendered.get(i) ?? lines[i]);
+  }
+  let result = out.join('\n');
+
+  // Append the reference list (footnote style) — each skill path once, after all
+  // content, so it never clutters the content lines.
+  if (listed.length > 0) {
+    const header =
+      lang === 'zh'
+        ? '请先读取以下 skill 文件，再据此执行：'
+        : 'Read these skill files first, then act accordingly:';
+    const sep = lang === 'zh' ? '：' : ': ';
+    const entries = listed.map((s) => `- ${s.name}${sep}${s.path}`).join('\n');
+    result = `${result}\n\n${header}\n${entries}`;
+  }
+  return result;
 }
 
-interface ResolvedStep {
-  marker: StepMarker;
-  body: string;
-  /** The pointer text injected for this step (read-the-SKILL.md, or, if the
-   *  builtin write failed, the inlined content as a fallback). */
-  pointer: string;
+interface SkillRef {
+  name: string;
+  /** Absolute SKILL.md path, or null when a builtin write failed. */
+  path: string | null;
+  /** Inlined SKILL.md content, present ONLY as the fallback when path is null. */
+  content: string | null;
 }
 
-// Resolve one parsed step to its pointer text. (Callers only pass known
-// verbs.) A user skill takes PRECEDENCE over a builtin of the same name —
-// restoring the pre-server-resolution behavior where the client expanded the
-// user's own skill first. So a user skill named `cr`/`new-branch` shadows the
-// builtin; the user's edits to their own skill keep taking effect.
-function resolveStep(
-  step: ParsedStep,
+// Rewrite one command line into its tag. Normal case: `[locus·skill] body`
+// (locus omitted for a lone main-session command), path deferred to the appended
+// reference list. Degraded case (builtin write failed → no path): inline the full
+// content, glued to any body with a sequence connective, so the command never
+// silently no-ops.
+function renderCommandLine(
+  marker: StepMarker,
+  ref: SkillRef,
+  body: string,
+  lang: 'zh' | 'en',
+  showLocus: boolean,
+): string {
+  if (ref.path) {
+    const tag = showLocus ? `[${locusWord(marker, lang)}·${ref.name}]` : `[${ref.name}]`;
+    return body ? `${tag} ${body}` : tag;
+  }
+  const locus = showLocus ? `[${locusWord(marker, lang)}] ` : '';
+  const then = body ? (lang === 'zh' ? `，然后：${body}` : `, then: ${body}`) : '';
+  return `${locus}${ref.content ?? ''}${then}`;
+}
+
+/** Bare execution-locus word: main session vs subagent. */
+function locusWord(marker: StepMarker, lang: 'zh' | 'en'): string {
+  if (marker === '@') return 'subagent';
+  return lang === 'zh' ? '主会话' : 'main session';
+}
+
+// Resolve a command verb to its skill reference (name + absolute SKILL.md path).
+// A user skill takes PRECEDENCE over a builtin of the same name — so a user skill
+// named `cr`/`new-branch` shadows the builtin and their own edits keep taking
+// effect. On a builtin write failure, path is null and the raw content is
+// returned for inlining. (Callers only pass known verbs.)
+function resolveSkillRef(
+  cmd: string,
   lang: 'zh' | 'en',
   baseUrl: string,
   userSkills: Array<{ name: string; path: string }>,
-): ResolvedStep {
-  const skill = userSkills.find((s) => s.name === step.cmd);
-  if (skill) {
-    return { marker: step.marker, body: step.body, pointer: readSkillPointer(skill.path, lang) };
-  }
-  const entry = COMMAND_CONTENT[step.cmd]!;
+): SkillRef {
+  const skill = userSkills.find((s) => s.name === cmd);
+  if (skill) return { name: cmd, path: skill.path, content: null };
+  const entry = COMMAND_CONTENT[cmd]!;
   const content = entry[lang].replaceAll('{{BASE_URL}}', baseUrl);
-  const skillPath = writeBuiltinSkill(step.cmd, content);
-  // On write failure, inline the content so the command never silently no-ops.
-  const pointer = skillPath ? readSkillPointer(skillPath, lang) : content;
-  return { marker: step.marker, body: step.body, pointer };
-}
-
-/** "Please read this skill file: <path>" pointer in the active language. */
-function readSkillPointer(skillPath: string, lang: 'zh' | 'en'): string {
-  return lang === 'zh'
-    ? `请读取这个 skill 文件：\n${skillPath}`
-    : `Please read this skill file:\n${skillPath}`;
-}
-
-/** Step header with execution-locus annotation (main session vs subagent). */
-function stepHeader(n: number, marker: StepMarker, lang: 'zh' | 'en'): string {
-  if (lang === 'zh') {
-    return marker === '@'
-      ? `步骤 ${n}（用 subagent 执行）：`
-      : `步骤 ${n}（主会话执行）：`;
-  }
-  return marker === '@'
-    ? `Step ${n} (run in a subagent): `
-    : `Step ${n} (run in the main session): `;
+  const skillPath = writeBuiltinSkill(cmd, content);
+  return skillPath
+    ? { name: cmd, path: skillPath, content: null }
+    : { name: cmd, path: null, content };
 }
 
 interface SkillRecord {

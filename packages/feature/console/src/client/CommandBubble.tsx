@@ -641,13 +641,15 @@ export const CommandBubble = memo(function CommandBubble({
               <Suspense fallback={<div className="px-4 py-2 text-xs text-muted-foreground" style={{ height: contentHeight }}>{t('console.loadingTerminal')}</div>}>
                 <XtermRenderer ref={xtermSearchRef} output={output} isRunning={isRunning} onInput={onStdin} onResize={onPtyResize} maximized={maximized} height={contentHeight} directWrite={!!subscribePtyOutput} />
               </Suspense>
+              {!isRunning && (
+                <div className="absolute inset-0 bg-black/30 pointer-events-none" />
+              )}
               {!isRunning && onRerun && (
                 <div
                   className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                   onClick={(e) => { e.stopPropagation(); onRerun(); }}
-                  title={t('console.rerun')}
                 >
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 text-white text-xs">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-neutral-800 text-white text-xs">
                     <RotateCw className="w-3.5 h-3.5" />
                     {t('console.rerun')}
                   </div>

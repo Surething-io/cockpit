@@ -451,7 +451,10 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                 {/* Message "view all file changes": overlays the FileBrowser (kept
                     mounted underneath). Close stays on this panel — no swipe back. */}
                 {fileDiffRequest && (
-                  <div className="absolute inset-0 z-20">
+                  <div
+                    className="absolute inset-0 z-20 flex bg-black/50 p-[4vmin]"
+                    onClick={() => setFileDiffRequest(null)}
+                  >
                     <FileDiffViewer
                       // Switching to a different message must reset the viewer
                       // (first commit / first file, or empty state) — key on the

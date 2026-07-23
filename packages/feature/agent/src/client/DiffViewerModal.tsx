@@ -405,7 +405,7 @@ export function FileDiffViewer({ toolCalls, cwd, onClose, onContentSearch }: Dif
     <MenuContainerProvider container={menuContainer}>
     <div
       ref={menuContainerRef}
-      className="relative bg-card shadow-xl w-full h-full flex flex-col"
+      className="relative bg-card shadow-xl w-full h-full flex flex-col rounded-lg"
       onClick={(e) => e.stopPropagation()}
     >
         {/* Header */}

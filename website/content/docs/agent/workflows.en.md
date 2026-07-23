@@ -1,12 +1,12 @@
-A single message can be more than one command. If you start several lines with `/` or `@`, Cockpit reads the whole message as an **ordered workflow** — each command line is a step, and Cockpit assembles them into one numbered plan before the AI starts. It's the fastest way to say "clarify this, then fix it, then have a sub-agent review the fix" without sending three separate messages.
+A single message can be more than one command. If you start several lines with `/` or `@`, Cockpit annotates each command line **in place** with a compact tag (where it runs, which skill it uses) and gathers the SKILL.md paths into one list at the end of the message — your original layout, blank lines, and line order are all preserved. It's the fastest way to say "clarify this, then fix it, then have a sub-agent review the fix" without sending three separate messages. **The order and any parallelism are left for the AI to decide once it reads the message — Cockpit no longer forces a numbered sequence.**
 
 This builds directly on the [slash menu](/en/docs/agent/message-input/#slash-menu-) and [Skills](/en/docs/agent/skills/) — the same commands, now chainable.
 
-## One message, several steps
+## One message, several commands
 
-Each line that starts with a known command becomes a step:
+Each line that starts with a known command is annotated in place:
 
-| Marker | Where the step runs |
+| Marker | Where the command runs |
 |---|---|
 | `/verb` | the **main session** — the AI continues in the current chat |
 | `@verb` | a **sub-agent** — Cockpit delegates the step to a separate agent and reports back |
@@ -23,38 +23,37 @@ figure out why the idempotency key isn't being honored
 audit the fix for race conditions and missing rollbacks
 ```
 
-Cockpit turns that into a single ordered prompt — roughly:
+Cockpit annotates it in place — roughly:
 
 ```text
 Here is the failing test output: payment webhook 500s on retries.
+[main session·fx] figure out why the idempotency key isn't being honored
+[subagent·cr] audit the fix for race conditions and missing rollbacks
 
-Complete the following steps in order:
-
-Step 1 (run in the main session): 
-Please read this skill file:
-~/.cockpit/skills/fx/SKILL.md
-Question: figure out why the idempotency key isn't being honored
-
-Step 2 (run in a subagent): 
-Please read this skill file:
-~/.cockpit/skills/cr/SKILL.md
-Question: audit the fix for race conditions and missing rollbacks
+Read these skill files first, then act accordingly:
+- fx: ~/.cockpit/skills/fx/SKILL.md
+- cr: ~/.cockpit/skills/cr/SKILL.md
 ```
 
-You write four lines; the AI receives a structured plan it works through in order.
+You write four lines; the AI receives your original layout, with each command line lit up as a `[where·which skill]` tag and a skill list appended at the end. Reading the tag:
 
-## How a message is split into steps
+- `[main session·fx]` = run in the main session, using the fx skill; `[subagent·cr]` = delegate to a sub-agent, using the cr skill.
+- When the whole message has a single `/` command, the locus is dropped and only `[fx]` remains (a lone main-session command needs no disambiguation). The locus appears only when it's ambiguous: two or more commands, or any `@`.
+- Which one runs first, and whether any run in parallel, is up to the AI once it reads the message — Cockpit doesn't sequence them for it.
+
+## How a message is split
 
 The rules are line-based and predictable:
 
 - **A command line** is any line whose first non-space character is `/` or `@` followed by a known verb. Lines that start with a slash but aren't a real command (`/usr/local/bin`, `@mention`) are left as ordinary text.
-- **A step's body** is everything after the verb on that line, plus every following line, up to the next command line. Blank lines and multiple paragraphs are kept — so a step can carry as much context as you want.
-- **Preamble** is any text *before* the first command line. It's passed through as-is at the top of the plan — a good place to paste an error log or describe the goal once for the whole workflow.
+- **A command's body** is everything after the verb on that line, **plus the contiguous non-blank lines directly below it, up to a blank line or the next command line**. The body follows the tag: `[main session·fx] <body>`.
+- **A blank line is a hard boundary**: a paragraph set off by a blank line is *not* folded into the command above it. So a closing remark meant for the whole message (e.g. "also fix everything else"), written as its own paragraph after a blank line, stays global instead of being mistaken for part of a command.
+- **Everything else is kept verbatim**: ordinary text before, between, or after commands stays exactly where you put it — paste an error log or state the goal once, wherever you wrote it.
 
 ## Main session vs sub-agent — `/` vs `@`
 
-- `/verb` keeps the work **in the current chat**. Use it for steps you want to watch and steer turn by turn.
-- `@verb` hands the step to a **sub-agent**. Use it for self-contained work — a review pass, an exploration, a focused investigation — that you want done and summarized without cluttering the main thread.
+- `/verb` keeps the work **in the current chat**. Use it for work you want to watch and steer turn by turn.
+- `@verb` hands that command to a **sub-agent**. Use it for self-contained work — a review pass, an exploration, a focused investigation — that you want done and summarized without cluttering the main thread.
 
 A common shape is "do the work in the main session, then send a sub-agent to check it":
 
@@ -73,9 +72,9 @@ A workflow can freely mix [built-in commands](/en/docs/agent/skills/) and your [
 
 The command menu no longer triggers only at the very start of the box. Type `/` or `@` at the start of **any line** — including the second, third, or fourth — and the autocomplete dropdown appears for that line, filtered as you type. `Tab` or `Enter` inserts the selected command. That's what makes stacking commands line by line comfortable.
 
-## When it stays a single command
+## When nothing is rewritten
 
-If your message is just one `/verb` with no preamble and no `@`, nothing changes — you get the original compact behavior: the command's skill plus your trailing text, sent as one normal turn. The numbered step list only appears when there's genuinely a workflow to run: two or more commands, any `@` sub-agent step, or leading preamble text.
+Cockpit leaves a message completely untouched only when it contains **no known command** at all. As soon as there's a single `/verb` or `@verb`, that command line is annotated with a tag and the skill list is appended at the end of the message — a single command included, just without the locus, rendered as `[verb] your trailing text`.
 
 ## Next
 

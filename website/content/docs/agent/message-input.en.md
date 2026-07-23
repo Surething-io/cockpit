@@ -61,7 +61,7 @@ Type `/` at the start of the input and a menu pops up, split into two sections:
 
 Type to filter. `Tab` or `Enter` inserts the selected command into the input — then type your actual message after it and press `Enter` to send.
 
-> **Chaining commands.** A message can hold more than one command. Start several lines with `/` (run in the main session) or `@` (delegate to a sub-agent) and Cockpit assembles them into an ordered, multi-step workflow. See [Workflows](/en/docs/agent/workflows/).
+> **Chaining commands.** A message can hold more than one command. Start several lines with `/` (run in the main session) or `@` (delegate to a sub-agent) and Cockpit annotates each command line in place into a multi-command workflow (the AI decides the order). See [Workflows](/en/docs/agent/workflows/).
 
 `!` and `/` don't conflict — `!` only fires when first-line-first-character, slash commands only fire when you typed `/` first.
 

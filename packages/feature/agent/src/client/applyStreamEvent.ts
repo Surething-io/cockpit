@@ -1,3 +1,4 @@
+import { joinAssistantText } from '../shared/assistantText';
 import type { ChatMessage, ToolCallInfo } from './types';
 
 // Single engine-agnostic stream→messages reducer (#10 line 1).
@@ -51,7 +52,11 @@ export function applyStreamEvent(
     const e = ev.event;
     if (e?.type === 'content_block_delta' && e.delta?.type === 'text_delta' && e.delta.text) {
       const txt = e.delta.text;
-      return messages.map((m) => (m.id === assistantId ? { ...m, content: (m.content || '') + txt } : m));
+      return messages.map((m) =>
+        m.id === assistantId
+          ? { ...m, content: joinAssistantText(m.content || '', txt, !!m.pendingTextBreak), pendingTextBreak: false }
+          : m
+      );
     }
     return messages;
   }
@@ -67,7 +72,12 @@ export function applyStreamEvent(
     const isSynthetic = ev.message?.model === '<synthetic>';
     if (engine === 'codex' || engine === 'kimi' || engine === 'ollama' || isSynthetic) {
       const newText = blocks.filter((b) => b.type === 'text' && b.text).map((b) => b.text).join('');
-      if (newText) out = out.map((m) => (m.id === assistantId ? { ...m, content: (m.content || '') + newText } : m));
+      if (newText)
+        out = out.map((m) =>
+          m.id === assistantId
+            ? { ...m, content: joinAssistantText(m.content || '', newText, !!m.pendingTextBreak), pendingTextBreak: false }
+            : m
+        );
     }
 
     for (const b of blocks) {
@@ -81,7 +91,9 @@ export function applyStreamEvent(
         out = out.map((m) => {
           if (m.id !== assistantId) return m;
           if (m.toolCalls?.some((x) => x.id === tc.id)) return m;
-          return { ...m, toolCalls: [...(m.toolCalls || []), tc] };
+          // A tool_use between two text segments starts a new paragraph for the
+          // next one (see shared/assistantText.ts). Mirrors the history parsers.
+          return { ...m, toolCalls: [...(m.toolCalls || []), tc], pendingTextBreak: true };
         });
       }
     }

@@ -78,4 +78,42 @@ describe('applyStreamEvent (#10 engine-agnostic reducer)', () => {
     expect(out[0].content).toBe('q');
     expect(out[1].content).toBe('x');
   });
+
+  // #paragraph-break: two narration segments separated by a tool_use must render
+  // as separate paragraphs (blank line), not glue into `**a****b**`. Must match
+  // the history parsers byte-for-byte so a page refresh does not reflow the turn.
+  const toolUse = (id: string): StreamEvent => ({
+    type: 'assistant',
+    message: { content: [{ type: 'tool_use', id, name: 'Read', input: {} }] },
+  });
+
+  it('text segments separated by a tool_use break into paragraphs', () => {
+    const out = reduce(seed(), [delta('**1/5**'), toolUse('t1'), delta('**2/5**'), toolUse('t2'), delta('**3/5**')]);
+    expect(out[0].content).toBe('**1/5**\n\n**2/5**\n\n**3/5**');
+  });
+
+  it('consecutive deltas within one segment glue (no spurious break)', () => {
+    const out = reduce(seed(), [toolUse('t1'), delta('Now '), delta('insert '), delta('the fn')]);
+    // first delta after the tool breaks off the (empty) prior content → no leading blank line;
+    // the rest of the same block glue verbatim.
+    expect(out[0].content).toBe('Now insert the fn');
+  });
+
+  it('adjacent text with NO tool between stays glued (matches live streaming)', () => {
+    const out = reduce(seed(), [delta('a'), delta('b')]);
+    expect(out[0].content).toBe('ab');
+  });
+
+  it('codex complete-text segments separated by a tool_use also break', () => {
+    const out = reduce(
+      seed(),
+      [
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'step one' }] } },
+        toolUse('t1'),
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'step two' }] } },
+      ],
+      'codex'
+    );
+    expect(out[0].content).toBe('step one\n\nstep two');
+  });
 });

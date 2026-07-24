@@ -8,6 +8,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '@cockpit/effect-core';
+import { joinAssistantText } from '../../../shared/assistantText';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -165,6 +166,10 @@ async function parseTranscriptFile(filePath: string): Promise<ChatMessage[]> {
 function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] {
   const chatMessages: ChatMessage[] = [];
   let currentAssistantMessage: ChatMessage | null = null;
+  // True when a tool_use has landed on the current assistant bubble since its
+  // last text segment — the next text segment then starts a new paragraph.
+  // Kept in lockstep with the live reducer's pendingTextBreak (assistantText.ts).
+  let toolSinceText = false;
   const toolResults = new Map<string, string>();
   const skillContents = new Map<string, string>();
 
@@ -265,18 +270,21 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
 
       // Start of a new conversation turn (has text content and the previous assistant message is done)
       if (textBlocks.length > 0) {
+        const entryText = textBlocks.map((b) => b.text || '').join('');
         if (currentAssistantMessage) {
-          // Append text to the current message
-          currentAssistantMessage.content += textBlocks.map((b) => b.text || '').join('\n');
+          // Append text to the current message, breaking a paragraph only if a
+          // tool_use has intervened since the previous text (matches live reducer).
+          currentAssistantMessage.content = joinAssistantText(currentAssistantMessage.content, entryText, toolSinceText);
         } else {
           currentAssistantMessage = {
             id: msg.uuid || `assistant-${Date.now()}`,
             role: 'assistant',
-            content: textBlocks.map((b) => b.text || '').join('\n'),
+            content: entryText,
             timestamp: msg.timestamp,
             toolCalls: [],
           };
         }
+        toolSinceText = false;
       }
 
       // Handle tool calls
@@ -289,6 +297,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
             toolCalls: [],
           };
         }
+        toolSinceText = true;
 
         for (const tool of toolBlocks) {
           if (tool.name && tool.id) {

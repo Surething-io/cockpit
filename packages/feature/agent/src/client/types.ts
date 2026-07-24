@@ -42,6 +42,11 @@ export interface ChatMessage {
   // bubbles (which the new run's snapshot will never rebuild). Absent on persisted/reloaded
   // messages (they carry real UUIDs and must never be filtered).
   runKey?: string;
+  // Transient (never persisted): true when a tool_use has occurred since the
+  // last text segment was appended to this assistant bubble, so the next text
+  // segment starts a new paragraph. Maintained by the live reducer
+  // (applyStreamEvent) and the history parsers; see shared/assistantText.ts.
+  pendingTextBreak?: boolean;
 }
 
 export interface ChatSession {

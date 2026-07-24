@@ -10,6 +10,7 @@ import {
   ValidationError,
 } from '@cockpit/effect-core';
 import { generateTitle } from '../sessionTitle';
+import { joinAssistantText } from '../../shared/assistantText';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -576,6 +577,8 @@ function buildSystemEvent(msg: TranscriptMessage, kind: 'task-notification' | 'm
 function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] {
   const chatMessages: ChatMessage[] = [];
   let currentAssistantMessage: ChatMessage | null = null;
+  // See history.ts / assistantText.ts: paragraph-break only across a tool_use.
+  let toolSinceText = false;
   const toolResults = new Map<string, string>();
   // Skill bodies, keyed by the tool call (sourceToolUseID) that loaded them — folded
   // into that tool call instead of being rendered as a user bubble.
@@ -673,17 +676,19 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
       const toolBlocks = content.filter((b) => b.type === 'tool_use');
 
       if (textBlocks.length > 0) {
+        const entryText = textBlocks.map((b) => b.text || '').join('');
         if (currentAssistantMessage) {
-          currentAssistantMessage.content += textBlocks.map((b) => b.text || '').join('\n');
+          currentAssistantMessage.content = joinAssistantText(currentAssistantMessage.content, entryText, toolSinceText);
         } else {
           currentAssistantMessage = {
             id: msg.uuid || `assistant-${Date.now()}`,
             role: 'assistant',
-            content: textBlocks.map((b) => b.text || '').join('\n'),
+            content: entryText,
             timestamp: msg.timestamp,
             toolCalls: [],
           };
         }
+        toolSinceText = false;
       }
 
       if (toolBlocks.length > 0) {
@@ -696,6 +701,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
             toolCalls: [],
           };
         }
+        toolSinceText = true;
 
         for (const tool of toolBlocks) {
           if (tool.name && tool.id) {
@@ -745,11 +751,14 @@ async function parseCodexTranscriptFile(
   let title = 'Untitled Session';
   let lastUsage: TokenUsage | undefined;
   let msgCounter = 0;
+  // Paragraph-break only across a tool call (see assistantText.ts).
+  let toolSinceText = false;
 
   const flushAssistant = () => {
     if (currentAssistant) {
       messages.push(currentAssistant);
       currentAssistant = null;
+      toolSinceText = false;
     }
   };
 
@@ -807,7 +816,8 @@ async function parseCodexTranscriptFile(
           .join('') || '';
         if (text) {
           const assistant = ensureAssistant(timestamp);
-          assistant.content = (assistant.content || '') + text;
+          assistant.content = joinAssistantText(assistant.content || '', text, toolSinceText);
+          toolSinceText = false;
         }
       }
 
@@ -828,6 +838,7 @@ async function parseCodexTranscriptFile(
           input,
           isLoading: false,
         });
+        toolSinceText = true;
       }
 
       // Tool result (function_call_output)
@@ -868,6 +879,8 @@ async function parseKimiTranscriptFile(
   const messages: ChatMessage[] = [];
   let title = 'Untitled Session';
   let msgCounter = 0;
+  // Paragraph-break only across a tool call (see assistantText.ts).
+  let toolSinceText = false;
 
   for await (const line of rl) {
     if (!line.trim()) continue;
@@ -891,6 +904,7 @@ async function parseKimiTranscriptFile(
         role: 'user',
         content: text,
       });
+      toolSinceText = false;
       if (title === 'Untitled Session') {
         title = text.slice(0, 80);
       }
@@ -926,6 +940,10 @@ async function parseKimiTranscriptFile(
         }
       }
 
+      // Break decision must read the state from PRIOR entries, before this
+      // entry's own tool calls (which follow its text) update it below.
+      const breakBefore = toolSinceText;
+
       // Merge into the last assistant message if it's part of a tool call chain
       // (consecutive assistant messages without a user message in between)
       const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
@@ -935,7 +953,7 @@ async function parseKimiTranscriptFile(
           lastMsg.toolCalls.push(...newToolCalls);
         }
         if (text) {
-          lastMsg.content = (lastMsg.content || '') + text;
+          lastMsg.content = joinAssistantText(lastMsg.content || '', text, breakBefore);
         }
       } else if (text || newToolCalls.length > 0) {
         // New assistant bubble
@@ -946,6 +964,11 @@ async function parseKimiTranscriptFile(
           ...(newToolCalls.length > 0 ? { toolCalls: newToolCalls } : {}),
         });
       }
+
+      // This entry's text consumes any pending break; its own tool calls then
+      // sit between this text and the next, so the next text breaks.
+      if (text) toolSinceText = false;
+      if (newToolCalls.length > 0) toolSinceText = true;
     }
 
     if (entry.role === 'tool') {

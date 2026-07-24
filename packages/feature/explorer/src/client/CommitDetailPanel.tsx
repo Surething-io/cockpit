@@ -85,9 +85,9 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
   const [htmlPreview, setHtmlPreview] = useState<{ content: string; filePath: string } | null>(null);
   // 精简/全文 — pane-local, defaults to compact (same as StatusDiffPane).
   const [density, setDensity] = useState<'compact' | 'full'>('compact');
-  // split/unified — pane-local, defaults to split; not persisted (same policy
+  // split/unified — pane-local, defaults to unified; not persisted (same policy
   // as density and the tool-call diff viewer).
-  const [viewMode, setViewMode] = useState<'split' | 'unified'>('split');
+  const [viewMode, setViewMode] = useState<'split' | 'unified'>('unified');
   const commitPreRef = useRef<HTMLPreElement>(null);
   const commitJsonSearch = useJsonSearch(commitPreRef);
 

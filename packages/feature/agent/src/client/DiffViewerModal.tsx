@@ -311,9 +311,9 @@ export function FileDiffViewer({ toolCalls, cwd, onClose, onContentSearch }: Dif
   );
   // 精简/全文 — pane-local, defaults to compact (same as StatusDiffPane).
   const [density, setDensity] = useState<'compact' | 'full'>('compact');
-  // split/unified — pane-local, defaults to split (same non-persisted policy
+  // split/unified — pane-local, defaults to unified (same non-persisted policy
   // as density). Both views support compact / preview / comments / search.
-  const [viewMode, setViewMode] = useState<'split' | 'unified'>('split');
+  const [viewMode, setViewMode] = useState<'split' | 'unified'>('unified');
   // Rendered previews of the SNAPSHOT's post-change content (not the current
   // disk state — that's the point). Same overlay pattern as StatusDiffPane.
   const [showMarkdownPreview, setShowMarkdownPreview] = useState(false);

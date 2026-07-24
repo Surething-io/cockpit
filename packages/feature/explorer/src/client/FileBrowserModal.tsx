@@ -20,8 +20,9 @@ import {
   fetchCommits,
 } from './effect/gitClient';
 import { CommitDetailPanel } from './CommitDetailPanel';
-import { DiffView } from '@cockpit/feature-explorer';
+import { DiffView, DiffUnifiedView } from '@cockpit/feature-explorer';
 import { DiffDensityToggle } from './DiffDensityToggle';
+import { DiffViewModeToggle } from './DiffViewModeToggle';
 import { toast, confirm } from '@cockpit/shared-ui';
 import { FileTree, type GitStatusMap, type GitStatusCode } from './FileTree';
 import { GitFileTree, buildGitFileTree, collectFilesUnderNode } from './GitFileTree';
@@ -97,6 +98,9 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
   const [jsonPreview, setJsonPreview] = useState<{ content: string; filePath: string } | null>(null);
   // 精简/全文 for the branch-compare diff — pane-local, defaults to compact.
   const [compareDensity, setCompareDensity] = useState<'compact' | 'full'>('compact');
+  // split/unified for compare-mode diff — pane-local, defaults to unified, not
+  // persisted (same policy as `compareDensity` and the other diff panes).
+  const [compareViewMode, setCompareViewMode] = useState<'split' | 'unified'>('unified');
   const jsonPreRef = useRef<HTMLPreElement>(null);
   const jsonSearch = useJsonSearch(jsonPreRef);
   const jsonPreviewPreRef = useRef<HTMLPreElement>(null);
@@ -1960,31 +1964,54 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                   </div>
                 ) : gitHistory.compareFileDiff ? (
                   <div className="flex-1 flex flex-col overflow-hidden">
-                    <div className="flex items-center justify-end px-3 py-1.5 border-b border-border flex-shrink-0">
+                    <div className="flex items-center justify-end gap-2 px-3 py-1.5 border-b border-border flex-shrink-0">
                       <DiffDensityToggle value={compareDensity} onChange={setCompareDensity} />
+                      <DiffViewModeToggle value={compareViewMode} onChange={setCompareViewMode} />
                     </div>
                     <div className="flex-1 overflow-hidden">
-                      <DiffView
-                        oldContent={gitHistory.compareFileDiff.oldContent}
-                        newContent={gitHistory.compareFileDiff.newContent}
-                        filePath={gitHistory.compareFileDiff.filePath}
-                        isNew={gitHistory.compareFileDiff.isNew}
-                        isDeleted={gitHistory.compareFileDiff.isDeleted}
-                        cwd={cwd}
-                        enableComments={true}
-                        compact={compareDensity === 'compact'}
-                        onPreview={
-                          !gitHistory.compareFileDiff.isDeleted && gitHistory.compareFileDiff.filePath.endsWith('.json')
-                            ? () => setJsonPreview({ content: gitHistory.compareFileDiff!.newContent, filePath: gitHistory.compareFileDiff!.filePath })
-                            : undefined
-                        }
-                        previewLabel={t('common.readable')}
-                        onContentSearch={(query) => {
-                          setActiveTab('search');
-                          contentSearch.setContentSearchQuery(query);
-                          contentSearch.performContentSearch(query);
-                        }}
-                      />
+                      {compareViewMode === 'unified' ? (
+                        <DiffUnifiedView
+                          oldContent={gitHistory.compareFileDiff.oldContent}
+                          newContent={gitHistory.compareFileDiff.newContent}
+                          filePath={gitHistory.compareFileDiff.filePath}
+                          cwd={cwd}
+                          enableComments={true}
+                          compact={compareDensity === 'compact'}
+                          onPreview={
+                            !gitHistory.compareFileDiff.isDeleted && gitHistory.compareFileDiff.filePath.endsWith('.json')
+                              ? () => setJsonPreview({ content: gitHistory.compareFileDiff!.newContent, filePath: gitHistory.compareFileDiff!.filePath })
+                              : undefined
+                          }
+                          previewLabel={t('common.readable')}
+                          onContentSearch={(query) => {
+                            setActiveTab('search');
+                            contentSearch.setContentSearchQuery(query);
+                            contentSearch.performContentSearch(query);
+                          }}
+                        />
+                      ) : (
+                        <DiffView
+                          oldContent={gitHistory.compareFileDiff.oldContent}
+                          newContent={gitHistory.compareFileDiff.newContent}
+                          filePath={gitHistory.compareFileDiff.filePath}
+                          isNew={gitHistory.compareFileDiff.isNew}
+                          isDeleted={gitHistory.compareFileDiff.isDeleted}
+                          cwd={cwd}
+                          enableComments={true}
+                          compact={compareDensity === 'compact'}
+                          onPreview={
+                            !gitHistory.compareFileDiff.isDeleted && gitHistory.compareFileDiff.filePath.endsWith('.json')
+                              ? () => setJsonPreview({ content: gitHistory.compareFileDiff!.newContent, filePath: gitHistory.compareFileDiff!.filePath })
+                              : undefined
+                          }
+                          previewLabel={t('common.readable')}
+                          onContentSearch={(query) => {
+                            setActiveTab('search');
+                            contentSearch.setContentSearchQuery(query);
+                            contentSearch.performContentSearch(query);
+                          }}
+                        />
+                      )}
                     </div>
                   </div>
                 ) : (

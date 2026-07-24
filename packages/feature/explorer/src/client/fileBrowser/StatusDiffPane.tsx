@@ -150,8 +150,8 @@ export function StatusDiffPane({
   const [fileDensity, setFileDensity] = useState<'compact' | 'full'>('compact');
 
   /** split/unified toggle for file-mode line diff — pane-local, defaults to
-   *  split, not persisted (same policy as `fileDensity`). */
-  const [viewMode, setViewMode] = useState<'split' | 'unified'>('split');
+   *  unified, not persisted (same policy as `fileDensity`). */
+  const [viewMode, setViewMode] = useState<'split' | 'unified'>('unified');
 
   const filePath = selected.file.path;
   const isImage = isImageFile(filePath);

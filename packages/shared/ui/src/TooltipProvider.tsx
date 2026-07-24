@@ -138,7 +138,7 @@ export function TooltipProvider() {
   return createPortal(
     <div
       ref={popoverRef}
-      className="fixed z-[9999] px-2 py-1 bg-popover text-popover-foreground text-xs font-mono rounded shadow-lg border border-brand whitespace-nowrap pointer-events-none max-w-[80vw] overflow-hidden text-ellipsis"
+      className="fixed z-[9999] px-2 py-1 bg-popover text-popover-foreground text-xs font-mono rounded shadow-lg border border-brand whitespace-pre-wrap break-all pointer-events-none max-w-[80vw]"
       style={{ left: pos.left, top: pos.top }}
     >
       {tip.text}

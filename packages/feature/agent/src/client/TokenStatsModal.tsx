@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
-import { useEscToClose } from '@cockpit/shared-ui';
+import { useEscToClose, useTheme } from '@cockpit/shared-ui';
 import { loadClaudeStats } from './effect/agentClient';
 
 interface TokenStatsModalProps {
@@ -11,33 +11,69 @@ interface TokenStatsModalProps {
   onClose: () => void;
 }
 
-// Claude API official pricing ($/MTok) — 2026.03
-const MODEL_PRICING: Record<string, { label: string; input: number; output: number; cacheRead: number; cacheWrite: number; color: string }> = {
-  'claude-opus-4-6':            { label: 'Opus 4.6',   input: 5,  output: 25, cacheRead: 0.50, cacheWrite: 6.25, color: '#f97316' },
-  'claude-opus-4-5-20251101':   { label: 'Opus 4.5',   input: 5,  output: 25, cacheRead: 0.50, cacheWrite: 6.25, color: '#fb923c' },
-  'claude-sonnet-4-6':          { label: 'Sonnet 4.6',  input: 3,  output: 15, cacheRead: 0.30, cacheWrite: 3.75, color: '#3b82f6' },
-  'claude-sonnet-4-5-20250929': { label: 'Sonnet 4.5',  input: 3,  output: 15, cacheRead: 0.30, cacheWrite: 3.75, color: '#60a5fa' },
-  'claude-haiku-4-5-20251001':  { label: 'Haiku 4.5',   input: 1,  output: 5,  cacheRead: 0.10, cacheWrite: 1.25, color: '#22c55e' },
+// Claude API official pricing ($/MTok) — 2026.07.
+// Pricing only: model colors are derived separately (see assignColors) so a new
+// model never has to be added here just to get a distinct color.
+const MODEL_PRICING: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
+  'claude-fable-5':             { input: 10, output: 50, cacheRead: 1.00, cacheWrite: 12.50 },
+  'claude-opus-4-6':            { input: 5,  output: 25, cacheRead: 0.50, cacheWrite: 6.25 },
+  'claude-opus-4-5-20251101':   { input: 5,  output: 25, cacheRead: 0.50, cacheWrite: 6.25 },
+  'claude-sonnet-4-6':          { input: 3,  output: 15, cacheRead: 0.30, cacheWrite: 3.75 },
+  'claude-sonnet-4-5-20250929': { input: 3,  output: 15, cacheRead: 0.30, cacheWrite: 3.75 },
+  'claude-haiku-4-5-20251001':  { input: 1,  output: 5,  cacheRead: 0.10, cacheWrite: 1.25 },
 };
 
-const DEFAULT_PRICING = { label: '', input: 3, output: 15, cacheRead: 0.30, cacheWrite: 3.75, color: '#94a3b8' };
+const DEFAULT_PRICING = { input: 3, output: 15, cacheRead: 0.30, cacheWrite: 3.75 };
 
 function getPricing(modelId: string) {
   if (MODEL_PRICING[modelId]) return MODEL_PRICING[modelId];
   const lower = modelId.toLowerCase();
-  if (lower.includes('opus')) return { ...DEFAULT_PRICING, input: 5, output: 25, cacheRead: 0.50, cacheWrite: 6.25, color: '#f97316' };
-  if (lower.includes('haiku')) return { ...DEFAULT_PRICING, input: 1, output: 5, cacheRead: 0.10, cacheWrite: 1.25, color: '#22c55e' };
-  return DEFAULT_PRICING;
+  if (lower.includes('fable') || lower.includes('mythos')) return { input: 10, output: 50, cacheRead: 1.00, cacheWrite: 12.50 };
+  if (lower.includes('opus')) return { input: 5, output: 25, cacheRead: 0.50, cacheWrite: 6.25 };
+  if (lower.includes('haiku')) return { input: 1, output: 5, cacheRead: 0.10, cacheWrite: 1.25 };
+  return DEFAULT_PRICING;  // sonnet and anything unknown
 }
 
+// `claude-opus-4-8-20260101` -> `Opus 4.8`. A hyphen between two digits is a
+// version separator (becomes a dot); every other hyphen is a word separator.
 function getLabel(modelId: string) {
-  const p = MODEL_PRICING[modelId];
-  if (p) return p.label;
-  return modelId.replace(/^claude-/, '').replace(/-\d{8}$/, '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  return modelId
+    .replace(/^claude-/, '')
+    .replace(/-\d{8}$/, '')
+    .replace(/(\d)-(?=\d)/g, '$1.')
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function getColor(modelId: string) {
-  return (MODEL_PRICING[modelId] ?? getPricing(modelId)).color;
+// Categorical palette: no model-family semantics, just 8 hues validated as a set
+// (see the dataviz skill's validate_palette.js — lightness band, chroma floor,
+// colorblind separation, contrast vs surface). The dark column is the same eight
+// hues re-stepped for a dark surface, not a separate palette.
+//
+// Do not extend this list to fit more models. Eight is the documented ceiling —
+// a 9th hue is indistinguishable from an existing one under CVD and fails every
+// check. Past eight, colors repeat and the legend carries identity.
+const MODEL_PALETTE = {
+  light: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'],
+  dark:  ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'],
+};
+
+// Activity-trend series (chart + legend share these).
+const ACTIVITY_COLORS = { messages: '#3b82f6', toolCalls: '#22c55e' };
+
+// Hues are handed out in palette order, never hashed into arbitrary slots: the
+// palette is only validated for *adjacent* slots, so slots 1..N are guaranteed
+// distinguishable while an arbitrary subset is not (slot 2 vs slot 8 is normal-
+// vision dE 7.1, well under the floor of 15).
+//
+// `orderedIds` must therefore be append-only — see the first-seen ordering at the
+// call site — so a newly seen model takes the next free slot instead of
+// repainting the models already on screen.
+function assignColors(orderedIds: string[], mode: 'light' | 'dark'): Record<string, string> {
+  const palette = MODEL_PALETTE[mode];
+  const map: Record<string, string> = {};
+  orderedIds.forEach((id, i) => { map[id] = palette[i % palette.length]; });
+  return map;
 }
 
 function calcCost(modelId: string, usage: ModelUsage): number {
@@ -162,7 +198,9 @@ function aggregateByMonth(dailyActivity: DailyActivity[], dailyModelTokens: Dail
 
 interface BarChartData {
   labels: string[];
-  datasets: { label: string; data: number[]; color: string }[];
+  // `id` identifies a model dataset for legend filtering; absent on the
+  // activity-trend series, which has no model behind it.
+  datasets: { id?: string; label: string; data: number[]; color: string }[];
 }
 
 function BarChart({ data, height = 200, formatValue = fmtTokens }: { data: BarChartData; height?: number; formatValue?: (n: number) => string }) {
@@ -235,7 +273,10 @@ function BarChart({ data, height = 200, formatValue = fmtTokens }: { data: BarCh
       datasets.forEach(ds => {
         const val = ds.data[i];
         if (val <= 0) return;
-        const barH = (val / niceMax) * chartH;
+        // Floor at 1px: a model with 0.15% share renders sub-pixel on a stack
+        // whose top series is 1000x bigger, so it would silently vanish. Costs at
+        // most (datasets - 1) px of stacking error across the whole column.
+        const barH = Math.max(1, (val / niceMax) * chartH);
         const y = paddingTop + chartH - cumY - barH;
 
         ctx.fillStyle = ds.color;
@@ -375,6 +416,8 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<TimeRange>('day');
   const [tokenChartMode, setTokenChartMode] = useState<'tokens' | 'cost'>('tokens');
+  const [focusedModel, setFocusedModel] = useState<string | null>(null);
+  const { resolvedTheme } = useTheme();
   const [statsEngine, setStatsEngine] = useState<'claude' | 'claude2'>('claude');
 
   useEffect(() => {
@@ -389,6 +432,25 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
     });
   }, [isOpen, statsEngine]);
 
+  // One color allocation for every model we know about, shared by the charts,
+  // the legend and the breakdown table.
+  const modelColors = useMemo(() => {
+    const ids = Object.keys(stats?.modelUsage || {}).filter(id => !id.startsWith('<'));
+    // Order by first appearance so the sequence only ever grows at the end: a
+    // model released later always sorts after the ones already in use, and so
+    // takes a fresh slot rather than shifting everyone's color.
+    const firstSeen = new Map<string, string>();
+    for (const day of stats?.dailyModelTokens || []) {
+      for (const [id, tokens] of Object.entries(day.tokensByModel)) {
+        const prev = firstSeen.get(id);
+        if (tokens > 0 && (!prev || day.date < prev)) firstSeen.set(id, day.date);
+      }
+    }
+    const ordered = [...ids].sort((a, b) =>
+      (firstSeen.get(a) ?? '￿').localeCompare(firstSeen.get(b) ?? '￿') || a.localeCompare(b));
+    return assignColors(ordered, resolvedTheme);
+  }, [stats, resolvedTheme]);
+
   // Model cost breakdown table
   const modelRows = useMemo(() => {
     if (!stats?.modelUsage) return [];
@@ -397,13 +459,13 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
       .map(([id, usage]) => ({
         id,
         label: getLabel(id),
-        color: getColor(id),
+        color: modelColors[id],
         usage,
         cost: calcCost(id, usage),
         totalTokens: usage.inputTokens + usage.outputTokens + usage.cacheReadInputTokens + usage.cacheCreationInputTokens,
       }))
       .sort((a, b) => b.cost - a.cost);
-  }, [stats]);
+  }, [stats, modelColors]);
 
   const totalCost = useMemo(() => modelRows.reduce((s, r) => s + r.cost, 0), [modelRows]);
 
@@ -433,8 +495,8 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
       const activityChart: BarChartData = {
         labels,
         datasets: [
-          { label: t('tokenStats.messages'), data: slicedActivity.map(d => d.messageCount), color: '#3b82f6' },
-          { label: t('tokenStats.toolCalls'), data: slicedActivity.map(d => d.toolCallCount), color: '#22c55e' },
+          { label: t('tokenStats.messages'), data: slicedActivity.map(d => d.messageCount), color: ACTIVITY_COLORS.messages },
+          { label: t('tokenStats.toolCalls'), data: slicedActivity.map(d => d.toolCallCount), color: ACTIVITY_COLORS.toolCalls },
         ],
       };
 
@@ -443,9 +505,10 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
       const tokenChart: BarChartData = {
         labels: tokenLabels,
         datasets: allModelIds.map(id => ({
+          id,
           label: getLabel(id),
           data: slicedTokens.map(d => d.tokensByModel[id] || 0),
-          color: getColor(id),
+          color: modelColors[id],
         })),
       };
 
@@ -453,9 +516,10 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
       const costChart: BarChartData = {
         labels: tokenLabels,
         datasets: allModelIds.map(id => ({
+          id,
           label: getLabel(id),
           data: slicedTokens.map(d => (d.tokensByModel[id] || 0) * (costPerToken[id] || 0)),
-          color: getColor(id),
+          color: modelColors[id],
         })),
       };
 
@@ -469,26 +533,28 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
       const activityChart: BarChartData = {
         labels,
         datasets: [
-          { label: t('tokenStats.messages'), data: weeks.map(w => w.messages), color: '#3b82f6' },
-          { label: t('tokenStats.toolCalls'), data: weeks.map(w => w.tools), color: '#22c55e' },
+          { label: t('tokenStats.messages'), data: weeks.map(w => w.messages), color: ACTIVITY_COLORS.messages },
+          { label: t('tokenStats.toolCalls'), data: weeks.map(w => w.tools), color: ACTIVITY_COLORS.toolCalls },
         ],
       };
 
       const tokenChart: BarChartData = {
         labels,
         datasets: allModelIds.map(id => ({
+          id,
           label: getLabel(id),
           data: weeks.map(w => w.tokensByModel[id] || 0),
-          color: getColor(id),
+          color: modelColors[id],
         })),
       };
 
       const costChart: BarChartData = {
         labels,
         datasets: allModelIds.map(id => ({
+          id,
           label: getLabel(id),
           data: weeks.map(w => (w.tokensByModel[id] || 0) * (costPerToken[id] || 0)),
-          color: getColor(id),
+          color: modelColors[id],
         })),
       };
 
@@ -502,31 +568,44 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
     const activityChart: BarChartData = {
       labels,
       datasets: [
-        { label: t('tokenStats.messages'), data: months.map(m => m.messages), color: '#3b82f6' },
-        { label: t('tokenStats.toolCalls'), data: months.map(m => m.tools), color: '#22c55e' },
+        { label: t('tokenStats.messages'), data: months.map(m => m.messages), color: ACTIVITY_COLORS.messages },
+        { label: t('tokenStats.toolCalls'), data: months.map(m => m.tools), color: ACTIVITY_COLORS.toolCalls },
       ],
     };
 
     const tokenChart: BarChartData = {
       labels,
       datasets: allModelIds.map(id => ({
+        id,
         label: getLabel(id),
         data: months.map(m => m.tokensByModel[id] || 0),
-        color: getColor(id),
+        color: modelColors[id],
       })),
     };
 
     const costChart: BarChartData = {
       labels,
       datasets: allModelIds.map(id => ({
+        id,
         label: getLabel(id),
         data: months.map(m => (m.tokensByModel[id] || 0) * (costPerToken[id] || 0)),
-        color: getColor(id),
+        color: modelColors[id],
       })),
     };
 
     return { activityChart, tokenChart, costChart };
-  }, [stats, timeRange, allModelIds, costPerToken, t]);
+  }, [stats, timeRange, allModelIds, costPerToken, modelColors, t]);
+
+  // Drop a stale focus if that model is gone from the current stats.
+  const activeModel = focusedModel && modelColors[focusedModel] ? focusedModel : null;
+
+  // Legend click narrows the by-model chart to a single model; clicking the
+  // same entry again restores the full stack.
+  const byModelChart = useMemo(() => {
+    const chart = tokenChartMode === 'tokens' ? tokenChart : costChart;
+    if (!activeModel) return chart;
+    return { ...chart, datasets: chart.datasets.filter(ds => ds.id === activeModel) };
+  }, [tokenChart, costChart, tokenChartMode, activeModel]);
 
   // ESC to close (blurs the trigger so it doesn't keep a stuck focus ring)
   useEscToClose(onClose, isOpen);
@@ -616,11 +695,11 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
                   <h3 className="text-xs font-medium text-muted-foreground">{t('tokenStats.activityTrend')}</h3>
                   <div className="flex items-center gap-3 text-[10px]">
                     <span className="flex items-center gap-1">
-                      <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#3b82f6' }} />
+                      <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: ACTIVITY_COLORS.messages }} />
                       {t('tokenStats.messages')}
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#22c55e' }} />
+                      <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: ACTIVITY_COLORS.toolCalls }} />
                       {t('tokenStats.toolCalls')}
                     </span>
                   </div>
@@ -656,16 +735,22 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
                   </div>
                   <div className="flex items-center gap-3 text-[10px] flex-wrap">
                     {modelRows.map(r => (
-                      <span key={r.id} className="flex items-center gap-1">
+                      <button
+                        key={r.id}
+                        onClick={() => setFocusedModel(activeModel === r.id ? null : r.id)}
+                        className={`flex items-center gap-1 rounded-sm transition-opacity hover:opacity-100 ${
+                          activeModel && activeModel !== r.id ? 'opacity-40' : ''
+                        }`}
+                      >
                         <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: r.color }} />
                         {r.label}
-                      </span>
+                      </button>
                     ))}
                   </div>
                 </div>
                 <div className="border border-border rounded-lg p-3 bg-muted/20">
                   <BarChart
-                    data={tokenChartMode === 'tokens' ? tokenChart : costChart}
+                    data={byModelChart}
                     height={180}
                     formatValue={tokenChartMode === 'tokens' ? fmtTokens : fmtCost}
                   />

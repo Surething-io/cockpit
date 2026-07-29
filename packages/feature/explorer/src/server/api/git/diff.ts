@@ -1,8 +1,13 @@
 /**
  * /api/git/diff
  *
- * Single-file diff (staged or unstaged): both-side contents plus
+ * Single-file diff (staged / unstaged / worktree): both-side contents plus
  * isNew / isDeleted flags.
+ *
+ * "worktree" is HEAD -> working tree, i.e. staged and unstaged edits merged
+ * into one change set. The file-tree viewer uses it so a fully-staged file
+ * still shows its changes; "unstaged" would compare index-vs-disk there and
+ * render an empty diff.
  */
 import { exec } from "child_process"
 import { promisify } from "util"
@@ -51,30 +56,37 @@ export const GET = handler((req) =>
     const sp = new URL(req.url).searchParams
     const cwd = sp.get("cwd") || process.cwd()
     const file = sp.get("file")
-    const type = sp.get("type") as "staged" | "unstaged" | null
+    const type = sp.get("type") as "staged" | "unstaged" | "worktree" | null
+    // Renames: `git status` reports the NEW path, but HEAD only knows the old
+    // one, so `git show HEAD:<new>` would miss and the file would render as
+    // entirely added. Callers pass the pre-rename path to get a real diff.
+    const oldPath = sp.get("oldPath")
 
     if (!file) {
       return yield* Effect.fail(
         new ValidationError({ field: "file", reason: "missing" })
       )
     }
-    if (!type || !["staged", "unstaged"].includes(type)) {
+    if (!type || !["staged", "unstaged", "worktree"].includes(type)) {
       return yield* Effect.fail(
         new ValidationError({
           field: "type",
-          reason: 'must be "staged" or "unstaged"',
+          reason: 'must be "staged", "unstaged" or "worktree"',
         })
       )
     }
 
     const absolutePath = path.resolve(cwd, file)
+    // Every HEAD-side lookup goes through the pre-rename name when there is
+    // one; the index and the working tree already use the new name.
+    const headFile = oldPath || file
     let oldContent = ""
     let newContent = ""
     let isNew = false
     let isDeleted = false
 
     if (type === "staged") {
-      const head = yield* readGitShowFlag(`git show HEAD:"${file}"`, cwd)
+      const head = yield* readGitShowFlag(`git show HEAD:"${headFile}"`, cwd)
       oldContent = head.content
       isNew = head.missing
 
@@ -82,17 +94,25 @@ export const GET = handler((req) =>
       newContent = staged.content
       isDeleted = staged.missing
     } else {
-      // Try staging first, fall back to HEAD, otherwise mark as isNew
-      const staged = yield* readGitShowFlag(`git show :"${file}"`, cwd)
-      if (!staged.missing) {
-        oldContent = staged.content
+      if (type === "worktree") {
+        // HEAD -> disk: ignore the index entirely so staged and unstaged
+        // edits show up as a single change set.
+        const head = yield* readGitShowFlag(`git show HEAD:"${headFile}"`, cwd)
+        oldContent = head.content
+        isNew = head.missing
       } else {
-        const head = yield* readGitShowFlag(`git show HEAD:"${file}"`, cwd)
-        if (!head.missing) {
-          oldContent = head.content
+        // Try staging first, fall back to HEAD, otherwise mark as isNew
+        const staged = yield* readGitShowFlag(`git show :"${file}"`, cwd)
+        if (!staged.missing) {
+          oldContent = staged.content
         } else {
-          isNew = true
-          oldContent = ""
+          const head = yield* readGitShowFlag(`git show HEAD:"${headFile}"`, cwd)
+          if (!head.missing) {
+            oldContent = head.content
+          } else {
+            isNew = true
+            oldContent = ""
+          }
         }
       }
 

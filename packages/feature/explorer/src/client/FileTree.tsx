@@ -18,8 +18,10 @@ export interface FileNode {
   symlinkTarget?: string;
 }
 
-// Git status type: M=modified, A=added, D=deleted, ?=untracked, R=renamed
-export type GitStatusCode = 'M' | 'A' | 'D' | '?' | 'R';
+// Git status type: M=modified, A=added (incl. untracked), D=deleted, R=renamed
+// Untracked files map to 'A' rather than a separate '?': git only lists what
+// .gitignore let through, so the tree treats every one of them as a new file.
+export type GitStatusCode = 'M' | 'A' | 'D' | 'R';
 
 // Git status map: path -> status code
 export type GitStatusMap = Map<string, GitStatusCode>;
@@ -86,9 +88,8 @@ function flattenTree(
 // Git status color configuration
 const GIT_STATUS_COLORS: Record<GitStatusCode, { text: string; bg: string }> = {
   'M': { text: 'text-amber-11', bg: 'bg-amber-9/20' },      // modified - yellow
-  'A': { text: 'text-green-11', bg: 'bg-green-9/20' },      // added - green
+  'A': { text: 'text-green-11', bg: 'bg-green-9/20' },      // added / untracked - green
   'D': { text: 'text-red-11', bg: 'bg-red-9/20' },          // deleted - red
-  '?': { text: 'text-slate-9', bg: 'bg-slate-9/20' },       // untracked - gray
   'R': { text: 'text-blue-11', bg: 'bg-blue-9/20' },        // renamed - blue
 };
 

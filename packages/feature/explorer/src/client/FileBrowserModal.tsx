@@ -55,6 +55,7 @@ import { useFileTree } from './hooks/useFileTree';
 import { useContentSearch } from './hooks/useContentSearch';
 import { useGitStatus } from './hooks/useGitStatus';
 import { useGitHistory } from './hooks/useGitHistory';
+import { useTreeFileDiff } from './hooks/useTreeFileDiff';
 import { useLSPDefinition, useLSPHover, useLSPReferences, useLSPWarmup } from '@cockpit/feature-explorer';
 import { useNavigationHistory } from '@cockpit/shared-ui';
 import { useTranslation } from 'react-i18next';
@@ -101,6 +102,10 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
   // split/unified for compare-mode diff — pane-local, defaults to unified, not
   // persisted (same policy as `compareDensity` and the other diff panes).
   const [compareViewMode, setCompareViewMode] = useState<'split' | 'unified'>('unified');
+  // 精简/全文 + split/unified for the directory-tree viewer's diff mode —
+  // pane-local, same defaults and non-persistence policy as the other diff panes.
+  const [treeDiffDensity, setTreeDiffDensity] = useState<'compact' | 'full'>('compact');
+  const [treeDiffViewMode, setTreeDiffViewMode] = useState<'split' | 'unified'>('unified');
   const jsonPreRef = useRef<HTMLPreElement>(null);
   const jsonSearch = useJsonSearch(jsonPreRef);
   const jsonPreviewPreRef = useRef<HTMLPreElement>(null);
@@ -377,7 +382,10 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
         case 'added': return 'A';
         case 'deleted': return 'D';
         case 'renamed': return 'R';
-        case 'untracked': return '?';
+        // Untracked folds into 'A': anything git surfaces here already survived
+        // .gitignore, so from the tree's point of view it is a new file. Matches
+        // the changes tab (GitFileTree's StatusIcon), which never split the two.
+        case 'untracked': return 'A';
         default: return 'M';
       }
     };
@@ -391,6 +399,44 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
 
     return map;
   }, [gitStatus.status]);
+
+  /** New path -> pre-rename path. Only staged entries carry `oldPath` (git only
+   *  detects renames once they are in the index), and it is what lets a renamed
+   *  file diff against its real HEAD content instead of looking wholly new. */
+  const renameOldPaths = useMemo(() => {
+    if (!gitStatus.status) return null;
+    const map = new Map<string, string>();
+    for (const f of gitStatus.status.staged) {
+      if (f.status === 'renamed' && f.oldPath) map.set(f.path, f.oldPath);
+    }
+    return map;
+  }, [gitStatus.status]);
+
+  /** Stable across renders — DiffView / DiffUnifiedView are memo'd heavy
+   *  renderers, and an inline arrow here would re-render them on every
+   *  unrelated FileBrowserModal update. */
+  const handleDiffContentSearch = useCallback((query: string) => {
+    setActiveTab('search');
+    contentSearch.setContentSearchQuery(query);
+    contentSearch.performContentSearch(query);
+  }, [contentSearch.setContentSearchQuery, contentSearch.performContentSearch]);
+
+  // ========== Directory-tree viewer diff mode ==========
+  // Clicking a modified file in the tree opens its diff instead of the plain
+  // viewer; the header's exit button flips back to full text. Scoped to the
+  // tree tab at the render sites below — search / recent keep the plain viewer.
+  const treeDiff = useTreeFileDiff({
+    cwd,
+    selectedPath: fileTree.selectedPath,
+    gitStatusMap,
+    renameOldPaths,
+    isText: fileTree.fileContent?.type === 'text',
+    refreshKey: fileTree.fileContent?.mtime,
+  });
+  // Diff mode owns the whole viewer: the header's reading-mode buttons (blame /
+  // edit / preview / code map) are hidden while it is on, so this one flag
+  // gates both the toolbar and the main area.
+  const treeDiffActive = activeTab === 'tree' && treeDiff.showDiff;
 
   // ========== Set menu container after mount ==========
   useEffect(() => {
@@ -1633,9 +1679,40 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                             {t('fileBrowser.closeBtn')}
                           </button>
                         </>
+                      ) : treeDiffActive ? (
+                        <>
+                          {/* Diff mode: only diff-shape controls plus the way out.
+                              The reading-mode buttons (blame / preview / edit /
+                              code map) are deliberately absent — they each have
+                              their own view of the file, and combining them with
+                              the diff projection multiplies states for no gain.
+                              Exit first, then use them. */}
+                          <DiffDensityToggle value={treeDiffDensity} onChange={setTreeDiffDensity} />
+                          <DiffViewModeToggle value={treeDiffViewMode} onChange={setTreeDiffViewMode} />
+                          <button
+                            onClick={treeDiff.toggleDiff}
+                            className="px-1.5 py-0.5 text-xs rounded transition-colors bg-brand text-white"
+                            title={t('fileBrowser.exitDiff')}
+                          >
+                            {t('fileBrowser.exitDiff')}
+                          </button>
+                        </>
                       ) : (
                         <>
                           {/* View mode order: share · readable/preview · blame · copy · codemap · edit */}
+                          {/* Diff — only for files git reports as modified/renamed,
+                              and only on the tree tab. Same toggle the diff-mode
+                              header exits with, so the two directions are one
+                              button in two states. */}
+                          {activeTab === 'tree' && treeDiff.canDiff && (
+                            <button
+                              onClick={treeDiff.toggleDiff}
+                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
+                              title={t('fileBrowser.viewDiff')}
+                            >
+                              {t('common.diff')}
+                            </button>
+                          )}
                           {/* Share first — markdown only. Style left unchanged (this component
                               is shared with the agent-chat / diff-view preview headers). */}
                           {fileTree.fileContent?.type === 'text' && isMarkdownFile(fileTree.selectedPath) && (
@@ -1766,7 +1843,51 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                       </div>
                     ) : fileTree.fileContent ? (
                       fileTree.fileContent.type === 'text' && typeof fileTree.fileContent.content === 'string' ? (
-                        fileTree.showBlame && fileTree.blameError ? (
+                        // Diff mode wins over every other viewer projection —
+                        // it is an explicit (or auto-applied) mode, not a submode.
+                        treeDiffActive ? (
+                          treeDiff.isLoadingDiff && !treeDiff.diff ? (
+                            <div className="h-full flex items-center justify-center">
+                              <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+                            </div>
+                          ) : treeDiff.diff ? (
+                            treeDiffViewMode === 'unified' ? (
+                              <DiffUnifiedView
+                                oldContent={treeDiff.diff.oldContent}
+                                newContent={treeDiff.diff.newContent}
+                                filePath={treeDiff.diff.filePath}
+                                cwd={cwd}
+                                enableComments={true}
+                                compact={treeDiffDensity === 'compact'}
+                                onContentSearch={handleDiffContentSearch}
+                              />
+                            ) : (
+                              <DiffView
+                                oldContent={treeDiff.diff.oldContent}
+                                newContent={treeDiff.diff.newContent}
+                                filePath={treeDiff.diff.filePath}
+                                isNew={treeDiff.diff.isNew}
+                                isDeleted={treeDiff.diff.isDeleted}
+                                cwd={cwd}
+                                enableComments={true}
+                                compact={treeDiffDensity === 'compact'}
+                                onContentSearch={handleDiffContentSearch}
+                              />
+                            )
+                          ) : (
+                            <div className="h-full flex items-center justify-center text-muted-foreground">
+                              <div className="text-center">
+                                <p>{t('fileBrowser.diffLoadFailed')}</p>
+                                <button
+                                  onClick={treeDiff.toggleDiff}
+                                  className="mt-2 text-brand hover:underline text-sm"
+                                >
+                                  {t('fileBrowser.exitDiff')}
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        ) : fileTree.showBlame && fileTree.blameError ? (
                           <div className="h-full flex items-center justify-center text-muted-foreground">
                             <div className="text-center">
                               <p className="text-red-11">{fileTree.blameError}</p>

@@ -183,14 +183,20 @@ export const discardFiles = (
   httpPostJson("/api/git/discard", { cwd, files, isUntracked })
 
 /**
- * Working tree single-file diff (staged / unstaged view).
+ * Working tree single-file diff.
+ *  - "staged"   HEAD -> index
+ *  - "unstaged" index (or HEAD) -> disk
+ *  - "worktree" HEAD -> disk (staged + unstaged merged into one change set)
  */
 export const fetchGitDiff = (
   cwd: string,
   file: string,
-  type: "staged" | "unstaged"
+  type: "staged" | "unstaged" | "worktree",
+  /** Pre-rename path, so the HEAD side of a renamed file resolves. */
+  oldPath?: string
 ): Effect.Effect<unknown, AppError> => {
   const params = new URLSearchParams({ cwd, file, type })
+  if (oldPath) params.set("oldPath", oldPath)
   return httpGet(`/api/git/diff?${params}`)
 }
 

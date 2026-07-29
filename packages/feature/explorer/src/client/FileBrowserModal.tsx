@@ -67,6 +67,14 @@ import { SearchResultsPanel } from './SearchResultsPanel';
 import type { Location } from '@cockpit/feature-explorer/server/lsp/types';
 import { useSwipeContext } from '@cockpit/shared-ui';
 
+/**
+ * Drag range for the left file-tree pane. The minimum is the width the pane
+ * used to be hard-coded to (`w-80` = 320px), so the divider can only widen the
+ * tree — dragging left just clamps back to the original layout.
+ */
+const TREE_WIDTH_MIN = 320;
+const TREE_WIDTH_MAX = TREE_WIDTH_MIN * 1.5;
+
 function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrigger, initialSearchQuery, searchQueryTrigger }: FileBrowserModalProps) {
   const { t } = useTranslation();
   const addHtmlApp = useAddHtmlApp();
@@ -106,6 +114,37 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
   // pane-local, same defaults and non-persistence policy as the other diff panes.
   const [treeDiffDensity, setTreeDiffDensity] = useState<'compact' | 'full'>('compact');
   const [treeDiffViewMode, setTreeDiffViewMode] = useState<'split' | 'unified'>('unified');
+  // Width of the left file-tree pane, adjustable by dragging the divider.
+  // Pane-local and deliberately NOT persisted: the range is only 320-480px, so
+  // this is a transient "widen it to read a long path" tweak, not a stored
+  // preference (same non-persistence policy as the diff panes above).
+  const [treeWidth, setTreeWidth] = useState(TREE_WIDTH_MIN);
+  const treeResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  // Mouse only: on touch, a horizontal drag belongs to the three-panel swipe
+  // gesture, so we leave those pointers alone entirely.
+  const handleTreeResizeStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    e.preventDefault(); // suppresses the text selection the drag would otherwise start
+    treeResizeRef.current = { startX: e.clientX, startWidth: treeWidth };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, [treeWidth]);
+
+  const handleTreeResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = treeResizeRef.current;
+    if (!drag) return;
+    const next = drag.startWidth + (e.clientX - drag.startX);
+    setTreeWidth(Math.min(TREE_WIDTH_MAX, Math.max(TREE_WIDTH_MIN, next)));
+  }, []);
+
+  const handleTreeResizeEnd = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!treeResizeRef.current) return;
+    treeResizeRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  }, []);
+
   const jsonPreRef = useRef<HTMLPreElement>(null);
   const jsonSearch = useJsonSearch(jsonPreRef);
   const jsonPreviewPreRef = useRef<HTMLPreElement>(null);
@@ -860,7 +899,10 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
         {/* Content */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Panel */}
-          <div className="w-80 flex-shrink-0 border-r border-border flex flex-col overflow-hidden">
+          <div
+            className="flex-shrink-0 flex flex-col overflow-hidden"
+            style={{ width: treeWidth }}
+          >
             {/* Tabs */}
             <div className="flex border-b border-border">
               <button
@@ -1537,6 +1579,17 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Divider — 5px hit area around a 1px line, drag to resize the tree */}
+          <div
+            onPointerDown={handleTreeResizeStart}
+            onPointerMove={handleTreeResizeMove}
+            onPointerUp={handleTreeResizeEnd}
+            onPointerCancel={handleTreeResizeEnd}
+            className="w-[5px] flex-shrink-0 relative cursor-col-resize group"
+          >
+            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border group-hover:bg-brand transition-colors" />
           </div>
 
           {/* Right Panel */}

@@ -13,6 +13,11 @@ import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/pris
 import { memo, useMemo, useRef, ComponentPropsWithoutRef, RefObject } from 'react';
 import type { PluggableList } from 'unified';
 import type { ExtraProps } from 'react-markdown';
+// Deep subpath, NOT the '@cockpit/shared-utils' barrel: the barrel re-exports
+// paths.ts (node fs/os/path), and this module is bundled into the browser-only
+// /html-lib/markdown.js, where esbuild resolves every import in the barrel
+// regardless of tree-shaking and the build fails outright.
+import { resolveLocalMediaUrl } from '@cockpit/shared-utils/htmlBashSdk';
 import { useThemeSafe } from './ThemeProvider';
 import { scrollToHeadingAnchor } from './markdownLinks';
 import { remarkFrontmatterTable } from './markdownFrontmatter';
@@ -42,6 +47,16 @@ interface MarkdownRendererProps {
    * Same-document `#anchor` links are always handled internally (smooth scroll).
    */
   onLinkClick?: (href: string) => boolean;
+  /**
+   * Absolute directory this document lives in — the base for resolving
+   * document-relative image srcs to their `/apps/local` URL. Omit (agent chat
+   * prose, pasted content) and relative srcs keep the browser's own resolution.
+   *
+   * Deliberately a plain string, NOT a resolver callback: it feeds the
+   * `components` useMemo below, and an unmemoized callback prop there would tear
+   * down and rebuild the entire markdown DOM on every parent render.
+   */
+  basePath?: string;
 }
 
 /**
@@ -234,6 +249,7 @@ function createMarkdownComponents(
   isDark: boolean,
   onLinkClick: ((href: string) => boolean) | undefined,
   wrapperRef: RefObject<HTMLDivElement | null>,
+  basePath: string | undefined,
 ) {
   return {
     // Code block — node comes from react-markdown passNode, destructure to avoid passing to DOM
@@ -351,15 +367,22 @@ function createMarkdownComponents(
     ),
     hr: ({ node: _node, ...rest }: ComponentPropsWithoutRef<'hr'> & ExtraProps) => <hr className="my-4 border-border" {...rest} />,
     img: ({ src, alt, node: _node, height, width, style, ...props }: ComponentPropsWithoutRef<'img'> & ExtraProps) => {
+      // Document-relative src (`![](img/a.png)`): resolve against the file's own
+      // directory. Markdown is rendered detached from its address, so without a
+      // base the browser resolves against the APP's page URL and 404s. Done here
+      // rather than by rewriting the source: this sees the parsed src, so
+      // reference-style images and raw <img> are covered alike, and image syntax
+      // quoted inside a fenced code block is left verbatim.
+      const resolvedSrc = basePath && typeof src === 'string' ? resolveLocalMediaUrl(src, basePath) : src;
       // HTML <img> with explicit dimensions (e.g. <img height="28">): preserve original size, display inline
       // height/width must be converted to inline style, otherwise overridden by Tailwind preflight's img { height: auto }
       const hasExplicitSize = height || width || style;
       if (!hasExplicitSize) {
-        return <img src={src} alt={alt || ''} className="max-w-full h-auto rounded-lg my-3" {...props} />;
+        return <img src={resolvedSrc} alt={alt || ''} className="max-w-full h-auto rounded-lg my-3" {...props} />;
       }
       const px = (v: string | number | undefined) => v ? (/^\d+$/.test(String(v)) ? `${v}px` : String(v)) : undefined;
       const mergedStyle = { ...style, height: px(height) ?? style?.height, width: px(width) ?? style?.width };
-      return <img src={src} alt={alt || ''} style={mergedStyle} className="inline-block align-middle" {...props} />;
+      return <img src={resolvedSrc} alt={alt || ''} style={mergedStyle} className="inline-block align-middle" {...props} />;
     },
     strong: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'strong'> & ExtraProps) => <strong className="font-bold" {...rest}>{children}</strong>,
     em: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'em'> & ExtraProps) => <em className="italic" {...rest}>{children}</em>,
@@ -367,7 +390,7 @@ function createMarkdownComponents(
   };
 }
 
-export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser = false, isStreaming = false, enableMath = true, isDark: isDarkProp, rehypePlugins, onLinkClick }: MarkdownRendererProps) {
+export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser = false, isStreaming = false, enableMath = true, isDark: isDarkProp, rehypePlugins, onLinkClick, basePath }: MarkdownRendererProps) {
   // Use global Theme Context to avoid each component creating its own MutationObserver.
   // Context is nullable: the standalone /html-lib bundle renders without a
   // ThemeProvider and passes isDark as a prop instead.
@@ -380,8 +403,8 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
   // Memoize components to keep stable references — prevents ReactMarkdown from
   // tearing down and recreating the entire DOM tree on parent re-renders
   const components = useMemo(
-    () => createMarkdownComponents(isDark, onLinkClick, wrapperRef),
-    [isDark, onLinkClick],
+    () => createMarkdownComponents(isDark, onLinkClick, wrapperRef, basePath),
+    [isDark, onLinkClick, basePath],
   );
 
   const remarkPlugins = enableMath ? REMARK_PLUGINS : REMARK_PLUGINS_NO_MATH;

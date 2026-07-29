@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from "vitest"
 import vm from "vm"
-import { injectBashSdk } from "./htmlBashSdk"
+import { injectBashSdk, resolveLocalMediaUrl, fromLocalAppUrl } from "./htmlBashSdk"
 
 /** Fake socket: readyState is driven by the test, sends are recorded. */
 class FakeSocket {
@@ -223,5 +223,79 @@ describe("injected SDK — language", () => {
     postMessage({ type: "THEME_CHANGE", theme: "dark" })
     postMessage({ type: "cockpit:language-change" })
     expect(cockpit.lang).toBe("")
+  })
+})
+
+/**
+ * Document-relative media refs. These are the cases that decide whether a
+ * README's `![](examples/a.jpg)` renders at all: the renderer sees the parsed
+ * src with no address of its own, so every one of them is resolved here.
+ */
+describe("resolveLocalMediaUrl", () => {
+  const BASE = "/Users/ka/Work/novel-to-game"
+
+  it("maps a document-relative path to its /apps/local URL", () => {
+    expect(resolveLocalMediaUrl("examples/a/title.jpg", BASE)).toBe(
+      "/apps/local/Users/ka/Work/novel-to-game/examples/a/title.jpg"
+    )
+    expect(resolveLocalMediaUrl("./title.jpg", BASE)).toBe(
+      "/apps/local/Users/ka/Work/novel-to-game/title.jpg"
+    )
+  })
+
+  it("collapses `..` — the server rejects a URL that still contains one", () => {
+    expect(resolveLocalMediaUrl("../shared/logo.png", BASE)).toBe(
+      "/apps/local/Users/ka/Work/shared/logo.png"
+    )
+    expect(fromLocalAppUrl(resolveLocalMediaUrl("../shared/logo.png", BASE))).toBe(
+      "/Users/ka/Work/shared/logo.png"
+    )
+  })
+
+  it("keeps ?query and #hash out of the encoded filename", () => {
+    expect(resolveLocalMediaUrl("logo.png?v=2", BASE)).toBe(
+      "/apps/local/Users/ka/Work/novel-to-game/logo.png?v=2"
+    )
+    expect(resolveLocalMediaUrl("sprite.svg#icon", BASE)).toBe(
+      "/apps/local/Users/ka/Work/novel-to-game/sprite.svg#icon"
+    )
+  })
+
+  it("decodes once so an already-encoded path is not double-encoded", () => {
+    expect(resolveLocalMediaUrl("my%20file.png", BASE)).toBe(
+      "/apps/local/Users/ka/Work/novel-to-game/my%20file.png"
+    )
+    expect(resolveLocalMediaUrl("my file.png", BASE)).toBe(
+      "/apps/local/Users/ka/Work/novel-to-game/my%20file.png"
+    )
+  })
+
+  it("leaves refs the browser already resolves untouched", () => {
+    for (const src of [
+      "https://x.test/a.png",
+      "http://x.test/a.png",
+      "data:image/png;base64,AAA",
+      "//cdn.test/a.png",
+      "/absolute/on/origin.png",
+      "#anchor-only",
+    ]) {
+      expect(resolveLocalMediaUrl(src, BASE)).toBe(src)
+    }
+  })
+
+  it("anchors a relative base to projectRoot, and gives up without one", () => {
+    expect(resolveLocalMediaUrl("a.png", "docs", "/Users/ka/proj")).toBe(
+      "/apps/local/Users/ka/proj/docs/a.png"
+    )
+    // No absolute base derivable — leave the browser's own resolution alone
+    // rather than emit a URL that is confidently wrong.
+    expect(resolveLocalMediaUrl("a.png", "docs")).toBe("a.png")
+    expect(resolveLocalMediaUrl("a.png", "")).toBe("a.png")
+  })
+
+  it("handles a windows base", () => {
+    expect(resolveLocalMediaUrl("img/a.png", "C:\\Users\\ka\\proj")).toBe(
+      "/apps/local/C%3A/Users/ka/proj/img/a.png"
+    )
   })
 })

@@ -6,6 +6,7 @@
   "types": "./src/index.ts",
   "sideEffects": false,
   "dependencies": {
-    "@cockpit/effect-core": "*"
+    "@cockpit/effect-core": "*",
+    "@cockpit/shared-utils": "*"
   }
 }

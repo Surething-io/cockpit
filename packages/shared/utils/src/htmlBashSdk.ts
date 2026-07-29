@@ -481,6 +481,87 @@ export function toLocalAppUrl(filePath: string, projectRoot?: string): string {
 }
 
 /**
+ * Collapse `.` / `..` segments (posix or windows separators). Leading `..`
+ * that would escape an absolute root are dropped, as the OS does for `/..`.
+ */
+function normalizeSegments(p: string): string {
+  const drive = /^[A-Za-z]:/.exec(p)?.[0] ?? ""
+  const body = drive ? p.slice(drive.length) : p
+  const rooted = /^[/\\]/.test(body)
+  const out: string[] = []
+  for (const seg of body.split(/[/\\]/)) {
+    if (!seg || seg === ".") continue
+    if (seg === "..") {
+      if (out.length && out[out.length - 1] !== "..") out.pop()
+      else if (!rooted && !drive) out.push("..")
+      continue
+    }
+    out.push(seg)
+  }
+  return drive + (rooted || drive ? "/" : "") + out.join("/")
+}
+
+/**
+ * A reference the browser already resolves on its own: any scheme (`http:`,
+ * `data:`), protocol-relative `//host`, or root-relative `/path`.
+ */
+const SELF_RESOLVING_REF_RE = /^([a-z][a-z0-9+.-]*:|\/\/|\/)/i
+
+/**
+ * Resolve a document-relative media reference (markdown `![](x)`, raw
+ * `<img src="x">`) against the directory the document itself lives in, and map
+ * it to the `/apps/local` URL that actually serves those bytes.
+ *
+ * This is the base-URL the renderer otherwise lacks: markdown is rendered
+ * detached from its address, so a relative src would resolve against the app's
+ * page URL and 404 (root-relative paths are not served — see apps.ts). Rather
+ * than rewriting the markdown SOURCE (which corrupts image syntax quoted inside
+ * fenced code blocks and misses reference-style images), callers hand the base
+ * to the renderer and resolution happens per-reference, at render time.
+ *
+ * Returns `src` untouched when it is already self-resolving or when no absolute
+ * base is derivable — a wrong URL is worse than the browser's own attempt.
+ */
+export function resolveLocalMediaUrl(
+  src: string,
+  baseDir: string,
+  projectRoot?: string
+): string {
+  const raw = src.trim()
+  if (!raw || SELF_RESOLVING_REF_RE.test(raw)) return src
+  // canResolveAbsolute, not isAbsolutePath(joined): joinPath("", "docs") yields
+  // "/docs", which would pass an absolute-path test and silently anchor a
+  // relative base to the filesystem ROOT.
+  if (!canResolveAbsolute(baseDir, projectRoot)) return src
+  const base = isAbsolutePath(baseDir)
+    ? baseDir
+    : joinPath(projectRoot as string, baseDir)
+
+  // Split `?query` / `#hash` off BEFORE building the path: toLocalAppUrl encodes
+  // per segment, so a suffix left attached is percent-escaped INTO the filename
+  // (`logo.png?v=2` -> `logo.png%3Fv%3D2`) and 404s. Cache-busting queries and
+  // SVG fragment ids are ordinary markdown, so this is not an edge case.
+  const cut = raw.search(/[?#]/)
+  const rel = cut < 0 ? raw : raw.slice(0, cut)
+  const suffix = cut < 0 ? "" : raw.slice(cut)
+  if (!rel) return src // bare `#frag` / `?q` — not a path reference
+
+  // The source carries an already-encoded path (`my%20file.png`) and
+  // toLocalAppUrl re-encodes per segment; decode first or it becomes `%2520`.
+  let decoded = rel
+  try {
+    decoded = decodeURIComponent(rel)
+  } catch {
+    /* malformed escape — use the path as written */
+  }
+
+  // `..` MUST be collapsed here: fromLocalAppUrl rejects a URL still containing
+  // a `..` segment as a traversal attempt, so an un-normalized `../img.png`
+  // would come back 403 instead of the file one directory up.
+  return toLocalAppUrl(normalizeSegments(joinPath(base, decoded))) + suffix
+}
+
+/**
  * Extensions handled by the built-in file-viewer app (apps/file-viewer/):
  * markdown (CockpitMarkdown + TocSidebar), images (themed, centered, fit/100%
  * toggle), pdf (CockpitPdf, Explorer's themed viewer), json (readable widget

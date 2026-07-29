@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Portal } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
@@ -11,6 +11,7 @@ import { MarkdownRenderer } from '@cockpit/shared-ui';
 import { TocSidebar } from '@cockpit/shared-ui';
 import { rehypeSourceLines } from '@cockpit/shared-ui';
 import { toast } from '@cockpit/shared-ui';
+import { resolveBashCwd } from '@cockpit/shared-utils';
 import { useJsonSearch, JsonSearchBar } from '@cockpit/shared-ui';
 import { FileImagePreview } from './index';
 import {
@@ -103,7 +104,7 @@ function FilePreview({ filePath }: FilePreviewProps) {
   }
 
   if (isMd) {
-    return <FilePreviewMarkdown content={fileContent} />;
+    return <FilePreviewMarkdown content={fileContent} filePath={filePath} />;
   }
 
   return (
@@ -123,13 +124,15 @@ function FilePreview({ filePath }: FilePreviewProps) {
 
 const REHYPE_PLUGINS = [rehypeSourceLines];
 
-function FilePreviewMarkdown({ content }: { content: string }) {
+function FilePreviewMarkdown({ content, filePath }: { content: string; filePath: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Document-relative images resolve against the previewed file's directory.
+  const basePath = useMemo(() => resolveBashCwd(filePath), [filePath]);
   return (
     <div className="h-full flex">
       <TocSidebar content={content} containerRef={containerRef} />
       <div ref={containerRef} className="flex-1 overflow-auto p-4">
-        <MarkdownRenderer content={content} rehypePlugins={REHYPE_PLUGINS} />
+        <MarkdownRenderer content={content} basePath={basePath} rehypePlugins={REHYPE_PLUGINS} />
       </div>
     </div>
   );

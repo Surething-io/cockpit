@@ -11,6 +11,7 @@ import { useComments } from '@cockpit/feature-comments';
 import { useAIBridge } from '@cockpit/shared-ui';
 import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, type CodeReference } from '@cockpit/feature-comments';
 import { MarkdownRenderer } from '@cockpit/shared-ui';
+import { resolveBashCwd } from '@cockpit/shared-utils';
 import { rehypeSourceLines } from '@cockpit/shared-ui';
 import { scrollToHeadingAnchor } from '@cockpit/shared-ui';
 import { isMarkdownFile, resolveRelativePath } from './toolCallUtils';
@@ -107,6 +108,11 @@ export function InteractiveMarkdownPreview({
 
   // === Source lines for extracting original content ===
   const sourceLines = useMemo(() => content.split('\n'), [content]);
+
+  // Base for document-relative image srcs — the previewed file's own directory
+  // (absolute; a relative filePath is anchored to cwd). Same helper the HTML
+  // preview uses for its bash cwd, so the two cannot drift.
+  const imageBaseDir = useMemo(() => resolveBashCwd(filePath, cwd), [filePath, cwd]);
 
   useEffect(() => { queueMicrotask(() => setIsMounted(true)); }, []);
 
@@ -408,6 +414,7 @@ export function InteractiveMarkdownPreview({
           <div className="p-6">
             <MarkdownRenderer
               content={content}
+              basePath={imageBaseDir}
               rehypePlugins={REHYPE_PLUGINS}
               onLinkClick={handleLinkClick}
             />

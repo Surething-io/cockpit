@@ -40,16 +40,16 @@ description: "完整代码审查:静态 + 动态一遍做完。静态三角校�
 
 两条副作用红线:① 主会话**不替 subagent 做实质判断**;② 静态拆出去还顺带消掉"静态广度摊薄动态建模"的主稀释。
 
-按规模三档(**都至少进一个干净 subagent**):
+按规模三档(**都至少进一个干净 subagent**)。**前两档你自己按规模选;hard 只由用户显式指定,你不得自行升档**——改动再大、风险再高,用户没说 hard 就封顶在默认档,报告里也不要建议改用 hard:
 - **单 subagent**:无动态面 / 极小 → 1 个干净 subagent 跑 Part A。主会话只转交 diff + 收报告。
 - **默认(2 subagent)**:有动态面 → 1 静态 + 1 动态,**两个都干净、并行**,各自在干净 diff 上自行 triage(静态扫全部改动 / 动态用切片原型清单列全切片)。
-- **hard(1 + N subagent)**:高风险 / 大型 → 先 1 个干净 triage subagent 出切片清单,据此 fan out 1 静态 + 每切片 1 个 subagent。最深、最慢。
+- **hard(1 + N subagent)**:**仅当用户显式要 hard(如 \`/cr hard\`)** → 先 1 个干净 triage subagent 出切片清单,据此 fan out 1 静态 + 每切片 1 个 subagent。最深、最慢。用户点了就照跑,不因为"这次改动不大"自行降档;真拆不出动态切片时,注明"无动态切片,per-slice fan-out 退化为 1 静态"即可。
 
 subagent prompt 模板:\`读本 skill (cr/SKILL.md),只对 <你那块(Part A 全部 / 某个动态切片)> 应用对应 Part,自行 triage,按统一格式输出 findings\`。
 
 **Synthesis(主会话,只整理不重判)**:汇总各 subagent 的 findings → 去重(同根因标"共犯")→ 影响 × 概率排序 → 一份报告 + 梯度图。**禁止用主会话的开发上下文给任何 finding 洗白 / 降级**——subagent 怎么判就怎么收。要质疑某条,**重新 spawn 一个干净 subagent 复核**,而不是主会话自己拍。
 
-> 取舍:默认 2-subagent 既隔离开发污染、又消掉静态摊薄动态;hard 的 per-slice fan-out 是额外深度(实测把 image/video 挖到 🔴 + 多 subagent 独立收敛提置信度),贵且慢,只在高风险上。
+> 取舍:默认 2-subagent 既隔离开发污染、又消掉静态摊薄动态;hard 的 per-slice fan-out 是额外深度(实测把 image/video 挖到 🔴 + 多 subagent 独立收敛提置信度),贵且慢,由用户显式选用(不自动升档)。
 
 ## Step 1 — 分诊(triage;两种模式都先做这步)
 读 diff,切两面(可重叠):
@@ -187,16 +187,16 @@ Most PR review is static — read the snapshot and you can judge right/wrong, **
 
 Two side-effect red lines: ① the main session **does not make substantive judgements on the subagent's behalf**; ② splitting static out also removes the "static breadth dilutes dynamic modelling" dilution of the main thread.
 
-Three tiers by scale (**all enter at least one clean subagent**):
+Three tiers by scale (**all enter at least one clean subagent**). **You pick between the first two by scale yourself; hard is enabled ONLY when the user explicitly asks for it — never escalate to it on your own** — however large the diff or however high the risk, without the user saying hard you cap at the default tier, and don't suggest switching to hard in the report either:
 - **Single subagent**: no dynamic surface / tiny → 1 clean subagent runs Part A. Main session just relays the diff + collects the report.
 - **Default (2 subagents)**: has a dynamic surface → 1 static + 1 dynamic, **both clean, in parallel**, each triaging on the clean diff itself (static scans all changes / dynamic lists every slice via the slice-archetype checklist).
-- **hard (1 + N subagents)**: high-risk / large → first 1 clean triage subagent produces the slice list, then fan out 1 static + 1 subagent per slice. Deepest, slowest.
+- **hard (1 + N subagents)**: **only when the user explicitly asks for hard (e.g. \`/cr hard\`)** → first 1 clean triage subagent produces the slice list, then fan out 1 static + 1 subagent per slice. Deepest, slowest. Once the user asks for it, run it as asked — don't downgrade on your own because "this change is small"; if no dynamic slice can be carved out, just note "no dynamic slice, per-slice fan-out degenerates to 1 static".
 
 Subagent prompt template: \`Read this skill (cr/SKILL.md); apply only the matching Part to <your chunk (all of Part A / one dynamic slice)>, triage it yourself, and output findings in the unified format\`.
 
 **Synthesis (main session, organize only — never re-judge)**: gather each subagent's findings → dedup (mark same-root-cause as "accomplices") → sort by impact × probability → one report + gradient chart. **It is forbidden to use the main session's dev context to whitewash / downgrade any finding** — take what the subagent judged as-is. To dispute one, **spawn a fresh clean subagent to re-check**, not the main session deciding on its own.
 
-> Trade-off: the default 2-subagent both isolates dev pollution and removes static-dilutes-dynamic; hard's per-slice fan-out is extra depth (in practice it dug image/video up to 🔴, and multiple independently-converging subagents raised confidence), expensive and slow, only for high risk.
+> Trade-off: the default 2-subagent both isolates dev pollution and removes static-dilutes-dynamic; hard's per-slice fan-out is extra depth (in practice it dug image/video up to 🔴, and multiple independently-converging subagents raised confidence), expensive and slow, selected explicitly by the user (never auto-escalated).
 
 ## Step 1 — Triage (do this first in both modes)
 Read the diff, cut two surfaces (may overlap):

@@ -938,6 +938,19 @@ export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableC
     overscan: 20,
   });
 
+  // Minimap strip — projected from `rows`, NOT `diffLines`, so its vertical
+  // scale matches the scroll container's. In compact mode a collapsed gap is
+  // one row of scrollable height, so it contributes one `unchanged` strip;
+  // projecting the raw diff instead would make every click-to-jump land in
+  // the wrong place. Same rule the split view applies to its `renderRows`.
+  const minimapLines = useMemo(
+    () =>
+      rows.map((row) =>
+        row.kind === 'gap' ? { type: 'unchanged' as const } : { type: row.line.type },
+      ),
+    [rows],
+  );
+
   return (
     <div className="font-mono flex flex-col h-full text-sm">
       {/* Action bar — hosts the preview trigger (the callback has no other home
@@ -962,106 +975,116 @@ export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableC
               {t('common.copy')}
             </button>
           )}
+          {/* Spacer over the minimap column, so the bar's buttons stop at the
+              content's right edge instead of overhanging the strip. Same
+              w-4 filler the split view's header carries. */}
+          <div className="w-4 flex-shrink-0" />
         </div>
       )}
-      <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-auto">
-        <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
-          {virtualizer.getVirtualItems().map((virtualItem) => {
-            const row = rows[virtualItem.index];
-            if (!row) return null;
-            const style = {
-              position: 'absolute' as const,
-              top: 0,
-              left: 0,
-              minWidth: '100%',
-              width: 'max-content' as const,
-              height: `${virtualItem.size}px`,
-              transform: `translateY(${virtualItem.start}px)`,
-            };
-
-            if (row.kind === 'gap') {
-              const label = t('diffViewer.gap.hidden', { count: row.count });
+      {/* Content row — scroll container + minimap side by side, mirroring the
+          split view. The minimap sits BELOW the action bar and spans only the
+          scroll area, so it lines up with the content it maps. */}
+      <div className="flex-1 min-h-0 flex">
+        <div ref={scrollContainerRef} className="flex-1 min-w-0 overflow-auto">
+          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
+            {virtualizer.getVirtualItems().map((virtualItem) => {
+              const row = rows[virtualItem.index];
+              if (!row) return null;
+              const style = {
+                position: 'absolute' as const,
+                top: 0,
+                left: 0,
+                minWidth: '100%',
+                width: 'max-content' as const,
+                height: `${virtualItem.size}px`,
+                transform: `translateY(${virtualItem.start}px)`,
+              };
+  
+              if (row.kind === 'gap') {
+                const label = t('diffViewer.gap.hidden', { count: row.count });
+                return (
+                  <div
+                    key={virtualItem.key}
+                    style={style}
+                    onClick={() => setExpandedGaps((prev) => new Set(prev).add(row.id))}
+                    className="flex items-center cursor-pointer bg-slate-2 hover:bg-accent border-y border-border text-xs text-slate-9 select-none"
+                    title={label}
+                  >
+                    <span className="w-full text-center">{label}</span>
+                  </div>
+                );
+              }
+  
+              const line = row.line;
+              // New-file line number = the comment anchor. Removed rows have no
+              // new-side line, so they get no bubble / `data-new-line` — matching
+              // the split view's left (old) column.
+              const lineNum = line.type !== 'removed' ? (line.newLineNum ?? 0) : 0;
+              const hasComments = lineNum > 0 && linesWithComments.has(lineNum);
+              const lineComments = commentsByEndLine.get(lineNum);
+              const firstComment = lineComments?.[0];
+              const isInCommentRange = addCommentRange && lineNum >= addCommentRange.start && lineNum <= addCommentRange.end;
+              const isInAIRange = sendToAIRange && lineNum >= sendToAIRange.start && lineNum <= sendToAIRange.end;
+              const isInRange = isInCommentRange || isInAIRange;
               return (
                 <div
                   key={virtualItem.key}
                   style={style}
-                  onClick={() => setExpandedGaps((prev) => new Set(prev).add(row.id))}
-                  className="flex items-center cursor-pointer bg-slate-2 hover:bg-accent border-y border-border text-xs text-slate-9 select-none"
-                  title={label}
-                >
-                  <span className="w-full text-center">{label}</span>
-                </div>
-              );
-            }
-
-            const line = row.line;
-            // New-file line number = the comment anchor. Removed rows have no
-            // new-side line, so they get no bubble / `data-new-line` — matching
-            // the split view's left (old) column.
-            const lineNum = line.type !== 'removed' ? (line.newLineNum ?? 0) : 0;
-            const hasComments = lineNum > 0 && linesWithComments.has(lineNum);
-            const lineComments = commentsByEndLine.get(lineNum);
-            const firstComment = lineComments?.[0];
-            const isInCommentRange = addCommentRange && lineNum >= addCommentRange.start && lineNum <= addCommentRange.end;
-            const isInAIRange = sendToAIRange && lineNum >= sendToAIRange.start && lineNum <= sendToAIRange.end;
-            const isInRange = isInCommentRange || isInAIRange;
-            return (
-              <div
-                key={virtualItem.key}
-                style={style}
-                data-new-line={lineNum || undefined}
-                className={`flex ${
-                  isInRange ? 'bg-blue-9/20' :
-                  hasComments ? 'bg-amber-9/10' :
-                  line.type === 'removed' ? 'bg-red-9/15 dark:bg-red-9/25' :
-                  line.type === 'added' ? 'bg-green-9/15 dark:bg-green-9/25' : ''
-                }`}
-              >
-                {/* Comment bubble gutter — only present when comments are on, so
-                    the plain view keeps its original width. */}
-                {commentsEnabled && (
-                  <span className="w-5 flex-shrink-0 flex items-center justify-center select-none">
-                    {lineNum > 0 && hasComments && firstComment && (
-                      <button
-                        onClick={(e) => handleCommentBubbleClick(firstComment, e)}
-                        className="w-4 h-4 flex items-center justify-center rounded hover:bg-accent text-amber-9"
-                        title={t('codeViewer.nComments', { count: lineComments?.length })}
-                      >
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                    )}
-                  </span>
-                )}
-                {/* Line numbers */}
-                <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
-                  {line.type !== 'added' ? line.oldLineNum : ''}
-                </span>
-                <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
-                  {line.type !== 'removed' ? line.newLineNum : ''}
-                </span>
-                {/* Symbol */}
-                <span
-                  className={`w-6 flex-shrink-0 text-center select-none ${
-                    line.type === 'removed'
-                      ? 'text-red-11'
-                      : line.type === 'added'
-                      ? 'text-green-11'
-                      : 'text-slate-9'
+                  data-new-line={lineNum || undefined}
+                  className={`flex ${
+                    isInRange ? 'bg-blue-9/20' :
+                    hasComments ? 'bg-amber-9/10' :
+                    line.type === 'removed' ? 'bg-red-9/15 dark:bg-red-9/25' :
+                    line.type === 'added' ? 'bg-green-9/15 dark:bg-green-9/25' : ''
                   }`}
                 >
-                  {line.type === 'removed' ? '-' : line.type === 'added' ? '+' : ' '}
-                </span>
-                {/* Content with syntax highlighting */}
-                <span
-                  className="flex-1 whitespace-pre pl-1"
-                  dangerouslySetInnerHTML={{ __html: highlightedLines[row.index] || escapeHtml(line.content || ' ') }}
-                />
-              </div>
-            );
-          })}
+                  {/* Comment bubble gutter — only present when comments are on, so
+                      the plain view keeps its original width. */}
+                  {commentsEnabled && (
+                    <span className="w-5 flex-shrink-0 flex items-center justify-center select-none">
+                      {lineNum > 0 && hasComments && firstComment && (
+                        <button
+                          onClick={(e) => handleCommentBubbleClick(firstComment, e)}
+                          className="w-4 h-4 flex items-center justify-center rounded hover:bg-accent text-amber-9"
+                          title={t('codeViewer.nComments', { count: lineComments?.length })}
+                        >
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                          </svg>
+                        </button>
+                      )}
+                    </span>
+                  )}
+                  {/* Line numbers */}
+                  <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
+                    {line.type !== 'added' ? line.oldLineNum : ''}
+                  </span>
+                  <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
+                    {line.type !== 'removed' ? line.newLineNum : ''}
+                  </span>
+                  {/* Symbol */}
+                  <span
+                    className={`w-6 flex-shrink-0 text-center select-none ${
+                      line.type === 'removed'
+                        ? 'text-red-11'
+                        : line.type === 'added'
+                        ? 'text-green-11'
+                        : 'text-slate-9'
+                    }`}
+                  >
+                    {line.type === 'removed' ? '-' : line.type === 'added' ? '+' : ' '}
+                  </span>
+                  {/* Content with syntax highlighting */}
+                  <span
+                    className="flex-1 whitespace-pre pl-1"
+                    dangerouslySetInnerHTML={{ __html: highlightedLines[row.index] || escapeHtml(line.content || ' ') }}
+                  />
+                </div>
+              );
+            })}
+          </div>
         </div>
+        <DiffMinimap lines={minimapLines} containerRef={scrollContainerRef} />
       </div>
       {/* Floating toolbar / comment cards — portaled by the shared hook. */}
       {commentPortal}

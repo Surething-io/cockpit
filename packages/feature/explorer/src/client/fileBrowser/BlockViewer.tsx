@@ -1884,31 +1884,40 @@ export function BlockViewer({
           Callback ref keeps the value as state so useSelectionToolbar's
           effect re-runs the moment the element mounts.
 
-          Layout is a flex ROW: FileTOCSection on the LEFT (file
-          structure / "you are here"), scroll container in the MIDDLE
-          claiming flex-1, optional BlockDiffMinimap to its right
-          (chip-diff mode only), FunctionHistoryDrawer on the RIGHT
-          (cross-file navigation trail). This puts the scroll
-          container's right edge at the minimap/drawer's left edge,
-          so the native browser scrollbar (styled by globals.css to
-          match `slate-7` 8px) renders FULLY VISIBLE — same as
-          CodeViewer. Previously the scroll container spanned the
-          full panel and the drawer's `absolute right-0 w-56` covered
-          the scrollbar, which is why we needed a custom overview
-          ruler in the first place. */}
+          Layout is a flex ROW: the `w-56` navigation rail on the LEFT,
+          scroll container in the MIDDLE claiming flex-1, optional
+          BlockDiffMinimap on the RIGHT (chip-diff mode only). This
+          puts the scroll container's right edge at the minimap's left
+          edge (or the panel edge in plain chip mode), so the native
+          browser scrollbar (styled by globals.css to match `slate-7`
+          8px) renders FULLY VISIBLE — same as CodeViewer. Previously
+          a history drawer sat here as `absolute right-0 w-56` and
+          covered the scrollbar, which is why we needed a custom
+          overview ruler in the first place. */}
       <div ref={setReviewAnchor} className="flex-1 relative min-h-0 flex">
-        {/* TOC: file structure index on the left. Always rendered
-            (even when empty) so the chip canvas's left edge is
-            visually stable as files swap. */}
-        <FileTOCSection
-          functions={workingFunctions}
-          currentQname={currentFocalQname}
-          onSelect={handleRulerJump}
-          notIndexed={data.notIndexed}
-          onRebuild={refresh}
-        />
-        {/* Scroll container — `flex-1` claims the space the TOC,
-            minimap, and drawer leave. `min-w-0` so flex children
+        {/* Left rail — TOC (top 50%) over History (bottom 50%). Both
+            halves are `flex-1 min-h-0`, so the split is fixed rather
+            than content-driven: the boundary never jumps when history
+            fills up or the file's function list gets long. The rail
+            itself is always rendered (even when both halves are
+            empty) so the chip canvas's left edge stays visually
+            stable as files swap. */}
+        <div className="w-56 flex-shrink-0 border-r border-border flex flex-col">
+          <FileTOCSection
+            functions={workingFunctions}
+            currentQname={currentFocalQname}
+            onSelect={handleRulerJump}
+            notIndexed={data.notIndexed}
+            onRebuild={refresh}
+          />
+          <FunctionHistoryDrawer
+            entries={history}
+            onSelect={handleHistorySelect}
+            onClear={() => setHistory([])}
+          />
+        </div>
+        {/* Scroll container — `flex-1` claims the space the rail and
+            minimap leave. `min-w-0` so flex children
             with long content (here: row pins + horizontally scrolling
             code bodies) shrink correctly instead of pushing the row
             out. Ref'd via callback so BlockDiffMinimap's viewport-
@@ -2021,11 +2030,6 @@ export function BlockViewer({
               onJumpToLine={handleRulerJump}
             />
           )}
-        <FunctionHistoryDrawer
-          entries={history}
-          onSelect={handleHistorySelect}
-          onClear={() => setHistory([])}
-        />
         {searchOpen && (
           <SearchPalette
             cwd={cwd}

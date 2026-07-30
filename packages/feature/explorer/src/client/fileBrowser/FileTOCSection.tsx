@@ -14,12 +14,17 @@
  * Cmd+K is a typed search, not a scan. The TOC is the "scan" surface
  * — orientation in one glance, no typing.
  *
- * Layout: own column on the LEFT of the chip canvas (sister of the
- * `FunctionHistoryDrawer` on the right). Tried stacking TOC + History
- * on the right first; the split-attention between two top-and-bottom
- * lists felt worse than a balanced two-column rail (left = file
- * structure, right = navigation trail). The chip canvas gets squeezed
- * a bit; that's the accepted tradeoff.
+ * Layout: TOP half of the single `w-56` left rail, stacked above
+ * `FunctionHistoryDrawer` (each `flex-1 min-h-0` → a fixed 50/50
+ * split, independent scrollers). The rail's width + right border live
+ * on the wrapper in `BlockViewer`; this component only owns its own
+ * half. Both halves render unconditionally so the split never jumps
+ * as files swap or history empties.
+ *
+ * History used to be a mirror column on the RIGHT of the canvas. It
+ * was moved here to give the chip canvas back those 224px — the
+ * canvas is the surface that actually needs width (code bodies +
+ * caller/callee pin columns), while both rails are short text lists.
  *
  * Data is free — `data.functions` from `useFileFunctions` already has
  * every function with name / qualifiedName / startLine / endLine /
@@ -88,7 +93,7 @@ export function FileTOCSection({
   );
   return (
     <div
-      className="w-56 flex-shrink-0 bg-card border-r border-border flex flex-col"
+      className="flex-1 min-h-0 bg-card flex flex-col"
       data-testid="file-toc-section"
     >
       <div className="flex-shrink-0 px-2 py-1.5 border-b border-border text-xs text-muted-foreground font-mono truncate">

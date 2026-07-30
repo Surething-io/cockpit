@@ -1,10 +1,17 @@
 'use client';
 
 /**
- * FunctionHistoryDrawer — narrow right-side column of the Code Map
- * that tracks the functions the user has hopped through via input/
- * output pins. Sister of `FileTOCSection` on the LEFT side: TOC = "what's
- * in this file", History = "where I've been across files".
+ * FunctionHistoryDrawer — BOTTOM half of the Code Map's left rail,
+ * tracking the functions the user has hopped through via input/output
+ * pins. Stacked under `FileTOCSection`: TOC = "what's in this file",
+ * History = "where I've been across files".
+ *
+ * Layout: the rail's `w-56` + right border live on the wrapper in
+ * `BlockViewer`; both halves are `flex-1 min-h-0`, so the split is a
+ * fixed 50/50 with independent scrollers — it does NOT reflow when
+ * history is empty or when the TOC is long. This column used to sit
+ * on the RIGHT of the chip canvas; moving it here gives the canvas
+ * back 224px, which it needs far more than a text list does.
  *
  * Why a trail and not a code preview: the BlockViewer already shows
  * every function's source inline, so a separate drawer displaying the
@@ -60,7 +67,7 @@ export function FunctionHistoryDrawer({
   const { t } = useTranslation();
   return (
     <div
-      className="w-56 flex-shrink-0 bg-card border-l border-border flex flex-col"
+      className="flex-1 min-h-0 bg-card border-t border-border flex flex-col"
       data-testid="function-history-drawer"
     >
       <div className="flex-shrink-0 px-2 py-1.5 border-b border-border flex items-center justify-between gap-1">

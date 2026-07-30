@@ -44,7 +44,8 @@ import { usePageVisible } from '@cockpit/shared-ui';
 import type { TabType, GitFileStatus, GitStatusResponse, FileBrowserModalProps, SearchResult, Commit } from './fileBrowser/types';
 import type { FileNode } from './FileTree';
 import type { RecentFileEntry } from '@/app/api/files/recent/route';
-import { BlockViewer } from './fileBrowser/BlockViewer';
+import { BlockViewer, type BlockViewerHeaderState } from './fileBrowser/BlockViewer';
+import { BlockDiffViewer } from './fileBrowser/BlockDiffViewer';
 import { StatusDiffPane } from './fileBrowser/StatusDiffPane';
 import { getTargetDirPath, formatDateTime, NOOP, COMMITS_PER_PAGE } from './fileBrowser/utils';
 
@@ -113,8 +114,14 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
   // persisted (same policy as `compareDensity` and the other diff panes).
   const [compareViewMode, setCompareViewMode] = useState<'split' | 'unified'>('unified');
   // 精简/全文 + split/unified for the directory-tree viewer's diff mode —
-  // pane-local, same defaults and non-persistence policy as the other diff panes.
-  const [treeDiffDensity, setTreeDiffDensity] = useState<'compact' | 'full'>('compact');
+  // pane-local and not persisted, same policy as the other diff panes.
+  //
+  // Density defaults to 'full' here, unlike every other pane. Those panes
+  // answer "what changed in this batch", where changed-lines-only is the
+  // point. The tree answers "let me read this file" — every other file in
+  // the tree opens as full text, so a diff that opens as fragments is the
+  // odd one out. The toggle still flips it back to compact.
+  const [treeDiffDensity, setTreeDiffDensity] = useState<'compact' | 'full'>('full');
   const [treeDiffViewMode, setTreeDiffViewMode] = useState<'split' | 'unified'>('unified');
   // Width of the left file-tree pane, adjustable by dragging the divider.
   // Pane-local and deliberately NOT persisted: the range is only 320-480px, so
@@ -879,6 +886,77 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
     setActiveTab('tree');
   }, [fileTree, handleSelectFileWithSave]);
 
+  // ========== Code Map header slots (shared by the plain and diff variants) ==========
+  // Both map variants take over the whole right panel, so their header is the
+  // only toolbar the user has. These two slots are what keep it at parity with
+  // the code-mode toolbar; defining them once means the plain map and the diff
+  // map can never drift apart.
+
+  /** Left slot: copy-abs-path + locate-in-tree, driven by BlockViewer's LIVE
+   *  focal so they follow pin navigation instead of acting on the path the
+   *  host knew at mount time. */
+  const mapHeaderExtraLeft = useCallback(({ focalFile }: BlockViewerHeaderState) =>
+    focalFile && (
+      <>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            navigator.clipboard.writeText(`${cwd}/${focalFile}`);
+            toast(t('common.copiedPath'));
+          }}
+          className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
+          title={t('common.copyAbsPath')}
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            locateInTree(focalFile);
+          }}
+          className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
+          title={t('fileBrowser.locateInTree')}
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" strokeWidth={2} />
+            <circle cx="12" cy="12" r="3" strokeWidth={2} />
+            <path strokeLinecap="round" strokeWidth={2} d="M12 2v4m0 12v4M2 12h4m12 0h4" />
+          </svg>
+        </button>
+      </>
+    ),
+  [cwd, locateInTree, t]);
+
+  /** Right slot: the diff switch (and, while diff is on, the 精简/全文 density
+   *  switch). Diff and map are INDEPENDENT toggles — this is the diff one, in
+   *  map mode, so all four combinations stay reachable from either side.
+   *
+   *  Hidden unless focal is still the tree-selected file: `useTreeFileDiff` is
+   *  keyed on `selectedPath`, so after a pin-jump the button would silently
+   *  toggle a file the user has navigated away from. */
+  const mapHeaderExtraRight = useCallback(({ focalFile }: BlockViewerHeaderState) => {
+    if (activeTab !== 'tree' || !treeDiff.canDiff) return null;
+    if (focalFile !== fileTree.selectedPath) return null;
+    return (
+      <>
+        {treeDiff.showDiff && (
+          <DiffDensityToggle value={treeDiffDensity} onChange={setTreeDiffDensity} />
+        )}
+        <button
+          onClick={treeDiff.toggleDiff}
+          className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
+            treeDiff.showDiff ? 'bg-brand text-white' : 'text-muted-foreground hover:bg-accent'
+          }`}
+          title={treeDiff.showDiff ? t('fileBrowser.exitDiff') : t('fileBrowser.viewDiff')}
+        >
+          {t('common.diff')}
+        </button>
+      </>
+    );
+  }, [activeTab, treeDiff.canDiff, treeDiff.showDiff, treeDiff.toggleDiff, fileTree.selectedPath, treeDiffDensity, t]);
+
   // One-shot anchor to scroll to after a markdown-link cross-file navigation.
   const [mdLinkAnchor, setMdLinkAnchor] = useState<string | null>(null);
 
@@ -1617,57 +1695,51 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                 // stays visible — clicking a file there auto-expands the
                 // path in the map and pans to the file node.
                 //
-                // headerExtraLeft injects the file-context controls
-                // (copy abs path + locate-in-tree) that the code-mode
-                // toolbar provides — so switching from Code → Block
-                // doesn't strip the user of basic file ops. Reads
-                // focalFile from BlockViewer's state so it tracks
-                // pin-navigation, NOT the original `selectedPath`.
-                <BlockViewer
-                  cwd={cwd}
-                  highlightedFilePath={fileTree.selectedPath}
-                  changedFiles={changedFilePathSet}
-                  onSwitchToCode={() => setEditorMode('code')}
-                  enableComments
-                  onContentSearch={(query) => {
-                    setActiveTab('search');
-                    contentSearch.setContentSearchQuery(query);
-                    contentSearch.performContentSearch(query);
-                  }}
-                  headerExtraLeft={({ focalFile }) =>
-                    focalFile && (
-                      <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigator.clipboard.writeText(`${cwd}/${focalFile}`);
-                            toast(t('common.copiedPath'));
-                          }}
-                          className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
-                          title={t('common.copyAbsPath')}
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            locateInTree(focalFile);
-                          }}
-                          className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
-                          title={t('fileBrowser.locateInTree')}
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <circle cx="12" cy="12" r="10" strokeWidth={2} />
-                            <circle cx="12" cy="12" r="3" strokeWidth={2} />
-                            <path strokeLinecap="round" strokeWidth={2} d="M12 2v4m0 12v4M2 12h4m12 0h4" />
-                          </svg>
-                        </button>
-                      </>
-                    )
-                  }
-                />
+                // Diff and map are INDEPENDENT toggles, so this branch has
+                // two variants: with diff on, the chip canvas gets the diff
+                // overlay (BlockDiffViewer); with it off, the plain map. The
+                // header slots are shared, so the diff switch and the file
+                // controls sit in the same place either way.
+                //
+                // Falling back to the plain map while `treeDiff.diff` is still
+                // in flight costs a remount when it lands. Accepted: the
+                // alternative is a projection built from empty content, which
+                // renders the whole file as added.
+                treeDiffActive && treeDiff.diff ? (
+                  <BlockDiffViewer
+                    cwd={cwd}
+                    filePath={treeDiff.diff.filePath}
+                    oldContent={treeDiff.diff.oldContent}
+                    newContent={treeDiff.diff.newContent}
+                    isNew={treeDiff.diff.isNew}
+                    isDeleted={treeDiff.diff.isDeleted}
+                    changedFiles={changedFilePathSet}
+                    // Cross-file pin jumps re-fetch the neighbour's staged /
+                    // unstaged diff, while the anchor file above is HEAD ->
+                    // worktree. Deliberate: it matches the changes tab, and
+                    // unifying it would mean threading a diff-type through
+                    // BlockDiffViewer for a case that only differs when a file
+                    // is partially staged.
+                    fileGitStatusMap={fileGitStatusMap}
+                    compact={treeDiffDensity === 'compact'}
+                    enableComments
+                    onSwitchToCode={() => setEditorMode('code')}
+                    onContentSearch={handleDiffContentSearch}
+                    headerExtraLeft={mapHeaderExtraLeft}
+                    headerExtraRight={mapHeaderExtraRight}
+                  />
+                ) : (
+                  <BlockViewer
+                    cwd={cwd}
+                    highlightedFilePath={fileTree.selectedPath}
+                    changedFiles={changedFilePathSet}
+                    onSwitchToCode={() => setEditorMode('code')}
+                    enableComments
+                    onContentSearch={handleDiffContentSearch}
+                    headerExtraLeft={mapHeaderExtraLeft}
+                    headerExtraRight={mapHeaderExtraRight}
+                  />
+                )
               ) : fileTree.selectedPath ? (
                 <>
                   <div className="px-4 py-2 bg-secondary border-b border-border flex-shrink-0 flex items-center justify-between">
@@ -1736,14 +1808,25 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                         </>
                       ) : treeDiffActive ? (
                         <>
-                          {/* Diff mode: only diff-shape controls plus the way out.
-                              The reading-mode buttons (blame / preview / edit /
-                              code map) are deliberately absent — they each have
-                              their own view of the file, and combining them with
-                              the diff projection multiplies states for no gain.
-                              Exit first, then use them. */}
+                          {/* Diff mode: diff-shape controls, the map switch, and
+                              the way out. The single-view reading modes (blame /
+                              preview / edit) stay absent — each is its own take
+                              on the file and combining them with the diff
+                              projection multiplies states for no gain.
+                              Code Map is the exception: diff and map are
+                              independent axes, so it stays reachable and simply
+                              carries the diff overlay across. */}
                           <DiffDensityToggle value={treeDiffDensity} onChange={setTreeDiffDensity} />
                           <DiffViewModeToggle value={treeDiffViewMode} onChange={setTreeDiffViewMode} />
+                          {!isMarkdownFile(fileTree.selectedPath) && !isHtmlFile(fileTree.selectedPath) && !isJsonFile(fileTree.selectedPath) && (
+                            <button
+                              onClick={() => setEditorMode('map')}
+                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
+                              title={t('blockViewer.viewerToggle.toBlock')}
+                            >
+                              {t('common.codeMap')}
+                            </button>
+                          )}
                           <button
                             onClick={treeDiff.toggleDiff}
                             className="px-1.5 py-0.5 text-xs rounded transition-colors bg-brand text-white"

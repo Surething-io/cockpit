@@ -64,10 +64,33 @@ interface BlockDiffViewerProps {
    *  whether to ask `/api/git/diff` for its staged or unstaged diff. */
   fileGitStatusMap?: ReadonlyMap<string, 'staged' | 'unstaged'>;
   enableComments?: boolean;
+  /**
+   * 精简 (true) / 全文 (false) — the chip-level counterpart of DiffView's
+   * density toggle.
+   *
+   *   - compact: chips are filtered to the functions the diff touched.
+   *   - full:    every chip in the file renders; changed ones keep their
+   *              accent outline and green added-line overlay.
+   *
+   * Only the FILTER is gated. Accent + added-line highlighting stay on in
+   * both, so "full" is still a diff view — it just keeps the unchanged
+   * neighbours around for context.
+   *
+   * Defaults to true: chip diff was compact-only until this prop existed,
+   * and every caller that doesn't opt in keeps that behaviour.
+   */
+  compact?: boolean;
   /** Forwarded to BlockViewer — adds a "Search" button to the
    *  FloatingToolbar that hands the selected text off for project-wide
    *  content search. Omit to hide the button. */
   onContentSearch?: (query: string) => void;
+  /**
+   * Forwarded to BlockViewer's header "Code" button. Omit when the host
+   * already has its own file/map toolbar above this component (the git
+   * changes tab) — supply it when the code map owns the whole panel and
+   * this button is the only way back (the directory tree).
+   */
+  onSwitchToCode?: () => void;
   /** Forwarded straight to BlockViewer — see its `headerExtraLeft` /
    *  `headerExtraRight` for semantics. The host (FileBrowserModal)
    *  uses these to inject copy-path + dynamic git-status badge on the
@@ -102,7 +125,9 @@ export function BlockDiffViewer({
   changedFiles,
   fileGitStatusMap,
   enableComments = false,
+  compact = true,
   onContentSearch,
+  onSwitchToCode,
   headerExtraLeft,
   headerExtraRight,
 }: BlockDiffViewerProps) {
@@ -191,7 +216,10 @@ export function BlockDiffViewer({
       // what makes the overlay follow pin navigation: when activeFile
       // becomes file B, projection is for B, anchors say B, BlockViewer
       // sees `data.filePath === addedLinesFile` and applies overlay.
-      qnameFilter={projection?.changedQnames}
+      // Density: 全文 drops ONLY the filter, so every chip in the file
+      // renders while the accent + added-line overlay below still mark
+      // what actually changed.
+      qnameFilter={compact ? projection?.changedQnames : undefined}
       qnameFilterFile={activeFile}
       accentQnames={projection?.changedQnames}
       accentFile={activeFile}
@@ -199,10 +227,12 @@ export function BlockDiffViewer({
       addedLinesFile={activeFile}
       onFocalChange={(f) => f && setActiveFile(f)}
       onContentSearch={onContentSearch}
+      // Undefined hides the header's "Code" button — right for hosts whose
+      // own toolbar already provides the file/map toggle (git changes tab),
+      // and supplied by hosts where the map owns the panel (directory tree).
+      onSwitchToCode={onSwitchToCode}
       headerExtraLeft={headerExtraLeft}
       headerExtraRight={headerExtraRight}
-      // No `onSwitchToCode` — the Code button is hidden in diff context
-      // because the toolbar above already provides the file/block toggle.
     />
   );
 }

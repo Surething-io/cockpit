@@ -208,6 +208,10 @@ export function StatusDiffPane({
           changedFiles={changedFiles}
           fileGitStatusMap={fileGitStatusMap}
           enableComments
+          // Same 精简/全文 switch the file mode uses: compact filters the
+          // chips down to the touched functions, full keeps every chip and
+          // relies on the accent + green overlay to show what changed.
+          compact={fileDensity === 'compact'}
           onContentSearch={onContentSearch}
           headerExtraLeft={({ focalFile }) => {
             if (!focalFile) return null;
@@ -263,24 +267,31 @@ export function StatusDiffPane({
             );
           }}
           headerExtraRight={() => (
-            <div className="flex items-center gap-0.5 rounded border border-border overflow-hidden">
-              {(['file', 'map'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDiffViewerMode(mode);
-                  }}
-                  className={`px-2 py-0.5 text-[11px] transition-colors ${
-                    diffViewerMode === mode
-                      ? 'bg-brand text-white'
-                      : 'text-muted-foreground hover:bg-accent'
-                  }`}
-                >
-                  {t(mode === 'file' ? 'common.file' : 'common.codeMap')}
-                </button>
-              ))}
-            </div>
+            <>
+              {/* Density lives HERE in map mode, not in the host toolbar — that
+                  bar isn't rendered at all when the map takes over, so the two
+                  modes carry the same switch in two different places. Shared
+                  `fileDensity` state, so flipping file <-> map preserves it. */}
+              <DiffDensityToggle value={fileDensity} onChange={setFileDensity} />
+              <div className="flex items-center gap-0.5 rounded border border-border overflow-hidden">
+                {(['file', 'map'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDiffViewerMode(mode);
+                    }}
+                    className={`px-2 py-0.5 text-[11px] transition-colors ${
+                      diffViewerMode === mode
+                        ? 'bg-brand text-white'
+                        : 'text-muted-foreground hover:bg-accent'
+                    }`}
+                  >
+                    {t(mode === 'file' ? 'common.file' : 'common.codeMap')}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         />
       ) : (
@@ -333,12 +344,12 @@ export function StatusDiffPane({
               {selected.type === 'staged' ? t('fileBrowser.staged') : t('fileBrowser.unstaged')}
             </span>
             <div className="flex-1" />
-            {/* File-mode density toggle — only relevant when we're
-                actually rendering a DiffView (i.e. not in map mode,
-                not previewing an image). Map mode is already
-                "compact-by-design" so a duplicate toggle would just
-                confuse. */}
-            {!isImage && diffViewerMode === 'file' && (
+            {/* Density toggle — file mode's copy. Map mode has its own in
+                BlockDiffViewer's header (this whole bar is gone there), both
+                driving the same `fileDensity`. 精简/全文 means the same thing
+                at each granularity: hide unchanged LINES here, unchanged
+                CHIPS there. Image preview has neither. */}
+            {!isImage && (
               <DiffDensityToggle value={fileDensity} onChange={setFileDensity} />
             )}
             {!isImage && diffViewerMode === 'file' && (

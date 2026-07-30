@@ -8,7 +8,7 @@ import { Portal, useAIBridge } from '@cockpit/shared-ui';
 import { toast } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { loadAllProjectComments, deleteComment as deleteCommentEff } from './effect/commentsClient';
-import { fetchFileText } from '@cockpit/feature-explorer';
+import { fetchFileText } from '@cockpit/shared-api';
 
 interface CodeComment {
   id: string;

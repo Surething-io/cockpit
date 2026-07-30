@@ -14,6 +14,9 @@
  */
 import { Effect } from "effect"
 import { AppError } from "@cockpit/effect-core"
+// Imported (not just re-exported) because fetchFileTextRaw below uses
+// TextResponse as its generic default, which needs the name in local scope.
+import { fetchFileText, type TextResponse } from "@cockpit/shared-api"
 
 // ─────────────────────────────────────────────────────────
 // HTTP primitives
@@ -231,30 +234,15 @@ export const fetchFileStat = (
 // /api/files/text
 // ─────────────────────────────────────────────────────────
 
-export interface TextResponse {
-  content?: string
-  size?: number
-  mtimeMs?: number
-  isSymlink?: boolean
-  symlinkTarget?: string
-  error?: string
-}
-
 /**
- * `text` allows 409 (binary detected on second sniff) to pass through; the
- * caller decides how to handle it.
+ * `fetchFileText` / `TextResponse` are defined in @cockpit/shared-api and
+ * re-exported here so this module stays the one place explorer code imports
+ * file IO from. They live in shared/ because feature-comments needs them too,
+ * and owning them here is what used to cycle feature-comments → feature-explorer
+ * (explorer already imports comments for useComments). `text` allows 409 (binary
+ * detected on second sniff) to pass through; the caller decides how to handle it.
  */
-export const fetchFileText = (
-  cwd: string,
-  path: string
-): Effect.Effect<
-  { status: number; ok: boolean; data: TextResponse | null },
-  AppError
-> =>
-  httpGetWithStatus<TextResponse>(
-    `/api/files/text?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(path)}`,
-    { cache: "no-store" }
-  )
+export { fetchFileText, type TextResponse }
 
 /**
  * Call `/api/files/text` with a pre-built query string — used by callers like

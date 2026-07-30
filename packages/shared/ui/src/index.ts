@@ -69,3 +69,7 @@ export { SwipeablePages } from './SwipeablePages';
 
 // Generic in-memory file navigation history (back/forward stack for Cmd+Click jumps)
 export { useNavigationHistory, type NavEntry } from './useNavigationHistory';
+
+// Cross-feature API clients (/api/files/text, /api/skills) + the skills
+// cross-frame bus live in @cockpit/shared-api, not here — this package is UI
+// primitives and generic React hooks.

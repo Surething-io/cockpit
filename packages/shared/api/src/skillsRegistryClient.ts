@@ -1,11 +1,13 @@
 /**
- * Client-side skills IO — Effect wrappers
- *
- * Wraps the 4 fetch calls across SkillsModal + SkillPreviewModal. Endpoints:
+ * Client-side skills-registry IO — Effect wrappers. Endpoints:
  *   - GET    /api/skills            — list
  *   - POST   /api/skills            — add by path
  *   - DELETE /api/skills/:id        — remove
  *   - GET    /api/skills/content?id — preview content
+ *
+ * Lives in shared-api alongside skillsBus for the same reason: feature-skills
+ * (SkillsModal / SkillPreviewModal) and feature-explorer (the SKILL.md "add"
+ * buttons) both need it, and homing it in feature-skills would cycle.
  */
 import { Effect } from "effect"
 import { AppError } from "@cockpit/effect-core"
@@ -18,8 +20,8 @@ const httpJson = <A>(
     try: async () => {
       const res = await fetch(url, init)
       if (!res.ok) {
-        // Surface the backend's body.error into cause.message; SkillsModal needs
-        // to display toast(err.error).
+        // Surface the backend's body.error into cause.message; callers display
+        // it verbatim in a toast.
         let bodyError: string | undefined
         try {
           const data = (await res.json()) as { error?: string }
@@ -57,6 +59,11 @@ export interface SkillPreviewLite {
   [key: string]: unknown
 }
 
+export interface AddSkillResult extends SkillInfoLite {
+  /** True when the path was already registered (no new entry written). */
+  alreadyExists: boolean
+}
+
 // ─────────────────────────────────────────────────────────
 // API
 // ─────────────────────────────────────────────────────────
@@ -71,8 +78,8 @@ export const loadSkillsList = <T = SkillInfoLite>(): Effect.Effect<
 
 export const addSkill = (
   path: string
-): Effect.Effect<unknown, AppError> =>
-  httpJson("/api/skills", {
+): Effect.Effect<AddSkillResult, AppError> =>
+  httpJson<AddSkillResult>("/api/skills", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path }),

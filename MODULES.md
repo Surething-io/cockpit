@@ -27,6 +27,7 @@ bootstrap. **All business code lives in `packages/`.**
 
 | Folder                            | Package name                  | Role |
 |-----------------------------------|-------------------------------|------|
+| `packages/shared/api/`            | `@cockpit/shared-api`         | Browser-side Effect clients for `/api/*` routes needed by **two or more** features (`/api/files/text`, `/api/skills`) + the skills cross-frame bus. Single-feature clients stay in their feature. |
 | `packages/shared/i18n/`           | `@cockpit/shared-i18n`        | App-wide translation dictionary + i18next instance (singleton, side-effecting init) |
 | `packages/shared/ui/`             | `@cockpit/shared-ui`          | UI primitives (Toast, MarkdownRenderer, Tooltip, codeHighlighter, …) + generic React hooks |
 | `packages/shared/utils/`          | `@cockpit/shared-utils`       | Pure functions / types (paths, ollamaEnv, platform, shortId) |
@@ -60,7 +61,11 @@ src/  ──→  packages/feature/*  ──→  packages/shared/*
    automated cycle check.
 - ✅ `packages/shared/*` may depend on other `packages/shared/*`
 - ❌ `packages/shared/*` MUST NOT depend on `@cockpit/feature-*` (ESLint
-   enforced — shared is the leaf layer)
+   enforced — shared is the leaf layer). One sanctioned exception, carried as an
+   explicit `ignores` entry in `eslint.config.mjs`:
+   `shared/effect-runtime/src/server/runtime.ts` is the AppLayer assembly hub
+   and must import every feature's Live layer to merge them. Inverting that into
+   IoC (server.mjs collects and injects the layers) is in the backlog.
 - ❌ Nothing depends on `src/`
 
 By convention, `feature-workspace` is the **only** feature that consumes
@@ -71,17 +76,40 @@ relationship.
 ## Current feature dependency graph (acyclic)
 
 ```
-feature-workspace  ──→  all features
-feature-agent      ──→  feature-comments, feature-skills, feature-explorer
-feature-explorer   ──→  feature-comments
-feature-review     ──→  feature-comments
-feature-skills     ──→  (none)
+feature-workspace  ──→  agent, console, explorer, review, skills
+feature-agent      ──→  feature-comments, feature-explorer
+feature-explorer   ──→  feature-comments, feature-review
+feature-skills     ──→  feature-explorer
 feature-comments   ──→  (none)
+feature-review     ──→  (none)
 feature-console    ──→  (none)
 ```
 
 When adding a feature → feature dependency, double-check this graph stays
-acyclic.
+acyclic. Nothing enforces it — ESLint only blocks `shared → feature`, so a
+cycle lints clean and builds clean. It bites later, at module-evaluation time:
+in a cycle, whichever package is evaluated second sees a half-initialised
+namespace, so any **top-level** use of a cross-package import (`class X extends
+Imported`, `styled(Imported)`, a module-level const table) reads `undefined`.
+The crash surfaces in the victim module, not in the file that introduced it, and
+which module loses depends on the entry point — so it can pass in the app and
+fail in a test, or pass in dev and fail in the production build. Since features
+import each other by package name, a cycle is barrel-to-barrel: the blast radius
+is every symbol both packages export, not just the two files involved.
+
+**When two features need the same endpoint, sink the client into
+`@cockpit/shared-api` instead of importing sideways.** Both current residents got
+there that way: `filesTextClient.ts` (`/api/files/text` — explorer + comments)
+and `skillsRegistryClient.ts` / `skillsBus.ts` (skills.json — skills + explorer +
+agent). Either would close a cycle if it sat in the feature that looks like its
+owner, because `feature-comments` and `feature-skills` both already depend on
+`feature-explorer` for its renderers.
+
+The admission rule is **two or more consumers**. A client used by exactly one
+feature belongs in that feature (`agentClient`, `gitClient`, `lspClient`,
+`htmlAppsClient`, `reviewClient`, `consoleClient`, … are all correctly private);
+promoting those would move private code into shared space and make each feature
+harder to read on its own.
 
 ## i18n
 

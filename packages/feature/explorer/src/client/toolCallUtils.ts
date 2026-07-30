@@ -229,6 +229,17 @@ export function isJsonFile(filePath: string): boolean {
 }
 
 /**
+ * A skill file is any file *named* SKILL.md (case-insensitive) — the name is the
+ * whole contract, since parseSkillMd derives the `/slash` trigger from the parent
+ * directory. Deliberately narrower than isMarkdownFile: an arbitrary .md added to
+ * the registry would get a nonsense command name.
+ */
+export function isSkillFile(filePath: string): boolean {
+  const base = filePath.slice(filePath.lastIndexOf('/') + 1);
+  return base.toLowerCase() === 'skill.md';
+}
+
+/**
  * Resolve a markdown link target against the directory of the current file,
  * returning a cwd-relative path (the form handleSelectFile / locateInTree use).
  *

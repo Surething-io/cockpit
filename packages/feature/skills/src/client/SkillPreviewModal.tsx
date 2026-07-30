@@ -1,10 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { SimpleCodeBlock, InteractiveMarkdownPreview } from '@cockpit/feature-explorer';
 import { toast, blurActiveElement } from '@cockpit/shared-ui';
+import { loadSkillContent } from '@cockpit/shared-api';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
-import { loadSkillContent } from './effect/skillsClient';
 
 interface SkillPreviewData {
   id: string;
@@ -24,6 +25,7 @@ interface SkillPreviewModalProps {
 type ViewMode = 'preview' | 'source';
 
 export function SkillPreviewModal({ skillId, onClose }: SkillPreviewModalProps) {
+  const { t } = useTranslation();
   const [data, setData] = useState<SkillPreviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<ViewMode>('preview');
@@ -62,11 +64,11 @@ export function SkillPreviewModal({ skillId, onClose }: SkillPreviewModalProps) 
     if (!data?.path) return;
     try {
       await navigator.clipboard.writeText(data.path);
-      toast('Path copied', 'success');
+      toast(t('common.copiedPath'), 'success');
     } catch {
-      toast('Failed to copy', 'error');
+      toast(t('common.copyFailed'), 'error');
     }
-  }, [data]);
+  }, [data, t]);
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center">
@@ -78,12 +80,12 @@ export function SkillPreviewModal({ skillId, onClose }: SkillPreviewModalProps) 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-medium text-foreground truncate">
-                {data?.name ? `/${data.name}` : 'Skill Preview'}
+                {data?.name ? `/${data.name}` : t('skills.previewTitle')}
               </h2>
               <button
                 onClick={handleCopyPath}
                 className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-                title="Copy path"
+                title={t('skills.copyPath')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <rect x="9" y="9" width="13" height="13" rx="2" strokeWidth={2} />
@@ -108,7 +110,7 @@ export function SkillPreviewModal({ skillId, onClose }: SkillPreviewModalProps) 
                   : 'text-muted-foreground hover:text-foreground hover:bg-accent'
               }`}
             >
-              Preview
+              {t('common.preview')}
             </button>
             <button
               onClick={() => setMode('source')}
@@ -118,14 +120,14 @@ export function SkillPreviewModal({ skillId, onClose }: SkillPreviewModalProps) 
                   : 'text-muted-foreground hover:text-foreground hover:bg-accent'
               }`}
             >
-              Source
+              {t('skills.source')}
             </button>
           </div>
 
           <button
             onClick={onClose}
             className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors flex-shrink-0"
-            title="Close"
+            title={t('common.close')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -136,11 +138,11 @@ export function SkillPreviewModal({ skillId, onClose }: SkillPreviewModalProps) 
         {/* Body */}
         {loading ? (
           <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-            Loading...
+            {t('common.loading')}
           </div>
         ) : !data || !data.valid ? (
           <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-            File cannot be read.
+            {t('skills.cannotRead')}
           </div>
         ) : mode === 'preview' ? (
           // Embedded markdown preview with TOC sidebar — same component as the chat message stream.

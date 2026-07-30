@@ -65,6 +65,28 @@
     "alreadyAdded": "Already added",
     "addFailed": "Failed to add"
   },
+  "skills": {
+    "addTooltip": "Add to Skills panel",
+    "added": "Added to Skills panel",
+    "alreadyAdded": "Already added",
+    "addFailed": "Failed to add",
+    "title": "Skills",
+    "searchPlaceholder": "Search skills...",
+    "clearSearch": "Clear",
+    "addSkill": "Add Skill",
+    "emptyNoSkills": "No skills yet. Click \"Add Skill\" to add one.",
+    "emptyNoMatch": "No skills match your search.",
+    "pathLabel": "Absolute path to SKILL.md",
+    "pathPlaceholder": "/Users/you/.../skills/foo/SKILL.md",
+    "add": "Add",
+    "adding": "Adding...",
+    "invalid": "Invalid",
+    "copyPath": "Copy path",
+    "noDescription": "No description",
+    "previewTitle": "Skill Preview",
+    "source": "Source",
+    "cannotRead": "File cannot be read."
+  },
   "toast": {
     "savedSuccess": "Saved",
     "saveFailed": "Save failed",

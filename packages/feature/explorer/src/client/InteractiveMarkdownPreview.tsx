@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { BookmarkPlus } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useMenuContainer, toast } from '@cockpit/shared-ui';
 import { ToolbarRenderer } from '@cockpit/shared-ui';
@@ -14,7 +15,8 @@ import { MarkdownRenderer } from '@cockpit/shared-ui';
 import { resolveBashCwd } from '@cockpit/shared-utils';
 import { rehypeSourceLines } from '@cockpit/shared-ui';
 import { scrollToHeadingAnchor } from '@cockpit/shared-ui';
-import { isMarkdownFile, resolveRelativePath } from './toolCallUtils';
+import { isMarkdownFile, isSkillFile, resolveRelativePath } from './toolCallUtils';
+import { useAddSkill } from './skills/useAddSkill';
 import type { CodeComment } from '@cockpit/feature-comments';
 import { TocSidebar } from '@cockpit/shared-ui';
 import { ShareReviewToggle } from '@cockpit/feature-review';
@@ -98,6 +100,7 @@ export function InteractiveMarkdownPreview({
   // === Hooks ===
   const menuContainer = useMenuContainer();
   const aiBridge = useAIBridge();
+  const addSkill = useAddSkill();
   const { comments, addComment, updateComment, deleteComment, refresh: refreshComments } = useComments({ cwd, filePath });
   const [isMounted, setIsMounted] = useState(false);
 
@@ -392,6 +395,23 @@ export function InteractiveMarkdownPreview({
           </span>
           <div className="flex items-center gap-3">
             <ShareReviewToggle content={content} sourceFile={sourceFile} />
+            {/* Register this SKILL.md in the skills registry (skills.json) — the
+                markdown counterpart of the HTML preview's BookmarkPlus. Only for
+                files literally named SKILL.md; the registry stores absolute paths,
+                and a relative filePath here is anchored to cwd. */}
+            {isSkillFile(filePath) && (
+              <button
+                onClick={() => addSkill(
+                  filePath.startsWith('/') || !cwd
+                    ? filePath
+                    : `${cwd.replace(/\/$/, '')}/${filePath}`
+                )}
+                className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                title={t('skills.addTooltip')}
+              >
+                <BookmarkPlus className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"

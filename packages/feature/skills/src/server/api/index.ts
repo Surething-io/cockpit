@@ -89,12 +89,15 @@ export const POST = handler((req) =>
       )
     }
 
-    const record = yield* Effect.tryPromise({
+    // alreadyExists lets the caller distinguish "added" from "already there" —
+    // the explorer / chat one-click buttons toast differently for each, and only
+    // the real insert should fire the cross-frame refresh.
+    const { record, alreadyExists } = yield* Effect.tryPromise({
       try: () =>
         withFileLock(SKILLS_FILE, async () => {
           const data = await readJsonFile<SkillsFile>(SKILLS_FILE, DEFAULT)
           const existing = data.skills.find((s) => s.path === trimmed)
-          if (existing) return existing
+          if (existing) return { record: existing, alreadyExists: true }
           const next: SkillRecord = {
             id: makeId(),
             path: trimmed,
@@ -103,7 +106,7 @@ export const POST = handler((req) =>
           await writeJsonFile(SKILLS_FILE, {
             skills: [...data.skills, next],
           })
-          return next
+          return { record: next, alreadyExists: false }
         }),
       catch: (cause) =>
         new FSError({ path: SKILLS_FILE, op: "write", cause }),
@@ -113,6 +116,7 @@ export const POST = handler((req) =>
       id: record.id,
       path: record.path,
       addedAt: record.addedAt,
+      alreadyExists,
       name: parsed.name,
       description: parsed.description,
       icon: parsed.icon,

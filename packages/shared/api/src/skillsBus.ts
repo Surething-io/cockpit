@@ -4,6 +4,13 @@
  * SkillsModal runs in the Workspace parent frame, while ChatInput runs
  * inside each project's iframe. BroadcastChannel propagates messages
  * across all same-origin frames/tabs with zero server round-trip.
+ *
+ * Lives in shared-api (not feature-skills) because three features write to the
+ * skills registry and must agree on the channel name: feature-skills
+ * (SkillsModal add/delete), feature-agent (ChatInput autocomplete reload), and
+ * feature-explorer (the SKILL.md "add" buttons). Homing it in feature-skills
+ * would force feature-explorer → feature-skills, which cycles back through
+ * SkillPreviewModal's feature-explorer import.
  */
 
 const CHANNEL_NAME = 'cockpit-skills';

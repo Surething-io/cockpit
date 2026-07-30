@@ -6,7 +6,7 @@ import { toast } from '@cockpit/shared-ui';
 import { useTranslation } from 'react-i18next';
 import { ImagePreview } from '@cockpit/shared-ui';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
-import { onSkillsChanged } from '@cockpit/feature-skills';
+import { onSkillsChanged } from '@cockpit/shared-api';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { stageFiles } from '@cockpit/feature-explorer';
 import { loadSkills as loadSkillsEff, loadSlashCommands } from './effect/agentClient';

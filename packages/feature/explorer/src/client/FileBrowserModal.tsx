@@ -28,9 +28,10 @@ import { FileTree, type GitStatusMap, type GitStatusCode } from './FileTree';
 import { GitFileTree, buildGitFileTree, collectFilesUnderNode } from './GitFileTree';
 import { MenuContainerProvider } from '@cockpit/shared-ui';
 import { CodeViewer } from '@cockpit/feature-explorer';
-import { isMarkdownFile, isHtmlFile, isJsonFile, formatAsHumanReadable, THEME_JSON_COLORS } from './toolCallUtils';
+import { isMarkdownFile, isHtmlFile, isJsonFile, isSkillFile, formatAsHumanReadable, THEME_JSON_COLORS } from './toolCallUtils';
 import { ExternalLink, BookmarkPlus } from 'lucide-react';
 import { useAddHtmlApp } from './htmlApps/useAddHtmlApp';
+import { useAddSkill } from './skills/useAddSkill';
 import { buildTreeFromPaths, collectAllDirPaths, mergeFileTree } from './fileBrowser/utils';
 import { InteractiveMarkdownPreview } from '@cockpit/feature-explorer';
 import { HtmlPreview } from './HtmlPreview';
@@ -78,6 +79,7 @@ const TREE_WIDTH_MAX = TREE_WIDTH_MIN * 1.5;
 function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrigger, initialSearchQuery, searchQueryTrigger }: FileBrowserModalProps) {
   const { t } = useTranslation();
   const addHtmlApp = useAddHtmlApp();
+  const addSkill = useAddSkill();
   const { activeView, onViewChange } = useSwipeContext();
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   // Editor mode in the right panel of tree / search / recent tabs:
@@ -1796,6 +1798,23 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                                 title={on ? t('fileBrowser.exitPreview') : t('common.preview')}
                               >
                                 {on ? t('fileBrowser.exitPreview') : t('common.preview')}
+                              </button>
+                            );
+                          })()}
+                          {/* Register this SKILL.md in the skills registry (skills.json) — the
+                              markdown analogue of the HTML button below. Only for files literally
+                              named SKILL.md, since parseSkillMd derives the `/slash` trigger from
+                              the parent directory. Same relative → absolute step as HTML. */}
+                          {fileTree.fileContent?.type === 'text' && isSkillFile(fileTree.selectedPath || '') && (() => {
+                            const sp = fileTree.selectedPath || '';
+                            const abs = sp.startsWith('/') ? sp : cwd ? `${cwd.replace(/\/$/, '')}/${sp}` : sp;
+                            return (
+                              <button
+                                onClick={() => addSkill(abs)}
+                                className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent flex items-center"
+                                title={t('skills.addTooltip')}
+                              >
+                                <BookmarkPlus className="w-3.5 h-3.5" />
                               </button>
                             );
                           })()}

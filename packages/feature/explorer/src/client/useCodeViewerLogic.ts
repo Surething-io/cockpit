@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useComments, type CodeComment } from '@cockpit/feature-comments';
-import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, type CodeReference } from '@cockpit/feature-comments';
+import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, sendReferenceToAI, type CodeReference } from '@cockpit/feature-comments';
+import i18n from '@cockpit/shared-i18n';
 import { useAIBridge } from '@cockpit/shared-ui';
 import { useLineHighlight } from './index';
 import { escapeHtml, findMatches } from '@cockpit/shared-ui';
@@ -610,6 +611,25 @@ export function useCodeViewerLogic({
     clearToolbar();
   }, [clearToolbar, floatingToolbarRef]);
 
+  // Click "explain" in toolbar → send immediately, no question card. Not
+  // routed through sendSelectionToAI: that one also ships and then wipes the
+  // whole comment stack, which a one-click action must not do.
+  const handleToolbarExplain = useCallback(() => {
+    const toolbar = floatingToolbarRef.current;
+    if (!toolbar || !aiBridge) return;
+    clearToolbar();
+    sendReferenceToAI(
+      aiBridge.sendMessage,
+      {
+        filePath,
+        startLine: toolbar.range.start,
+        endLine: toolbar.range.end,
+        codeContent: toolbar.lineSnapshot,
+      },
+      i18n.t('explain.selectionMessage'),
+    );
+  }, [aiBridge, filePath, clearToolbar, floatingToolbarRef]);
+
   // Click "search" in toolbar → trigger content search with the LITERAL
   // selection (never the line-expanded snapshot — that was the old
   // DiffView bug source).
@@ -820,6 +840,7 @@ export function useCodeViewerLogic({
     handleCommentBubbleClick,
     handleToolbarAddComment,
     handleToolbarSendToAI,
+    handleToolbarExplain,
     handleToolbarSearch,
     handleCommentSubmit,
     handleSendToAISubmit,

@@ -10,6 +10,7 @@ export {
   fetchAllCommentsWithCode,
   clearAllComments,
   buildAIMessage,
+  sendReferenceToAI,
   emitCommentsChange,
   subscribeCommentsChange,
   CHAT_COMMENT_FILE,

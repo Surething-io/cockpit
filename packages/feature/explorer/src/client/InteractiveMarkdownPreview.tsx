@@ -10,7 +10,8 @@ import { AddCommentInput, SendToAIInput } from '@cockpit/shared-ui';
 import { ViewCommentCard } from './index';
 import { useComments } from '@cockpit/feature-comments';
 import { useAIBridge } from '@cockpit/shared-ui';
-import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, type CodeReference } from '@cockpit/feature-comments';
+import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, sendReferenceToAI, type CodeReference } from '@cockpit/feature-comments';
+import i18n from '@cockpit/shared-i18n';
 import { MarkdownRenderer } from '@cockpit/shared-ui';
 import { resolveBashCwd } from '@cockpit/shared-utils';
 import { rehypeSourceLines } from '@cockpit/shared-ui';
@@ -216,6 +217,24 @@ export function InteractiveMarkdownPreview({
     });
     clearToolbar();
   }, [clearToolbar, floatingToolbarRef]);
+
+  // One-click explain — no question card, and not routed through
+  // sendSelectionToAI (that one also ships and wipes the comment stack).
+  const handleToolbarExplain = useCallback(() => {
+    const toolbar = floatingToolbarRef.current;
+    if (!toolbar || !aiBridge) return;
+    clearToolbar();
+    sendReferenceToAI(
+      aiBridge.sendMessage,
+      {
+        filePath,
+        startLine: toolbar.range.start,
+        endLine: toolbar.range.end,
+        codeContent: toolbar.lineSnapshot,
+      },
+      i18n.t('explain.selectionMessage'),
+    );
+  }, [aiBridge, filePath, clearToolbar, floatingToolbarRef]);
 
   // Submit comment — pass `selectedText` so the DB snapshot equals what
   // the user actually highlighted.
@@ -472,6 +491,7 @@ export function InteractiveMarkdownPreview({
             container={menuContainer}
             onAddComment={handleToolbarAddComment}
             onSendToAI={handleToolbarSendToAI}
+            onExplain={aiBridge ? handleToolbarExplain : undefined}
             isChatLoading={aiBridge?.isLoading}
           />
           {addCommentInput && (

@@ -12,7 +12,7 @@ import { MessageBubble } from './MessageBubble';
 // Allowed by MODULES.md as transitional reverse imports.
 import { useChatSearch } from './useChatSearch';
 import { useComments } from '@cockpit/feature-comments';
-import { fetchAllCommentsWithCode, buildAIMessage, clearAllComments, CHAT_COMMENT_FILE, type CodeReference } from '@cockpit/feature-comments';
+import { fetchAllCommentsWithCode, buildAIMessage, clearAllComments, sendReferenceToAI, CHAT_COMMENT_FILE, type CodeReference } from '@cockpit/feature-comments';
 import { ToolbarRenderer, ToolbarData } from '@cockpit/shared-ui';
 import { AddCommentInput, SendToAIInput } from '@cockpit/shared-ui';
 import { useTranslation } from 'react-i18next';
@@ -149,6 +149,21 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     bumpToolbarRef.current();
     window.getSelection()?.removeAllRanges();
   }, []);
+
+  // One-click explain — no question card, and deliberately not routed through
+  // sendSelectionToAI below (that one also ships and wipes the comment stack).
+  const handleExplain = useCallback(() => {
+    const tb = floatingToolbarRef.current;
+    if (!tb || !chatCtx) return;
+    floatingToolbarRef.current = null;
+    bumpToolbarRef.current();
+    window.getSelection()?.removeAllRanges();
+    sendReferenceToAI(
+      chatCtx.sendMessage,
+      { filePath: CHAT_COMMENT_FILE, startLine: 0, endLine: 0, codeContent: tb.selectedText },
+      t('explain.selectionMessage'),
+    );
+  }, [chatCtx, t]);
 
   const handleSearch = useCallback(() => {
     const tb = floatingToolbarRef.current;
@@ -519,6 +534,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
           onAddComment={handleAddComment}
           onSendToAI={handleSendToAI}
           onSearch={onContentSearch ? handleSearch : undefined}
+          onExplain={chatCtx ? handleExplain : undefined}
           isChatLoading={chatCtx?.isLoading}
         />
       )}

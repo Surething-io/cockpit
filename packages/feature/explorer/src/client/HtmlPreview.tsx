@@ -14,8 +14,10 @@ import {
   fetchAllCommentsWithCode,
   clearAllComments,
   buildAIMessage,
+  sendReferenceToAI,
   type CodeReference,
 } from '@cockpit/feature-comments';
+import i18n from '@cockpit/shared-i18n';
 
 interface HtmlPreviewProps {
   /** Raw HTML source. Optional: only used by the srcDoc fallback (relative
@@ -188,6 +190,22 @@ export function HtmlPreview({ content, filePath, cwd, onContentSearch }: HtmlPre
     iframeRef.current?.contentWindow?.getSelection()?.removeAllRanges();
   }, [clearToolbar]);
 
+  // One-click explain — no question card, and not routed through
+  // sendSelectionToAI (that one also ships and wipes the comment stack).
+  // Snapshot-anchored like the comments here: real file path, no line range,
+  // and the RENDERED text rather than the HTML source that produced it.
+  const handleToolbarExplain = useCallback(() => {
+    const tb = floatingToolbarRef.current;
+    if (!tb || !aiBridge) return;
+    clearToolbar();
+    iframeRef.current?.contentWindow?.getSelection()?.removeAllRanges();
+    sendReferenceToAI(
+      aiBridge.sendMessage,
+      { filePath, startLine: 0, endLine: 0, codeContent: tb.selectedText },
+      i18n.t('explain.selectionMessage'),
+    );
+  }, [aiBridge, filePath, clearToolbar]);
+
   const handleSearch = useCallback(() => {
     const tb = floatingToolbarRef.current;
     if (!tb || !onContentSearch) return;
@@ -281,6 +299,7 @@ export function HtmlPreview({ content, filePath, cwd, onContentSearch }: HtmlPre
             onAddComment={handleAddComment}
             onSendToAI={handleToolbarSendToAI}
             onSearch={onContentSearch ? handleSearch : undefined}
+            onExplain={aiBridge ? handleToolbarExplain : undefined}
             isChatLoading={aiBridge?.isLoading}
           />
           {commentInput && (

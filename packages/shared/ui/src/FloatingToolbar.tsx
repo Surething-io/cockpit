@@ -15,10 +15,16 @@ interface FloatingToolbarProps {
   onAddComment: () => void;
   onSendToAI: () => void;
   onSearch?: () => void;
+  /** One-click "explain this selection" — sends straight away, with no
+   *  question card in between. Hosts that wire it must send *only* the
+   *  selection (see `sendReferenceToAI`); the card-based onSendToAI flow
+   *  additionally submits and clears the whole comment stack, which is not
+   *  something a single click should do. */
+  onExplain?: () => void;
   isChatLoading?: boolean;
 }
 
-export function FloatingToolbar({ x, y, visible, container, onAddComment, onSendToAI, onSearch, isChatLoading }: FloatingToolbarProps) {
+export function FloatingToolbar({ x, y, visible, container, onAddComment, onSendToAI, onSearch, onExplain, isChatLoading }: FloatingToolbarProps) {
   const { t } = useTranslation();
   const containerRect = container.getBoundingClientRect();
   const relX = x - containerRect.left;
@@ -52,6 +58,16 @@ export function FloatingToolbar({ x, y, visible, container, onAddComment, onSend
       >
         {t('floatingToolbar.sendToAI')}
       </button>
+      {onExplain && (
+        <button
+          className="px-3 py-1.5 text-xs font-medium border border-brand text-brand rounded-md hover:bg-brand/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={onExplain}
+          disabled={isChatLoading}
+          title={isChatLoading ? t('comments.aiResponding') : t('explain.action')}
+        >
+          {t('explain.action')}
+        </button>
+      )}
       {onSearch && (
         <button
           className="px-3 py-1.5 text-xs font-medium border border-brand text-brand rounded-md hover:bg-brand/10 transition-colors"
@@ -97,10 +113,11 @@ interface ToolbarRendererProps {
   onAddComment: () => void;
   onSendToAI: () => void;
   onSearch?: () => void;
+  onExplain?: () => void;
   isChatLoading?: boolean;
 }
 
-function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddComment, onSendToAI, onSearch, isChatLoading }: ToolbarRendererProps) {
+function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddComment, onSendToAI, onSearch, onExplain, isChatLoading }: ToolbarRendererProps) {
   const [version, forceRender] = useState(0);
 
   // Allow parent to trigger a re-render of this component via bumpRef
@@ -120,6 +137,7 @@ function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddCom
       onAddComment={onAddComment}
       onSendToAI={onSendToAI}
       onSearch={onSearch}
+      onExplain={onExplain}
       isChatLoading={isChatLoading}
     />
   );

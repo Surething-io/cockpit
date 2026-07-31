@@ -43,6 +43,7 @@ import {
   buildAIMessage,
   clearAllComments,
   fetchAllCommentsWithCode,
+  sendReferenceToAI,
   type CodeReference,
 } from '@cockpit/feature-comments';
 import { useTheme } from '@cockpit/shared-ui';
@@ -238,7 +239,14 @@ function CodeBlock({
         <span className="text-[10px] text-muted-foreground/70 flex-shrink-0">
           {symbol.kind} · L{symbol.startLine}-{symbol.endLine}
         </span>
-        <span className="flex-1" />
+        {/* Sits right after the line range rather than flushed right: the
+            eye is already here after reading `kind · L18-23`, so the click
+            target is where attention is, not a full row-width away.
+            `h-4 leading-4` pins it to the 16px line box of the header's
+            `text-xs` — the padded hit area must NOT grow the header, since
+            HEADER_HEIGHT_PX (29) is hardcoded and callee-pin placement
+            derives every `top` from it. (`py-0.5` would compute to 17px and
+            shift every pin in the right column by a pixel.) */}
         {aiBridge && (
           <button
             onClick={() => aiBridge.sendMessage(t('explain.symbolMessage', {
@@ -248,11 +256,12 @@ function CodeBlock({
             }))}
             disabled={aiBridge.isLoading}
             title={aiBridge.isLoading ? t('comments.aiResponding') : undefined}
-            className="flex-shrink-0 text-[10px] text-brand hover:underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
+            className="flex-shrink-0 h-4 leading-4 px-1.5 rounded text-[10px] text-brand hover:bg-brand/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           >
             {t('explain.action')}
           </button>
         )}
+        <span className="flex-1" />
         {hasChange && (
           <span
             className="flex-shrink-0 w-2 h-2 rounded-full bg-amber-11"
@@ -1473,6 +1482,26 @@ export function BlockViewer({
     clearToolbar();
   }, [clearToolbar, floatingToolbarRef]);
 
+  // One-click explain — no question card, and not routed through
+  // sendSelectionToAI (that one also ships and wipes the comment stack).
+  // Needs focalFile for the same reason the send card does: without it there
+  // is no path to hang the line range off.
+  const handleToolbarExplain = useCallback(() => {
+    const tb = floatingToolbarRef.current;
+    if (!tb || !aiBridge || !focalFile) return;
+    clearToolbar();
+    sendReferenceToAI(
+      aiBridge.sendMessage,
+      {
+        filePath: focalFile,
+        startLine: tb.range.start,
+        endLine: tb.range.end,
+        codeContent: tb.lineSnapshot,
+      },
+      t('explain.selectionMessage'),
+    );
+  }, [aiBridge, focalFile, clearToolbar, floatingToolbarRef, t]);
+
   // Search button: hand the trimmed literal selection off to the host
   // (project-wide content search). Empty selections are ignored —
   // the toolbar's just been dismissed at that point so pushing an empty
@@ -2052,6 +2081,7 @@ export function BlockViewer({
             onAddComment={handleToolbarAddComment}
             onSendToAI={handleToolbarSendToAI}
             onSearch={onContentSearch ? handleToolbarSearch : undefined}
+            onExplain={aiBridge && focalFile ? handleToolbarExplain : undefined}
             isChatLoading={aiBridge?.isLoading}
           />
         )}

@@ -1113,7 +1113,8 @@
   "explain": {
     "action": "解释一下",
     "fileMessage": "解释一下 {{path}}",
-    "symbolMessage": "解释一下 {{name}} ({{path}}:{{lines}})"
+    "symbolMessage": "解释一下 {{name}} ({{path}}:{{lines}})",
+    "selectionMessage": "解释一下"
   },
   "reviewUtils": {
     "adjectives": ["快乐", "勇敢", "安静", "明亮", "温柔", "灵巧", "自由", "清澈", "飞翔", "悠闲", "活泼", "聪慧", "淡定", "机敏", "从容", "坚定", "爽朗", "和煦", "奔放", "沉稳"],

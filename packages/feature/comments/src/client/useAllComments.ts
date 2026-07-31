@@ -180,3 +180,22 @@ export function buildAIMessage(references: CodeReference[], question: string): s
 
   return parts.join('\n').trim();
 }
+
+/**
+ * Send a single reference to AI and nothing else.
+ *
+ * Deliberately the whole implementation: no `fetchAllCommentsWithCode`, no
+ * `clearAllComments`. The "send to AI" flows each pull in the entire comment
+ * stack and wipe it afterwards, which is right for "I annotated ten places,
+ * ship them together" but wrong for a one-click action — a user asking about
+ * one selection has not asked to submit, let alone discard, annotations they
+ * were still collecting. Keep those two concerns apart when wiring new
+ * one-click entries.
+ */
+export function sendReferenceToAI(
+  send: (message: string) => void,
+  reference: CodeReference,
+  question: string,
+): void {
+  send(buildAIMessage([reference], question));
+}

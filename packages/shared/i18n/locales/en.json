@@ -1113,7 +1113,8 @@
   "explain": {
     "action": "Explain",
     "fileMessage": "Explain {{path}}",
-    "symbolMessage": "Explain {{name}} ({{path}}:{{lines}})"
+    "symbolMessage": "Explain {{name}} ({{path}}:{{lines}})",
+    "selectionMessage": "Explain"
   },
   "reviewUtils": {
     "adjectives": ["Happy", "Brave", "Quiet", "Bright", "Gentle", "Agile", "Free", "Clear", "Flying", "Relaxed", "Lively", "Wise", "Calm", "Alert", "Composed", "Steady", "Cheerful", "Warm", "Bold", "Poised"],

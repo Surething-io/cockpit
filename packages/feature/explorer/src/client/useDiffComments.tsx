@@ -21,7 +21,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useComments, type CodeComment } from '@cockpit/feature-comments';
-import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, type CodeReference } from '@cockpit/feature-comments';
+import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, sendReferenceToAI, type CodeReference } from '@cockpit/feature-comments';
+import i18n from '@cockpit/shared-i18n';
 import { useMenuContainer, useAIBridge, AddCommentInput, SendToAIInput, ToolbarRenderer } from '@cockpit/shared-ui';
 import { ViewCommentCard } from './index';
 import { useSelectionToolbar } from './useSelectionToolbar';
@@ -186,6 +187,24 @@ export function useDiffComments({
     clearToolbar();
   }, [clearToolbar, floatingToolbarRef]);
 
+  // One-click explain — no question card, and not routed through
+  // sendSelectionToAI (that one also ships and wipes the comment stack).
+  const handleToolbarExplain = useCallback(() => {
+    const toolbar = floatingToolbarRef.current;
+    if (!toolbar || !aiBridge) return;
+    clearToolbar();
+    sendReferenceToAI(
+      aiBridge.sendMessage,
+      {
+        filePath,
+        startLine: toolbar.range.start,
+        endLine: toolbar.range.end,
+        codeContent: toolbar.lineSnapshot,
+      },
+      i18n.t('explain.selectionMessage'),
+    );
+  }, [aiBridge, filePath, clearToolbar, floatingToolbarRef]);
+
   // Search the LITERAL selection — not the line-expanded snapshot. Using
   // the snapshot was the source of the long-standing "DiffView search
   // mysteriously expands to the whole line" bug.
@@ -269,6 +288,7 @@ export function useDiffComments({
             onAddComment={handleToolbarAddComment}
             onSendToAI={handleToolbarSendToAI}
             onSearch={onContentSearch ? handleToolbarSearch : undefined}
+            onExplain={aiBridge ? handleToolbarExplain : undefined}
             isChatLoading={aiBridge?.isLoading ?? false}
           />
           {addCommentInput && (

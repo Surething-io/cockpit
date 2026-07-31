@@ -197,6 +197,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
     handleCommentBubbleClick,
     handleToolbarAddComment,
     handleToolbarSendToAI,
+    handleToolbarExplain,
     handleToolbarSearch,
     handleCommentSubmit,
     handleSendToAISubmit,
@@ -1187,6 +1188,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
               onAddComment={handleToolbarAddComment}
               onSendToAI={handleToolbarSendToAI}
               onSearch={onContentSearch ? handleToolbarSearch : undefined}
+              onExplain={aiBridge ? handleToolbarExplain : undefined}
               isChatLoading={aiBridge?.isLoading}
             />
           )}

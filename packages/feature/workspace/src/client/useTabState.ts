@@ -29,6 +29,8 @@ export interface TabInfo {
   deepseekModel?: DeepseekModel;
   chatMode?: ChatMode;
   planMode?: boolean;
+  /** ollama only: send every user message with no prior history (independent task) */
+  noHistory?: boolean;
 }
 
 // ============================================
@@ -114,6 +116,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         const savedDeepseekModels: Record<string, string> = data.deepseekModels || {};
         const savedChatModes: Record<string, string> = data.chatModes || {};
         const savedPlanModes: Record<string, boolean> = data.planModes || {};
+        const savedNoHistories: Record<string, boolean> = data.noHistories || {};
 
         // Merge URL sessionId with sessions in session.json (deduplicate)
         let allSessions = [...savedSessions];
@@ -132,6 +135,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
             deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || undefined,
             chatMode: (savedChatModes[sessionId] as ChatMode) || undefined,
             planMode: savedPlanModes[sessionId] || undefined,
+            noHistory: savedNoHistories[sessionId] || undefined,
           }));
 
           // Activation priority: URL sessionId > session.json activeSessionId > first
@@ -175,6 +179,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     const deepseekModels: Record<string, string> = {};
     const chatModes: Record<string, string> = {};
     const planModes: Record<string, boolean> = {};
+    const noHistories: Record<string, boolean> = {};
     for (const tab of tabs) {
       if (tab.sessionId && tab.engine) {
         engines[tab.sessionId] = tab.engine;
@@ -194,6 +199,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       if (tab.sessionId) {
         chatModes[tab.sessionId] = tab.chatMode === 'pty' ? 'pty' : 'sdk';
         planModes[tab.sessionId] = !!tab.planMode;
+        noHistories[tab.sessionId] = !!tab.noHistory;
       }
     }
 
@@ -215,6 +221,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         deepseekModels,
         chatModes,
         planModes,
+        noHistories,
         ...(closedSessionIds.length ? { closedSessionIds } : {}),
       }).pipe(
         Effect.tap(() =>
@@ -262,6 +269,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       const deepseekModels = (data.deepseekModels || {}) as Record<string, string>;
       const chatModes = (data.chatModes || {}) as Record<string, string>;
       const planModes = (data.planModes || {}) as Record<string, boolean>;
+      const noHistories = (data.noHistories || {}) as Record<string, boolean>;
 
       const prev = tabsRef.current;
       const closedSet = new Set(closedIds);
@@ -284,6 +292,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         deepseekModel: (deepseekModels[sid] as DeepseekModel) || undefined,
         chatMode: (chatModes[sid] as ChatMode) || undefined,
         planMode: planModes[sid] || undefined,
+        noHistory: noHistories[sid] || undefined,
       }));
       let next = [...kept, ...added];
       // never leave the tab bar empty (tabs[0].id is read every render)
@@ -455,6 +464,15 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     );
   }, []);
 
+  // Update independent-task mode (ollama: send no history) for a tab
+  const updateTabNoHistory = useCallback((tabId: string, noHistory: boolean) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, noHistory } : tab
+      )
+    );
+  }, []);
+
   // Open new session (for Fork, always creates a new tab)
   const handleOpenSession = useCallback((sid: string, title?: string) => {
     addTab(initialCwd, sid, title);
@@ -592,6 +610,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     updateTabDeepseekModel,
     updateTabChatMode,
     updateTabPlanMode,
+    updateTabNoHistory,
 
     // Drag operations
     handleTabDragStart,

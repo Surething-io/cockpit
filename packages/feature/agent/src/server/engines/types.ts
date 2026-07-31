@@ -23,6 +23,12 @@ export interface DispatchParams {
   permissionMode?: string;
   ptyCols?: number;
   ptyRows?: number;
+  // ollama-only (other runners ignore): send ONLY this turn to the model, no prior messages.
+  // Turns each user message into an independent task. The transcript is still read/written,
+  // so the UI history stays continuous — this only affects what is put in the prompt.
+  // Not portable to the SDK/CLI engines: their history IS the provider session, so skipping
+  // it there means starting a new session (see engines/claude.ts, codex.ts, kimi.ts).
+  noHistory?: boolean;
 }
 
 /** Dispatch result. The run is detached (fire-and-forget); on success the caller gets the

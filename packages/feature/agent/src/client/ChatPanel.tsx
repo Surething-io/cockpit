@@ -23,6 +23,8 @@ interface ChatPanelProps {
   onChatModeChange?: (tabId: string, chatMode: ChatMode) => void;
   planMode?: boolean;
   onPlanModeChange?: (tabId: string, planMode: boolean) => void;
+  noHistory?: boolean;
+  onNoHistoryChange?: (tabId: string, noHistory: boolean) => void;
   isActive?: boolean;
   // Forwarded to Chat: forced history refresh on explicit session jump (see ChatProps.refreshSignal)
   refreshSignal?: { sessionId: string; nonce: number } | null;
@@ -48,7 +50,7 @@ interface ChatPanelProps {
   onShowFileDiff?: (toolCalls: ToolCallInfo[], cwd?: string) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode, onChatModeChange, planMode, onPlanModeChange, isActive, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode, onChatModeChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -77,6 +79,10 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllama
     onPlanModeChange?.(tabId, p);
   }, [tabId, onPlanModeChange]);
 
+  const handleNoHistoryChange = useCallback((v: boolean) => {
+    onNoHistoryChange?.(tabId, v);
+  }, [tabId, onNoHistoryChange]);
+
   return (
     <Chat
       tabId={tabId}
@@ -91,6 +97,8 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllama
       onChatModeChange={handleChatModeChange}
       planMode={planMode}
       onPlanModeChange={handlePlanModeChange}
+      noHistory={noHistory}
+      onNoHistoryChange={handleNoHistoryChange}
       hideHeader
       hideSidebar
       isActive={isActive}

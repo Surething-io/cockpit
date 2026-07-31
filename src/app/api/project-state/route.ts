@@ -22,6 +22,7 @@ interface ProjectState {
   deepseekModels?: Record<string, string>
   chatModes?: Record<string, string>
   planModes?: Record<string, boolean>
+  noHistories?: Record<string, boolean>
 }
 
 export const GET = handler((req) =>
@@ -91,6 +92,7 @@ export const POST = handler((req) =>
           const deepseekModels = merge(existing.deepseekModels, body.deepseekModels)
           const chatModes = merge(existing.chatModes, body.chatModes)
           const planModes = merge<boolean>(existing.planModes, body.planModes)
+          const noHistories = merge<boolean>(existing.noHistories, body.noHistories)
           const active = body.activeSessionId ?? existing.activeSessionId
           const next: ProjectState = {
             sessions: union,
@@ -100,6 +102,7 @@ export const POST = handler((req) =>
             ...(Object.keys(deepseekModels).length ? { deepseekModels } : {}),
             ...(Object.keys(chatModes).length ? { chatModes } : {}),
             ...(Object.keys(planModes).length ? { planModes } : {}),
+            ...(Object.keys(noHistories).length ? { noHistories } : {}),
           }
           await writeJsonFile(filePath, next)
           return next

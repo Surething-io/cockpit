@@ -41,6 +41,8 @@ interface UseChatStreamOptions {
   chatMode?: ChatMode;
   /** Plan mode (SDK + claude engine only): read-only exploration that produces a plan without editing */
   planMode?: boolean;
+  /** Independent-task mode (ollama only): send each user message with no prior history */
+  noHistory?: boolean;
   ollamaModel?: string;
   deepseekModel?: DeepseekModel;
   onSessionId: (sid: string) => void;
@@ -79,7 +81,7 @@ interface UseChatStreamReturn {
 export function useChatStream(
   messages: ChatMessage[],
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  { sessionId, cwd, engine, chatMode, planMode, ollamaModel, deepseekModel, onSessionId, onFetchTitle, onPtyOutput, onRunComplete }: UseChatStreamOptions
+  { sessionId, cwd, engine, chatMode, planMode, noHistory, ollamaModel, deepseekModel, onSessionId, onFetchTitle, onPtyOutput, onRunComplete }: UseChatStreamOptions
 ): UseChatStreamReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
@@ -549,6 +551,9 @@ export function useChatStream(
             // Plan mode: only meaningful in SDK mode on a claude engine (PTY has its own
             // Shift+Tab plan). When unchecked, omit → server defaults to bypassPermissions.
             ...(usePlanMode && !usePty && isClaudeEngine && { permissionMode: 'plan' }),
+            // Independent task: ollama-only (the other engines resume a provider session, so
+            // dropping history there would fork a new one). Omitted when off.
+            ...(engine === 'ollama' && noHistory && { noHistory: true }),
           }),
         });
 
@@ -597,7 +602,7 @@ export function useChatStream(
         setActiveRun(null);
       }
     },
-    [cwd, engine, chatMode, planMode, ollamaModel, deepseekModel, setMessages, endRun]
+    [cwd, engine, chatMode, planMode, noHistory, ollamaModel, deepseekModel, setMessages, endRun]
   );
 
   return {

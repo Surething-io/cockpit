@@ -64,6 +64,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     updateTabDeepseekModel,
     updateTabChatMode,
     updateTabPlanMode,
+    updateTabNoHistory,
     handleTabDragStart,
     handleTabDragOver,
     handleTabDrop,
@@ -420,6 +421,8 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                           onChatModeChange={updateTabChatMode}
                           planMode={tab.planMode}
                           onPlanModeChange={updateTabPlanMode}
+                          noHistory={tab.noHistory}
+                          onNoHistoryChange={updateTabNoHistory}
                           isActive={tab.id === activeTabId && activeView === 'agent'}
                           refreshSignal={sessionRefresh}
                           onStateChange={updateTabState}
@@ -521,6 +524,8 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                     onChatModeChange={updateTabChatMode}
                     planMode={tab.planMode}
                     onPlanModeChange={updateTabPlanMode}
+                    noHistory={tab.noHistory}
+                    onNoHistoryChange={updateTabNoHistory}
                     isActive={tab.id === activeTabId}
                     refreshSignal={sessionRefresh}
                     onStateChange={updateTabState}

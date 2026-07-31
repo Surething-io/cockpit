@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { ClipboardList } from 'lucide-react';
+import { ClipboardList, Scissors } from 'lucide-react';
 import { toast } from '@cockpit/shared-ui';
 import { useLiveStream } from './useLiveStream';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
@@ -44,6 +44,8 @@ interface ChatProps {
   onChatModeChange?: (chatMode: ChatMode) => void;
   planMode?: boolean;
   onPlanModeChange?: (planMode: boolean) => void;
+  noHistory?: boolean;
+  onNoHistoryChange?: (noHistory: boolean) => void;
   hideHeader?: boolean;
   hideSidebar?: boolean;
   isActive?: boolean; // Whether the tab is active (used to handle scroll issues for hidden tabs)
@@ -78,7 +80,7 @@ interface ChatProps {
   onOpenSettings?: () => void; // Host-handled: open the app settings modal
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode: chatModeProp, onChatModeChange, planMode: planModeProp, onPlanModeChange, hideHeader, hideSidebar, isActive = true, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode: chatModeProp, onChatModeChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -105,6 +107,15 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
     setLocalPlanMode(p);
     onPlanModeChange?.(p);
   }, [onPlanModeChange]);
+  // Independent-task mode (per-tab, ollama only): each user message is sent with no prior
+  // history, so the model treats every turn as a standalone task. Same controlled-with-local-
+  // fallback shape as planMode above; persisted via TabInfo.noHistory.
+  const [localNoHistory, setLocalNoHistory] = useState(false);
+  const noHistory = noHistoryProp ?? localNoHistory;
+  const setNoHistory = useCallback((v: boolean) => {
+    setLocalNoHistory(v);
+    onNoHistoryChange?.(v);
+  }, [onNoHistoryChange]);
   const isClaudeEngine = !engine || engine === 'claude' || engine === 'claude2';
   // PTY floating window: receives raw terminal output
   const ptyWindowRef = useRef<XtermFloatingHandle>(null);
@@ -158,6 +169,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
     engine,
     chatMode,
     planMode,
+    noHistory,
     ollamaModel,
     deepseekModel,
     onSessionId: setSessionId,
@@ -551,10 +563,32 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
           </div>
         )}
 
-        {/* Ollama model picker */}
-        {engine === 'ollama' && onOllamaModelChange && (
+        {/* Ollama model picker + independent-task toggle */}
+        {engine === 'ollama' && (
           <div className="flex items-center px-3 py-1.5 border-b border-border bg-card/50">
-            <OllamaModelPicker currentModel={ollamaModel} onModelChange={onOllamaModelChange} />
+            {onOllamaModelChange && (
+              <OllamaModelPicker currentModel={ollamaModel} onModelChange={onOllamaModelChange} />
+            )}
+            {/* Independent task (ollama only): each message is sent WITHOUT the prior turns.
+                Stays on until unchecked — it's a session-level mode, not a one-shot. The
+                transcript keeps recording, so the history above is unaffected. */}
+            <label
+              className="flex items-center gap-1.5 ml-2 pl-3 border-l border-border text-xs cursor-pointer select-none"
+              title={t('chat.noHistoryHint', { defaultValue: 'Independent task: each message is sent to the model on its own, with no prior conversation. The transcript above still records everything.' })}
+            >
+              <input
+                type="checkbox"
+                data-testid="nohistory-toggle"
+                checked={noHistory}
+                onChange={(e) => setNoHistory(e.target.checked)}
+                className="accent-brand"
+              />
+              <span className="flex items-center gap-1 text-foreground">
+                <Scissors className="w-3.5 h-3.5" />
+                {t('chat.noHistory', { defaultValue: 'Independent task' })}
+              </span>
+              <span className="text-muted-foreground">{t('chat.noHistoryDesc', { defaultValue: 'no history sent' })}</span>
+            </label>
           </div>
         )}
 

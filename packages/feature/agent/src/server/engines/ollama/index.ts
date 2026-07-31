@@ -94,7 +94,11 @@ export const ollamaSpec: EngineSpec = {
         try { ctx.emit(JSON.parse(data.slice(6))); } catch { /* ignore */ }
       };
 
-      const existing = readSessionMessages(cwd, sid);
+      // "Independent task" mode: send ONLY this turn to the model. We still read/write the
+      // transcript exactly as usual — the jsonl is what the UI renders, so skipping the WRITE
+      // would blank the visible history. Only the prompt loses the prior messages.
+      const noHistory = ctx.params.noHistory === true;
+      const existing = noHistory ? [] : readSessionMessages(cwd, sid);
       const messages: ModelMessage[] = [...existing, { role: 'user', content: prompt }];
       appendUserText(cwd, sid, prompt, { uuid: randomUUID(), timestamp: new Date().toISOString() });
 

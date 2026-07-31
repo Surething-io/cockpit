@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, memo } from 'react';
 import { Portal, toast } from '@cockpit/shared-ui';
-import { FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2 } from 'lucide-react';
+import { FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed } from 'lucide-react';
 import { ToolCallModal } from './ToolCallModal';
 import { AskQuestionViewerModal } from './AskQuestionViewerModal';
 import { DiffViewerModal, resolveDiffCalls } from './DiffViewerModal';
@@ -133,6 +133,47 @@ interface MessageBubbleProps {
 // so special operation entries (AskUserQuestion / FileDiff) on the header are always reachable.
 const TOOL_CALLS_COLLAPSE_THRESHOLD = 0;
 
+/**
+ * One text segment of an assistant turn.
+ *
+ * `isAside` marks mid-turn narration — a segment the model emitted before going
+ * back to tool calls ("Both red. Now the fixes."), as opposed to the turn's
+ * actual answer, which is always the final segment. Without the distinction a
+ * turn reads as one uninterrupted monologue with no way to tell the running
+ * commentary from the conclusion.
+ *
+ * memo'd, and this matters more than the usual reason: a turn now renders one
+ * row per segment, so a streaming delta re-renders ONLY the trailing row. The
+ * old single-blob renderer re-parsed the whole turn's markdown on every token.
+ */
+const TextPartRow = memo(function TextPartRow({
+  text,
+  isAside,
+  isUser,
+  isStreaming,
+}: {
+  text: string;
+  isAside: boolean;
+  isUser: boolean;
+  isStreaming: boolean;
+}) {
+  const body = (
+    <>
+      <MarkdownRenderer content={text} isUser={isUser} isStreaming={isStreaming} enableMath={false} />
+      {isStreaming && <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />}
+    </>
+  );
+
+  if (!isAside) return <div className="break-words">{body}</div>;
+
+  return (
+    <div className="flex gap-1.5 break-words opacity-65">
+      <MessageSquareDashed className="w-3 h-3 mt-[5px] shrink-0 text-muted-foreground" aria-hidden />
+      <div className="flex-1 min-w-0">{body}</div>
+    </div>
+  );
+});
+
 // Use memo optimization — only re-render when message or cwd changes
 export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork, onApprovePlan, isLoading, onContentSearch, onShowFileDiff }: MessageBubbleProps) {
   const { t } = useTranslation();
@@ -156,6 +197,25 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   const hasFileChanges = useMemo(() => {
     return message.toolCalls?.some(tc => isMutatingToolName(tc.name)) || false;
   }, [message.toolCalls]);
+
+  // Text segments of this turn, each tagged with whether a tool call follows it
+  // (⇒ mid-turn narration rather than the answer). `parts` is the ordered
+  // skeleton the reducer/parsers build; see shared/assistantText.ts.
+  //
+  // Messages without it — user bubbles, optimistically inserted sends, system
+  // rows — degrade to a single non-aside segment, i.e. exactly the DOM this
+  // component rendered before parts existed.
+  const textParts = useMemo(() => {
+    const parts = message.parts;
+    if (!parts?.length) return message.content ? [{ text: message.content, isAside: false }] : [];
+    let lastToolIndex = -1;
+    parts.forEach((p, i) => { if (p.type === 'tool') lastToolIndex = i; });
+    const out: Array<{ text: string; isAside: boolean }> = [];
+    parts.forEach((p, i) => {
+      if (p.type === 'text') out.push({ text: p.text, isAside: i < lastToolIndex });
+    });
+    return out;
+  }, [message.parts, message.content]);
 
   // Whether the FileDiff icon should show at all. We resolve emptiness at
   // RENDER time (not on click) so a message with zero real changes never shows
@@ -463,13 +523,20 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             </div>
           )}
 
-          {/* Text content — rendered as Markdown */}
-          {message.content && (
-            <div className="break-words">
-              <MarkdownRenderer content={message.content} isUser={isUser} isStreaming={message.isStreaming} enableMath={false} />
-              {message.isStreaming && (
-                <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />
-              )}
+          {/* Text content — one row per segment. space-y-3 reproduces the gap the
+              segments used to get as sibling <p>s inside one document (p is mb-3,
+              last:mb-0), so splitting the blob costs no vertical rhythm. */}
+          {textParts.length > 0 && (
+            <div className="space-y-3">
+              {textParts.map((part, i) => (
+                <TextPartRow
+                  key={i}
+                  text={part.text}
+                  isAside={part.isAside}
+                  isUser={isUser}
+                  isStreaming={!!message.isStreaming && i === textParts.length - 1}
+                />
+              ))}
             </div>
           )}
 

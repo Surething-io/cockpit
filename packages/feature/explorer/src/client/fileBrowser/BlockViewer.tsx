@@ -373,20 +373,31 @@ function PinChip({ side, pin, accent, onClick }: PinChipProps) {
         onClick();
       }}
       className={`${baseClasses}${accentRing} w-full text-left border rounded px-1.5 py-0.5 text-[10px] font-mono cursor-pointer transition-colors flex items-center gap-1.5`}
-      data-tooltip={`${tooltipPrefix}${tooltipBody ? ' · ' + tooltipBody : ''}`}
+      // displayName is repeated here even though it's rendered in the
+      // chip: past the width cap the label still truncates, and the
+      // tooltip is then the only way to read the full name.
+      data-tooltip={`${tooltipPrefix} · ${displayName}${tooltipBody ? ' · ' + tooltipBody : ''}`}
     >
       <span
         className={`${tagColor} text-[9px] uppercase tracking-wider font-semibold flex-shrink-0`}
       >
         {tag}
       </span>
-      <span className="truncate flex-1 min-w-0">
-        <span className="font-medium">{displayName}</span>
+      {/* Three separate shrink zones, NOT one shared truncate box. With a
+          single box the ellipsis ate right-to-left, so a long name wiped
+          out the basename AND the call count — the two cheapest, most
+          informative glyphs in the chip. Now each clips on its own:
+          the name shrinks last, the basename absorbs the pressure first
+          (shrink-[10]), and the count never shrinks at all. */}
+      <span className="flex-1 min-w-0 flex items-center gap-1">
+        <span className="font-medium truncate">{displayName}</span>
         {displayBasename && (
-          <span className="text-muted-foreground/70 ml-1">{displayBasename}</span>
+          <span className="text-muted-foreground/70 truncate shrink-[10]">
+            {displayBasename}
+          </span>
         )}
         {callCount > 1 && (
-          <span className="text-muted-foreground/60 ml-1">·{callCount}×</span>
+          <span className="text-muted-foreground/60 flex-shrink-0">·{callCount}×</span>
         )}
       </span>
     </button>
@@ -396,6 +407,38 @@ function PinChip({ side, pin, accent, onClick }: PinChipProps) {
 // ============================================================================
 // Function row — one strip of [upstream | code | downstream]
 // ============================================================================
+
+/**
+ * Shared width ladder for BOTH pin columns, so the two sides can never
+ * drift apart. Breakpoints are `@`-prefixed: they measure the chip
+ * canvas (see the `@container` on the scroll container), NOT the viewport.
+ *
+ * The centre code block is `flex-1`, so without this ladder every extra
+ * pixel of a wide monitor went to the centre and none to the pins —
+ * which is how long function names ended up truncated on an external
+ * display while looking fine on a laptop.
+ *
+ * Measured against the scroll container, so the queried width runs 24px
+ * (the inner stack's p-3) ahead of what the pins can actually use —
+ * immaterial at these thresholds, and noted so the numbers aren't
+ * mistaken for exact canvas widths.
+ *
+ * Container width -> pin width (approx. chars at text-[10px] mono):
+ *   <900   176px  ~21   laptops, narrow windows (unchanged from before)
+ *    900   208px  ~26   MacBook Pro 14"/16"
+ *   1100   240px  ~32
+ *   1400   288px  ~40   1080p external / 4K@2x
+ *   1800   320px  ~45   1440p 27" / 5K@2x
+ *   2400   384px  ~56   ultrawide — capped here on purpose: past this
+ *                       the pins start out-weighing the code they
+ *                       annotate. Names longer than the cap fall back
+ *                       to truncation + the full-name tooltip.
+ *
+ * Written as one literal string (not composed) so Tailwind's scanner
+ * sees every class.
+ */
+const PIN_COL_WIDTH =
+  'w-44 @min-[900px]:w-52 @min-[1100px]:w-60 @min-[1400px]:w-72 @min-[1800px]:w-80 @min-[2400px]:w-96';
 
 /**
  * A single row's pin payload — discriminated union over three flavours:
@@ -585,9 +628,9 @@ function FunctionRow({
   // are currently scrolled into view" from each block's bounding rect
   // without threading the workingFunctions array through closures.
   //
-  // Side cells get fixed widths — the centre claims the rest. flex-shrink-0
-  // on the sides keeps them stable when the centre body has a horizontal
-  // scrollbar for long lines.
+  // Side cells step through PIN_COL_WIDTH's container-query ladder — the
+  // centre claims the rest. flex-shrink-0 on the sides keeps them stable
+  // when the centre body has a horizontal scrollbar for long lines.
   return (
     <div
       data-block-qname={symbol.qualifiedName}
@@ -598,7 +641,7 @@ function FunctionRow({
       {/* Left column: callers stacked top-aligned. We DON'T align in-pins
           to lines because the call line lives in the CALLER's file, not
           here — there's nothing in this row's body to align them to. */}
-      <div className="w-44 flex-shrink-0 flex flex-col gap-1 pt-1">
+      <div className={`${PIN_COL_WIDTH} flex-shrink-0 flex flex-col gap-1 pt-1`}>
         {upstream.length === 0 ? (
           <div className="text-[10px] text-muted-foreground/40 italic px-1.5">no callers</div>
         ) : (
@@ -625,7 +668,7 @@ function FunctionRow({
       {/* Right column: callees absolutely positioned, each `top` aligned
           to its first call site so the pin sits next to the actual line.
           Overlap is resolved in placeDownstreamPins. */}
-      <div className="w-44 flex-shrink-0 relative">
+      <div className={`${PIN_COL_WIDTH} flex-shrink-0 relative`}>
         {downstream.length === 0 ? (
           <div className="text-[10px] text-muted-foreground/40 italic px-1.5 pt-1">
             no callees
@@ -1922,10 +1965,30 @@ export function BlockViewer({
             code bodies) shrink correctly instead of pushing the row
             out. Ref'd via callback so BlockDiffMinimap's viewport-
             tracking effect re-binds the moment the element mounts;
-            useRef would silently skip the loading→ready transition. */}
+            useRef would silently skip the loading→ready transition.
+
+            `@container` makes this the query container for PIN_COL_WIDTH.
+            It MUST be container-based rather than viewport-based: this
+            canvas is the viewport minus the file tree (320-480px, and
+            user-draggable), the 5px splitter and the w-56 rail — a
+            549-709px shortfall that viewport breakpoints would
+            systematically overshoot, and dragging the tree resizes us
+            without moving the viewport at all.
+
+            Mounted on the scroll container, NOT the padded stack inside:
+            container-type implies inline-size containment, which stops an
+            element from being widened by its content. This element is
+            already `flex-1 min-w-0` (width fully externally determined),
+            so containment changes nothing here — whereas on the inner
+            stack it would suppress the overflow that gives this container
+            its horizontal scrollbar when the two flex-shrink-0 pin
+            columns can't fit. Layout containment also captures abs-
+            positioned descendants, which is safe because every floating
+            layer (toolbar, comment popovers) anchors to reviewAnchor,
+            outside this subtree. */}
         <div
           ref={setScrollContainer}
-          className="flex-1 min-w-0 overflow-auto"
+          className="@container flex-1 min-w-0 overflow-auto"
         >
           <div className="flex flex-col gap-3 p-3">
             {workingFunctions.map((fn) => (

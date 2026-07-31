@@ -1,4 +1,4 @@
-import { joinAssistantText } from '../shared/assistantText';
+import { appendTextPart, appendToolPart, joinAssistantText } from '../shared/assistantText';
 import type { ChatMessage, ToolCallInfo } from './types';
 
 // Single engine-agnostic stream→messages reducer (#10 line 1).
@@ -54,7 +54,12 @@ export function applyStreamEvent(
       const txt = e.delta.text;
       return messages.map((m) =>
         m.id === assistantId
-          ? { ...m, content: joinAssistantText(m.content || '', txt, !!m.pendingTextBreak), pendingTextBreak: false }
+          ? {
+              ...m,
+              content: joinAssistantText(m.content || '', txt, !!m.pendingTextBreak),
+              parts: appendTextPart(m.parts, txt, !!m.pendingTextBreak),
+              pendingTextBreak: false,
+            }
           : m
       );
     }
@@ -75,7 +80,12 @@ export function applyStreamEvent(
       if (newText)
         out = out.map((m) =>
           m.id === assistantId
-            ? { ...m, content: joinAssistantText(m.content || '', newText, !!m.pendingTextBreak), pendingTextBreak: false }
+            ? {
+                ...m,
+                content: joinAssistantText(m.content || '', newText, !!m.pendingTextBreak),
+                parts: appendTextPart(m.parts, newText, !!m.pendingTextBreak),
+                pendingTextBreak: false,
+              }
             : m
         );
     }
@@ -93,7 +103,12 @@ export function applyStreamEvent(
           if (m.toolCalls?.some((x) => x.id === tc.id)) return m;
           // A tool_use between two text segments starts a new paragraph for the
           // next one (see shared/assistantText.ts). Mirrors the history parsers.
-          return { ...m, toolCalls: [...(m.toolCalls || []), tc], pendingTextBreak: true };
+          return {
+            ...m,
+            toolCalls: [...(m.toolCalls || []), tc],
+            parts: appendToolPart(m.parts, tc.id),
+            pendingTextBreak: true,
+          };
         });
       }
     }
@@ -125,11 +140,15 @@ export function applyStreamEvent(
   // handles 'error' itself and returns before calling this, so it is unaffected.)
   if (ev.type === 'error') {
     const errText = ev.error || 'An error occurred. Please try again.';
+    const banner = `⚠️ ${errText}`;
     return messages.map((m) =>
       m.id === assistantId
         ? {
             ...m,
-            content: m.content ? `${m.content}\n\n⚠️ ${errText}` : `⚠️ ${errText}`,
+            // joinAssistantText rather than a raw `\n\n` concat, so this stays
+            // byte-identical to deriveContent(parts) — the banner is its own part.
+            content: joinAssistantText(m.content || '', banner, true),
+            parts: appendTextPart(m.parts, banner, true),
             isStreaming: false,
           }
         : m
@@ -144,6 +163,7 @@ export function applyStreamEvent(
         ? {
             ...m,
             content: !m.content && resultText ? resultText : m.content,
+            parts: !m.content && resultText ? appendTextPart(m.parts, resultText) : m.parts,
             isStreaming: false,
             toolCalls: m.toolCalls?.map((tc) => ({ ...tc, isLoading: false })),
           }

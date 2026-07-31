@@ -10,10 +10,27 @@ import {
   ValidationError,
 } from '@cockpit/effect-core';
 import { generateTitle } from '../sessionTitle';
-import { joinAssistantText } from '../../shared/assistantText';
+import { appendTextPart, appendToolPart, joinAssistantText } from '../../shared/assistantText';
+import type { MessagePart } from '../../shared/assistantText';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/**
+ * Kimi packs one entry's text and its tool calls together, with the tool calls
+ * semantically FOLLOWING the text (see the breakBefore comment in the kimi
+ * parser). Appending them in that order is what keeps a text segment's
+ * "is a tool call after me" answer correct.
+ */
+function appendParts(
+  parts: MessagePart[] | undefined,
+  text: string,
+  toolCalls: Array<{ id: string }>
+): MessagePart[] {
+  let out = appendTextPart(parts, text);
+  for (const tc of toolCalls) out = appendToolPart(out, tc.id);
+  return out;
+}
 
 interface TokenUsage {
   input_tokens?: number;
@@ -75,6 +92,9 @@ interface ChatMessage {
   // Set on role:'system' rows — a harness event rendered as a muted one-line bar
   // (not a conversation bubble). `task-notification` shows the <summary> line.
   systemEvent?: { kind: 'task-notification' | 'meta'; status?: string; detail?: string };
+  // Ordered text/tool skeleton of the turn — see shared/assistantText.ts. Built
+  // in lockstep with `content`, which stays derivable from it (deriveContent).
+  parts?: MessagePart[];
   toolCalls?: Array<{
     id: string;
     name: string;
@@ -679,11 +699,13 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
         const entryText = textBlocks.map((b) => b.text || '').join('');
         if (currentAssistantMessage) {
           currentAssistantMessage.content = joinAssistantText(currentAssistantMessage.content, entryText, toolSinceText);
+          currentAssistantMessage.parts = appendTextPart(currentAssistantMessage.parts, entryText, toolSinceText);
         } else {
           currentAssistantMessage = {
             id: msg.uuid || `assistant-${Date.now()}`,
             role: 'assistant',
             content: entryText,
+            parts: appendTextPart([], entryText),
             timestamp: msg.timestamp,
             toolCalls: [],
           };
@@ -697,6 +719,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
             id: msg.uuid || `assistant-${Date.now()}`,
             role: 'assistant',
             content: '',
+            parts: [],
             timestamp: msg.timestamp,
             toolCalls: [],
           };
@@ -705,6 +728,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
 
         for (const tool of toolBlocks) {
           if (tool.name && tool.id) {
+            currentAssistantMessage.parts = appendToolPart(currentAssistantMessage.parts, tool.id);
             currentAssistantMessage.toolCalls!.push({
               id: tool.id,
               name: tool.name,
@@ -768,6 +792,7 @@ async function parseCodexTranscriptFile(
         id: `codex-assistant-${msgCounter++}`,
         role: 'assistant',
         content: '',
+        parts: [],
         toolCalls: [],
         timestamp,
       };
@@ -817,6 +842,7 @@ async function parseCodexTranscriptFile(
         if (text) {
           const assistant = ensureAssistant(timestamp);
           assistant.content = joinAssistantText(assistant.content || '', text, toolSinceText);
+          assistant.parts = appendTextPart(assistant.parts, text, toolSinceText);
           toolSinceText = false;
         }
       }
@@ -832,8 +858,10 @@ async function parseCodexTranscriptFile(
         let input: Record<string, unknown> = {};
         try { input = JSON.parse(payload.arguments || '{}'); } catch { /* */ }
         assistant.toolCalls = assistant.toolCalls || [];
+        const callId = payload.call_id || `tool-${msgCounter++}`;
+        assistant.parts = appendToolPart(assistant.parts, callId);
         assistant.toolCalls.push({
-          id: payload.call_id || `tool-${msgCounter++}`,
+          id: callId,
           name: payload.name === 'shell_command' ? 'Bash' : payload.name,
           input,
           isLoading: false,
@@ -955,12 +983,17 @@ async function parseKimiTranscriptFile(
         if (text) {
           lastMsg.content = joinAssistantText(lastMsg.content || '', text, breakBefore);
         }
+        // parts follow the SEMANTIC order (text, then this entry's tool calls),
+        // which is the reverse of the code order above — see the breakBefore
+        // comment: an entry's tool calls come after its text.
+        lastMsg.parts = appendParts(lastMsg.parts, text, newToolCalls);
       } else if (text || newToolCalls.length > 0) {
         // New assistant bubble
         messages.push({
           id: `kimi-assistant-${msgCounter++}`,
           role: 'assistant',
           content: text,
+          parts: appendParts([], text, newToolCalls),
           ...(newToolCalls.length > 0 ? { toolCalls: newToolCalls } : {}),
         });
       }

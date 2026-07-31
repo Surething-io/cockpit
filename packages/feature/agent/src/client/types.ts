@@ -18,6 +18,12 @@ export interface ToolCallInfo {
   skillContent?: string;
 }
 
+// Ordered text/tool skeleton of an assistant turn — defined in shared/ because
+// the history parsers (server) build it too. Re-exported here so client callers
+// keep a single import site for chat types.
+import type { MessagePart } from '../shared/assistantText';
+export type { MessagePart };
+
 // Re-export image types from shared-utils (single source of truth).
 import type { ImageMediaType, ImageInfo, MessageImage } from '@cockpit/shared-utils';
 export type { ImageMediaType, ImageInfo, MessageImage };
@@ -42,10 +48,16 @@ export interface ChatMessage {
   // bubbles (which the new run's snapshot will never rebuild). Absent on persisted/reloaded
   // messages (they carry real UUIDs and must never be filtered).
   runKey?: string;
+  // Ordered text/tool skeleton of this turn (assistant rows only). Built by the
+  // live reducer and the history parsers in lockstep with `content`; see
+  // shared/assistantText.ts. `content` is derivable from it (deriveContent).
+  parts?: MessagePart[];
   // Transient (never persisted): true when a tool_use has occurred since the
-  // last text segment was appended to this assistant bubble, so the next text
-  // segment starts a new paragraph. Maintained by the live reducer
-  // (applyStreamEvent) and the history parsers; see shared/assistantText.ts.
+  // last text segment was appended to this assistant bubble. It is the ONE
+  // segment-boundary decision, fed to both `content` (as joinAssistantText's
+  // breakBefore) and `parts` (as appendTextPart's) so the two cannot disagree.
+  // Maintained by the live reducer (applyStreamEvent) and the history parsers;
+  // see shared/assistantText.ts.
   pendingTextBreak?: boolean;
 }
 

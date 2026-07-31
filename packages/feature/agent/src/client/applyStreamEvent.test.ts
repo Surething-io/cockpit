@@ -2,6 +2,7 @@
 // (vitest) or `npx vitest run <this file>`.
 import { describe, it, expect } from 'vitest';
 import { applyStreamEvent, type StreamEvent } from './applyStreamEvent';
+import { deriveContent } from '../shared/assistantText';
 import type { ChatMessage } from './types';
 
 const ID = 'asst-1';
@@ -115,5 +116,65 @@ describe('applyStreamEvent (#10 engine-agnostic reducer)', () => {
       'codex'
     );
     expect(out[0].content).toBe('step one\n\nstep two');
+  });
+
+  // #parts: the ordered text/tool skeleton the renderer needs to tell a mid-turn
+  // narration segment from the turn's answer. It is built alongside `content`;
+  // these tests pin BOTH the ordering and the fact that it stays a lossless
+  // re-description of the same string (deriveContent === content).
+  describe('#parts ordered skeleton', () => {
+    const kinds = (m: ChatMessage) => (m.parts || []).map((p) => (p.type === 'text' ? `t:${p.text}` : `x:${p.id}`));
+
+    it('interleaves text and tool parts in emission order', () => {
+      const out = reduce(seed(), [delta('one'), toolUse('t1'), delta('two'), toolUse('t2'), delta('three')]);
+      expect(kinds(out[0])).toEqual(['t:one', 'x:t1', 't:two', 'x:t2', 't:three']);
+    });
+
+    it('adjacent deltas with no tool between them stay ONE part', () => {
+      const out = reduce(seed(), [delta('a'), delta('b'), delta('c')]);
+      expect(kinds(out[0])).toEqual(['t:abc']);
+    });
+
+    it('a re-delivered tool_use adds no part (would forge a segment boundary)', () => {
+      const out = reduce(seed(), [delta('a'), toolUse('t1'), toolUse('t1'), delta('b')]);
+      expect(kinds(out[0])).toEqual(['t:a', 'x:t1', 't:b']);
+    });
+
+    it('the error banner is its own part, never folded into the narration', () => {
+      const out = reduce(seed(), [delta('working'), { type: 'error', error: 'boom' }]);
+      expect(kinds(out[0])).toEqual(['t:working', 't:⚠️ boom']);
+    });
+
+    it('result-filled fallback content produces a part too', () => {
+      const out = reduce(seed(), [{ type: 'result', result: ' fallback ' }]);
+      expect(kinds(out[0])).toEqual(['t:fallback']);
+    });
+
+    // The contract that lets step 2 drop `content` from the render path without
+    // changing a pixel: parts carry everything the joined string carried.
+    it('deriveContent(parts) reproduces content byte for byte', () => {
+      const cases: StreamEvent[][] = [
+        [delta('**1/5**'), toolUse('t1'), delta('**2/5**'), toolUse('t2'), delta('**3/5**')],
+        [toolUse('t1'), delta('Now '), delta('insert '), delta('the fn')],
+        [delta('a'), delta('b')],
+        [delta('trailing\n\n'), toolUse('t1'), delta('after')],
+        [delta('text'), toolUse('t1'), { type: 'error', error: 'boom' }],
+        [delta('x'), toolUse('t1'), { type: 'result', result: 'ignored' }],
+      ];
+      for (const evs of cases) {
+        const out = reduce(seed(), evs);
+        expect(deriveContent(out[0].parts)).toBe(out[0].content);
+      }
+    });
+
+    // Guards the repo's memo convention: MessageBubble hangs ~40 useMemo/useCallback
+    // on [message.toolCalls]. If a text delta ever re-created that array, every tool
+    // card would re-render on every token.
+    it('a text delta leaves the toolCalls array identity untouched', () => {
+      const withTool = reduce(seed(), [toolUse('t1')]);
+      const before = withTool[0].toolCalls;
+      const after = reduce(withTool, [delta('a'), delta('b')]);
+      expect(after[0].toolCalls).toBe(before);
+    });
   });
 });

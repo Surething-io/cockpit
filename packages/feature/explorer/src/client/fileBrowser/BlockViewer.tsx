@@ -123,6 +123,12 @@ function CodeBlock({
   addedLines,
 }: CodeBlockProps) {
   const { resolvedTheme } = useTheme();
+  const { t } = useTranslation();
+  // Self-contained: unlike the selection toolbar below, "explain this
+  // block" touches no viewer state — it just pushes one line into the
+  // active chat — so it reads the bridge here instead of being threaded
+  // down through FunctionRow. Null bridge (no chat host) → no button.
+  const aiBridge = useAIBridge();
   const language = useMemo(
     () => getLanguageFromPath(symbol.filePath),
     [symbol.filePath],
@@ -233,6 +239,20 @@ function CodeBlock({
           {symbol.kind} · L{symbol.startLine}-{symbol.endLine}
         </span>
         <span className="flex-1" />
+        {aiBridge && (
+          <button
+            onClick={() => aiBridge.sendMessage(t('explain.symbolMessage', {
+              name: symbol.name,
+              path: symbol.filePath,
+              lines: `${symbol.startLine}-${symbol.endLine}`,
+            }))}
+            disabled={aiBridge.isLoading}
+            title={aiBridge.isLoading ? t('comments.aiResponding') : undefined}
+            className="flex-shrink-0 text-[10px] text-brand hover:underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
+          >
+            {t('explain.action')}
+          </button>
+        )}
         {hasChange && (
           <span
             className="flex-shrink-0 w-2 h-2 rounded-full bg-amber-11"

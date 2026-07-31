@@ -1110,6 +1110,11 @@
   "gitFileTree": {
     "noFiles": "No files"
   },
+  "explain": {
+    "action": "Explain",
+    "fileMessage": "Explain {{path}}",
+    "symbolMessage": "Explain {{name}} ({{path}}:{{lines}})"
+  },
   "reviewUtils": {
     "adjectives": ["Happy", "Brave", "Quiet", "Bright", "Gentle", "Agile", "Free", "Clear", "Flying", "Relaxed", "Lively", "Wise", "Calm", "Alert", "Composed", "Steady", "Cheerful", "Warm", "Bold", "Poised"],
     "nouns": ["Panda", "Dolphin", "Crane", "Snow Leopard", "Skylark", "Squirrel", "Flying Fish", "Deer", "Bluebird", "Silver Fox", "Owl", "Dragonfly", "Firefly", "Sea Turtle", "Butterfly", "Monkey", "Red-crowned Crane", "Antelope", "Swallow", "Penguin"]

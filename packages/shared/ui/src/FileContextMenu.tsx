@@ -36,12 +36,19 @@ interface FileContextMenuProps {
   onRefresh?: () => void;
   onCopyFile?: (path: string) => void;
   onPaste?: (targetDir: string) => void;
+  /** Ask the agent to explain this file. Files only — never shown for
+   *  directories. Omitted by hosts with no chat to send to (Git tree,
+   *  search results, diff viewer), same opt-in gating as the callbacks
+   *  above. */
+  onExplain?: (path: string) => void;
+  /** Greys out the explain item while the agent is streaming a reply. */
+  explainDisabled?: boolean;
 }
 
 export function FileContextMenu({
   x, y, path, cwd, isDirectory, onClose,
   onCreateFile, onDelete, onRefresh: _onRefresh,
-  onCopyFile, onPaste,
+  onCopyFile, onPaste, onExplain, explainDisabled,
 }: FileContextMenuProps) {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -119,6 +126,10 @@ export function FileContextMenu({
   // Target directory for create/operations
   const targetDir = isDirectory ? path : relativeDirPath;
 
+  // "Explain this" is a file-level action — a directory has no single
+  // content to hand to the agent, so the item simply doesn't render.
+  const showExplain = Boolean(onExplain) && !isDirectory;
+
   const copyMenuItems = [
     { label: t('fileContextMenu.copyRelativePath'), value: path },
     { label: t('fileContextMenu.copyAbsolutePath'), value: absolutePath },
@@ -134,6 +145,16 @@ export function FileContextMenu({
       style={{ left: position.x, top: position.y }}
     >
       {/* Operation menu items */}
+      {showExplain && (
+        <button
+          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          disabled={explainDisabled}
+          title={explainDisabled ? t('comments.aiResponding') : undefined}
+          onClick={() => { onClose(); onExplain!(path); }}
+        >
+          {t('explain.action')}
+        </button>
+      )}
       {onCreateFile && (
         <button
           className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
@@ -168,7 +189,7 @@ export function FileContextMenu({
       )}
 
       {/* Divider */}
-      {(onCreateFile || onDelete || onCopyFile || onPaste) && (
+      {(showExplain || onCreateFile || onDelete || onCopyFile || onPaste) && (
         <div className="my-1 border-t border-border" />
       )}
 

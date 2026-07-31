@@ -40,6 +40,7 @@ import { type FileEditorHandle } from './FileEditorModal';
 import { QuickFileOpen } from './QuickFileOpen';
 import { useWebSocket } from '@cockpit/shared-ui';
 import { usePageVisible } from '@cockpit/shared-ui';
+import { useAIBridge } from '@cockpit/shared-ui';
 
 import type { TabType, GitFileStatus, GitStatusResponse, FileBrowserModalProps, SearchResult, Commit } from './fileBrowser/types';
 import type { FileNode } from './FileTree';
@@ -79,6 +80,14 @@ const TREE_WIDTH_MAX = TREE_WIDTH_MIN * 1.5;
 
 function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrigger, initialSearchQuery, searchQueryTrigger }: FileBrowserModalProps) {
   const { t } = useTranslation();
+  const aiBridge = useAIBridge();
+  // "Explain this" — tree context menu (file) and LSP hover card (symbol)
+  // both just push a localized one-liner into the active chat. Paths stay
+  // project-relative: that's what every producer here already holds, and
+  // the agent resolves them against the same cwd.
+  const handleExplainFile = useCallback((path: string) => {
+    aiBridge?.sendMessage(t('explain.fileMessage', { path }));
+  }, [aiBridge, t]);
   const addHtmlApp = useAddHtmlApp();
   const addSkill = useAddSkill();
   const { activeView, onViewChange } = useSwipeContext();
@@ -1320,6 +1329,8 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                     onRefresh={() => fileTree.loadFiles()}
                     onCopyFile={handleCopyFile}
                     onPaste={handlePaste}
+                    onExplain={aiBridge ? handleExplainFile : undefined}
+                    explainDisabled={aiBridge?.isLoading}
                   />
                 )}
               </div>
@@ -2444,6 +2455,15 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
             contentSearch.setContentSearchQuery(keyword);
             contentSearch.performContentSearch(keyword);
           }}
+          onExplain={aiBridge ? (name) => {
+            // LSP hover gives a point (line/column), not a span — the
+            // signature payload carries no end line. One line number is
+            // enough for the agent to find the symbol in the file.
+            const { filePath, line } = lspHover.hoverInfo!;
+            lspHover.clearHover();
+            aiBridge.sendMessage(t('explain.symbolMessage', { name, path: filePath, lines: String(line) }));
+          } : undefined}
+          explainDisabled={aiBridge?.isLoading}
         />,
         menuContainer,
       )}

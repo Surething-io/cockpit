@@ -13,6 +13,12 @@ interface HoverTooltipProps {
   onMouseLeave?: () => void;
   onFindReferences?: () => void;
   onSearch?: (keyword: string) => void;
+  /** Ask the agent to explain the hovered symbol. Receives the same
+   *  regex-extracted token name the search action uses — the LSP hover
+   *  payload carries no structured symbol, only a signature string. */
+  onExplain?: (name: string) => void;
+  /** Greys out the explain action while the agent is streaming a reply. */
+  explainDisabled?: boolean;
 }
 
 /** Strip the "(kind) " prefix returned by tsserver */
@@ -71,7 +77,7 @@ function extractTokenName(displayString: string): string {
   return idMatch ? idMatch[1] : clean.split(/[(\s:]/)[0];
 }
 
-export const HoverTooltip = forwardRef<HTMLDivElement, HoverTooltipProps>(function HoverTooltip({ displayString, documentation, x, y, container, onMouseEnter, onMouseLeave, onFindReferences, onSearch }, forwardedRef) {
+export const HoverTooltip = forwardRef<HTMLDivElement, HoverTooltipProps>(function HoverTooltip({ displayString, documentation, x, y, container, onMouseEnter, onMouseLeave, onFindReferences, onSearch, onExplain, explainDisabled }, forwardedRef) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
 
@@ -122,7 +128,7 @@ export const HoverTooltip = forwardRef<HTMLDivElement, HoverTooltipProps>(functi
           <p className="text-xs text-muted-foreground whitespace-pre-wrap">{documentation}</p>
         </>
       )}
-      {(onFindReferences || onSearch) && (
+      {(onFindReferences || onSearch || onExplain) && (
         <>
           <div className="border-t border-border my-1.5" />
           <div
@@ -144,6 +150,16 @@ export const HoverTooltip = forwardRef<HTMLDivElement, HoverTooltipProps>(functi
                 className="text-[11px] text-brand hover:underline cursor-pointer"
               >
                 {t('hoverTooltip.search')}
+              </button>
+            )}
+            {onExplain && (
+              <button
+                onClick={() => onExplain(extractTokenName(displayString))}
+                disabled={explainDisabled}
+                title={explainDisabled ? t('comments.aiResponding') : undefined}
+                className="text-[11px] text-brand hover:underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
+              >
+                {t('explain.action')}
               </button>
             )}
           </div>

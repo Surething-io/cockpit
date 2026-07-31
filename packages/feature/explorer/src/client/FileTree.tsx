@@ -214,6 +214,8 @@ export interface FileTreeProps {
   onRefresh?: () => void;
   onCopyFile?: (path: string) => void;
   onPaste?: (targetDir: string) => void;
+  onExplain?: (path: string) => void;
+  explainDisabled?: boolean;
 }
 
 export function FileTree({
@@ -235,6 +237,8 @@ export function FileTree({
   onRefresh,
   onCopyFile,
   onPaste,
+  onExplain,
+  explainDisabled,
 }: FileTreeProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const { contextMenu, showContextMenu, hideContextMenu } = useFileContextMenu();
@@ -332,6 +336,8 @@ export function FileTree({
           onRefresh={onRefresh}
           onCopyFile={onCopyFile}
           onPaste={onPaste}
+          onExplain={onExplain}
+          explainDisabled={explainDisabled}
         />
       )}
     </div>

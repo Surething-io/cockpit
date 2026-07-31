@@ -1118,10 +1118,10 @@
     "fileMessage": "Explain {{path}}",
     "symbolMessage": "Explain {{name}} ({{path}}:{{lines}})",
     "selectionMessage": "Explain",
-    "commitFileMessage": "Explain what commit {{hash}} changed in {{path}}",
-    "compareFileMessage": "Explain the changes to {{path}} in {{base}}..HEAD",
-    "stagedFileMessage": "Explain the staged changes to {{path}}",
-    "unstagedFileMessage": "Explain the working tree changes to {{path}}"
+    "commitFileMessage": "Explain what git commit {{hash}} changed in {{path}}",
+    "compareFileMessage": "Explain the git changes to {{path}} in {{base}}..HEAD",
+    "stagedFileMessage": "Explain the git staged changes to {{path}}",
+    "unstagedFileMessage": "Explain the git working tree changes to {{path}}"
   },
   "reviewUtils": {
     "adjectives": ["Happy", "Brave", "Quiet", "Bright", "Gentle", "Agile", "Free", "Clear", "Flying", "Relaxed", "Lively", "Wise", "Calm", "Alert", "Composed", "Steady", "Cheerful", "Warm", "Bold", "Poised"],

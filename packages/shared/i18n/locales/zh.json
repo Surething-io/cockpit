@@ -1118,10 +1118,10 @@
     "fileMessage": "解释一下 {{path}}",
     "symbolMessage": "解释一下 {{name}} ({{path}}:{{lines}})",
     "selectionMessage": "解释一下",
-    "commitFileMessage": "解释一下 commit {{hash}} 对 {{path}} 的改动",
-    "compareFileMessage": "解释一下 {{base}}..HEAD 中 {{path}} 的改动",
-    "stagedFileMessage": "解释一下暂存区中 {{path}} 的改动",
-    "unstagedFileMessage": "解释一下工作区中 {{path}} 的改动"
+    "commitFileMessage": "解释一下 git commit {{hash}} 对 {{path}} 的改动",
+    "compareFileMessage": "解释一下 git {{base}}..HEAD 中 {{path}} 的改动",
+    "stagedFileMessage": "解释一下 git 暂存区中 {{path}} 的改动",
+    "unstagedFileMessage": "解释一下 git 工作区中 {{path}} 的改动"
   },
   "reviewUtils": {
     "adjectives": ["快乐", "勇敢", "安静", "明亮", "温柔", "灵巧", "自由", "清澈", "飞翔", "悠闲", "活泼", "聪慧", "淡定", "机敏", "从容", "坚定", "爽朗", "和煦", "奔放", "沉稳"],

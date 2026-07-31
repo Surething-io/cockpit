@@ -37,9 +37,10 @@ interface FileContextMenuProps {
   onCopyFile?: (path: string) => void;
   onPaste?: (targetDir: string) => void;
   /** Ask the agent to explain this file. Files only — never shown for
-   *  directories. Omitted by hosts with no chat to send to (Git tree,
-   *  search results, diff viewer), same opt-in gating as the callbacks
-   *  above. */
+   *  directories. Omitted by hosts with no chat to send to, or whose rows
+   *  point at a historical revision rather than the working tree (commit
+   *  detail, diff viewer) — the message only names a path, so the agent
+   *  would read the current file and answer about the wrong version. */
   onExplain?: (path: string) => void;
   /** Greys out the explain item while the agent is streaming a reply. */
   explainDisabled?: boolean;
@@ -130,6 +131,12 @@ export function FileContextMenu({
   // content to hand to the agent, so the item simply doesn't render.
   const showExplain = Boolean(onExplain) && !isDirectory;
 
+  // Three groups, each divided from the next: [explain] / [file ops] / [copy
+  // path]. Hosts opt into the first two independently, so the dividers hang off
+  // the group *before* them — otherwise a tree that only passes onExplain
+  // (search / recent / git) would render two rules back to back.
+  const showFileOps = Boolean(onCreateFile || onCopyFile || onPaste || onDelete);
+
   const copyMenuItems = [
     { label: t('fileContextMenu.copyRelativePath'), value: path },
     { label: t('fileContextMenu.copyAbsolutePath'), value: absolutePath },
@@ -144,7 +151,7 @@ export function FileContextMenu({
       className="absolute z-[200] bg-card border border-border rounded-lg shadow-lg py-1 w-fit whitespace-nowrap"
       style={{ left: position.x, top: position.y }}
     >
-      {/* Operation menu items */}
+      {/* Agent actions */}
       {showExplain && (
         <button
           className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
@@ -155,6 +162,9 @@ export function FileContextMenu({
           {t('explain.action')}
         </button>
       )}
+      {showExplain && <div className="my-1 border-t border-border" />}
+
+      {/* File operations */}
       {onCreateFile && (
         <button
           className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
@@ -188,10 +198,7 @@ export function FileContextMenu({
         </button>
       )}
 
-      {/* Divider */}
-      {(showExplain || onCreateFile || onDelete || onCopyFile || onPaste) && (
-        <div className="my-1 border-t border-border" />
-      )}
+      {showFileOps && <div className="my-1 border-t border-border" />}
 
       {/* Copy path menu items */}
       {copyMenuItems.map((item, index) => (

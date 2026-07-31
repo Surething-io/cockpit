@@ -1386,6 +1386,8 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                       }}
                       onToggle={handleSearchTreeToggle}
                       cwd={cwd}
+                      onExplain={aiBridge ? handleExplainFile : undefined}
+                      explainDisabled={aiBridge?.isLoading}
                       renderActions={renderSearchActions}
                       className="flex-1 overflow-y-auto py-1 min-w-max"
                     />
@@ -1407,6 +1409,8 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                     onSelect={handleSelectFileWithSave}
                     onToggle={NOOP}
                     cwd={cwd}
+                    onExplain={aiBridge ? handleExplainFile : undefined}
+                    explainDisabled={aiBridge?.isLoading}
                   />
                 )}
               </div>
@@ -1461,6 +1465,8 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                         cwd={cwd}
                         emptyMessage={t('fileBrowser.noStagedFiles')}
                         className="py-1"
+                        onExplain={aiBridge ? handleExplainFile : undefined}
+                        explainDisabled={aiBridge?.isLoading}
                         renderActions={(node) => {
                           if (node.isDirectory) {
                             const files = collectFilesUnderNode(node);
@@ -1530,6 +1536,8 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                         cwd={cwd}
                         emptyMessage={t('fileBrowser.noUnstagedChanges')}
                         className="py-1"
+                        onExplain={aiBridge ? handleExplainFile : undefined}
+                        explainDisabled={aiBridge?.isLoading}
                         renderActions={(node) => {
                           if (node.isDirectory) {
                             const files = collectFilesUnderNode(node);

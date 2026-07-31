@@ -161,6 +161,11 @@ export interface GitFileTreeProps {
   renderActions?: (node: GitFileNode<unknown>) => ReactNode;
   emptyMessage?: string;
   className?: string;
+  /** Only pass these where the rows are working-tree files (staged /
+   *  unstaged). Historical listings (commit detail, compare) must leave it
+   *  unset — see FileContextMenu.onExplain. */
+  onExplain?: (path: string) => void;
+  explainDisabled?: boolean;
 }
 
 export function GitFileTree({
@@ -174,6 +179,8 @@ export function GitFileTree({
   renderActions,
   emptyMessage,
   className,
+  onExplain,
+  explainDisabled,
 }: GitFileTreeProps) {
   const { t } = useTranslation();
   const resolvedEmptyMessage = emptyMessage ?? t('gitFileTree.noFiles');
@@ -212,6 +219,8 @@ export function GitFileTree({
           cwd={cwd}
           isDirectory={contextMenu.isDirectory}
           onClose={hideContextMenu}
+          onExplain={onExplain}
+          explainDisabled={explainDisabled}
         />
       )}
     </div>

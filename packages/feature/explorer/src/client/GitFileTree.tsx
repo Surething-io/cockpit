@@ -161,9 +161,9 @@ export interface GitFileTreeProps {
   renderActions?: (node: GitFileNode<unknown>) => ReactNode;
   emptyMessage?: string;
   className?: string;
-  /** Only pass these where the rows are working-tree files (staged /
-   *  unstaged). Historical listings (commit detail, compare) must leave it
-   *  unset — see FileContextMenu.onExplain. */
+  /** Word the message for the range this tree is showing — staged, working
+   *  tree, a commit, a branch comparison — so the agent knows which diff to
+   *  read. See FileContextMenu.onExplain. */
   onExplain?: (path: string) => void;
   explainDisabled?: boolean;
 }

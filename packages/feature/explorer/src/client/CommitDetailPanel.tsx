@@ -9,7 +9,7 @@ import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, type GitFileNode
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { fetchCommitDiff } from './effect/gitClient';
 import { formatAsHumanReadable, isHtmlFile } from './toolCallUtils';
-import { useJsonSearch, JsonSearchBar, blurActiveElement } from '@cockpit/shared-ui';
+import { useJsonSearch, JsonSearchBar, blurActiveElement, useAIBridge } from '@cockpit/shared-ui';
 
 // Types
 export interface CommitInfo {
@@ -90,6 +90,18 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
   const [viewMode, setViewMode] = useState<'split' | 'unified'>('unified');
   const commitPreRef = useRef<HTMLPreElement>(null);
   const commitJsonSearch = useJsonSearch(commitPreRef);
+
+  // "Explain" is built here rather than handed down by the mount sites: this
+  // panel owns `commit`, and both mounts (History tab, blame popup) would
+  // otherwise have to reproduce the same message. Naming the sha keeps the
+  // agent off the working-tree copy, and asking about the *change* rather
+  // than the file is what makes deleted paths answerable at all.
+  const aiBridge = useAIBridge();
+  const commitShortHash = commit?.shortHash;
+  const handleExplainFile = useCallback((path: string) => {
+    if (!commitShortHash) return;
+    aiBridge?.sendMessage(t('explain.commitFileMessage', { hash: commitShortHash, path }));
+  }, [aiBridge, t, commitShortHash]);
 
   // ESC / Cmd+F
   useEffect(() => {
@@ -271,6 +283,8 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
               showChanges={true}
               emptyMessage={t('commitDetail.noFileChanges')}
               className="py-1"
+              onExplain={aiBridge && commitShortHash ? handleExplainFile : undefined}
+              explainDisabled={aiBridge?.isLoading}
             />
           )}
         </div>

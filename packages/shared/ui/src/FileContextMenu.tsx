@@ -36,11 +36,15 @@ interface FileContextMenuProps {
   onRefresh?: () => void;
   onCopyFile?: (path: string) => void;
   onPaste?: (targetDir: string) => void;
-  /** Ask the agent to explain this file. Files only — never shown for
-   *  directories. Omitted by hosts with no chat to send to, or whose rows
-   *  point at a historical revision rather than the working tree (commit
-   *  detail, diff viewer) — the message only names a path, so the agent
-   *  would read the current file and answer about the wrong version. */
+  /** Ask the agent to explain this row. Files only — never shown for
+   *  directories. Omitted by hosts with no chat to send to.
+   *
+   *  The host owns the wording, and it differs by surface: file trees ask
+   *  about the file, git surfaces ask about the *change* and name the range
+   *  they mean (`commit <sha>`, `<base>..HEAD`, staged, working tree) so the
+   *  agent can reach for the matching git command. A bare path would point it
+   *  at the working-tree copy, which is the wrong revision everywhere except
+   *  the file trees. */
   onExplain?: (path: string) => void;
   /** Greys out the explain item while the agent is streaming a reply. */
   explainDisabled?: boolean;

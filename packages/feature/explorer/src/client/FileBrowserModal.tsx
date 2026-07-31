@@ -88,6 +88,17 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
   const handleExplainFile = useCallback((path: string) => {
     aiBridge?.sendMessage(t('explain.fileMessage', { path }));
   }, [aiBridge, t]);
+  // Git surfaces ask about the *change*, not the file, and each names its own
+  // range so the agent picks the right git command instead of reading the
+  // working-tree copy. Untracked files go through the working-tree wording
+  // too: `git diff` comes back empty and the agent falls back to reading the
+  // file, which beats threading per-row status down to the context menu.
+  const handleExplainStaged = useCallback((path: string) => {
+    aiBridge?.sendMessage(t('explain.stagedFileMessage', { path }));
+  }, [aiBridge, t]);
+  const handleExplainUnstaged = useCallback((path: string) => {
+    aiBridge?.sendMessage(t('explain.unstagedFileMessage', { path }));
+  }, [aiBridge, t]);
   const addHtmlApp = useAddHtmlApp();
   const addSkill = useAddSkill();
   const { activeView, onViewChange } = useSwipeContext();
@@ -220,6 +231,14 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
     return out;
   }, [gitStatus.status]);
   const gitHistory = useGitHistory({ cwd, addToRecentFiles: fileTree.addToRecentFiles });
+
+  // Compare mode has no commit pair to name — the head side is hardcoded to
+  // HEAD server-side (branch-diff.ts). Spell the range two-dot: the route runs
+  // `git diff <base> HEAD`, so `<base>..HEAD` matches it and `<base>...HEAD`
+  // (merge-base, a real PR diff) would hand the agent a different diff.
+  const handleExplainCompare = useCallback((path: string) => {
+    aiBridge?.sendMessage(t('explain.compareFileMessage', { base: gitHistory.compareBaseBranch, path }));
+  }, [aiBridge, t, gitHistory.compareBaseBranch]);
 
   // ========== Vi Mode Callbacks ==========
   /** True when the next entry into edit mode was caused by a vi normal-mode
@@ -1465,7 +1484,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                         cwd={cwd}
                         emptyMessage={t('fileBrowser.noStagedFiles')}
                         className="py-1"
-                        onExplain={aiBridge ? handleExplainFile : undefined}
+                        onExplain={aiBridge ? handleExplainStaged : undefined}
                         explainDisabled={aiBridge?.isLoading}
                         renderActions={(node) => {
                           if (node.isDirectory) {
@@ -1536,7 +1555,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                         cwd={cwd}
                         emptyMessage={t('fileBrowser.noUnstagedChanges')}
                         className="py-1"
-                        onExplain={aiBridge ? handleExplainFile : undefined}
+                        onExplain={aiBridge ? handleExplainUnstaged : undefined}
                         explainDisabled={aiBridge?.isLoading}
                         renderActions={(node) => {
                           if (node.isDirectory) {
@@ -1646,6 +1665,8 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           }}
                           cwd={cwd}
                           showChanges={true}
+                          onExplain={aiBridge ? handleExplainCompare : undefined}
+                          explainDisabled={aiBridge?.isLoading}
                         />
                       </>
                     )}

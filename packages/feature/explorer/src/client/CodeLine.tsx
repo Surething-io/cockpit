@@ -6,6 +6,7 @@ import i18n from '@cockpit/shared-i18n';
 import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
 import type { CodeComment } from '@cockpit/feature-comments';
 import type { BlameLine } from './fileBrowser/types';
+import { getColumnFromClick, resolveTokenHover } from './tokenHover';
 
 /** Format relative time */
 function formatRelativeTime(unixTimestamp: number): string {
@@ -258,37 +259,6 @@ export interface CodeLineProps {
 }
 
 /**
- * Calculate column from click position
- * Uses caretRangeFromPoint to precisely locate the text offset at the click position,
- * then walks text nodes to accumulate the column
- */
-function getColumnFromClick(e: React.MouseEvent, codeSpan: HTMLElement): number {
-  // Use browser API to precisely get the text node and offset at the click position
-  const range = document.caretRangeFromPoint(e.clientX, e.clientY);
-  if (!range || !codeSpan.contains(range.startContainer)) {
-    return 1;
-  }
-
-  const targetNode = range.startContainer;
-  const targetOffset = range.startOffset;
-
-  // Walk all text nodes in the code line to accumulate column up to the target node
-  const walker = document.createTreeWalker(codeSpan, NodeFilter.SHOW_TEXT);
-  let column = 1;
-  let node: Text | null;
-
-  while ((node = walker.nextNode() as Text | null)) {
-    if (node === targetNode) {
-      column += targetOffset;
-      return column;
-    }
-    column += node.textContent?.length || 0;
-  }
-
-  return column;
-}
-
-/**
  * Insert vi block cursor into highlighted HTML.
  * Walk HTML text nodes, find the col-th character and wrap it with <span class="vi-char-cursor">.
  * Correctly handles HTML entities (&lt; etc.) and multi-width characters (CJK 2ch).
@@ -392,21 +362,11 @@ export const CodeLine = memo(function CodeLine({
 
   const handleCodeMouseOver = useCallback((e: React.MouseEvent<HTMLSpanElement>) => {
     if (!onTokenHover) return;
-    // Skip hover logic when mouse button is held (drag-selecting), to avoid state updates losing selection
-    if (e.buttons !== 0) return;
-    // Skip when there is a selection, to avoid interfering with selection interaction
-    const sel = window.getSelection();
-    if (sel && !sel.isCollapsed) return;
-
-    const target = e.target as HTMLElement;
-    // Only handle tokens inside span (spans with style attribute)
-    if (target.tagName !== 'SPAN' || !target.style.color) return;
-
-    const codeSpan = e.currentTarget;
-    const column = getColumnFromClick(e, codeSpan);
-    const rect = target.getBoundingClientRect();
-
-    onTokenHover(lineNum, column, { x: rect.left, y: rect.bottom + 4 });
+    // Drag-selection / existing-selection / non-token guards all live in
+    // resolveTokenHover, shared with DiffView's after-side rows.
+    const hit = resolveTokenHover(e, e.currentTarget);
+    if (!hit) return;
+    onTokenHover(lineNum, hit.column, hit.rect);
   }, [lineNum, onTokenHover]);
 
   const handleBlameClick = useCallback(() => {

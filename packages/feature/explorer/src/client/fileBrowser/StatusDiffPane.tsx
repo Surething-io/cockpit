@@ -98,6 +98,12 @@ interface StatusDiffPaneProps {
   setJsonPreview: (v: { content: string; filePath: string } | null) => void;
   jsonPreviewSearch: ReturnType<typeof useJsonSearch>;
   jsonPreviewPreRef: RefObject<HTMLPreElement | null>;
+
+  /** LSP hover wiring for the diff's after side — see DiffViewProps.
+   *  Forwarded ONLY for unstaged diffs; see `lspHoverProps` below. */
+  onTokenHover?: (line: number, column: number, rect: { x: number; y: number }) => void;
+  onTokenHoverLeave?: () => void;
+  onTokenHoverCancel?: () => void;
 }
 
 export function StatusDiffPane({
@@ -114,8 +120,19 @@ export function StatusDiffPane({
   setJsonPreview,
   jsonPreviewSearch,
   jsonPreviewPreRef,
+  onTokenHover,
+  onTokenHoverLeave,
+  onTokenHoverCancel,
 }: StatusDiffPaneProps) {
   const { t } = useTranslation();
+  // The unstaged diff's after side IS the file on disk, which is exactly
+  // what the LSP server reads — line numbers agree, so hover is safe. The
+  // staged diff's after side is the index snapshot; once the user edits
+  // the file again it stops matching disk and every hover would resolve
+  // the wrong symbol without any visible sign, so hover stays off there.
+  const lspHoverProps = selected.type === 'unstaged'
+    ? { onTokenHover, onTokenHoverLeave, onTokenHoverCancel }
+    : {};
   // HTML preview overlay — local to the status pane (not shared with the
   // history tab, unlike the lifted markdown/json state).
   const [showHtmlPreview, setShowHtmlPreview] = useState(false);
@@ -404,6 +421,7 @@ export function StatusDiffPane({
                 }
                 previewLabel={filePath.endsWith('.json') ? t('common.readable') : t('common.preview')}
                 onContentSearch={onContentSearch}
+                {...lspHoverProps}
               />
             ) : (
               <DiffView
@@ -427,6 +445,7 @@ export function StatusDiffPane({
                 }
                 previewLabel={filePath.endsWith('.json') ? t('common.readable') : t('common.preview')}
                 onContentSearch={onContentSearch}
+                {...lspHoverProps}
               />
             )}
           </div>

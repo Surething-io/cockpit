@@ -6,12 +6,20 @@
 // ============================================
 
 import { resolve } from 'path';
+import { createHash } from 'crypto';
 import type { LanguageServerAdapter, LSPServerInstance, SupportedLanguage } from './types';
 import { TSServerAdapter } from './tsserverAdapter';
 import { PyrightAdapter } from './pyrightAdapter';
 
-const GLOBAL_KEY = Symbol.for('lsp_server_registry');
-const IDLE_TIMER_KEY = Symbol.for('lsp_idle_timer');
+// The registry lives on globalThis, so it OUTLIVES a module reload — in dev
+// a hot reload swaps this file's code while keeping instances built by the
+// previous version. Any change to the `LSPServerInstance` shape must bump
+// this key, or the new code will operate on old-shaped objects and throw
+// (v1 → v2 turned `openedFiles` from a Set into a Map). Orphaned v1 servers
+// stay owned by their own registry's idle timer + exit hook, so they are
+// still reaped; they just stop receiving new requests.
+const GLOBAL_KEY = Symbol.for('lsp_server_registry_v2');
+const IDLE_TIMER_KEY = Symbol.for('lsp_idle_timer_v2');
 
 const MAX_SERVERS = 5;
 const IDLE_TIMEOUT = 5 * 60 * 1000;  // 5 minutes
@@ -168,7 +176,7 @@ export async function getOrCreateServer(language: SupportedLanguage, cwd: string
     cwd: resolvedCwd,
     adapter,
     process: childProcess,
-    openedFiles: new Set(),
+    openedFiles: new Map(),
     ready: false,
     readyPromise,
     lastUsedAt: Date.now(),
@@ -213,8 +221,25 @@ export function getServer(language: SupportedLanguage, cwd: string): LSPServerIn
   return instance;
 }
 
+/** Fingerprint of the content last handed to the server, so a re-open is
+ *  skipped only when the file genuinely hasn't moved. Callers already read
+ *  the file to get `content`, so hashing it costs nothing next to the IO. */
+function fingerprint(content: string): string {
+  return createHash('sha1').update(content).digest('hex');
+}
+
 /**
- * Ensure a file is open in the corresponding Language Server.
+ * Ensure a file is open in the corresponding Language Server, and in sync
+ * with the content the caller just read off disk.
+ *
+ * Re-open when any of these hold:
+ *   - the server has never seen this file;
+ *   - its content changed since we last synced it — the common case when
+ *     the user is actively editing the file they're hovering, which is
+ *     exactly what a diff view is showing. Skipping this reload used to
+ *     serve type info from a stale copy, with no visible sign;
+ *   - the adapter's active file moved elsewhere (tsserver tracks a single
+ *     current file and needs it re-asserted on switch back).
  */
 export async function ensureFileOpen(
   server: LSPServerInstance,
@@ -223,15 +248,11 @@ export async function ensureFileOpen(
 ): Promise<void> {
   server.lastUsedAt = Date.now();
 
-  if (!server.openedFiles.has(filePath)) {
-    // First open
-    server.openedFiles.add(filePath);
-    server.adapter.openFile(filePath, content);
-    server.lastOpenedFile = filePath;
-    return;
-  }
-  // Already opened: reload only when switching files; consecutive requests for the same file skip reload
-  if (server.lastOpenedFile !== filePath) {
+  const hash = fingerprint(content);
+  const syncedHash = server.openedFiles.get(filePath);
+
+  if (syncedHash !== hash || server.lastOpenedFile !== filePath) {
+    server.openedFiles.set(filePath, hash);
     server.adapter.openFile(filePath, content);
     server.lastOpenedFile = filePath;
   }

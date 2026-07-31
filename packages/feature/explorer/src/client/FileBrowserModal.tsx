@@ -377,6 +377,8 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
 
   // ========== LSP handlers (depend on fileTree) ==========
   const isLSPSupported = fileTree.selectedPath ? getLanguageForFile(fileTree.selectedPath) !== null : false;
+  /** Whether the visible hover card was opened from a diff surface. */
+  const [lspHoverInDiff, setLspHoverInDiff] = useState(false);
 
   const handleLSPCmdClick = useCallback(async (line: number, column: number) => {
     if (!fileTree.selectedPath || !isLSPSupported) return;
@@ -405,10 +407,26 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
     }
   }, [fileTree, cwd, isLSPSupported, lspDefinition, navHistory]);
 
+  // Shared entry point for every hover surface. `inDiff` only affects the
+  // card's action row: "find references" switches to the search tab, which
+  // would tear down the diff the user is reading, so diff-sourced cards
+  // offer just search + explain.
+  const runLSPTokenHover = useCallback((
+    path: string | null | undefined,
+    inDiff: boolean,
+    line: number,
+    column: number,
+    rect: { x: number; y: number },
+  ) => {
+    if (!path || getLanguageForFile(path) === null) return;
+    setLspHoverInDiff(inDiff);
+    lspHover.onTokenMouseEnter(path, line, column, rect);
+  }, [lspHover]);
+
   const handleLSPTokenHover = useCallback((line: number, column: number, rect: { x: number; y: number }) => {
-    if (!fileTree.selectedPath || !isLSPSupported) return;
-    lspHover.onTokenMouseEnter(fileTree.selectedPath, line, column, rect);
-  }, [fileTree.selectedPath, isLSPSupported, lspHover]);
+    if (!isLSPSupported) return;
+    runLSPTokenHover(fileTree.selectedPath, false, line, column, rect);
+  }, [fileTree.selectedPath, isLSPSupported, runLSPTokenHover]);
 
   const handleLSPReferenceSelect = useCallback((ref: Location) => {
     const cwdPrefix = cwd.endsWith('/') ? cwd : cwd + '/';
@@ -2026,6 +2044,9 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                                 enableComments={true}
                                 compact={treeDiffDensity === 'compact'}
                                 onContentSearch={handleDiffContentSearch}
+                                onTokenHover={(line, column, rect) => runLSPTokenHover(treeDiff.diff?.filePath, true, line, column, rect)}
+                                onTokenHoverLeave={lspHover.onTokenMouseLeave}
+                                onTokenHoverCancel={lspHover.clearHover}
                               />
                             ) : (
                               <DiffView
@@ -2038,6 +2059,9 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                                 enableComments={true}
                                 compact={treeDiffDensity === 'compact'}
                                 onContentSearch={handleDiffContentSearch}
+                                onTokenHover={(line, column, rect) => runLSPTokenHover(treeDiff.diff?.filePath, true, line, column, rect)}
+                                onTokenHoverLeave={lspHover.onTokenMouseLeave}
+                                onTokenHoverCancel={lspHover.clearHover}
                               />
                             )
                           ) : (
@@ -2233,6 +2257,9 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                   setJsonPreview={setJsonPreview}
                   jsonPreviewSearch={jsonPreviewSearch}
                   jsonPreviewPreRef={jsonPreviewPreRef}
+                  onTokenHover={(line, column, rect) => runLSPTokenHover(gitStatus.statusDiff?.filePath, true, line, column, rect)}
+                  onTokenHoverLeave={lspHover.onTokenMouseLeave}
+                  onTokenHoverCancel={lspHover.clearHover}
                 />
               ) : (
                 <div className="flex-1 flex items-center justify-center text-slate-9">
@@ -2444,7 +2471,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
           container={menuContainer}
           onMouseEnter={lspHover.onCardMouseEnter}
           onMouseLeave={lspHover.onCardMouseLeave}
-          onFindReferences={() => {
+          onFindReferences={lspHoverInDiff ? undefined : () => {
             const { filePath, line, column } = lspHover.hoverInfo!;
             lspHover.clearHover();
             lspReferences.findReferences(filePath, line, column);

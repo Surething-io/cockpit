@@ -55,7 +55,9 @@ export interface LSPServerInstance {
   cwd: string;               // project root directory (absolute path)
   adapter: LanguageServerAdapter;
   process: ChildProcess;
-  openedFiles: Set<string>;  // paths of files that have been opened
+  /** Opened file path → fingerprint of the content last synced to the
+   *  server. Drives re-open on disk change; see `ensureFileOpen`. */
+  openedFiles: Map<string, string>;
   lastOpenedFile?: string;   // currently active file; reloaded on switch
   ready: boolean;            // initialization complete flag
   readyPromise: Promise<void>; // resolves when initialization is complete

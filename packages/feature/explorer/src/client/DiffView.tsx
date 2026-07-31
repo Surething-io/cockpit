@@ -19,6 +19,7 @@ import { useLineHighlight } from './index';
 import { escapeHtml } from '@cockpit/shared-ui';
 import { DiffMinimap } from './index';
 import { useDiffComments } from './useDiffComments';
+import { resolveTokenHover } from './tokenHover';
 
 // computeLineDiff / DiffLine moved to @cockpit/feature-explorer; callers
 // should import them directly from there. (Previously re-exported here for
@@ -81,6 +82,49 @@ interface DiffViewProps {
    * just show "N lines hidden".
    */
   symbols?: readonly SymbolInfo[];
+  /**
+   * LSP hover on the AFTER side only. Opt-in by callback: a host passes
+   * this exactly when the after-side content is byte-identical to what's
+   * on disk right now, because the LSP server answers by reading the file
+   * from disk (`server/api/lsp/hover.ts`) — it never sees what we render.
+   *
+   * That is true for worktree diffs and nothing else. Staged diffs show
+   * the index snapshot, commit / branch diffs show git objects, and the
+   * agent's tool-call diffs show a snapshot (or, on the Edit fallback
+   * path, a bare fragment numbered 1..N). Feeding any of those line
+   * numbers to the LSP resolves a DIFFERENT symbol and reports it with
+   * full confidence — a silent wrong answer, worse than no card at all.
+   *
+   * The before side is never eligible: by definition it is content that
+   * no longer exists on disk.
+   *
+   * `line` is the new-file line number, `column` is 1-based, `rect`
+   * anchors the card under the hovered token in viewport coordinates.
+   */
+  onTokenHover?: (line: number, column: number, rect: { x: number; y: number }) => void;
+  /** Pointer left a token — hosts debounce this to let the user reach the card. */
+  onTokenHoverLeave?: () => void;
+  /** Dismiss immediately (mousedown starting a drag) with no grace period. */
+  onTokenHoverCancel?: () => void;
+}
+
+/**
+ * Build the after-side token-hover handler shared by the split and
+ * unified renderers. Returns undefined when the host didn't opt in, so
+ * the JSX can drop the listener entirely rather than attach a no-op to
+ * every virtual row.
+ */
+function useAfterSideTokenHover(
+  onTokenHover: DiffViewProps['onTokenHover'],
+) {
+  return useCallback((e: React.MouseEvent<HTMLSpanElement>, lineNum: number) => {
+    // lineNum 0 = a removed row or an alignment filler: no after-side
+    // line exists, so there is nothing the LSP could resolve.
+    if (!onTokenHover || lineNum <= 0) return;
+    const hit = resolveTokenHover(e, e.currentTarget);
+    if (!hit) return;
+    onTokenHover(lineNum, hit.column, hit.rect);
+  }, [onTokenHover]);
 }
 
 // ============================================
@@ -109,8 +153,9 @@ function formatSignature(s: SymbolInfo): string {
 // new-side rows. The hook+ToolbarRenderer combination is what keeps the
 // toolbar's show/hide isolated from DiffView's virtual list re-renders.
 
-export function DiffView({ oldContent, newContent, filePath, isNew = false, isDeleted = false, cwd, enableComments = false, onPreview, previewLabel, onContentSearch, targetLine, compact = false, symbols }: DiffViewProps) {
+export function DiffView({ oldContent, newContent, filePath, isNew = false, isDeleted = false, cwd, enableComments = false, onPreview, previewLabel, onContentSearch, targetLine, compact = false, symbols, onTokenHover, onTokenHoverLeave, onTokenHoverCancel }: DiffViewProps) {
   const { t } = useTranslation();
+  const handleTokenMouseOver = useAfterSideTokenHover(onTokenHover);
   const resolvedPreviewLabel = previewLabel ?? t('common.preview');
   const diffLines = useMemo(() => computeLineDiff(oldContent, newContent), [oldContent, newContent]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -797,6 +842,9 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
                       </span>
                       <span
                         className="whitespace-pre pl-2"
+                        onMouseOver={onTokenHover ? (e) => handleTokenMouseOver(e, lineNum) : undefined}
+                        onMouseLeave={onTokenHover ? onTokenHoverLeave : undefined}
+                        onMouseDown={onTokenHover ? onTokenHoverCancel : undefined}
                         dangerouslySetInnerHTML={{ __html: (line?.originalIdx >= 0 && highlightedLines[line.originalIdx]) || escapeHtml(line?.content || ' ') }}
                       />
                     </div>
@@ -869,8 +917,9 @@ function buildUnifiedCompactRows(diffLines: DiffLine[], expandedGaps: Set<number
   return rows;
 }
 
-export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableComments = false, onPreview, previewLabel, onContentSearch, compact = false }: Omit<DiffViewProps, 'isNew' | 'isDeleted'>) {
+export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableComments = false, onPreview, previewLabel, onContentSearch, compact = false, onTokenHover, onTokenHoverLeave, onTokenHoverCancel }: Omit<DiffViewProps, 'isNew' | 'isDeleted'>) {
   const { t } = useTranslation();
+  const handleTokenMouseOver = useAfterSideTokenHover(onTokenHover);
   const resolvedPreviewLabel = previewLabel ?? t('common.preview');
   const diffLines = useMemo(() => computeLineDiff(oldContent, newContent), [oldContent, newContent]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -1077,6 +1126,9 @@ export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableC
                   {/* Content with syntax highlighting */}
                   <span
                     className="flex-1 whitespace-pre pl-1"
+                    onMouseOver={onTokenHover ? (e) => handleTokenMouseOver(e, lineNum) : undefined}
+                    onMouseLeave={onTokenHover ? onTokenHoverLeave : undefined}
+                    onMouseDown={onTokenHover ? onTokenHoverCancel : undefined}
                     dangerouslySetInnerHTML={{ __html: highlightedLines[row.index] || escapeHtml(line.content || ' ') }}
                   />
                 </div>

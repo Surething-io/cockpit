@@ -1113,6 +1113,7 @@
     "optionA": "A",
     "optionB": "B",
     "optionC": "C",
+    "optionD": "D",
     "allRecommended": "All recommended",
     "thisOne": "This one",
     "notThis": "Not this",
@@ -1121,7 +1122,8 @@
     "example": "Give an example",
     "start": "Do it",
     "continue": "Continue",
-    "ok": "OK"
+    "ok": "OK",
+    "done": "Done"
   },
   "searchResults": {
     "title": "Search Results",

@@ -29,10 +29,10 @@ export type QuickReplyTarget = 'comment' | 'ai';
  * fragment ("All recs", "Example").
  */
 const QUICK_REPLY_ROWS: readonly (readonly string[])[] = [
-  ['quickReply.optionA', 'quickReply.optionB', 'quickReply.optionC'],
+  ['quickReply.optionA', 'quickReply.optionB', 'quickReply.optionC', 'quickReply.optionD'],
   ['quickReply.allRecommended', 'quickReply.thisOne', 'quickReply.notThis'],
   ['quickReply.why', 'quickReply.elaborate', 'quickReply.example'],
-  ['quickReply.start', 'quickReply.continue', 'quickReply.ok'],
+  ['quickReply.start', 'quickReply.continue', 'quickReply.ok', 'quickReply.done'],
 ];
 
 /** Grace period before a hover-out closes the panel. Without it the pointer

@@ -1113,6 +1113,7 @@
     "optionA": "A",
     "optionB": "B",
     "optionC": "C",
+    "optionD": "D",
     "allRecommended": "都按推荐",
     "thisOne": "就这个",
     "notThis": "不要这样",
@@ -1121,7 +1122,8 @@
     "example": "举个例子",
     "start": "开始做",
     "continue": "继续",
-    "ok": "OK"
+    "ok": "OK",
+    "done": "做完了"
   },
   "searchResults": {
     "title": "搜索结果",

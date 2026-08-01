@@ -82,17 +82,38 @@ export const POST = handler((req) =>
             if (!closed.has(sid) && !union.includes(sid)) union.push(sid)
           }
           const inSet = new Set(union)
-          const merge = <T>(a?: Record<string, T>, b?: Record<string, T>) => {
+          /**
+           * How a session was configured OUTLIVES its tab. These maps used to be pruned to the
+           * open-tab set, which made closing a tab silently reset the session: reopening it
+           * from a session list came back with the default engine / execution mode / model /
+           * toggles. Engine and deepseek's sdk-vs-builtin can be re-derived from which store
+           * holds the transcript (so that case self-corrected after a round-trip, visibly
+           * flickering); claude's pty-vs-sdk, the ollama/deepseek model and the two toggles
+           * can NOT be derived from anywhere — those were simply lost.
+           *
+           * Kept instead of pruned, and bounded by dropping the DEFAULT rather than by tab
+           * lifetime: a missing key already means "the default", so recording it buys nothing.
+           * That keeps a claude-only project's maps as empty as they are today, while the
+           * sessions that actually differ from the default — the only ones a reset would be
+           * noticeable on — are the ones that occupy a slot.
+           */
+          const carryOver = <T>(
+            a: Record<string, T> | undefined,
+            b: Record<string, T> | undefined,
+            isDefault?: (v: T) => boolean
+          ) => {
             const m: Record<string, T> = { ...(a ?? {}), ...(b ?? {}) }
-            for (const id of Object.keys(m)) if (!inSet.has(id)) delete m[id] // drop closed/orphan
+            for (const id of Object.keys(m)) {
+              if (m[id] === undefined || isDefault?.(m[id])) delete m[id]
+            }
             return m
           }
-          const engines = merge(existing.engines, body.engines)
-          const ollamaModels = merge(existing.ollamaModels, body.ollamaModels)
-          const deepseekModels = merge(existing.deepseekModels, body.deepseekModels)
-          const chatModes = merge(existing.chatModes, body.chatModes)
-          const planModes = merge<boolean>(existing.planModes, body.planModes)
-          const noHistories = merge<boolean>(existing.noHistories, body.noHistories)
+          const engines = carryOver(existing.engines, body.engines, (v) => v === "claude")
+          const ollamaModels = carryOver(existing.ollamaModels, body.ollamaModels)
+          const deepseekModels = carryOver(existing.deepseekModels, body.deepseekModels)
+          const chatModes = carryOver(existing.chatModes, body.chatModes, (v) => v === "sdk")
+          const planModes = carryOver(existing.planModes, body.planModes, (v) => !v)
+          const noHistories = carryOver(existing.noHistories, body.noHistories, (v) => !v)
           const active = body.activeSessionId ?? existing.activeSessionId
           const next: ProjectState = {
             sessions: union,

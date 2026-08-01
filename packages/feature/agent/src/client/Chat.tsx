@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { ClipboardList, Scissors } from 'lucide-react';
 import { toast } from '@cockpit/shared-ui';
+import i18n from '@cockpit/shared-i18n';
 import { useLiveStream } from './useLiveStream';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
@@ -37,6 +38,12 @@ interface ChatProps {
   initialCwd?: string;
   initialSessionId?: string;
   engine?: ChatEngine;
+  /**
+   * Backfill: fired once when this session's engine was NOT supplied by the host (a tab
+   * reopened from a session list carries no engine) and history resolved the authoritative
+   * one. Lets the host record it so the next open doesn't need the round-trip.
+   */
+  onEngineChange?: (engine: ChatEngine) => void;
   ollamaModel?: string;
   onOllamaModelChange?: (model: string) => void;
   deepseekModel?: DeepseekModel;
@@ -66,7 +73,9 @@ interface ChatProps {
     sessionId: string;
     engine?: string;
     model?: string;
+    language?: string;
     message: string;
+    taskFile?: string;
     type: 'once' | 'interval' | 'cron';
     delayMinutes?: number;
     intervalMinutes?: number;
@@ -81,7 +90,7 @@ interface ChatProps {
   onOpenSettings?: () => void; // Host-handled: open the app settings modal
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode: chatModeProp, onChatModeChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode: chatModeProp, onChatModeChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -94,7 +103,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
   // Execution mode (per-tab): controlled by TabInfo.chatMode (persisted); falls back to local state when no prop (standalone use)
   // Default 'sdk' (Claude Agent SDK) — tabs without an explicit choice run in SDK mode
   const [localChatMode, setLocalChatMode] = useState<ChatMode>('sdk');
-  const chatMode = chatModeProp ?? localChatMode;
   const setChatMode = useCallback((m: ChatMode) => {
     setLocalChatMode(m);
     onChatModeChange?.(m);
@@ -117,22 +125,10 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
     setLocalNoHistory(v);
     onNoHistoryChange?.(v);
   }, [onNoHistoryChange]);
-  const isClaudeEngine = !engine || engine === 'claude' || engine === 'claude2';
-  const isDeepseekEngine = engine === 'deepseek';
-  // DeepSeek's two modes do NOT share a transcript store (SDK → ~/.cockpit/deepseek/projects,
-  // Built-in Agent → ~/.cockpit/deepseek-sessions), so switching mid-session would leave the
-  // model blind to history the UI is still showing. The choice is therefore made while the
-  // session is empty — a fresh tab — and locked afterwards. `initialSessionId` covers a
-  // reopened session whose messages have not finished loading yet.
-  const isDeepseekBuiltin = isDeepseekEngine && chatMode === 'builtin';
-  const modeLocked = Boolean(initialSessionId) || messages.length > 0;
   // Owned by DeepseekConfigPicker (the only component that reads/writes the credential
   // endpoint); lifted here so the balance button on the execution-mode row above it can
   // gate on a live value rather than a copy that goes stale after a key is saved.
   const [deepseekHasKey, setDeepseekHasKey] = useState(false);
-  // Independent task is a Built-in Agent capability: the SDK/CLI engines resume a provider
-  // session, so dropping history there forks a new one instead of clearing context.
-  const supportsNoHistory = engine === 'ollama' || isDeepseekBuiltin;
   // PTY floating window: receives raw terminal output
   const ptyWindowRef = useRef<XtermFloatingHandle>(null);
   const handlePtyOutput = useCallback((data: string) => {
@@ -164,11 +160,83 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
     }
   }, [initialCwd, onTitleChange]);
 
-  // Reconcile-on-run-end: useChatStream is constructed before useChatHistory / liveSessionId
-  // exist, so the actual disk-reload closure is injected into this ref below (effect) and
-  // invoked via a stable thunk. Lets the originator converge its live bubbles to canonical
-  // UUIDs when a run ends — symmetric with the viewer's onComplete reconcile.
+  // Reconcile-on-run-end: `liveSessionId` is derived below useChatStream, so the actual
+  // disk-reload closure is injected into this ref by an effect further down and invoked via
+  // a stable thunk. Lets the originator converge its live bubbles to canonical UUIDs when a
+  // run ends — symmetric with the viewer's onComplete reconcile.
   const reconcileFromDiskRef = useRef<(() => void) | null>(null);
+
+  // History hook
+  // #10: whether useLiveStream is actively rendering a live run for this tab. Declared
+  // before useChatHistory so the initial history load can DEFER to the live stream — a viewer
+  // that joins mid-run (auto-created tab for a new session) must not also disk-load the
+  // in-flight turn, or it renders twice.
+  const [liveRunning, setLiveRunning] = useState(false);
+  const liveRunningRef = useRef(false);
+  useEffect(() => { liveRunningRef.current = liveRunning; }, [liveRunning]);
+
+  // History runs BEFORE the stream hook because it yields the authoritative engine + mode
+  // (see the engine resolution right below): a session reopened from a list arrives with no
+  // engine at all, and every downstream `!engine` reads as claude.
+  const {
+    isLoadingHistory,
+    isLoadingMore,
+    hasMoreHistory,
+    loadMoreHistory,
+    loadHistoryByCwdAndSessionId,
+    loadedSessionId,
+    loadedEngine,
+    loadedMode,
+  } = useChatHistory(messages, setMessages, sessionId, {
+    cwd: initialCwd,
+    initialSessionId,
+    onSessionId: setSessionId,
+    onTitleChange,
+    onTokenUsage: setHistoryTokenUsage,
+    liveRunningRef,
+  });
+
+  // Engine + execution mode of THIS session, most-trusted first:
+  //   1. what the transcript's own store PROVES (echoed by /api/session-by-path) — a file
+  //      sitting in ~/.cockpit/deepseek-sessions ran as deepseek/builtin, full stop;
+  //   2. the host's per-tab value (session.json, or handed over by the session list) — the
+  //      only source before any transcript exists, i.e. a brand-new tab;
+  //   3. the local default.
+  //
+  // The store outranks the persisted value deliberately: session.json is a UI-written cache
+  // that CAN be wrong (reopening a session used to stamp it with the default 'sdk', which is
+  // exactly the bug this ordering fixes), while the store is where the bytes physically are.
+  // Where the store cannot tell — claude sdk-vs-pty share a directory — it reports nothing
+  // and the persisted value survives untouched.
+  //
+  // Resolution must happen BEFORE any use: `undefined` means "not known yet", NOT "claude",
+  // yet every downstream check (`!engine`, the apiUrl fallback) reads the two identically.
+  const engine = loadedEngine ?? engineProp ?? undefined;
+  const chatMode = loadedMode ?? chatModeProp ?? localChatMode;
+  const isClaudeEngine = !engine || engine === 'claude' || engine === 'claude2';
+  const isDeepseekEngine = engine === 'deepseek';
+  // DeepSeek's two modes do NOT share a transcript store (SDK → ~/.cockpit/deepseek/projects,
+  // Built-in Agent → ~/.cockpit/deepseek-sessions), so switching mid-session would leave the
+  // model blind to history the UI is still showing. The choice is therefore made while the
+  // session is empty — a fresh tab — and locked afterwards. `initialSessionId` covers a
+  // reopened session whose messages have not finished loading yet.
+  const isDeepseekBuiltin = isDeepseekEngine && chatMode === 'builtin';
+  const modeLocked = Boolean(initialSessionId) || messages.length > 0;
+  // Independent task is a Built-in Agent capability: the SDK/CLI engines resume a provider
+  // session, so dropping history there forks a new one instead of clearing context.
+  const supportsNoHistory = engine === 'ollama' || isDeepseekBuiltin;
+
+  // Write what the store proved back into the host's per-tab record — repair, not just
+  // fill-in: session.json may hold no entry (a tab reopened from a session list never had
+  // one) or a WRONG one (a previous reopen stamped it with the local default). Both converge
+  // here, so the resolution above is needed only once per session. The host's updaters
+  // no-op on an unchanged value, so this settles after one pass instead of looping.
+  useEffect(() => {
+    if (loadedEngine && engineProp !== loadedEngine) onEngineChange?.(loadedEngine);
+  }, [engineProp, loadedEngine, onEngineChange]);
+  useEffect(() => {
+    if (loadedMode && chatModeProp !== loadedMode) onChatModeChange?.(loadedMode);
+  }, [chatModeProp, loadedMode, onChatModeChange]);
 
   // Stream hook
   const {
@@ -261,31 +329,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
       { permissionMode: null }
     );
   }, [handleSend, setPlanMode, t]);
-
-  // History hook
-  // #10: whether useLiveStream is actively rendering a live run for this tab. Declared
-  // before useChatHistory so the initial history load can DEFER to the live stream — a viewer
-  // that joins mid-run (auto-created tab for a new session) must not also disk-load the
-  // in-flight turn, or it renders twice.
-  const [liveRunning, setLiveRunning] = useState(false);
-  const liveRunningRef = useRef(false);
-  useEffect(() => { liveRunningRef.current = liveRunning; }, [liveRunning]);
-
-  const {
-    isLoadingHistory,
-    isLoadingMore,
-    hasMoreHistory,
-    loadMoreHistory,
-    loadHistoryByCwdAndSessionId,
-    loadedSessionId,
-  } = useChatHistory(messages, setMessages, sessionId, {
-    cwd: initialCwd,
-    initialSessionId,
-    onSessionId: setSessionId,
-    onTitleChange,
-    onTokenUsage: setHistoryTokenUsage,
-    liveRunningRef,
-  });
 
   // #10: live session sync.
   const liveSessionId = loadedSessionId || sessionId;
@@ -494,13 +537,16 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
 
   const handleCreateScheduledTask = useMemo(() => {
     if (!onCreateScheduledTask || !initialCwd || !tabId || !sessionId) return undefined;
-    return (params: { message: string; type: 'once' | 'interval' | 'cron'; delayMinutes?: number; intervalMinutes?: number; activeFrom?: string; activeTo?: string; cron?: string }) => {
+    return (params: { message: string; taskFile?: string; type: 'once' | 'interval' | 'cron'; delayMinutes?: number; intervalMinutes?: number; activeFrom?: string; activeTo?: string; cron?: string }) => {
       onCreateScheduledTask({
         ...params,
         cwd: initialCwd,
         tabId,
         sessionId,
         engine,
+        // Snapshot the UI language so a taskFile task's "read this first" line is
+        // written in the language the creator was using (buildTaskPrompt reads it).
+        language: i18n.language,
         ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
         ...(engine === 'deepseek' && deepseekModel && { model: deepseekModel }),
       });

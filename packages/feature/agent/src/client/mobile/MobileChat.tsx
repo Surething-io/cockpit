@@ -10,9 +10,9 @@ import { useChatStream } from '../useChatStream';
 import { useLiveStream } from '../useLiveStream';
 import { MessageList, type MessageListHandle } from '../MessageList';
 import { MobileChatInput } from './MobileChatInput';
-import type { ChatMessage, ChatEngine, DeepseekModel } from '../types';
+import type { ChatMessage, ChatEngine, DeepseekModel, ChatMode } from '../types';
 
-// Per-session engine + model, persisted by the desktop tab system in the
+// Per-session engine + model + execution mode, persisted by the desktop tab system in the
 // project's session.json. This is the same source useTabState resumes from —
 // the reliable way to send ollama on its original model (the transcript doesn't
 // record it, and the server otherwise falls back to a default).
@@ -20,6 +20,7 @@ interface ResolvedRun {
   engine?: ChatEngine;
   ollamaModel?: string;
   deepseekModel?: DeepseekModel;
+  chatMode?: ChatMode;
 }
 
 // Mobile chat surface for /m. Reuses the proven streaming orchestration from
@@ -59,6 +60,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
           engines?: Record<string, string>;
           ollamaModels?: Record<string, string>;
           deepseekModels?: Record<string, string>;
+          chatModes?: Record<string, string>;
         };
       },
       catch: (cause) => new AppError({ message: 'loadProjectState failed', cause }),
@@ -70,6 +72,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
           engine: d.engines?.[initialSessionId] as ChatEngine | undefined,
           ollamaModel: d.ollamaModels?.[initialSessionId],
           deepseekModel: d.deepseekModels?.[initialSessionId] as DeepseekModel | undefined,
+          chatMode: d.chatModes?.[initialSessionId] as ChatMode | undefined,
         });
       }
     });
@@ -90,6 +93,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     loadHistoryByCwdAndSessionId,
     loadedSessionId,
     loadedEngine,
+    loadedMode,
   } = useChatHistory(messages, setMessages, sessionId, {
     cwd,
     initialSessionId,
@@ -98,9 +102,13 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     liveRunningRef,
   });
 
-  // Send on the session's native engine: prefer the persisted tab engine, then
-  // the engine echoed by history. undefined → claude.
-  const engine: ChatEngine | undefined = resolved.engine ?? loadedEngine ?? undefined;
+  // Send on the session's native engine AND execution mode. Same precedence as Chat.tsx:
+  // what the transcript's store proves outranks the persisted tab value (which is a cache
+  // and can be stale/wrong); the persisted value only fills what the store can't tell.
+  // Mode matters as much as engine — a Built-in Agent session driven through the SDK loop
+  // resumes an id that loop has never written.
+  const engine: ChatEngine | undefined = loadedEngine ?? resolved.engine ?? undefined;
+  const chatMode: ChatMode = loadedMode ?? resolved.chatMode ?? 'sdk';
 
   const noop = useCallback(() => {}, []);
   // Reconcile-on-run-end (mirrors Chat.tsx): useChatStream is constructed before
@@ -117,7 +125,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     sessionId,
     cwd,
     engine,
-    chatMode: 'sdk',
+    chatMode,
     planMode: false,
     ollamaModel: resolved.ollamaModel,
     deepseekModel: resolved.deepseekModel,

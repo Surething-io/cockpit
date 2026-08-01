@@ -23,6 +23,12 @@ interface SessionInfo {
    * mid-conversation messages remain searchable.
    */
   searchText: string;
+  /**
+   * Which engine wrote this transcript, derived from the store it lives in. Display only
+   * (the badge in the session lists) — reopening a session does NOT restore its engine from
+   * here: `/api/session-by-path` re-derives it, including the sdk-vs-builtin execution mode
+   * this field deliberately does not carry, and Chat writes the answer into session.json.
+   */
   engine?: 'claude' | 'claude2' | 'ollama' | 'codex' | 'kimi' | 'deepseek';
 }
 

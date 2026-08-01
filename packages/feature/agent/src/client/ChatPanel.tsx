@@ -15,6 +15,8 @@ interface ChatPanelProps {
   cwd?: string;
   sessionId?: string;
   engine?: ChatEngine;
+  /** Backfill from the loaded transcript's store when this tab carries no engine (see ChatProps). */
+  onEngineChange?: (tabId: string, engine: ChatEngine) => void;
   ollamaModel?: string;
   onOllamaModelChange?: (tabId: string, model: string) => void;
   deepseekModel?: DeepseekModel;
@@ -50,7 +52,7 @@ interface ChatPanelProps {
   onShowFileDiff?: (toolCalls: ToolCallInfo[], cwd?: string) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode, onChatModeChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode, onChatModeChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -62,6 +64,10 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllama
   const handleTitleChange = useCallback((title: string) => {
     onStateChange(tabId, { title });
   }, [tabId, onStateChange]);
+
+  const handleEngineChange = useCallback((e: ChatEngine) => {
+    onEngineChange?.(tabId, e);
+  }, [tabId, onEngineChange]);
 
   const handleOllamaModelChange = useCallback((model: string) => {
     onOllamaModelChange?.(tabId, model);
@@ -89,6 +95,7 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, ollamaModel, onOllama
       initialCwd={cwd}
       initialSessionId={sessionId}
       engine={engine}
+      onEngineChange={handleEngineChange}
       ollamaModel={ollamaModel}
       onOllamaModelChange={handleOllamaModelChange}
       deepseekModel={deepseekModel}

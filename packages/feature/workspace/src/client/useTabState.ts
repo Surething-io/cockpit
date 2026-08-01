@@ -47,8 +47,17 @@ interface UseTabStateOptions {
 export function useTabState({ initialCwd, initialSessionId, activeView }: UseTabStateOptions) {
   // Mark whether sessions have been loaded from server
   const hasLoadedRef = useRef(false);
-  // Mark whether currently initializing (avoid triggering save during initialization)
+  // Mark whether currently initializing (avoid triggering save during initialization).
+  // Mirrored into state because the save effect must RE-RUN when initialization ends: work
+  // that resolves inside the init window (e.g. Chat backfilling a session's engine from its
+  // transcript store) changes `tabs` while saving is suppressed, and without a re-run that
+  // repair is computed and then silently dropped — nothing else touches `tabs` afterwards.
   const isInitializingRef = useRef(true);
+  const [initDone, setInitDone] = useState(false);
+  const finishInitializing = useCallback(() => {
+    isInitializingRef.current = false;
+    setInitDone(true);
+  }, []);
   const activeViewRef = useRef(activeView);
   useEffect(() => { activeViewRef.current = activeView; }, [activeView]);
   const pageVisible = usePageVisible();
@@ -125,18 +134,26 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         }
 
         if (allSessions.length > 0) {
-          const restoredTabs: TabInfo[] = allSessions.map((sessionId: string, index: number) => ({
-            id: `tab-${Date.now()}-${index}`,
-            cwd: initialCwd,
-            sessionId,
-            title: `Session ${sessionId.slice(0, 6)}...`,
-            engine: (savedEngines[sessionId] as ChatEngine) || undefined,
-            ollamaModel: savedOllamaModels[sessionId] || undefined,
-            deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || undefined,
-            chatMode: (savedChatModes[sessionId] as ChatMode) || undefined,
-            planMode: savedPlanModes[sessionId] || undefined,
-            noHistory: savedNoHistories[sessionId] || undefined,
-          }));
+          // This load is async, so a tab may already have resolved its own engine/mode from
+          // the transcript store while it was in flight (Chat's backfill). session.json is
+          // the weaker source — it holds nothing for a session that was never open as a tab —
+          // so it must not ERASE what is already known; fall back to the live tab instead.
+          const live = tabsRef.current;
+          const restoredTabs: TabInfo[] = allSessions.map((sessionId: string, index: number) => {
+            const prev = live.find((t) => t.sessionId === sessionId);
+            return {
+              id: `tab-${Date.now()}-${index}`,
+              cwd: initialCwd,
+              sessionId,
+              title: `Session ${sessionId.slice(0, 6)}...`,
+              engine: (savedEngines[sessionId] as ChatEngine) || prev?.engine || undefined,
+              ollamaModel: savedOllamaModels[sessionId] || prev?.ollamaModel || undefined,
+              deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || prev?.deepseekModel || undefined,
+              chatMode: (savedChatModes[sessionId] as ChatMode) || prev?.chatMode || undefined,
+              planMode: savedPlanModes[sessionId] ?? prev?.planMode,
+              noHistory: savedNoHistories[sessionId] ?? prev?.noHistory,
+            };
+          });
 
           // Activation priority: URL sessionId > session.json activeSessionId > first
           const activeSessionToUse = initialSessionId || savedActiveSessionId;
@@ -147,24 +164,23 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
           setTabs(restoredTabs);
           setActiveTabId(newActiveTabId);
 
-          setTimeout(() => {
-            isInitializingRef.current = false;
-          }, 0);
+          setTimeout(finishInitializing, 0);
         } else {
-          isInitializingRef.current = false;
+          finishInitializing();
         }
       } else {
         // loadProjectState failed: don't block init, keep the default tab list
-        isInitializingRef.current = false;
+        finishInitializing();
       }
     };
 
     loadSessions();
-  }, [initialCwd, initialSessionId]);
+  }, [initialCwd, initialSessionId, finishInitializing]);
 
-  // Save to server when tabs or activeTabId changes
+  // Save to server when tabs or activeTabId changes — and once more the moment
+  // initialization ends, to flush anything resolved while saving was suppressed.
   useEffect(() => {
-    if (isInitializingRef.current || !initialCwd) return;
+    if (!initDone || !initialCwd) return;
 
     const sessionIds = tabs
       .map(tab => tab.sessionId)
@@ -190,18 +206,23 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       if (tab.sessionId && tab.deepseekModel) {
         deepseekModels[tab.sessionId] = tab.deepseekModel;
       }
-      // Persist the explicit value for sessions THIS tab has open, so switching
-      // back to the default actually overrides a previously-saved non-default.
-      // The server merge is a union — an absent key keeps the old value, which
-      // made "off"/"sdk" un-persistable (toggle off → key omitted → stale value
-      // survives → re-applied on reload). Sessions open only in OTHER tabs aren't
-      // in this payload, so the union still preserves their settings.
+      // Persist the DECIDED value for sessions THIS tab has open, so switching back to the
+      // default actually overrides a previously-saved non-default. The server merge is a
+      // union — an absent key keeps the old value, which made "off"/"sdk" un-persistable
+      // (toggle off → key omitted → stale value survives → re-applied on reload). Sessions
+      // open only in OTHER tabs aren't in this payload, so the union still preserves theirs.
+      //
+      // "Decided" is the load-bearing word: `undefined` means this tab has not established
+      // the value yet (a session reopened from a list starts that way and Chat's local
+      // fallback — 'sdk', off — is NOT the tab's answer). Writing the fallback anyway is how
+      // a Built-in Agent session got downgraded to 'sdk' on disk just by being reopened,
+      // which is unrecoverable: the transcript store still says builtin, but nothing reads
+      // it back. So only explicit values are written; Chat backfills the rest from the
+      // store, at which point they become explicit and round-trip normally.
       if (tab.sessionId) {
-        // Every non-default mode must round-trip verbatim; collapsing unknown values to 'sdk'
-        // silently downgraded 'builtin' back to the Agent SDK on the next reload.
-        chatModes[tab.sessionId] = tab.chatMode === 'pty' || tab.chatMode === 'builtin' ? tab.chatMode : 'sdk';
-        planModes[tab.sessionId] = !!tab.planMode;
-        noHistories[tab.sessionId] = !!tab.noHistory;
+        if (tab.chatMode !== undefined) chatModes[tab.sessionId] = tab.chatMode;
+        if (tab.planMode !== undefined) planModes[tab.sessionId] = tab.planMode;
+        if (tab.noHistory !== undefined) noHistories[tab.sessionId] = tab.noHistory;
       }
     }
 
@@ -237,7 +258,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         Effect.catchAll(() => Effect.void)
       )
     );
-  }, [tabs, activeTabId, initialCwd]);
+  }, [tabs, activeTabId, initialCwd, initDone]);
 
   // Notify parent Workspace when switching tab (parent handles URL update)
   useEffect(() => {
@@ -325,7 +346,24 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   // - appendToEnd=true (new chats from "+" menu, opening existing sessions from sidebar):
   //   append to the end of all tabs
   // - appendToEnd=false (forked chats): insert to the right of current tab
-  const addTab = useCallback((cwd?: string, sessionId?: string, title?: string, engine?: ChatEngine, ollamaModel?: string, deepseekModel?: DeepseekModel, appendToEnd: boolean = false) => {
+  // `opts` carries the tab's identity (engine/model/mode). For an EXISTING session it must be
+  // filled from the session list — an omitted engine is not "claude", it is "unknown", and
+  // every downstream check reads the two the same way.
+  const addTab = useCallback((
+    cwd?: string,
+    sessionId?: string,
+    title?: string,
+    opts?: {
+      engine?: ChatEngine;
+      ollamaModel?: string;
+      deepseekModel?: DeepseekModel;
+      chatMode?: ChatMode;
+      planMode?: boolean;
+      noHistory?: boolean;
+      appendToEnd?: boolean;
+    }
+  ) => {
+    const { engine, ollamaModel, deepseekModel, chatMode, planMode, noHistory, appendToEnd = false } = opts ?? {};
     const newTab: TabInfo = {
       id: `tab-${Date.now()}`,
       cwd,
@@ -334,6 +372,9 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       engine,
       ollamaModel,
       deepseekModel,
+      chatMode,
+      planMode,
+      noHistory,
     };
     setTabs((prev) => {
       if (appendToEnd) {
@@ -390,40 +431,89 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     setTabs([newTab]);
   }, [initialCwd]);
 
-  // Handle sidebar session click - add new tab (appended to end)
+  // Handle sidebar session click - add new tab (appended to end).
+  //
+  // A reopened session comes back as itself from session.json — ONE source, for every entry
+  // point (session list, recent, pinned, scheduled tasks, cross-project postMessage), rather
+  // than threaded through each dialog. Two facts make this sufficient:
+  //   • The UI preferences (plan mode, independent task, models) exist nowhere else at all —
+  //     no transcript records them, so a tab created without them silently resets the user's
+  //     choice to the default.
+  //   • Engine and execution mode ARE re-derivable (from which store holds the transcript),
+  //     and Chat resolves them from there on load and writes the answer back here. So this
+  //     read is right for every session that has been opened once; for one that never has,
+  //     the tab starts engine-less for a single round-trip and Chat's backfill settles it.
+  //     Handing the same fact over a second, synchronous channel would only buy that one
+  //     window, at the cost of a second derivation to keep in sync.
+  // Fetched per open instead of reusing the snapshot loaded at mount: it is a <10ms local
+  // request, and the snapshot goes stale as soon as another browser tab edits the project.
   const handleSelectSession = useCallback((sid: string, title?: string) => {
     const existingTab = tabs.find((t) => t.sessionId === sid);
     if (existingTab) {
       setActiveTabId(existingTab.id);
-    } else {
-      addTab(initialCwd, sid, title, undefined, undefined, undefined, true);
+      return;
     }
+    if (!initialCwd) {
+      addTab(initialCwd, sid, title, { appendToEnd: true });
+      return;
+    }
+    BrowserRuntime.runPromise(
+      loadProjectState(initialCwd).pipe(Effect.catchAll(() => Effect.succeed(null)))
+    ).then((data) => {
+      // Re-check against the live tabs: the await above is long enough for a second click
+      // (or a SWITCH_SESSION for the same id) to have opened this session already.
+      const already = tabsRef.current.find((t) => t.sessionId === sid);
+      if (already) {
+        setActiveTabId(already.id);
+        return;
+      }
+      addTab(initialCwd, sid, title, {
+        engine: data?.engines?.[sid] as ChatEngine | undefined,
+        chatMode: data?.chatModes?.[sid] as ChatMode | undefined,
+        ollamaModel: data?.ollamaModels?.[sid],
+        deepseekModel: data?.deepseekModels?.[sid] as DeepseekModel | undefined,
+        planMode: data?.planModes?.[sid],
+        noHistory: data?.noHistories?.[sid],
+        appendToEnd: true,
+      });
+    });
   }, [tabs, initialCwd, addTab]);
 
   // Create new blank tab (Claude Code, appended to end)
   const handleNewTab = useCallback(() => {
-    addTab(initialCwd, undefined, undefined, undefined, undefined, undefined, true);
+    addTab(initialCwd, undefined, undefined, { appendToEnd: true });
   }, [initialCwd, addTab]);
 
   // Create new Claude 2 tab (appended to end)
   const handleNewClaude2Tab = useCallback(() => {
-    addTab(initialCwd, undefined, 'New Claude 2 Chat', 'claude2', undefined, undefined, true);
+    addTab(initialCwd, undefined, 'New Claude 2 Chat', { engine: 'claude2', appendToEnd: true });
   }, [initialCwd, addTab]);
 
   // Create new Codex tab (appended to end)
   const handleNewCodexTab = useCallback(() => {
-    addTab(initialCwd, undefined, 'New Codex Chat', 'codex', undefined, undefined, true);
+    addTab(initialCwd, undefined, 'New Codex Chat', { engine: 'codex', appendToEnd: true });
   }, [initialCwd, addTab]);
 
   // Create new Kimi tab (appended to end)
   const handleNewKimiTab = useCallback(() => {
-    addTab(initialCwd, undefined, 'New Kimi Chat', 'kimi', undefined, undefined, true);
+    addTab(initialCwd, undefined, 'New Kimi Chat', { engine: 'kimi', appendToEnd: true });
   }, [initialCwd, addTab]);
 
   // Create new Ollama tab (appended to end)
   const handleNewOllamaTab = useCallback((model?: string) => {
-    addTab(initialCwd, undefined, model ? `New Ollama (${model})` : 'New Ollama Chat', 'ollama', model, undefined, true);
+    addTab(initialCwd, undefined, model ? `New Ollama (${model})` : 'New Ollama Chat', { engine: 'ollama', ollamaModel: model, appendToEnd: true });
   }, [initialCwd, addTab]);
+
+  // Record a tab's engine. Fired by Chat's backfill when the tab was opened without one and
+  // history resolved the authoritative value — this is what stops `engines` in session.json
+  // from being a write-only-on-new-tab map that can never recover a lost entry.
+  const updateTabEngine = useCallback((tabId: string, engine: ChatEngine) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId && tab.engine !== engine ? { ...tab, engine } : tab
+      )
+    );
+  }, []);
 
   // Update Ollama model for a tab
   const updateTabOllamaModel = useCallback((tabId: string, model: string) => {
@@ -436,7 +526,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
 
   // Create new DeepSeek tab (defaults to v4-flash; picker in chat header lets user switch later) (appended to end)
   const handleNewDeepseekTab = useCallback(() => {
-    addTab(initialCwd, undefined, 'New DeepSeek Chat', 'deepseek', undefined, 'deepseek-v4-flash', true);
+    addTab(initialCwd, undefined, 'New DeepSeek Chat', { engine: 'deepseek', deepseekModel: 'deepseek-v4-flash', appendToEnd: true });
   }, [initialCwd, addTab]);
 
   // Update DeepSeek model for a tab
@@ -452,7 +542,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   const updateTabChatMode = useCallback((tabId: string, chatMode: ChatMode) => {
     setTabs((prev) =>
       prev.map((tab) =>
-        tab.id === tabId ? { ...tab, chatMode } : tab
+        tab.id === tabId && tab.chatMode !== chatMode ? { ...tab, chatMode } : tab
       )
     );
   }, []);
@@ -475,9 +565,17 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     );
   }, []);
 
-  // Open new session (for Fork, always creates a new tab)
+  // Open new session (for Fork, always creates a new tab). A fork lands in the SAME store as
+  // its source, so the new tab inherits the source tab's engine/model/mode rather than
+  // starting as "unknown" (which every downstream check would read as claude).
   const handleOpenSession = useCallback((sid: string, title?: string) => {
-    addTab(initialCwd, sid, title);
+    const source = tabsRef.current.find((t) => t.id === activeTabIdRef.current);
+    addTab(initialCwd, sid, title, {
+      engine: source?.engine,
+      ollamaModel: source?.ollamaModel,
+      deepseekModel: source?.deepseekModel,
+      chatMode: source?.chatMode,
+    });
   }, [initialCwd, addTab]);
 
   // Update tab state (loading, sessionId)
@@ -608,6 +706,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     handleNewDeepseekTab,
     handleOpenSession,
     updateTabState,
+    updateTabEngine,
     updateTabOllamaModel,
     updateTabDeepseekModel,
     updateTabChatMode,

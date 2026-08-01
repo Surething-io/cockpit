@@ -60,6 +60,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     handleNewDeepseekTab,
     handleOpenSession,
     updateTabState,
+    updateTabEngine,
     updateTabOllamaModel,
     updateTabDeepseekModel,
     updateTabChatMode,
@@ -413,6 +414,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                           cwd={tab.cwd}
                           sessionId={tab.sessionId}
                           engine={tab.engine}
+                          onEngineChange={updateTabEngine}
                           ollamaModel={tab.ollamaModel}
                           onOllamaModelChange={updateTabOllamaModel}
                           deepseekModel={tab.deepseekModel}
@@ -516,6 +518,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                     cwd={tab.cwd}
                     sessionId={tab.sessionId}
                     engine={tab.engine}
+                    onEngineChange={updateTabEngine}
                     ollamaModel={tab.ollamaModel}
                     onOllamaModelChange={updateTabOllamaModel}
                     deepseekModel={tab.deepseekModel}

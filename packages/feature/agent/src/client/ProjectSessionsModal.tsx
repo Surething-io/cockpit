@@ -22,6 +22,10 @@ interface ProjectSessionsModalProps {
   isOpen: boolean;
   onClose: () => void;
   cwd: string;
+  /**
+   * Only the id and title: the session's engine/mode/preferences are restored by the host
+   * from session.json + the transcript's store, so this list does not carry them.
+   */
   onSelectSession?: (sessionId: string, title?: string) => void;
 }
 
@@ -121,7 +125,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/50"
         onClick={onClose}
       />
 

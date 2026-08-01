@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { ChatMessage, TokenUsage, ChatEngine } from './types';
+import type { ChatMessage, TokenUsage, ChatEngine, ChatMode } from './types';
 import { mergeIncrementalMessages } from './mergeIncrementalMessages';
 import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
@@ -63,6 +63,7 @@ interface SessionPageData {
   sessionId?: string;
   title?: string;
   engine?: ChatEngine;
+  mode?: ChatMode;
   usage?: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
 }
 
@@ -106,9 +107,14 @@ interface UseChatHistoryReturn {
   // server reads the same file the client is looking at.
   loadedSessionId: string | null;
   // Authoritative engine of the loaded session, echoed by /api/session-by-path
-  // (resolved server-side by file location). Used by the mobile chat to send on
-  // the session's native engine. null until the first successful load.
+  // (resolved server-side by file location). Callers send on the session's native
+  // engine instead of the undefined-means-claude default. null until the first
+  // successful load.
   loadedEngine: ChatEngine | null;
+  // Authoritative execution mode, same source. Only set when the store proves it
+  // (deepseek sdk vs builtin); stays null for engines whose stores can't tell, so
+  // a null here must NOT be read as "sdk".
+  loadedMode: ChatMode | null;
 }
 
 // ============================================
@@ -129,8 +135,9 @@ export function useChatHistory(
   // sessionId of the file whose contents currently populate `messages`.
   // Updated whenever a load successfully returns messages.
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(null);
-  // Engine echoed by /api/session-by-path for the loaded session.
+  // Engine + execution mode echoed by /api/session-by-path for the loaded session.
   const [loadedEngine, setLoadedEngine] = useState<ChatEngine | null>(null);
+  const [loadedMode, setLoadedMode] = useState<ChatMode | null>(null);
 
   // Use ref to ensure callbacks use the latest reference
   const onTitleChangeRef = useRef(onTitleChange);
@@ -203,6 +210,9 @@ export function useChatHistory(
         }
         if (data.engine) {
           setLoadedEngine(data.engine);
+        }
+        if (data.mode) {
+          setLoadedMode(data.mode);
         }
         // Notify parent component of title change
         if (data.title) {
@@ -364,5 +374,6 @@ export function useChatHistory(
     loadHistoryByCwdAndSessionId,
     loadedSessionId,
     loadedEngine,
+    loadedMode,
   };
 }

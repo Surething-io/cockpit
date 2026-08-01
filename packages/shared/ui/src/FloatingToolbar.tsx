@@ -76,7 +76,7 @@ function QuickReplyPanel({
           {row.map((key) => (
             <button
               key={key}
-              className="px-2 py-1 text-xs whitespace-nowrap border border-border text-foreground rounded hover:bg-accent transition-colors"
+              className="px-2 py-1 text-xs whitespace-nowrap border border-border text-foreground rounded hover:border-brand hover:bg-accent transition-colors"
               onClick={() => onPick(t(key))}
             >
               {t(key)}

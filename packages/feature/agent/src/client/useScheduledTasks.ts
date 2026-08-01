@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
 import { Effect } from 'effect';
+import i18n from '@cockpit/shared-i18n';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
   loadScheduledTasks,
@@ -22,6 +23,12 @@ export interface ScheduledTask {
   message: string;
   /** Absolute path to a file describing the task; read by the agent at fire time. */
   taskFile?: string;
+  /**
+   * Server-computed: the exact prompt the dispatcher will send. For a plain task
+   * this equals `message`; for a taskFile task it is the "read this file first"
+   * instruction. Read-only — never send it back.
+   */
+  resolvedPrompt?: string;
   type: 'once' | 'interval' | 'cron';
   delayMinutes?: number;
   intervalMinutes?: number;
@@ -106,8 +113,11 @@ export function useScheduledTasks() {
 
   const createTask = useCallback(
     async (params: CreateTaskParams): Promise<ScheduledTask | null> => {
+      // Language is stamped here, not at the call sites: it decides the wording of
+      // a taskFile task's dispatched prompt, and a caller that forgot it would
+      // silently fall back to English with nothing to notice. One funnel, one place.
       const exit = await BrowserRuntime.runPromiseExit(
-        createScheduledTask<ScheduledTask>(params)
+        createScheduledTask<ScheduledTask>({ language: i18n.language, ...params })
       );
       if (exit._tag !== 'Success') return null;
       const data = exit.value;
@@ -156,7 +166,9 @@ export function useScheduledTasks() {
           'message' | 'taskFile' | 'type' | 'delayMinutes' | 'intervalMinutes' | 'activeFrom' | 'activeTo' | 'cron'
         >
       >,
-    ) => runPatch(id, 'update', fields as Record<string, unknown>),
+      // Editing re-stamps the language, so a task written before the user switched
+      // locales follows them over on the next edit instead of being frozen forever.
+    ) => runPatch(id, 'update', { ...fields, language: i18n.language } as Record<string, unknown>),
     [runPatch],
   );
 

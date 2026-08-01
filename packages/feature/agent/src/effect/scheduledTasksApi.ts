@@ -14,6 +14,7 @@ import { AppError, NotFoundError } from "@cockpit/effect-core"
 import {
   scheduledTaskManager,
   getNextCronTime,
+  buildTaskPrompt,
   type ScheduledTask,
 } from "../server/scheduledTasks"
 
@@ -38,13 +39,32 @@ export const getUnreadCountEff: Effect.Effect<number, AppError> =
   })
 
 /** Combined GET list + unread count; on failure falls back to an empty result. */
+/**
+ * Each task is returned with `resolvedPrompt` — the exact string the dispatcher
+ * will send. Computing it here rather than re-deriving it in the panel keeps the
+ * card honest by construction: a taskFile task's prompt wording lives in exactly
+ * one place (buildTaskPrompt), so changing it can't silently leave the UI
+ * advertising a message the agent never receives.
+ *
+ * Slash commands are still expanded later, at dispatch (resolveCommandPrompt) —
+ * as they always have been for typed messages too.
+ */
 export const getTasksAndUnreadEff: Effect.Effect<
-  { tasks: ReadonlyArray<ScheduledTask>; unreadCount: number },
+  {
+    tasks: ReadonlyArray<ScheduledTask & { resolvedPrompt: string }>
+    unreadCount: number
+  },
   never
 > = Effect.gen(function* () {
   const tasks = yield* getTasksEff
   const unreadCount = yield* getUnreadCountEff
-  return { tasks, unreadCount }
+  return {
+    tasks: tasks.map((task) => ({
+      ...task,
+      resolvedPrompt: buildTaskPrompt(task),
+    })),
+    unreadCount,
+  }
 }).pipe(Effect.orElseSucceed(() => ({ tasks: [], unreadCount: 0 })))
 
 // ─────────────────────────────────────────────────────────

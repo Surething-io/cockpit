@@ -1,9 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from '@cockpit/shared-ui';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
 import type { ScheduledTask } from './useScheduledTasks';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
+import { MdPreviewModal } from './MdPreviewModal';
+import { readFileForPreview } from './effect/agentClient';
 
 interface ScheduledTasksPanelProps {
   collapsed?: boolean;
@@ -56,13 +60,13 @@ function getStatusColor(task: ScheduledTask): string {
 }
 
 /**
- * What the card shows as the task's instruction. A taskFile task has no message, so
- * it renders the file's basename — the absolute path would be truncated to
- * uselessness in a three-column grid, and the full path is on the tooltip anyway.
+ * What the card shows as the task's instruction: the exact prompt that will be
+ * dispatched, so "what the card says" and "what the agent receives" cannot drift.
+ * The server computes it (buildTaskPrompt); the fallbacks cover tasks fetched
+ * before that field existed.
  */
 function getTaskSummary(task: ScheduledTask): string {
-  if (!task.taskFile) return task.message;
-  return task.taskFile.split('/').pop() || task.taskFile;
+  return task.resolvedPrompt || task.message || task.taskFile || '';
 }
 
 function getStatusText(task: ScheduledTask, t: (key: string) => string): string {
@@ -99,6 +103,9 @@ export function ScheduledTasksPanel({
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
+  // Task-file preview: the path is set on click, the content arrives async.
+  const [previewPath, setPreviewPath] = useState<string | null>(null);
+  const [previewContent, setPreviewContent] = useState<string | null>(null);
 
   const activeTasks = tasks.filter(t => !t.completed);
   const runningCount = activeTasks.filter(t => !t.paused).length;
@@ -112,18 +119,89 @@ export function ScheduledTasksPanel({
     return () => clearInterval(timer);
   }, [isOpen]);
 
-  // Close on ESC — the edit dialog sits above and handles its own ESC first
+  // Read the task file when a preview opens. The path is absolute and may sit
+  // outside any project, so this goes through /api/file rather than the
+  // cwd-relative file routes.
+  useEffect(() => {
+    if (!previewPath) return;
+    let cancelled = false;
+    // Drop any previous file's content first: the modal renders as soon as both
+    // are set, so a stale body would flash before this fetch lands.
+    setPreviewContent(null);
+    BrowserRuntime.runPromiseExit(readFileForPreview(previewPath)).then((exit) => {
+      if (cancelled) return;
+      if (exit._tag === 'Success' && exit.value.content !== undefined) {
+        setPreviewContent(exit.value.content);
+      } else {
+        // Deleted, moved, too large or binary — the same failure the dispatcher
+        // pre-checks for. Drop back to the board instead of showing an empty shell.
+        toast(t('toast.readFileFailed'), 'error');
+        setPreviewPath(null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [previewPath, t]);
+
+  const closePreview = useCallback(() => {
+    setPreviewPath(null);
+    setPreviewContent(null);
+  }, []);
+
+  /**
+   * One copy button per card, carrying whichever half of the mutually-exclusive
+   * pair the task actually uses: the absolute path for a file-backed task, the
+   * text for a typed one. Both are values the card can only ever show truncated.
+   */
+  const handleCopy = useCallback(async (task: ScheduledTask) => {
+    const isFile = !!task.taskFile;
+    try {
+      await navigator.clipboard.writeText(isFile ? task.taskFile! : task.message);
+      toast(t(isFile ? 'common.copiedPath' : 'toast.copiedMessage'), 'success');
+    } catch {
+      // Clipboard writes reject without a user gesture or on an insecure origin.
+      toast(t('common.copyFailed'), 'error');
+    }
+  }, [t]);
+
+  // Close on ESC — the edit dialog and the preview both sit above and own their
+  // own ESC, so the board must not also swallow the same keypress and close.
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !editingTask) setIsOpen(false);
+      if (e.key !== 'Escape') return;
+      if (previewPath) { closePreview(); return; }
+      if (!editingTask) setIsOpen(false);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, editingTask]);
+  }, [isOpen, editingTask, previewPath, closePreview]);
 
   const renderActions = (task: ScheduledTask) => (
     <div className="flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Preview — only a file-backed task has something to show */}
+      {task.taskFile && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setPreviewPath(task.taskFile!); }}
+          className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+          title={t('common.preview')}
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+        </button>
+      )}
+      {/* Copy — the path for a file task, the text for a typed one */}
+      <button
+        onClick={(e) => { e.stopPropagation(); handleCopy(task); }}
+        className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+        title={t(task.taskFile ? 'common.copyPath' : 'common.copy')}
+      >
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <rect x="9" y="9" width="13" height="13" rx="2" strokeWidth={2} />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+        </svg>
+      </button>
       {/* Run immediately */}
       <button
         onClick={(e) => { e.stopPropagation(); onTrigger(task.id); }}
@@ -278,7 +356,7 @@ export function ScheduledTasksPanel({
                           </div>
 
                           {/* Task message */}
-                          <div className="text-xs text-foreground line-clamp-2 mb-1" data-tooltip={task.taskFile || task.message}>
+                          <div className="text-xs text-foreground line-clamp-3 mb-1 whitespace-pre-wrap break-words" data-tooltip={getTaskSummary(task)}>
                             {getTaskSummary(task)}
                           </div>
 
@@ -326,7 +404,7 @@ export function ScheduledTasksPanel({
                               </h4>
                               {renderActions(task)}
                             </div>
-                            <div className="text-xs text-foreground line-clamp-2 mb-1" data-tooltip={task.taskFile || task.message}>
+                            <div className="text-xs text-foreground line-clamp-3 mb-1 whitespace-pre-wrap break-words" data-tooltip={getTaskSummary(task)}>
                               {getTaskSummary(task)}
                             </div>
                             <div className="text-xs text-muted-foreground truncate">
@@ -342,6 +420,20 @@ export function ScheduledTasksPanel({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Task file preview — z-[80] clears the board (z-[70]) but stays under the
+          edit dialog (z-[100]); Portal renders to <body>, so without this it
+          would land beneath the board that opened it. cwd is the file's own
+          directory, NOT task.cwd: a task file may live outside that project. */}
+      {previewPath && previewContent !== null && (
+        <MdPreviewModal
+          filePath={previewPath}
+          content={previewContent}
+          cwd={previewPath.slice(0, Math.max(0, previewPath.lastIndexOf('/')))}
+          onClose={closePreview}
+          zClassName="z-[80]"
+        />
       )}
 
       {/* Edit modal */}

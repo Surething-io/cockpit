@@ -9,6 +9,7 @@ import { isRunActive, getRunSnapshot, getRunSessionId, requestStop } from './ses
 import { dispatchChat } from './engines/orchestrator';
 import { getEngineSpec } from './engines/registry';
 import { Effect } from 'effect';
+import i18n from '@cockpit/shared-i18n';
 import { AgentError, type AgentProvider } from '@cockpit/effect-core';
 import { AppRuntime } from '@cockpit/effect-runtime/server';
 
@@ -58,15 +59,20 @@ const MAX_CONSECUTIVE_FAILURES = 3;
  * server/lib/slashCommands.ts) so the agent gets a phrasing it already handles — an
  * explicit "read this first" beats "do what X says", which models will sometimes
  * answer from the filename alone without ever opening the file.
+ *
+ * The language is taken from the task, NOT from the i18n singleton's current
+ * language: this runs on a background timer where "the current UI language" is
+ * whatever the last request happened to set, which would make one task dispatch
+ * different wording at different times. Passing `lng` explicitly reads the chosen
+ * bundle without mutating the singleton.
  */
 export function buildTaskPrompt(
   task: Pick<ScheduledTask, 'message' | 'taskFile' | 'language'>,
 ): string {
   if (!task.taskFile) return task.message;
-  const header =
-    task.language === 'zh'
-      ? '请先读取以下任务文件，再据此执行：'
-      : 'Read this task file first, then act accordingly:';
+  const header = i18n.t('scheduledTasks.taskFilePromptHeader', {
+    lng: task.language || 'en',
+  });
   return `${header}\n- ${task.taskFile}`;
 }
 

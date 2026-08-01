@@ -3,7 +3,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { ClipboardList, Scissors } from 'lucide-react';
 import { toast } from '@cockpit/shared-ui';
-import i18n from '@cockpit/shared-i18n';
 import { useLiveStream } from './useLiveStream';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
@@ -544,9 +543,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
         tabId,
         sessionId,
         engine,
-        // Snapshot the UI language so a taskFile task's "read this first" line is
-        // written in the language the creator was using (buildTaskPrompt reads it).
-        language: i18n.language,
         ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
         ...(engine === 'deepseek' && deepseekModel && { model: deepseekModel }),
       });

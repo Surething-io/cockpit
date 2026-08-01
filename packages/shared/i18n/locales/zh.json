@@ -1109,6 +1109,20 @@
     "sendToAI": "发送 AI",
     "search": "搜索"
   },
+  "quickReply": {
+    "optionA": "A",
+    "optionB": "B",
+    "optionC": "C",
+    "allRecommended": "都按推荐",
+    "thisOne": "就这个",
+    "notThis": "不要这样",
+    "why": "为什么",
+    "elaborate": "展开说",
+    "example": "举个例子",
+    "start": "开始做",
+    "continue": "继续",
+    "ok": "OK"
+  },
   "searchResults": {
     "title": "搜索结果",
     "nMatches": "({{count}} 处匹配)",

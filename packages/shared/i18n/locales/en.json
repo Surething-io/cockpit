@@ -1109,6 +1109,20 @@
     "sendToAI": "Send to AI",
     "search": "Search"
   },
+  "quickReply": {
+    "optionA": "A",
+    "optionB": "B",
+    "optionC": "C",
+    "allRecommended": "All recommended",
+    "thisOne": "This one",
+    "notThis": "Not this",
+    "why": "Why?",
+    "elaborate": "Say more",
+    "example": "Give an example",
+    "start": "Do it",
+    "continue": "Continue",
+    "ok": "OK"
+  },
   "searchResults": {
     "title": "Search Results",
     "nMatches": "({{count}} matches)",

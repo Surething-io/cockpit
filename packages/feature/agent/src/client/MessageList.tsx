@@ -13,7 +13,7 @@ import { MessageBubble } from './MessageBubble';
 import { useChatSearch } from './useChatSearch';
 import { useComments } from '@cockpit/feature-comments';
 import { fetchAllCommentsWithCode, buildAIMessage, clearAllComments, sendReferenceToAI, CHAT_COMMENT_FILE, type CodeReference } from '@cockpit/feature-comments';
-import { ToolbarRenderer, ToolbarData } from '@cockpit/shared-ui';
+import { ToolbarRenderer, ToolbarData, type QuickReplyTarget } from '@cockpit/shared-ui';
 import { AddCommentInput, SendToAIInput } from '@cockpit/shared-ui';
 import { useTranslation } from 'react-i18next';
 
@@ -211,6 +211,29 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       console.error('Failed to send to AI:', err);
     }
   }, [chatCtx, cwd, refreshComments]);
+
+  // Quick reply — the canned-phrase shortcut past both cards' text input.
+  // The two targets diverge on purpose:
+  //   comment → parks the phrase on the comment stack, sends nothing
+  //   ai      → ships the whole stack (this selection included) and, as that
+  //             path always has, clears it once it has been handed over
+  // Note this is the one one-click action that DOES go through
+  // sendSelectionToAI. `handleExplain` above avoids it precisely to keep the
+  // stack intact; here shipping the accumulated comments is the entire point,
+  // which is what makes "annotate A, B, C, then send once" work.
+  const handleQuickReply = useCallback((target: QuickReplyTarget, text: string) => {
+    const tb = floatingToolbarRef.current;
+    if (!tb) return;
+    const selected = tb.selectedText;
+    floatingToolbarRef.current = null;
+    bumpToolbarRef.current();
+    window.getSelection()?.removeAllRanges();
+    if (target === 'comment') {
+      void addComment(0, 0, text, selected);
+    } else {
+      void sendSelectionToAI(selected, text);
+    }
+  }, [addComment, sendSelectionToAI]);
 
   // Both cards close themselves on submit — deliberately NO trailing state
   // reset after the async send (a late set(null) could clobber a card the
@@ -535,6 +558,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
           onSendToAI={handleSendToAI}
           onSearch={onContentSearch ? handleSearch : undefined}
           onExplain={chatCtx ? handleExplain : undefined}
+          onQuickReply={handleQuickReply}
           isChatLoading={chatCtx?.isLoading}
         />
       )}

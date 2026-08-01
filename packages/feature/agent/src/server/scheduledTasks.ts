@@ -23,7 +23,9 @@ export interface ScheduledTask {
   sessionId: string;       // chat session id
   engine?: string;         // ChatEngine at creation; absent = 'claude' (pre-persistence tasks)
   model?: string;          // ollama/deepseek: model name snapshot at creation
-  message: string;
+  language?: string;       // UI language snapshot at creation; picks the taskFile prompt wording
+  message: string;         // mutually exclusive with taskFile — exactly one is set
+  taskFile?: string;       // absolute path to a file describing the task; referenced, never inlined
   type: 'once' | 'interval' | 'cron';
   delayMinutes?: number;   // type=once
   intervalMinutes?: number; // type=interval
@@ -43,6 +45,30 @@ export interface ScheduledTask {
 
 /** Recurring tasks auto-pause after this many consecutive failures (circuit breaker). */
 const MAX_CONSECUTIVE_FAILURES = 3;
+
+/**
+ * The prompt a task actually dispatches.
+ *
+ * A taskFile task REFERENCES the file and lets the agent read it — the content is
+ * never inlined. That is the whole point of the field: edits to the file take effect
+ * on the next fire instead of being frozen at creation time, and the stored task stays
+ * small no matter how long the document grows.
+ *
+ * The wording mirrors resolveCommandPrompt's skill reference list (see
+ * server/lib/slashCommands.ts) so the agent gets a phrasing it already handles — an
+ * explicit "read this first" beats "do what X says", which models will sometimes
+ * answer from the filename alone without ever opening the file.
+ */
+export function buildTaskPrompt(
+  task: Pick<ScheduledTask, 'message' | 'taskFile' | 'language'>,
+): string {
+  if (!task.taskFile) return task.message;
+  const header =
+    task.language === 'zh'
+      ? '请先读取以下任务文件，再据此执行：'
+      : 'Read this task file first, then act accordingly:';
+  return `${header}\n- ${task.taskFile}`;
+}
 
 // ============================================
 // Cron Parser (minimal, supports: min hour dom month dow)
@@ -144,7 +170,7 @@ const dispatchEngineMessageEff = (
       // instance. The run registers in sessionRunHub and streams to viewers via
       // /ws/session-stream exactly like an interactive request.
       const outcome = await dispatchChat(spec, {
-        prompt: task.message,
+        prompt: buildTaskPrompt(task),
         // Omit sessionId to start a brand-new session when the resume target is gone;
         // the engine generates a fresh id (captured below via getRunSessionId).
         ...(startFresh ? {} : { sessionId: task.sessionId }),
@@ -244,6 +270,20 @@ export const sendChatMessageEff = (task: ScheduledTask): Effect.Effect<boolean, 
           provider: 'claude',
           kind: 'unsupported-engine',
           cause: new Error(`scheduled tasks not supported for engine '${engine}' (task ${task.id})`),
+        }),
+      );
+    }
+
+    // Pre-flight the taskFile. Dispatching a reference to a file that no longer exists
+    // burns a full turn and — worse — the agent replies normally ("that file is missing"),
+    // so the run reports SUCCESS and the task shows green in the panel. Failing here is
+    // what makes a moved/deleted task file visible as a red task.
+    if (task.taskFile && !existsSync(task.taskFile)) {
+      return yield* Effect.fail(
+        new AgentError({
+          provider: (engine === 'claude2' ? 'claude' : engine) as AgentProvider,
+          kind: 'unknown',
+          cause: new Error(`task file not found: ${task.taskFile} (task ${task.id})`),
         }),
       );
     }

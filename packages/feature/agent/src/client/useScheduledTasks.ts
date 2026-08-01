@@ -17,7 +17,11 @@ export interface ScheduledTask {
   sessionId: string;
   engine?: string;
   model?: string;
+  language?: string;
+  /** Mutually exclusive with taskFile — exactly one carries the instruction. */
   message: string;
+  /** Absolute path to a file describing the task; read by the agent at fire time. */
+  taskFile?: string;
   type: 'once' | 'interval' | 'cron';
   delayMinutes?: number;
   intervalMinutes?: number;
@@ -40,7 +44,9 @@ interface CreateTaskParams {
   sessionId: string;
   engine?: string;
   model?: string;
+  language?: string;
   message: string;
+  taskFile?: string;
   type: 'once' | 'interval' | 'cron';
   delayMinutes?: number;
   intervalMinutes?: number;
@@ -147,7 +153,7 @@ export function useScheduledTasks() {
       fields: Partial<
         Pick<
           ScheduledTask,
-          'message' | 'type' | 'delayMinutes' | 'intervalMinutes' | 'activeFrom' | 'activeTo' | 'cron'
+          'message' | 'taskFile' | 'type' | 'delayMinutes' | 'intervalMinutes' | 'activeFrom' | 'activeTo' | 'cron'
         >
       >,
     ) => runPatch(id, 'update', fields as Record<string, unknown>),

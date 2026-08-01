@@ -237,6 +237,21 @@ export const dispatchPatchEff = (
   if (action === "update" && fields) {
     const now = Date.now()
     const updatedFields: Record<string, unknown> = { ...fields }
+    // message and taskFile are mutually exclusive. updateTask merges fields onto the
+    // stored task, so switching a task from one mode to the other has to blank the
+    // other field explicitly — otherwise the old value survives and buildTaskPrompt,
+    // which prefers taskFile, would keep dispatching a file the user just replaced
+    // with a typed message.
+    if ("taskFile" in fields || "message" in fields) {
+      const file =
+        typeof fields.taskFile === "string" ? fields.taskFile.trim() : ""
+      updatedFields.taskFile = file || undefined
+      updatedFields.message = file
+        ? ""
+        : typeof fields.message === "string"
+          ? fields.message.trim()
+          : ""
+    }
     if (fields.type === "once" && fields.delayMinutes) {
       updatedFields.nextFireTime =
         now + (fields.delayMinutes as number) * 60000

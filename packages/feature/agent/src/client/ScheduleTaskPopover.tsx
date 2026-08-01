@@ -99,7 +99,9 @@ function describeCron(expr: string): string | null {
 }
 
 interface TaskParams {
+  /** Mutually exclusive with taskFile; the unused one is sent empty so the server clears it. */
   message: string;
+  taskFile?: string;
   type: 'once' | 'interval' | 'cron';
   delayMinutes?: number;
   intervalMinutes?: number;
@@ -115,6 +117,7 @@ interface ScheduleTaskPopoverProps {
   editTask?: {
     id: string;
     message: string;
+    taskFile?: string;
     type: 'once' | 'interval' | 'cron';
     delayMinutes?: number;
     intervalMinutes?: number;
@@ -154,6 +157,11 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
   const isEdit = !!editTask;
   const [type, setType] = useState<TaskType>(editTask?.type || 'once');
   const [message, setMessage] = useState(editTask?.message || '');
+  // Source mode is mutually exclusive: type a message, or point at a file the agent
+  // reads at fire time. Both values are kept in state while the dialog is open so
+  // toggling back and forth doesn't lose what was already typed.
+  const [source, setSource] = useState<'message' | 'file'>(editTask?.taskFile ? 'file' : 'message');
+  const [taskFile, setTaskFile] = useState(editTask?.taskFile || '');
   const [customMinutes, setCustomMinutes] = useState(
     editTask ? String(editTask.delayMinutes || editTask.intervalMinutes || '') : ''
   );
@@ -182,19 +190,26 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
   }, [onClose]);
 
   const handleSubmit = useCallback(() => {
-    if (!message.trim()) return;
+    // Send both keys every time, one of them empty: the server treats a blank as
+    // "clear this", which is how switching an existing task between the two modes
+    // drops the value it used to run on.
+    const isFile = source === 'file';
+    const sourceFields = isFile
+      ? { message: '', taskFile: taskFile.trim() }
+      : { message: message.trim(), taskFile: '' };
+    if (isFile ? !sourceFields.taskFile : !sourceFields.message) return;
 
     let params: TaskParams | null = null;
 
     if (type === 'once') {
       const minutes = selectedPreset as number || parseInt(customMinutes, 10);
       if (!minutes || minutes <= 0) return;
-      params = { message: message.trim(), type: 'once', delayMinutes: minutes };
+      params = { ...sourceFields, type: 'once', delayMinutes: minutes };
     } else if (type === 'interval') {
       const minutes = selectedPreset as number || parseInt(customMinutes, 10);
       if (!minutes || minutes <= 0) return;
       params = {
-        message: message.trim(),
+        ...sourceFields,
         type: 'interval',
         intervalMinutes: minutes,
         ...(useTimeRange ? { activeFrom, activeTo } : {}),
@@ -202,7 +217,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
     } else if (type === 'cron') {
       const cron = (selectedPreset as string) || customCron.trim();
       if (!cron) return;
-      params = { message: message.trim(), type: 'cron', cron };
+      params = { ...sourceFields, type: 'cron', cron };
     }
 
     if (!params) return;
@@ -214,7 +229,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
     }
 
     onClose();
-  }, [message, type, selectedPreset, customMinutes, customCron, useTimeRange, activeFrom, activeTo, onCreate, onClose, isEdit, editTask, onUpdate]);
+  }, [message, source, taskFile, type, selectedPreset, customMinutes, customCron, useTimeRange, activeFrom, activeTo, onCreate, onClose, isEdit, editTask, onUpdate]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -225,7 +240,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
   };
 
   const isValid = () => {
-    if (!message.trim()) return false;
+    if (source === 'file' ? !taskFile.trim() : !message.trim()) return false;
     if (type === 'once' || type === 'interval') {
       return !!(selectedPreset || (customMinutes && parseInt(customMinutes, 10) > 0));
     }
@@ -246,17 +261,44 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
       </div>
 
       <div className="p-4 space-y-4 max-h-[min(52rem,calc(100vh-3rem))] overflow-y-auto">
-        {/* Message content */}
+        {/* Task source — message or file, never both */}
         <div>
-          <label className="text-xs text-muted-foreground mb-1 block">{t('scheduledTasks.sendMessage')}</label>
-          <textarea
-            ref={messageRef}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder={t('scheduledTasks.messagePlaceholder')}
-            rows={5}
-            className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y min-h-[6rem]"
-          />
+          <div className="flex gap-1 mb-1.5">
+            {(['message', 'file'] as const).map((src) => (
+              <button
+                key={src}
+                onClick={() => setSource(src)}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  source === src
+                    ? 'bg-brand text-white'
+                    : 'bg-muted text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {src === 'message' ? t('scheduledTasks.sendMessage') : t('scheduledTasks.taskFile')}
+              </button>
+            ))}
+          </div>
+          {source === 'message' ? (
+            <textarea
+              ref={messageRef}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder={t('scheduledTasks.messagePlaceholder')}
+              rows={5}
+              className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y min-h-[6rem]"
+            />
+          ) : (
+            <>
+              <input
+                type="text"
+                value={taskFile}
+                onChange={(e) => setTaskFile(e.target.value)}
+                placeholder={t('scheduledTasks.taskFilePlaceholder')}
+                className="w-full px-2 py-1.5 text-sm font-mono border border-border rounded bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <p className="text-xs text-muted-foreground mt-1">{t('scheduledTasks.taskFileHint')}</p>
+            </>
+          )}
         </div>
 
         {/* Type selection */}

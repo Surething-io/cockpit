@@ -28,6 +28,9 @@ interface DeepseekBalanceButtonProps {
 
 const CURRENCY_SYMBOLS: Record<string, string> = { CNY: '¥', USD: '$' };
 
+/** DeepSeek's console page for usage + top-up — everything /user/balance does not report. */
+const USAGE_URL = 'https://platform.deepseek.com/usage';
+
 /** "110.00" + CNY → "¥110.00". Unknown currencies keep their code as the prefix. */
 const formatBalance = (info: DeepseekBalanceInfo): string =>
   info.balances
@@ -92,6 +95,23 @@ export function DeepseekBalanceButton({ hasKey }: DeepseekBalanceButtonProps) {
       >
         {t('chat.checkBalance', { defaultValue: 'Check balance' })}
       </button>
+      {/* Escape hatch to the console (usage breakdown, top-up). Always available — unlike the
+          button it needs no key, and a user with no balance is exactly who needs this link.
+          `target="_blank"` matters here beyond convention: navigating in place would take the
+          whole Cockpit window with it. */}
+      <a
+        href={USAGE_URL}
+        target="_blank"
+        rel="noopener"
+        data-testid="deepseek-usage-link"
+        title={t('chat.openUsagePage', { defaultValue: 'Open DeepSeek usage console' })}
+        aria-label={t('chat.openUsagePage', { defaultValue: 'Open DeepSeek usage console' })}
+        className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+        </svg>
+      </a>
     </div>
   );
 }

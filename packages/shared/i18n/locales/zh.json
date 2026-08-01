@@ -474,6 +474,7 @@
     "balanceNeedsKey": "请先配置 DeepSeek API Key",
     "balanceUnavailable": "账户当前不可用",
     "balanceEmpty": "接口未返回余额",
+    "openUsagePage": "打开 DeepSeek 用量控制台",
     "ptyModeHint": "订阅计费模式：用交互式 claude CLI 驱动",
     "planMode": "计划模式",
     "planModeDesc": "只读·先出计划不改代码",

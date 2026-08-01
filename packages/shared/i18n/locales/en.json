@@ -474,6 +474,7 @@
     "balanceNeedsKey": "Set a DeepSeek API key first",
     "balanceUnavailable": "Account is not available for requests",
     "balanceEmpty": "No balance returned",
+    "openUsagePage": "Open DeepSeek usage console",
     "ptyModeHint": "Subscription billing mode: uses interactive claude CLI",
     "planMode": "Plan mode",
     "planModeDesc": "read-only · plan first, no edits",

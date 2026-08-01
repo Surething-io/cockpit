@@ -26,6 +26,7 @@ import type { ChatMessage, TokenUsage, ImageInfo, ChatEngine, DeepseekModel, Cha
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { OllamaModelPicker } from './OllamaModelPicker';
 import { DeepseekConfigPicker } from './DeepseekConfigPicker';
+import { DeepseekBalanceButton } from './DeepseekBalanceButton';
 import { CommentsListModal } from '@cockpit/feature-comments';
 import { useTranslation } from 'react-i18next';
 
@@ -107,9 +108,9 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
     setLocalPlanMode(p);
     onPlanModeChange?.(p);
   }, [onPlanModeChange]);
-  // Independent-task mode (per-tab, ollama only): each user message is sent with no prior
-  // history, so the model treats every turn as a standalone task. Same controlled-with-local-
-  // fallback shape as planMode above; persisted via TabInfo.noHistory.
+  // Independent-task mode (per-tab, Built-in Agent only): each user message is sent with no
+  // prior history, so the model treats every turn as a standalone task. Same controlled-with-
+  // local-fallback shape as planMode above; persisted via TabInfo.noHistory.
   const [localNoHistory, setLocalNoHistory] = useState(false);
   const noHistory = noHistoryProp ?? localNoHistory;
   const setNoHistory = useCallback((v: boolean) => {
@@ -117,6 +118,21 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
     onNoHistoryChange?.(v);
   }, [onNoHistoryChange]);
   const isClaudeEngine = !engine || engine === 'claude' || engine === 'claude2';
+  const isDeepseekEngine = engine === 'deepseek';
+  // DeepSeek's two modes do NOT share a transcript store (SDK → ~/.cockpit/deepseek/projects,
+  // Built-in Agent → ~/.cockpit/deepseek-sessions), so switching mid-session would leave the
+  // model blind to history the UI is still showing. The choice is therefore made while the
+  // session is empty — a fresh tab — and locked afterwards. `initialSessionId` covers a
+  // reopened session whose messages have not finished loading yet.
+  const isDeepseekBuiltin = isDeepseekEngine && chatMode === 'builtin';
+  const modeLocked = Boolean(initialSessionId) || messages.length > 0;
+  // Owned by DeepseekConfigPicker (the only component that reads/writes the credential
+  // endpoint); lifted here so the balance button on the execution-mode row above it can
+  // gate on a live value rather than a copy that goes stale after a key is saved.
+  const [deepseekHasKey, setDeepseekHasKey] = useState(false);
+  // Independent task is a Built-in Agent capability: the SDK/CLI engines resume a provider
+  // session, so dropping history there forks a new one instead of clearing context.
+  const supportsNoHistory = engine === 'ollama' || isDeepseekBuiltin;
   // PTY floating window: receives raw terminal output
   const ptyWindowRef = useRef<XtermFloatingHandle>(null);
   const handlePtyOutput = useCallback((data: string) => {
@@ -491,6 +507,30 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
     };
   }, [onCreateScheduledTask, initialCwd, tabId, sessionId, engine, ollamaModel, deepseekModel]);
 
+  /* Independent task (Built-in Agent only): each message is sent WITHOUT the prior turns.
+     Stays on until unchecked — it's a session-level mode, not a one-shot. The transcript keeps
+     recording, so the history above is unaffected. Rendered in whichever engine's option row is
+     visible (ollama / deepseek-builtin), hence a shared node rather than two copies. */
+  const independentTaskToggle = supportsNoHistory ? (
+    <label
+      className="flex items-center gap-1.5 ml-2 pl-3 border-l border-border text-xs cursor-pointer select-none"
+      title={t('chat.noHistoryHint', { defaultValue: 'Independent task: each message is sent to the model on its own, with no prior conversation. The transcript above still records everything.' })}
+    >
+      <input
+        type="checkbox"
+        data-testid="nohistory-toggle"
+        checked={noHistory}
+        onChange={(e) => setNoHistory(e.target.checked)}
+        className="accent-brand"
+      />
+      <span className="flex items-center gap-1 text-foreground">
+        <Scissors className="w-3.5 h-3.5" />
+        {t('chat.noHistory', { defaultValue: 'Independent task' })}
+      </span>
+      <span className="text-muted-foreground">{t('chat.noHistoryDesc', { defaultValue: 'no history sent' })}</span>
+    </label>
+  ) : null;
+
   return (
     <div className={`flex ${hideHeader && hideSidebar ? 'h-full' : 'h-screen'} bg-card`}>
       {/* Main Content */}
@@ -511,6 +551,43 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
             onOpenSessionBrowser={onOpenSessionBrowser}
             onOpenSettings={onOpenSettings}
           />
+        )}
+
+        {/* Execution mode (deepseek): Claude Agent SDK ↔ Built-in Agent (our own loop, engines/builtinAgent).
+            Locked once the session has messages — the two modes keep separate transcript stores, so the
+            choice belongs to a fresh tab. See `modeLocked` above. */}
+        {isDeepseekEngine && (
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card/50">
+            <span className="text-xs text-muted-foreground">{t('chat.executionMode', { defaultValue: 'Execution mode' })}</span>
+            <div className="inline-flex rounded-md border border-border overflow-hidden text-xs" role="group" data-testid="deepseek-mode-toggle">
+              <button
+                type="button"
+                data-testid="deepseek-mode-sdk"
+                disabled={modeLocked}
+                onClick={() => setChatMode('sdk')}
+                className={`px-2 py-0.5 ${chatMode !== 'builtin' ? 'bg-brand text-white' : 'bg-transparent text-muted-foreground hover:bg-accent'} ${modeLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
+              >
+                Claude Agent SDK
+              </button>
+              <button
+                type="button"
+                data-testid="deepseek-mode-builtin"
+                disabled={modeLocked}
+                onClick={() => setChatMode('builtin')}
+                className={`px-2 py-0.5 ${chatMode === 'builtin' ? 'bg-brand text-white' : 'bg-transparent text-muted-foreground hover:bg-accent'} ${modeLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
+                title={t('chat.builtinModeHint', { defaultValue: "Cockpit's own agent loop, talking to DeepSeek's OpenAI-compatible endpoint" })}
+              >
+                Built-in Agent
+              </button>
+            </div>
+            {modeLocked && (
+              <span className="text-xs text-muted-foreground">
+                {t('chat.modeLockedHint', { defaultValue: 'Locked for this session — open a new tab to switch' })}
+              </span>
+            )}
+            {/* Right-aligned: balance belongs to the key, not to the mode toggle it sits next to. */}
+            <DeepseekBalanceButton hasKey={deepseekHasKey} />
+          </div>
         )}
 
         {/* Execution mode (claude/claude2 only): SDK ↔ PTY (subscription billing). Switchable dynamically at any time.
@@ -569,33 +646,22 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine, ollamaModel,
             {onOllamaModelChange && (
               <OllamaModelPicker currentModel={ollamaModel} onModelChange={onOllamaModelChange} />
             )}
-            {/* Independent task (ollama only): each message is sent WITHOUT the prior turns.
-                Stays on until unchecked — it's a session-level mode, not a one-shot. The
-                transcript keeps recording, so the history above is unaffected. */}
-            <label
-              className="flex items-center gap-1.5 ml-2 pl-3 border-l border-border text-xs cursor-pointer select-none"
-              title={t('chat.noHistoryHint', { defaultValue: 'Independent task: each message is sent to the model on its own, with no prior conversation. The transcript above still records everything.' })}
-            >
-              <input
-                type="checkbox"
-                data-testid="nohistory-toggle"
-                checked={noHistory}
-                onChange={(e) => setNoHistory(e.target.checked)}
-                className="accent-brand"
-              />
-              <span className="flex items-center gap-1 text-foreground">
-                <Scissors className="w-3.5 h-3.5" />
-                {t('chat.noHistory', { defaultValue: 'Independent task' })}
-              </span>
-              <span className="text-muted-foreground">{t('chat.noHistoryDesc', { defaultValue: 'no history sent' })}</span>
-            </label>
+            {independentTaskToggle}
           </div>
         )}
 
-        {/* DeepSeek API key + model picker */}
-        {engine === 'deepseek' && onDeepseekModelChange && (
+        {/* DeepSeek API key + model picker (+ independent task in Built-in Agent mode).
+            The picker's model list and the settings key it persists to both follow the
+            mode — the two endpoints expose different model ids. */}
+        {isDeepseekEngine && onDeepseekModelChange && (
           <div className="flex items-center px-3 py-1.5 border-b border-border bg-card/50">
-            <DeepseekConfigPicker currentModel={deepseekModel} onModelChange={onDeepseekModelChange} />
+            <DeepseekConfigPicker
+              currentModel={deepseekModel}
+              onModelChange={onDeepseekModelChange}
+              builtin={isDeepseekBuiltin}
+              onHasKeyChange={setDeepseekHasKey}
+            />
+            {independentTaskToggle}
           </div>
         )}
 

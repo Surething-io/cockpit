@@ -87,6 +87,38 @@ export const saveDeepseekApiKey = (
   httpPutJson<DeepseekCredentialsInfo>("/api/deepseek/credentials", { apiKey })
 
 // ─────────────────────────────────────────────────────────
+// /api/deepseek/models — model ids from DeepSeek's OpenAI-compatible /v1/models,
+// for Built-in Agent mode. Live rather than hardcoded: DeepSeek's lineup changes
+// without a cockpit release. Requires a saved API key.
+// ─────────────────────────────────────────────────────────
+
+export const loadDeepseekModels = (): Effect.Effect<
+  { models: string[] },
+  AppError
+> => httpJson<{ models: string[] }>("/api/deepseek/models")
+
+// ─────────────────────────────────────────────────────────
+// /api/deepseek/balance — account balance, server-proxied (the raw key never
+// reaches the browser). `isAvailable: false` is a successful response describing
+// an unusable account, not a failure. `balances` can hold more than one currency.
+// ─────────────────────────────────────────────────────────
+
+export interface DeepseekBalanceEntry {
+  currency: string
+  totalBalance: string
+}
+
+export interface DeepseekBalanceInfo {
+  isAvailable: boolean
+  balances: DeepseekBalanceEntry[]
+}
+
+export const loadDeepseekBalance = (): Effect.Effect<
+  DeepseekBalanceInfo,
+  AppError
+> => httpJson<DeepseekBalanceInfo>("/api/deepseek/balance")
+
+// ─────────────────────────────────────────────────────────
 // /api/ollama/config — Ollama connection config (baseUrl + apiKey), stored
 // outside settings.json. GET returns the effective config (resolved values,
 // masked key, per-field source); PUT { baseUrl?, apiKey? } merges — '' clears a

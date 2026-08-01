@@ -18,16 +18,20 @@ export interface DispatchParams {
   language?: string;
   engine?: string;
   model?: string;
-  // claude-only (other runners ignore)
+  // Execution mode. 'pty' → Claude Code CLI (claude/claude2 only); 'builtin' → the Built-in
+  // Agent loop (deepseek only); absent/anything else → the vendor SDK loop. Runners that
+  // support only one mode ignore this.
   mode?: string;
+  // claude-only (other runners ignore)
   permissionMode?: string;
   ptyCols?: number;
   ptyRows?: number;
-  // ollama-only (other runners ignore): send ONLY this turn to the model, no prior messages.
-  // Turns each user message into an independent task. The transcript is still read/written,
-  // so the UI history stays continuous — this only affects what is put in the prompt.
-  // Not portable to the SDK/CLI engines: their history IS the provider session, so skipping
-  // it there means starting a new session (see engines/claude.ts, codex.ts, kimi.ts).
+  // Built-in Agent only (ollama, deepseek in mode:'builtin'): send ONLY this turn to the
+  // model, no prior messages. Turns each user message into an independent task. The
+  // transcript is still read/written, so the UI history stays continuous — this only affects
+  // what is put in the prompt. Not portable to the SDK/CLI engines: their history IS the
+  // provider session, so skipping it there means starting a new session (see engines/claude.ts,
+  // codex.ts, kimi.ts, and deepseek.ts in SDK mode).
   noHistory?: boolean;
 }
 

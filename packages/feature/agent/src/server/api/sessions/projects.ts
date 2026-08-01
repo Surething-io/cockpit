@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, COCKPIT_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath, getBuiltinSessionsRoot } from '@cockpit/shared-utils';
 import { handler } from '@cockpit/effect-runtime/server';
 import { AppError } from '@cockpit/effect-core';
 
@@ -135,6 +135,58 @@ function countSessionFiles(dir: string): number {
   }
 }
 
+/**
+ * Merge one session store into the project map. Every store except the primary Claude one
+ * goes through here — they share the dir-per-project layout and the merge rule, and differ
+ * only in where a project's real cwd can be recovered from.
+ *
+ * `selfDescribing`: the store's own transcripts carry the cwd, so its project dir can resolve
+ * the path (Claude-format stores written by the CLI / Agent SDK — claude2, deepseek SDK).
+ * The Built-in Agent stores (ollama, deepseek-sessions) write no cwd field, so they fall back
+ * to the Claude projects dir and then the global-state lookup.
+ *
+ * Path resolution runs only for projects not already in the map: an existing entry already
+ * has a resolved path, so an unresolvable sibling store must still contribute its count.
+ */
+function mergeStoreIntoProjects(
+  root: string,
+  projectMap: Map<string, { fullPath: string; sessionCount: number }>,
+  cwdLookup: Map<string, string>,
+  selfDescribing: boolean,
+): void {
+  if (!fs.existsSync(root)) return;
+
+  let dirNames: string[];
+  try {
+    dirNames = fs.readdirSync(root, { withFileTypes: true })
+      .filter(dirent => dirent.isDirectory())
+      .map(dirent => dirent.name);
+  } catch {
+    return;
+  }
+
+  for (const dirName of dirNames) {
+    const storeDir = path.join(root, dirName);
+    const count = countSessionFiles(storeDir);
+    if (count === 0) continue;
+
+    const existing = projectMap.get(dirName);
+    if (existing) {
+      existing.sessionCount += count;
+      continue;
+    }
+
+    const claudeDir = path.join(CLAUDE_PROJECTS_DIR, dirName);
+    const pathSource = selfDescribing
+      ? storeDir
+      : (fs.existsSync(claudeDir) ? claudeDir : undefined);
+    const fullPath = resolveProjectPath(dirName, cwdLookup, pathSource);
+    if (!fullPath) continue;
+
+    projectMap.set(dirName, { fullPath, sessionCount: count });
+  }
+}
+
 // Count codex/kimi sessions from cockpit session.json
 function countEngineSessionsFromCockpitState(encodedDirName: string): number {
   try {
@@ -200,55 +252,14 @@ async function buildProjectsList() {
     }
 
     // --- Source 1b: Claude2 projects dir ---
-    if (fs.existsSync(CLAUDE2_PROJECTS_DIR)) {
-      const projectDirs = fs.readdirSync(CLAUDE2_PROJECTS_DIR, { withFileTypes: true })
-        .filter(dirent => dirent.isDirectory())
-        .map(dirent => dirent.name);
+    mergeStoreIntoProjects(CLAUDE2_PROJECTS_DIR, projectMap, cwdLookup, true);
 
-      for (const dirName of projectDirs) {
-        const claude2Dir = path.join(CLAUDE2_PROJECTS_DIR, dirName);
-        const fullPath = resolveProjectPath(dirName, cwdLookup, claude2Dir);
-        if (!fullPath) continue;
+    // --- Source 1c: DeepSeek SDK-mode projects dir (written by the Claude Agent SDK) ---
+    mergeStoreIntoProjects(DEEPSEEK_PROJECTS_DIR, projectMap, cwdLookup, true);
 
-        const count = countSessionFiles(claude2Dir);
-        if (count === 0) continue;
-
-        const existing = projectMap.get(dirName);
-        if (existing) {
-          existing.sessionCount += count;
-        } else {
-          projectMap.set(dirName, { fullPath, sessionCount: count });
-        }
-      }
-    }
-
-    // --- Source 2: Ollama sessions dir ---
-    const ollamaSessionsRoot = path.join(COCKPIT_DIR, 'ollama-sessions');
-    if (fs.existsSync(ollamaSessionsRoot)) {
-      const ollamaDirs = fs.readdirSync(ollamaSessionsRoot, { withFileTypes: true })
-        .filter(dirent => dirent.isDirectory())
-        .map(dirent => dirent.name);
-
-      for (const dirName of ollamaDirs) {
-        const ollamaDir = path.join(ollamaSessionsRoot, dirName);
-        const count = countSessionFiles(ollamaDir);
-        if (count === 0) continue;
-
-        const existing = projectMap.get(dirName);
-        if (existing) {
-          // Merge: add ollama session count to existing project
-          existing.sessionCount += count;
-        } else {
-          // New project — resolve path using Claude dir (if exists) or global state
-          const claudeDir = path.join(CLAUDE_PROJECTS_DIR, dirName);
-          const claudeDirExists = fs.existsSync(claudeDir) ? claudeDir : undefined;
-          const fullPath = resolveProjectPath(dirName, cwdLookup, claudeDirExists);
-          if (!fullPath) continue;
-
-          projectMap.set(dirName, { fullPath, sessionCount: count });
-        }
-      }
-    }
+    // --- Source 2: Built-in Agent stores (ollama, deepseek Built-in Agent mode) ---
+    mergeStoreIntoProjects(getBuiltinSessionsRoot('ollama'), projectMap, cwdLookup, false);
+    mergeStoreIntoProjects(getBuiltinSessionsRoot('deepseek'), projectMap, cwdLookup, false);
 
     // --- Source 3: Codex/Kimi sessions via cockpit session.json ---
     if (fs.existsSync(COCKPIT_PROJECTS_DIR)) {

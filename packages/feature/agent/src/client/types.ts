@@ -100,12 +100,23 @@ export interface RateLimitInfo {
 // MessageList, etc. Migrated here from useTabState so the types live with
 // the agent feature instead of a generic tab-state hook.
 export type ChatEngine = 'claude' | 'claude2' | 'codex' | 'kimi' | 'ollama' | 'deepseek';
-export type DeepseekModel = 'deepseek-v4-flash' | 'deepseek-v4-pro';
 /**
- * Execution mode for the Claude/Claude2 engines:
- * - `sdk`: invoked via `@anthropic-ai/claude-agent-sdk`'s `query()` (headless). Counts toward the Agent SDK billing bucket.
- * - `pty`: spawns the interactive `claude` CLI (pseudo-terminal driven), classified as interactive Claude Code → uses the subscription quota.
- * Switchable dynamically at any time; resuming a session that has SDK edit history via PTY may crash upstream rendering — the driver's
- * crash detection covers that (errors instead of hanging), so the user can switch back to SDK.
+ * A DeepSeek model id. Deliberately a plain string, not a union: Built-in Agent mode fills
+ * its list live from /api/deepseek/models (DeepSeek's /v1/models), so any id the account
+ * has can appear. SDK mode is still whitelisted to a fixed pair server-side
+ * (engines/deepseek.ts ALLOWED_MODELS) — the Anthropic-compatible endpoint has no listing API.
  */
-export type ChatMode = 'sdk' | 'pty';
+export type DeepseekModel = string;
+/**
+ * Execution mode — which loop actually drives the turn.
+ * - `sdk`: `@anthropic-ai/claude-agent-sdk`'s `query()` (headless). claude/claude2 (Agent SDK
+ *   billing bucket) and deepseek (Anthropic-compatible endpoint). The default everywhere.
+ * - `pty`: spawns the interactive `claude` CLI (pseudo-terminal driven) → subscription quota.
+ *   claude/claude2 only. Switchable at any time; resuming a session that has SDK edit history
+ *   via PTY may crash upstream rendering — the driver's crash detection covers that (errors
+ *   instead of hanging), so the user can switch back to SDK.
+ * - `builtin`: Cockpit's own agent loop (server engines/builtinAgent) against the provider's
+ *   OpenAI-compatible endpoint. deepseek only. NOT switchable mid-session: it keeps its own
+ *   transcript store, so the UI locks the choice once a session has messages.
+ */
+export type ChatMode = 'sdk' | 'pty' | 'builtin';

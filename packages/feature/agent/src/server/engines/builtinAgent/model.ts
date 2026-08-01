@@ -46,3 +46,18 @@ export async function createOllamaModel(modelName: string): Promise<LanguageMode
   });
   return provider.chat(modelName);
 }
+
+/**
+ * Any OpenAI-compatible chat-completions endpoint (DeepSeek's /v1, and whatever
+ * provider gets a Built-in Agent mode next). No ollamaFetch here — the
+ * `content: null` coercion is an Ollama server quirk, and hosted providers accept
+ * the spec-compliant form.
+ */
+export function createOpenAiCompatModel(opts: {
+  baseURL: string;
+  apiKey: string;
+  modelName: string;
+}): LanguageModelV3 {
+  const provider = createOpenAI({ apiKey: opts.apiKey, baseURL: opts.baseURL });
+  return provider.chat(opts.modelName);
+}

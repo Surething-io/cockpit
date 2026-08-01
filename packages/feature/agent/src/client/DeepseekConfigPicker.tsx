@@ -8,22 +8,34 @@ import {
   loadAgentSettings,
   saveAgentSettings,
   loadDeepseekCredentials,
+  loadDeepseekModels,
   saveDeepseekApiKey,
 } from './effect/agentClient';
 
 // Migrated from src/components/project/DeepseekConfigPicker.tsx.
 
-const MODELS: { value: DeepseekModel; label: string }[] = [
+/** SDK mode: the two ids DeepSeek's Anthropic-compatible endpoint accepts. Fixed — this
+ *  endpoint has no model-listing API, and the server whitelists the same pair
+ *  (engines/deepseek.ts ALLOWED_MODELS). Built-in Agent mode instead lists /v1/models live. */
+const SDK_MODELS: { value: DeepseekModel; label: string }[] = [
   { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash' },
   { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro' },
 ];
+const SDK_DEFAULT_MODEL = 'deepseek-v4-flash';
 
 interface DeepseekConfigPickerProps {
   currentModel?: DeepseekModel;
   onModelChange: (model: DeepseekModel) => void;
+  /** Built-in Agent mode — different endpoint, so a different model namespace and a
+   *  different settings key. See ChatMode in ./types. */
+  builtin?: boolean;
+  /** Fired whenever the persisted-key state changes (mount, save, clear, reopen). This
+   *  component is the only live owner of that fact, so siblings that need it (the balance
+   *  button) get it from here instead of caching their own copy and going stale. */
+  onHasKeyChange?: (hasKey: boolean) => void;
 }
 
-export function DeepseekConfigPicker({ currentModel, onModelChange }: DeepseekConfigPickerProps) {
+export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = false, onHasKeyChange }: DeepseekConfigPickerProps) {
   const [open, setOpen] = useState(false);
   const [hasKey, setHasKey] = useState(false); // whether a key is persisted
   const [maskedKey, setMaskedKey] = useState<string>(''); // server-masked display
@@ -32,11 +44,58 @@ export function DeepseekConfigPicker({ currentModel, onModelChange }: DeepseekCo
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Built-in Agent mode only: model ids fetched from /v1/models on open.
+  const [builtinModels, setBuiltinModels] = useState<string[]>([]);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Ref indirection for the mount-only effect below: it must read these once without the
+  // parent's re-render churn (onModelChange gets a fresh identity every render) turning a
+  // one-shot load into a loop.
+  const builtinRef = useRef(builtin);
+  const currentModelRef = useRef(currentModel);
+  const onModelChangeRef = useRef(onModelChange);
+  const onHasKeyChangeRef = useRef(onHasKeyChange);
+  useEffect(() => {
+    builtinRef.current = builtin;
+    currentModelRef.current = currentModel;
+    onModelChangeRef.current = onModelChange;
+    onHasKeyChangeRef.current = onHasKeyChange;
+  });
+
+  // One notification point instead of four: hasKey is set on mount, on reopen, on save and
+  // on clear, and every one of those must reach the parent.
+  useEffect(() => {
+    onHasKeyChangeRef.current?.(hasKey);
+  }, [hasKey]);
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const panelTarget = usePanelPortalTarget();
+
+  // Resolve the button label on mount, not on first open: the label doubles as the key
+  // indicator ("Set API key") and the model display, so deferring this to the popover left
+  // every restored tab claiming no key was configured until the user clicked it.
+  // Local-only calls (credentials + settings). The model LIST stays lazy — that one hits
+  // DeepSeek over the network and is only needed once the popover is actually open.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [credExit, settingsExit] = await Promise.all([
+        BrowserRuntime.runPromiseExit(loadDeepseekCredentials()),
+        BrowserRuntime.runPromiseExit(
+          loadAgentSettings<{ engines?: { deepseek?: { model?: DeepseekModel; builtinModel?: DeepseekModel } } }>()
+        ),
+      ]);
+      if (cancelled || credExit._tag === 'Failure') return;
+      setHasKey(credExit.value.hasKey);
+      setMaskedKey(credExit.value.maskedKey);
+      const savedDeepseek = settingsExit._tag === 'Success' ? settingsExit.value?.engines?.deepseek : undefined;
+      const savedModel = builtinRef.current ? savedDeepseek?.builtinModel : savedDeepseek?.model;
+      // Only fill a gap — never overwrite the model this tab was restored with.
+      if (!currentModelRef.current && savedModel) onModelChangeRef.current(savedModel);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Close on outside click
   useEffect(() => {
@@ -51,15 +110,23 @@ export function DeepseekConfigPicker({ currentModel, onModelChange }: DeepseekCo
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  // Separate default per mode. The id sets overlap today, but SDK mode is whitelisted to a
+  // fixed pair while Built-in Agent mode accepts anything /v1/models reports — sharing one
+  // key would let a newer model chosen here become the SDK default, where it is silently
+  // downgraded to DEFAULT_MODEL.
+  const settingsKey = builtin ? 'builtinModel' : 'model';
+
   // Load settings on first open. The API key comes from its own credential
   // endpoint (masked, never raw); only the model lives in /api/settings.
+  // In Built-in Agent mode the model list itself is fetched from /v1/models.
   const loadSettings = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setModelsError(null);
     const [credExit, settingsExit] = await Promise.all([
       BrowserRuntime.runPromiseExit(loadDeepseekCredentials()),
       BrowserRuntime.runPromiseExit(
-        loadAgentSettings<{ engines?: { deepseek?: { model?: DeepseekModel } } }>()
+        loadAgentSettings<{ engines?: { deepseek?: { model?: DeepseekModel; builtinModel?: DeepseekModel } } }>()
       ),
     ]);
     if (credExit._tag === 'Failure') {
@@ -71,14 +138,34 @@ export function DeepseekConfigPicker({ currentModel, onModelChange }: DeepseekCo
     setMaskedKey(credExit.value.maskedKey);
     setKeyInput('');
     setEditing(false);
-    // If parent didn't pass a model and settings has one, sync upward
-    const savedModel =
-      settingsExit._tag === 'Success' ? settingsExit.value?.engines?.deepseek?.model : undefined;
-    if (!currentModel && savedModel && MODELS.some(m => m.value === savedModel)) {
+
+    const savedDeepseek = settingsExit._tag === 'Success' ? settingsExit.value?.engines?.deepseek : undefined;
+    const savedModel = builtin ? savedDeepseek?.builtinModel : savedDeepseek?.model;
+
+    if (builtin) {
+      // Live list — an unreachable endpoint or a bad key surfaces here rather than at the
+      // first chat turn. Without a key there is nothing to authenticate with, so skip.
+      let available: string[] = [];
+      if (credExit.value.hasKey) {
+        const modelsExit = await BrowserRuntime.runPromiseExit(loadDeepseekModels());
+        if (modelsExit._tag === 'Success') {
+          available = modelsExit.value.models;
+        } else {
+          setModelsError('Failed to load models — check the API key');
+        }
+      }
+      setBuiltinModels(available);
+      // Sync a usable default upward: the saved one if the account still has it, else the
+      // first available. Never leave the tab pointing at a model the endpoint rejects.
+      const fallback = savedModel && available.includes(savedModel) ? savedModel : available[0];
+      if (fallback && (!currentModel || !available.includes(currentModel))) {
+        onModelChange(fallback);
+      }
+    } else if (!currentModel && savedModel && SDK_MODELS.some(m => m.value === savedModel)) {
       onModelChange(savedModel);
     }
     setLoading(false);
-  }, [currentModel, onModelChange]);
+  }, [builtin, currentModel, onModelChange]);
 
   // Persist the model into /api/settings (shallow merge — send only the engines diff).
   const persistModel = useCallback(async (model: DeepseekModel) => {
@@ -89,11 +176,11 @@ export function DeepseekConfigPicker({ currentModel, onModelChange }: DeepseekCo
     const curEngines = cur.engines || {};
     const engines = {
       ...curEngines,
-      deepseek: { ...(curEngines.deepseek || {}), model },
+      deepseek: { ...(curEngines.deepseek || {}), [settingsKey]: model },
     };
     const saveExit = await BrowserRuntime.runPromiseExit(saveAgentSettings({ engines }));
     if (saveExit._tag === 'Failure') throw new Error('Failed to save settings');
-  }, []);
+  }, [settingsKey]);
 
   const toggle = () => {
     if (!open) {
@@ -157,10 +244,16 @@ export function DeepseekConfigPicker({ currentModel, onModelChange }: DeepseekCo
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
+  // In Built-in Agent mode there is no meaningful fallback id to show before the live list
+  // arrives — the SDK default belongs to the other endpoint's namespace.
   const displayLabel = !hasKey
     ? 'Set API key'
-    : (currentModel || 'deepseek-v4-flash');
+    : (currentModel || (builtin ? 'Select model' : SDK_DEFAULT_MODEL));
   const labelTone = !hasKey ? 'text-amber-400' : 'text-sky-400';
+  const modelOptions: { value: DeepseekModel; label: string }[] = builtin
+    ? builtinModels.map((id) => ({ value: id, label: id }))
+    : SDK_MODELS;
+  const selectedModel = currentModel || (builtin ? '' : SDK_DEFAULT_MODEL);
 
   const menu = open ? (
     <Portal>
@@ -239,10 +332,21 @@ export function DeepseekConfigPicker({ currentModel, onModelChange }: DeepseekCo
 
             {/* Model section */}
             <div className="px-3 py-1.5">
-              <div className="text-[11px] font-medium text-muted-foreground mb-1.5">Model</div>
+              <div className="text-[11px] font-medium text-muted-foreground mb-1.5">
+                Model
+                {builtin && <span className="ml-1 font-normal opacity-70">· Built-in Agent</span>}
+              </div>
+              {builtin && modelsError && (
+                <div className="mb-1 text-[11px] text-red-400">{modelsError}</div>
+              )}
+              {builtin && !modelsError && modelOptions.length === 0 && (
+                <div className="mb-1 text-[11px] text-muted-foreground">
+                  {hasKey ? 'No models returned by /v1/models' : 'Save an API key to list models'}
+                </div>
+              )}
               <div className="flex flex-col gap-0.5">
-                {MODELS.map((m) => {
-                  const selected = (currentModel || 'deepseek-v4-flash') === m.value;
+                {modelOptions.map((m) => {
+                  const selected = selectedModel === m.value;
                   return (
                     <button
                       key={m.value}

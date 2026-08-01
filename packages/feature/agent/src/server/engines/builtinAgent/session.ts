@@ -1,12 +1,12 @@
 import { readFileSync, existsSync, mkdirSync, appendFileSync } from 'fs';
 import { join } from 'path';
 import type { ModelMessage } from '@ai-sdk/provider-utils';
-import { encodePath, COCKPIT_DIR } from '@cockpit/shared-utils';
+import { encodePath } from '@cockpit/shared-utils';
 
-// Must follow COCKPIT_DIR (COCKPIT_HOME-aware) so writes land in the SAME data dir the rest of
-// cockpit reads from (paths.ts getOllamaSessionPath). Hardcoding ~/.cockpit here split the
-// write/read dirs under COCKPIT_HOME and made ollama sessions look unsaved after refresh.
-const SESSIONS_ROOT = join(COCKPIT_DIR, 'ollama-sessions');
+// The store root is passed in per engine (ollama → ~/.cockpit/ollama-sessions, deepseek →
+// ~/.cockpit/deepseek-sessions) and MUST come from paths.ts, which is COCKPIT_HOME-aware.
+// Hardcoding ~/.cockpit here once split the write/read dirs under COCKPIT_HOME and made
+// sessions look unsaved after refresh.
 
 type ClaudeContentBlock =
   | { type: 'text'; text?: string }
@@ -36,16 +36,16 @@ export interface ClaudeTranscriptLine {
   isMeta?: boolean;
 }
 
-function getSessionDir(cwd: string): string {
-  return join(SESSIONS_ROOT, encodePath(cwd));
+function getSessionDir(root: string, cwd: string): string {
+  return join(root, encodePath(cwd));
 }
 
-function getSessionPath(cwd: string, sessionId: string): string {
-  return join(getSessionDir(cwd), `${sessionId}.jsonl`);
+function getSessionPath(root: string, cwd: string, sessionId: string): string {
+  return join(getSessionDir(root, cwd), `${sessionId}.jsonl`);
 }
 
-export function readSessionMessages(cwd: string, sessionId: string): ModelMessage[] {
-  const path = getSessionPath(cwd, sessionId);
+export function readSessionMessages(root: string, cwd: string, sessionId: string): ModelMessage[] {
+  const path = getSessionPath(root, cwd, sessionId);
   if (!existsSync(path)) return [];
 
   const lines = readFileSync(path, 'utf-8').split('\n').filter(Boolean);
@@ -168,15 +168,15 @@ export function readSessionMessages(cwd: string, sessionId: string): ModelMessag
   return messages;
 }
 
-export function appendSessionLine(cwd: string, sessionId: string, line: ClaudeTranscriptLine): void {
-  const dir = getSessionDir(cwd);
+export function appendSessionLine(root: string, cwd: string, sessionId: string, line: ClaudeTranscriptLine): void {
+  const dir = getSessionDir(root, cwd);
   mkdirSync(dir, { recursive: true });
-  const path = getSessionPath(cwd, sessionId);
+  const path = getSessionPath(root, cwd, sessionId);
   appendFileSync(path, JSON.stringify(line) + '\n', 'utf-8');
 }
 
-export function appendUserText(cwd: string, sessionId: string, text: string, opts?: { uuid?: string; timestamp?: string }): void {
-  appendSessionLine(cwd, sessionId, {
+export function appendUserText(root: string, cwd: string, sessionId: string, text: string, opts?: { uuid?: string; timestamp?: string }): void {
+  appendSessionLine(root, cwd, sessionId, {
     type: 'user',
     uuid: opts?.uuid,
     sessionId,
@@ -186,6 +186,7 @@ export function appendUserText(cwd: string, sessionId: string, text: string, opt
 }
 
 export function appendAssistantMessage(
+  root: string,
   cwd: string,
   sessionId: string,
   content: ClaudeContentBlock[],
@@ -200,7 +201,7 @@ export function appendAssistantMessage(
     };
   }
 ): void {
-  appendSessionLine(cwd, sessionId, {
+  appendSessionLine(root, cwd, sessionId, {
     type: 'assistant',
     uuid: opts?.uuid,
     sessionId,
@@ -210,13 +211,14 @@ export function appendAssistantMessage(
 }
 
 export function appendToolResult(
+  root: string,
   cwd: string,
   sessionId: string,
   toolUseId: string,
   content: string,
   opts?: { uuid?: string; timestamp?: string; is_error?: boolean }
 ): void {
-  appendSessionLine(cwd, sessionId, {
+  appendSessionLine(root, cwd, sessionId, {
     type: 'user',
     uuid: opts?.uuid,
     sessionId,

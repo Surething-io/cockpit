@@ -15,7 +15,7 @@ interface SessionInfo {
   lastMessages: string[];
   /** Untruncated full-text corpus (title + summary + all user messages), lowercased. */
   searchText?: string;
-  engine?: 'claude' | 'claude2' | 'ollama' | 'codex' | 'kimi';
+  engine?: 'claude' | 'claude2' | 'ollama' | 'codex' | 'kimi' | 'deepseek';
 }
 
 interface ProjectSessionsModalProps {
@@ -217,6 +217,8 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
                         session.engine === 'ollama' ? 'bg-blue-500/15 text-blue-11' :
                         session.engine === 'codex' ? 'bg-green-500/15 text-green-11' :
                         session.engine === 'kimi' ? 'bg-purple-500/15 text-purple-11' :
+                        // Matches the DS badge in TabBar; the -11 scale has no sky token.
+                        session.engine === 'deepseek' ? 'bg-sky-500/15 text-sky-400' :
                         'bg-muted text-muted-foreground'
                       }`}>
                         {session.engine}

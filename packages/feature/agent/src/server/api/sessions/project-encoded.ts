@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, COCKPIT_DIR, COCKPIT_PROJECTS_DIR, findCodexSessionPath, findKimiSessionPath } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, getBuiltinSessionsRoot, findCodexSessionPath, findKimiSessionPath } from '@cockpit/shared-utils';
 import { dynamicHandler } from '@cockpit/effect-runtime/server';
 import { AppError, ValidationError } from '@cockpit/effect-core';
 import { generateTitle } from '../../sessionTitle';
@@ -23,7 +23,7 @@ interface SessionInfo {
    * mid-conversation messages remain searchable.
    */
   searchText: string;
-  engine?: 'claude' | 'claude2' | 'ollama' | 'codex' | 'kimi';
+  engine?: 'claude' | 'claude2' | 'ollama' | 'codex' | 'kimi' | 'deepseek';
 }
 
 interface TranscriptLine {
@@ -239,15 +239,22 @@ export const GET = dynamicHandler<
 );
 
 async function loadSessions(encodedPath: string) {
-    // Collect session files from all engine directories
+    // Collect session files from all engine directories. Every store here holds
+    // Claude-format transcripts, so one parser covers them all. DeepSeek contributes TWO
+    // stores because its execution modes don't share one: SDK mode is written by the Agent
+    // SDK under deepseek/projects, Built-in Agent mode by us under deepseek-sessions.
     const claudeDir = path.join(CLAUDE_PROJECTS_DIR, encodedPath);
     const claude2Dir = path.join(CLAUDE2_PROJECTS_DIR, encodedPath);
-    const ollamaDir = path.join(COCKPIT_DIR, 'ollama-sessions', encodedPath);
+    const ollamaDir = path.join(getBuiltinSessionsRoot('ollama'), encodedPath);
+    const deepseekSdkDir = path.join(DEEPSEEK_PROJECTS_DIR, encodedPath);
+    const deepseekBuiltinDir = path.join(getBuiltinSessionsRoot('deepseek'), encodedPath);
 
     const allSessionFiles = [
       ...collectSessionFiles(claudeDir, 'claude'),
       ...collectSessionFiles(claude2Dir, 'claude2'),
       ...collectSessionFiles(ollamaDir, 'ollama'),
+      ...collectSessionFiles(deepseekSdkDir, 'deepseek'),
+      ...collectSessionFiles(deepseekBuiltinDir, 'deepseek'),
     ];
 
     // Deduplicate by filename (same sessionId could theoretically appear in both)

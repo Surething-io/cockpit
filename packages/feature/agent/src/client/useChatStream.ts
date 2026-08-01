@@ -522,6 +522,11 @@ export function useChatStream(
       // PTY mode (claude/claude2 only). Images are written to temp files by the backend driver + the prompt carries the paths for claude to read.
       const isClaudeEngine = !engine || engine === 'claude' || engine === 'claude2';
       const usePty = chatMode === 'pty' && isClaudeEngine;
+      // Built-in Agent mode (deepseek only) — server runs engines/builtinAgent instead of the Agent SDK.
+      const useBuiltin = chatMode === 'builtin' && engine === 'deepseek';
+      // Independent task is only honoured by the Built-in Agent loop (ollama, deepseek+builtin);
+      // the SDK/CLI engines resume a provider session, so dropping history forks a new one.
+      const canDropHistory = engine === 'ollama' || useBuiltin;
 
       const runId = genRunId();
 
@@ -548,12 +553,12 @@ export function useChatStream(
             ...(engine === 'deepseek' && deepseekModel && { model: deepseekModel }),
             ...(engine === 'claude2' && { engine: 'claude2' }),
             ...(usePty && { mode: 'pty', ptyCols: PTY_COLS, ptyRows: PTY_ROWS }),
+            ...(useBuiltin && { mode: 'builtin' }),
             // Plan mode: only meaningful in SDK mode on a claude engine (PTY has its own
             // Shift+Tab plan). When unchecked, omit → server defaults to bypassPermissions.
             ...(usePlanMode && !usePty && isClaudeEngine && { permissionMode: 'plan' }),
-            // Independent task: ollama-only (the other engines resume a provider session, so
-            // dropping history there would fork a new one). Omitted when off.
-            ...(engine === 'ollama' && noHistory && { noHistory: true }),
+            // Independent task — Built-in Agent only (see canDropHistory). Omitted when off.
+            ...(canDropHistory && noHistory && { noHistory: true }),
           }),
         });
 

@@ -6,9 +6,31 @@ import {
   getClaudeSessionPath,
   getClaude2SessionPath,
   getOllamaSessionPath,
+  getDeepseekSessionPath,
+  getDeepseekBuiltinSessionPath,
   findCodexSessionPath,
   findKimiSessionPath,
 } from '@cockpit/shared-utils';
+
+/** Claude-format transcript stores, probed in order by cwd+sessionId. DeepSeek has two:
+ *  the Claude Agent SDK store (~/.cockpit/deepseek/projects) and the Built-in Agent store
+ *  (~/.cockpit/deepseek-sessions), depending on the execution mode the session ran in. */
+const CLAUDE_STYLE_PATHS = [
+  getClaudeSessionPath,
+  getClaude2SessionPath,
+  getOllamaSessionPath,
+  getDeepseekSessionPath,
+  getDeepseekBuiltinSessionPath,
+];
+
+/** First existing Claude-format transcript for this session, or null. */
+function findClaudeStylePath(cwd: string, sessionId: string): string | null {
+  for (const resolve of CLAUDE_STYLE_PATHS) {
+    const path = resolve(cwd, sessionId);
+    if (existsSync(path)) return path;
+  }
+  return null;
+}
 import { createReadStream, existsSync, statSync } from 'fs';
 import { createInterface } from 'readline';
 import { basename } from 'path';
@@ -137,19 +159,9 @@ export async function updateGlobalState(
  * Read the session title from a transcript file.
  */
 export async function getSessionTitle(cwd: string, sessionId: string): Promise<string> {
-  const claudePath = getClaudeSessionPath(cwd, sessionId);
-  if (existsSync(claudePath)) {
-    return getClaudeStyleTitle(claudePath);
-  }
-
-  const claude2Path = getClaude2SessionPath(cwd, sessionId);
-  if (existsSync(claude2Path)) {
-    return getClaudeStyleTitle(claude2Path);
-  }
-
-  const ollamaPath = getOllamaSessionPath(cwd, sessionId);
-  if (existsSync(ollamaPath)) {
-    return getClaudeStyleTitle(ollamaPath);
+  const claudeStylePath = findClaudeStylePath(cwd, sessionId);
+  if (claudeStylePath) {
+    return getClaudeStyleTitle(claudeStylePath);
   }
 
   const codexPath = findCodexSessionPath(sessionId);
@@ -172,19 +184,9 @@ export async function getSessionTitle(cwd: string, sessionId: string): Promise<s
  * dispatching by engine format (Claude-style / Codex / Kimi).
  */
 async function collectUserMessages(cwd: string, sessionId: string): Promise<string[]> {
-  const claudePath = getClaudeSessionPath(cwd, sessionId);
-  if (existsSync(claudePath)) {
-    return await getClaudeStyleUserMessages(claudePath);
-  }
-
-  const claude2Path = getClaude2SessionPath(cwd, sessionId);
-  if (existsSync(claude2Path)) {
-    return await getClaudeStyleUserMessages(claude2Path);
-  }
-
-  const ollamaPath = getOllamaSessionPath(cwd, sessionId);
-  if (existsSync(ollamaPath)) {
-    return await getClaudeStyleUserMessages(ollamaPath);
+  const claudeStylePath = findClaudeStylePath(cwd, sessionId);
+  if (claudeStylePath) {
+    return await getClaudeStyleUserMessages(claudeStylePath);
   }
 
   const codexPath = findCodexSessionPath(sessionId);
@@ -247,14 +249,8 @@ function resolveSessionFile(
   cwd: string,
   sessionId: string
 ): { path: string; read: (p: string) => Promise<SessionContent> } | null {
-  const claudePath = getClaudeSessionPath(cwd, sessionId);
-  if (existsSync(claudePath)) return { path: claudePath, read: getClaudeStyleContent };
-
-  const claude2Path = getClaude2SessionPath(cwd, sessionId);
-  if (existsSync(claude2Path)) return { path: claude2Path, read: getClaudeStyleContent };
-
-  const ollamaPath = getOllamaSessionPath(cwd, sessionId);
-  if (existsSync(ollamaPath)) return { path: ollamaPath, read: getClaudeStyleContent };
+  const claudeStylePath = findClaudeStylePath(cwd, sessionId);
+  if (claudeStylePath) return { path: claudeStylePath, read: getClaudeStyleContent };
 
   const codexPath = findCodexSessionPath(sessionId);
   if (codexPath && existsSync(codexPath)) {

@@ -1,16 +1,17 @@
 /**
- * SessionCleanupLive -- retention sweep for Ollama chat session transcripts.
+ * SessionCleanupLive -- retention sweep for Built-in Agent chat transcripts.
  *
- * Scope: ONLY `<cockpitDir>/ollama-sessions/`. This is the sole session store
+ * Scope: ONLY the Built-in Agent stores (`BUILTIN_SESSION_DIR_NAMES` under
+ * `<cockpitDir>/`: ollama-sessions, deepseek-sessions). These are the stores
  * cockpit writes itself (via appendFileSync) with no cleanup. Every other
  * engine's sessions are cleaned by their own external CLI / Agent SDK:
  *   - claude / claude2 -> ~/.claude(2)/projects (Claude CLI cleanupPeriodDays)
- *   - deepseek         -> ~/.cockpit/deepseek/projects (Claude Agent SDK)
+ *   - deepseek (SDK)   -> ~/.cockpit/deepseek/projects (Claude Agent SDK)
  *   - codex / kimi     -> ~/.codex, ~/.kimi (external CLI)
  * so this sweep deliberately never touches them.
  *
  * On-disk layout (one dir per project cwd, one file per session):
- *   ollama-sessions/<encoded-cwd>/
+ *   <store>/<encoded-cwd>/
  *     ├── <sessionId>.jsonl      <- parent transcript (retention basis)
  *     └── <sessionId>/           <- future attachments (subagents/, tool-results/)
  *
@@ -32,6 +33,7 @@ import { readdir, readFile, rm, rmdir, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { Context, Effect, Layer, Schedule } from "effect"
 import { AppError, CockpitConfig } from "@cockpit/effect-core"
+import { BUILTIN_SESSION_DIR_NAMES } from "@cockpit/shared-utils"
 
 const DAY_MS = 24 * 3600 * 1000
 
@@ -164,7 +166,7 @@ const cleanupSessions = (
 // ─────────────────────────────────────────────────────────
 
 export interface SessionCleanupService {
-  /** Retention pass over ~/.cockpit/ollama-sessions/. Exposed for tests. */
+  /** Retention pass over every Built-in Agent store. Exposed for tests. */
   readonly cleanup: Effect.Effect<void, AppError>
 }
 
@@ -176,12 +178,15 @@ export const SessionCleanupLive = Layer.scoped(
   SessionCleanupService,
   Effect.gen(function* () {
     const cfg = yield* CockpitConfig
-    const root = join(cfg.cockpitDir, "ollama-sessions")
+    const roots = BUILTIN_SESSION_DIR_NAMES.map((dir) => join(cfg.cockpitDir, dir))
     const pinnedFile = join(cfg.cockpitDir, "pinned-sessions.json")
     // Clamp to >= 1 day: 0 would set cutoff = now and delete every inactive
     // session (mirrors Claude Code rejecting cleanupPeriodDays: 0).
     const keepDays = Math.max(1, cfg.sessionKeepDays)
-    const cleanup = cleanupSessions(root, keepDays, pinnedFile)
+    // One pass per Built-in Agent store; a missing root is a no-op inside cleanupSessions.
+    const cleanup = Effect.forEach(roots, (root) => cleanupSessions(root, keepDays, pinnedFile), {
+      discard: true,
+    })
 
     yield* Effect.forkScoped(
       cleanup.pipe(

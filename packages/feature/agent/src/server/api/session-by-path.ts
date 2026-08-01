@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as readline from 'readline';
 import { join } from 'path';
 import { Effect } from 'effect';
-import { getClaudeSessionPath, getClaude2SessionPath, findCodexSessionPath, findKimiSessionPath, getOllamaSessionPath, getDeepseekSessionPath } from '@cockpit/shared-utils';
+import { getClaudeSessionPath, getClaude2SessionPath, findCodexSessionPath, findKimiSessionPath, getOllamaSessionPath, getDeepseekSessionPath, getDeepseekBuiltinSessionPath } from '@cockpit/shared-utils';
 import { handler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import {
   AppError,
@@ -415,6 +415,12 @@ function resolveSessionPath(
   const deepseekPath = getDeepseekSessionPath(cwd, sessionId);
   if (fs.existsSync(deepseekPath)) {
     return { sessionPath: deepseekPath, engine: 'deepseek' };
+  }
+  // Same engine, other execution mode: sessions run through the Built-in Agent live in
+  // their own store, so both have to be probed before we conclude "not a deepseek session".
+  const deepseekBuiltinPath = getDeepseekBuiltinSessionPath(cwd, sessionId);
+  if (fs.existsSync(deepseekBuiltinPath)) {
+    return { sessionPath: deepseekBuiltinPath, engine: 'deepseek' };
   }
   const codexPath = findCodexSessionPath(sessionId);
   if (codexPath) {

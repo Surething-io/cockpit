@@ -255,21 +255,62 @@ export function getDeepseekSessionPath(cwd: string, sessionId: string): string {
 }
 
 // ============================================
-// Ollama Session Paths (~/.cockpit/ollama-sessions/<encoded-cwd>/... )
+// Built-in Agent Session Paths (~/.cockpit/<engine>-sessions/<encoded-cwd>/... )
+// Written by engines/builtinAgent — our own agent loop, one store per engine.
 // ============================================
+
+/** engine → store directory name. `ollama` keeps its historical name: renaming it
+ *  would orphan every existing ollama transcript on disk. */
+const BUILTIN_SESSION_DIRS: Record<string, string> = {
+  ollama: 'ollama-sessions',
+  deepseek: 'deepseek-sessions',
+};
+
+/** Store directory names, relative to the cockpit data dir. For callers that resolve the
+ *  data dir themselves (e.g. the Effect CockpitConfig) instead of using COCKPIT_DIR. */
+export const BUILTIN_SESSION_DIR_NAMES: readonly string[] = Object.values(BUILTIN_SESSION_DIRS);
+
+/** Root of an engine's Built-in Agent transcript store. Throws for engines that
+ *  have no built-in mode, so a typo fails loudly instead of writing to ~/.cockpit. */
+export function getBuiltinSessionsRoot(engine: string): string {
+  const dir = BUILTIN_SESSION_DIRS[engine];
+  if (!dir) throw new Error(`No built-in agent session store for engine "${engine}"`);
+  return join(COCKPIT_DIR, dir);
+}
+
+/** Every Built-in Agent store root — for readers that must probe all of them. */
+export function getBuiltinSessionRoots(): string[] {
+  return Object.values(BUILTIN_SESSION_DIRS).map((dir) => join(COCKPIT_DIR, dir));
+}
+
+export function getBuiltinSessionsDir(engine: string, cwd: string): string {
+  return join(getBuiltinSessionsRoot(engine), encodePath(cwd));
+}
+
+export function getBuiltinSessionPath(engine: string, cwd: string, sessionId: string): string {
+  return join(getBuiltinSessionsDir(engine, cwd), `${sessionId}.jsonl`);
+}
 
 /**
  * Get the Ollama sessions directory for a given cwd
  */
 export function getOllamaSessionsDir(cwd: string): string {
-  return join(COCKPIT_DIR, 'ollama-sessions', encodePath(cwd));
+  return getBuiltinSessionsDir('ollama', cwd);
 }
 
 /**
  * Get the Ollama session file path for a given cwd
  */
 export function getOllamaSessionPath(cwd: string, sessionId: string): string {
-  return join(getOllamaSessionsDir(cwd), `${sessionId}.jsonl`);
+  return getBuiltinSessionPath('ollama', cwd, sessionId);
+}
+
+/**
+ * Get the DeepSeek Built-in Agent session file path (mode: 'builtin'). Distinct from
+ * getDeepseekSessionPath, which is the Claude Agent SDK store under ~/.cockpit/deepseek/projects.
+ */
+export function getDeepseekBuiltinSessionPath(cwd: string, sessionId: string): string {
+  return getBuiltinSessionPath('deepseek', cwd, sessionId);
 }
 
 /**

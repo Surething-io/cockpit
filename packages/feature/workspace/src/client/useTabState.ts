@@ -197,7 +197,9 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       // survives → re-applied on reload). Sessions open only in OTHER tabs aren't
       // in this payload, so the union still preserves their settings.
       if (tab.sessionId) {
-        chatModes[tab.sessionId] = tab.chatMode === 'pty' ? 'pty' : 'sdk';
+        // Every non-default mode must round-trip verbatim; collapsing unknown values to 'sdk'
+        // silently downgraded 'builtin' back to the Agent SDK on the next reload.
+        chatModes[tab.sessionId] = tab.chatMode === 'pty' || tab.chatMode === 'builtin' ? tab.chatMode : 'sdk';
         planModes[tab.sessionId] = !!tab.planMode;
         noHistories[tab.sessionId] = !!tab.noHistory;
       }

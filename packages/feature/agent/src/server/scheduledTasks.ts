@@ -2,7 +2,7 @@ import { existsSync } from 'fs';
 import {
   SCHEDULED_TASKS_FILE, readJsonFile, writeJsonFile, mutateJsonFile, withFileLock,
   getClaudeSessionPath, getClaude2SessionPath, getOllamaSessionPath,
-  getDeepseekSessionPath, findCodexSessionPath, findKimiSessionPath,
+  getDeepseekSessionPath, getDeepseekBuiltinSessionPath, findCodexSessionPath, findKimiSessionPath,
 } from '@cockpit/shared-utils';
 import { updateGlobalState } from './state/globalState';
 import { isRunActive, getRunSnapshot, getRunSessionId, requestStop } from './sessionRunHub';
@@ -151,6 +151,10 @@ const dispatchEngineMessageEff = (
         cwd: task.cwd,
         engine, // selects claude2's CLAUDE_CONFIG_DIR; no-op for the others
         ...(task.model && { model: task.model }),
+        // Execution mode is NOT snapshotted on the task — it is derived from where the
+        // session actually lives, so a task made from a Built-in Agent tab keeps running
+        // the built-in loop instead of silently switching backends mid-schedule.
+        ...(isDeepseekBuiltinSession(engine, task) && { mode: 'builtin' }),
       });
       if (!outcome.ok) {
         // 409 = session/run already active (the guard fired). Surface as a task error
@@ -207,9 +211,16 @@ const dispatchEngineMessageEff = (
  * check). codex/kimi store sessions outside the cwd-encoded layout, so their
  * helpers glob by sessionId and return null when not found.
  */
+function isDeepseekBuiltinSession(engine: string, task: ScheduledTask): boolean {
+  return engine === 'deepseek' && existsSync(getDeepseekBuiltinSessionPath(task.cwd, task.sessionId));
+}
+
 function sessionPathFor(engine: string, task: ScheduledTask): string | null {
   if (engine === 'claude2') return getClaude2SessionPath(task.cwd, task.sessionId);
   if (engine === 'ollama') return getOllamaSessionPath(task.cwd, task.sessionId);
+  // DeepSeek has one store per execution mode; the built-in one is checked first so a
+  // built-in session isn't reported missing (which would restart it as a fresh SDK run).
+  if (isDeepseekBuiltinSession(engine, task)) return getDeepseekBuiltinSessionPath(task.cwd, task.sessionId);
   if (engine === 'deepseek') return getDeepseekSessionPath(task.cwd, task.sessionId);
   if (engine === 'codex') return findCodexSessionPath(task.sessionId);
   if (engine === 'kimi') return findKimiSessionPath(task.sessionId);

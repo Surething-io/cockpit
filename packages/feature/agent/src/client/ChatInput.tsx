@@ -6,6 +6,7 @@ import { toast } from '@cockpit/shared-ui';
 import { useTranslation } from 'react-i18next';
 import { ImagePreview } from '@cockpit/shared-ui';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
+import { QuickPromptsPopover } from './QuickPromptsPopover';
 import { onSkillsChanged } from '@cockpit/shared-api';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { stageFiles } from '@cockpit/feature-explorer';
@@ -65,10 +66,14 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [skills, setSkills] = useState<CommandInfo[]>([]);
   const [showScheduler, setShowScheduler] = useState(false);
+  const [showQuickPrompts, setShowQuickPrompts] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [commandsDismissed, setCommandsDismissed] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const commandListRef = useRef<HTMLDivElement>(null);
+  // Wraps the quick-prompts trigger + its popover; the popover measures
+  // outside-click against this so the trigger can close what it opened.
+  const quickPromptsAnchorRef = useRef<HTMLDivElement>(null);
 
   // Auto-adjust textarea height
   const adjustTextareaHeight = useCallback(() => {
@@ -208,6 +213,14 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
       textareaRef.current.style.height = 'auto';
     }
   }, [input, images, disabled, onSend]);
+
+  // Quick prompts send immediately and bypass `input` entirely, so whatever the
+  // user has half-typed in the textarea is left untouched. Gated on `disabled`
+  // for the same reason handleSend is — the stream can't accept it yet.
+  const handleQuickPrompt = useCallback((prompt: string) => {
+    if (disabled) return;
+    onSend(prompt);
+  }, [disabled, onSend]);
 
   const handleSelectCommand = useCallback((command: CommandInfo) => {
     // Preserve the marker the user typed (`/` main session, `@` subagent); only
@@ -499,6 +512,32 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
             )}
           </div>
         )}
+
+        {/* Quick prompts button */}
+        <div className="relative" ref={quickPromptsAnchorRef}>
+          <button
+            onClick={() => setShowQuickPrompts(!showQuickPrompts)}
+            className={`p-2 rounded-lg transition-all ${
+              showQuickPrompts
+                ? 'text-brand bg-brand/10'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95'
+            }`}
+            title={t('chat.quickPrompts')}
+          >
+            {/* Lightning bolt — mirrors the Console input bar's quick commands button */}
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </button>
+          {showQuickPrompts && (
+            <QuickPromptsPopover
+              cwd={cwd}
+              anchorRef={quickPromptsAnchorRef}
+              onClose={() => setShowQuickPrompts(false)}
+              onSelect={handleQuickPrompt}
+            />
+          )}
+        </div>
 
         <textarea
           ref={textareaRef}

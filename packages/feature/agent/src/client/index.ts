@@ -29,6 +29,7 @@ export { SessionCompleteToastContainer, showSessionCompleteToast } from './Sessi
 
 // Chat ancillary UI
 export { ScheduleTaskPopover } from './ScheduleTaskPopover';
+export { QuickPromptsPopover } from './QuickPromptsPopover';
 export { TokenStatsModal } from './TokenStatsModal';
 export { SlashCommandMenu } from './SlashCommandMenu';
 export { getSlashCommands, slashCommands, getMarkdown, type SlashCommand } from './slashCommands';

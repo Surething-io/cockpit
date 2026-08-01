@@ -121,6 +121,16 @@ export function getServicesConfigPath(cwd: string): string {
 }
 
 /**
+ * Get the quick-prompts config path for a project (chat input quick prompts).
+ * Deliberately a separate file from services.json: that one is the Console
+ * domain's, and folding an Agent-domain list into it would make either feature's
+ * write clobber the other's data on a partial POST.
+ */
+export function getPromptsConfigPath(cwd: string): string {
+  return join(getCockpitProjectDir(cwd), 'prompts.json');
+}
+
+/**
  * Get the note.md path for a project
  */
 export function getProjectNotePath(cwd: string): string {
@@ -176,6 +186,13 @@ export function getGlobalAliasesPath(): string {
  */
 export function getGlobalServicesConfigPath(): string {
   return join(COCKPIT_DIR, 'services.json');
+}
+
+/**
+ * Get the global quick-prompts config path (shared across all projects)
+ */
+export function getGlobalPromptsConfigPath(): string {
+  return join(COCKPIT_DIR, 'prompts.json');
 }
 
 /**

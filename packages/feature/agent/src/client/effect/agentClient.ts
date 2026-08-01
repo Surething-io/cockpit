@@ -361,3 +361,33 @@ export const loadClaudeStats = <A = Record<string, unknown>>(
   engine: string
 ): Effect.Effect<A, AppError> =>
   httpJson(`/api/claude-stats?engine=${encodeURIComponent(engine)}`)
+
+// ─────────────────────────────────────────────────────────
+// /api/prompts/config — chat input quick prompts (GET scope=global / cwd=, POST full array)
+// ─────────────────────────────────────────────────────────
+
+export interface PromptsConfigResponse {
+  prompts?: string[]
+}
+
+/** Global scope: ?scope=global */
+export const loadGlobalPromptsConfig = (): Effect.Effect<
+  PromptsConfigResponse,
+  AppError
+> => httpJson("/api/prompts/config?scope=global")
+
+/** Project scope: ?cwd=... */
+export const loadProjectPromptsConfig = (
+  cwd: string
+): Effect.Effect<PromptsConfigResponse, AppError> =>
+  httpJson(`/api/prompts/config?cwd=${encodeURIComponent(cwd)}`)
+
+/**
+ * Returns the prompts as actually PERSISTED — the server normalizes on write
+ * (trims, drops empties, collapses duplicates), so callers must adopt this
+ * instead of keeping their optimistic array.
+ */
+export const savePromptsConfig = (
+  body: { cwd?: string; scope?: "global"; prompts: string[] }
+): Effect.Effect<PromptsConfigResponse & { success?: boolean }, AppError> =>
+  httpPostJson("/api/prompts/config", body)

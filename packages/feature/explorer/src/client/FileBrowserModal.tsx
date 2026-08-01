@@ -1693,7 +1693,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           >
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-xs text-brand">{commit.shortHash}</span>
-                              <span className="text-xs text-slate-9" title={commit.date}>
+                              <span className="text-xs text-slate-9" data-tooltip={commit.date}>
                                 {commit.relativeDate} · {formatDateTime(commit.date)}
                               </span>
                             </div>
@@ -1888,7 +1888,6 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           <button
                             onClick={treeDiff.toggleDiff}
                             className="px-1.5 py-0.5 text-xs rounded transition-colors bg-brand text-white"
-                            title={t('fileBrowser.exitDiff')}
                           >
                             {t('fileBrowser.exitDiff')}
                           </button>
@@ -1936,7 +1935,6 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                                 className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
                                   on ? 'bg-brand text-white' : 'text-muted-foreground hover:bg-accent'
                                 }`}
-                                title={on ? t('fileBrowser.exitPreview') : t('common.preview')}
                               >
                                 {on ? t('fileBrowser.exitPreview') : t('common.preview')}
                               </button>

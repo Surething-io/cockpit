@@ -167,7 +167,6 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
               <button
                 onClick={e => { e.stopPropagation(); onToggleClosed(true); }}
                 className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                title={t('review.closeComment')}
               >
                 {t('review.closeComment')}
               </button>

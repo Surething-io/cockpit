@@ -133,7 +133,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
             <h2 className="text-sm font-medium text-foreground">
               {t('sessions.sessionList')}
             </h2>
-            <p className="text-xs text-muted-foreground truncate" title={cwd}>
+            <p className="text-xs text-muted-foreground truncate" data-tooltip={cwd}>
               {cwd}
             </p>
           </div>
@@ -224,7 +224,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
                         {session.engine}
                       </span>
                     )}
-                    <h4 className="text-xs font-medium text-foreground truncate" title={session.title}>
+                    <h4 className="text-xs font-medium text-foreground truncate" data-tooltip={session.title}>
                       {session.title}
                     </h4>
                   </div>
@@ -241,7 +241,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
                       <div
                         key={`first-${idx}`}
                         className="text-foreground truncate"
-                        title={msg}
+                        data-tooltip={msg}
                       >
                         <span className="text-slate-9 mr-1">•</span>
                         {msg}
@@ -260,7 +260,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
                       <div
                         key={`last-${idx}`}
                         className="text-foreground truncate"
-                        title={msg}
+                        data-tooltip={msg}
                       >
                         <span className="text-slate-9 mr-1">•</span>
                         {msg}

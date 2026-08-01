@@ -209,7 +209,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject }: Recent
                         {session.engine}
                       </span>
                     )}
-                    <h4 className="text-xs font-medium text-foreground truncate flex-1" title={session.cwd}>
+                    <h4 className="text-xs font-medium text-foreground truncate flex-1" data-tooltip={session.cwd}>
                       {getProjectName(session.cwd)}
                     </h4>
                     {session.status === 'loading' && (
@@ -222,7 +222,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject }: Recent
 
                   {/* Session title (ai-title / summary / first user message) */}
                   {session.title && (
-                    <div className="text-xs font-medium text-foreground truncate mb-1" title={session.title}>
+                    <div className="text-xs font-medium text-foreground truncate mb-1" data-tooltip={session.title}>
                       {session.title}
                     </div>
                   )}
@@ -236,7 +236,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject }: Recent
                   {((session.firstMessages?.length ?? 0) > 0 || (session.lastMessages?.length ?? 0) > 0) ? (
                     <div className="space-y-0.5 text-xs">
                       {session.firstMessages?.map((msg, idx) => (
-                        <div key={`first-${idx}`} className="text-foreground truncate" title={msg}>
+                        <div key={`first-${idx}`} className="text-foreground truncate" data-tooltip={msg}>
                           <span className="text-slate-9 mr-1">•</span>
                           {msg}
                         </div>
@@ -245,14 +245,14 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject }: Recent
                         <div className="text-slate-9 text-center py-0.5">···</div>
                       )}
                       {session.lastMessages?.map((msg, idx) => (
-                        <div key={`last-${idx}`} className="text-foreground truncate" title={msg}>
+                        <div key={`last-${idx}`} className="text-foreground truncate" data-tooltip={msg}>
                           <span className="text-slate-9 mr-1">•</span>
                           {msg}
                         </div>
                       ))}
                     </div>
                   ) : session.lastUserMessage ? (
-                    <div className="text-xs text-foreground truncate" title={session.lastUserMessage}>
+                    <div className="text-xs text-foreground truncate" data-tooltip={session.lastUserMessage}>
                       <span className="text-slate-9 mr-1">•</span>
                       {session.lastUserMessage}
                     </div>

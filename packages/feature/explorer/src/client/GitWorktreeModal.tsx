@@ -376,7 +376,7 @@ export function GitWorktreeModal({
                         return (
                           <span
                             className={`text-xs flex-shrink-0 ${label === 'just now' ? 'text-brand' : 'text-muted-foreground/70'}`}
-                            title={new Date(worktree.createdAt).toLocaleString()}
+                            data-tooltip={new Date(worktree.createdAt).toLocaleString()}
                           >
                             {label}
                           </span>

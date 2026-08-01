@@ -52,7 +52,7 @@ export function ChatHeader({
           {cwd && (
             <span
               className="text-sm text-foreground max-w-md truncate cursor-help"
-              title={`CWD: ${cwd}`}
+              data-tooltip={`CWD: ${cwd}`}
             >
               {cwd}
             </span>

@@ -229,7 +229,7 @@ export function FloatingToolbar({ x, y, visible, container, onAddComment, onSend
           className="px-3 py-1.5 text-xs font-medium border border-brand text-brand rounded-md hover:bg-brand/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           onClick={onSendToAI}
           disabled={isChatLoading}
-          title={isChatLoading ? t('comments.aiResponding') : t('floatingToolbar.sendToAI')}
+          title={isChatLoading ? t('comments.aiResponding') : undefined}
         >
           {t('floatingToolbar.sendToAI')}
         </button>
@@ -240,7 +240,7 @@ export function FloatingToolbar({ x, y, visible, container, onAddComment, onSend
           className="px-3 py-1.5 text-xs font-medium border border-brand text-brand rounded-md hover:bg-brand/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           onClick={onExplain}
           disabled={isChatLoading}
-          title={isChatLoading ? t('comments.aiResponding') : t('explain.action')}
+          title={isChatLoading ? t('comments.aiResponding') : undefined}
         >
           {t('explain.action')}
         </button>

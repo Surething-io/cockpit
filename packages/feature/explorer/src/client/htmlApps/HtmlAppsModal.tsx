@@ -223,7 +223,7 @@ export function HtmlAppsModal({ isOpen, onClose }: HtmlAppsModalProps) {
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-0 md:p-4" onClick={() => setPreview(null)}>
           <div className="bg-card shadow-xl w-full h-full md:max-w-[90%] md:h-[90vh] md:rounded-lg flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-border flex-shrink-0">
-              <span className="text-sm text-muted-foreground truncate min-w-0 flex-1" title={preview.path}>{preview.title}</span>
+              <span className="text-sm text-muted-foreground truncate min-w-0 flex-1" data-tooltip={preview.path}>{preview.title}</span>
               <button onClick={() => setPreview(null)} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0">
                 <X className="w-4 h-4" />
               </button>
@@ -254,15 +254,15 @@ function HtmlAppCard({ app, onOpen, onPreview, onDelete, onCopyPath }: HtmlAppCa
     <div
       className={`group flex flex-col h-full border border-border rounded-lg p-3 bg-secondary hover:border-brand hover:shadow-md transition-all cursor-pointer ${app.valid ? '' : 'opacity-60'}`}
       onClick={() => app.valid && onOpen()}
-      title="Open in a console bubble"
+      data-tooltip="Open in a console bubble"
     >
       <div className="flex items-center gap-2.5">
         <div className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-md bg-brand/10 text-brand text-lg">
           {app.icon ? <span>{app.icon}</span> : <ExternalLink className="w-5 h-5" />}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-foreground truncate" title={app.title}>{app.title}</div>
-          <div className="font-mono text-[11px] text-muted-foreground truncate" title={`/${app.name}`}>/{app.name}</div>
+          <div className="text-sm font-medium text-foreground truncate" data-tooltip={app.title}>{app.title}</div>
+          <div className="font-mono text-[11px] text-muted-foreground truncate" data-tooltip={`/${app.name}`}>/{app.name}</div>
         </div>
         {!app.valid && <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-red-9/15 text-red-11">Invalid</span>}
         <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>

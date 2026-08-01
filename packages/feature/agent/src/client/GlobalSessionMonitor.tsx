@@ -117,7 +117,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
         className={`relative flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
           collapsed ? 'w-full justify-center' : 'w-full'
         }`}
-        title={t('sessions.recentSessions')}
+        title={collapsed ? t('sessions.recentSessions') : undefined}
       >
         {/* Lightning icon indicates active state */}
         <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -203,7 +203,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
                       </span>
                     </div>
                     {session.title && (
-                      <div className="text-xs font-medium text-foreground truncate" title={session.title}>
+                      <div className="text-xs font-medium text-foreground truncate" data-tooltip={session.title}>
                         {session.title}
                       </div>
                     )}
@@ -228,7 +228,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
         >
           <div className="text-xs font-medium text-foreground truncate">{getProjectName(tooltip.session.cwd)}</div>
           {tooltip.session.title && (
-            <div className="text-xs font-medium text-foreground truncate mt-0.5" title={tooltip.session.title}>
+            <div className="text-xs font-medium text-foreground truncate mt-0.5" data-tooltip={tooltip.session.title}>
               {tooltip.session.title}
             </div>
           )}

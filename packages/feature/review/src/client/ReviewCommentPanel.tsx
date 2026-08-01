@@ -75,7 +75,6 @@ export function ReviewCommentPanel({
             <button
               onClick={() => onNavigateComment('prev')}
               className="px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors flex items-center gap-0.5"
-              title={t('review.prevComment')}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
               {t('review.prevComment')}
@@ -83,7 +82,6 @@ export function ReviewCommentPanel({
             <button
               onClick={() => onNavigateComment('next')}
               className="px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors flex items-center gap-0.5"
-              title={t('review.nextComment')}
             >
               {t('review.nextComment')}
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>

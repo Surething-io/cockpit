@@ -404,7 +404,7 @@ export function InteractiveMarkdownPreview({
           <span
             className="text-sm font-medium text-foreground truncate min-w-0 flex-1 cursor-pointer hover:text-brand transition-colors"
             style={{ direction: 'rtl', textAlign: 'left' }}
-            title={filePath}
+            data-tooltip={filePath}
             onClick={() => {
               navigator.clipboard.writeText(filePath);
               toast(t('common.copiedPath'));

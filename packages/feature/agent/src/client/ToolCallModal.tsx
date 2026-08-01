@@ -159,7 +159,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
           <>
             <span
               className="text-xs text-muted-foreground truncate flex-1 min-w-0"
-              title={displayInfo || ''}
+              data-tooltip={displayInfo || ''}
             >
               {displayPath}
             </span>

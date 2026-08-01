@@ -1004,7 +1004,7 @@ function StructureView({ columns, primaryKeys: _primaryKeys, foreignKeys, indexe
           <div className="text-[10px] text-muted-foreground uppercase tracking-wide px-1 mb-1">{t('database.indexes')}</div>
           <div className="space-y-0.5">
             {indexes.map(idx => (
-              <div key={idx.name} className="text-xs font-mono px-1.5 text-muted-foreground truncate" title={idx.definition}>
+              <div key={idx.name} className="text-xs font-mono px-1.5 text-muted-foreground truncate" data-tooltip={idx.definition}>
                 {idx.name}
               </div>
             ))}

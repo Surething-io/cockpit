@@ -71,7 +71,7 @@ export function DeepseekBalanceButton({ hasKey }: DeepseekBalanceButtonProps) {
       {!loading && !error && balance && (
         <span
           className={`text-xs font-mono ${unavailable ? 'text-red-400' : 'text-sky-400'}`}
-          title={
+          data-tooltip={
             unavailable
               ? t('chat.balanceUnavailable', { defaultValue: 'Account is not available for requests' })
               : undefined
@@ -86,7 +86,7 @@ export function DeepseekBalanceButton({ hasKey }: DeepseekBalanceButtonProps) {
         data-testid="deepseek-balance-button"
         disabled={!hasKey || loading}
         onClick={handleClick}
-        title={
+        data-tooltip={
           hasKey
             ? undefined
             : t('chat.balanceNeedsKey', { defaultValue: 'Set a DeepSeek API key first' })

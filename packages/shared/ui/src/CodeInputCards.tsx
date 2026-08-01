@@ -168,7 +168,7 @@ export function AddCommentInput({ x, y, range, filePath, lineSnapshot, container
                 className="px-3 py-1 text-xs font-medium border border-brand text-brand rounded-md hover:bg-brand/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={handleSendToAI}
                 disabled={isSubmitting || isChatLoading || !content.trim()}
-                title={isChatLoading ? t('comments.aiResponding') : t('comments.sendToAI')}
+                title={isChatLoading ? t('comments.aiResponding') : undefined}
               >
                 {t('comments.sendToAI')}
               </button>

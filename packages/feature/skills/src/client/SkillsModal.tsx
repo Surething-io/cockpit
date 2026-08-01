@@ -173,7 +173,6 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
               <button
                 onClick={() => setShowAdd(true)}
                 className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title={t('skills.addSkill')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -318,7 +317,7 @@ function SkillCard({ skill, onPreview, onDelete, onCopyPath }: SkillCardProps) {
             </svg>
           )}
         </div>
-        <span className="font-mono text-sm font-medium text-foreground truncate flex-1 min-w-0" title={`/${skill.name}`}>
+        <span className="font-mono text-sm font-medium text-foreground truncate flex-1 min-w-0" data-tooltip={`/${skill.name}`}>
           /{skill.name}
         </span>
         {!skill.valid && (
@@ -392,7 +391,7 @@ function SkillCard({ skill, onPreview, onDelete, onCopyPath }: SkillCardProps) {
 
       {/* Argument hint */}
       {skill.argumentHint && (
-        <div className="font-mono text-xs text-muted-foreground mt-1 truncate" title={skill.argumentHint}>
+        <div className="font-mono text-xs text-muted-foreground mt-1 truncate" data-tooltip={skill.argumentHint}>
           {skill.argumentHint}
         </div>
       )}

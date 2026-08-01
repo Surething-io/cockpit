@@ -68,7 +68,7 @@ export function TokenUsageBar({ tokenUsage, rateLimitInfo }: TokenUsageBarProps)
         {/* Rate limit warning/rejected indicator */}
         {rateLimitInfo && rateLimitLabel && (
           <span className={`flex items-center gap-1 ${rateLimitColor}`}
-            title={[
+            data-tooltip={[
               rateLimitInfo.rateLimitType && `Type: ${formatLimitType(rateLimitInfo.rateLimitType)}`,
               rateLimitInfo.utilization != null && `Usage: ${(rateLimitInfo.utilization * 100).toFixed(0)}%`,
               rateLimitInfo.resetsAt && `Resets in: ${formatResetTime(rateLimitInfo.resetsAt)}`,
@@ -95,7 +95,7 @@ export function TokenUsageBar({ tokenUsage, rateLimitInfo }: TokenUsageBarProps)
         {/* Rate limit info (shown when allowed — display reset countdown) */}
         {rateLimitInfo && !rateLimitLabel && rateLimitInfo.resetsAt && (
           <span className="flex items-center gap-1.5"
-            title={[
+            data-tooltip={[
               rateLimitInfo.rateLimitType && formatLimitType(rateLimitInfo.rateLimitType),
               rateLimitInfo.utilization != null && `Usage: ${(rateLimitInfo.utilization * 100).toFixed(0)}%`,
               `Resets in: ${formatResetTime(rateLimitInfo.resetsAt)}`,

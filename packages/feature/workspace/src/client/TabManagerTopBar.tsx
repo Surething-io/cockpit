@@ -215,7 +215,7 @@ export function TabManagerTopBar({
               <>
                 <span
                   className="text-sm text-foreground max-w-md truncate cursor-help"
-                  title={`CWD: ${initialCwd}`}
+                  data-tooltip={`CWD: ${initialCwd}`}
                 >
                   {initialCwd}
                 </span>

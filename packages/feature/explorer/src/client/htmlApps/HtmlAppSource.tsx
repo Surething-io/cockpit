@@ -129,7 +129,7 @@ export function HtmlAppSource({ entryPath, entryContent }: {
             <button
               key={f.abs}
               onClick={() => setSel(f.abs)}
-              title={f.rel}
+              data-tooltip={f.rel}
               className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 min-w-0 transition-colors ${
                 sel === f.abs ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/50'
               }`}

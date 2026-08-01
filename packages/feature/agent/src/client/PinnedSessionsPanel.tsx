@@ -118,7 +118,7 @@ export function PinnedSessionsPanel({
         className={`relative flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
           collapsed ? 'w-full justify-center' : 'w-full'
         }`}
-        title={t('sessions.pinnedSessions')}
+        title={collapsed ? t('sessions.pinnedSessions') : undefined}
       >
         {/* Star icon */}
         <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -168,7 +168,7 @@ export function PinnedSessionsPanel({
                       <circle cx="3" cy="14" r="1.5"/><circle cx="7" cy="14" r="1.5"/>
                     </svg>
                   </span>
-                  <div className="flex-1 min-w-0" title={session.cwd}>
+                  <div className="flex-1 min-w-0" data-tooltip={session.cwd}>
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm truncate">
                         {getProjectName(session.cwd)}

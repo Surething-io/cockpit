@@ -126,7 +126,7 @@ export function SubagentTranscriptModal({ cwd, sessionId, toolCall, workflowRef,
               {t('chat.subagent')}
             </span>
             {subtitle && (
-              <span className="text-xs text-muted-foreground truncate flex-1 min-w-0" title={subtitle}>
+              <span className="text-xs text-muted-foreground truncate flex-1 min-w-0" data-tooltip={subtitle}>
                 {subtitle}
               </span>
             )}

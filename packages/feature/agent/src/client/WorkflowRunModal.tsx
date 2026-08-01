@@ -151,7 +151,7 @@ export function WorkflowRunModal({ cwd, sessionId, runId, isRunning, onClose }: 
               {t('chat.workflowRun')}
             </span>
             {stats && (
-              <span className="text-xs text-muted-foreground truncate flex-1 min-w-0" title={stats}>
+              <span className="text-xs text-muted-foreground truncate flex-1 min-w-0" data-tooltip={stats}>
                 {stats}
               </span>
             )}
@@ -246,7 +246,7 @@ function WorkflowAgentRow({
         >
           {expanded ? '▲' : '▼'}
         </button>
-        <span className="text-xs text-foreground truncate flex-1 min-w-0" title={agent.label || ''}>
+        <span className="text-xs text-foreground truncate flex-1 min-w-0" data-tooltip={agent.label || ''}>
           {agent.label || agent.agentId}
         </span>
         <span className={`text-[10px] flex-shrink-0 ${stateColor}`}>{agent.state}</span>

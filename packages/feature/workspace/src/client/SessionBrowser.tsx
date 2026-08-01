@@ -235,7 +235,6 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
                 onClick={handlePickFolder}
                 disabled={isPickingFolder}
                 className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-                title={t('sessions.openFolder')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m3-3H9m-4 7h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -308,7 +307,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
                   </svg>
 
                   {/* Project Path */}
-                  <span className="flex-1 text-xs font-medium text-foreground truncate" title={project.fullPath}>
+                  <span className="flex-1 text-xs font-medium text-foreground truncate" data-tooltip={project.fullPath}>
                     {project.fullPath}
                   </span>
 
@@ -358,7 +357,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
                                   {session.engine}
                                 </span>
                               )}
-                              <h4 className="text-xs font-medium text-foreground truncate" title={session.title}>
+                              <h4 className="text-xs font-medium text-foreground truncate" data-tooltip={session.title}>
                                 {session.title}
                               </h4>
                             </div>
@@ -375,7 +374,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
                                 <div
                                   key={`first-${idx}`}
                                   className="text-foreground truncate"
-                                  title={msg}
+                                  data-tooltip={msg}
                                 >
                                   <span className="text-slate-9 mr-1">•</span>
                                   {msg}
@@ -394,7 +393,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
                                 <div
                                   key={`last-${idx}`}
                                   className="text-foreground truncate"
-                                  title={msg}
+                                  data-tooltip={msg}
                                 >
                                   <span className="text-slate-9 mr-1">•</span>
                                   {msg}

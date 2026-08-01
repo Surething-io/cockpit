@@ -434,7 +434,7 @@ export function JupyterBubble({
       case 'idle': return <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" title="Kernel idle" />;
       case 'busy': return <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse inline-block" title="Kernel busy" />;
       case 'starting': return <span className="w-3 h-3 border border-brand border-t-transparent rounded-full animate-spin inline-block" title="Starting kernel" />;
-      case 'error': return <span className="w-2 h-2 rounded-full bg-red-500 inline-block" title={kernelError || 'Kernel error'} />;
+      case 'error': return <span className="w-2 h-2 rounded-full bg-red-500 inline-block" data-tooltip={kernelError || 'Kernel error'} />;
       case 'dead': return <span className="w-2 h-2 rounded-full bg-red-500 inline-block" title="Kernel died" />;
       default: return <span className="w-2 h-2 rounded-full bg-gray-500 inline-block" title="Disconnected" />;
     }
@@ -523,7 +523,7 @@ export function JupyterBubble({
         >{saving ? 'Saving...' : 'Save'}</button>
         <span className="flex-1" />
         {kernelError && (
-          <span className="text-[10px] text-red-400 truncate max-w-[50%]" title={kernelError}>
+          <span className="text-[10px] text-red-400 truncate max-w-[50%]" data-tooltip={kernelError}>
             {kernelError}
           </span>
         )}

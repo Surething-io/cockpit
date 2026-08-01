@@ -171,7 +171,8 @@ export function ProjectSidebar({
             collapsed ? 'justify-center' : ''
           }`}
           onClick={onOpenSessionBrowser}
-          title={t('workspace.openProject')}
+          // Collapsed-only: expanded state already renders the same label below.
+          title={collapsed ? t('workspace.openProject') : undefined}
         >
           <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -284,7 +285,7 @@ export function ProjectSidebar({
             collapsed ? 'justify-center' : ''
           }`}
           onClick={() => onOpenNote()}
-          title={t('workspace.notes')}
+          title={collapsed ? t('workspace.notes') : undefined}
         >
           <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -297,7 +298,7 @@ export function ProjectSidebar({
             collapsed ? 'justify-center' : ''
           }`}
           onClick={onOpenSkills}
-          title={t('workspace.skills')}
+          title={collapsed ? t('workspace.skills') : undefined}
         >
           <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3l1.9 4.8L19 9l-4.1 3.1L16 18l-4-2.8L8 18l1.1-5.9L5 9l5.1-1.2L12 3z" />

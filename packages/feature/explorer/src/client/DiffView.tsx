@@ -782,7 +782,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
                             <span className="opacity-50 flex-shrink-0">·</span>
                             <span
                               className="truncate min-w-0 font-medium"
-                              title={formatSignature(row.enclosingFn)}
+                              data-tooltip={formatSignature(row.enclosingFn)}
                             >
                               {formatSignature(row.enclosingFn)}
                             </span>
@@ -1057,7 +1057,7 @@ export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableC
                     style={style}
                     onClick={() => setExpandedGaps((prev) => new Set(prev).add(row.id))}
                     className="flex items-center cursor-pointer bg-slate-2 hover:bg-accent border-y border-border text-xs text-slate-9 select-none"
-                    title={label}
+                    data-tooltip={label}
                   >
                     <span className="w-full text-center">{label}</span>
                   </div>

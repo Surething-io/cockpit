@@ -39,7 +39,7 @@ export function HtmlPreviewModal({ filePath, content, cwd, onClose, onContentSea
           <span
             className="text-sm text-muted-foreground truncate min-w-0 flex-1 cursor-pointer hover:text-foreground transition-colors"
             style={{ direction: 'rtl', textAlign: 'left' }}
-            title={filePath}
+            data-tooltip={filePath}
             onClick={() => {
               navigator.clipboard.writeText(filePath);
               toast(t('common.copiedPath'));
@@ -54,7 +54,6 @@ export function HtmlPreviewModal({ filePath, content, cwd, onClose, onContentSea
             className={`px-1.5 py-0.5 text-xs rounded transition-colors flex-shrink-0 ${
               mode === 'preview' ? 'bg-brand text-white' : 'text-muted-foreground hover:bg-accent'
             }`}
-            title={mode === 'preview' ? t('fileBrowser.exitPreview') : t('common.preview')}
           >
             {mode === 'preview' ? t('fileBrowser.exitPreview') : t('common.preview')}
           </button>

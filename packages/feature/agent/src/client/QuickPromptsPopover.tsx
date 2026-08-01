@@ -165,20 +165,26 @@ function PromptSection({
             onCancel={() => setEditIndex(null)}
           />
         ) : (
-          <Tooltip key={i} content={prompt}>
-            {/* draggable sits on the row, not the grip: the grip is only an
-                affordance, and a drag started anywhere on the row still works. */}
-            <div
-              draggable
-              onDragStart={() => setDragIndex(i)}
-              onDragOver={(e) => handleDragOver(e, i)}
-              onDrop={() => handleDrop(i)}
-              onDragEnd={clearDrag}
-              className={`flex items-center group min-w-0 rounded transition-opacity ${
-                dragIndex === i ? 'opacity-50' : ''
-              } ${dragOverIndex === i && dragIndex !== i ? 'border-t-2 border-brand' : ''}`}
-            >
-              <GripVertical className="w-3 h-3 flex-shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
+          // draggable sits on the row, not the grip: the grip is only an
+          // affordance, and a drag started anywhere on the row still works.
+          <div
+            key={i}
+            draggable
+            onDragStart={() => setDragIndex(i)}
+            onDragOver={(e) => handleDragOver(e, i)}
+            onDrop={() => handleDrop(i)}
+            onDragEnd={clearDrag}
+            className={`flex items-center group min-w-0 rounded transition-opacity ${
+              dragIndex === i ? 'opacity-50' : ''
+            } ${dragOverIndex === i && dragIndex !== i ? 'border-t-2 border-brand' : ''}`}
+          >
+            <GripVertical className="w-3 h-3 flex-shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
+            {/* Tooltip wraps only this button, not the whole row. TooltipProvider
+                resolves it by walking UP the parent chain, so hosting it on the
+                row would make hovering the icon buttons below surface the prompt
+                tooltip AND their own native `title` bubble at once. Cloned onto
+                the button (no className), so `flex-1` and layout are untouched. */}
+            <Tooltip content={prompt}>
               <button
                 type="button"
                 onClick={() => onSelect(prompt)}
@@ -187,24 +193,26 @@ function PromptSection({
                 <Send className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
                 <span className="truncate">{prompt}</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setEditIndex(i)}
-                className="p-1 text-muted-foreground hover:text-foreground rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                title={t('common.edit')}
-              >
-                <Pencil className="w-3 h-3" />
-              </button>
-              <button
-                type="button"
-                onClick={() => { setEditIndex(null); onDelete(i); }}
-                className="p-1 text-muted-foreground hover:text-destructive rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                title={t('common.delete')}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          </Tooltip>
+            </Tooltip>
+            {/* Icon-only: `title` stays as the sole accessible name, per the
+                tooltip migration's own carve-out for unlabelled buttons. */}
+            <button
+              type="button"
+              onClick={() => setEditIndex(i)}
+              className="p-1 text-muted-foreground hover:text-foreground rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+              title={t('common.edit')}
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => { setEditIndex(null); onDelete(i); }}
+              className="p-1 text-muted-foreground hover:text-destructive rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+              title={t('common.delete')}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
         )
       )}
     </div>

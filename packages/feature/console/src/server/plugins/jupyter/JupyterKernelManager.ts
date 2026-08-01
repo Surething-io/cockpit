@@ -12,6 +12,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { existsSync } from 'fs';
 import { createInterface, type Interface } from 'readline';
+import { sanitizedSpawnEnv } from '@cockpit/shared-utils';
 
 // ============================================
 // Types
@@ -113,11 +114,10 @@ class JupyterKernelManager {
 
     const bridge = spawn(python, ['-u', bridgePath], {
       cwd,
-      env: {
-        ...process.env,
+      env: sanitizedSpawnEnv({
         JUPYTER_CWD: cwd,
         PYTHONUNBUFFERED: '1',
-      },
+      }),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 

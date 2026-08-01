@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { sanitizedSpawnEnv } from '@cockpit/shared-utils';
 import { randomUUID } from 'crypto';
 import { createInterface } from 'readline';
 import { readdirSync } from 'fs';
@@ -64,7 +65,7 @@ export const kimiSpec: EngineSpec = {
         const child = spawn('kimi', args, {
           stdio: ['ignore', 'pipe', 'pipe'],
           cwd: cwd || undefined,
-          env: { ...process.env },
+          env: sanitizedSpawnEnv(),
         });
         ctx.signal.addEventListener('abort', () => child.kill('SIGTERM'), { once: true });
 

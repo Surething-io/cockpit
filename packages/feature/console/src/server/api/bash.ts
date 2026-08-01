@@ -7,6 +7,7 @@ import { exec } from "child_process"
 import { Effect } from "effect"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { ValidationError } from "@cockpit/effect-core"
+import { sanitizedSpawnEnv } from "@cockpit/shared-utils"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -37,7 +38,7 @@ export const POST = handler((req) =>
               cwd: cwd || process.cwd(),
               timeout: 30000,
               maxBuffer: 1024 * 1024,
-              env: { ...process.env, FORCE_COLOR: "0" },
+              env: sanitizedSpawnEnv({ FORCE_COLOR: "0" }),
             },
             (error, stdout, stderr) => {
               resolve({

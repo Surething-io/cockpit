@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { sanitizedSpawnEnv } from '@cockpit/shared-utils';
 import { randomUUID } from 'crypto';
 import { createInterface } from 'readline';
 import { writeFileSync, unlinkSync, mkdirSync, existsSync } from 'fs';
@@ -89,7 +90,7 @@ export const codexSpec: EngineSpec = {
         const child = spawn('codex', args, {
           stdio: ['ignore', 'pipe', 'pipe'],
           cwd: cwd || undefined,
-          env: { ...process.env },
+          env: sanitizedSpawnEnv(),
         });
         ctx.signal.addEventListener('abort', () => child.kill('SIGTERM'), { once: true });
 

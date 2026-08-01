@@ -1,4 +1,4 @@
-import { CLAUDE2_DIR } from '@cockpit/shared-utils';
+import { CLAUDE2_DIR, sanitizedSpawnEnv } from '@cockpit/shared-utils';
 import { getSessionTitle } from '../state/globalState';
 import { runSdkLoop, type BuildSdkOptions } from './shared/sdkLoop';
 import { runPtyTurn } from './shared/ptyBranch';
@@ -78,8 +78,10 @@ function buildClaudeOptions(ctx: RunCtx): BuildSdkOptions {
     }),
     includePartialMessages: true,
     abortController: abort,
-    // claude2 engine: override config directory to ~/.claude2.
-    ...(engine === 'claude2' && { env: { ...process.env, CLAUDE_CONFIG_DIR: CLAUDE2_DIR } }),
+    // env is ALWAYS passed (not just for claude2): without it the SDK inherits
+    // process.env verbatim, handing the agent this server's NODE_ENV=production.
+    // See sanitizedSpawnEnv. claude2 additionally points at ~/.claude2.
+    env: sanitizedSpawnEnv(engine === 'claude2' ? { CLAUDE_CONFIG_DIR: CLAUDE2_DIR } : {}),
   });
 }
 

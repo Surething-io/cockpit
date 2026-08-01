@@ -24,6 +24,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import * as pty from 'node-pty';
 import { execSync } from 'child_process';
+import { sanitizedSpawnEnv } from '@cockpit/shared-utils';
 
 // ── System-clipboard image paste (interactive claude's native attach: Ctrl+V → it reads the
 //    clipboard PNG via osascript/xclip) ──
@@ -296,7 +297,7 @@ export function runClaudeTurn(opts: RunTurnOptions): Promise<RunTurnResult> {
     let term: pty.IPty;
     try {
       term = pty.spawn(shell, ['--login', '-c', cmd], {
-        name: 'xterm-256color', cols, rows, cwd, env: process.env as Record<string, string>,
+        name: 'xterm-256color', cols, rows, cwd, env: sanitizedSpawnEnv(),
       });
     } catch (e) {
       // spawn failed: clean up temp images, resolve with a failure result (don't reject, to avoid leaking temp files).

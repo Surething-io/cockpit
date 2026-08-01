@@ -8,6 +8,7 @@ import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import fg from 'fast-glob';
 import { rgPath as RG_PATH } from '@vscode/ripgrep';
+import { sanitizedSpawnEnv } from '@cockpit/shared-utils';
 import type { AgentContext } from './types';
 
 // Async child-process helpers. We must NOT use execSync/execFileSync here:
@@ -279,7 +280,7 @@ export function createTools(context: AgentContext) {
             encoding: 'utf-8',
             timeout: timeout ?? 60000,
             maxBuffer: 10 * 1024 * 1024,
-            env: { ...process.env, FORCE_COLOR: '0', CI: '1' },
+            env: sanitizedSpawnEnv({ FORCE_COLOR: '0', CI: '1' }),
           });
 
           // Empty stdout is the #1 source of model confusion — an empty
@@ -417,7 +418,7 @@ export function createTools(context: AgentContext) {
             encoding: 'utf-8',
             timeout: 15000,
             maxBuffer: 10 * 1024 * 1024,
-            env: { ...process.env, FORCE_COLOR: '0' },
+            env: sanitizedSpawnEnv({ FORCE_COLOR: '0' }),
           });
           const GREP_CAP = 32000;
           const spillPath = stdout.length > GREP_CAP ? await spillToFile(stdout, 'grep') : undefined;

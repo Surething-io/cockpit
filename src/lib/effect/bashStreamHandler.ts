@@ -27,6 +27,7 @@ import type { WebSocket } from "ws"
 import { ValidationError, WSError } from "@cockpit/effect-core"
 import type { WSConnection } from "@cockpit/effect-services"
 import { fromWebSocket } from "@cockpit/effect-runtime/server"
+import { sanitizedSpawnEnv } from "@cockpit/shared-utils"
 import { resolveBashShell, killProcessTree } from "../shell"
 
 const HEARTBEAT = Schedule.spaced("30 seconds")
@@ -95,7 +96,7 @@ export const handleBash = (
       try {
         child = spawn(shell, ["--login", "-c", command], {
           cwd,
-          env: { ...process.env, FORCE_COLOR: "0" },
+          env: sanitizedSpawnEnv({ FORCE_COLOR: "0" }),
           stdio: ["ignore", "pipe", "pipe"],
           detached: true,
         })

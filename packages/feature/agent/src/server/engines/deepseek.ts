@@ -1,4 +1,4 @@
-import { DEEPSEEK_DIR, SETTINGS_FILE, getBuiltinSessionsRoot, readJsonFile } from '@cockpit/shared-utils';
+import { DEEPSEEK_DIR, SETTINGS_FILE, getBuiltinSessionsRoot, readJsonFile, sanitizedSpawnEnv } from '@cockpit/shared-utils';
 import { readDeepseekApiKey } from './deepseekCredentials';
 import { getSessionTitle } from '../state/globalState';
 import { runSdkLoop, type BuildSdkOptions } from './shared/sdkLoop';
@@ -58,12 +58,11 @@ function buildBuiltinConfig(apiKey: string): BuiltinAgentConfig {
 }
 
 /** Inject DeepSeek's Anthropic-compatible env. We must REMOVE ANTHROPIC_AUTH_TOKEN (not blank it):
- *  some SDK paths check "is defined" and would emit an empty Bearer header → 401. */
+ *  some SDK paths check "is defined" and would emit an empty Bearer header → 401 — hence the
+ *  `undefined` override, which sanitizedSpawnEnv deletes rather than blanks. */
 function buildDeepseekEnv(apiKey: string, model: string): Record<string, string | undefined> {
-  const { ANTHROPIC_AUTH_TOKEN: _t, ANTHROPIC_API_KEY: _k, ...inherited } = process.env;
-  void _t; void _k;
-  return {
-    ...inherited,
+  return sanitizedSpawnEnv({
+    ANTHROPIC_AUTH_TOKEN: undefined,
     ANTHROPIC_BASE_URL: DEEPSEEK_BASE_URL,
     ANTHROPIC_API_KEY: apiKey, // DeepSeek sends this as x-api-key (fully supported)
     ANTHROPIC_MODEL: model,
@@ -73,7 +72,7 @@ function buildDeepseekEnv(apiKey: string, model: string): Record<string, string 
     CLAUDE_CODE_USE_BEDROCK: '0',
     CLAUDE_CODE_USE_VERTEX: '0',
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-  };
+  });
 }
 
 function buildDeepseekOptions(ctx: RunCtx, env: Record<string, string | undefined>): BuildSdkOptions {

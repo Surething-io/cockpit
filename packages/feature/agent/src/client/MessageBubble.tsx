@@ -10,14 +10,13 @@ import { loadSnapshotsByToolIds } from './effect/snapshotClient';
 import type { ChatMessage, MessageImage, ToolCallInfo } from './types';
 import { isMutatingToolName } from '../shared/toolMutation';
 // Tech debt: cross-package imports into the main shell.
-//   - InteractiveMarkdownPreview, FileContextMenu: chat-adjacent code that
-//     hasn't migrated yet.
+//   - FileContextMenu: chat-adjacent code that hasn't migrated yet.
 //   - MarkdownRenderer: a generic markdown renderer; candidate for shared-ui.
 // Allowed by MODULES.md as transitional reverse imports.
-import { InteractiveMarkdownPreview, HtmlPreviewModal, isMarkdownFile, isHtmlFile, isImageFile } from '@cockpit/feature-explorer';
-import { MenuContainerProvider } from '@cockpit/shared-ui';
+import { HtmlPreviewModal, isMarkdownFile, isHtmlFile, isImageFile } from '@cockpit/feature-explorer';
 import { MarkdownRenderer } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { MdPreviewModal } from './MdPreviewModal';
 import { readFileForPreview } from './effect/agentClient';
 import { useTranslation } from 'react-i18next';
 
@@ -80,32 +79,6 @@ function ImageFilePreviewModal({ filePath, onClose }: { filePath: string; onClos
           onClick={(e) => e.stopPropagation()}
         />
       </div>
-    </Portal>
-  );
-}
-
-// MD preview modal — provides MenuContainerProvider so FloatingToolbar works correctly
-// container uses a callback ref (i.e. useState setter): React calls it synchronously on mount, avoiding timing issues
-function MdPreviewModal({ filePath, content, cwd, onClose }: {
-  filePath: string; content: string; cwd: string;
-  onClose: () => void;
-}) {
-  const [container, setContainer] = useState<HTMLElement | null>(null);
-
-  return (
-    <Portal>
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-0 md:p-4" onClick={onClose}>
-      <div ref={setContainer} className="bg-card shadow-xl w-full h-full rounded-none md:max-w-[90%] md:h-[90vh] md:rounded-lg flex flex-col relative" onClick={e => e.stopPropagation()}>
-        <MenuContainerProvider container={container}>
-          <InteractiveMarkdownPreview
-            content={content}
-            filePath={filePath}
-            cwd={cwd}
-            onClose={onClose}
-          />
-        </MenuContainerProvider>
-      </div>
-    </div>
     </Portal>
   );
 }

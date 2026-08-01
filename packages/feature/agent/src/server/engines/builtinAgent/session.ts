@@ -91,6 +91,30 @@ export function readSessionMessages(root: string, cwd: string, sessionId: string
 
   const messages: ModelMessage[] = [];
 
+  // The writer appends one transcript line per event (text flush, each tool_use, each
+  // tool_result), so a single assistant turn spans several lines. Buffer those lines and
+  // flush them as ONE assistant message, which keeps two invariants the OpenAI-compatible
+  // wire format requires and per-line emission broke:
+  //   1. No empty assistant message. A turn whose only tool call was dropped below (or the
+  //      trailing usage-carrying line, which has empty content by design) must vanish
+  //      entirely, not become `content: ''` — providers reject that with
+  //      "Invalid assistant message: content or tool_calls must be set", which bricks the
+  //      whole session since replay happens on every subsequent turn.
+  //   2. Parallel tool calls stay in one assistant message, so their tool results follow
+  //      the message that declared them instead of interleaving assistant/assistant/tool/tool.
+  let assistantParts: Array<Record<string, unknown>> = [];
+
+  const flushAssistant = (): void => {
+    const parts = assistantParts.filter((p) => p.type !== 'text' || String(p.text || '').length > 0);
+    assistantParts = [];
+    if (parts.length === 0) return; // invariant 1 — drop, never emit empty content
+    if (parts.length === 1 && parts[0].type === 'text') {
+      messages.push({ role: 'assistant', content: String(parts[0].text || '') } as ModelMessage);
+    } else {
+      messages.push({ role: 'assistant', content: parts as unknown } as ModelMessage);
+    }
+  };
+
   for (const entry of transcriptEntries) {
     // User text
     if (entry.type === 'user' && entry.message?.role === 'user' && Array.isArray(entry.message.content)) {
@@ -98,17 +122,17 @@ export function readSessionMessages(root: string, cwd: string, sessionId: string
         .filter((b) => b.type === 'text')
         .map((b) => b.text || '')
         .join('\n');
+      flushAssistant();
+      if (!text) continue; // same reason as invariant 1, on the user side
       messages.push({ role: 'user', content: text } as ModelMessage);
       continue;
     }
 
     // Assistant message (text + tool calls)
     if (entry.type === 'assistant' && Array.isArray(entry.message?.content)) {
-      const parts: Array<Record<string, unknown>> = [];
-
       for (const block of entry.message.content) {
         if (block.type === 'text') {
-          parts.push({ type: 'text', text: block.text || '' });
+          assistantParts.push({ type: 'text', text: block.text || '' });
         } else if (block.type === 'tool_use') {
           const toolCallId = block.id || '';
           if (!toolCallId) continue;
@@ -117,21 +141,13 @@ export function readSessionMessages(root: string, cwd: string, sessionId: string
           if (!toolResultIds.has(toolCallId)) continue;
 
           const toolName = block.name || toolNameById.get(toolCallId) || 'tool';
-          parts.push({
+          assistantParts.push({
             type: 'tool-call',
             toolCallId,
             toolName,
             input: block.input || {},
           });
         }
-      }
-
-      if (parts.length === 1 && parts[0].type === 'text') {
-        messages.push({ role: 'assistant', content: String(parts[0].text || '') } as ModelMessage);
-      } else if (parts.length > 0) {
-        messages.push({ role: 'assistant', content: parts as unknown } as ModelMessage);
-      } else {
-        messages.push({ role: 'assistant', content: '' } as ModelMessage);
       }
       continue;
     }
@@ -149,6 +165,7 @@ export function readSessionMessages(root: string, cwd: string, sessionId: string
         // Drop results without matching call (keeps prompt schema consistent).
         if (!toolCallIds.has(toolCallId)) continue;
 
+        flushAssistant(); // the calls must land before the results that answer them
         const toolName = toolNameById.get(toolCallId) || 'tool';
         messages.push({
           role: 'tool',
@@ -165,6 +182,7 @@ export function readSessionMessages(root: string, cwd: string, sessionId: string
 	    }
   }
 
+  flushAssistant();
   return messages;
 }
 

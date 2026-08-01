@@ -120,13 +120,13 @@ export async function runBuiltinAgent(ctx: RunCtx, config: BuiltinAgentConfig): 
             );
           } catch { /* ignore */ }
         },
-        onToolResult: (toolUseId, content) => {
+        onToolResult: (toolUseId, content, isError) => {
           try {
             pendingToolCalls.delete(toolUseId);
             appendToolResult(sessionsRoot, cwd, sid, toolUseId, content, {
               uuid: randomUUID(),
               timestamp: new Date().toISOString(),
-              is_error: false,
+              is_error: Boolean(isError),
             });
           } catch { /* ignore */ }
         },

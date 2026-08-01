@@ -1,6 +1,7 @@
 import { existsSync } from 'fs';
 import {
   SCHEDULED_TASKS_FILE, readJsonFile, writeJsonFile, mutateJsonFile, withFileLock,
+  getSessionFilePath,
   getClaudeSessionPath, getClaude2SessionPath, getOllamaSessionPath,
   getDeepseekSessionPath, getDeepseekBuiltinSessionPath, findCodexSessionPath, findKimiSessionPath,
 } from '@cockpit/shared-utils';
@@ -175,6 +176,11 @@ const dispatchEngineMessageEff = (
       // loopback, so scheduled tasks need no port and can't mis-target a sibling dev/prod
       // instance. The run registers in sessionRunHub and streams to viewers via
       // /ws/session-stream exactly like an interactive request.
+      // Execution mode is NOT snapshotted on the task — it is derived from where the
+      // session actually lives, so a task made from a Built-in Agent tab keeps running
+      // the built-in loop instead of silently switching backends mid-schedule.
+      const builtinLoop = isDeepseekBuiltinSession(engine, task);
+      const noHistory = await readSessionNoHistory(task, engine, builtinLoop);
       const outcome = await dispatchChat(spec, {
         prompt: buildTaskPrompt(task),
         // Omit sessionId to start a brand-new session when the resume target is gone;
@@ -183,10 +189,8 @@ const dispatchEngineMessageEff = (
         cwd: task.cwd,
         engine, // selects claude2's CLAUDE_CONFIG_DIR; no-op for the others
         ...(task.model && { model: task.model }),
-        // Execution mode is NOT snapshotted on the task — it is derived from where the
-        // session actually lives, so a task made from a Built-in Agent tab keeps running
-        // the built-in loop instead of silently switching backends mid-schedule.
-        ...(isDeepseekBuiltinSession(engine, task) && { mode: 'builtin' }),
+        ...(builtinLoop && { mode: 'builtin' }),
+        ...(noHistory && { noHistory: true }),
       });
       if (!outcome.ok) {
         // 409 = session/run already active (the guard fired). Surface as a task error
@@ -245,6 +249,35 @@ const dispatchEngineMessageEff = (
  */
 function isDeepseekBuiltinSession(engine: string, task: ScheduledTask): boolean {
   return engine === 'deepseek' && existsSync(getDeepseekBuiltinSessionPath(task.cwd, task.sessionId));
+}
+
+/** Per-session slice of the project state file the chat tabs persist (see /api/project-state). */
+interface ProjectSessionState {
+  noHistories?: Record<string, boolean>;
+}
+
+/**
+ * "Independent task" (the noHistory toggle) for this session, READ AT FIRE TIME.
+ *
+ * It is a per-session UI preference, not a task field, so it follows the same rule as the
+ * execution mode above: derived from where the session lives, never snapshotted onto the
+ * task. Flipping the checkbox therefore takes effect on the next fire instead of being
+ * frozen at task creation — and a task whose session has it on stops replaying a transcript
+ * the user explicitly asked not to send.
+ *
+ * Gated on the engines that actually honor it, mirroring the client's `canDropHistory`:
+ * only the built-in agent loop reads params.noHistory, and ollama always runs that loop
+ * while deepseek runs it only in builtin mode. Passing it to an SDK/PTY engine would be
+ * silently ignored, which would read as support that isn't there.
+ */
+export async function readSessionNoHistory(
+  task: ScheduledTask,
+  engine: string,
+  builtinLoop: boolean,
+): Promise<boolean> {
+  if (engine !== 'ollama' && !builtinLoop) return false;
+  const state = await readJsonFile<ProjectSessionState>(getSessionFilePath(task.cwd), {});
+  return state.noHistories?.[task.sessionId] === true;
 }
 
 function sessionPathFor(engine: string, task: ScheduledTask): string | null {

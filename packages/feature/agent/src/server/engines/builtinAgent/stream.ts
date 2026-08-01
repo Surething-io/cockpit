@@ -2,12 +2,24 @@ import type { TextStreamPart } from 'ai';
 
 export type SafeEnqueue = (data: string) => void;
 
+/** A failed tool call still owes the transcript a tool_result. Turn whatever the AI SDK
+ *  threw (Error, string, structured payload) into readable text for the model and the UI. */
+function formatToolError(error: unknown): string {
+  if (error instanceof Error) return error.message || String(error);
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 export async function consumeStream(
   fullStream: AsyncIterable<TextStreamPart<Record<string, never>>>,
   safeEnqueue: SafeEnqueue,
   _sessionId: string,
   opts?: {
-    onToolResult?: (toolUseId: string, content: string) => void;
+    onToolResult?: (toolUseId: string, content: string, isError?: boolean) => void;
     onToolCall?: (toolUseId: string, toolName: string, input: Record<string, unknown>) => void;
     onTextFlush?: (text: string) => void;
   }
@@ -62,12 +74,32 @@ export async function consumeStream(
 
       case 'tool-result': {
         const content = String(part.output);
-        opts?.onToolResult?.(part.toolCallId, content);
+        opts?.onToolResult?.(part.toolCallId, content, false);
         safeEnqueue(
           `data: ${JSON.stringify({
             type: 'user',
             message: {
               content: [{ type: 'tool_result', tool_use_id: part.toolCallId, content, is_error: false }],
+            },
+          })}\n\n`
+        );
+        break;
+      }
+
+      // A tool that threw (or whose input failed schema validation) emits `tool-error`,
+      // never `tool-result`. Skipping it left the tool_use dangling in the transcript;
+      // on the NEXT turn that call was dropped on replay, the assistant message it lived
+      // in became empty, and the provider rejected the whole request with
+      // "Invalid assistant message: content or tool_calls must be set" — a permanently
+      // unusable session. Every tool call must close with a result line, success or not.
+      case 'tool-error': {
+        const content = formatToolError(part.error);
+        opts?.onToolResult?.(part.toolCallId, content, true);
+        safeEnqueue(
+          `data: ${JSON.stringify({
+            type: 'user',
+            message: {
+              content: [{ type: 'tool_result', tool_use_id: part.toolCallId, content, is_error: true }],
             },
           })}\n\n`
         );

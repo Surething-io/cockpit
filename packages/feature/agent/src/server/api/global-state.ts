@@ -8,6 +8,7 @@ import { FSError, ValidationError } from "@cockpit/effect-core"
 import {
   updateGlobalState,
   getSessionPreview,
+  attachEngines,
   type SessionStatus,
 } from "../state/globalState"
 
@@ -20,6 +21,7 @@ interface GlobalSession {
   lastUserMessage?: string
   firstMessages?: string[]
   lastMessages?: string[]
+  engine?: string
 }
 
 interface GlobalState {
@@ -75,7 +77,10 @@ export const GET = handler(() =>
       ),
       { concurrency: "unbounded" }
     )
-    return ok({ sessions })
+    // Engine per session (session.json's `engines` map) — the badge the cards
+    // already render but never had data for.
+    const withEngines = yield* Effect.promise(() => attachEngines(sessions))
+    return ok({ sessions: withEngines })
   })
 )
 

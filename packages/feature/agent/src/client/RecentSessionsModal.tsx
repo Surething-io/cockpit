@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { loadRecentSessions, type RecentSessionInfo } from './effect/agentClient';
+import { EngineBadge } from './EngineBadge';
 
 interface RecentSessionsModalProps {
   isOpen: boolean;
@@ -199,15 +200,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject }: Recent
                           : 'bg-muted-foreground/30'
                     }`} />
                     {session.engine && session.engine !== 'claude' && (
-                      <span className={`shrink-0 px-1 py-0.5 text-[10px] leading-none font-medium rounded ${
-                        session.engine === 'claude2' ? 'bg-orange-500/15 text-orange-11' :
-                        session.engine === 'ollama' ? 'bg-blue-500/15 text-blue-11' :
-                        session.engine === 'codex' ? 'bg-green-500/15 text-green-11' :
-                        session.engine === 'kimi' ? 'bg-purple-500/15 text-purple-11' :
-                        'bg-muted text-muted-foreground'
-                      }`}>
-                        {session.engine}
-                      </span>
+                      <EngineBadge engine={session.engine} />
                     )}
                     <h4 className="text-xs font-medium text-foreground truncate flex-1" data-tooltip={session.cwd}>
                       {getProjectName(session.cwd)}

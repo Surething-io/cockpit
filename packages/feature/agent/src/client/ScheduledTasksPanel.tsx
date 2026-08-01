@@ -7,6 +7,7 @@ import { BrowserRuntime } from '@cockpit/effect-runtime';
 import type { ScheduledTask } from './useScheduledTasks';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
 import { MdPreviewModal } from './MdPreviewModal';
+import { EngineBadge } from './EngineBadge';
 import { readFileForPreview } from './effect/agentClient';
 
 interface ScheduledTasksPanelProps {
@@ -67,6 +68,21 @@ function getStatusColor(task: ScheduledTask): string {
  */
 function getTaskSummary(task: ScheduledTask): string {
   return task.resolvedPrompt || task.message || task.taskFile || '';
+}
+
+/**
+ * The engine this task will actually fire on. `engine` is a snapshot taken at
+ * creation and is absent on tasks made before it was persisted — those run on
+ * claude, which is also what the dispatcher falls back to (sendChatMessageEff).
+ */
+function getTaskEngine(task: ScheduledTask): string {
+  return task.engine || 'claude';
+}
+
+/** Model is only meaningful for the engines that carry one; keep it in the tooltip. */
+function getEngineTooltip(task: ScheduledTask): string {
+  const engine = getTaskEngine(task);
+  return task.model ? `${engine} · ${task.model}` : engine;
 }
 
 function getStatusText(task: ScheduledTask, t: (key: string) => string): string {
@@ -343,9 +359,10 @@ export function ScheduledTasksPanel({
                             task.unread ? 'border-brand/40 bg-brand/5' : 'border-border'
                           }`}
                         >
-                          {/* Project name + status dot */}
+                          {/* Project name + status dot + engine */}
                           <div className="flex items-center gap-1.5 mb-1">
                             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getStatusColor(task)}`} />
+                            <EngineBadge engine={getTaskEngine(task)} tooltip={getEngineTooltip(task)} />
                             <h4 className="text-xs font-medium text-foreground truncate flex-1" data-tooltip={task.cwd}>
                               {getProjectName(task.cwd)}
                             </h4>
@@ -399,6 +416,7 @@ export function ScheduledTasksPanel({
                           >
                             <div className="flex items-center gap-1.5 mb-1">
                               <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getStatusColor(task)}`} />
+                              <EngineBadge engine={getTaskEngine(task)} tooltip={getEngineTooltip(task)} />
                               <h4 className="text-xs font-medium text-foreground truncate flex-1" data-tooltip={task.cwd}>
                                 {getProjectName(task.cwd)}
                               </h4>

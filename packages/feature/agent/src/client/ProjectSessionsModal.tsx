@@ -6,6 +6,7 @@ import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { loadSessionsByProject } from './effect/agentClient';
+import { EngineBadge } from './EngineBadge';
 
 interface SessionInfo {
   path: string;
@@ -216,17 +217,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
                   {/* Session Title + Engine Badge */}
                   <div className="flex items-center gap-1.5 mb-1">
                     {session.engine && session.engine !== 'claude' && (
-                      <span className={`shrink-0 px-1 py-0.5 text-[10px] leading-none font-medium rounded ${
-                        session.engine === 'claude2' ? 'bg-orange-500/15 text-orange-11' :
-                        session.engine === 'ollama' ? 'bg-blue-500/15 text-blue-11' :
-                        session.engine === 'codex' ? 'bg-green-500/15 text-green-11' :
-                        session.engine === 'kimi' ? 'bg-purple-500/15 text-purple-11' :
-                        // Matches the DS badge in TabBar; the -11 scale has no sky token.
-                        session.engine === 'deepseek' ? 'bg-sky-500/15 text-sky-400' :
-                        'bg-muted text-muted-foreground'
-                      }`}>
-                        {session.engine}
-                      </span>
+                      <EngineBadge engine={session.engine} />
                     )}
                     <h4 className="text-xs font-medium text-foreground truncate" data-tooltip={session.title}>
                       {session.title}

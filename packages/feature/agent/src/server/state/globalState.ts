@@ -10,6 +10,7 @@ import {
   getDeepseekBuiltinSessionPath,
   findCodexSessionPath,
   findKimiSessionPath,
+  getSessionFilePath,
 } from '@cockpit/shared-utils';
 
 /** Claude-format transcript stores, probed in order by cwd+sessionId. DeepSeek has two:
@@ -46,7 +47,8 @@ interface GlobalSession {
   status: SessionStatus;
   title?: string;
   lastUserMessage?: string;
-  engine?: 'claude' | 'claude2' | 'codex' | 'ollama';
+  /** Attached at read time by attachEngines — never persisted in state.json. */
+  engine?: string;
 }
 
 interface GlobalState {
@@ -364,6 +366,41 @@ export interface GlobalSessionSnapshot extends GlobalSession {
 }
 
 /**
+ * Attach each session's engine, read from the project state the chat tabs persist
+ * (session.json's `engines` map — the same map the per-project session lists read).
+ *
+ * state.json has carried an `engine` field since forever but NOTHING ever wrote it,
+ * so every consumer saw `undefined`: the recent-sessions badge was dead markup that
+ * had silently never rendered, which is exactly how its copy of the engine→color
+ * chain got to drift without anyone noticing.
+ *
+ * One read per PROJECT, not per session: a 100-entry cross-project list collapses to
+ * a handful of files. Best-effort — an unreadable state file just leaves engine unset,
+ * which renders as the neutral default rather than failing the list.
+ */
+export async function attachEngines<T extends { cwd: string; sessionId: string }>(
+  sessions: T[],
+): Promise<Array<T & { engine?: string }>> {
+  const byCwd = new Map<string, Promise<Record<string, string>>>();
+  const enginesFor = (cwd: string): Promise<Record<string, string>> => {
+    const cached = byCwd.get(cwd);
+    if (cached) return cached;
+    const pending = readJsonFile<{ engines?: Record<string, string> }>(getSessionFilePath(cwd), {})
+      .then((state) => state.engines ?? {})
+      .catch(() => ({}));
+    byCwd.set(cwd, pending);
+    return pending;
+  };
+
+  return Promise.all(
+    sessions.map(async (session) => {
+      const engine = (await enginesFor(session.cwd))[session.sessionId];
+      return engine ? { ...session, engine } : session;
+    }),
+  );
+}
+
+/**
  * Build the recent-sessions snapshot (top `limit`, previews attached) — the
  * exact shape the /ws/global-state channel pushes. Shared by:
  *   - the WS handler (src/lib/effect/globalStateHandler.ts), and
@@ -384,7 +421,7 @@ export async function getGlobalSessionsSnapshot(limit = 15): Promise<GlobalSessi
   state.sessions.sort((a, b) => b.lastActive - a.lastActive);
   const recent = state.sessions.slice(0, limit);
 
-  return Promise.all(
+  const previews = await Promise.all(
     recent.map(async (session): Promise<GlobalSessionSnapshot> => {
       // Actively-loading sessions already carry a fresh lastUserMessage.
       if (session.status === 'loading' && session.lastUserMessage) return session;
@@ -411,6 +448,10 @@ export async function getGlobalSessionsSnapshot(limit = 15): Promise<GlobalSessi
       }
     })
   );
+
+  // After the previews, so the two early-return branches above (already-fresh
+  // loading session, preview failure) get an engine too.
+  return attachEngines(previews);
 }
 
 /**

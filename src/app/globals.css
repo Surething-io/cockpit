@@ -305,6 +305,15 @@ body {
   :focus:not(:focus-visible) {
     outline: none;
   }
+
+  /* Single source of truth for placeholder color. Tailwind's preflight
+     defaults to `currentcolor 50%`, which tracks the text color and drifts
+     per surface; pin it to slate-9 so a placeholder never reads as typed
+     input. Lives in @layer base on purpose — a `placeholder:text-*` utility
+     still wins when one input genuinely needs to differ. */
+  ::placeholder {
+    color: hsl(var(--slate-9));
+  }
 }
 
 /* ---- Scrollbar styles ---- */

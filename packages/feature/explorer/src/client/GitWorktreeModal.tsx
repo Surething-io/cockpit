@@ -404,7 +404,7 @@ export function GitWorktreeModal({
                 value={branchSearch}
                 onChange={(e) => setBranchSearch(e.target.value)}
                 placeholder={t('git.worktree.searchBranch')}
-                className="flex-1 bg-secondary text-sm text-foreground rounded px-2.5 py-1.5 outline-none placeholder:text-muted-foreground"
+                className="flex-1 bg-secondary text-sm text-foreground rounded px-2.5 py-1.5 outline-none"
                 autoFocus
                 autoComplete="off"
                 spellCheck="false"

@@ -213,7 +213,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
                 placeholder={t('workspace.searchProjectPath')}
                 value={searchKeyword}
                 onChange={(e) => setSearchKeyword(e.target.value)}
-                className="px-2 py-1 pr-6 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                className="px-2 py-1 pr-6 text-xs border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
               />
               {searchKeyword && (
                 <button

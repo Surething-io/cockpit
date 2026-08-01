@@ -144,7 +144,7 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder={t('git.searchBranch')}
-              className="w-full px-2.5 py-1.5 text-sm bg-muted rounded border-none outline-none placeholder:text-muted-foreground"
+              className="w-full px-2.5 py-1.5 text-sm bg-muted rounded border-none outline-none"
               onKeyDown={e => {
                 if (e.key === 'Escape') handleClose();
               }}

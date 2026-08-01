@@ -1093,7 +1093,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                     value={fileTree.searchQuery}
                     onChange={e => fileTree.setSearchQuery(e.target.value)}
                     placeholder={t('fileBrowser.searchFiles')}
-                    className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring"
+                    className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                   {fileTree.searchQuery && (
                     <button
@@ -1163,7 +1163,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                         }
                       }}
                       placeholder={t('fileBrowser.searchFileContent')}
-                      className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                     {contentSearch.contentSearchQuery && (
                       <button
@@ -1221,7 +1221,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                     value={contentSearch.searchOptions.fileType}
                     onChange={e => contentSearch.setSearchOptions(prev => ({ ...prev, fileType: e.target.value }))}
                     placeholder={t('fileBrowser.fileTypes')}
-                    className="w-24 px-2 py-0.5 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9"
+                    className="w-24 px-2 py-0.5 text-xs border border-border rounded bg-card text-foreground"
                   />
                 </div>
               </div>

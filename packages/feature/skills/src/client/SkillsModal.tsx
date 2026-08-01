@@ -153,7 +153,7 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder={t('skills.searchPlaceholder')}
-                  className="px-2 py-1 pr-6 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                  className="px-2 py-1 pr-6 text-xs border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
                 {query && (
                   <button
@@ -244,7 +244,7 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
               }}
               placeholder={t('skills.pathPlaceholder')}
               autoFocus
-              className="w-full px-3 py-2 text-sm font-mono border border-border rounded-md bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full px-3 py-2 text-sm font-mono border border-border rounded-md bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
             <div className="flex justify-end gap-2 mt-4">
               <button

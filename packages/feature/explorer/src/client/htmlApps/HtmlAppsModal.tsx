@@ -134,7 +134,7 @@ export function HtmlAppsModal({ isOpen, onClose }: HtmlAppsModalProps) {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search HTML apps..."
-                  className="pl-7 pr-6 py-1 text-xs border border-border rounded bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                  className="pl-7 pr-6 py-1 text-xs border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
                 {query && (
                   <button
@@ -197,7 +197,7 @@ export function HtmlAppsModal({ isOpen, onClose }: HtmlAppsModalProps) {
               onKeyDown={(e) => { if (e.key === 'Enter' && !adding) handleAdd(); }}
               placeholder="/Users/you/.../report.html"
               autoFocus
-              className="w-full px-3 py-2 text-sm font-mono border border-border rounded-md bg-card text-foreground placeholder-slate-9 focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full px-3 py-2 text-sm font-mono border border-border rounded-md bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
             <div className="flex justify-end gap-2 mt-4">
               <button

@@ -551,7 +551,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
           onPaste={handlePaste}
           placeholder={disabled ? t('chat.placeholderDisabled') : t('chat.placeholder')}
           rows={1}
-          className="flex-1 resize-none px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-card text-foreground placeholder-slate-9"
+          className="flex-1 resize-none px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-card text-foreground"
         />
       </div>
 

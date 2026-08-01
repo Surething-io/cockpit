@@ -589,7 +589,7 @@ export const CommandBubble = memo(function CommandBubble({
                   }
                 }}
                 placeholder={t('console.searchPlaceholder')}
-                className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                className="flex-1 bg-transparent text-sm text-foreground outline-none"
                 autoComplete="off"
                 spellCheck="false"
               />
@@ -709,7 +709,7 @@ export const CommandBubble = memo(function CommandBubble({
                     }
                   }}
                   placeholder={t('console.stdinPlaceholder')}
-                  className="flex-1 min-w-0 bg-transparent text-xs font-mono text-foreground outline-none placeholder:text-muted-foreground"
+                  className="flex-1 min-w-0 bg-transparent text-xs font-mono text-foreground outline-none"
                   autoComplete="off"
                   spellCheck="false"
                 />

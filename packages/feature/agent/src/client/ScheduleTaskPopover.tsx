@@ -285,7 +285,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
               onChange={(e) => setMessage(e.target.value)}
               placeholder={t('scheduledTasks.messagePlaceholder')}
               rows={5}
-              className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y min-h-[6rem]"
+              className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y min-h-[6rem]"
             />
           ) : (
             <>
@@ -294,7 +294,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
                 value={taskFile}
                 onChange={(e) => setTaskFile(e.target.value)}
                 placeholder={t('scheduledTasks.taskFilePlaceholder')}
-                className="w-full px-2 py-1.5 text-sm font-mono border border-border rounded bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full px-2 py-1.5 text-sm font-mono border border-border rounded bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               />
               <p className="text-xs text-muted-foreground mt-1">{t('scheduledTasks.taskFileHint')}</p>
             </>
@@ -360,7 +360,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
                 value={customCron}
                 onChange={(e) => { setCustomCron(e.target.value); setSelectedPreset(null); }}
                 placeholder={t('scheduledTasks.cronPlaceholder')}
-                className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
+                className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono"
               />
               {customCron.trim() && (
                 <div className="mt-1 text-xs text-muted-foreground">
@@ -375,7 +375,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
               onChange={(e) => { setCustomMinutes(e.target.value); setSelectedPreset(null); }}
               placeholder={t('scheduledTasks.minutesPlaceholder')}
               min={1}
-              className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             />
           )}
         </div>

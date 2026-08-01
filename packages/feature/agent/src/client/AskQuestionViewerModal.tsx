@@ -289,7 +289,7 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
                           value={customTexts[key] || ''}
                           onChange={(e) => handleCustomTextChange(key, e.target.value)}
                           placeholder={t('askQuestion.customPlaceholder')}
-                          className="w-full px-3 py-1.5 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-brand text-foreground placeholder:text-muted-foreground"
+                          className="w-full px-3 py-1.5 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-brand text-foreground"
                         />
                       </div>
                     )}

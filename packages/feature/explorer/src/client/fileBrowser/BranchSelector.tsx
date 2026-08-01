@@ -87,7 +87,7 @@ export function BranchSelector({
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder={t('git.searchBranch')}
-              className="w-full px-2 py-1 text-sm border border-border rounded bg-secondary text-foreground placeholder-slate-9"
+              className="w-full px-2 py-1 text-sm border border-border rounded bg-secondary text-foreground"
             />
           </div>
           <div className="overflow-y-auto flex-1">

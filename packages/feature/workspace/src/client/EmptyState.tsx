@@ -153,7 +153,7 @@ export function EmptyState({ onSelectSession }: EmptyStateProps) {
           placeholder={t('workspace.searchProjectPath')}
           value={searchKeyword}
           onChange={(e) => setSearchKeyword(e.target.value)}
-          className="px-3 py-1.5 text-sm border border-border rounded-lg bg-card text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+          className="px-3 py-1.5 text-sm border border-border rounded-lg bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
         />
       </div>
 

@@ -264,7 +264,7 @@ export function QuickFileOpen({ files, fileIndex, recentFiles, onSelectFile, onC
             onChange={(e) => handleQueryChange(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={t('quickFileOpen.placeholder')}
-            className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            className="flex-1 bg-transparent text-sm text-foreground outline-none"
             autoComplete="off"
             autoCorrect="off"
             spellCheck="false"

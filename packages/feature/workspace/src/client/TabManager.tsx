@@ -213,8 +213,10 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
 
   // Listen for git change events and update branch name in real time
   const handleWatchMessage = useCallback((msg: unknown) => {
-    const { data } = msg as { type: string; data: Array<{ type: string }> };
-    if (data?.some(e => e.type === 'git')) {
+    // `/ws/watch` carries more than file events (e.g. `graphProgress`, whose
+    // `data` is an object) — guard the shape instead of assuming an array.
+    const { data } = msg as { type: string; data: unknown };
+    if (Array.isArray(data) && data.some((e: { type?: string }) => e.type === 'git')) {
       loadGitInfo();
     }
   }, [loadGitInfo]);

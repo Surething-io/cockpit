@@ -111,8 +111,10 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
 
   // Subscribe to /ws/watch review events; silently refresh the list on receipt (update red-dot state)
   const handleWsMessage = useCallback((msg: unknown) => {
-    const { data } = msg as { type: string; data: Array<{ type: string }> };
-    if (data?.some(e => e.type === 'review')) {
+    // Same guard as TabManager: this socket also carries non-array payloads
+    // (`graphProgress`), and an unguarded `.some` here would throw.
+    const { data } = msg as { type: string; data: unknown };
+    if (Array.isArray(data) && data.some((e: { type?: string }) => e.type === 'review')) {
       fetchList();
     }
   }, [fetchList]);

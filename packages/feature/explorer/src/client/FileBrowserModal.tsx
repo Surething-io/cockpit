@@ -812,7 +812,10 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
   const handleWatchMessage = useCallback(async (msg: unknown) => {
     try {
       const { data: events } = msg as { type: string; data: Array<{ type: 'file' | 'git' }> };
-      if (!events) return;
+      // This socket also carries `graphProgress` frames, whose `data` is an
+      // object — without the array check every frame threw into the catch
+      // below (harmless but ~10 console errors/second during an index build).
+      if (!Array.isArray(events)) return;
 
       const hasGitChange = events.some(ev => ev.type === 'git');
       const hasFileChange = events.some(ev => ev.type === 'file');

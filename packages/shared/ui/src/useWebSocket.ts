@@ -46,13 +46,28 @@ function getOrCreateConnection(url: string): SharedConnection {
       };
 
       ws.onmessage = (e) => {
+        let msg: unknown;
         try {
-          const msg = JSON.parse(e.data);
-          if (msg.type === 'ping') return;
-          conn.listeners.forEach(listener => listener(msg));
+          msg = JSON.parse(e.data);
         } catch {
-          // Ignore parse errors
+          return; // Ignore parse errors
         }
+        if ((msg as { type?: string })?.type === 'ping') return;
+        // Isolate each listener. `Array.prototype.forEach` ABORTS on the first
+        // callback that throws, so without this a single listener choking on an
+        // unexpected message shape silently starves every listener registered
+        // after it — and the old outer try/catch swallowed the error, leaving no
+        // trace at all. That is exactly what happened when the `graphProgress`
+        // message type was added: its `data` is an object, several existing
+        // handlers did `data.some(...)` unguarded, and the Code Map's progress
+        // listener (registered later) never ran.
+        conn.listeners.forEach(listener => {
+          try {
+            listener(msg);
+          } catch (err) {
+            console.error('[useWebSocket] listener threw; other listeners unaffected', err);
+          }
+        });
       };
 
       ws.onclose = () => {

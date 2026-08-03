@@ -53,7 +53,7 @@ const NON_GIT_FALLBACK_SKIP = new Set(['.git', 'node_modules']);
  *  Single source of truth — `codeIndex.ts` imports from here so
  *  `listFilesViaGit` / `walkSource` / the post-list `slice` all use the
  *  SAME limit. */
-export const MAX_FILES = 8000;
+export const MAX_FILES = 15000;
 
 // Tests, specs, and storybook files (`*.test.*` / `*.spec.*` /
 // `*.stories.*`) are deliberately INDEXED — calls from a test into

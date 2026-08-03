@@ -14,8 +14,11 @@
  *
  * Memory budget: at 10K nodes / 100K edges the cache is well under
  * 50 MB (PR scores: 10K floats; TF-IDF: ~10K × ~10 terms each). For
- * Cockpit's typical project sizes (`MAX_FILES = 8000`) this is fine
- * to keep resident.
+ * Cockpit's typical project sizes (`MAX_FILES = 15000`) this is fine
+ * to keep resident. Note the analytics entry is the SMALL half of the
+ * per-project footprint — the CodeIndex itself measured ~0.8 GB
+ * resident for a 7.7K-file project, and neither cache has an eviction
+ * policy, so every project visited stays until the process restarts.
  *
  * Concurrency: precompute is idempotent and synchronous (all algos
  * are pure CPU). We don't lock — multiple precompute calls overlap

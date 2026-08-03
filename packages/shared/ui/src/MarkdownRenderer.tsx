@@ -196,7 +196,7 @@ function escapeUnknownHtmlTags(content: string): string {
   const masks: string[] = []
   const MASK = (s: string) => {
     masks.push(s)
-    return ` MASK${masks.length - 1} `
+    return `\u0000MASK${masks.length - 1}\u0000`
   }
 
   const masked = content
@@ -223,7 +223,7 @@ function escapeUnknownHtmlTags(content: string): string {
   )
 
   // Restore masked code regions
-  return escaped.replace(/ MASK(\d+) /g, (_, idx) => masks[+idx])
+  return escaped.replace(/\u0000MASK(\d+)\u0000/g, (_, idx) => masks[+idx])
 }
 
 /**

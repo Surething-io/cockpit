@@ -365,7 +365,7 @@ function extractStringLiterals(
     if (out.length >= MAX_LITERALS_PER_FILE) break;
     const value = m[2];
     const line = lineOf(m.index);
-    const key = `${value} ${line}`;
+    const key = `${value}\u0000${line}`;
     if (seen.has(key)) continue;
     seen.add(key);
     const enclosing = findEnclosingFlat(flatSymbols, line);

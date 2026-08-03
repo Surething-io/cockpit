@@ -37,6 +37,7 @@ import { fetchFileTextRaw } from '../effect/filesClient';
 import { SymbolIcon } from './symbolIcon';
 
 import { useFileFunctions } from '../hooks/useFileBlocks';
+import { GraphBuildProgress } from './GraphBuildProgress';
 import { useAIBridge } from '@cockpit/shared-ui';
 import { useComments, type CodeComment } from '@cockpit/feature-comments';
 import {
@@ -1744,9 +1745,7 @@ export function BlockViewer({
           extraLeft={headerExtraLeft}
           extraRight={headerExtraRight}
         />
-        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-          {t('blockViewer.fileMode.loading', 'Loading…')}
-        </div>
+        <GraphBuildProgress cwd={cwd} />
       </div>
     );
   }

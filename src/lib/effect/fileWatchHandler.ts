@@ -15,6 +15,10 @@ import {
 import type { WSConnection } from "@cockpit/effect-services"
 import { fromWebSocket } from "@cockpit/effect-runtime/server"
 import { fileWatcher, reviewWatcher, type FileEvent } from "../fileWatcher"
+import {
+  subscribeBuildProgress,
+  type BuildProgressEvent,
+} from "@cockpit/feature-explorer/server/codeMap/projectGraph/buildProgress"
 
 const HEARTBEAT = Schedule.spaced("30 seconds")
 
@@ -58,6 +62,32 @@ const reviewEvents: Stream.Stream<void, never, Scope.Scope> = Stream.unwrapScope
 )
 
 /**
+ * Convert code-index build progress into a Stream.
+ *
+ * Rides the existing /ws/watch socket rather than opening a dedicated
+ * channel: FileBrowserModal — the panel that hosts the Code Map — already
+ * holds this connection for the same cwd, so progress costs zero extra
+ * sockets and zero extra routes.
+ */
+const buildProgressEvents = (
+  cwd: string
+): Stream.Stream<BuildProgressEvent, never, Scope.Scope> =>
+  Stream.unwrapScoped(
+    Effect.gen(function* () {
+      const queue = yield* Queue.unbounded<BuildProgressEvent>()
+      yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          subscribeBuildProgress(cwd, (ev) => {
+            Effect.runFork(Queue.offer(queue, ev))
+          })
+        ),
+        (unsubscribe) => Effect.sync(unsubscribe)
+      )
+      return Stream.fromQueue(queue)
+    })
+  )
+
+/**
  * handleFileWatch — Effect entry point.
  */
 export const handleFileWatch = (
@@ -85,6 +115,16 @@ export const handleFileWatch = (
       reviewEvents.pipe(
         Stream.mapEffect(() =>
           conn.send({ type: "watch", data: [{ type: "review" }] })
+        ),
+        Stream.runDrain
+      )
+    )
+
+    // Code-index build progress stream
+    yield* Effect.forkScoped(
+      buildProgressEvents(cwd).pipe(
+        Stream.mapEffect((ev) =>
+          conn.send({ type: "graphProgress", data: ev })
         ),
         Stream.runDrain
       )

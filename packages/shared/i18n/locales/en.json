@@ -294,6 +294,14 @@
       "loading": "Loading…",
       "notFound": "This file is not indexed (unsupported language or beyond the file cap)."
     },
+    "buildProgress": {
+      "listing": "Listing files…",
+      "contexts": "Reading project config…",
+      "parsing": "Parsing files",
+      "resolving": "Resolving imports…",
+      "edges": "Building call graph…",
+      "done": "Finishing up…"
+    },
     "search": {
       "tooltip": "Search (⌘K)",
       "hint": "Start typing to search",

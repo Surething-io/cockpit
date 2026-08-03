@@ -47,6 +47,7 @@ import {
   type TsconfigScope,
   type Workspace,
 } from './buildGraph';
+import { emitBuildProgress } from './buildProgress';
 import type {
   CrossFileCallEdge,
   ExternalCallEdge,
@@ -462,6 +463,7 @@ export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
   const startedAt = Date.now();
 
   // 1. List source files (.gitignore-aware via `git ls-files`, fs walker fallback).
+  emitBuildProgress(cwd, 'listing', 0, 0, undefined, true);
   let files: string[] | null = await listFilesViaGit(cwd);
   if (!files) {
     files = [];
@@ -478,6 +480,7 @@ export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
   //    via `buildProjectContext` for its resolveSpecifier calls — we
   //    don't share the value because handler contexts are opaque to
   //    this orchestration layer.
+  emitBuildProgress(cwd, 'contexts', 0, files.length, undefined, true);
   const tsconfigs = await loadTsconfigs(cwd);
   const workspaces = await loadWorkspaces(cwd, fileSet);
 
@@ -496,10 +499,23 @@ export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
   }
 
   // 4. Parse every file in parallel.
+  //    This phase dominates wall-clock, and it's the only one with natural
+  //    per-file granularity, so it's where the progress bar actually moves.
+  //    The counter is incremented from `READ_CONCURRENCY` interleaved
+  //    workers, but JS has no preemption inside a synchronous block, so
+  //    `++` is atomic here — no lost updates.
+  const totalToParse = files.length;
+  let parsedCount = 0;
+  emitBuildProgress(cwd, 'parsing', 0, totalToParse, undefined, true);
   const parsed = (
-    await mapWithConcurrency(files, READ_CONCURRENCY, (f) =>
-      parseOneFile(path.join(cwd, f), f),
-    )
+    await mapWithConcurrency(files, READ_CONCURRENCY, async (f) => {
+      const result = await parseOneFile(path.join(cwd, f), f);
+      parsedCount += 1;
+      // Throttled inside emitBuildProgress — calling it once per file is
+      // fine even at ~330 files/s.
+      emitBuildProgress(cwd, 'parsing', parsedCount, totalToParse, f);
+      return result;
+    })
   ).filter((p): p is ParsedFile => p !== null);
 
   // 5. Resolve each import specifier → project file (or drop as external).
@@ -508,6 +524,7 @@ export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
   //    language-specific resolution (TS aliases / workspaces, Python
   //    dotted-paths and relative dots) — codeIndex stays language-
   //    agnostic at this layer.
+  emitBuildProgress(cwd, 'resolving', totalToParse, totalToParse, undefined, true);
   const indexedFiles = new Map<string, IndexedFile>();
   for (const f of parsed) {
     const handler = getHandler(f.language as Parameters<typeof getHandler>[0]);
@@ -572,6 +589,8 @@ export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
       if (t) t.importedBy.add(f.path);
     }
   }
+
+  emitBuildProgress(cwd, 'edges', totalToParse, totalToParse, undefined, true);
 
   // 6. Resolve calls per file via the per-language handler.
   //
@@ -733,6 +752,11 @@ export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
       });
     }
   }
+
+  // Terminal frame: tells the UI to drop the progress view. The failure
+  // path is covered in `getCodeIndex` — a build that throws must not leave
+  // a progress bar frozen at 60% forever.
+  emitBuildProgress(cwd, 'done', totalToParse, totalToParse, undefined, true);
 
   return {
     cwd,
@@ -902,6 +926,17 @@ export async function getCodeIndex(cwd: string, opts: GetIndexOptions = {}): Pro
         console.error('[codeIndex] analytics precompute failed:', err);
       });
     return index;
+  }).catch((err) => {
+    // Failure cleanup. Two things must happen that the success path does:
+    //   1. Clear the terminal progress frame, or the Code Map sits on a
+    //      frozen bar until the tab is closed.
+    //   2. Drop the rejected promise from `inflight`. Without this it stays
+    //      cached and EVERY later getCodeIndex(cwd) returns the same
+    //      rejection — the cwd is poisoned until something calls
+    //      invalidateIndex (which only two of the ten routes do).
+    emitBuildProgress(cwd, 'done', 0, 0, undefined, true);
+    inflight.delete(cwd);
+    throw err;
   });
   inflight.set(cwd, p);
   return p;

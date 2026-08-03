@@ -294,6 +294,14 @@
       "loading": "加载中…",
       "notFound": "该文件未索引（不支持的语言或超出文件上限）。"
     },
+    "buildProgress": {
+      "listing": "正在扫描文件…",
+      "contexts": "正在读取项目配置…",
+      "parsing": "正在解析文件",
+      "resolving": "正在解析引用关系…",
+      "edges": "正在构建调用图…",
+      "done": "即将完成…"
+    },
     "search": {
       "tooltip": "搜索 (⌘K)",
       "hint": "开始输入以搜索",

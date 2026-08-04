@@ -123,9 +123,11 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
     }
     window.history.replaceState({}, '', url.toString());
 
-    // Update the browser tab title
+    // Update the browser tab title. Project name only — an installed PWA window
+    // already gets the app name from manifest `name`, so prefixing "Cockpit"
+    // here would render as "OpenCockpit - Cockpit - <project>".
     const dirName = cwd.split('/').filter(Boolean).pop();
-    document.title = dirName ? `Cockpit - ${dirName}` : 'Cockpit';
+    document.title = dirName || 'Cockpit';
   }, []);
 
   // Handle cwd and sessionId from URL parameters

@@ -13,7 +13,9 @@ export async function generateMetadata({ searchParams }: ProjectPageProps): Prom
   const cwd = params.cwd;
   const dirName = cwd?.split('/').filter(Boolean).pop();
   return {
-    title: dirName ? `Cockpit - ${dirName}` : 'Cockpit',
+    // Project name only; the installed PWA window already shows the app name
+    // from manifest `name` (see Workspace.tsx title update).
+    title: dirName || 'Cockpit',
   };
 }
 

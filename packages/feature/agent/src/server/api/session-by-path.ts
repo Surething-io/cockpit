@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as readline from 'readline';
 import { join } from 'path';
 import { Effect } from 'effect';
-import { getClaudeSessionPath, getClaude2SessionPath, findCodexSessionPath, findKimiSessionPath, getOllamaSessionPath, getDeepseekSessionPath, getDeepseekBuiltinSessionPath } from '@cockpit/shared-utils';
+import { resolveSessionPath } from './session/sessionStore';
 import { handler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import {
   AppError,
@@ -400,59 +400,6 @@ export const POST = handler((req) =>
     });
   })
 );
-
-/**
- * Where a session lives IS what it ran as — the transcript files carry no engine field, so
- * the store that holds one is the only authority. Engine and execution mode are TWO
- * dimensions and only the store can separate them: deepseek's SDK and Built-in Agent modes
- * write to different roots, so `mode` is authoritative for those two and MUST be reported
- * alongside the engine (collapsing them to `engine: 'deepseek'` alone loses the half that
- * decides which loop resumes the session).
- *
- * `mode` is deliberately absent where the store cannot prove it: claude/claude2 write the
- * same directory whether they ran through the SDK or the PTY, so guessing there would
- * replace one wrong answer with another. Absent means "unknown, keep what the tab had".
- */
-function resolveSessionPath(
-  cwd: string,
-  sessionId: string
-): {
-  sessionPath: string;
-  engine: 'claude' | 'claude2' | 'codex' | 'kimi' | 'ollama' | 'deepseek';
-  mode?: 'sdk' | 'builtin';
-} | null {
-  const sessionPath = getClaudeSessionPath(cwd, sessionId);
-  if (fs.existsSync(sessionPath)) {
-    return { sessionPath, engine: 'claude' };
-  }
-  const claude2Path = getClaude2SessionPath(cwd, sessionId);
-  if (fs.existsSync(claude2Path)) {
-    return { sessionPath: claude2Path, engine: 'claude2' };
-  }
-  const deepseekPath = getDeepseekSessionPath(cwd, sessionId);
-  if (fs.existsSync(deepseekPath)) {
-    return { sessionPath: deepseekPath, engine: 'deepseek', mode: 'sdk' };
-  }
-  // Same engine, other execution mode: sessions run through the Built-in Agent live in
-  // their own store, so both have to be probed before we conclude "not a deepseek session".
-  const deepseekBuiltinPath = getDeepseekBuiltinSessionPath(cwd, sessionId);
-  if (fs.existsSync(deepseekBuiltinPath)) {
-    return { sessionPath: deepseekBuiltinPath, engine: 'deepseek', mode: 'builtin' };
-  }
-  const codexPath = findCodexSessionPath(sessionId);
-  if (codexPath) {
-    return { sessionPath: codexPath, engine: 'codex' };
-  }
-  const kimiPath = findKimiSessionPath(sessionId);
-  if (kimiPath) {
-    return { sessionPath: kimiPath, engine: 'kimi' };
-  }
-  const ollamaPath = getOllamaSessionPath(cwd, sessionId);
-  if (fs.existsSync(ollamaPath)) {
-    return { sessionPath: ollamaPath, engine: 'ollama' };
-  }
-  return null;
-}
 
 async function parseTranscriptFile(
   filePath: string,

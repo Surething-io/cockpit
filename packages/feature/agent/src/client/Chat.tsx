@@ -490,7 +490,10 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // that uuid may not exist, causing fork.ts to silently degrade to a
   // full-file copy. Fall back to `sessionId` only when no file has been
   // loaded yet (fresh tab with no history).
-  const handleForkImpl = useCallback(async (messageId: string) => {
+  //
+  // scope='prefix' branches the conversation (everything up to this turn); scope='single'
+  // lifts just this one turn into a session of its own.
+  const handleForkImpl = useCallback(async (messageId: string, scope: 'prefix' | 'single') => {
     const forkSid = loadedSessionId ?? sessionId;
     if (!initialCwd || !forkSid) return;
 
@@ -498,12 +501,14 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       forkSession<{ newSessionId?: string }>(forkSid, {
         cwd: initialCwd,
         fromMessageUuid: messageId,
+        scope,
       })
     );
     if (exit._tag === 'Success' && exit.value.newSessionId) {
       const newSessionId = exit.value.newSessionId;
+      const label = scope === 'single' ? 'Excerpt' : 'Fork';
       if (onOpenSession) {
-        onOpenSession(newSessionId, 'Fork');
+        onOpenSession(newSessionId, label);
       } else {
         publishTopic(Topics.OpenProject, {
           cwd: initialCwd,
@@ -511,9 +516,18 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
         });
       }
     } else if (exit._tag === 'Failure') {
+      // Must be visible: this used to be console-only, so every failure (a session whose
+      // store we cannot write to, a uuid missing from the file) looked to the user like a
+      // dead button that did nothing at all.
       console.error('Fork failed:', exit.cause);
+      toast(
+        scope === 'single'
+          ? t('toast.excerptFailed', { defaultValue: 'Failed to excerpt this turn' })
+          : t('toast.forkFailed', { defaultValue: 'Failed to fork session' }),
+        'error'
+      );
     }
-  }, [initialCwd, loadedSessionId, sessionId, onOpenSession]);
+  }, [initialCwd, loadedSessionId, sessionId, onOpenSession, t]);
 
   // Stabilize the fork callback passed down to every (memoized) MessageBubble.
   // handleForkImpl's identity changes whenever loadedSessionId / sessionId churn
@@ -523,7 +537,9 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // still calling the latest implementation.
   const handleForkRef = useRef(handleForkImpl);
   handleForkRef.current = handleForkImpl;
-  const handleFork = useRef((messageId: string) => handleForkRef.current(messageId)).current;
+  const handleFork = useRef((messageId: string, scope: 'prefix' | 'single') =>
+    handleForkRef.current(messageId, scope)
+  ).current;
 
   // Stabilize ChatInput callback props, combined with React.memo to avoid unnecessary re-renders
   const handleShowComments = useCallback(() => {

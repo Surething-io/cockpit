@@ -31,7 +31,7 @@ interface MessageListProps {
   hasMoreHistory?: boolean;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
-  onFork?: (messageId: string) => void;
+  onFork?: (messageId: string, scope: 'prefix' | 'single') => void;
   isActive?: boolean; // Whether the tab is active (handles scroll issues for hidden tabs)
   onContentSearch?: (query: string) => void; // Selected text → project-wide search
   /** Show a message's file changes in the Explorer panel (panel 2) + auto-swipe */
@@ -50,6 +50,11 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   ref
 ) {
   const { t } = useTranslation();
+  // codex and kimi transcripts are owned by their own CLIs, under names we cannot construct
+  // (see isForkableStore in server/api/session/sessionStore.ts) — we can read them but not
+  // create a sibling session, so hide the buttons rather than let the request 404. Passed
+  // down as a plain boolean, not `engine`, to keep MessageBubble's memo props stable.
+  const forkSupported = engine !== 'codex' && engine !== 'kimi';
   const bottomRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -470,6 +475,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                   cwd={cwd}
                   sessionId={sessionId}
                   onFork={onFork}
+                  forkSupported={forkSupported}
                   onApprovePlan={onApprovePlan}
                   isLoading={isLoading}
                   onContentSearch={onContentSearch}

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, memo } from 'react';
 import { Portal, toast } from '@cockpit/shared-ui';
-import { FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed } from 'lucide-react';
+import { FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed, Scissors } from 'lucide-react';
 import { ToolCallModal } from './ToolCallModal';
 import { AskQuestionViewerModal } from './AskQuestionViewerModal';
 import { DiffViewerModal, resolveDiffCalls } from './DiffViewerModal';
@@ -87,7 +87,17 @@ interface MessageBubbleProps {
   message: ChatMessage;
   cwd?: string;
   sessionId?: string | null;
-  onFork?: (messageId: string) => void;
+  /**
+   * Branch a new session off this message. `scope` picks how much comes along:
+   * 'prefix' keeps the conversation up to this turn, 'single' keeps only this turn.
+   */
+  onFork?: (messageId: string, scope: 'prefix' | 'single') => void;
+  /**
+   * Whether a new session can be created in this engine's transcript store at all
+   * (false for codex / kimi). A boolean rather than the engine itself, so this memoized
+   * component keeps stable props.
+   */
+  forkSupported?: boolean;
   /** Plan mode: approve the plan card → turn off plan mode and resend to execute */
   onApprovePlan?: () => void;
   /** Disable the approve button while a run is streaming (no concurrent send) */
@@ -148,7 +158,7 @@ const TextPartRow = memo(function TextPartRow({
 });
 
 // Use memo optimization — only re-render when message or cwd changes
-export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork, onApprovePlan, isLoading, onContentSearch, onShowFileDiff }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork, forkSupported = true, onApprovePlan, isLoading, onContentSearch, onShowFileDiff }: MessageBubbleProps) {
   const { t } = useTranslation();
   const [previewImage, setPreviewImage] = useState<MessageImage | null>(null);
   // Single-tool case: default expanded so the content stays visible (we only need the header for special entries).
@@ -161,7 +171,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   const hasImages = message.images && message.images.length > 0;
   const toolCallsCount = message.toolCalls?.length || 0;
   const shouldCollapseToolCalls = toolCallsCount > TOOL_CALLS_COLLAPSE_THRESHOLD;
-  const canFork = !!sessionId && !!cwd && !!onFork;
+  const canFork = !!sessionId && !!cwd && !!onFork && forkSupported;
 
   // Whether this message contains tool calls that may have touched files.
   // Shares the READ_ONLY deny-list with the server-side snapshot hook (single
@@ -344,10 +354,19 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     }
   };
 
-  // Fork session (branch from this message)
+  // Fork session (branch from this message, keeping the conversation up to here)
   const handleFork = () => {
     if (canFork) {
-      onFork!(message.id);
+      onFork!(message.id, 'prefix');
+    }
+  };
+
+  // Excerpt this single turn (this message's question + answer) into a new session,
+  // dropping everything before it. Works from either bubble of the turn — the server
+  // rewinds an assistant uuid back to the user message that opened it.
+  const handleExcerpt = () => {
+    if (canFork) {
+      onFork!(message.id, 'single');
     }
   };
 
@@ -466,6 +485,15 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                   <path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9" />
                   <path d="M12 12v3" />
                 </svg>
+              </button>
+            )}
+            {canFork && (
+              <button
+                onClick={handleExcerpt}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+                title={t('chat.excerptTurn')}
+              >
+                <Scissors className="w-4 h-4" />
               </button>
             )}
           </div>
@@ -753,6 +781,15 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                   <path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9" />
                   <path d="M12 12v3" />
                 </svg>
+              </button>
+            )}
+            {canFork && (
+              <button
+                onClick={handleExcerpt}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+                title={t('chat.excerptTurn')}
+              >
+                <Scissors className="w-4 h-4" />
               </button>
             )}
           </div>

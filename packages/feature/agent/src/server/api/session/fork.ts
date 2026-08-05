@@ -19,6 +19,7 @@ import {
   isForkableStore,
   newSessionPathInStore,
 } from './sessionStore';
+import { isHumanTurnStart } from '../../../shared/transcriptTurns';
 
 export const runtime = 'nodejs';
 
@@ -36,22 +37,6 @@ interface ForkRequestBody {
   fromMessageUuid?: string;
   // Defaults to 'prefix' so existing callers keep their behaviour
   scope?: ForkScope;
-}
-
-/**
- * Determine whether a message is a "real user message" (not a tool_result)
- * A real user message: type=user and content contains a text block (not only tool_result)
- */
-function isRealUserMessage(entry: Record<string, unknown>): boolean {
-  if (entry.type !== 'user') return false;
-  const message = entry.message as Record<string, unknown> | undefined;
-  if (!message) return false;
-  const content = message.content;
-  if (!Array.isArray(content)) return typeof content === 'string';
-  // Check whether there is a text-type content block (genuine user input)
-  return content.some(
-    (block: Record<string, unknown>) => block.type === 'text'
-  );
 }
 
 /**
@@ -161,11 +146,11 @@ export const POST = dynamicHandler<
           try {
             const entry = JSON.parse(line);
             if (state === 'found_target') {
-              if (isRealUserMessage(entry)) {
+              if (isHumanTurnStart(entry)) {
                 state = 'done';
                 break;
               }
-            } else if (scope === 'single' && isRealUserMessage(entry)) {
+            } else if (scope === 'single' && isHumanTurnStart(entry)) {
               // A new turn starts here and we have not hit the target yet, so everything
               // buffered so far belongs to an earlier turn the excerpt does not want.
               // This is also what rewinds an assistant target back to its opening user

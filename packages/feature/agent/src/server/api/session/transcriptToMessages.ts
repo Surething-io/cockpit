@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as readline from 'readline';
 import { appendTextPart, appendToolPart, joinAssistantText } from '../../../shared/assistantText';
 import type { MessagePart } from '../../../shared/assistantText';
+import { injectionKind } from '../../../shared/transcriptTurns';
 
 export interface TranscriptMessage {
   type: string;
@@ -78,16 +79,6 @@ function messageText(msg: TranscriptMessage): string {
   if (typeof c === 'string') return c;
   if (Array.isArray(c)) return c.filter((b) => b.type === 'text').map((b) => b.text || '').join('\n');
   return '';
-}
-
-// The harness-injection kind of a user message, or null if it's a real user turn.
-function injectionKind(msg: TranscriptMessage): 'skill' | 'task-notification' | 'meta' | null {
-  if (msg.isMeta && msg.sourceToolUseID) return 'skill';
-  if (msg.origin?.kind === 'task-notification') return 'task-notification';
-  if (msg.origin?.kind && msg.origin.kind !== 'human') return 'meta';
-  if (msg.isMeta) return 'meta';
-  if (msg.isCompactSummary) return 'meta'; // context-compaction continuation notice (no isMeta on some versions)
-  return null;
 }
 
 function buildSystemEvent(msg: TranscriptMessage, kind: 'task-notification' | 'meta'): ChatMessage | null {

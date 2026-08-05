@@ -3,6 +3,7 @@ import * as readline from 'readline';
 import { join } from 'path';
 import { Effect } from 'effect';
 import { resolveSessionPath } from './session/sessionStore';
+import { injectionKind, isHumanTurnStart } from '../../shared/transcriptTurns';
 import { handler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import {
   AppError,
@@ -442,16 +443,10 @@ async function parseTranscriptFile(
           lastUsage = obj.message.usage;
         }
 
-        // Collect user text messages for title generation. Exclude harness-injected
-        // messages: `isMeta` (skill/image/compact) and `origin.kind` (task-notification,
-        // etc.) — only 'human'-origin/unstamped turns are real user input.
-        if (
-          obj.type === 'user' &&
-          !obj.isMeta &&
-          !obj.isCompactSummary &&
-          (!obj.origin?.kind || obj.origin.kind === 'human') &&
-          obj.message?.content
-        ) {
+        // Collect user text messages for title generation. Harness-injected entries
+        // (task notifications, skill bodies, compaction notices) are not user input and
+        // must not name the session — same rule the renderer and the turn splitter use.
+        if (isHumanTurnStart(obj) && obj.message?.content) {
           const content = obj.message.content;
           if (typeof content === 'string') {
             userTextMessages.push(content);
@@ -524,19 +519,6 @@ function messageText(msg: TranscriptMessage): string {
   if (typeof c === 'string') return c;
   if (Array.isArray(c)) return c.filter((b) => b.type === 'text').map((b) => b.text || '').join('\n');
   return '';
-}
-
-// The harness-injection kind of a user message, or null if it's a real user turn.
-// A real user turn has no `isMeta` and no non-'human' `origin.kind`.
-//   - 'skill': a skill body loaded by a tool call (folded into that call, not shown here)
-//   - 'task-notification' / 'meta': rendered as a muted system-event bar
-function injectionKind(msg: TranscriptMessage): 'skill' | 'task-notification' | 'meta' | null {
-  if (msg.isMeta && msg.sourceToolUseID) return 'skill';
-  if (msg.origin?.kind === 'task-notification') return 'task-notification';
-  if (msg.origin?.kind && msg.origin.kind !== 'human') return 'meta';
-  if (msg.isMeta) return 'meta';
-  if (msg.isCompactSummary) return 'meta'; // context-compaction continuation notice (no isMeta on some versions)
-  return null;
 }
 
 // Build a muted system-event row from an injected message (task-notification / meta).

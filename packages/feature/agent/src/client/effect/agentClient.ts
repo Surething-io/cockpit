@@ -71,9 +71,11 @@ export const saveAgentSettings = (
 // an OpenAI-compatible one for Built-in Agent mode behind a single key, so the
 // browser side of them is identical and parameterised by engine id.
 //
-// credentials GET returns only { hasKey, maskedKey } (never the raw key); PUT
-// persists it (empty string clears). models is live rather than hardcoded — both
-// lineups change without a cockpit release — and requires a saved API key.
+// credentials GET returns only { hasKey, maskedKey }; the raw key comes back only
+// from the explicit ?reveal=1 form (revealEngineApiKey), used by the picker's Copy
+// button. PUT persists it (empty string clears). models is live rather than
+// hardcoded — both lineups change without a cockpit release — and requires a saved
+// API key.
 // ─────────────────────────────────────────────────────────
 
 /** Engines configured by API key rather than by a local CLI login. */
@@ -98,6 +100,18 @@ export const loadEngineCredentials = (
   engine: ApiKeyEngine
 ): Effect.Effect<EngineCredentialsInfo, AppError> =>
   httpJson<EngineCredentialsInfo>(`/api/${engine}/credentials`)
+
+/**
+ * Same endpoint, asking for the plaintext. Kept a separate call so the plaintext
+ * is fetched only where it is needed (copy to clipboard) instead of riding along
+ * on every credentials load.
+ */
+export const revealEngineApiKey = (
+  engine: ApiKeyEngine
+): Effect.Effect<EngineCredentialsInfo & { apiKey: string }, AppError> =>
+  httpJson<EngineCredentialsInfo & { apiKey: string }>(
+    `/api/${engine}/credentials?reveal=1`
+  )
 
 export const saveEngineApiKey = (
   engine: ApiKeyEngine,

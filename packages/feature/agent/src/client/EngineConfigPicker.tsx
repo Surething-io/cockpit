@@ -10,6 +10,7 @@ import {
   saveAgentSettings,
   loadEngineCredentials,
   loadEngineModels,
+  revealEngineApiKey,
   saveEngineApiKey,
   type ApiKeyEngine,
   type EngineModelInfo,
@@ -175,6 +176,8 @@ export function EngineConfigPicker({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 'copied' shows the confirmation inline for a moment — this popover has no toast host.
+  const [copied, setCopied] = useState(false);
   // Models fetched from the provider's listing endpoint on open (live modes only).
   const [fetchedModels, setFetchedModels] = useState<EngineModelInfo[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -185,6 +188,8 @@ export function EngineConfigPicker({
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (copiedTimer.current) clearTimeout(copiedTimer.current); }, []);
   // Ref indirection for the mount-only effect below: it must read these once without the
   // parent's re-render churn (onModelChange gets a fresh identity every render) turning a
   // one-shot load into a loop.
@@ -406,6 +411,31 @@ export function EngineConfigPicker({
     setSaving(false);
   };
 
+  /**
+   * Copy the real key. The UI only ever holds the masked form, so the plaintext is
+   * fetched on demand (`?reveal=1`) and handed straight to the clipboard — it is
+   * never kept in state, where a re-render could paint it on screen.
+   */
+  const handleCopyKey = async () => {
+    const exit = await BrowserRuntime.runPromiseExit(revealEngineApiKey(engine));
+    if (exit._tag === 'Failure' || !exit.value.apiKey) {
+      setError('Copy failed');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(exit.value.apiKey);
+    } catch {
+      // Clipboard is permission-gated (and absent on insecure origins) — say so
+      // rather than silently claiming success.
+      setError('Clipboard unavailable');
+      return;
+    }
+    setError(null);
+    setCopied(true);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopied(false), 1500);
+  };
+
   /** Switch the key field into edit mode and focus it once React has rendered the input. */
   const beginEdit = () => {
     setEditing(true);
@@ -468,10 +498,30 @@ export function EngineConfigPicker({
                 </a>
               </div>
               {hasKey && !editing ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <code className="flex-1 min-w-0 truncate text-xs px-2 py-1 rounded bg-secondary text-foreground font-mono">
                     {maskedKey}
                   </code>
+                  {/* Icon-only: the row already carries two text buttons and the popover is
+                      280px wide, so a third label would push the masked key to nothing. */}
+                  <button
+                    onClick={handleCopyKey}
+                    data-testid={`${engine}-copy-api-key`}
+                    title={copied ? 'Copied' : 'Copy API key'}
+                    aria-label="Copy API key"
+                    className={`p-1 rounded transition-colors ${copied ? 'text-emerald-400' : 'text-muted-foreground hover:text-foreground hover:bg-accent'}`}
+                    disabled={saving}
+                  >
+                    {copied ? (
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </button>
                   <button
                     onClick={beginEdit}
                     className="text-[11px] px-2 py-1 rounded bg-secondary hover:bg-accent text-foreground transition-colors"

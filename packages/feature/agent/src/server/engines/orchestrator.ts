@@ -4,6 +4,7 @@ import { snapshotOnRunStart, snapshotOnRunEvent } from '../snapshot/hook';
 import { resolveCommandPrompt } from '../lib/slashCommands';
 import { randomUUID } from 'crypto';
 import type { DispatchParams, DispatchOutcome, RunCtx, RunEvent, EngineSpec } from './types';
+import { formatProviderError } from './shared/providerError';
 
 /**
  * The single run-lifecycle skeleton for ALL engines.
@@ -122,9 +123,11 @@ export async function dispatchChat(
       }
       console.error(`[engine:${spec.name}] run error:`, error);
       // Emit the error event BEFORE the terminal mark — appendRun drops events once the run
-      // leaves 'running', so the error must reach subscribers first. Prefer the bare message
-      // (engines throw Error(msg)) over String(error)'s "Error: " prefix.
-      ctx.emit({ type: 'error', error: error instanceof Error ? error.message : String(error) });
+      // leaves 'running', so the error must reach subscribers first. formatProviderError keeps
+      // the bare message (engines throw Error(msg)) but recovers the HTTP status and the
+      // provider's own wording from an APICallError's responseBody, which `.message` alone
+      // can drop — that is the difference between "Unauthorized" and "your plan lacks k3".
+      ctx.emit({ type: 'error', error: formatProviderError(error) });
       markRunIdle(currentKey, 'error');
       isClosed = true;
       // Best-effort teardown of global state even on failure.

@@ -22,6 +22,7 @@ import { createTools } from './tools';
 import { consumeStream, emitResultMessage } from './stream';
 import type { AgentContext } from './types';
 import type { DispatchParams, RunCtx } from '../types';
+import { formatProviderError } from '../shared/providerError';
 
 export interface BuiltinAgentConfig {
   /** Transcript store root — always from paths.ts getBuiltinSessionsRoot (COCKPIT_HOME-aware). */
@@ -85,7 +86,18 @@ export async function runBuiltinAgent(ctx: RunCtx, config: BuiltinAgentConfig): 
     // `null` means "omit the field" (the AI SDK sends it otherwise) — see BuiltinAgentConfig.
     ...(config.temperature === null ? {} : { temperature: config.temperature ?? 0 }),
     abortSignal: ctx.signal,
+    // The SDK default dumps the whole error object to stdout and nothing else.
+    // consumeStream re-throws the same failure with the user-facing text, so
+    // keep only a one-line server breadcrumb here.
+    onError: ({ error }) => {
+      console.error(`[builtinAgent] provider error: ${formatProviderError(error)}`);
+    },
   });
+
+  // consumeStream throws on an `error` part, so the promises hanging off
+  // `result` may never be awaited below. They reject on failure, and an
+  // unobserved rejection takes down the server process — claim them now.
+  void Promise.resolve(result.usage).catch(() => {});
 
   const pendingToolCalls = new Map<string, { name: string; input: Record<string, unknown> }>();
   const flushPendingToolCallsAsErrors = (reason: string) => {
@@ -170,6 +182,21 @@ export async function runBuiltinAgent(ctx: RunCtx, config: BuiltinAgentConfig): 
       return; // orchestrator maps abort → idle
     }
     flushPendingToolCallsAsErrors('Tool call failed (stream error).');
+    // Persist the failure in the transcript before rethrowing. The live `error` event alone
+    // is not enough: endRun() on the client reconciles its bubbles against the jsonl on disk
+    // ("identical to a page reload"), so a failure that was never written there gets wiped
+    // from the UI the instant the run ends — and is gone entirely after a refresh. That is
+    // why a 401 looked like it produced no message at all. Same ⚠️ prefix the client renders
+    // for a live error event, so the reconcile is a no-op instead of a visible rewrite.
+    try {
+      appendAssistantMessage(
+        sessionsRoot,
+        cwd,
+        sid,
+        [{ type: 'text', text: `⚠️ ${formatProviderError(error)}` }],
+        { uuid: randomUUID(), timestamp: new Date().toISOString() },
+      );
+    } catch { /* ignore */ }
     throw error; // orchestrator marks 'error' + emits the error event
   }
 }

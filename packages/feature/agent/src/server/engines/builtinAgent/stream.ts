@@ -1,4 +1,5 @@
 import type { TextStreamPart } from 'ai';
+import { formatProviderError } from '../shared/providerError';
 
 export type SafeEnqueue = (data: string) => void;
 
@@ -105,6 +106,17 @@ export async function consumeStream(
         );
         break;
       }
+
+      // A provider/transport failure (bad key, no quota, model not on the plan,
+      // network reset) is NOT thrown by streamText — it arrives here as an
+      // `error` part and the stream then ends. Falling through to `default`
+      // dropped it: the SDK's own `onError` logged it to the server terminal,
+      // `await result.usage` later rejected with the useless "No output
+      // generated", and mid-loop failures didn't even do that — they emitted a
+      // `result: success` over an empty bubble. Re-throw so the reason travels
+      // the normal failure path (orchestrator → run `error` event → UI).
+      case 'error':
+        throw new Error(formatProviderError(part.error), { cause: part.error });
 
       case 'finish':
         break;

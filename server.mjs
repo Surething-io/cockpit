@@ -132,6 +132,42 @@ process.stderr.on('error', (err) => {
   if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') process.exit(0);
 });
 
+// Fail-fast guard against Next build/runtime version skew. The published
+// package ships a prebuilt `.next-prod` and loads Next's server runtime from
+// node_modules at runtime; if a floating range ever lets those diverge, the
+// React server renderer breaks on EVERY request with a cryptic
+// "renderToPipeableStream is not implemented" and the whole app 500s. `next`
+// is pinned to an exact version in package.json to prevent this, but a bad
+// global install / manual tampering could still drift it — so cross-check the
+// build stamp (written by scripts/stamp-build.mjs) against the installed Next
+// and refuse to start with an actionable message rather than serving garbage.
+function assertNextVersionMatchesBuild() {
+  if (dev) return; // dev has no prebuilt .next-prod
+  let built;
+  try {
+    built = JSON.parse(readFileSync(join(__dirname, '.next-prod', 'cockpit-build.json'), 'utf8')).next;
+  } catch {
+    return; // older build without a stamp — skip (backward compatible)
+  }
+  let installed;
+  try {
+    installed = JSON.parse(readFileSync(join(__dirname, 'node_modules', 'next', 'package.json'), 'utf8')).version;
+  } catch {
+    return; // can't resolve installed Next — let Next itself report the problem
+  }
+  if (built !== installed) {
+    console.error(`\n✗ Next.js version mismatch — this build cannot run on the installed Next.`);
+    console.error(`  Built with:  next@${built}`);
+    console.error(`  Installed:   next@${installed}`);
+    console.error(`  The shipped .next-prod is compiled for an exact Next version. A newer/older`);
+    console.error(`  runtime breaks server rendering (every request 500s).`);
+    console.error(`  Fix: reinstall so the exact version is used —`);
+    console.error(`    npm install -g @surething/cockpit@latest\n`);
+    process.exit(1);
+  }
+}
+assertNextVersionMatchesBuild();
+
 const app = next({ dev });
 const handle = app.getRequestHandler();
 

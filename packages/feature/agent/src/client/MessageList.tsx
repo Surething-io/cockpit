@@ -324,12 +324,36 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     void sendSelectionToAI(commentInput.text, question);
   }, [commentInput, sendSelectionToAI]);
 
-  // Deduplicate messages (prevent duplicate key warnings)
+  // Deduplicate messages (prevent duplicate key warnings), then drop assistant bubbles
+  // that finished with nothing to show.
+  //
+  // Every send inserts an empty assistant placeholder (useChatStream) which the stream
+  // then fills. A turn that ends without producing any assistant content — stopped early,
+  // or failed before the first token — leaves that placeholder empty forever: the live
+  // reducer only maps over messages and never removes one, and MessageBubble has no
+  // empty-content early return, so it still paints its `bg-accent px-4 py-2` container
+  // as a blank pill. The disk reconcile on run end would drop it, but it is skippable
+  // (5s throttle / notModified fingerprint), so the blank row survives at random.
+  //
+  // `isStreaming` is the critical guard: a streaming empty bubble IS the loading
+  // indicator, so filtering it would delete the "thinking" state of every in-flight turn.
+  // Mirror MessageBubble's own content sources here (content / images / toolCalls /
+  // parts) — anything it can render must count as non-empty.
   const uniqueMessages = useMemo(() => {
     const seen = new Set<string>();
     return messages.filter((msg) => {
       if (seen.has(msg.id)) return false;
       seen.add(msg.id);
+      if (
+        msg.role === 'assistant' &&
+        !msg.isStreaming &&
+        !msg.content &&
+        !msg.images?.length &&
+        !msg.toolCalls?.length &&
+        !msg.parts?.length
+      ) {
+        return false;
+      }
       return true;
     });
   }, [messages]);

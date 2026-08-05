@@ -456,7 +456,14 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             {timeStr}
           </span>
         )}
-        <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} w-full`}>
+        {/* items-start is load-bearing: the hover action buttons flanking the bubble are a
+            `flex flex-col` of up to three icons (~84px tall) and, being `opacity-0` rather
+            than unmounted, they occupy that height at ALL times. Without it the bubble
+            defaults to `align-self: stretch` and is dragged to the buttons' height, so a
+            short message ("hi") renders as a tall pill with its text pinned to the top and
+            dead space below. Both sides have such a column, so this fixes user and
+            assistant bubbles alike. */}
+        <div className={`flex items-start ${isUser ? 'justify-end' : 'justify-start'} w-full`}>
         {/* Action buttons for user messages — on the left */}
         {isUser && (
           <div className="self-start mt-2 mr-1 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">

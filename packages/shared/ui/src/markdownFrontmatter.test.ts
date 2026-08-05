@@ -16,7 +16,7 @@ describe('frontmatterToTable', () => {
     };
     run(tree);
 
-    const first = tree.children[0] as { type: string; children: { children: { children: { value: string }[] }[] }[] };
+    const first = tree.children[0] as unknown as { type: string; children: { children: { children: { value: string }[] }[] }[] };
     expect(first.type).toBe('table');
     // header + 2 data rows
     expect(first.children).toHaveLength(3);
@@ -33,7 +33,7 @@ describe('frontmatterToTable', () => {
   it('collapses multi-line string values into a single line', () => {
     const tree = { children: [yamlNode('description: "line one\nline two"')] };
     run(tree);
-    const cell = (tree.children[0] as { children: { children: { children: { value: string }[] }[] }[] })
+    const cell = (tree.children[0] as unknown as { children: { children: { children: { value: string }[] }[] }[] })
       .children[1].children[1].children[0].value;
     expect(cell).toBe('line one line two');
   });

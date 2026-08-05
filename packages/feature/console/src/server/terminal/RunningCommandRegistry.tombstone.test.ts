@@ -44,7 +44,7 @@ describe('finalizeCommand tombstone (deleted bubble must not resurrect)', () => 
 
     registerCommand({
       commandId, command: 'sleep 300', cwd: projectCwd, projectCwd, tabId,
-      pid: child.pid!, process: child,
+      pid: child.pid!, process: child, timestamp: new Date().toISOString(),
     });
     await sleep(150); // let the async placeholder write land
 
@@ -66,7 +66,7 @@ describe('finalizeCommand tombstone (deleted bubble must not resurrect)', () => 
 
     registerCommand({
       commandId, command: 'sleep 300', cwd: projectCwd, projectCwd, tabId,
-      pid: child.pid!, process: child,
+      pid: child.pid!, process: child, timestamp: new Date().toISOString(),
     });
     await sleep(150);
 
@@ -106,6 +106,7 @@ describe('finalizeCommand tombstone (deleted bubble must not resurrect)', () => 
     registerCommand({
       commandId, command: 'sleep 300', cwd: projectCwd, projectCwd, tabId,
       pid: fakePty.pid, process: dummy, ptyProcess: fakePty, usePty: true,
+      timestamp: new Date().toISOString(),
     });
     await sleep(150);
     expect(getRunningCommand(commandId)).toBeDefined(); // running before

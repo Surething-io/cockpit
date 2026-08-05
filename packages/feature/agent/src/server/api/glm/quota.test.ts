@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toQuotaPayload, type RawQuota } from './usage';
+import { toQuotaPayload, type RawQuota } from './quota';
 
 // Captured verbatim from GET /api/monitor/usage/quota/limit on a Coding Plan (lite)
 // account, one chat call after the first sample. Keeping the real bytes matters: the

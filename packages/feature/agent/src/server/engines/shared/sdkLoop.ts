@@ -10,8 +10,16 @@ type ContentBlock =
 /** Build the SDK options for one attempt. `abort` is the controller for THIS attempt (the loop
  *  creates a fresh one per compaction retry and forwards ctx.signal into it). Engine-specific
  *  knobs (env, permissionMode, CLAUDE_CONFIG_DIR, plan canUseTool) live in here. `resume` is the
- *  session id to resume (undefined on first attempt for a new session). */
-export type BuildSdkOptions = (abort: AbortController, resume: string | undefined) => SdkOptions;
+ *  session id to resume (undefined on first attempt for a new session).
+ *
+ *  `isRetry` marks a compaction retry, which the loop always drives with `resume` (added after
+ *  this returns). Builders that would otherwise emit `sessionId` must skip it then: the SDK
+ *  rejects `sessionId` together with `resume` unless `forkSession` is also set. */
+export type BuildSdkOptions = (
+  abort: AbortController,
+  resume: string | undefined,
+  isRetry: boolean,
+) => SdkOptions;
 
 const MAX_COMPACTION_RETRIES = 1;
 
@@ -93,8 +101,8 @@ export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Pr
     const attemptAbort = follow(ctx);
     const resume = isRetry ? ctx.currentKey() : ctx.sessionId;
     const options = isRetry
-      ? { ...buildOptions(attemptAbort, resume), resume }
-      : buildOptions(attemptAbort, ctx.sessionId);
+      ? { ...buildOptions(attemptAbort, resume, true), resume }
+      : buildOptions(attemptAbort, ctx.sessionId, false);
 
     const response = query({ prompt: input, options });
 

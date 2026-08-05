@@ -60,8 +60,16 @@ describe('readSessionNoHistory (scheduled fire honors "independent task")', () =
     expect(await readSessionNoHistory(task(SID), 'deepseek', false)).toBe(false);
   });
 
-  it('stays false for the SDK/PTY engines, mirroring the client gate', async () => {
-    for (const engine of ['claude', 'claude2', 'codex', 'kimi']) {
+  it('reads it for claude/claude2, which honor it by stashing the transcript', async () => {
+    // Scheduled dispatch never passes mode:'pty', so these always take the SDK path.
+    for (const engine of ['claude', 'claude2']) {
+      expect(await readSessionNoHistory(task(SID), engine, false)).toBe(true);
+    }
+  });
+
+  it('stays false for the external-CLI engines, mirroring the client gate', async () => {
+    // codex and kimi are driven by their own CLIs, which own the conversation context.
+    for (const engine of ['codex', 'kimi']) {
       expect(await readSessionNoHistory(task(SID), engine, false)).toBe(false);
     }
   });

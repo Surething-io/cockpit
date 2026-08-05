@@ -506,6 +506,7 @@
     "noHistory": "独立任务",
     "noHistoryDesc": "不发送历史",
     "noHistoryHint": "独立任务：每条消息单独发给模型，不带之前的对话。上方的会话记录照常保留。",
+    "noHistoryPtyHint": "PTY 模式下不可用：对话由交互式 claude CLI 自己持有。切换到 SDK 模式即可使用。",
     "planTitle": "计划（待你确认）",
     "approvePlan": "批准并执行",
     "planApproveHint": "本环境无审批弹窗，点此退出计划模式并执行",

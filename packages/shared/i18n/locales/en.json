@@ -506,6 +506,7 @@
     "noHistory": "Independent task",
     "noHistoryDesc": "no history sent",
     "noHistoryHint": "Independent task: each message is sent to the model on its own, with no prior conversation. The transcript above still records everything.",
+    "noHistoryPtyHint": "Not available in PTY mode: the interactive claude CLI holds the conversation itself. Switch to SDK mode to use it.",
     "planTitle": "Plan (awaiting your review)",
     "approvePlan": "Approve & run",
     "planApproveHint": "No approval dialog here — click to exit plan mode and execute",

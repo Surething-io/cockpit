@@ -1,6 +1,12 @@
-import { CLAUDE2_DIR, sanitizedSpawnEnv } from '@cockpit/shared-utils';
+import {
+  CLAUDE2_DIR,
+  sanitizedSpawnEnv,
+  getClaudeSessionPath,
+  getClaude2SessionPath,
+} from '@cockpit/shared-utils';
 import { getSessionTitle } from '../state/globalState';
 import { runSdkLoop, type BuildSdkOptions } from './shared/sdkLoop';
+import { stashTranscript, mergeStashedTranscript } from './shared/noHistoryTranscript';
 import { runPtyTurn } from './shared/ptyBranch';
 import type { EngineSpec, RunCtx } from './types';
 
@@ -56,11 +62,17 @@ export function planPermission(
 }
 
 /** Build claude/claude2 SDK options for one attempt. claude2 overrides the config dir. */
-function buildClaudeOptions(ctx: RunCtx): BuildSdkOptions {
+function buildClaudeOptions(ctx: RunCtx, independent: boolean): BuildSdkOptions {
   const { engine, permissionMode } = ctx.params;
   const isPlan = permissionMode === 'plan';
-  return (abort, resume) => ({
-    ...(resume && { resume }),
+  return (abort, resume, isRetry) => ({
+    // Independent task: resume is what makes the CLI load the transcript, so the first
+    // attempt drops it and names the session explicitly instead — same file on disk, empty
+    // context. A compaction retry still resumes: by then the only thing to reload IS this
+    // turn (the history is stashed away), which is exactly what the retry needs.
+    ...(independent && !isRetry
+      ? { sessionId: resume }
+      : resume && { resume }),
     ...(ctx.cwd && { cwd: ctx.cwd }),
     settingSources: ['user', 'project', 'local'] as Array<'user' | 'project' | 'local'>,
     // Permission mode: 'plan' (read-only) when requested, else skip all permission checks.
@@ -95,7 +107,31 @@ export const claudeSpec: EngineSpec = {
         await runPtyTurn(ctx);
         return;
       }
-      await runSdkLoop(ctx, buildClaudeOptions(ctx));
+
+      // "Independent task": run this turn with the transcript stashed, then merge it back.
+      // A session with no transcript yet (ctx.sessionId unset) is already context-free, so
+      // there is nothing to stash and the plain path applies.
+      //
+      // The stash MUST be undone before this method returns: the orchestrator calls
+      // resolveTitle(cwd, sessionId) right after run() (orchestrator.ts), which reads this
+      // very file — restoring later would let the independent turn's isolated content
+      // retitle the whole session.
+      const independent = ctx.params.noHistory === true && !!ctx.sessionId;
+      if (!independent) {
+        await runSdkLoop(ctx, buildClaudeOptions(ctx, false));
+        return;
+      }
+
+      const sessionPath =
+        engine === 'claude2'
+          ? getClaude2SessionPath(ctx.cwd, ctx.sessionId!)
+          : getClaudeSessionPath(ctx.cwd, ctx.sessionId!);
+      const stashed = stashTranscript(sessionPath);
+      try {
+        await runSdkLoop(ctx, buildClaudeOptions(ctx, true));
+      } finally {
+        if (stashed) mergeStashedTranscript(sessionPath);
+      }
     },
     resolveTitle: (cwd, sessionId) => getSessionTitle(cwd, sessionId),
   },

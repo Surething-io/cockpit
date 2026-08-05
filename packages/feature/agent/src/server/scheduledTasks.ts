@@ -266,16 +266,19 @@ interface ProjectSessionState {
  * the user explicitly asked not to send.
  *
  * Gated on the engines that actually honor it, mirroring the client's `canDropHistory`:
- * only the built-in agent loop reads params.noHistory, and ollama always runs that loop
- * while deepseek runs it only in builtin mode. Passing it to an SDK/PTY engine would be
- * silently ignored, which would read as support that isn't there.
+ * the built-in agent loop reads params.noHistory directly (ollama always runs that loop,
+ * deepseek only in builtin mode), and claude/claude2 honor it in the SDK loop by stashing
+ * the transcript for the turn. Scheduled runs always take the SDK path — dispatch never
+ * passes mode:'pty' — so the PTY exclusion cannot apply here. Passing the flag to an engine
+ * that ignores it would read as support that isn't there.
  */
 export async function readSessionNoHistory(
   task: ScheduledTask,
   engine: string,
   builtinLoop: boolean,
 ): Promise<boolean> {
-  if (engine !== 'ollama' && !builtinLoop) return false;
+  const sdkClaude = engine === 'claude' || engine === 'claude2';
+  if (engine !== 'ollama' && !builtinLoop && !sdkClaude) return false;
   const state = await readJsonFile<ProjectSessionState>(getSessionFilePath(task.cwd), {});
   return state.noHistories?.[task.sessionId] === true;
 }

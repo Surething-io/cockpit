@@ -26,12 +26,18 @@ export interface DispatchParams {
   permissionMode?: string;
   ptyCols?: number;
   ptyRows?: number;
-  // Built-in Agent only (ollama, deepseek in mode:'builtin'): send ONLY this turn to the
-  // model, no prior messages. Turns each user message into an independent task. The
-  // transcript is still read/written, so the UI history stays continuous — this only affects
-  // what is put in the prompt. Not portable to the SDK/CLI engines: their history IS the
-  // provider session, so skipping it there means starting a new session (see engines/claude.ts,
-  // codex.ts, kimi.ts, and deepseek.ts in SDK mode).
+  // Send ONLY this turn to the model, no prior messages — each user message becomes an
+  // independent task. The transcript is still read/written either way, so the UI history
+  // stays continuous; this only affects what the model is given.
+  //
+  // Honored by two different mechanisms:
+  //  - Built-in Agent (ollama, deepseek in mode:'builtin') simply omits the prior messages
+  //    when assembling the request (builtinAgent/index.ts).
+  //  - claude/claude2 in SDK mode stash the transcript for the turn, because their history
+  //    IS the provider session and the only lever is whether that file is there
+  //    (shared/noHistoryTranscript.ts). Not available in mode:'pty' — the interactive CLI
+  //    holds the context itself.
+  // Ignored by codex, kimi and deepseek-SDK, whose context lives with the vendor.
   noHistory?: boolean;
 }
 

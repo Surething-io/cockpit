@@ -221,9 +221,15 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // reopened session whose messages have not finished loading yet.
   const isDeepseekBuiltin = isDeepseekEngine && chatMode === 'builtin';
   const modeLocked = Boolean(initialSessionId) || messages.length > 0;
-  // Independent task is a Built-in Agent capability: the SDK/CLI engines resume a provider
-  // session, so dropping history there forks a new one instead of clearing context.
-  const supportsNoHistory = engine === 'ollama' || isDeepseekBuiltin;
+  // Independent task. The Built-in Agent engines get it by construction (they assemble the
+  // message array). claude/claude2 get it in SDK mode by stashing the transcript for the
+  // turn — see server/engines/shared/noHistoryTranscript.ts.
+  const supportsNoHistory = engine === 'ollama' || isDeepseekBuiltin || isClaudeEngine;
+  // ...but not in PTY mode: there the conversation is held by an interactive `claude` CLI
+  // process, so no amount of file juggling drops its context. Shown disabled rather than
+  // hidden — flipping the engine's execution mode also flips its billing, which is not a
+  // decision this checkbox should make silently on the user's behalf.
+  const noHistoryDisabled = isClaudeEngine && chatMode === 'pty';
 
   // Write what the store proved back into the host's per-tab record — repair, not just
   // fill-in: session.json may hold no entry (a tab reopened from a session list never had
@@ -565,19 +571,28 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     };
   }, [onCreateScheduledTask, initialCwd, tabId, sessionId, engine, ollamaModel, deepseekModel]);
 
-  /* Independent task (Built-in Agent only): each message is sent WITHOUT the prior turns.
-     Stays on until unchecked — it's a session-level mode, not a one-shot. The transcript keeps
-     recording, so the history above is unaffected. Rendered in whichever engine's option row is
-     visible (ollama / deepseek-builtin), hence a shared node rather than two copies. */
+  /* Independent task: each message is sent WITHOUT the prior turns. Stays on until unchecked —
+     it's a session-level mode, not a one-shot. The transcript keeps recording, so the history
+     above is unaffected.
+     One shared node mounted into whichever engine's option row is visible (claude execution-mode
+     row / ollama / deepseek), rather than a copy per row — adding an engine here means adding a
+     mount point, so keep `supportsNoHistory` and the mount points in step. */
   const independentTaskToggle = supportsNoHistory ? (
     <label
-      className="flex items-center gap-1.5 ml-2 pl-3 border-l border-border text-xs cursor-pointer select-none"
-      title={t('chat.noHistoryHint', { defaultValue: 'Independent task: each message is sent to the model on its own, with no prior conversation. The transcript above still records everything.' })}
+      className={`flex items-center gap-1.5 ml-2 pl-3 border-l border-border text-xs select-none ${
+        noHistoryDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+      }`}
+      title={
+        noHistoryDisabled
+          ? t('chat.noHistoryPtyHint', { defaultValue: 'Not available in PTY mode: the interactive claude CLI holds the conversation itself. Switch to SDK mode to use it.' })
+          : t('chat.noHistoryHint', { defaultValue: 'Independent task: each message is sent to the model on its own, with no prior conversation. The transcript above still records everything.' })
+      }
     >
       <input
         type="checkbox"
         data-testid="nohistory-toggle"
-        checked={noHistory}
+        checked={noHistory && !noHistoryDisabled}
+        disabled={noHistoryDisabled}
         onChange={(e) => setNoHistory(e.target.checked)}
         className="accent-brand"
       />
@@ -695,6 +710,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
                 <span className="text-muted-foreground">{t('chat.planModeDesc', { defaultValue: 'read-only · plan first, no edits' })}</span>
               </label>
             )}
+            {/* Shown in both modes, disabled under PTY — see noHistoryDisabled. */}
+            {independentTaskToggle}
           </div>
         )}
 

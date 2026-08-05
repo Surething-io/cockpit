@@ -524,9 +524,10 @@ export function useChatStream(
       const usePty = chatMode === 'pty' && isClaudeEngine;
       // Built-in Agent mode (deepseek only) — server runs engines/builtinAgent instead of the Agent SDK.
       const useBuiltin = chatMode === 'builtin' && engine === 'deepseek';
-      // Independent task is only honoured by the Built-in Agent loop (ollama, deepseek+builtin);
-      // the SDK/CLI engines resume a provider session, so dropping history forks a new one.
-      const canDropHistory = engine === 'ollama' || useBuiltin;
+      // Independent task: the Built-in Agent loop honours it directly (ollama,
+      // deepseek+builtin), and claude/claude2 honour it in SDK mode by stashing the
+      // transcript for the turn. PTY is excluded — the interactive CLI owns the context.
+      const canDropHistory = engine === 'ollama' || useBuiltin || (isClaudeEngine && !usePty);
 
       const runId = genRunId();
 

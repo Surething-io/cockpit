@@ -103,6 +103,10 @@ export function NoteModal({ isOpen, onClose, projectCwd, projectName }: NoteModa
       StarterKit.configure({
         // Heading is provided by CollapsibleHeading below (adds fold support).
         heading: false,
+        // Link ships inside StarterKit since v3, but we register our own configured
+        // copy below (autolink, target=_blank, .tiptap-link). Registering both makes
+        // tiptap warn about the duplicate name and keep only one of them.
+        link: false,
       }),
       CollapsibleHeading.configure({
         levels: [1, 2, 3],

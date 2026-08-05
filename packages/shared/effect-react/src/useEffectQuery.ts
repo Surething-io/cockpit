@@ -31,6 +31,12 @@ export function useEffectQuery<A, E>(
       Exit.match(exit, {
         onSuccess: (data) => setState({ status: "success", data }),
         onFailure: (cause) => {
+          // Interruption is this hook's own cleanup (unmount, or a deps change that
+          // supersedes this fiber), not a query failure. Reporting it as an error made
+          // React StrictMode's double-mount surface a phantom error on every dev boot:
+          // the first fiber is interrupted right after mount and its observer then
+          // wrote `error` onto the remounted component, racing the real result.
+          if (Cause.isInterruptedOnly(cause)) return
           const failure = Cause.failureOption(cause)
           const error = Option.isSome(failure)
             ? (failure.value as E)

@@ -23,6 +23,10 @@ const SDK_MODELS: { value: DeepseekModel; label: string }[] = [
 ];
 const SDK_DEFAULT_MODEL = 'deepseek-v4-flash';
 
+/** DeepSeek's console page where keys are created — the only place a user can get the
+ *  value this menu asks for, so the field links straight to it. */
+const API_KEYS_URL = 'https://platform.deepseek.com/api_keys';
+
 interface DeepseekConfigPickerProps {
   currentModel?: DeepseekModel;
   onModelChange: (model: DeepseekModel) => void;
@@ -271,7 +275,24 @@ export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = fa
           <>
             {/* API Key section */}
             <div className="px-3 py-1.5">
-              <div className="text-[11px] font-medium text-muted-foreground mb-1.5">API Key</div>
+              <div className="flex items-center gap-1 mb-1.5">
+                <span className="text-[11px] font-medium text-muted-foreground">API Key</span>
+                {/* Where the key comes from. `target="_blank"` matters beyond convention:
+                    navigating in place would take the whole Cockpit window with it. */}
+                <a
+                  href={API_KEYS_URL}
+                  target="_blank"
+                  rel="noopener"
+                  data-testid="deepseek-api-keys-link"
+                  title="Open DeepSeek API keys page"
+                  aria-label="Open DeepSeek API keys page"
+                  className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+              </div>
               {hasKey && !editing ? (
                 <div className="flex items-center gap-2">
                   <code className="flex-1 min-w-0 truncate text-xs px-2 py-1 rounded bg-secondary text-foreground font-mono">

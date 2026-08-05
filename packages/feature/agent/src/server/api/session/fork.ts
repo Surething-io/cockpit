@@ -20,6 +20,7 @@ import {
   newSessionPathInStore,
 } from './sessionStore';
 import { isHumanTurnStart } from '../../../shared/transcriptTurns';
+import { copyReferencedArtifacts } from './sessionArtifacts';
 
 export const runtime = 'nodejs';
 
@@ -228,11 +229,22 @@ export const POST = dynamicHandler<
       catch: (cause) => new FSError({ path: newPath, op: 'write', cause }),
     });
 
+    // The transcript alone is not the session: Task and Workflow entries resolve their
+    // drill-ins through a directory named after the session id, so without this every one
+    // of them opens nothing in the fork. Runs after the write and never throws — a fork
+    // missing some drill-ins is degraded but usable, and the new session already exists.
+    const artifactCount = copyReferencedArtifacts(
+      originalPath,
+      newPath,
+      result.newLines
+    );
+
     return ok({
       success: true,
       originalSessionId,
       newSessionId: result.newSessionId,
       messageCount: result.newLines.length,
+      artifactCount,
     });
   })
 );

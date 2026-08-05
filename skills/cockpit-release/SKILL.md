@@ -33,7 +33,23 @@ Run these checks. If any fails, **stop and report** — do not "fix" them silent
    PREV=$(git describe --tags --abbrev=0)
    git log "$PREV..HEAD" --oneline
    ```
-5. Read the bump type from `$ARGUMENTS`. If absent or unclear, ask: *"Bump from $PREV → patch / minor / major?"*
+5. **Lock smoke** — Step 2 installs a packed tarball and never runs the repo's
+   `npm ci`, so a corrupt `package-lock.json` passes every smoke test and then
+   kills the publish workflow at its first step. Costs ~1s here, versus a tag to
+   unwind if you find it after the bump:
+
+   ```bash
+   rm -rf /tmp/lock-smoke && git clone -q . /tmp/lock-smoke
+   (cd /tmp/lock-smoke && npm ci --dry-run) || { echo "❌ npm ci broken at HEAD"; exit 1; }
+   rm -rf /tmp/lock-smoke
+   ```
+
+   `npm error Invalid Version:` means some entry lost its `version` — `npm install`
+   tolerates that, `npm ci` does not (v1.0.256: pinning `next` left a
+   `sharp-freebsd-wasm32` stub). Fix by deleting that entry, *then*
+   `npm install --package-lock-only` — that order, since it reads the broken lock first.
+
+6. Read the bump type from `$ARGUMENTS`. If absent or unclear, ask: *"Bump from $PREV → patch / minor / major?"*
 
 ## The release pipeline
 
@@ -320,6 +336,14 @@ Expected: new tag at top of changelog (en + zh), no `compare/v1.0.x-1...v1.0.x` 
 - **Step 2 install/runtime smoke failed**: `git tag -d v1.0.x && git reset --hard HEAD~1`, fix the bug, `npm version` again. Catching this here saves shipping a hot-fix release.
 - **Wrong release notes published**: `gh release edit v1.0.x --notes-file …` rewrites them. Then re-trigger Deploy Website.
 - **Website didn't pick up new notes**: re-run `gh workflow run "Deploy Website"`. Build is idempotent.
+- **Publish workflow failed BEFORE the `npm publish` step** (`npm ci` / build red): nothing consumed this version, so the tag is a dud and moving it beats burning a version number. Prove it first — `npm view @surething/cockpit version` still shows the PREVIOUS version and `gh release view v1.0.x` says "release not found" — then, **with human sign-off** (this is the `git tag -f` the Refusals cover), commit the fix on top and:
+
+  ```bash
+  git tag -f -a v1.0.x -m "v1.0.x" <fix-sha>
+  git push origin main && git push --force origin v1.0.x   # re-triggers Publish to npm
+  ```
+
+  If either check comes back dirty, do not move the tag — bump to the next patch.
 - **npm publish failed mid-CI**:
   - Transient (`@vscode/ripgrep` 403, `npm ci` ECONNRESET, GH API 504): `gh run rerun <id>` is fine.
   - Real: `gh run view <id> --log-failed`. Common causes: `COCKPIT_NPM_TOKEN` rotated, `npm run build` flake, `package-lock.json` drift.

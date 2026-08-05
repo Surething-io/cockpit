@@ -3,7 +3,8 @@ import {
   SCHEDULED_TASKS_FILE, readJsonFile, writeJsonFile, mutateJsonFile, withFileLock,
   getSessionFilePath,
   getClaudeSessionPath, getClaude2SessionPath, getOllamaSessionPath,
-  getDeepseekSessionPath, getDeepseekBuiltinSessionPath, findCodexSessionPath, findKimiSessionPath,
+  getDeepseekSessionPath, getDeepseekBuiltinSessionPath,
+  getKimiSessionPath, getKimiBuiltinSessionPath, findCodexSessionPath,
 } from '@cockpit/shared-utils';
 import { updateGlobalState } from './state/globalState';
 import { isRunActive, getRunSnapshot, getRunSessionId, requestStop } from './sessionRunHub';
@@ -24,7 +25,7 @@ export interface ScheduledTask {
   tabId: string;
   sessionId: string;       // chat session id
   engine?: string;         // ChatEngine at creation; absent = 'claude' (pre-persistence tasks)
-  model?: string;          // ollama/deepseek: model name snapshot at creation
+  model?: string;          // ollama/deepseek/kimi: model name snapshot at creation
   language?: string;       // UI language snapshot at creation; picks the taskFile prompt wording
   message: string;         // mutually exclusive with taskFile — exactly one is set
   taskFile?: string;       // absolute path to a file describing the task; referenced, never inlined
@@ -179,7 +180,7 @@ const dispatchEngineMessageEff = (
       // Execution mode is NOT snapshotted on the task — it is derived from where the
       // session actually lives, so a task made from a Built-in Agent tab keeps running
       // the built-in loop instead of silently switching backends mid-schedule.
-      const builtinLoop = isDeepseekBuiltinSession(engine, task);
+      const builtinLoop = isBuiltinLoopSession(engine, task);
       const noHistory = await readSessionNoHistory(task, engine, builtinLoop);
       const outcome = await dispatchChat(spec, {
         prompt: buildTaskPrompt(task),
@@ -242,13 +243,23 @@ const dispatchEngineMessageEff = (
       }),
   });
 
+/** Built-in Agent transcript path for the engines that have two stores (SDK + built-in). */
+const BUILTIN_LOOP_PATHS: Record<string, (cwd: string, sessionId: string) => string> = {
+  deepseek: getDeepseekBuiltinSessionPath,
+  kimi: getKimiBuiltinSessionPath,
+};
+
 /**
- * resume-target session file per engine (used for the pre-flight existence
- * check). codex/kimi store sessions outside the cwd-encoded layout, so their
- * helpers glob by sessionId and return null when not found.
+ * Does this task's session live in its engine's Built-in Agent store?
+ *
+ * deepseek and kimi each run the same two loops (Claude Agent SDK / our built-in agent) and
+ * write a different store per mode, so the store IS the answer — the task never snapshots a
+ * mode. ollama is absent on purpose: it only ever runs the built-in loop, so it needs no
+ * probe (see readSessionNoHistory, which special-cases it).
  */
-function isDeepseekBuiltinSession(engine: string, task: ScheduledTask): boolean {
-  return engine === 'deepseek' && existsSync(getDeepseekBuiltinSessionPath(task.cwd, task.sessionId));
+function isBuiltinLoopSession(engine: string, task: ScheduledTask): boolean {
+  const resolve = BUILTIN_LOOP_PATHS[engine];
+  return !!resolve && existsSync(resolve(task.cwd, task.sessionId));
 }
 
 /** Per-session slice of the project state file the chat tabs persist (see /api/project-state). */
@@ -267,7 +278,7 @@ interface ProjectSessionState {
  *
  * Gated on the engines that actually honor it, mirroring the client's `canDropHistory`:
  * the built-in agent loop reads params.noHistory directly (ollama always runs that loop,
- * deepseek only in builtin mode), and claude/claude2 honor it in the SDK loop by stashing
+ * deepseek/kimi only in builtin mode), and claude/claude2 honor it in the SDK loop by stashing
  * the transcript for the turn. Scheduled runs always take the SDK path — dispatch never
  * passes mode:'pty' — so the PTY exclusion cannot apply here. Passing the flag to an engine
  * that ignores it would read as support that isn't there.
@@ -283,15 +294,20 @@ export async function readSessionNoHistory(
   return state.noHistories?.[task.sessionId] === true;
 }
 
+/**
+ * Resume-target session file per engine (used for the pre-flight existence check).
+ * Codex stores sessions outside the cwd-encoded layout, so its helper globs by
+ * sessionId and returns null when not found.
+ */
 function sessionPathFor(engine: string, task: ScheduledTask): string | null {
   if (engine === 'claude2') return getClaude2SessionPath(task.cwd, task.sessionId);
   if (engine === 'ollama') return getOllamaSessionPath(task.cwd, task.sessionId);
-  // DeepSeek has one store per execution mode; the built-in one is checked first so a
+  // DeepSeek/Kimi have one store per execution mode; the built-in one is checked first so a
   // built-in session isn't reported missing (which would restart it as a fresh SDK run).
-  if (isDeepseekBuiltinSession(engine, task)) return getDeepseekBuiltinSessionPath(task.cwd, task.sessionId);
+  if (isBuiltinLoopSession(engine, task)) return BUILTIN_LOOP_PATHS[engine](task.cwd, task.sessionId);
   if (engine === 'deepseek') return getDeepseekSessionPath(task.cwd, task.sessionId);
+  if (engine === 'kimi') return getKimiSessionPath(task.cwd, task.sessionId);
   if (engine === 'codex') return findCodexSessionPath(task.sessionId);
-  if (engine === 'kimi') return findKimiSessionPath(task.sessionId);
   return getClaudeSessionPath(task.cwd, task.sessionId);
 }
 
@@ -331,7 +347,7 @@ export const sendChatMessageEff = (task: ScheduledTask): Effect.Effect<boolean, 
     }
 
     // Resume target gone (cleared history, session-id rotation, retention pruning,
-    // or codex/kimi glob miss) → don't fail; start a FRESH session running the same
+    // or a codex glob miss) → don't fail; start a FRESH session running the same
     // message and write the new session id back to the task (see dispatchEngineMessageEff).
     const sessionPath = sessionPathFor(engine, task);
     const startFresh = !sessionPath || !existsSync(sessionPath);

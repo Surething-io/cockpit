@@ -21,12 +21,14 @@ import { useChatStream } from './useChatStream';
 import { MessageList, MessageListHandle } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { XtermFloatingWindow, XtermFloatingHandle } from './XtermFloatingWindow';
-import type { ChatMessage, TokenUsage, ImageInfo, ChatEngine, DeepseekModel, ChatMode, ToolCallInfo } from './types';
+import type { ChatMessage, TokenUsage, ImageInfo, ChatEngine, EngineModelId, ChatMode, ToolCallInfo } from './types';
 // In-package siblings (chat-only)
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { OllamaModelPicker } from './OllamaModelPicker';
-import { DeepseekConfigPicker } from './DeepseekConfigPicker';
+import { EngineConfigPicker } from './EngineConfigPicker';
 import { DeepseekBalanceButton } from './DeepseekBalanceButton';
+import { KimiQuotaButton } from './KimiQuotaButton';
+import type { ApiKeyEngine } from './effect/agentClient';
 import { CommentsListModal } from '@cockpit/feature-comments';
 import { useTranslation } from 'react-i18next';
 
@@ -45,8 +47,10 @@ interface ChatProps {
   onEngineChange?: (engine: ChatEngine) => void;
   ollamaModel?: string;
   onOllamaModelChange?: (model: string) => void;
-  deepseekModel?: DeepseekModel;
-  onDeepseekModelChange?: (model: DeepseekModel) => void;
+  deepseekModel?: EngineModelId;
+  onDeepseekModelChange?: (model: EngineModelId) => void;
+  kimiModel?: EngineModelId;
+  onKimiModelChange?: (model: EngineModelId) => void;
   chatMode?: ChatMode;
   onChatModeChange?: (chatMode: ChatMode) => void;
   planMode?: boolean;
@@ -89,7 +93,7 @@ interface ChatProps {
   onOpenSettings?: () => void; // Host-handled: open the app settings modal
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode: chatModeProp, onChatModeChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, chatMode: chatModeProp, onChatModeChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -124,10 +128,10 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     setLocalNoHistory(v);
     onNoHistoryChange?.(v);
   }, [onNoHistoryChange]);
-  // Owned by DeepseekConfigPicker (the only component that reads/writes the credential
-  // endpoint); lifted here so the balance button on the execution-mode row above it can
-  // gate on a live value rather than a copy that goes stale after a key is saved.
-  const [deepseekHasKey, setDeepseekHasKey] = useState(false);
+  // Owned by EngineConfigPicker (the only component that reads/writes the credential
+  // endpoint); lifted here so the balance/quota button on the execution-mode row above it
+  // can gate on a live value rather than a copy that goes stale after a key is saved.
+  const [engineHasKey, setEngineHasKey] = useState(false);
   // PTY floating window: receives raw terminal output
   const ptyWindowRef = useRef<XtermFloatingHandle>(null);
   const handlePtyOutput = useCallback((data: string) => {
@@ -213,18 +217,23 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const engine = loadedEngine ?? engineProp ?? undefined;
   const chatMode = loadedMode ?? chatModeProp ?? localChatMode;
   const isClaudeEngine = !engine || engine === 'claude' || engine === 'claude2';
-  const isDeepseekEngine = engine === 'deepseek';
-  // DeepSeek's two modes do NOT share a transcript store (SDK → ~/.cockpit/deepseek/projects,
-  // Built-in Agent → ~/.cockpit/deepseek-sessions), so switching mid-session would leave the
+  // Engines configured by API key rather than by a local CLI login. They share one UI: a
+  // key+model picker, an SDK ↔ Built-in Agent toggle, and a consumption readout.
+  const apiKeyEngine: ApiKeyEngine | null =
+    engine === 'deepseek' ? 'deepseek' : engine === 'kimi' ? 'kimi' : null;
+  const engineModel = apiKeyEngine === 'kimi' ? kimiModel : deepseekModel;
+  const onEngineModelChange = apiKeyEngine === 'kimi' ? onKimiModelChange : onDeepseekModelChange;
+  // Their two modes do NOT share a transcript store (SDK → ~/.cockpit/<engine>/projects,
+  // Built-in Agent → ~/.cockpit/<engine>-sessions), so switching mid-session would leave the
   // model blind to history the UI is still showing. The choice is therefore made while the
   // session is empty — a fresh tab — and locked afterwards. `initialSessionId` covers a
   // reopened session whose messages have not finished loading yet.
-  const isDeepseekBuiltin = isDeepseekEngine && chatMode === 'builtin';
+  const isBuiltinLoop = apiKeyEngine !== null && chatMode === 'builtin';
   const modeLocked = Boolean(initialSessionId) || messages.length > 0;
   // Independent task. The Built-in Agent engines get it by construction (they assemble the
   // message array). claude/claude2 get it in SDK mode by stashing the transcript for the
   // turn — see server/engines/shared/noHistoryTranscript.ts.
-  const supportsNoHistory = engine === 'ollama' || isDeepseekBuiltin || isClaudeEngine;
+  const supportsNoHistory = engine === 'ollama' || isBuiltinLoop || isClaudeEngine;
   // ...but not in PTY mode: there the conversation is held by an interactive `claude` CLI
   // process, so no amount of file juggling drops its context. Shown disabled rather than
   // hidden — flipping the engine's execution mode also flips its billing, which is not a
@@ -260,7 +269,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     planMode,
     noHistory,
     ollamaModel,
-    deepseekModel,
+    engineModel,
     onSessionId: setSessionId,
     onFetchTitle: fetchSessionTitle,
     onPtyOutput: handlePtyOutput,
@@ -566,10 +575,10 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
         sessionId,
         engine,
         ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
-        ...(engine === 'deepseek' && deepseekModel && { model: deepseekModel }),
+        ...(apiKeyEngine && engineModel && { model: engineModel }),
       });
     };
-  }, [onCreateScheduledTask, initialCwd, tabId, sessionId, engine, ollamaModel, deepseekModel]);
+  }, [onCreateScheduledTask, initialCwd, tabId, sessionId, engine, ollamaModel, apiKeyEngine, engineModel]);
 
   /* Independent task: each message is sent WITHOUT the prior turns. Stays on until unchecked —
      it's a session-level mode, not a one-shot. The transcript keeps recording, so the history
@@ -626,16 +635,16 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           />
         )}
 
-        {/* Execution mode (deepseek): Claude Agent SDK ↔ Built-in Agent (our own loop, engines/builtinAgent).
-            Locked once the session has messages — the two modes keep separate transcript stores, so the
-            choice belongs to a fresh tab. See `modeLocked` above. */}
-        {isDeepseekEngine && (
+        {/* Execution mode (deepseek / kimi): Claude Agent SDK ↔ Built-in Agent (our own loop,
+            engines/builtinAgent). Locked once the session has messages — the two modes keep
+            separate transcript stores, so the choice belongs to a fresh tab. See `modeLocked`. */}
+        {apiKeyEngine && (
           <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card/50">
             <span className="text-xs text-muted-foreground">{t('chat.executionMode', { defaultValue: 'Execution mode' })}</span>
-            <div className="inline-flex rounded-md border border-border overflow-hidden text-xs" role="group" data-testid="deepseek-mode-toggle">
+            <div className="inline-flex rounded-md border border-border overflow-hidden text-xs" role="group" data-testid={`${apiKeyEngine}-mode-toggle`}>
               <button
                 type="button"
-                data-testid="deepseek-mode-sdk"
+                data-testid={`${apiKeyEngine}-mode-sdk`}
                 disabled={modeLocked}
                 onClick={() => setChatMode('sdk')}
                 className={`px-2 py-0.5 ${chatMode !== 'builtin' ? 'bg-brand text-white' : 'bg-transparent text-muted-foreground hover:bg-accent'} ${modeLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
@@ -644,11 +653,11 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
               </button>
               <button
                 type="button"
-                data-testid="deepseek-mode-builtin"
+                data-testid={`${apiKeyEngine}-mode-builtin`}
                 disabled={modeLocked}
                 onClick={() => setChatMode('builtin')}
                 className={`px-2 py-0.5 ${chatMode === 'builtin' ? 'bg-brand text-white' : 'bg-transparent text-muted-foreground hover:bg-accent'} ${modeLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
-                title={t('chat.builtinModeHint', { defaultValue: "Cockpit's own agent loop, talking to DeepSeek's OpenAI-compatible endpoint" })}
+                title={t('chat.builtinModeHint', { defaultValue: "Cockpit's own agent loop, talking to the provider's OpenAI-compatible endpoint" })}
               >
                 Built-in Agent
               </button>
@@ -658,8 +667,11 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
                 {t('chat.modeLockedHint', { defaultValue: 'Locked for this session — open a new tab to switch' })}
               </span>
             )}
-            {/* Right-aligned: balance belongs to the key, not to the mode toggle it sits next to. */}
-            <DeepseekBalanceButton hasKey={deepseekHasKey} />
+            {/* Right-aligned: what the key has left belongs to the key, not to the mode toggle it
+                sits next to. DeepSeek reports a prepaid balance, Kimi a subscription quota. */}
+            {apiKeyEngine === 'kimi'
+              ? <KimiQuotaButton hasKey={engineHasKey} />
+              : <DeepseekBalanceButton hasKey={engineHasKey} />}
           </div>
         )}
 
@@ -725,16 +737,17 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           </div>
         )}
 
-        {/* DeepSeek API key + model picker (+ independent task in Built-in Agent mode).
-            The picker's model list and the settings key it persists to both follow the
-            mode — the two endpoints expose different model ids. */}
-        {isDeepseekEngine && onDeepseekModelChange && (
+        {/* API key + model picker (+ independent task in Built-in Agent mode). The picker's
+            model list and the settings key it persists to both follow the mode — the two
+            endpoints can expose different model ids. */}
+        {apiKeyEngine && onEngineModelChange && (
           <div className="flex items-center px-3 py-1.5 border-b border-border bg-card/50">
-            <DeepseekConfigPicker
-              currentModel={deepseekModel}
-              onModelChange={onDeepseekModelChange}
-              builtin={isDeepseekBuiltin}
-              onHasKeyChange={setDeepseekHasKey}
+            <EngineConfigPicker
+              engine={apiKeyEngine}
+              currentModel={engineModel}
+              onModelChange={onEngineModelChange}
+              builtin={isBuiltinLoop}
+              onHasKeyChange={setEngineHasKey}
             />
             {independentTaskToggle}
           </div>

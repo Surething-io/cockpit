@@ -139,7 +139,7 @@ function NewTabButton({ onNewTab, onNewClaude2Tab, onNewCodexTab, onNewKimiTab, 
             onClick={() => pick('kimi')}
             className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors whitespace-nowrap"
           >
-            <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
+            <span className="w-2 h-2 rounded-full bg-purple-500 flex-shrink-0" />
             Kimi
           </button>
           <button
@@ -278,8 +278,10 @@ export function TabBar({
               {tab.engine === 'codex' && (
                 <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-emerald-500/15 text-emerald-400 font-medium leading-relaxed">CX</span>
               )}
+              {/* Purple, matching EngineBadge's kimi entry — the same session shows both
+                  chips (tab bar + session list), so they must not disagree on the color. */}
               {tab.engine === 'kimi' && (
-                <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-blue-500/15 text-blue-400 font-medium leading-relaxed">KM</span>
+                <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-purple-500/15 text-purple-400 font-medium leading-relaxed">KM</span>
               )}
               {tab.engine === 'ollama' && (
                 <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-violet-500/15 text-violet-400 font-medium leading-relaxed">OL</span>

@@ -63,6 +63,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     updateTabEngine,
     updateTabOllamaModel,
     updateTabDeepseekModel,
+    updateTabKimiModel,
     updateTabChatMode,
     updateTabPlanMode,
     updateTabNoHistory,
@@ -421,6 +422,8 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                           onOllamaModelChange={updateTabOllamaModel}
                           deepseekModel={tab.deepseekModel}
                           onDeepseekModelChange={updateTabDeepseekModel}
+                          kimiModel={tab.kimiModel}
+                          onKimiModelChange={updateTabKimiModel}
                           chatMode={tab.chatMode}
                           onChatModeChange={updateTabChatMode}
                           planMode={tab.planMode}
@@ -525,6 +528,8 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                     onOllamaModelChange={updateTabOllamaModel}
                     deepseekModel={tab.deepseekModel}
                     onDeepseekModelChange={updateTabDeepseekModel}
+                    kimiModel={tab.kimiModel}
+                    onKimiModelChange={updateTabKimiModel}
                     chatMode={tab.chatMode}
                     onChatModeChange={updateTabChatMode}
                     planMode={tab.planMode}

@@ -17,22 +17,6 @@ import type { MessagePart } from '../../shared/assistantText';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/**
- * Kimi packs one entry's text and its tool calls together, with the tool calls
- * semantically FOLLOWING the text (see the breakBefore comment in the kimi
- * parser). Appending them in that order is what keeps a text segment's
- * "is a tool call after me" answer correct.
- */
-function appendParts(
-  parts: MessagePart[] | undefined,
-  text: string,
-  toolCalls: Array<{ id: string }>
-): MessagePart[] {
-  let out = appendTextPart(parts, text);
-  for (const tc of toolCalls) out = appendToolPart(out, tc.id);
-  return out;
-}
-
 interface TokenUsage {
   input_tokens?: number;
   output_tokens?: number;
@@ -370,9 +354,10 @@ export const POST = handler((req) =>
     const parseResult = yield* Effect.tryPromise({
       try: async () => {
         if (engine === 'codex') return parseCodexTranscriptFile(sessionPath);
-        if (engine === 'kimi') return parseKimiTranscriptFile(sessionPath);
-        // ollama writes Claude-style transcripts since v1.0.186; the AI SDK ModelMessage
-        // legacy fallback (v1.0.184–185 only) was removed.
+        // Everything else (claude/claude2/ollama/deepseek/kimi) writes Claude-style
+        // transcripts, in both SDK and Built-in Agent mode, so one parser covers them.
+        // ollama has done so since v1.0.186; the AI SDK ModelMessage legacy fallback
+        // (v1.0.184–185 only) was removed.
         return parseTranscriptFile(sessionPath, limit, beforeTurnIndex);
       },
       catch: (cause) =>
@@ -395,8 +380,8 @@ export const POST = handler((req) =>
       // more reliable than the optional global-state engine field, which is only
       // written for sessions that were open as a tab.
       engine,
-      // Authoritative execution mode where the store proves it (deepseek sdk vs
-      // builtin); omitted when it doesn't (see resolveSessionPath).
+      // Authoritative execution mode where the store proves it (deepseek/kimi sdk
+      // vs builtin); omitted when it doesn't (see resolveSessionPath).
       mode,
     });
   })
@@ -844,139 +829,3 @@ async function parseCodexTranscriptFile(
 
   return { messages, title, usage: lastUsage };
 }
-
-// ============================================
-// Kimi session transcript parser (context.jsonl)
-// ============================================
-// Format: each line is {"role":"user"|"assistant"|"_system_prompt"|"_checkpoint", "content":[...], ...}
-
-async function parseKimiTranscriptFile(
-  filePath: string
-): Promise<{ messages: ChatMessage[]; title: string; usage?: TokenUsage }> {
-  const fileStream = fs.createReadStream(filePath);
-  const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
-
-  const messages: ChatMessage[] = [];
-  let title = 'Untitled Session';
-  let msgCounter = 0;
-  // Paragraph-break only across a tool call (see assistantText.ts).
-  let toolSinceText = false;
-
-  for await (const line of rl) {
-    if (!line.trim()) continue;
-    let entry: { role?: string; content?: string | Array<{ type?: string; text?: string; think?: string }>; id?: number };
-    try { entry = JSON.parse(line); } catch { continue; }
-
-    // Skip system prompts and checkpoints
-    if (!entry.role || entry.role.startsWith('_')) continue;
-
-    if (entry.role === 'user') {
-      // content can be a string or an array of blocks
-      const text = typeof entry.content === 'string'
-        ? entry.content
-        : Array.isArray(entry.content)
-          ? entry.content.filter(c => (c.type === 'input_text' || c.type === 'text') && c.text).map(c => c.text!).join('')
-          : '';
-      // Skip system-injected messages
-      if (!text || text.startsWith('<system') || text.startsWith('<environment') || text.startsWith('# AGENTS.md') || text.startsWith('<permissions')) continue;
-      messages.push({
-        id: `kimi-user-${msgCounter++}`,
-        role: 'user',
-        content: text,
-      });
-      toolSinceText = false;
-      if (title === 'Untitled Session') {
-        title = text.slice(0, 80);
-      }
-    }
-
-    if (entry.role === 'assistant') {
-      let text = '';
-      if (typeof entry.content === 'string') {
-        text = entry.content;
-      } else if (Array.isArray(entry.content)) {
-        for (const block of entry.content) {
-          if (block.type === 'text' && block.text) {
-            text += block.text;
-          }
-        }
-      }
-
-      // Extract tool calls
-      const newToolCalls: NonNullable<ChatMessage['toolCalls']> = [];
-      const entryToolCalls = (entry as Record<string, unknown>).tool_calls as Array<{ id?: string; function?: { name?: string; arguments?: string } }> | undefined;
-      if (entryToolCalls && Array.isArray(entryToolCalls)) {
-        for (const tc of entryToolCalls) {
-          if (tc.function?.name) {
-            let input: Record<string, unknown> = {};
-            try { input = JSON.parse(tc.function.arguments || '{}'); } catch { /* */ }
-            newToolCalls.push({
-              id: tc.id || `tool-${msgCounter++}`,
-              name: tc.function.name === 'Shell' ? 'Bash' : tc.function.name,
-              input,
-              isLoading: false,
-            });
-          }
-        }
-      }
-
-      // Break decision must read the state from PRIOR entries, before this
-      // entry's own tool calls (which follow its text) update it below.
-      const breakBefore = toolSinceText;
-
-      // Merge into the last assistant message if it's part of a tool call chain
-      // (consecutive assistant messages without a user message in between)
-      const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
-      if (lastMsg && lastMsg.role === 'assistant' && lastMsg.toolCalls && lastMsg.toolCalls.length > 0) {
-        // Append tool calls and text to existing bubble
-        if (newToolCalls.length > 0) {
-          lastMsg.toolCalls.push(...newToolCalls);
-        }
-        if (text) {
-          lastMsg.content = joinAssistantText(lastMsg.content || '', text, breakBefore);
-        }
-        // parts follow the SEMANTIC order (text, then this entry's tool calls),
-        // which is the reverse of the code order above — see the breakBefore
-        // comment: an entry's tool calls come after its text.
-        lastMsg.parts = appendParts(lastMsg.parts, text, newToolCalls);
-      } else if (text || newToolCalls.length > 0) {
-        // New assistant bubble
-        messages.push({
-          id: `kimi-assistant-${msgCounter++}`,
-          role: 'assistant',
-          content: text,
-          parts: appendParts([], text, newToolCalls),
-          ...(newToolCalls.length > 0 ? { toolCalls: newToolCalls } : {}),
-        });
-      }
-
-      // This entry's text consumes any pending break; its own tool calls then
-      // sit between this text and the next, so the next text breaks.
-      if (text) toolSinceText = false;
-      if (newToolCalls.length > 0) toolSinceText = true;
-    }
-
-    if (entry.role === 'tool') {
-      // Match tool result to the last assistant message's tool call
-      const toolCallId = (entry as Record<string, unknown>).tool_call_id as string | undefined;
-      if (toolCallId && messages.length > 0) {
-        const lastMsg = messages[messages.length - 1];
-        if (lastMsg.role === 'assistant' && lastMsg.toolCalls) {
-          const tc = lastMsg.toolCalls.find(t => t.id === toolCallId);
-          if (tc) {
-            let result = '';
-            if (typeof entry.content === 'string') {
-              result = entry.content;
-            } else if (Array.isArray(entry.content)) {
-              result = entry.content.filter(c => c.type === 'text' && c.text).map(c => c.text!).join('\n');
-            }
-            tc.result = result;
-          }
-        }
-      }
-    }
-  }
-
-  return { messages, title };
-}
-

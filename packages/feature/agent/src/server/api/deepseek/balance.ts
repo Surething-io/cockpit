@@ -17,7 +17,8 @@
 import { Effect } from 'effect';
 import { handler, ok } from '@cockpit/effect-runtime/server';
 import { AgentError } from '@cockpit/effect-core';
-import { readDeepseekApiKey } from '../../engines/deepseekCredentials';
+import { deepseekApiKey } from '../../engines/credentials';
+import { agentErrorKind, getJsonWithKey } from '../engineHttp';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -42,18 +43,10 @@ export interface BalancePayload {
 }
 
 async function fetchBalance(): Promise<BalancePayload> {
-  const apiKey = await readDeepseekApiKey();
-  if (!apiKey) throw new Error('DeepSeek API key is not configured');
-
-  const res = await fetch(BALANCE_URL, {
-    headers: { Accept: 'application/json', Authorization: `Bearer ${apiKey}` },
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!res.ok) throw new Error(`Server returned ${res.status}`);
-  const data = (await res.json()) as {
+  const data = await getJsonWithKey<{
     is_available?: boolean;
     balance_infos?: DeepseekBalanceInfo[];
-  };
+  }>({ url: BALANCE_URL, store: deepseekApiKey, label: 'DeepSeek' });
   return {
     isAvailable: data.is_available !== false,
     balances: (data.balance_infos || [])
@@ -69,15 +62,8 @@ export const GET = handler(() =>
   Effect.gen(function* () {
     const payload = yield* Effect.tryPromise({
       try: () => fetchBalance(),
-      catch: (cause) => {
-        const msg = cause instanceof Error ? cause.message : String(cause);
-        const kind = msg.includes('401') || msg.includes('API key')
-          ? 'auth'
-          : msg.includes('abort') || msg.includes('fetch failed')
-            ? 'timeout'
-            : 'protocol';
-        return new AgentError({ provider: 'deepseek', kind, cause });
-      },
+      catch: (cause) =>
+        new AgentError({ provider: 'deepseek', kind: agentErrorKind(cause), cause }),
     });
     return ok(payload);
   })

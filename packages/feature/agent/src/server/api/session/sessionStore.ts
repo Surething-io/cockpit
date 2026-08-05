@@ -4,9 +4,10 @@ import {
   getClaude2SessionPath,
   getDeepseekSessionPath,
   getDeepseekBuiltinSessionPath,
+  getKimiSessionPath,
+  getKimiBuiltinSessionPath,
   getOllamaSessionPath,
   findCodexSessionPath,
-  findKimiSessionPath,
 } from '@cockpit/shared-utils';
 
 export type SessionEngine =
@@ -26,10 +27,10 @@ export interface SessionStore {
 /**
  * Where a session lives IS what it ran as — the transcript files carry no engine field, so
  * the store that holds one is the only authority. Engine and execution mode are TWO
- * dimensions and only the store can separate them: deepseek's SDK and Built-in Agent modes
- * write to different roots, so `mode` is authoritative for those two and MUST be reported
- * alongside the engine (collapsing them to `engine: 'deepseek'` alone loses the half that
- * decides which loop resumes the session).
+ * dimensions and only the store can separate them: deepseek's and kimi's SDK and Built-in
+ * Agent modes write to different roots, so `mode` is authoritative for those and MUST be
+ * reported alongside the engine (collapsing them to `engine: 'deepseek'` alone loses the
+ * half that decides which loop resumes the session).
  *
  * `mode` is deliberately absent where the store cannot prove it: claude/claude2 write the
  * same directory whether they ran through the SDK or the PTY, so guessing there would
@@ -61,13 +62,18 @@ export function resolveSessionPath(
       mode: 'builtin',
     };
   }
+  // Kimi is structurally identical to deepseek: same two stores, same mode split.
+  const kimiPath = getKimiSessionPath(cwd, sessionId);
+  if (fs.existsSync(kimiPath)) {
+    return { sessionPath: kimiPath, engine: 'kimi', mode: 'sdk' };
+  }
+  const kimiBuiltinPath = getKimiBuiltinSessionPath(cwd, sessionId);
+  if (fs.existsSync(kimiBuiltinPath)) {
+    return { sessionPath: kimiBuiltinPath, engine: 'kimi', mode: 'builtin' };
+  }
   const codexPath = findCodexSessionPath(sessionId);
   if (codexPath) {
     return { sessionPath: codexPath, engine: 'codex' };
-  }
-  const kimiPath = findKimiSessionPath(sessionId);
-  if (kimiPath) {
-    return { sessionPath: kimiPath, engine: 'kimi' };
   }
   const ollamaPath = getOllamaSessionPath(cwd, sessionId);
   if (fs.existsSync(ollamaPath)) {
@@ -79,19 +85,18 @@ export function resolveSessionPath(
 /**
  * Engines whose store we may CREATE a session in, not merely read from.
  *
- * The four listed here store Claude-compatible JSONL at a path we can construct from
+ * Every engine but codex stores Claude-compatible JSONL at a path we can construct from
  * (cwd, sessionId) alone, so a synthesized transcript is indistinguishable from one the
- * engine wrote itself. codex and kimi are deliberately excluded: their transcripts are
- * owned by their own CLIs and named on terms we do not control — codex is
- * `<date-dirs>/rollout-<timestamp>-<thread_id>.jsonl`, kimi is `<cwd-hash>/<sid>/context.jsonl`
- * — so a file we invent may simply never be found or resumed by them. Readers (history,
+ * engine wrote itself. codex is deliberately excluded: its transcripts are owned by its own
+ * CLI and named on terms we do not control (`<date-dirs>/rollout-<timestamp>-<thread_id>.jsonl`),
+ * so a file we invent may simply never be found or resumed by it. Readers (history,
  * session-by-path) still support all six; only the write side is narrowed.
  *
  * Keep this in sync with `canForkEngine` on the client, which greys out the buttons so the
  * limit shows up as a disabled control rather than a request that fails.
  */
 export function isForkableStore(store: SessionStore): boolean {
-  return store.engine !== 'codex' && store.engine !== 'kimi';
+  return store.engine !== 'codex';
 }
 
 /**
@@ -113,6 +118,10 @@ export function newSessionPathInStore(
       return store.mode === 'builtin'
         ? getDeepseekBuiltinSessionPath(cwd, newSessionId)
         : getDeepseekSessionPath(cwd, newSessionId);
+    case 'kimi':
+      return store.mode === 'builtin'
+        ? getKimiBuiltinSessionPath(cwd, newSessionId)
+        : getKimiSessionPath(cwd, newSessionId);
     case 'ollama':
       return getOllamaSessionPath(cwd, newSessionId);
     default:

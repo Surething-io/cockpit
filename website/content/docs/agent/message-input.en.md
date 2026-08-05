@@ -37,7 +37,9 @@ Each attachment shows as a small thumbnail above the input. Click the `×` on a 
 
 > Drag-and-drop is not supported — only paste.
 
-Engines that accept images: **Claude**, **Codex**, **DeepSeek**. **Kimi** and **Ollama** tabs **silently drop** image attachments (no error, no warning).
+Engines that accept images: **Claude**, **Codex**, **DeepSeek**, **Kimi**. **Ollama** tabs **silently drop** image attachments (no error, no warning).
+
+> DeepSeek and Kimi only see images in their default **Claude Agent SDK** execution mode. In **Built-in Agent** mode there's no image support at all: an images-only message is rejected outright, and images sent alongside text are dropped.
 
 ## Running shell commands from chat — the `!` prefix
 

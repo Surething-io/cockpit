@@ -80,7 +80,7 @@ export function useLiveStream(
     //   2. `_ts` (startedAt) vs the most-recent user bubble's disk timestamp: written
     //      at/after run start ⇒ it IS this turn's disk copy (originator refreshed
     //      mid-run, or a scheduled task raced the incremental load) → skip.
-    // Text equality remains only as the fallback for untimestamped transcripts (kimi).
+    // Text equality remains only as the fallback for untimestamped transcripts (codex).
     if (ev.type === 'user' && ev._human) {
       const c = ev.message?.content;
       const text = typeof c === 'string'
@@ -189,7 +189,7 @@ export function useLiveStream(
             // cut === base.length ⇒ the in-flight turn isn't on disk → nothing to remove.
             return cut < base.length ? base.slice(0, cut) : base;
           }
-          // FALLBACK — untimestamped tail (kimi transcripts): locate by prompt text, confirm
+          // FALLBACK — untimestamped tail (codex transcripts): locate by prompt text, confirm
           // by snapshot fingerprint (pre-startedAt behavior, unchanged).
           if (!humanText) return base;
           // Only the MOST-RECENT user bubble can be this turn's prompt. If it doesn't match the

@@ -94,8 +94,8 @@ interface MessageBubbleProps {
   onFork?: (messageId: string, scope: 'prefix' | 'single') => void;
   /**
    * Whether a new session can be created in this engine's transcript store at all
-   * (false for codex / kimi). A boolean rather than the engine itself, so this memoized
-   * component keeps stable props.
+   * (false for codex, whose CLI owns the store). A boolean rather than the engine itself,
+   * so this memoized component keeps stable props.
    */
   forkSupported?: boolean;
   /** Plan mode: approve the plan card → turn off plan mode and resend to execute */

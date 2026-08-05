@@ -51,7 +51,7 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 | AI 输出审阅低效 | **局域网共享评审页**、行级评论、任意评论可回喂给 AI |
 | 每天写一遍"做 X 但不要动代码" | **斜杠模式** `/qa /fx /ex /go /cg /cc /cr` + 通过 Skills 侧边栏自定义 `SKILL.md` |
 | 没有自动化触发器 | 一次性 / 间隔 / **Cron** **定时任务** |
-| 担心"云端中转" | **完全本地**。无遥测，Codex / DeepSeek / Kimi 的 Key 仅存在本机 `~/.cockpit/settings.json` |
+| 担心"云端中转" | **完全本地**。无遥测，DeepSeek / Kimi 的 API Key 仅存在本机 `~/.cockpit/<引擎>/credentials.json` |
 
 ### 横向对比
 
@@ -86,10 +86,10 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 - **Claude** *(默认)* —— 完整官方 Agent SDK；`claude` CLI 已配置即零额外设置
 - **Codex** —— 直接读 `~/.codex` 配置，聊天 / Shell / 气泡都一样
 - **DeepSeek** —— 通过 Claude SDK 走 Anthropic 兼容端点；粘 Key，选 `v4-pro` 或 `v4-flash`
-- **Kimi** *(Moonshot)* —— 函数调用在聊天里完整渲染，跟 Claude 一样
+- **Kimi** *(Moonshot)* —— 粘 Kimi Code Key，模型选择器实时列出可用模型（`kimi-for-coding`、`k3` …），还能一键**查询额度**；不再需要 `kimi` CLI
 - **Ollama** —— 自动拉起守护进程；从聊天头部下拉任意已 pull 的模型；完全离线
 - 每个引擎跑在**独立 tab，独立会话历史**；新建 tab 时下拉切换
-- API Key 仅保存在本机 `~/.cockpit/settings.json`，**无云端中转**
+- API Key 仅保存在本机 `~/.cockpit/<引擎>/credentials.json`，**无云端中转**
 
 ### Agent —— 可扩展的 AI 对话
 
@@ -177,10 +177,10 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 
 - **Codex** —— 执行一次 `codex login` 即可生成 `~/.codex` 配置
 - **DeepSeek** —— 到 [api-docs.deepseek.com](https://api-docs.deepseek.com/) 申请 API Key，在引擎选择器里粘贴
-- **Kimi (Moonshot)** —— 到 [platform.moonshot.cn](https://platform.moonshot.cn/) 申请 API Key，在引擎选择器里粘贴
+- **Kimi (Moonshot)** —— 到 [kimi.com/code/console](https://www.kimi.com/code/console) 申请 **Kimi Code** API Key（`sk-kimi-…`），粘进聊天头部模型选择器的 **API Key** 输入框。*（`platform.moonshot.cn` 的开放平台 Key 是另一个产品，在这里用不了。）* 不再需要 `kimi` CLI。
 - **Ollama** —— 安装 [ollama.com](https://ollama.com/) 并 `ollama pull <model>`；Cockpit 会自动拉起守护进程
 
-> 所有 API Key 仅保存在本机 `~/.cockpit/settings.json`。无云端中转。
+> API Key 仅保存在本机，每个引擎一个文件：`~/.cockpit/<引擎>/credentials.json`（例如 `~/.cockpit/kimi/credentials.json`），**不写进** `settings.json`。无云端中转。
 
 ## 安装
 

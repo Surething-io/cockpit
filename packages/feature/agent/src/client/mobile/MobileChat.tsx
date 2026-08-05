@@ -10,7 +10,7 @@ import { useChatStream } from '../useChatStream';
 import { useLiveStream } from '../useLiveStream';
 import { MessageList, type MessageListHandle } from '../MessageList';
 import { MobileChatInput } from './MobileChatInput';
-import type { ChatMessage, ChatEngine, DeepseekModel, ChatMode } from '../types';
+import type { ChatMessage, ChatEngine, EngineModelId, ChatMode } from '../types';
 
 // Per-session engine + model + execution mode, persisted by the desktop tab system in the
 // project's session.json. This is the same source useTabState resumes from —
@@ -19,7 +19,8 @@ import type { ChatMessage, ChatEngine, DeepseekModel, ChatMode } from '../types'
 interface ResolvedRun {
   engine?: ChatEngine;
   ollamaModel?: string;
-  deepseekModel?: DeepseekModel;
+  deepseekModel?: EngineModelId;
+  kimiModel?: EngineModelId;
   chatMode?: ChatMode;
 }
 
@@ -60,6 +61,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
           engines?: Record<string, string>;
           ollamaModels?: Record<string, string>;
           deepseekModels?: Record<string, string>;
+          kimiModels?: Record<string, string>;
           chatModes?: Record<string, string>;
         };
       },
@@ -71,7 +73,8 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
         setResolved({
           engine: d.engines?.[initialSessionId] as ChatEngine | undefined,
           ollamaModel: d.ollamaModels?.[initialSessionId],
-          deepseekModel: d.deepseekModels?.[initialSessionId] as DeepseekModel | undefined,
+          deepseekModel: d.deepseekModels?.[initialSessionId] as EngineModelId | undefined,
+          kimiModel: d.kimiModels?.[initialSessionId] as EngineModelId | undefined,
           chatMode: d.chatModes?.[initialSessionId] as ChatMode | undefined,
         });
       }
@@ -128,7 +131,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     chatMode,
     planMode: false,
     ollamaModel: resolved.ollamaModel,
-    deepseekModel: resolved.deepseekModel,
+    engineModel: engine === 'kimi' ? resolved.kimiModel : resolved.deepseekModel,
     onSessionId: setSessionId,
     onFetchTitle: noop,
     // Mirrors Chat.tsx: when a run this screen ORIGINATED ends, reconcile from disk so

@@ -8,20 +8,23 @@ import {
   getOllamaSessionPath,
   getDeepseekSessionPath,
   getDeepseekBuiltinSessionPath,
+  getKimiSessionPath,
+  getKimiBuiltinSessionPath,
   findCodexSessionPath,
-  findKimiSessionPath,
   getSessionFilePath,
 } from '@cockpit/shared-utils';
 
-/** Claude-format transcript stores, probed in order by cwd+sessionId. DeepSeek has two:
- *  the Claude Agent SDK store (~/.cockpit/deepseek/projects) and the Built-in Agent store
- *  (~/.cockpit/deepseek-sessions), depending on the execution mode the session ran in. */
+/** Claude-format transcript stores, probed in order by cwd+sessionId. DeepSeek and Kimi each
+ *  have two: the Claude Agent SDK store (~/.cockpit/<engine>/projects) and the Built-in Agent
+ *  store (~/.cockpit/<engine>-sessions), depending on the execution mode the session ran in. */
 const CLAUDE_STYLE_PATHS = [
   getClaudeSessionPath,
   getClaude2SessionPath,
   getOllamaSessionPath,
   getDeepseekSessionPath,
   getDeepseekBuiltinSessionPath,
+  getKimiSessionPath,
+  getKimiBuiltinSessionPath,
 ];
 
 /** First existing Claude-format transcript for this session, or null. */
@@ -172,18 +175,12 @@ export async function getSessionTitle(cwd: string, sessionId: string): Promise<s
     return title || 'Untitled Session';
   }
 
-  const kimiPath = findKimiSessionPath(sessionId);
-  if (kimiPath && existsSync(kimiPath)) {
-    const title = await getKimiTitle(kimiPath);
-    return title || 'Untitled Session';
-  }
-
   return 'Untitled Session';
 }
 
 /**
  * Collect every valid user message from a transcript file, in order,
- * dispatching by engine format (Claude-style / Codex / Kimi).
+ * dispatching by engine format (Claude-style / Codex).
  */
 async function collectUserMessages(cwd: string, sessionId: string): Promise<string[]> {
   const claudeStylePath = findClaudeStylePath(cwd, sessionId);
@@ -194,11 +191,6 @@ async function collectUserMessages(cwd: string, sessionId: string): Promise<stri
   const codexPath = findCodexSessionPath(sessionId);
   if (codexPath && existsSync(codexPath)) {
     return await getCodexUserMessages(codexPath);
-  }
-
-  const kimiPath = findKimiSessionPath(sessionId);
-  if (kimiPath && existsSync(kimiPath)) {
-    return await getKimiUserMessages(kimiPath);
   }
 
   return [];
@@ -243,7 +235,7 @@ interface SessionContent {
 
 /**
  * Resolve the on-disk transcript path for a session plus the reader that parses
- * it into SessionContent, dispatching by engine. Codex/Kimi transcripts have no
+ * it into SessionContent, dispatching by engine. Codex transcripts have no
  * summary line (their title is the first user message, already in `messages`).
  * Returns null when no transcript exists on any known path.
  */
@@ -259,14 +251,6 @@ function resolveSessionFile(
     return {
       path: codexPath,
       read: async (p) => ({ aiTitle: '', summary: '', messages: await getCodexUserMessages(p) }),
-    };
-  }
-
-  const kimiPath = findKimiSessionPath(sessionId);
-  if (kimiPath && existsSync(kimiPath)) {
-    return {
-      path: kimiPath,
-      read: async (p) => ({ aiTitle: '', summary: '', messages: await getKimiUserMessages(p) }),
     };
   }
 
@@ -480,7 +464,7 @@ function isValidUserMessage(text: string): boolean {
 }
 
 // ============================================
-// Transcript readers (Claude-style, Codex, Kimi)
+// Transcript readers (Claude-style, Codex)
 // ============================================
 
 // Snapshot readers only consume `user`, `summary`, and `ai-title` lines — all
@@ -726,97 +710,3 @@ async function getCodexTitle(filePath: string): Promise<string | undefined> {
     return undefined;
   }
 }
-
-async function getKimiUserMessages(filePath: string): Promise<string[]> {
-  const messages: string[] = [];
-  try {
-    const fileStream = createReadStream(filePath);
-    const rl = createInterface({ input: fileStream, crlfDelay: Infinity });
-
-    for await (const line of rl) {
-      if (!line.trim()) continue;
-      let entry: { role?: string; content?: string | Array<{ type?: string; text?: string }> };
-      try {
-        entry = JSON.parse(line);
-      } catch {
-        continue;
-      }
-
-      if (entry.role !== 'user') continue;
-
-      const text =
-        typeof entry.content === 'string'
-          ? entry.content
-          : Array.isArray(entry.content)
-            ? entry.content
-                .filter((c) => (c.type === 'input_text' || c.type === 'text') && c.text)
-                .map((c) => c.text!)
-                .join('')
-            : '';
-
-      if (
-        !text ||
-        text.startsWith('<system') ||
-        text.startsWith('<environment') ||
-        text.startsWith('# AGENTS.md') ||
-        text.startsWith('<permissions')
-      ) {
-        continue;
-      }
-
-      const filtered = filterCommandTags(text);
-      if (filtered && isValidUserMessage(filtered)) {
-        messages.push(filtered);
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return messages;
-}
-
-async function getKimiTitle(filePath: string): Promise<string | undefined> {
-  try {
-    const fileStream = createReadStream(filePath);
-    const rl = createInterface({ input: fileStream, crlfDelay: Infinity });
-
-    for await (const line of rl) {
-      if (!line.trim()) continue;
-      let entry: { role?: string; content?: string | Array<{ type?: string; text?: string }> };
-      try {
-        entry = JSON.parse(line);
-      } catch {
-        continue;
-      }
-
-      if (entry.role !== 'user') continue;
-
-      const text =
-        typeof entry.content === 'string'
-          ? entry.content
-          : Array.isArray(entry.content)
-            ? entry.content
-                .filter((c) => (c.type === 'input_text' || c.type === 'text') && c.text)
-                .map((c) => c.text!)
-                .join('')
-            : '';
-
-      if (
-        !text ||
-        text.startsWith('<system') ||
-        text.startsWith('<environment') ||
-        text.startsWith('# AGENTS.md') ||
-        text.startsWith('<permissions')
-      ) {
-        continue;
-      }
-
-      return text.slice(0, 80);
-    }
-
-    return undefined;
-  } catch {
-    return undefined;
-  }
-}
-

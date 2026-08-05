@@ -2,12 +2,12 @@
  * SessionCleanupLive -- retention sweep for Built-in Agent chat transcripts.
  *
  * Scope: ONLY the Built-in Agent stores (`BUILTIN_SESSION_DIR_NAMES` under
- * `<cockpitDir>/`: ollama-sessions, deepseek-sessions). These are the stores
- * cockpit writes itself (via appendFileSync) with no cleanup. Every other
- * engine's sessions are cleaned by their own external CLI / Agent SDK:
- *   - claude / claude2 -> ~/.claude(2)/projects (Claude CLI cleanupPeriodDays)
- *   - deepseek (SDK)   -> ~/.cockpit/deepseek/projects (Claude Agent SDK)
- *   - codex / kimi     -> ~/.codex, ~/.kimi (external CLI)
+ * `<cockpitDir>/`: ollama-sessions, deepseek-sessions, kimi-sessions). These are
+ * the stores cockpit writes itself (via appendFileSync) with no cleanup. Every
+ * other engine's sessions are cleaned by their own external CLI / Agent SDK:
+ *   - claude / claude2     -> ~/.claude(2)/projects (Claude CLI cleanupPeriodDays)
+ *   - deepseek / kimi (SDK) -> ~/.cockpit/<engine>/projects (Claude Agent SDK)
+ *   - codex                -> ~/.codex (external CLI)
  * so this sweep deliberately never touches them.
  *
  * On-disk layout (one dir per project cwd, one file per session):
@@ -145,7 +145,7 @@ const cleanupSessions = (
           ).pipe(Effect.orElseSucceed(() => undefined))
         }
         yield* Effect.logInfo(
-          `session cleanup: removed ollama session ${stem} under ${cwdName} (older than ${keepDays}d)`
+          `session cleanup: removed session ${stem} from ${root} under ${cwdName} (older than ${keepDays}d)`
         )
       }
 

@@ -151,7 +151,10 @@ export const POST = handler((req) =>
       sessionId,
       engine,
       // model snapshot only matters for engines whose chat route accepts it
-      model: engine === "ollama" || engine === "deepseek" ? model : undefined,
+      model:
+        engine === "ollama" || engine === "deepseek" || engine === "kimi"
+          ? model
+          : undefined,
       language,
       message: validated.message,
       taskFile: validated.taskFile,

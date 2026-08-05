@@ -6,7 +6,7 @@
  * baseURL/apiKey through env:
  *   - claude: no env override (defaults to anthropic.com)
  *   - codex:    ANTHROPIC_BASE_URL=https://api.openai.com/v1 + ANTHROPIC_API_KEY=<key>
- *   - kimi:     ANTHROPIC_BASE_URL=https://api.moonshot.cn/anthropic + ANTHROPIC_API_KEY=<key>
+ *   - kimi:     ANTHROPIC_BASE_URL=https://api.kimi.com/coding/ + ANTHROPIC_API_KEY=<key>
  *   - deepseek: ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic + ANTHROPIC_API_KEY=<key>
  *
  * Note: the session / tool / global-state integration from the original
@@ -45,7 +45,7 @@ const providerEnvFor = (
       }
     case "kimi":
       return {
-        baseUrl: "https://api.moonshot.cn/anthropic",
+        baseUrl: "https://api.kimi.com/coding/",
         apiKey: apiKeyOverride,
       }
     case "deepseek":

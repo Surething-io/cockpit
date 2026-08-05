@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath, getBuiltinSessionsRoot } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, KIMI_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath, getBuiltinSessionsRoot } from '@cockpit/shared-utils';
 import { handler } from '@cockpit/effect-runtime/server';
 import { AppError } from '@cockpit/effect-core';
 
@@ -82,7 +82,8 @@ function getProjectPathFromJsonl(projectDir: string): string | null {
 }
 
 // Build a lookup of encodedPath → cwd from the global state file
-// This covers projects that may only have ollama/codex/kimi sessions
+// This covers projects whose only sessions live in stores that carry no cwd field
+// (the Built-in Agent stores) or outside the cwd-encoded layout entirely (codex)
 function buildCwdLookupFromGlobalState(): Map<string, string> {
   const lookup = new Map<string, string>();
   try {
@@ -141,9 +142,9 @@ function countSessionFiles(dir: string): number {
  * only in where a project's real cwd can be recovered from.
  *
  * `selfDescribing`: the store's own transcripts carry the cwd, so its project dir can resolve
- * the path (Claude-format stores written by the CLI / Agent SDK — claude2, deepseek SDK).
- * The Built-in Agent stores (ollama, deepseek-sessions) write no cwd field, so they fall back
- * to the Claude projects dir and then the global-state lookup.
+ * the path (Claude-format stores written by the CLI / Agent SDK — claude2, deepseek/kimi SDK).
+ * The Built-in Agent stores (ollama-, deepseek- and kimi-sessions) write no cwd field, so they
+ * fall back to the Claude projects dir and then the global-state lookup.
  *
  * Path resolution runs only for projects not already in the map: an existing entry already
  * has a resolved path, so an unresolvable sibling store must still contribute its count.
@@ -187,8 +188,10 @@ function mergeStoreIntoProjects(
   }
 }
 
-// Count codex/kimi sessions from cockpit session.json
-function countEngineSessionsFromCockpitState(encodedDirName: string): number {
+// Count codex sessions from cockpit session.json. Codex is the only engine that needs
+// this: its transcripts live outside the cwd-encoded layout, so there is no project dir
+// to scan — the session.json engines map is the only record that ties one to a project.
+function countCodexSessionsFromCockpitState(encodedDirName: string): number {
   try {
     const sessionJsonPath = path.join(COCKPIT_PROJECTS_DIR, encodedDirName, 'session.json');
     if (!fs.existsSync(sessionJsonPath)) return 0;
@@ -199,13 +202,9 @@ function countEngineSessionsFromCockpitState(encodedDirName: string): number {
     };
     if (!state.sessions || !state.engines) return 0;
 
-    // Count sessions whose engine is codex or kimi
     let count = 0;
     for (const sessionId of state.sessions) {
-      const engine = state.engines[sessionId];
-      if (engine === 'codex' || engine === 'kimi') {
-        count++;
-      }
+      if (state.engines[sessionId] === 'codex') count++;
     }
     return count;
   } catch {
@@ -254,21 +253,23 @@ async function buildProjectsList() {
     // --- Source 1b: Claude2 projects dir ---
     mergeStoreIntoProjects(CLAUDE2_PROJECTS_DIR, projectMap, cwdLookup, true);
 
-    // --- Source 1c: DeepSeek SDK-mode projects dir (written by the Claude Agent SDK) ---
+    // --- Source 1c: DeepSeek/Kimi SDK-mode projects dirs (written by the Claude Agent SDK) ---
     mergeStoreIntoProjects(DEEPSEEK_PROJECTS_DIR, projectMap, cwdLookup, true);
+    mergeStoreIntoProjects(KIMI_PROJECTS_DIR, projectMap, cwdLookup, true);
 
-    // --- Source 2: Built-in Agent stores (ollama, deepseek Built-in Agent mode) ---
+    // --- Source 2: Built-in Agent stores (ollama, deepseek/kimi Built-in Agent mode) ---
     mergeStoreIntoProjects(getBuiltinSessionsRoot('ollama'), projectMap, cwdLookup, false);
     mergeStoreIntoProjects(getBuiltinSessionsRoot('deepseek'), projectMap, cwdLookup, false);
+    mergeStoreIntoProjects(getBuiltinSessionsRoot('kimi'), projectMap, cwdLookup, false);
 
-    // --- Source 3: Codex/Kimi sessions via cockpit session.json ---
+    // --- Source 3: Codex sessions via cockpit session.json ---
     if (fs.existsSync(COCKPIT_PROJECTS_DIR)) {
       const cockpitDirs = fs.readdirSync(COCKPIT_PROJECTS_DIR, { withFileTypes: true })
         .filter(dirent => dirent.isDirectory())
         .map(dirent => dirent.name);
 
       for (const dirName of cockpitDirs) {
-        const engineCount = countEngineSessionsFromCockpitState(dirName);
+        const engineCount = countCodexSessionsFromCockpitState(dirName);
         if (engineCount === 0) continue;
 
         const existing = projectMap.get(dirName);

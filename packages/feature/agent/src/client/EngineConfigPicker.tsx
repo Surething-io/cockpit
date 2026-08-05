@@ -1,45 +1,141 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
-import type { DeepseekModel } from './types';
+import type { EngineModelId } from './types';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
   loadAgentSettings,
   saveAgentSettings,
-  loadDeepseekCredentials,
-  loadDeepseekModels,
-  saveDeepseekApiKey,
+  loadEngineCredentials,
+  loadEngineModels,
+  saveEngineApiKey,
+  type ApiKeyEngine,
+  type EngineModelInfo,
 } from './effect/agentClient';
 
-// Migrated from src/components/project/DeepseekConfigPicker.tsx.
+/**
+ * API key + model picker for the engines configured by key rather than by a local
+ * CLI login (DeepSeek, Kimi). Both providers have the same shape — one key, an
+ * Anthropic-compatible endpoint for SDK mode and an OpenAI-compatible one for
+ * Built-in Agent mode — so they share this component and differ only in ENGINES
+ * below.
+ *
+ * The one real behavioural difference is where SDK-mode model ids come from:
+ * DeepSeek's Anthropic-compatible endpoint has no listing API (hence a fixed pair,
+ * mirrored by ALLOWED_MODELS in engines/deepseek.ts), while Kimi lists live models
+ * for both protocols and gates them by membership tier — so a hardcoded list would
+ * offer models the account cannot call.
+ */
 
-/** SDK mode: the two ids DeepSeek's Anthropic-compatible endpoint accepts. Fixed — this
- *  endpoint has no model-listing API, and the server whitelists the same pair
- *  (engines/deepseek.ts ALLOWED_MODELS). Built-in Agent mode instead lists /v1/models live. */
-const SDK_MODELS: { value: DeepseekModel; label: string }[] = [
-  { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash' },
-  { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro' },
-];
-const SDK_DEFAULT_MODEL = 'deepseek-v4-flash';
+type Accent = 'sky' | 'purple';
 
-/** DeepSeek's console page where keys are created — the only place a user can get the
- *  value this menu asks for, so the field links straight to it. */
-const API_KEYS_URL = 'https://platform.deepseek.com/api_keys';
+/** Tailwind classes must be literal strings — a `bg-${accent}-500` template never
+ *  reaches the generated CSS. */
+const ACCENTS: Record<Accent, {
+  dot: string; trigger: string; label: string; chevron: string;
+  inputFocus: string; save: string; selectedRow: string; radio: string; radioDot: string;
+}> = {
+  sky: {
+    dot: 'bg-sky-500',
+    trigger: 'bg-sky-500/15 hover:bg-sky-500/25',
+    label: 'text-sky-400',
+    chevron: 'text-sky-400',
+    inputFocus: 'focus:border-sky-500',
+    save: 'bg-sky-500/20 hover:bg-sky-500/30 text-sky-300',
+    selectedRow: 'bg-sky-500/15 text-sky-300',
+    radio: 'border-sky-400',
+    radioDot: 'bg-sky-400',
+  },
+  purple: {
+    dot: 'bg-purple-500',
+    trigger: 'bg-purple-500/15 hover:bg-purple-500/25',
+    label: 'text-purple-400',
+    chevron: 'text-purple-400',
+    inputFocus: 'focus:border-purple-500',
+    save: 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300',
+    selectedRow: 'bg-purple-500/15 text-purple-300',
+    radio: 'border-purple-400',
+    radioDot: 'bg-purple-400',
+  },
+};
 
-interface DeepseekConfigPickerProps {
-  currentModel?: DeepseekModel;
-  onModelChange: (model: DeepseekModel) => void;
+interface EngineUiConfig {
+  /** Human-readable provider name, used in every label and tooltip. */
+  label: string;
+  accent: Accent;
+  /** Console page where keys are created — the only place a user can get the value
+   *  this menu asks for, so the field links straight to it. */
+  apiKeysUrl: string;
+  /** SDK-mode model ids: a fixed list, or 'live' to use the same listing endpoint
+   *  Built-in Agent mode uses. */
+  sdkModels: { id: string; label: string }[] | 'live';
+  /** Shown as the trigger label before the user has chosen anything (fixed lists only). */
+  sdkDefaultModel?: string;
+  /** Listing endpoint path, quoted in the empty-state message. */
+  modelsEndpoint: string;
+}
+
+const ENGINES: Record<ApiKeyEngine, EngineUiConfig> = {
+  deepseek: {
+    label: 'DeepSeek',
+    accent: 'sky',
+    apiKeysUrl: 'https://platform.deepseek.com/api_keys',
+    sdkModels: [
+      { id: 'deepseek-v4-flash', label: 'deepseek-v4-flash' },
+      { id: 'deepseek-v4-pro', label: 'deepseek-v4-pro' },
+    ],
+    sdkDefaultModel: 'deepseek-v4-flash',
+    modelsEndpoint: '/v1/models',
+  },
+  kimi: {
+    label: 'Kimi',
+    accent: 'purple',
+    apiKeysUrl: 'https://www.kimi.com/code/console',
+    sdkModels: 'live',
+    modelsEndpoint: '/coding/v1/models',
+  },
+};
+
+/** 1048576 → '1M', 262144 → '256K'. */
+function formatContext(tokens?: number): string | null {
+  if (!tokens || tokens <= 0) return null;
+  if (tokens >= 1024 * 1024) return `${Math.round(tokens / (1024 * 1024))}M`;
+  return `${Math.round(tokens / 1024)}K`;
+}
+
+interface EngineConfigPickerProps {
+  engine: ApiKeyEngine;
+  currentModel?: EngineModelId;
+  onModelChange: (model: EngineModelId) => void;
   /** Built-in Agent mode — different endpoint, so a different model namespace and a
    *  different settings key. See ChatMode in ./types. */
   builtin?: boolean;
   /** Fired whenever the persisted-key state changes (mount, save, clear, reopen). This
    *  component is the only live owner of that fact, so siblings that need it (the balance
-   *  button) get it from here instead of caching their own copy and going stale. */
+   *  / quota button) get it from here instead of caching their own copy and going stale. */
   onHasKeyChange?: (hasKey: boolean) => void;
 }
 
-export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = false, onHasKeyChange }: DeepseekConfigPickerProps) {
+interface EngineSettingsSlice {
+  model?: string;
+  builtinModel?: string;
+  modelContextTokens?: number;
+  modelEffort?: string;
+}
+
+export function EngineConfigPicker({
+  engine,
+  currentModel,
+  onModelChange,
+  builtin = false,
+  onHasKeyChange,
+}: EngineConfigPickerProps) {
+  const config = ENGINES[engine];
+  const accent = ACCENTS[config.accent];
+  // SDK mode uses the live list too when the provider has no fixed set (Kimi).
+  const liveModels = builtin || config.sdkModels === 'live';
+
   const [open, setOpen] = useState(false);
   const [hasKey, setHasKey] = useState(false); // whether a key is persisted
   const [maskedKey, setMaskedKey] = useState<string>(''); // server-masked display
@@ -48,8 +144,8 @@ export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = fa
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Built-in Agent mode only: model ids fetched from /v1/models on open.
-  const [builtinModels, setBuiltinModels] = useState<string[]>([]);
+  // Models fetched from the provider's listing endpoint on open (live modes only).
+  const [fetchedModels, setFetchedModels] = useState<EngineModelInfo[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -80,26 +176,26 @@ export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = fa
   // indicator ("Set API key") and the model display, so deferring this to the popover left
   // every restored tab claiming no key was configured until the user clicked it.
   // Local-only calls (credentials + settings). The model LIST stays lazy — that one hits
-  // DeepSeek over the network and is only needed once the popover is actually open.
+  // the provider over the network and is only needed once the popover is actually open.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const [credExit, settingsExit] = await Promise.all([
-        BrowserRuntime.runPromiseExit(loadDeepseekCredentials()),
+        BrowserRuntime.runPromiseExit(loadEngineCredentials(engine)),
         BrowserRuntime.runPromiseExit(
-          loadAgentSettings<{ engines?: { deepseek?: { model?: DeepseekModel; builtinModel?: DeepseekModel } } }>()
+          loadAgentSettings<{ engines?: Record<string, EngineSettingsSlice | undefined> }>()
         ),
       ]);
       if (cancelled || credExit._tag === 'Failure') return;
       setHasKey(credExit.value.hasKey);
       setMaskedKey(credExit.value.maskedKey);
-      const savedDeepseek = settingsExit._tag === 'Success' ? settingsExit.value?.engines?.deepseek : undefined;
-      const savedModel = builtinRef.current ? savedDeepseek?.builtinModel : savedDeepseek?.model;
+      const savedEngine = settingsExit._tag === 'Success' ? settingsExit.value?.engines?.[engine] : undefined;
+      const savedModel = builtinRef.current ? savedEngine?.builtinModel : savedEngine?.model;
       // Only fill a gap — never overwrite the model this tab was restored with.
       if (!currentModelRef.current && savedModel) onModelChangeRef.current(savedModel);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [engine]);
 
   // Close on outside click
   useEffect(() => {
@@ -114,23 +210,26 @@ export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = fa
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  // Separate default per mode. The id sets overlap today, but SDK mode is whitelisted to a
-  // fixed pair while Built-in Agent mode accepts anything /v1/models reports — sharing one
-  // key would let a newer model chosen here become the SDK default, where it is silently
-  // downgraded to DEFAULT_MODEL.
+  // Separate default per mode. The id sets can overlap, but the two modes talk to
+  // different endpoints — sharing one key would let a model chosen for one of them
+  // become the other's default, where it may not exist at all.
   const settingsKey = builtin ? 'builtinModel' : 'model';
+
+  const staticOptions = useMemo(
+    () => (config.sdkModels === 'live' ? [] : config.sdkModels.map((m) => ({ id: m.id, label: m.label }))),
+    [config.sdkModels]
+  );
 
   // Load settings on first open. The API key comes from its own credential
   // endpoint (masked, never raw); only the model lives in /api/settings.
-  // In Built-in Agent mode the model list itself is fetched from /v1/models.
   const loadSettings = useCallback(async () => {
     setLoading(true);
     setError(null);
     setModelsError(null);
     const [credExit, settingsExit] = await Promise.all([
-      BrowserRuntime.runPromiseExit(loadDeepseekCredentials()),
+      BrowserRuntime.runPromiseExit(loadEngineCredentials(engine)),
       BrowserRuntime.runPromiseExit(
-        loadAgentSettings<{ engines?: { deepseek?: { model?: DeepseekModel; builtinModel?: DeepseekModel } } }>()
+        loadAgentSettings<{ engines?: Record<string, EngineSettingsSlice | undefined> }>()
       ),
     ]);
     if (credExit._tag === 'Failure') {
@@ -143,36 +242,39 @@ export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = fa
     setKeyInput('');
     setEditing(false);
 
-    const savedDeepseek = settingsExit._tag === 'Success' ? settingsExit.value?.engines?.deepseek : undefined;
-    const savedModel = builtin ? savedDeepseek?.builtinModel : savedDeepseek?.model;
+    const savedEngine = settingsExit._tag === 'Success' ? settingsExit.value?.engines?.[engine] : undefined;
+    const savedModel = builtin ? savedEngine?.builtinModel : savedEngine?.model;
 
-    if (builtin) {
+    if (liveModels) {
       // Live list — an unreachable endpoint or a bad key surfaces here rather than at the
       // first chat turn. Without a key there is nothing to authenticate with, so skip.
-      let available: string[] = [];
+      let available: EngineModelInfo[] = [];
       if (credExit.value.hasKey) {
-        const modelsExit = await BrowserRuntime.runPromiseExit(loadDeepseekModels());
+        const modelsExit = await BrowserRuntime.runPromiseExit(loadEngineModels(engine));
         if (modelsExit._tag === 'Success') {
           available = modelsExit.value.models;
         } else {
           setModelsError('Failed to load models — check the API key');
         }
       }
-      setBuiltinModels(available);
+      setFetchedModels(available);
       // Sync a usable default upward: the saved one if the account still has it, else the
       // first available. Never leave the tab pointing at a model the endpoint rejects.
-      const fallback = savedModel && available.includes(savedModel) ? savedModel : available[0];
-      if (fallback && (!currentModel || !available.includes(currentModel))) {
+      const ids = available.map((m) => m.id);
+      const fallback = savedModel && ids.includes(savedModel) ? savedModel : ids[0];
+      if (fallback && (!currentModel || !ids.includes(currentModel))) {
         onModelChange(fallback);
       }
-    } else if (!currentModel && savedModel && SDK_MODELS.some(m => m.value === savedModel)) {
+    } else if (!currentModel && savedModel && staticOptions.some((m) => m.id === savedModel)) {
       onModelChange(savedModel);
     }
     setLoading(false);
-  }, [builtin, currentModel, onModelChange]);
+  }, [engine, builtin, liveModels, currentModel, onModelChange, staticOptions]);
 
   // Persist the model into /api/settings (shallow merge — send only the engines diff).
-  const persistModel = useCallback(async (model: DeepseekModel) => {
+  // SDK mode also stores the model's context window and effort default so the engine can
+  // build the SDK env without a round trip to the provider at chat start.
+  const persistModel = useCallback(async (model: EngineModelId, meta?: EngineModelInfo) => {
     const curExit = await BrowserRuntime.runPromiseExit(
       loadAgentSettings<{ engines?: Record<string, Record<string, unknown>> }>()
     );
@@ -180,11 +282,16 @@ export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = fa
     const curEngines = cur.engines || {};
     const engines = {
       ...curEngines,
-      deepseek: { ...(curEngines.deepseek || {}), [settingsKey]: model },
+      [engine]: {
+        ...(curEngines[engine] || {}),
+        [settingsKey]: model,
+        ...(!builtin && meta?.contextTokens ? { modelContextTokens: meta.contextTokens } : {}),
+        ...(!builtin && meta?.effort ? { modelEffort: meta.effort } : {}),
+      },
     };
     const saveExit = await BrowserRuntime.runPromiseExit(saveAgentSettings({ engines }));
     if (saveExit._tag === 'Failure') throw new Error('Failed to save settings');
-  }, [settingsKey]);
+  }, [engine, settingsKey, builtin]);
 
   const toggle = () => {
     if (!open) {
@@ -205,7 +312,7 @@ export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = fa
     if (!trimmed) return;
     setSaving(true);
     setError(null);
-    const exit = await BrowserRuntime.runPromiseExit(saveDeepseekApiKey(trimmed));
+    const exit = await BrowserRuntime.runPromiseExit(saveEngineApiKey(engine, trimmed));
     if (exit._tag === 'Failure') {
       setError('Save failed');
     } else {
@@ -213,6 +320,9 @@ export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = fa
       setMaskedKey(exit.value.maskedKey);
       setKeyInput('');
       setEditing(false);
+      // A fresh key usually means a different account, and in live-list mode the model
+      // options are account-scoped — reload them instead of showing the old tier's list.
+      if (liveModels) loadSettings();
     }
     setSaving(false);
   };
@@ -220,7 +330,7 @@ export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = fa
   const handleClearKey = async () => {
     setSaving(true);
     setError(null);
-    const exit = await BrowserRuntime.runPromiseExit(saveDeepseekApiKey(''));
+    const exit = await BrowserRuntime.runPromiseExit(saveEngineApiKey(engine, ''));
     if (exit._tag === 'Failure') {
       setError('Clear failed');
     } else {
@@ -228,36 +338,37 @@ export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = fa
       setMaskedKey(exit.value.maskedKey);
       setKeyInput('');
       setEditing(false);
+      if (liveModels) setFetchedModels([]);
     }
     setSaving(false);
   };
 
-  const handleSelectModel = async (model: DeepseekModel) => {
+  /** Switch the key field into edit mode and focus it once React has rendered the input. */
+  const beginEdit = () => {
+    setEditing(true);
+    setKeyInput('');
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const handleSelectModel = async (model: EngineModelId, meta?: EngineModelInfo) => {
     onModelChange(model);
     try {
-      await persistModel(model);
+      await persistModel(model, meta);
     } catch {
       // non-fatal — tab state already updated
     }
   };
 
-  const beginEdit = () => {
-    setEditing(true);
-    setKeyInput('');
-    // Defer focus until input is rendered
-    setTimeout(() => inputRef.current?.focus(), 0);
-  };
+  const modelOptions: EngineModelInfo[] = liveModels
+    ? fetchedModels
+    : staticOptions.map((m) => ({ id: m.id, label: m.label }));
 
-  // In Built-in Agent mode there is no meaningful fallback id to show before the live list
-  // arrives — the SDK default belongs to the other endpoint's namespace.
+  // With a live list there is no meaningful fallback id to show before it arrives.
   const displayLabel = !hasKey
     ? 'Set API key'
-    : (currentModel || (builtin ? 'Select model' : SDK_DEFAULT_MODEL));
-  const labelTone = !hasKey ? 'text-amber-400' : 'text-sky-400';
-  const modelOptions: { value: DeepseekModel; label: string }[] = builtin
-    ? builtinModels.map((id) => ({ value: id, label: id }))
-    : SDK_MODELS;
-  const selectedModel = currentModel || (builtin ? '' : SDK_DEFAULT_MODEL);
+    : (currentModel || (liveModels ? 'Select model' : config.sdkDefaultModel ?? 'Select model'));
+  const labelTone = !hasKey ? 'text-amber-400' : accent.label;
+  const selectedModel = currentModel || (liveModels ? '' : config.sdkDefaultModel ?? '');
 
   const menu = open ? (
     <Portal>
@@ -280,12 +391,12 @@ export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = fa
                 {/* Where the key comes from. `target="_blank"` matters beyond convention:
                     navigating in place would take the whole Cockpit window with it. */}
                 <a
-                  href={API_KEYS_URL}
+                  href={config.apiKeysUrl}
                   target="_blank"
                   rel="noopener"
-                  data-testid="deepseek-api-keys-link"
-                  title="Open DeepSeek API keys page"
-                  aria-label="Open DeepSeek API keys page"
+                  data-testid={`${engine}-api-keys-link`}
+                  title={`Open ${config.label} API keys page`}
+                  aria-label={`Open ${config.label} API keys page`}
                   className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -324,13 +435,13 @@ export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = fa
                       if (e.key === 'Enter') handleSaveKey();
                     }}
                     placeholder="sk-..."
-                    className="flex-1 min-w-0 text-xs px-2 py-1 rounded bg-secondary text-foreground border border-border focus:border-sky-500 focus:outline-none font-mono"
+                    className={`flex-1 min-w-0 text-xs px-2 py-1 rounded bg-secondary text-foreground border border-border focus:outline-none font-mono ${accent.inputFocus}`}
                     autoFocus
                   />
                   <button
                     onClick={handleSaveKey}
                     disabled={saving || !keyInput.trim()}
-                    className="text-[11px] px-2 py-1 rounded bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className={`text-[11px] px-2 py-1 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${accent.save}`}
                   >
                     {saving ? 'Saving...' : 'Save'}
                   </button>
@@ -357,31 +468,41 @@ export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = fa
                 Model
                 {builtin && <span className="ml-1 font-normal opacity-70">· Built-in Agent</span>}
               </div>
-              {builtin && modelsError && (
+              {liveModels && modelsError && (
                 <div className="mb-1 text-[11px] text-red-400">{modelsError}</div>
               )}
-              {builtin && !modelsError && modelOptions.length === 0 && (
+              {liveModels && !modelsError && modelOptions.length === 0 && (
                 <div className="mb-1 text-[11px] text-muted-foreground">
-                  {hasKey ? 'No models returned by /v1/models' : 'Save an API key to list models'}
+                  {hasKey ? `No models returned by ${config.modelsEndpoint}` : 'Save an API key to list models'}
                 </div>
               )}
               <div className="flex flex-col gap-0.5">
                 {modelOptions.map((m) => {
-                  const selected = selectedModel === m.value;
+                  const selected = selectedModel === m.id;
+                  const context = formatContext(m.contextTokens);
                   return (
                     <button
-                      key={m.value}
-                      onClick={() => handleSelectModel(m.value)}
+                      key={m.id}
+                      onClick={() => handleSelectModel(m.id, m)}
                       className={`flex items-center gap-2 px-2 py-1 text-xs rounded transition-colors ${
-                        selected ? 'bg-sky-500/15 text-sky-300' : 'text-foreground hover:bg-accent'
+                        selected ? accent.selectedRow : 'text-foreground hover:bg-accent'
                       }`}
                     >
                       <span className={`w-3 h-3 rounded-full border-2 flex items-center justify-center ${
-                        selected ? 'border-sky-400' : 'border-muted-foreground'
+                        selected ? accent.radio : 'border-muted-foreground'
                       }`}>
-                        {selected && <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />}
+                        {selected && <span className={`w-1.5 h-1.5 rounded-full ${accent.radioDot}`} />}
                       </span>
-                      <span>{m.label}</span>
+                      <span className="truncate">{m.id}</span>
+                      {/* The id is what the engine sends and what a bug report needs, so it
+                          stays primary; the provider's display name only earns space when it
+                          says something the id doesn't (kimi-for-coding → "K2.7 Coding"). */}
+                      {m.label && m.label !== m.id && (
+                        <span className="truncate text-[10px] text-muted-foreground">{m.label}</span>
+                      )}
+                      {context && (
+                        <span className="ml-auto pl-2 text-[10px] text-muted-foreground flex-shrink-0">{context}</span>
+                      )}
                     </button>
                   );
                 })}
@@ -398,16 +519,30 @@ export function DeepseekConfigPicker({ currentModel, onModelChange, builtin = fa
       <button
         ref={btnRef}
         onClick={toggle}
-        className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded bg-sky-500/15 hover:bg-sky-500/25 transition-colors"
-        title="Configure DeepSeek"
+        className={`flex items-center gap-1 px-2 py-0.5 text-[11px] rounded transition-colors ${accent.trigger}`}
+        title={`Configure ${config.label}`}
+        data-testid={`${engine}-config-picker`}
       >
-        <span className="w-1.5 h-1.5 rounded-full bg-sky-500 flex-shrink-0" />
+        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${accent.dot}`} />
         <span className={`truncate max-w-[160px] ${labelTone}`}>{displayLabel}</span>
-        <svg className="w-3 h-3 flex-shrink-0 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className={`w-3 h-3 flex-shrink-0 ${accent.chevron}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
       {menu}
     </>
   );
+}
+
+/** Switch the key field into edit mode and focus it once React has rendered the input. */
+function beginEditFactory(
+  setEditing: (v: boolean) => void,
+  setKeyInput: (v: string) => void,
+  inputRef: React.RefObject<HTMLInputElement | null>,
+) {
+  return () => {
+    setEditing(true);
+    setKeyInput('');
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
 }

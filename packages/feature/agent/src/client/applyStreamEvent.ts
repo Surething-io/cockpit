@@ -3,8 +3,8 @@ import type { ChatMessage, ToolCallInfo } from './types';
 
 // Single engine-agnostic stream→messages reducer (#10 line 1).
 //
-// Pure: maps the SSE events every engine route emits (claude/deepseek SDK, codex,
-// kimi, ollama, PTY — all share this vocabulary, verified) into ChatMessage updates,
+// Pure: maps the SSE events every engine route emits (claude/deepseek/kimi SDK, codex,
+// ollama, PTY — all share this vocabulary, verified) into ChatMessage updates,
 // scoped to the current turn's assistant bubble (`assistantId`). The caller owns the
 // assistant placeholder lifecycle:
 //   - originator (useChatStream): creates it on send, passes its id (behavior unchanged)
@@ -66,8 +66,9 @@ export function applyStreamEvent(
     return messages;
   }
 
-  // complete assistant message: codex/kimi/ollama/synthetic carry text here (claude's
-  // text comes via deltas → skipped to avoid duplication); tool_use blocks for all engines
+  // complete assistant message: codex/ollama/synthetic carry text here (claude, deepseek and
+  // kimi stream text as deltas → skipped to avoid duplication, in both SDK and Built-in Agent
+  // mode); tool_use blocks for all engines
   if (ev.type === 'assistant') {
     const content = ev.message?.content;
     if (!Array.isArray(content)) return messages;
@@ -75,7 +76,7 @@ export function applyStreamEvent(
     let out = messages;
 
     const isSynthetic = ev.message?.model === '<synthetic>';
-    if (engine === 'codex' || engine === 'kimi' || engine === 'ollama' || isSynthetic) {
+    if (engine === 'codex' || engine === 'ollama' || isSynthetic) {
       const newText = blocks.filter((b) => b.type === 'text' && b.text).map((b) => b.text).join('');
       if (newText)
         out = out.map((m) =>

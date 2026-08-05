@@ -51,7 +51,7 @@ Cockpit is the instrument panel. It does **not** replace Claude Code; it stands 
 | Reviewing AI output is friction | **LAN-shared review pages**, line-level comments, send any comment back as AI context |
 | Same "do X but don't change code" prompt every day | **Slash modes** `/qa /fx /ex /go /cg /cc /cr` + custom `SKILL.md` via the Skills sidebar |
 | No automation hooks | One-time / interval / cron-based **scheduled tasks** |
-| "Cloud relay" trust concerns | **Fully local**. No telemetry. Keys (Codex / DeepSeek / Kimi) stay in `~/.cockpit/settings.json` on your laptop. |
+| "Cloud relay" trust concerns | **Fully local**. No telemetry. API keys (DeepSeek / Kimi) stay in `~/.cockpit/<engine>/credentials.json` on your laptop. |
 
 ### How it compares
 
@@ -86,10 +86,10 @@ An honest snapshot as of July 2026 — each tool wins somewhere. Spotted an erro
 - **Claude** *(default)* — full official Agent SDK; zero setup if `claude` CLI is already configured
 - **Codex** — reuses your `~/.codex` config; same chat, same shell + bubbles
 - **DeepSeek** — Anthropic-compatible endpoint via the Claude SDK; paste a key, pick `v4-pro` or `v4-flash`
-- **Kimi** *(Moonshot)* — tool calls render in chat just like Claude's
+- **Kimi** *(Moonshot)* — Kimi Code key + live model picker (`kimi-for-coding`, `k3`, …) and a **quota check**; no `kimi` CLI needed
 - **Ollama** — auto-starts the daemon; pick any pulled model from the chat header; fully offline
 - Each engine lives in its own **tab with its own session history**; switch from the new-tab dropdown
-- Keys stored locally in `~/.cockpit/settings.json`; **no cloud relay**
+- API keys stored locally in `~/.cockpit/<engine>/credentials.json`; **no cloud relay**
 
 ### Agent — AI chat that scales
 
@@ -177,10 +177,10 @@ No install, no AI chat (read-only sandbox, 5 min):
 
 - **Codex** — log in once with `codex login` to populate `~/.codex`
 - **DeepSeek** — get an API key at [api-docs.deepseek.com](https://api-docs.deepseek.com/); paste it into the engine picker
-- **Kimi (Moonshot)** — get an API key at [platform.moonshot.cn](https://platform.moonshot.cn/); paste it into the engine picker
+- **Kimi (Moonshot)** — get a **Kimi Code** API key (`sk-kimi-…`) at [kimi.com/code/console](https://www.kimi.com/code/console); paste it into the **API Key** field of the model picker in the chat header. *(A `platform.moonshot.cn` Open Platform key is a different product and will not work.)* The `kimi` CLI is no longer used.
 - **Ollama** — install [ollama.com](https://ollama.com/) and `ollama pull <model>`; Cockpit auto-starts the daemon
 
-> All API keys are stored locally in `~/.cockpit/settings.json`. No cloud relay.
+> API keys are stored locally, each in its own file at `~/.cockpit/<engine>/credentials.json` (e.g. `~/.cockpit/kimi/credentials.json`) — never in `settings.json`. No cloud relay.
 
 ## Install
 

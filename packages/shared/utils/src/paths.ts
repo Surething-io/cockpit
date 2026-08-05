@@ -52,6 +52,12 @@ export const DEEPSEEK_PROJECTS_DIR = join(DEEPSEEK_DIR, 'projects');
 // settings.json — so it is never returned by GET /api/settings (which is sent
 // to the browser). Read/written only via /api/deepseek/credentials.
 export const DEEPSEEK_CREDENTIALS_FILE = join(DEEPSEEK_DIR, 'credentials.json');
+// Kimi mirrors DeepSeek exactly: Claude Agent SDK against an Anthropic-compatible
+// endpoint, with CLAUDE_CONFIG_DIR pointed here. Note this is NOT ~/.kimi — that
+// belongs to Moonshot's own CLI, which cockpit no longer drives.
+export const KIMI_DIR = join(COCKPIT_DIR, 'kimi');
+export const KIMI_PROJECTS_DIR = join(KIMI_DIR, 'projects');
+export const KIMI_CREDENTIALS_FILE = join(KIMI_DIR, 'credentials.json');
 // Ollama connection config (baseUrl + apiKey) lives in its own file, NOT in
 // settings.json — the apiKey must never be returned by GET /api/settings (which
 // ships to the browser). baseUrl and apiKey are kept together because a given
@@ -272,6 +278,20 @@ export function getDeepseekSessionPath(cwd: string, sessionId: string): string {
 }
 
 // ============================================
+// Kimi Project Paths (~/.cockpit/kimi/projects/<encoded-cwd>/...)
+// Same layout as DeepSeek: written by the Claude Agent SDK with
+// CLAUDE_CONFIG_DIR=KIMI_DIR.
+// ============================================
+
+export function getKimiProjectDir(cwd: string): string {
+  return join(KIMI_PROJECTS_DIR, encodePath(cwd));
+}
+
+export function getKimiSessionPath(cwd: string, sessionId: string): string {
+  return join(getKimiProjectDir(cwd), `${sessionId}.jsonl`);
+}
+
+// ============================================
 // Built-in Agent Session Paths (~/.cockpit/<engine>-sessions/<encoded-cwd>/... )
 // Written by engines/builtinAgent — our own agent loop, one store per engine.
 // ============================================
@@ -281,6 +301,7 @@ export function getDeepseekSessionPath(cwd: string, sessionId: string): string {
 const BUILTIN_SESSION_DIRS: Record<string, string> = {
   ollama: 'ollama-sessions',
   deepseek: 'deepseek-sessions',
+  kimi: 'kimi-sessions',
 };
 
 /** Store directory names, relative to the cockpit data dir. For callers that resolve the
@@ -331,6 +352,14 @@ export function getDeepseekBuiltinSessionPath(cwd: string, sessionId: string): s
 }
 
 /**
+ * Get the Kimi Built-in Agent session file path (mode: 'builtin'). Distinct from
+ * getKimiSessionPath, which is the Claude Agent SDK store under ~/.cockpit/kimi/projects.
+ */
+export function getKimiBuiltinSessionPath(cwd: string, sessionId: string): string {
+  return getBuiltinSessionPath('kimi', cwd, sessionId);
+}
+
+/**
  * Find a Codex session file by thread_id.
  * Codex stores sessions at ~/.codex/sessions/YYYY/MM/DD/rollout-<timestamp>-<thread_id>.jsonl
  * We glob for the thread_id suffix since we don't know the exact date/timestamp.
@@ -348,22 +377,6 @@ export function findCodexSessionPath(threadId: string): string | null {
     if (result) {
       // Return first match
       return result.split('\n')[0];
-    }
-  } catch { /* ignore */ }
-  return null;
-}
-
-/**
- * Find a Kimi session context.jsonl by session UUID.
- * Kimi stores sessions at ~/.kimi/sessions/<cwd-hash>/<session-uuid>/context.jsonl
- */
-export function findKimiSessionPath(sessionId: string): string | null {
-  const sessionsDir = join(HOME_DIR, '.kimi', 'sessions');
-  if (!existsSync(sessionsDir)) return null;
-  try {
-    for (const hash of readdirSync(sessionsDir)) {
-      const candidate = join(sessionsDir, hash, sessionId, 'context.jsonl');
-      if (existsSync(candidate)) return candidate;
     }
   } catch { /* ignore */ }
   return null;

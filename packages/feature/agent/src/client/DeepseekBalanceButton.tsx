@@ -11,7 +11,7 @@
  * Built-in Agent authenticate with the same key — so this is NOT gated on
  * `modeLocked` and stays usable after the session is locked.
  *
- * `hasKey` is passed down from Chat (fed by DeepseekConfigPicker) rather than
+ * `hasKey` is passed down from Chat (fed by EngineConfigPicker) rather than
  * read here: a locally-cached copy would go stale the moment the user saves a
  * key in the picker, leaving this button disabled until the tab remounted.
  */

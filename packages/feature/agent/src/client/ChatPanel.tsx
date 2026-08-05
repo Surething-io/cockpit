@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { Chat } from './Chat';
-import type { ChatEngine, DeepseekModel, ChatMode, ToolCallInfo } from './types';
+import type { ChatEngine, EngineModelId, ChatMode, ToolCallInfo } from './types';
 
 // Migrated from src/components/project/ChatPanel.tsx.
 
@@ -19,8 +19,10 @@ interface ChatPanelProps {
   onEngineChange?: (tabId: string, engine: ChatEngine) => void;
   ollamaModel?: string;
   onOllamaModelChange?: (tabId: string, model: string) => void;
-  deepseekModel?: DeepseekModel;
-  onDeepseekModelChange?: (tabId: string, model: DeepseekModel) => void;
+  deepseekModel?: EngineModelId;
+  onDeepseekModelChange?: (tabId: string, model: EngineModelId) => void;
+  kimiModel?: EngineModelId;
+  onKimiModelChange?: (tabId: string, model: EngineModelId) => void;
   chatMode?: ChatMode;
   onChatModeChange?: (tabId: string, chatMode: ChatMode) => void;
   planMode?: boolean;
@@ -52,7 +54,7 @@ interface ChatPanelProps {
   onShowFileDiff?: (toolCalls: ToolCallInfo[], cwd?: string) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, chatMode, onChatModeChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, chatMode, onChatModeChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -73,9 +75,13 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
     onOllamaModelChange?.(tabId, model);
   }, [tabId, onOllamaModelChange]);
 
-  const handleDeepseekModelChange = useCallback((model: DeepseekModel) => {
+  const handleDeepseekModelChange = useCallback((model: EngineModelId) => {
     onDeepseekModelChange?.(tabId, model);
   }, [tabId, onDeepseekModelChange]);
+
+  const handleKimiModelChange = useCallback((model: EngineModelId) => {
+    onKimiModelChange?.(tabId, model);
+  }, [tabId, onKimiModelChange]);
 
   const handleChatModeChange = useCallback((m: ChatMode) => {
     onChatModeChange?.(tabId, m);
@@ -100,6 +106,8 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
       onOllamaModelChange={handleOllamaModelChange}
       deepseekModel={deepseekModel}
       onDeepseekModelChange={handleDeepseekModelChange}
+      kimiModel={kimiModel}
+      onKimiModelChange={handleKimiModelChange}
       chatMode={chatMode}
       onChatModeChange={handleChatModeChange}
       planMode={planMode}

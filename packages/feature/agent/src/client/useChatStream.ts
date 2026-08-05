@@ -10,7 +10,7 @@ import type {
   RateLimitInfo,
   ApiRetryInfo,
   ChatEngine,
-  DeepseekModel,
+  EngineModelId,
   ChatMode,
 } from './types';
 import i18n from '@cockpit/shared-i18n';
@@ -44,7 +44,8 @@ interface UseChatStreamOptions {
   /** Independent-task mode (ollama only): send each user message with no prior history */
   noHistory?: boolean;
   ollamaModel?: string;
-  deepseekModel?: DeepseekModel;
+  /** Model for the API-key engines (deepseek / kimi) — whichever of them is running. */
+  engineModel?: EngineModelId;
   onSessionId: (sid: string) => void;
   onFetchTitle: (sid: string) => void;
   /** PTY mode: raw terminal output (forwarded to the floating-window xterm) */
@@ -81,7 +82,7 @@ interface UseChatStreamReturn {
 export function useChatStream(
   messages: ChatMessage[],
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  { sessionId, cwd, engine, chatMode, planMode, noHistory, ollamaModel, deepseekModel, onSessionId, onFetchTitle, onPtyOutput, onRunComplete }: UseChatStreamOptions
+  { sessionId, cwd, engine, chatMode, planMode, noHistory, ollamaModel, engineModel, onSessionId, onFetchTitle, onPtyOutput, onRunComplete }: UseChatStreamOptions
 ): UseChatStreamReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
@@ -346,7 +347,7 @@ export function useChatStream(
     }
 
     // Handle text content (complete message)
-    // Complete assistant message (codex/kimi/ollama/synthetic text + tool_use blocks)
+    // Complete assistant message (codex/ollama/synthetic text + tool_use blocks)
     if (eventType === 'assistant') {
       setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
     }
@@ -522,10 +523,12 @@ export function useChatStream(
       // PTY mode (claude/claude2 only). Images are written to temp files by the backend driver + the prompt carries the paths for claude to read.
       const isClaudeEngine = !engine || engine === 'claude' || engine === 'claude2';
       const usePty = chatMode === 'pty' && isClaudeEngine;
-      // Built-in Agent mode (deepseek only) — server runs engines/builtinAgent instead of the Agent SDK.
-      const useBuiltin = chatMode === 'builtin' && engine === 'deepseek';
+      // The engines configured by API key. Both offer Built-in Agent mode — server runs
+      // engines/builtinAgent against their OpenAI-compatible endpoint instead of the Agent SDK.
+      const isApiKeyEngine = engine === 'deepseek' || engine === 'kimi';
+      const useBuiltin = chatMode === 'builtin' && isApiKeyEngine;
       // Independent task: the Built-in Agent loop honours it directly (ollama,
-      // deepseek+builtin), and claude/claude2 honour it in SDK mode by stashing the
+      // deepseek/kimi + builtin), and claude/claude2 honour it in SDK mode by stashing the
       // transcript for the turn. PTY is excluded — the interactive CLI owns the context.
       const canDropHistory = engine === 'ollama' || useBuiltin || (isClaudeEngine && !usePty);
 
@@ -551,7 +554,7 @@ export function useChatStream(
             cwd,
             language: i18n.language,
             ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
-            ...(engine === 'deepseek' && deepseekModel && { model: deepseekModel }),
+            ...(isApiKeyEngine && engineModel && { model: engineModel }),
             ...(engine === 'claude2' && { engine: 'claude2' }),
             ...(usePty && { mode: 'pty', ptyCols: PTY_COLS, ptyRows: PTY_ROWS }),
             ...(useBuiltin && { mode: 'builtin' }),
@@ -563,10 +566,10 @@ export function useChatStream(
           }),
         });
 
-        if (response.status === 400 && engine === 'deepseek') {
+        if (response.status === 400 && isApiKeyEngine) {
           // Surface the readable error (likely "API key is not configured")
           const errBody = await response.json().catch(() => null);
-          throw new Error(errBody?.error || 'DeepSeek request failed');
+          throw new Error(errBody?.error || `${engine} request failed`);
         }
 
         if (!response.ok) {
@@ -608,7 +611,7 @@ export function useChatStream(
         setActiveRun(null);
       }
     },
-    [cwd, engine, chatMode, planMode, noHistory, ollamaModel, deepseekModel, setMessages, endRun]
+    [cwd, engine, chatMode, planMode, noHistory, ollamaModel, engineModel, setMessages, endRun]
   );
 
   return {

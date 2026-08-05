@@ -24,6 +24,7 @@ export interface LoadedProjectState {
   engines?: Record<string, string>
   ollamaModels?: Record<string, string>
   deepseekModels?: Record<string, string>
+  kimiModels?: Record<string, string>
   chatModes?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>
@@ -51,6 +52,7 @@ export interface ProjectStateSave {
   engines?: Record<string, string>
   ollamaModels?: Record<string, string>
   deepseekModels?: Record<string, string>
+  kimiModels?: Record<string, string>
   chatModes?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>

@@ -2,7 +2,7 @@
  * Client-side agent IO — Effect wrappers
  *
  * Wraps the ~15 fetch call sites across 7 agent-domain UI components
- * (Chat / ChatInput / OllamaModelPicker / DeepseekConfigPicker / TokenStatsModal /
+ * (Chat / ChatInput / OllamaModelPicker / EngineConfigPicker / TokenStatsModal /
  * ProjectSessionsModal / MessageBubble).
  *
  * Complements scheduledTasksClient.ts: this file covers chat-adjacent IO for
@@ -66,36 +66,49 @@ export const saveAgentSettings = (
 ): Effect.Effect<unknown, AppError> => httpPutJson("/api/settings", body)
 
 // ─────────────────────────────────────────────────────────
-// /api/deepseek/credentials — DeepSeek API key, stored outside settings.json.
-// GET returns only { hasKey, maskedKey } (never the raw key); PUT persists it
-// (empty string clears).
+// /api/<engine>/credentials + /api/<engine>/models — the API-key engines
+// (deepseek, kimi). Both expose an Anthropic-compatible endpoint for SDK mode and
+// an OpenAI-compatible one for Built-in Agent mode behind a single key, so the
+// browser side of them is identical and parameterised by engine id.
+//
+// credentials GET returns only { hasKey, maskedKey } (never the raw key); PUT
+// persists it (empty string clears). models is live rather than hardcoded — both
+// lineups change without a cockpit release — and requires a saved API key.
 // ─────────────────────────────────────────────────────────
 
-export interface DeepseekCredentialsInfo {
+/** Engines configured by API key rather than by a local CLI login. */
+export type ApiKeyEngine = "deepseek" | "kimi"
+
+export interface EngineCredentialsInfo {
   hasKey: boolean
   maskedKey: string
 }
 
-export const loadDeepseekCredentials = (): Effect.Effect<
-  DeepseekCredentialsInfo,
-  AppError
-> => httpJson<DeepseekCredentialsInfo>("/api/deepseek/credentials")
+export interface EngineModelInfo {
+  id: string
+  /** Provider's display name when it reports one, else the picker shows the id. */
+  label?: string
+  /** Context window; persisted with the model and fed to the SDK's context env. */
+  contextTokens?: number
+  /** Default thinking effort, likewise persisted and fed to the SDK. */
+  effort?: string
+}
 
-export const saveDeepseekApiKey = (
+export const loadEngineCredentials = (
+  engine: ApiKeyEngine
+): Effect.Effect<EngineCredentialsInfo, AppError> =>
+  httpJson<EngineCredentialsInfo>(`/api/${engine}/credentials`)
+
+export const saveEngineApiKey = (
+  engine: ApiKeyEngine,
   apiKey: string
-): Effect.Effect<DeepseekCredentialsInfo, AppError> =>
-  httpPutJson<DeepseekCredentialsInfo>("/api/deepseek/credentials", { apiKey })
+): Effect.Effect<EngineCredentialsInfo, AppError> =>
+  httpPutJson<EngineCredentialsInfo>(`/api/${engine}/credentials`, { apiKey })
 
-// ─────────────────────────────────────────────────────────
-// /api/deepseek/models — model ids from DeepSeek's OpenAI-compatible /v1/models,
-// for Built-in Agent mode. Live rather than hardcoded: DeepSeek's lineup changes
-// without a cockpit release. Requires a saved API key.
-// ─────────────────────────────────────────────────────────
-
-export const loadDeepseekModels = (): Effect.Effect<
-  { models: string[] },
-  AppError
-> => httpJson<{ models: string[] }>("/api/deepseek/models")
+export const loadEngineModels = (
+  engine: ApiKeyEngine
+): Effect.Effect<{ models: EngineModelInfo[] }, AppError> =>
+  httpJson<{ models: EngineModelInfo[] }>(`/api/${engine}/models`)
 
 // ─────────────────────────────────────────────────────────
 // /api/deepseek/balance — account balance, server-proxied (the raw key never
@@ -117,6 +130,28 @@ export const loadDeepseekBalance = (): Effect.Effect<
   DeepseekBalanceInfo,
   AppError
 > => httpJson<DeepseekBalanceInfo>("/api/deepseek/balance")
+
+// ─────────────────────────────────────────────────────────
+// /api/kimi/usage — remaining Kimi Code quota, server-proxied. Not a balance:
+// Kimi Code is a subscription, so this is a list of windows (the plan cycle plus a
+// rolling 5-hour cap), each with its own remaining/limit and reset time.
+// ─────────────────────────────────────────────────────────
+
+export interface KimiQuotaWindow {
+  /** 'plan' for the subscription cycle, else a duration like '5h'. */
+  label: string
+  limit: number | null
+  remaining: number | null
+  resetTime: string | null
+}
+
+export interface KimiUsageInfo {
+  membership: string
+  windows: KimiQuotaWindow[]
+}
+
+export const loadKimiUsage = (): Effect.Effect<KimiUsageInfo, AppError> =>
+  httpJson<KimiUsageInfo>("/api/kimi/usage")
 
 // ─────────────────────────────────────────────────────────
 // /api/ollama/config — Ollama connection config (baseUrl + apiKey), stored

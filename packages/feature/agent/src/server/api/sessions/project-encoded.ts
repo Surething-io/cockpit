@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, getBuiltinSessionsRoot, findCodexSessionPath, findKimiSessionPath } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, KIMI_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, getBuiltinSessionsRoot, findCodexSessionPath } from '@cockpit/shared-utils';
 import { dynamicHandler } from '@cockpit/effect-runtime/server';
 import { AppError, ValidationError } from '@cockpit/effect-core';
 import { generateTitle } from '../../sessionTitle';
@@ -140,8 +140,12 @@ function collectSessionFiles(dir: string, engine?: SessionInfo['engine']): Array
   }
 }
 
-// Read cockpit session.json to find codex/kimi session IDs
-function getCodexKimiSessionIds(encodedPath: string): Array<{ sessionId: string; engine: 'codex' | 'kimi' }> {
+// Read cockpit session.json to find codex session IDs. Codex is the only engine left
+// that needs this indirection: its transcripts live outside the cwd-encoded layout
+// (~/.codex/sessions/<date-dirs>/rollout-…jsonl), so the session.json engines map is the
+// only way to learn which ids belong to this project. Every other engine is found by
+// scanning its own project directory above.
+function getCodexSessionIds(encodedPath: string): string[] {
   try {
     const sessionJsonPath = path.join(COCKPIT_PROJECTS_DIR, encodedPath, 'session.json');
     if (!fs.existsSync(sessionJsonPath)) return [];
@@ -152,14 +156,7 @@ function getCodexKimiSessionIds(encodedPath: string): Array<{ sessionId: string;
     };
     if (!state.sessions || !state.engines) return [];
 
-    const results: Array<{ sessionId: string; engine: 'codex' | 'kimi' }> = [];
-    for (const sessionId of state.sessions) {
-      const engine = state.engines[sessionId];
-      if (engine === 'codex' || engine === 'kimi') {
-        results.push({ sessionId, engine });
-      }
-    }
-    return results;
+    return state.sessions.filter((sessionId) => state.engines![sessionId] === 'codex');
   } catch {
     return [];
   }
@@ -194,34 +191,6 @@ async function parseCodexSessionFile(filePath: string): Promise<{ title: string;
   return { title: '', userMessages };
 }
 
-// Parse a Kimi session file for title and user messages
-async function parseKimiSessionFile(filePath: string): Promise<{ title: string; userMessages: string[] }> {
-  const fileStream = fs.createReadStream(filePath);
-  const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
-
-  const userMessages: string[] = [];
-
-  for await (const line of rl) {
-    if (!line.trim()) continue;
-    try {
-      const entry = JSON.parse(line) as { role?: string; content?: string | Array<{ type?: string; text?: string }> };
-      if (entry.role !== 'user') continue;
-
-      const text = typeof entry.content === 'string'
-        ? entry.content
-        : Array.isArray(entry.content)
-          ? entry.content.filter(c => (c.type === 'input_text' || c.type === 'text') && c.text).map(c => c.text!).join('')
-          : '';
-
-      // Skip system-injected messages
-      if (!text || text.startsWith('<system') || text.startsWith('<environment') || text.startsWith('# AGENTS.md') || text.startsWith('<permissions')) continue;
-      userMessages.push(text);
-    } catch { /* ignore */ }
-  }
-
-  return { title: '', userMessages };
-}
-
 export const GET = dynamicHandler<
   { encodedPath: string },
   AppError | ValidationError
@@ -246,14 +215,17 @@ export const GET = dynamicHandler<
 
 async function loadSessions(encodedPath: string) {
     // Collect session files from all engine directories. Every store here holds
-    // Claude-format transcripts, so one parser covers them all. DeepSeek contributes TWO
-    // stores because its execution modes don't share one: SDK mode is written by the Agent
-    // SDK under deepseek/projects, Built-in Agent mode by us under deepseek-sessions.
+    // Claude-format transcripts, so one parser covers them all. DeepSeek and Kimi each
+    // contribute TWO stores because their execution modes don't share one: SDK mode is
+    // written by the Agent SDK under <engine>/projects, Built-in Agent mode by us under
+    // <engine>-sessions.
     const claudeDir = path.join(CLAUDE_PROJECTS_DIR, encodedPath);
     const claude2Dir = path.join(CLAUDE2_PROJECTS_DIR, encodedPath);
     const ollamaDir = path.join(getBuiltinSessionsRoot('ollama'), encodedPath);
     const deepseekSdkDir = path.join(DEEPSEEK_PROJECTS_DIR, encodedPath);
     const deepseekBuiltinDir = path.join(getBuiltinSessionsRoot('deepseek'), encodedPath);
+    const kimiSdkDir = path.join(KIMI_PROJECTS_DIR, encodedPath);
+    const kimiBuiltinDir = path.join(getBuiltinSessionsRoot('kimi'), encodedPath);
 
     const allSessionFiles = [
       ...collectSessionFiles(claudeDir, 'claude'),
@@ -261,6 +233,8 @@ async function loadSessions(encodedPath: string) {
       ...collectSessionFiles(ollamaDir, 'ollama'),
       ...collectSessionFiles(deepseekSdkDir, 'deepseek'),
       ...collectSessionFiles(deepseekBuiltinDir, 'deepseek'),
+      ...collectSessionFiles(kimiSdkDir, 'kimi'),
+      ...collectSessionFiles(kimiBuiltinDir, 'kimi'),
     ];
 
     // Deduplicate by filename (same sessionId could theoretically appear in both)
@@ -314,29 +288,15 @@ async function loadSessions(encodedPath: string) {
       }
     }
 
-    // Parse Codex/Kimi sessions (resolved via cockpit session.json)
-    const engineSessions = getCodexKimiSessionIds(encodedPath);
-    for (const { sessionId, engine } of engineSessions) {
+    // Parse Codex sessions (resolved via cockpit session.json)
+    for (const sessionId of getCodexSessionIds(encodedPath)) {
       // Skip if already found (e.g. session was also saved as Claude format)
       if (seen.has(`${sessionId}.jsonl`)) continue;
 
       try {
-        let filePath: string | null = null;
-        let parseResult: { title: string; userMessages: string[] } | null = null;
-
-        if (engine === 'codex') {
-          filePath = findCodexSessionPath(sessionId);
-          if (filePath && fs.existsSync(filePath)) {
-            parseResult = await parseCodexSessionFile(filePath);
-          }
-        } else if (engine === 'kimi') {
-          filePath = findKimiSessionPath(sessionId);
-          if (filePath && fs.existsSync(filePath)) {
-            parseResult = await parseKimiSessionFile(filePath);
-          }
-        }
-
-        if (!filePath || !parseResult) continue;
+        const filePath = findCodexSessionPath(sessionId);
+        if (!filePath || !fs.existsSync(filePath)) continue;
+        const parseResult = await parseCodexSessionFile(filePath);
         if (parseResult.userMessages.length === 0) continue;
 
         const modifiedAt = getFileModifiedTime(filePath);
@@ -360,10 +320,10 @@ async function loadSessions(encodedPath: string) {
           firstMessages,
           lastMessages,
           searchText: buildSearchText(displayTitle, userMessages),
-          engine,
+          engine: 'codex',
         });
       } catch (error) {
-        console.error(`Error parsing ${engine} session ${sessionId}:`, error);
+        console.error(`Error parsing codex session ${sessionId}:`, error);
       }
     }
 

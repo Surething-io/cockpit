@@ -9,7 +9,7 @@ export { TokenUsageBar } from './TokenUsageBar';
 export { MessageList, type MessageListHandle } from './MessageList';
 export { MessageBubble } from './MessageBubble';
 export { OllamaModelPicker } from './OllamaModelPicker';
-export { DeepseekConfigPicker } from './DeepseekConfigPicker';
+export { EngineConfigPicker } from './EngineConfigPicker';
 export { ProjectSessionsModal } from './ProjectSessionsModal';
 export { RecentSessionsModal } from './RecentSessionsModal';
 export { EngineBadge } from './EngineBadge';
@@ -59,6 +59,7 @@ export type {
   ApiRetryInfo,
   RateLimitInfo,
   ChatEngine,
+  EngineModelId,
   DeepseekModel,
   ChatMode,
 } from './types';

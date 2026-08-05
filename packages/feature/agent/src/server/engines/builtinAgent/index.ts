@@ -30,6 +30,13 @@ export interface BuiltinAgentConfig {
   defaultModel: string;
   /** Provider factory for the resolved model name. */
   createModel: (model: string) => Promise<LanguageModelV3>;
+  /**
+   * Sampling temperature. Defaults to 0 — an agent loop wants the most deterministic
+   * tool choices it can get. Set to `null` for providers that reject it: Kimi's coding
+   * models are thinking-only and answer `invalid temperature: only 1 is allowed for this
+   * model` to anything else, which kills the turn before a single token streams.
+   */
+  temperature?: number | null;
 }
 
 /** Shared preflight: the loop has no image support, and the orchestrator lets
@@ -75,7 +82,8 @@ export async function runBuiltinAgent(ctx: RunCtx, config: BuiltinAgentConfig): 
     messages,
     tools: createTools(context),
     stopWhen: stepCountIs(256),
-    temperature: 0,
+    // `null` means "omit the field" (the AI SDK sends it otherwise) — see BuiltinAgentConfig.
+    ...(config.temperature === null ? {} : { temperature: config.temperature ?? 0 }),
     abortSignal: ctx.signal,
   });
 

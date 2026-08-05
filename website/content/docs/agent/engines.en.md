@@ -5,7 +5,7 @@ Cockpit talks to 5 AI engines out of the box (plus a **Claude 2** entry, so 6 pi
 | [Claude](#claude) | Anthropic `claude` CLI login (or **Claude 2** for a second account) | Default. Best general-purpose model. |
 | [Codex](#codex) | `codex` CLI login | If you already have a Codex / GPT subscription. |
 | [DeepSeek](#deepseek) | Paste API key in the per-tab DeepSeek picker | Strong reasoning at lower cost. |
-| [Kimi](#kimi) | `kimi` CLI login | Long context, mostly used in China. |
+| [Kimi](#kimi) | Paste API key in the per-tab Kimi picker | Long context, mostly used in China. |
 | [Ollama](#ollama) | Nothing — runs locally | Offline use, sensitive data, custom models. |
 
 > Everything runs locally.
@@ -19,7 +19,7 @@ Cockpit talks to 5 AI engines out of the box (plus a **Claude 2** entry, so 6 pi
 | **Claude** | Log in once via the `claude` CLI | Default. Best general-purpose model. | Anthropic |
 | **Codex** | Log in once via the `codex` CLI | When you already have a Codex / GPT subscription. | OpenAI |
 | **DeepSeek** | Paste an API key in the per-tab DeepSeek picker | Strong reasoning at lower cost. | DeepSeek |
-| **Kimi** | Log in once via the `kimi` CLI | Long context, mostly used in China. | Moonshot |
+| **Kimi** | Paste an API key in the per-tab Kimi picker | Long context, mostly used in China. | Moonshot (Kimi Code subscription) |
 | **Ollama** | Nothing — it's local | Offline use, sensitive data, custom models. | Nobody (your own machine) |
 
 The engine picker in each tab also has a **Claude 2** entry — that's the **same engine** as Claude, just pointed at a second config directory (`~/.claude2`) so it uses a *different* Anthropic account. See the [Claude](#claude) section for setup.
@@ -33,7 +33,7 @@ You can have, say, five tabs open simultaneously:
 - Tab 1: Claude on `~/code/backend`
 - Tab 2: DeepSeek on the same project for a cheaper second opinion
 - Tab 3: Codex on a different project
-- Tab 4: Kimi on a notebook with a long PDF attached
+- Tab 4: Kimi on a notebook, using its long context window
 - Tab 5: Ollama running a local model for an offline draft
 
 Cockpit's Session Browser (grid icon at the top of the sidebar) shows all of them.
@@ -43,13 +43,13 @@ Cockpit's Session Browser (grid icon at the top of the sidebar) shows all of the
 |  | Claude | Codex | DeepSeek | Kimi | Ollama |
 |---|---|---|---|---|---|
 | Can read & edit your files | ✅ | ✅ | ✅ | ✅ | ⚠️ depends on model |
-| Accepts image attachments | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Accepts image attachments | ✅ | ✅ | ✅ | ✅ (SDK mode only) | ❌ |
 | Streams replies as it thinks | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Runs offline | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Choose between model variants | Fixed (latest) | Fixed | flash / pro | Fixed | Any model you've pulled |
-| Shows running cost in the UI | ✅ | — | ✅ (estimated) | — | Free |
+| Choose between model variants | Fixed (latest) | Fixed | flash / pro | Live list from your Kimi plan | Any model you've pulled |
+| Shows running cost in the UI | ✅ | — | ✅ (estimated) | Quota, not cost — see [Check quota](#check-your-quota) | Free |
 
-> Image support is engine-level. **Kimi** and **Ollama** tabs **silently drop** image attachments (no error, but the AI doesn't see them).
+> Image support is engine-level. **Ollama** tabs **silently drop** image attachments (no error, but the AI doesn't see them). **Kimi** accepts images in its default *Claude Agent SDK* mode; the **Built-in Agent** execution mode has no image support for any engine — see [Execution mode](#execution-mode-claude-agent-sdk-vs-built-in-agent).
 
 ### Setting up each engine
 
@@ -58,7 +58,7 @@ Per-engine sections below cover the specifics. Quick pointers:
 - **Claude** — run `claude` once on your terminal and follow its login prompt. Cockpit reuses your Claude login automatically.
 - **Codex** — install OpenAI's `codex` CLI and log in with it once. Cockpit reuses that login.
 - **DeepSeek** — get a key from [platform.deepseek.com](https://platform.deepseek.com/), then **paste it in the DeepSeek picker in the Agent tab header** (not in the global Cockpit Settings). Pick a model variant in the same picker.
-- **Kimi** — install Moonshot's `kimi` CLI and log in with it once. Cockpit reuses that login.
+- **Kimi** — get a key from the [Kimi Code console](https://www.kimi.com/code/console), then **paste it in the Kimi picker in the Agent tab header**. Pick a model in the same picker.
 - **Ollama** — install [Ollama](https://ollama.com/) and pull at least one model (`ollama pull llama3.1`). When you create an Ollama tab, the model picker lists what you've pulled.
 
 ## Claude
@@ -163,7 +163,7 @@ Nothing to paste inside Cockpit — it reuses whatever `codex` is already config
 
 ## DeepSeek
 
-DeepSeek is the cheapest cloud engine in Cockpit and the only one besides Claude where you pick a model variant per tab. Unlike Claude / Codex / Kimi (which reuse a CLI's login), DeepSeek is API-key-only — paste a key in the per-tab DeepSeek picker and you're done.
+DeepSeek is the cheapest cloud engine in Cockpit. Unlike Claude / Codex (which reuse a CLI's login), DeepSeek is API-key-only — paste a key in the per-tab DeepSeek picker and you're done. Kimi works the same way.
 
 Under the hood it goes through DeepSeek's [Anthropic-compatible endpoint](https://api-docs.deepseek.com/en/guides/anthropic_api) routed via the Claude Agent SDK, so tool use, streaming, and context management all work like Claude.
 
@@ -171,7 +171,7 @@ Under the hood it goes through DeepSeek's [Anthropic-compatible endpoint](https:
 
 1. Get an API key from [platform.deepseek.com](https://platform.deepseek.com/). It looks like `sk-...`.
 
-2. Open a new tab in Cockpit, pick **DeepSeek** in the engine menu, then **click the DeepSeek picker icon in the tab header** → paste the key → save. (The key lives in `~/.cockpit/settings.json` locally — *not* in the global Cockpit Settings modal.)
+2. Open a new tab in Cockpit, pick **DeepSeek** in the engine menu, then **click the DeepSeek picker icon in the tab header** → paste the key into the **API Key** field → save. (The key lives in its own credential file, `~/.cockpit/deepseek/credentials.json` — *not* in `~/.cockpit/settings.json`, and not in the global Cockpit Settings modal. `settings.json` only remembers which model you picked.)
 
 3. Pick a model variant in the same picker.
 
@@ -203,42 +203,88 @@ Done. The key only ever stays on your machine.
 
 ## Kimi
 
-Kimi is a Chinese-market AI from Moonshot, known for long context windows. Cockpit drives it via Moonshot's `kimi` CLI — install the CLI once, log in, and Cockpit reuses your session.
+Kimi is a Chinese-market AI from Moonshot, known for long context windows. Cockpit talks to **Kimi Code** directly over its API — paste a key in the per-tab Kimi picker and you're done. Structurally it's the same kind of engine as [DeepSeek](#deepseek): API-key-only, with a model picker and a fork-able session store.
+
+> **Changed:** Cockpit no longer uses Moonshot's `kimi` CLI. You don't need it installed, and its login no longer matters. See [Upgrading from the `kimi` CLI](#upgrading-from-the-kimi-cli) if you used Kimi in an earlier Cockpit.
 
 ### Setup
 
-1. Install Moonshot's `kimi` CLI (follow Moonshot's official install instructions for your platform).
+1. Get an API key from the [Kimi Code console](https://www.kimi.com/code/console). It looks like `sk-kimi-...`.
 
-2. Log in:
+   > This is a **Kimi Code** key, not a Kimi Open Platform key from `platform.moonshot.cn`. The two are separate products and the keys are **not** interchangeable — an Open Platform key will fail here.
 
-```bash
-kimi
-```
+2. Open a new tab in Cockpit, pick **Kimi** in the engine menu, then **click the model picker in the tab header** → paste the key into the **API Key** field → save. (The key lives in its own credential file, `~/.cockpit/kimi/credentials.json` — *not* in `~/.cockpit/settings.json`, and not in the global Cockpit Settings modal.)
 
-Follow the prompt to sign in with your Kimi / Moonshot account.
+3. Pick a model in the same picker. Cockpit fetches the list from your account the moment the key is saved.
 
-3. Open Cockpit, create a new Agent tab, pick **Kimi** in the engine menu. The tab uses your Kimi login.
+Done. The key only ever stays on your machine.
 
-Nothing to paste inside Cockpit — it reuses whatever `kimi` is already configured with on your machine.
+### Pick a model
+
+The model list is **fetched live** from Kimi's `GET /coding/v1/models` using your key — it isn't a list Cockpit hard-codes. Which models come back depends on your **membership tier**, so two accounts can see different lists, and the list changes when Kimi ships or retires a model.
+
+At the time of writing a Kimi Code account can see:
+
+| Model | Context | Notes |
+|---|---|---|
+| **`kimi-for-coding`** (K2.7 Coding) | 256K | The default pick. |
+| **`kimi-for-coding-highspeed`** | 256K | Same model, faster serving. Needs an **Allegretto** or higher membership. |
+| **`k3`** (K3) | 1M | Long-context flagship. Needs **Moderato** or higher. |
+| **`k3-256k`** | 256K | K3 at a smaller window. Needs **Moderato** or higher. |
+
+> Don't treat that table as fixed — if a model isn't in your picker, your plan doesn't include it. The picker shows the model id, its display name when it differs, and its context window.
+
+### Execution mode: Claude Agent SDK vs Built-in Agent
+
+The Kimi picker has an **Execution mode** toggle with two options. They talk to different Kimi endpoints and keep **separate transcript stores**, so the mode is locked once a session has messages — to switch, open a new tab.
+
+| | **Claude Agent SDK** (default) | **Built-in Agent** |
+|---|---|---|
+| What runs the loop | The official Claude Agent SDK, pointed at Kimi | Cockpit's own agent loop |
+| Endpoint | `https://api.kimi.com/coding/` (Anthropic-compatible) | `https://api.kimi.com/coding/v1` (OpenAI-compatible) |
+| Image attachments | ✅ | ❌ (no engine supports images in this mode) |
+| Sessions on disk | `~/.cockpit/kimi/projects/<project>/<session>.jsonl` | `~/.cockpit/kimi-sessions/<project>/<session>.jsonl` |
+
+Stay on **Claude Agent SDK** unless you have a reason not to — it's the mode that gets images, subagents, and everything else the SDK brings.
+
+### Check your quota
+
+Kimi Code is a **subscription**, not a prepaid balance, so the Kimi tab has a **Check quota** button next to the model picker instead of a cost readout. Click it and Cockpit reads what's left in:
+
+- your **plan cycle** — a 7-day window, and
+- a rolling **5-hour window** on top of it.
+
+Both show as `remaining/limit` (e.g. `plan 100/100 · 5h 40/50`); hover for when the plan window resets. It goes red when a window is exhausted. The button needs a saved key and doesn't poll — it only fetches when you click.
 
 ### What you get
 
-- The Kimi model that ships with the CLI.
+- **A model picker**, live from your account (see above).
+- **Image attachments** in Claude Agent SDK mode — paste images (`Cmd+V`) and Kimi can see them. PNG / JPEG / WEBP / GIF.
 - Streaming replies, with **the model's "thinking" steps folded into a `<details>` block before the final answer**.
 - Tool use — Kimi can read your files, run shell commands, edit code.
+- **Forking** — fork a Kimi session from any message, same as Claude. (This didn't work when Kimi went through the CLI.)
+- Per-tool-call [snapshots](/en/docs/agent/snapshots/), like every other engine.
 - Multi-tab sessions, each independent.
 
 ### What you don't get
 
-- **No image attachments.** Kimi tabs don't accept image input; pasted images are silently dropped.
-- **No running cost display.** Cockpit can't read pricing back from the `kimi` CLI. Check your Moonshot dashboard for billing.
-- **No model picker.** Whichever model your `kimi` CLI ships with is what runs.
+- **No dollar cost readout.** Kimi Code bills by subscription, so there's nothing per-token to total up — use **Check quota** instead. Any USD figure the token bar shows comes from the SDK's own price table, not from Kimi.
+- **No images in Built-in Agent mode.** An images-only message is rejected with *"The built-in agent requires a text prompt"*; a message with text *and* images is answered, with the images dropped.
+
+### Upgrading from the `kimi` CLI
+
+If you used Kimi in an earlier Cockpit, two things changed and both are breaking:
+
+- **Your `kimi` CLI login no longer applies.** Get a [Kimi Code key](https://www.kimi.com/code/console) and paste it into the picker. The CLI itself is no longer used or required — you can uninstall it as far as Cockpit is concerned.
+- **Old Kimi transcripts are gone from Cockpit.** Sessions used to live in `~/.kimi`; Cockpit no longer indexes that directory, so those conversations won't appear in the sidebar or the Session Browser. **The files are untouched on disk** — `~/.kimi` is still there if you want to read or archive it yourself. New sessions land under `~/.cockpit/kimi/`.
 
 ### Common issues
 
-- **"`kimi` not found" / nothing happens on send** — the `kimi` CLI isn't on your PATH. Verify with `kimi --version` in a terminal; if that fails, install it.
-- **Login expired** — re-run `kimi` in a terminal and complete the login flow again.
-- **Outdated CLI** — Moonshot updates `kimi` periodically. Upgrade per Moonshot's docs if behaviour gets strange.
+- **The picker says "Set API key"** — no key saved yet. It goes in the **Kimi picker in the tab header**, not the global Cockpit Settings modal.
+- **"Failed to load models — check the API key"** / **401** — bad, expired, or wrong-product key. Re-paste it (watch for stray whitespace) and confirm it's a `sk-kimi-...` key from the Kimi Code console rather than a `platform.moonshot.cn` one.
+- **A model you expected isn't listed** — the list is gated by membership tier. `k3` needs Moderato or higher, `kimi-for-coding-highspeed` needs Allegretto or higher.
+- **Replies stop mid-day** — you may have hit the 5-hour window. Click **Check quota**; if it's red, wait for the reset shown in the tooltip.
+- **Pasted images are ignored** — the tab is in **Built-in Agent** mode. Open a new tab on **Claude Agent SDK** mode (the mode can't be changed once a session has messages).
 
 ## Ollama
 

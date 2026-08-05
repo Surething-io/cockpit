@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { usePageVisible, useWebSocket } from '@cockpit/shared-ui';
-import type { ChatEngine, DeepseekModel, ChatMode } from '@cockpit/feature-agent';
+import type { ChatEngine, DeepseekModel, EngineModelId, ChatMode } from '@cockpit/feature-agent';
 import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
 import { Effect } from 'effect';
@@ -27,6 +27,7 @@ export interface TabInfo {
   engine?: ChatEngine;
   ollamaModel?: string;
   deepseekModel?: DeepseekModel;
+  kimiModel?: EngineModelId;
   chatMode?: ChatMode;
   planMode?: boolean;
   /** ollama only: send every user message with no prior history (independent task) */
@@ -123,6 +124,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         const savedEngines: Record<string, string> = data.engines || {};
         const savedOllamaModels: Record<string, string> = data.ollamaModels || {};
         const savedDeepseekModels: Record<string, string> = data.deepseekModels || {};
+        const savedKimiModels: Record<string, string> = data.kimiModels || {};
         const savedChatModes: Record<string, string> = data.chatModes || {};
         const savedPlanModes: Record<string, boolean> = data.planModes || {};
         const savedNoHistories: Record<string, boolean> = data.noHistories || {};
@@ -149,6 +151,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
               engine: (savedEngines[sessionId] as ChatEngine) || prev?.engine || undefined,
               ollamaModel: savedOllamaModels[sessionId] || prev?.ollamaModel || undefined,
               deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || prev?.deepseekModel || undefined,
+              kimiModel: (savedKimiModels[sessionId] as EngineModelId) || prev?.kimiModel || undefined,
               chatMode: (savedChatModes[sessionId] as ChatMode) || prev?.chatMode || undefined,
               planMode: savedPlanModes[sessionId] ?? prev?.planMode,
               noHistory: savedNoHistories[sessionId] ?? prev?.noHistory,
@@ -193,6 +196,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     const engines: Record<string, string> = {};
     const ollamaModels: Record<string, string> = {};
     const deepseekModels: Record<string, string> = {};
+    const kimiModels: Record<string, string> = {};
     const chatModes: Record<string, string> = {};
     const planModes: Record<string, boolean> = {};
     const noHistories: Record<string, boolean> = {};
@@ -205,6 +209,9 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       }
       if (tab.sessionId && tab.deepseekModel) {
         deepseekModels[tab.sessionId] = tab.deepseekModel;
+      }
+      if (tab.sessionId && tab.kimiModel) {
+        kimiModels[tab.sessionId] = tab.kimiModel;
       }
       // Persist the DECIDED value for sessions THIS tab has open, so switching back to the
       // default actually overrides a previously-saved non-default. The server merge is a
@@ -242,6 +249,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         engines,
         ollamaModels,
         deepseekModels,
+        kimiModels,
         chatModes,
         planModes,
         noHistories,
@@ -290,6 +298,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       const engines = (data.engines || {}) as Record<string, string>;
       const ollamaModels = (data.ollamaModels || {}) as Record<string, string>;
       const deepseekModels = (data.deepseekModels || {}) as Record<string, string>;
+      const kimiModels = (data.kimiModels || {}) as Record<string, string>;
       const chatModes = (data.chatModes || {}) as Record<string, string>;
       const planModes = (data.planModes || {}) as Record<string, boolean>;
       const noHistories = (data.noHistories || {}) as Record<string, boolean>;
@@ -313,6 +322,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         engine: (engines[sid] as ChatEngine) || undefined,
         ollamaModel: ollamaModels[sid] || undefined,
         deepseekModel: (deepseekModels[sid] as DeepseekModel) || undefined,
+        kimiModel: (kimiModels[sid] as EngineModelId) || undefined,
         chatMode: (chatModes[sid] as ChatMode) || undefined,
         planMode: planModes[sid] || undefined,
         noHistory: noHistories[sid] || undefined,
@@ -357,13 +367,14 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       engine?: ChatEngine;
       ollamaModel?: string;
       deepseekModel?: DeepseekModel;
+      kimiModel?: EngineModelId;
       chatMode?: ChatMode;
       planMode?: boolean;
       noHistory?: boolean;
       appendToEnd?: boolean;
     }
   ) => {
-    const { engine, ollamaModel, deepseekModel, chatMode, planMode, noHistory, appendToEnd = false } = opts ?? {};
+    const { engine, ollamaModel, deepseekModel, kimiModel, chatMode, planMode, noHistory, appendToEnd = false } = opts ?? {};
     const newTab: TabInfo = {
       id: `tab-${Date.now()}`,
       cwd,
@@ -372,6 +383,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       engine,
       ollamaModel,
       deepseekModel,
+      kimiModel,
       chatMode,
       planMode,
       noHistory,
@@ -472,6 +484,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         chatMode: data?.chatModes?.[sid] as ChatMode | undefined,
         ollamaModel: data?.ollamaModels?.[sid],
         deepseekModel: data?.deepseekModels?.[sid] as DeepseekModel | undefined,
+        kimiModel: data?.kimiModels?.[sid] as EngineModelId | undefined,
         planMode: data?.planModes?.[sid],
         noHistory: data?.noHistories?.[sid],
         appendToEnd: true,
@@ -494,9 +507,11 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     addTab(initialCwd, undefined, 'New Codex Chat', { engine: 'codex', appendToEnd: true });
   }, [initialCwd, addTab]);
 
-  // Create new Kimi tab (appended to end)
+  // Create new Kimi tab (appended to end). Defaults to kimi-for-coding: the entry tier,
+  // callable on every membership level, so a fresh tab never opens on a model this account
+  // is not entitled to. The picker in the chat header switches it.
   const handleNewKimiTab = useCallback(() => {
-    addTab(initialCwd, undefined, 'New Kimi Chat', { engine: 'kimi', appendToEnd: true });
+    addTab(initialCwd, undefined, 'New Kimi Chat', { engine: 'kimi', kimiModel: 'kimi-for-coding', appendToEnd: true });
   }, [initialCwd, addTab]);
 
   // Create new Ollama tab (appended to end)
@@ -538,6 +553,15 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     );
   }, []);
 
+  // Update Kimi model for a tab
+  const updateTabKimiModel = useCallback((tabId: string, model: EngineModelId) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, kimiModel: model } : tab
+      )
+    );
+  }, []);
+
   // Update execution mode (sdk/pty) for a tab
   const updateTabChatMode = useCallback((tabId: string, chatMode: ChatMode) => {
     setTabs((prev) =>
@@ -574,6 +598,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       engine: source?.engine,
       ollamaModel: source?.ollamaModel,
       deepseekModel: source?.deepseekModel,
+      kimiModel: source?.kimiModel,
       chatMode: source?.chatMode,
     });
   }, [initialCwd, addTab]);
@@ -709,6 +734,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     updateTabEngine,
     updateTabOllamaModel,
     updateTabDeepseekModel,
+    updateTabKimiModel,
     updateTabChatMode,
     updateTabPlanMode,
     updateTabNoHistory,

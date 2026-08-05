@@ -1146,7 +1146,18 @@
     "start": "Do it",
     "continue": "Continue",
     "ok": "OK",
-    "done": "Done"
+    "done": "Done",
+    "edit": "Edit quick replies",
+    "editTitle": "Edit quick replies",
+    "editHint": "One line per row; separate phrases with commas. Each phrase is sent to the chat exactly as written.",
+    "editPlaceholder": "This one, Not this\nWhy?, Say more",
+    "restoreDefault": "Restore defaults",
+    "save": "Save",
+    "cancel": "Cancel",
+    "customizedFor": "Customizing the {{lang}} phrases — the other language is unaffected.",
+    "langEn": "English",
+    "langZh": "Chinese",
+    "saveFailed": "Failed to save quick replies"
   },
   "searchResults": {
     "title": "Search Results",

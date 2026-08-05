@@ -13,9 +13,17 @@ import { MessageBubble } from './MessageBubble';
 import { useChatSearch } from './useChatSearch';
 import { useComments } from '@cockpit/feature-comments';
 import { fetchAllCommentsWithCode, buildAIMessage, clearAllComments, sendReferenceToAI, CHAT_COMMENT_FILE, type CodeReference } from '@cockpit/feature-comments';
-import { ToolbarRenderer, ToolbarData, type QuickReplyTarget } from '@cockpit/shared-ui';
+import { ToolbarRenderer, ToolbarData, DEFAULT_QUICK_REPLY_KEYS, type QuickReplyTarget } from '@cockpit/shared-ui';
 import { AddCommentInput, SendToAIInput } from '@cockpit/shared-ui';
 import { useTranslation } from 'react-i18next';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { loadAgentSettings, saveAgentSettings } from './effect/agentClient';
+import { QuickRepliesEditor } from './QuickRepliesEditor';
+import {
+  readQuickReplies,
+  toQuickReplyLang,
+  type QuickRepliesSetting,
+} from './quickReplies';
 
 // Migrated from src/components/project/MessageList.tsx.
 
@@ -49,7 +57,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, ptyNotice, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch, onShowFileDiff, onApprovePlan },
   ref
 ) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   // codex transcripts are owned by its own CLI, under names we cannot construct (see
   // isForkableStore in server/api/session/sessionStore.ts) — we can read them but not create
   // a sibling session, so hide the buttons rather than let the request 404. Passed down as a
@@ -239,6 +247,69 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       void sendSelectionToAI(selected, text);
     }
   }, [addComment, sendSelectionToAI]);
+
+  // ── Quick-reply customization ───────────────────────────────────────────
+  // Stored per language in ~/.cockpit/settings.json (see quickReplies.ts).
+  // `null` means "not customized" — the toolbar then falls back to the i18n
+  // defaults, which keep following a language switch.
+  const quickReplyLang = toQuickReplyLang(i18n.language);
+  const [customQuickReplies, setCustomQuickReplies] = useState<string[][] | null>(null);
+  const [quickReplyEditorOpen, setQuickReplyEditorOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    BrowserRuntime.runPromiseExit(loadAgentSettings()).then((exit) => {
+      if (cancelled) return;
+      setCustomQuickReplies(
+        exit._tag === 'Success' ? readQuickReplies(exit.value, quickReplyLang) : null
+      );
+    });
+    return () => { cancelled = true; };
+  }, [quickReplyLang]);
+
+  /**
+   * Persist one language's phrases (or clear them, restoring the defaults).
+   *
+   * Re-reads settings first and merges the whole `quickReplies` object by hand:
+   * PUT /api/settings merges only at the TOP level, so sending
+   * `{ quickReplies: { zh } }` would drop an existing `en`. A stale read is not
+   * a real risk here — this is a local single-user app and the only other
+   * writer of this key is this same dialog.
+   */
+  const persistQuickReplies = useCallback((rows: string[][] | null) => {
+    void BrowserRuntime.runPromiseExit(loadAgentSettings()).then((exit) => {
+      const current =
+        exit._tag === 'Success'
+          ? ((exit.value as { quickReplies?: QuickRepliesSetting }).quickReplies ?? {})
+          : {};
+      const next: QuickRepliesSetting = { ...current };
+      if (rows) next[quickReplyLang] = rows;
+      else delete next[quickReplyLang];
+      return BrowserRuntime.runPromiseExit(saveAgentSettings({ quickReplies: next })).then(
+        (saved) => {
+          if (saved._tag === 'Success') setCustomQuickReplies(rows);
+          else console.error('Failed to save quick replies:', saved.cause);
+        }
+      );
+    });
+  }, [quickReplyLang]);
+
+  const handleEditQuickReplies = useCallback(() => {
+    // Drop the toolbar up front. It would otherwise sit under the dialog's
+    // backdrop until the first click dismissed it (see the mousedown handler
+    // above), which reads as a rendering glitch.
+    floatingToolbarRef.current = null;
+    bumpToolbarRef.current();
+    window.getSelection()?.removeAllRanges();
+    setQuickReplyEditorOpen(true);
+  }, []);
+
+  // What the panel shows: the custom set, else the built-in defaults resolved
+  // in the current language.
+  const quickReplyRows = useMemo(
+    () => customQuickReplies ?? DEFAULT_QUICK_REPLY_KEYS.map((row) => row.map((key) => t(key))),
+    [customQuickReplies, t]
+  );
 
   // Both cards close themselves on submit — deliberately NO trailing state
   // reset after the async send (a late set(null) could clobber a card the
@@ -565,7 +636,23 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
           onSearch={onContentSearch ? handleSearch : undefined}
           onExplain={chatCtx ? handleExplain : undefined}
           onQuickReply={handleQuickReply}
+          quickReplyRows={quickReplyRows}
+          onEditQuickReplies={handleEditQuickReplies}
           isChatLoading={chatCtx?.isLoading}
+        />
+      )}
+
+      {/* Quick-reply editor. Mounted here, NOT inside the toolbar: the toolbar
+          unmounts on the first mousedown outside it, which would take the
+          dialog with it the moment the textarea was clicked. */}
+      {quickReplyEditorOpen && (
+        <QuickRepliesEditor
+          initialRows={quickReplyRows}
+          lang={quickReplyLang}
+          isCustomized={customQuickReplies !== null}
+          onSave={(rows) => persistQuickReplies(rows.length ? rows : null)}
+          onRestoreDefault={() => persistQuickReplies(null)}
+          onClose={() => setQuickReplyEditorOpen(false)}
         />
       )}
 

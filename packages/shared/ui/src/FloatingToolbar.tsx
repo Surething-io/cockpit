@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 export type QuickReplyTarget = 'comment' | 'ai';
 
 /**
- * Quick-reply phrases, pre-grouped into display rows:
+ * Default quick-reply phrases, pre-grouped into display rows:
  * options / stance / follow-up / execute.
  *
  * Grouping is carried by the row breaks alone — no headings. Headings would
@@ -27,39 +27,54 @@ export type QuickReplyTarget = 'comment' | 'ai';
  * Because the value is sent verbatim, keep each one a complete utterance:
  * abbreviations and bare nouns read fine on a button but reach the model as a
  * fragment ("All recs", "Example").
+ *
+ * Exported so a host that lets the user customize the phrases can seed its
+ * editor with — and fall back to — exactly what the panel would have shown.
+ * Hosts resolve the keys with their own `t`; keeping the export as keys rather
+ * than resolved strings is what makes the untouched panel follow a language
+ * switch.
  */
-const QUICK_REPLY_ROWS: readonly (readonly string[])[] = [
+export const DEFAULT_QUICK_REPLY_KEYS: readonly (readonly string[])[] = [
   ['quickReply.optionA', 'quickReply.optionB', 'quickReply.optionC', 'quickReply.optionD'],
   ['quickReply.allRecommended', 'quickReply.thisOne', 'quickReply.notThis'],
   ['quickReply.why', 'quickReply.elaborate', 'quickReply.example'],
   ['quickReply.start', 'quickReply.continue', 'quickReply.ok', 'quickReply.done'],
 ];
 
+/** Rows of ready-to-send phrases — already resolved, no i18n keys. */
+export type QuickReplyRows = readonly (readonly string[])[];
+
 /** Grace period before a hover-out closes the panel. Without it the pointer
  *  cannot cross the gap between the trigger button and the panel below it. */
 const HOVER_CLOSE_DELAY_MS = 150;
 
 function QuickReplyPanel({
+  rows,
   placeAbove,
   onHeight,
   onPick,
+  onEdit,
   onMouseEnter,
   onMouseLeave,
 }: {
+  rows: QuickReplyRows;
   placeAbove: boolean;
   onHeight: (height: number) => void;
   onPick: (text: string) => void;
+  onEdit?: () => void;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
 }) {
   const { t } = useTranslation();
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Report height up so the toolbar can decide which side to open on. The
-  // rows are fixed, so this settles on the first hover and is reused after.
+  // Report height up so the toolbar can decide which side to open on.
+  // `rows` is in the deps because a custom phrase set can have a different
+  // number of rows than the default — without it, an edit that adds rows would
+  // keep opening the panel against a stale (shorter) height and get clipped.
   useEffect(() => {
     if (panelRef.current) onHeight(panelRef.current.getBoundingClientRect().height);
-  }, [onHeight]);
+  }, [onHeight, rows]);
 
   return (
     // Rendered INSIDE .floating-toolbar on purpose: hosts clear the selection
@@ -71,15 +86,44 @@ function QuickReplyPanel({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      {QUICK_REPLY_ROWS.map((row, rowIndex) => (
-        <div key={rowIndex} className="flex items-center gap-1">
-          {row.map((key) => (
+      {onEdit && (
+        // Absolutely positioned so it costs no height — the panel's open
+        // direction is computed from that height, and a header row would push
+        // the panel taller for an affordance used once in a blue moon.
+        <button
+          className="absolute top-0.5 right-0.5 p-1 text-muted-foreground hover:text-brand transition-colors"
+          onClick={onEdit}
+          title={t('quickReply.edit')}
+          aria-label={t('quickReply.edit')}
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+            />
+          </svg>
+        </button>
+      )}
+      {rows.map((row, rowIndex) => (
+        // Only the FIRST row reserves space for the pencil. The panel is as
+        // wide as its widest row, so if some later row is wider this padding
+        // changes nothing; if the first row is the widest, it grows the panel
+        // just enough that no button ends up under the icon.
+        <div
+          key={rowIndex}
+          className={`flex items-center gap-1${onEdit && rowIndex === 0 ? ' pr-5' : ''}`}
+        >
+          {row.map((phrase, i) => (
             <button
-              key={key}
+              // Custom phrase sets can legitimately repeat a phrase across
+              // rows, so the phrase alone is not a stable key.
+              key={`${rowIndex}:${i}:${phrase}`}
               className="px-2 py-1 text-xs whitespace-nowrap border border-border text-foreground rounded hover:border-brand hover:bg-accent transition-colors"
-              onClick={() => onPick(t(key))}
+              onClick={() => onPick(phrase)}
             >
-              {t(key)}
+              {phrase}
             </button>
           ))}
         </div>
@@ -111,10 +155,18 @@ interface FloatingToolbarProps {
    *  phrases answer a chat question, which is meaningless over a code selection
    *  in the explorer surfaces that share this component. */
   onQuickReply?: (target: QuickReplyTarget, text: string) => void;
+  /** User-customized phrases. Undefined = show the built-in i18n defaults,
+   *  which keep following the language switch. */
+  quickReplyRows?: QuickReplyRows;
+  /** Opt-in: renders a pencil in the panel's top-right corner. The host owns
+   *  the editor dialog — it must live OUTSIDE this component, which unmounts
+   *  as soon as the selection it belongs to is cleared (a dialog rendered in
+   *  here would vanish on the first click into its own textarea). */
+  onEditQuickReplies?: () => void;
   isChatLoading?: boolean;
 }
 
-export function FloatingToolbar({ x, y, visible, container, onAddComment, onSendToAI, onSearch, onExplain, onQuickReply, isChatLoading }: FloatingToolbarProps) {
+export function FloatingToolbar({ x, y, visible, container, onAddComment, onSendToAI, onSearch, onExplain, onQuickReply, quickReplyRows, onEditQuickReplies, isChatLoading }: FloatingToolbarProps) {
   const { t } = useTranslation();
   const toolbarRef = useRef<HTMLDivElement>(null);
   const [selfSize, setSelfSize] = useState({ w: 0, h: 0 });
@@ -183,9 +235,19 @@ export function FloatingToolbar({ x, y, visible, container, onAddComment, onSend
   const placeAbove =
     panelHeight > 0 && toolbarTop + selfSize.h + 8 + panelHeight > containerRect.height;
 
+  // Falls back to the built-in phrases when the host has no custom set. Memoized
+  // because it is a fresh array every render otherwise, which would re-fire the
+  // panel's height-report effect on every parent render.
+  const resolvedRows = useMemo(
+    () => quickReplyRows ?? DEFAULT_QUICK_REPLY_KEYS.map((row) => row.map((key) => t(key))),
+    [quickReplyRows, t]
+  );
+
   const renderQuickReplies = (target: QuickReplyTarget) =>
     onQuickReply && hovered === target ? (
       <QuickReplyPanel
+        rows={resolvedRows}
+        onEdit={onEditQuickReplies}
         placeAbove={placeAbove}
         onHeight={handlePanelHeight}
         onPick={(text) => {
@@ -292,10 +354,12 @@ interface ToolbarRendererProps {
   onSearch?: () => void;
   onExplain?: () => void;
   onQuickReply?: (target: QuickReplyTarget, text: string) => void;
+  quickReplyRows?: QuickReplyRows;
+  onEditQuickReplies?: () => void;
   isChatLoading?: boolean;
 }
 
-function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddComment, onSendToAI, onSearch, onExplain, onQuickReply, isChatLoading }: ToolbarRendererProps) {
+function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddComment, onSendToAI, onSearch, onExplain, onQuickReply, quickReplyRows, onEditQuickReplies, isChatLoading }: ToolbarRendererProps) {
   const [version, forceRender] = useState(0);
 
   // Allow parent to trigger a re-render of this component via bumpRef
@@ -317,6 +381,8 @@ function ToolbarRendererInner({ floatingToolbarRef, bumpRef, container, onAddCom
       onSearch={onSearch}
       onExplain={onExplain}
       onQuickReply={onQuickReply}
+      quickReplyRows={quickReplyRows}
+      onEditQuickReplies={onEditQuickReplies}
       isChatLoading={isChatLoading}
     />
   );

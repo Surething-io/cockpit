@@ -1146,7 +1146,18 @@
     "start": "开始做",
     "continue": "继续",
     "ok": "OK",
-    "done": "做完了"
+    "done": "做完了",
+    "edit": "编辑快捷短语",
+    "editTitle": "编辑快捷短语",
+    "editHint": "一行对应面板的一行，行内用逗号分隔。每个短语会原样发送到对话。",
+    "editPlaceholder": "就这个，不要这样\n为什么，展开说",
+    "restoreDefault": "恢复默认",
+    "save": "保存",
+    "cancel": "取消",
+    "customizedFor": "当前编辑的是{{lang}}短语，另一种语言不受影响。",
+    "langEn": "英文",
+    "langZh": "中文",
+    "saveFailed": "保存快捷短语失败"
   },
   "searchResults": {
     "title": "搜索结果",

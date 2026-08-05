@@ -111,6 +111,8 @@ export default async function HomePage({
       'Claude Agent SDK',
       'OpenAI Codex GUI',
       'DeepSeek GUI',
+      'GLM GUI',
+      'Zhipu GLM GUI',
       'Kimi GUI',
       'Ollama GUI',
       'multi-engine AI coding',
@@ -123,7 +125,7 @@ export default async function HomePage({
       'Aider alternative',
     ].join(', '),
     featureList: [
-      'Multi-engine chat: Claude (default) / Codex / Kimi / DeepSeek / Ollama — each tab a separate session',
+      'Multi-engine chat: Claude (default) / Codex / DeepSeek / GLM / Kimi / Ollama — each tab a separate session',
       'Multi-project parallel agent sessions',
       'Web client–server architecture: self-host on a shared dev box — every teammate gets a seat, each in their own project / worktree',
       'Built-in xterm.js terminal',

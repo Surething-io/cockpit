@@ -1,10 +1,11 @@
-Cockpit talks to 5 AI engines out of the box (plus a **Claude 2** entry, so 6 picker options total). Each Agent tab picks one engine; you can mix and match across tabs without restarting — pick by what's running locally, what billing account you're on, or which model is best at the task in front of you.
+Cockpit talks to 6 AI engines out of the box (plus a **Claude 2** entry, so 7 picker options total). Each Agent tab picks one engine; you can mix and match across tabs without restarting — pick by what's running locally, what billing account you're on, or which model is best at the task in front of you.
 
 | Engine | How to sign in | When to use |
 |---|---|---|
 | [Claude](#claude) | Anthropic `claude` CLI login (or **Claude 2** for a second account) | Default. Best general-purpose model. |
 | [Codex](#codex) | `codex` CLI login | If you already have a Codex / GPT subscription. |
 | [DeepSeek](#deepseek) | Paste API key in the per-tab DeepSeek picker | Strong reasoning at lower cost. |
+| [GLM](#glm) | Paste API key in the per-tab GLM picker | Zhipu's models, on a mainland or an international host. |
 | [Kimi](#kimi) | Paste API key in the per-tab Kimi picker | Long context, mostly used in China. |
 | [Ollama](#ollama) | Nothing — runs locally | Offline use, sensitive data, custom models. |
 
@@ -19,6 +20,7 @@ Cockpit talks to 5 AI engines out of the box (plus a **Claude 2** entry, so 6 pi
 | **Claude** | Log in once via the `claude` CLI | Default. Best general-purpose model. | Anthropic |
 | **Codex** | Log in once via the `codex` CLI | When you already have a Codex / GPT subscription. | OpenAI |
 | **DeepSeek** | Paste an API key in the per-tab DeepSeek picker | Strong reasoning at lower cost. | DeepSeek |
+| **GLM** | Paste an API key in the per-tab GLM picker | Zhipu's models, served from a mainland **or** an international host. | Zhipu / BigModel (pay-as-you-go or Coding Plan) |
 | **Kimi** | Paste an API key in the per-tab Kimi picker | Long context, mostly used in China. | Moonshot (Kimi Code subscription) |
 | **Ollama** | Nothing — it's local | Offline use, sensitive data, custom models. | Nobody (your own machine) |
 
@@ -28,28 +30,29 @@ The engine picker in each tab also has a **Claude 2** entry — that's the **sam
 
 Each Agent tab has an engine picker in its header. When you create a new tab, the engine defaults to **Claude**. Switching the engine for an existing tab starts a fresh session — Claude history doesn't carry over into a Codex tab, since each engine has its own conversation format.
 
-You can have, say, five tabs open simultaneously:
+You can have, say, six tabs open simultaneously:
 
 - Tab 1: Claude on `~/code/backend`
 - Tab 2: DeepSeek on the same project for a cheaper second opinion
 - Tab 3: Codex on a different project
 - Tab 4: Kimi on a notebook, using its long context window
-- Tab 5: Ollama running a local model for an offline draft
+- Tab 5: GLM on a script, billed to your BigModel Coding Plan
+- Tab 6: Ollama running a local model for an offline draft
 
 Cockpit's Session Browser (grid icon at the top of the sidebar) shows all of them.
 
 ### What each engine can do
 
-|  | Claude | Codex | DeepSeek | Kimi | Ollama |
-|---|---|---|---|---|---|
-| Can read & edit your files | ✅ | ✅ | ✅ | ✅ | ⚠️ depends on model |
-| Accepts image attachments | ✅ | ✅ | ✅ | ✅ (SDK mode only) | ❌ |
-| Streams replies as it thinks | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Runs offline | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Choose between model variants | Fixed (latest) | Fixed | flash / pro | Live list from your Kimi plan | Any model you've pulled |
-| Shows running cost in the UI | ✅ | — | ✅ (estimated) | Quota, not cost — see [Check quota](#check-your-quota) | Free |
+|  | Claude | Codex | DeepSeek | GLM | Kimi | Ollama |
+|---|---|---|---|---|---|---|
+| Can read & edit your files | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ depends on model |
+| Accepts image attachments | ✅ | ✅ | ✅ | ✅ (SDK mode only) | ✅ (SDK mode only) | ❌ |
+| Streams replies as it thinks | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Runs offline | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Choose between model variants | Fixed (latest) | Fixed | flash / pro | Live list from GLM's API | Live list from your Kimi plan | Any model you've pulled |
+| Shows running cost in the UI | ✅ | — | ✅ (estimated) | Quota, not cost — see [Check quota](#check-your-coding-plan-quota) | Quota, not cost — see [Check quota](#check-your-quota) | Free |
 
-> Image support is engine-level. **Ollama** tabs **silently drop** image attachments (no error, but the AI doesn't see them). **Kimi** accepts images in its default *Claude Agent SDK* mode; the **Built-in Agent** execution mode has no image support for any engine — see [Execution mode](#execution-mode-claude-agent-sdk-vs-built-in-agent).
+> Image support is engine-level. **Ollama** tabs **silently drop** image attachments (no error, but the AI doesn't see them). **GLM** and **Kimi** accept images in their default *Claude Agent SDK* mode; the **Built-in Agent** execution mode has no image support for any engine — see [Execution mode](#execution-mode-claude-agent-sdk-vs-built-in-agent).
 
 ### Setting up each engine
 
@@ -58,6 +61,7 @@ Per-engine sections below cover the specifics. Quick pointers:
 - **Claude** — run `claude` once on your terminal and follow its login prompt. Cockpit reuses your Claude login automatically.
 - **Codex** — install OpenAI's `codex` CLI and log in with it once. Cockpit reuses that login.
 - **DeepSeek** — get a key from [platform.deepseek.com](https://platform.deepseek.com/), then **paste it in the DeepSeek picker in the Agent tab header** (not in the global Cockpit Settings). Pick a model variant in the same picker.
+- **GLM** — get a key from the [BigModel console](https://bigmodel.cn/apikey/platform), then **paste it in the GLM picker in the Agent tab header**. Pick a model in the same picker, and check the **Region** row while you're there — see [Choose a region](#choose-a-region).
 - **Kimi** — get a key from the [Kimi Code console](https://www.kimi.com/code/console), then **paste it in the Kimi picker in the Agent tab header**. Pick a model in the same picker.
 - **Ollama** — install [Ollama](https://ollama.com/) and pull at least one model (`ollama pull llama3.1`). When you create an Ollama tab, the model picker lists what you've pulled.
 
@@ -163,7 +167,7 @@ Nothing to paste inside Cockpit — it reuses whatever `codex` is already config
 
 ## DeepSeek
 
-DeepSeek is the cheapest cloud engine in Cockpit. Unlike Claude / Codex (which reuse a CLI's login), DeepSeek is API-key-only — paste a key in the per-tab DeepSeek picker and you're done. Kimi works the same way.
+DeepSeek is the cheapest cloud engine in Cockpit. Unlike Claude / Codex (which reuse a CLI's login), DeepSeek is API-key-only — paste a key in the per-tab DeepSeek picker and you're done. GLM and Kimi work the same way.
 
 Under the hood it goes through DeepSeek's [Anthropic-compatible endpoint](https://api-docs.deepseek.com/en/guides/anthropic_api) routed via the Claude Agent SDK, so tool use, streaming, and context management all work like Claude.
 
@@ -200,6 +204,100 @@ Done. The key only ever stays on your machine.
 - **"401 / Unauthorized"** — bad or expired key; paste it again in the picker and watch for stray whitespace.
 - **Slow / hanging replies** — `pro` is genuinely slower than `flash`; if you don't actually need the reasoning, switch the tab to `flash`.
 - **Estimated costs climbing fast** — `pro` is several times more expensive than `flash`. Look at the per-session cost in the token bar to spot accidental `pro` usage.
+
+## GLM
+
+GLM is Zhipu AI's model family, sold through the **BigModel** platform. Structurally it's the same kind of engine as [DeepSeek](#deepseek) and [Kimi](#kimi): API-key-only, with a live model picker, a quota readout, and a fork-able session store.
+
+The one thing GLM has that no other engine does: it's served from **two hosts** — one in mainland China, one international — and the picker has a **Region** row to pick between them. Same key either way; see [Choose a region](#choose-a-region).
+
+### Setup
+
+1. Get an API key from the [BigModel console](https://bigmodel.cn/apikey/platform). GLM keys are two dot-separated halves, `<id>.<secret>` — no `sk-` prefix.
+
+2. Open a new tab in Cockpit, pick **GLM** in the engine menu, then **click the model picker in the tab header** → paste the key into the **API Key** field → save. (The key lives in its own credential file, `~/.cockpit/glm/credentials.json` — *not* in `~/.cockpit/settings.json`, and not in the global Cockpit Settings modal.)
+
+3. Pick a model in the same picker. Cockpit fetches the list from your account the moment the key is saved.
+
+Done. The key only ever stays on your machine.
+
+### Pick a model
+
+The model list is **fetched live** from GLM's `GET /models` using your key — Cockpit hard-codes nothing, so new models show up on their own. At the time of writing the API returns eight:
+
+`glm-4.5` · `glm-4.5-air` · `glm-4.6` · `glm-4.7` · `glm-5` · `glm-5-turbo` · `glm-5.1` · `glm-5.2`
+
+A new GLM tab defaults to **`glm-5.2`**.
+
+> **GLM publishes no per-model metadata.** Its model list is bare ids — no display name, no context window. So the picker shows ids only, and Cockpit sets no context-window hint for GLM tabs (Kimi tabs get one because Kimi reports it). That's a limit of the provider's API rather than a missing Cockpit feature; the Agent SDK falls back to its own default window.
+
+> **`glm-5.2[1m]` is not supported.** BigModel's Claude Code docs mention that `[1m]` suffix for a 1M-token context. Cockpit can't offer it: the Anthropic-compatible endpoint rejects that id with HTTP 400 *"模型不存在"* — verified on two accounts, one of them on a Coding Plan. Use the bare `glm-5.2`.
+
+### Choose a region
+
+GLM is served from two hosts, and **the same key works on both**: a key issued on `bigmodel.cn` authenticates on `z.ai` and reports the identical quota. The region is pure routing.
+
+| Region | Anthropic-compatible (SDK mode) | OpenAI-compatible (Built-in Agent mode) |
+|---|---|---|
+| **中国大陆** — mainland | `https://open.bigmodel.cn/api/anthropic` | `https://open.bigmodel.cn/api/coding/paas/v4` |
+| **International** | `https://api.z.ai/api/anthropic` | `https://api.z.ai/api/coding/paas/v4` |
+
+The default comes from your **Cockpit UI language**: English → International, everything else (including "auto") → mainland. Override it in the **Region** row of the GLM picker — your pick wins and is remembered.
+
+Language only *seeds* that default; it never overrides a choice you made. That's deliberate: changing Cockpit's UI language shouldn't silently re-route your API traffic to a server in another country. If your language and your account don't line up, set the region once and forget it.
+
+Sessions are **not** region-scoped. Switch regions whenever you like — existing GLM conversations stay resumable, and the key stays valid.
+
+### Execution mode: SDK vs Built-in Agent
+
+The GLM picker has an **Execution mode** toggle with two options, exactly like Kimi's. They talk to different GLM endpoints and keep **separate transcript stores**, so the mode is locked once a session has messages — to switch, open a new tab.
+
+| | **Claude Agent SDK** (default) | **Built-in Agent** |
+|---|---|---|
+| What runs the loop | The official Claude Agent SDK, pointed at GLM | Cockpit's own agent loop |
+| Endpoint | The region's Anthropic-compatible host | The region's OpenAI-compatible host |
+| Image attachments | ✅ | ❌ (no engine supports images in this mode) |
+| Sessions on disk | `~/.cockpit/glm/projects/<project>/<session>.jsonl` | `~/.cockpit/glm-sessions/<project>/<session>.jsonl` |
+
+Stay on **Claude Agent SDK** unless you have a reason not to — it's the mode that gets images, subagents, and everything else the SDK brings.
+
+### Check your Coding Plan quota
+
+GLM's **Coding Plan** is a subscription, so the GLM tab gets a **Check quota** button next to the model picker rather than a dollar total. Click it and Cockpit reads what's left in two windows:
+
+- a rolling **5-hour** window, and
+- a **weekly** one.
+
+Each shows as `remaining/limit`, prefixed by your plan tier — e.g. `lite · 5h 1990/2000 · 1w 4980/5000`. Hover for when the longer window resets; it goes red when a window is exhausted. The button needs a saved key and doesn't poll — it fetches only when you click.
+
+> **No Coding Plan means no quota, and that's normal.** A plain pay-as-you-go BigModel key has no plan allowance to report, so the button answers *"Quota unavailable — check the API key"*. Chatting still works exactly as before — you're just billed per token instead. The link next to the button opens [BigModel's usage page](https://bigmodel.cn/coding-plan/personal/usage) for the real figures.
+
+### What you get
+
+- **A model picker**, live from GLM's API (see above).
+- **A region switch** — mainland or international, same key, sessions unaffected.
+- **Image attachments** in Claude Agent SDK mode — paste images (`Cmd+V`) and GLM can see them. PNG / JPEG / WEBP / GIF.
+- Streaming replies.
+- Tool use — GLM can read your files, run shell commands, edit code.
+- **Forking** — fork a GLM session from any message, same as Claude.
+- Per-tool-call [snapshots](/en/docs/agent/snapshots/), like every other engine.
+- Multi-tab sessions, each independent.
+
+### What you don't get
+
+- **No dollar cost readout you should trust.** Any USD figure in the token bar comes from the Agent SDK's own price table, not from GLM. On a Coding Plan use **Check quota**; on pay-as-you-go check the BigModel console.
+- **No context window or display name in the picker** — GLM doesn't report either. See the note under [Pick a model](#pick-a-model).
+- **No `[1m]` long-context variant.** `glm-5.2[1m]` is rejected by the endpoint Cockpit uses.
+- **No images in Built-in Agent mode.** An images-only message is rejected with *"The built-in agent requires a text prompt"*; a message with text *and* images is answered, with the images dropped.
+
+### Common issues
+
+- **The picker says "Set API key"** — no key saved yet. It goes in the **GLM picker in the tab header**, not the global Cockpit Settings modal.
+- **"Failed to load models — check the API key"** / **401** — bad or expired key. Re-paste it from the [BigModel console](https://bigmodel.cn/apikey/platform) and watch for stray whitespace; a GLM key is the full `<id>.<secret>` string, both halves included.
+- **HTTP 400 "模型不存在"** — that model id isn't served to your account. Most often it's the `[1m]` suffix, which Cockpit can't use at all; pick a plain id from the list.
+- **Quota says unavailable but chat works** — your account has no Coding Plan. Nothing is broken; see [Check your Coding Plan quota](#check-your-coding-plan-quota).
+- **Slow or flaky connection** — you may be on the far host. Flip the **Region** row: mainland accounts are usually fastest on `open.bigmodel.cn`, and the same key works on `api.z.ai` if you're outside China. Switching is safe; sessions survive it.
+- **Pasted images are ignored** — the tab is in **Built-in Agent** mode. Open a new tab on **Claude Agent SDK** mode (the mode can't be changed once a session has messages).
 
 ## Kimi
 

@@ -58,6 +58,12 @@ export const DEEPSEEK_CREDENTIALS_FILE = join(DEEPSEEK_DIR, 'credentials.json');
 export const KIMI_DIR = join(COCKPIT_DIR, 'kimi');
 export const KIMI_PROJECTS_DIR = join(KIMI_DIR, 'projects');
 export const KIMI_CREDENTIALS_FILE = join(KIMI_DIR, 'credentials.json');
+// GLM (Zhipu BigModel) — same shape again. Note the store is region-agnostic on
+// purpose: open.bigmodel.cn and api.z.ai serve the same account, so switching
+// region must not orphan existing sessions.
+export const GLM_DIR = join(COCKPIT_DIR, 'glm');
+export const GLM_PROJECTS_DIR = join(GLM_DIR, 'projects');
+export const GLM_CREDENTIALS_FILE = join(GLM_DIR, 'credentials.json');
 // Ollama connection config (baseUrl + apiKey) lives in its own file, NOT in
 // settings.json — the apiKey must never be returned by GET /api/settings (which
 // ships to the browser). baseUrl and apiKey are kept together because a given
@@ -292,6 +298,18 @@ export function getKimiSessionPath(cwd: string, sessionId: string): string {
 }
 
 // ============================================
+// GLM Project Paths (~/.cockpit/glm/projects/<encoded-cwd>/...)
+// ============================================
+
+export function getGlmProjectDir(cwd: string): string {
+  return join(GLM_PROJECTS_DIR, encodePath(cwd));
+}
+
+export function getGlmSessionPath(cwd: string, sessionId: string): string {
+  return join(getGlmProjectDir(cwd), `${sessionId}.jsonl`);
+}
+
+// ============================================
 // Built-in Agent Session Paths (~/.cockpit/<engine>-sessions/<encoded-cwd>/... )
 // Written by engines/builtinAgent — our own agent loop, one store per engine.
 // ============================================
@@ -302,6 +320,7 @@ const BUILTIN_SESSION_DIRS: Record<string, string> = {
   ollama: 'ollama-sessions',
   deepseek: 'deepseek-sessions',
   kimi: 'kimi-sessions',
+  glm: 'glm-sessions',
 };
 
 /** Store directory names, relative to the cockpit data dir. For callers that resolve the
@@ -357,6 +376,14 @@ export function getDeepseekBuiltinSessionPath(cwd: string, sessionId: string): s
  */
 export function getKimiBuiltinSessionPath(cwd: string, sessionId: string): string {
   return getBuiltinSessionPath('kimi', cwd, sessionId);
+}
+
+/**
+ * Get the GLM Built-in Agent session file path (mode: 'builtin'). Distinct from
+ * getGlmSessionPath, which is the Claude Agent SDK store under ~/.cockpit/glm/projects.
+ */
+export function getGlmBuiltinSessionPath(cwd: string, sessionId: string): string {
+  return getBuiltinSessionPath('glm', cwd, sessionId);
 }
 
 /**

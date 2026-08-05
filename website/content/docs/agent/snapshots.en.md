@@ -31,7 +31,7 @@ Cockpit keeps a **shadow git repository** per project under `<data dir>/snapshot
 - Your project's own `.git` is **never touched** — the shadow repo has its own object store and only reads your working tree.
 - Your project's `.gitignore` is honored, so `node_modules/`, build output, and the like never enter a snapshot. Common secret patterns (`.env*`, `*.pem`, SSH keys) are excluded even for projects without a `.gitignore`.
 - Everything is **local**. Snapshots never leave your machine.
-- All engines are covered — Claude, Codex, DeepSeek, Kimi, Ollama — because the snapshot hook sits on the one code path every engine's tool events flow through.
+- All engines are covered — Claude, Codex, DeepSeek, GLM, Kimi, Ollama — because the snapshot hook sits on the one code path every engine's tool events flow through.
 - Read-only tools (`Read`, `Grep`, web search, …) are skipped, and a tool call that changed nothing produces no entry.
 
 ## Retention & disk usage

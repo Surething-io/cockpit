@@ -10,13 +10,16 @@ import {
   getDeepseekBuiltinSessionPath,
   getKimiSessionPath,
   getKimiBuiltinSessionPath,
+  getGlmSessionPath,
+  getGlmBuiltinSessionPath,
   findCodexSessionPath,
   getSessionFilePath,
 } from '@cockpit/shared-utils';
 
-/** Claude-format transcript stores, probed in order by cwd+sessionId. DeepSeek and Kimi each
- *  have two: the Claude Agent SDK store (~/.cockpit/<engine>/projects) and the Built-in Agent
- *  store (~/.cockpit/<engine>-sessions), depending on the execution mode the session ran in. */
+/** Claude-format transcript stores, probed in order by cwd+sessionId. DeepSeek, Kimi and GLM
+ *  each have two: the Claude Agent SDK store (~/.cockpit/<engine>/projects) and the Built-in
+ *  Agent store (~/.cockpit/<engine>-sessions), depending on the execution mode the session
+ *  ran in. */
 const CLAUDE_STYLE_PATHS = [
   getClaudeSessionPath,
   getClaude2SessionPath,
@@ -25,6 +28,8 @@ const CLAUDE_STYLE_PATHS = [
   getDeepseekBuiltinSessionPath,
   getKimiSessionPath,
   getKimiBuiltinSessionPath,
+  getGlmSessionPath,
+  getGlmBuiltinSessionPath,
 ];
 
 /** First existing Claude-format transcript for this session, or null. */

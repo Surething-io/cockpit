@@ -27,7 +27,7 @@ import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { OllamaModelPicker } from './OllamaModelPicker';
 import { EngineConfigPicker } from './EngineConfigPicker';
 import { DeepseekBalanceButton } from './DeepseekBalanceButton';
-import { KimiQuotaButton } from './KimiQuotaButton';
+import { EngineQuotaButton } from './EngineQuotaButton';
 import type { ApiKeyEngine } from './effect/agentClient';
 import { CommentsListModal } from '@cockpit/feature-comments';
 import { useTranslation } from 'react-i18next';
@@ -51,6 +51,8 @@ interface ChatProps {
   onDeepseekModelChange?: (model: EngineModelId) => void;
   kimiModel?: EngineModelId;
   onKimiModelChange?: (model: EngineModelId) => void;
+  glmModel?: EngineModelId;
+  onGlmModelChange?: (model: EngineModelId) => void;
   chatMode?: ChatMode;
   onChatModeChange?: (chatMode: ChatMode) => void;
   planMode?: boolean;
@@ -93,7 +95,7 @@ interface ChatProps {
   onOpenSettings?: () => void; // Host-handled: open the app settings modal
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, chatMode: chatModeProp, onChatModeChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, chatMode: chatModeProp, onChatModeChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -220,9 +222,15 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // Engines configured by API key rather than by a local CLI login. They share one UI: a
   // key+model picker, an SDK ↔ Built-in Agent toggle, and a consumption readout.
   const apiKeyEngine: ApiKeyEngine | null =
-    engine === 'deepseek' ? 'deepseek' : engine === 'kimi' ? 'kimi' : null;
-  const engineModel = apiKeyEngine === 'kimi' ? kimiModel : deepseekModel;
-  const onEngineModelChange = apiKeyEngine === 'kimi' ? onKimiModelChange : onDeepseekModelChange;
+    engine === 'deepseek' || engine === 'kimi' || engine === 'glm' ? engine : null;
+  const engineModel =
+    apiKeyEngine === 'kimi' ? kimiModel : apiKeyEngine === 'glm' ? glmModel : deepseekModel;
+  const onEngineModelChange =
+    apiKeyEngine === 'kimi'
+      ? onKimiModelChange
+      : apiKeyEngine === 'glm'
+        ? onGlmModelChange
+        : onDeepseekModelChange;
   // Their two modes do NOT share a transcript store (SDK → ~/.cockpit/<engine>/projects,
   // Built-in Agent → ~/.cockpit/<engine>-sessions), so switching mid-session would leave the
   // model blind to history the UI is still showing. The choice is therefore made while the
@@ -669,9 +677,9 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             )}
             {/* Right-aligned: what the key has left belongs to the key, not to the mode toggle it
                 sits next to. DeepSeek reports a prepaid balance, Kimi a subscription quota. */}
-            {apiKeyEngine === 'kimi'
-              ? <KimiQuotaButton hasKey={engineHasKey} />
-              : <DeepseekBalanceButton hasKey={engineHasKey} />}
+            {apiKeyEngine === 'deepseek'
+              ? <DeepseekBalanceButton hasKey={engineHasKey} />
+              : <EngineQuotaButton engine={apiKeyEngine} hasKey={engineHasKey} />}
           </div>
         )}
 

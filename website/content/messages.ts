@@ -17,15 +17,15 @@ export const messages = {
         'The open-source Claude Code GUI, built like an IDE for the whole dev loop — code, terminal, browser & DB in one workbench. Runs on your laptop, or on a shared dev box where every teammate gets a seat.',
       pronounce: '/ˈkɒkpɪt/ — like an aircraft cockpit',
       description:
-        'OpenCockpit is the open-source Claude Code GUI — an IDE-like workbench for the whole dev loop, and a single canvas for whatever agent you bring next. Multi-project Claude sessions out of the box; pop open a tab for Codex, DeepSeek, Kimi, or local Ollama whenever you need. Built-in terminal, Chrome control, PostgreSQL / MySQL / Redis bubbles, code review, and slash modes — all local. Web client–server under the hood: self-host it on a shared dev box and every teammate gets a seat, each coding with AI in their own project or worktree.',
+        'OpenCockpit is the open-source Claude Code GUI — an IDE-like workbench for the whole dev loop, and a single canvas for whatever agent you bring next. Multi-project Claude sessions out of the box; pop open a tab for Codex, DeepSeek, GLM, Kimi, or local Ollama whenever you need. Built-in terminal, Chrome control, PostgreSQL / MySQL / Redis bubbles, code review, and slash modes — all local. Web client–server under the hood: self-host it on a shared dev box and every teammate gets a seat, each coding with AI in their own project or worktree.',
       // SEO ≤160 chars — used by metadata only, not visible on the page. Don't merge with description.
       metaDescription:
-        'Open-source Claude Code GUI — an IDE-like workbench for parallel AI coding. Codex/DeepSeek/Kimi/Ollama, terminal, browser & DB. Self-host for your team. MIT.',
+        'Open-source Claude Code GUI — IDE-like workbench for parallel AI coding. Codex/DeepSeek/GLM/Kimi/Ollama, terminal, browser & DB. Self-host for your team. MIT.',
       installLabel: 'Install',
       tryOnline: 'Try Online',
       githubStar: 'Star on GitHub',
       videoNotice: 'Watch the 24-second tour',
-      badge: 'Claude · Codex · DeepSeek · Kimi · Ollama',
+      badge: 'Claude · Codex · DeepSeek · GLM · Kimi · Ollama',
     },
     valueProp: {
       headline: 'Why Cockpit beats raw Claude Code',
@@ -36,7 +36,7 @@ export const messages = {
         },
         {
           title: 'Local-first, BYOK for the rest',
-          desc: '`claude` CLI works out of the box. For Codex, DeepSeek, Kimi or Ollama, paste a key (or none for Ollama). Everything runs locally.',
+          desc: '`claude` CLI works out of the box. For Codex, DeepSeek, GLM, Kimi or Ollama, paste a key (or none for Ollama). Everything runs locally.',
         },
         {
           title: 'Beyond chat: terminal, browser, DBs',
@@ -50,7 +50,7 @@ export const messages = {
         name: 'Agent',
         title: 'AI chat that scales with you',
         bullets: [
-          'Claude out of the box via the official Agent SDK; Codex / DeepSeek / Kimi / Ollama via per-tab BYOK',
+          'Claude out of the box via the official Agent SDK; Codex / DeepSeek / GLM / Kimi / Ollama via per-tab BYOK',
           'Multi-project concurrent sessions with desktop notifications',
           'Session pinning, forking, cross-project session browser',
           'Per-tool-call snapshots — review each reply as git history, real disk diffs incl. Bash',
@@ -121,6 +121,11 @@ export const messages = {
           name: 'DeepSeek',
           tagline: 'Long sessions on a budget',
           desc: 'Anthropic-compatible endpoint via the Claude SDK. Paste a key, pick `v4-pro` or `v4-flash`.',
+        },
+        {
+          name: 'GLM',
+          tagline: 'Zhipu, BYOK',
+          desc: 'Paste a BigModel key per tab — live GLM model list, both execution modes, plus a Coding Plan quota readout.',
         },
         {
           name: 'Kimi',
@@ -249,7 +254,7 @@ export const messages = {
         },
         {
           dim: 'Engines',
-          us: '✅ Claude + Codex / DeepSeek / Kimi / Ollama (BYOK)',
+          us: '✅ Claude + Codex / DeepSeek / GLM / Kimi / Ollama (BYOK)',
           official: 'Claude only',
           opcode: 'Claude only',
         },
@@ -442,11 +447,11 @@ export const messages = {
         '开源的 Claude Code GUI —— 贴合研发全流程的 IDE 式工作台：读码、终端、浏览器与数据库一体。跑在本机，或部署到共享开发机，全队一起飞。',
       pronounce: '/ˈkɒkpɪt/ —— 像飞机驾驶舱',
       description:
-        'OpenCockpit 是开源的 Claude Code GUI —— 贴合研发全流程的 IDE 式工作台，也是你想接入的任何 Agent 的统一画布。多项目 Claude 会话开箱即用；想用 Codex、DeepSeek、Kimi 或本地 Ollama？直接新开一个 tab。内置终端、Chrome 自动化、PostgreSQL / MySQL / Redis 气泡、代码评审与斜杠模式 —— 全部本地。Web client-server 架构：可自托管到共享开发机，全队一起飞，在各自项目 / worktree 上并行 AI coding。',
+        'OpenCockpit 是开源的 Claude Code GUI —— 贴合研发全流程的 IDE 式工作台，也是你想接入的任何 Agent 的统一画布。多项目 Claude 会话开箱即用；想用 Codex、DeepSeek、GLM、Kimi 或本地 Ollama？直接新开一个 tab。内置终端、Chrome 自动化、PostgreSQL / MySQL / Redis 气泡、代码评审与斜杠模式 —— 全部本地。Web client-server 架构：可自托管到共享开发机，全队一起飞，在各自项目 / worktree 上并行 AI coding。',
       // SEO ≤160 字符（CJK 计为 1.5×）—— 仅用于 metadata，不在页面展示。勿与 description 合并。
       metaDescription:
-        '开源 Claude Code GUI —— IDE 式工作台，多项目并行 AI 编程。Codex/DeepSeek/Kimi/Ollama 多引擎，内置终端、浏览器与数据库气泡。可自托管供全队使用。MIT 协议。',
-      badge: 'Claude · Codex · DeepSeek · Kimi · Ollama',
+        '开源 Claude Code GUI —— IDE 式工作台，多项目并行 AI 编程。Codex/DeepSeek/GLM/Kimi/Ollama 多引擎，内置终端、浏览器与数据库气泡。可自托管供全队使用。MIT 协议。',
+      badge: 'Claude · Codex · DeepSeek · GLM · Kimi · Ollama',
       installLabel: '安装',
       tryOnline: '在线体验',
       githubStar: '去 GitHub 点 Star',
@@ -461,7 +466,7 @@ export const messages = {
         },
         {
           title: '本地优先，其他引擎 BYOK',
-          desc: '`claude` CLI 已配好即开箱即用。Codex / DeepSeek / Kimi / Ollama 各自粘 Key（Ollama 无需）。一切都在本地完成。',
+          desc: '`claude` CLI 已配好即开箱即用。Codex / DeepSeek / GLM / Kimi / Ollama 各自粘 Key（Ollama 无需）。一切都在本地完成。',
         },
         {
           title: '不止聊天：终端、浏览器、数据库',
@@ -475,7 +480,7 @@ export const messages = {
         name: 'Agent',
         title: '可扩展的 AI 对话',
         bullets: [
-          '默认走官方 Claude Agent SDK；Codex / DeepSeek / Kimi / Ollama 各 tab 独立 BYOK',
+          '默认走官方 Claude Agent SDK；Codex / DeepSeek / GLM / Kimi / Ollama 各 tab 独立 BYOK',
           '多项目并发会话，桌面通知提醒',
           '会话固定、分叉、跨项目浏览',
           '工具调用级快照 —— 像读 git 历史一样审每条回复的真实磁盘 diff，含 Bash',
@@ -546,6 +551,11 @@ export const messages = {
           name: 'DeepSeek',
           tagline: '便宜的长会话',
           desc: '走 Anthropic 兼容端点，复用 Claude SDK。粘 Key，选 `v4-pro` 或 `v4-flash`。',
+        },
+        {
+          name: 'GLM',
+          tagline: '智谱，粘 Key 即用',
+          desc: '每个 tab 粘一个 BigModel 的 Key —— GLM 模型列表实时拉取，两种执行模式任选，还能查 Coding Plan 额度。',
         },
         {
           name: 'Kimi',
@@ -674,7 +684,7 @@ export const messages = {
         },
         {
           dim: '引擎',
-          us: '✅ Claude + Codex / DeepSeek / Kimi / Ollama（BYOK）',
+          us: '✅ Claude + Codex / DeepSeek / GLM / Kimi / Ollama（BYOK）',
           official: '仅 Claude',
           opcode: '仅 Claude',
         },

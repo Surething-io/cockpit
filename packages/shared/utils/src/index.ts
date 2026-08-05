@@ -8,5 +8,6 @@ export * from './shortId';
 export * from './platform';
 export * from './paths';
 export * from './ollamaEnv';
+export * from './engineRegion';
 export * from './spawnEnv';
 export * from './htmlBashSdk';

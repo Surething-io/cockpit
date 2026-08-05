@@ -21,7 +21,7 @@
 一个定时任务带:
 
 - **项目** —— 跑在哪个项目的工作目录里。
-- **引擎** —— Claude / Codex / DeepSeek / Kimi / Ollama。
+- **引擎** —— Claude / Codex / DeepSeek / GLM / Kimi / Ollama。
 - **prompt** —— 发什么消息。单行可以、多行也行。
 - **调度** —— 上面三种之一。
 

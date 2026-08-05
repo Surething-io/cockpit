@@ -77,7 +77,7 @@ export const saveAgentSettings = (
 // ─────────────────────────────────────────────────────────
 
 /** Engines configured by API key rather than by a local CLI login. */
-export type ApiKeyEngine = "deepseek" | "kimi"
+export type ApiKeyEngine = "deepseek" | "kimi" | "glm"
 
 export interface EngineCredentialsInfo {
   hasKey: boolean
@@ -132,26 +132,33 @@ export const loadDeepseekBalance = (): Effect.Effect<
 > => httpJson<DeepseekBalanceInfo>("/api/deepseek/balance")
 
 // ─────────────────────────────────────────────────────────
-// /api/kimi/usage — remaining Kimi Code quota, server-proxied. Not a balance:
-// Kimi Code is a subscription, so this is a list of windows (the plan cycle plus a
-// rolling 5-hour cap), each with its own remaining/limit and reset time.
+// /api/<engine>/usage — remaining subscription allowance (kimi, glm), server-proxied.
+// Not a balance: these are plans, so the answer is a LIST of windows (a plan cycle
+// plus a rolling short one), each with its own remaining/limit and reset time.
+// DeepSeek is deliberately not here — it sells prepaid credit, see loadDeepseekBalance.
 // ─────────────────────────────────────────────────────────
 
-export interface KimiQuotaWindow {
-  /** 'plan' for the subscription cycle, else a duration like '5h'. */
+/** Engines that report a plan allowance rather than a currency balance. */
+export type QuotaEngine = "kimi" | "glm"
+
+export interface EngineQuotaWindow {
+  /** 'plan' for the subscription cycle, else a duration like '5h' / '1w'. */
   label: string
   limit: number | null
   remaining: number | null
   resetTime: string | null
 }
 
-export interface KimiUsageInfo {
-  membership: string
-  windows: KimiQuotaWindow[]
+export interface EngineQuotaInfo {
+  /** Plan tier as the provider names it, e.g. 'TRIAL', 'lite'. May be ''. */
+  tier: string
+  windows: EngineQuotaWindow[]
 }
 
-export const loadKimiUsage = (): Effect.Effect<KimiUsageInfo, AppError> =>
-  httpJson<KimiUsageInfo>("/api/kimi/usage")
+export const loadEngineQuota = (
+  engine: QuotaEngine
+): Effect.Effect<EngineQuotaInfo, AppError> =>
+  httpJson<EngineQuotaInfo>(`/api/${engine}/usage`)
 
 // ─────────────────────────────────────────────────────────
 // /api/ollama/config — Ollama connection config (baseUrl + apiKey), stored

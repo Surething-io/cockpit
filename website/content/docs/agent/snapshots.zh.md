@@ -31,7 +31,7 @@ Cockpit 在 `<数据目录>/snapshots/`（默认 `~/.cockpit/snapshots/`）下�
 - 项目自己的 `.git` **完全不被触碰** —— 影子仓库有独立的对象存储，只读取你的工作区。
 - 继承项目的 `.gitignore`，`node_modules/`、构建产物等永远不会进快照。常见敏感文件（`.env*`、`*.pem`、SSH 密钥）即使项目没有 `.gitignore` 也会被内置排除。
 - 一切都在**本地**。快照永远不会离开你的机器。
-- 覆盖全部引擎 —— Claude、Codex、DeepSeek、Kimi、Ollama —— 快照挂在所有引擎工具事件的唯一必经路径上。
+- 覆盖全部引擎 —— Claude、Codex、DeepSeek、GLM、Kimi、Ollama —— 快照挂在所有引擎工具事件的唯一必经路径上。
 - 只读工具（`Read`、`Grep`、联网搜索等）直接跳过；没改任何文件的调用不会产生条目。
 
 ## 保留与磁盘占用

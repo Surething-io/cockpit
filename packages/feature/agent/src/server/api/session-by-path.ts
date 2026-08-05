@@ -253,7 +253,7 @@ export const POST = handler((req) =>
       );
     }
 
-    // Resolve session file across 6 engines (claude/claude2/deepseek/codex/kimi/ollama)
+    // Resolve session file across 7 engines (claude/claude2/deepseek/codex/kimi/glm/ollama)
     const resolved = yield* Effect.sync(() => resolveSessionPath(cwd, sessionId));
     if (!resolved) {
       return yield* Effect.fail(
@@ -354,7 +354,7 @@ export const POST = handler((req) =>
     const parseResult = yield* Effect.tryPromise({
       try: async () => {
         if (engine === 'codex') return parseCodexTranscriptFile(sessionPath);
-        // Everything else (claude/claude2/ollama/deepseek/kimi) writes Claude-style
+        // Everything else (claude/claude2/ollama/deepseek/kimi/glm) writes Claude-style
         // transcripts, in both SDK and Built-in Agent mode, so one parser covers them.
         // ollama has done so since v1.0.186; the AI SDK ModelMessage legacy fallback
         // (v1.0.184–185 only) was removed.
@@ -376,12 +376,12 @@ export const POST = handler((req) =>
       hasMore,
       fingerprint,
       // Authoritative engine for this session, resolved by file location across
-      // all 6 engines. Clients use this to send on the session's native engine —
+      // all 7 engines. Clients use this to send on the session's native engine —
       // more reliable than the optional global-state engine field, which is only
       // written for sessions that were open as a tab.
       engine,
-      // Authoritative execution mode where the store proves it (deepseek/kimi sdk
-      // vs builtin); omitted when it doesn't (see resolveSessionPath).
+      // Authoritative execution mode where the store proves it (deepseek/kimi/glm
+      // sdk vs builtin); omitted when it doesn't (see resolveSessionPath).
       mode,
     });
   })

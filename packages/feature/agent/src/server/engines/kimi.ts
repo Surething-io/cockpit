@@ -42,8 +42,7 @@ function kimiWireModel(model: string): string {
 export const kimiProvider: AnthropicCompatProvider = {
   name: 'kimi',
   label: 'Kimi',
-  anthropicBaseUrl: KIMI_BASE_URL,
-  openAiBaseUrl: KIMI_OPENAI_BASE_URL,
+  endpoints: { anthropicBaseUrl: KIMI_BASE_URL, openAiBaseUrl: KIMI_OPENAI_BASE_URL },
   configDir: KIMI_DIR,
   defaultModel: DEFAULT_MODEL,
   apiKey: kimiApiKey,

@@ -2,12 +2,15 @@
  * SessionCleanupLive -- retention sweep for Built-in Agent chat transcripts.
  *
  * Scope: ONLY the Built-in Agent stores (`BUILTIN_SESSION_DIR_NAMES` under
- * `<cockpitDir>/`: ollama-sessions, deepseek-sessions, kimi-sessions). These are
- * the stores cockpit writes itself (via appendFileSync) with no cleanup. Every
- * other engine's sessions are cleaned by their own external CLI / Agent SDK:
- *   - claude / claude2     -> ~/.claude(2)/projects (Claude CLI cleanupPeriodDays)
- *   - deepseek / kimi (SDK) -> ~/.cockpit/<engine>/projects (Claude Agent SDK)
- *   - codex                -> ~/.codex (external CLI)
+ * `<cockpitDir>/`: ollama-sessions, deepseek-sessions, kimi-sessions,
+ * glm-sessions). The roots are derived from that list, so a new built-in engine
+ * is swept as soon as it registers its dir name in paths.ts — nothing to add
+ * here. These are the stores cockpit writes itself (via appendFileSync) with no
+ * cleanup. Every other engine's sessions are cleaned by their own external CLI /
+ * Agent SDK:
+ *   - claude / claude2            -> ~/.claude(2)/projects (Claude CLI cleanupPeriodDays)
+ *   - deepseek / kimi / glm (SDK) -> ~/.cockpit/<engine>/projects (Claude Agent SDK)
+ *   - codex                       -> ~/.codex (external CLI)
  * so this sweep deliberately never touches them.
  *
  * On-disk layout (one dir per project cwd, one file per session):

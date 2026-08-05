@@ -26,7 +26,7 @@
 
 ---
 
-> **OpenCockpit 是开源的 Claude Code GUI** —— 贴合研发全流程的 IDE 式工作台，也是你想接入的任何 Agent 的统一画布。多项目 Claude 会话开箱即用；想用 **Codex、DeepSeek、Kimi 或本地 Ollama**？直接新开一个 tab。内置终端、Chrome 自动化、PostgreSQL / MySQL / Redis 气泡、代码评审与斜杠模式 —— 全部本地。Web client-server 架构：**自托管到共享开发机，全队一起飞。**
+> **OpenCockpit 是开源的 Claude Code GUI** —— 贴合研发全流程的 IDE 式工作台，也是你想接入的任何 Agent 的统一画布。多项目 Claude 会话开箱即用；想用 **Codex、DeepSeek、GLM、Kimi 或本地 Ollama**？直接新开一个 tab。内置终端、Chrome 自动化、PostgreSQL / MySQL / Redis 气泡、代码评审与斜杠模式 —— 全部本地。Web client-server 架构：**自托管到共享开发机，全队一起飞。**
 
 https://github.com/user-attachments/assets/18f1a5dc-64f3-4ff6-b9fc-9cd08181fbb8
 
@@ -42,7 +42,7 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 
 | 裸用 Claude Code 的痛 | Cockpit 的解法 |
 |---|---|
-| 只能用一个模型 | **5 个引擎按 tab 并排**：Claude（默认）、Codex、DeepSeek、Kimi、本地 Ollama —— 每个 tab 独立会话 |
+| 只能用一个模型 | **6 个引擎按 tab 并排**：Claude（默认）、Codex、DeepSeek、GLM、Kimi、本地 Ollama —— 每个 tab 独立会话 |
 | 一次只能开一个会话，3+ 项目就乱 | **多项目标签页**、并发 Agent 会话、红点收件箱、桌面通知 |
 | 图片附件麻烦 | 拖拽 / 粘贴图片直接进对话 |
 | "我昨天调的那个 bug 在哪？" | Cmd+K 跨项目会话浏览，会话固定 / 分叉 |
@@ -51,7 +51,7 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 | AI 输出审阅低效 | **局域网共享评审页**、行级评论、任意评论可回喂给 AI |
 | 每天写一遍"做 X 但不要动代码" | **斜杠模式** `/qa /fx /ex /go /cg /cc /cr` + 通过 Skills 侧边栏自定义 `SKILL.md` |
 | 没有自动化触发器 | 一次性 / 间隔 / **Cron** **定时任务** |
-| 担心"云端中转" | **完全本地**。无遥测，DeepSeek / Kimi 的 API Key 仅存在本机 `~/.cockpit/<引擎>/credentials.json` |
+| 担心"云端中转" | **完全本地**。无遥测，DeepSeek / GLM / Kimi 的 API Key 仅存在本机 `~/.cockpit/<引擎>/credentials.json` |
 
 ### 横向对比
 
@@ -62,7 +62,7 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 | 定位 | **贴合研发全流程的 IDE 式工作台** | Agent 会话伴侣 | Claude Code 会话管理器 |
 | 架构 | ✅ **Web client-server** —— 部署到共享开发机，全队一起飞，各占各的项目 / worktree | 单机桌面应用 | 单机桌面应用 |
 | 开源 | ✅ MIT | ❌ 闭源 | ✅ AGPL-3.0 |
-| 引擎 | ✅ **Claude + Codex / DeepSeek / Kimi / Ollama**（BYOK） | 仅 Claude | 仅 Claude |
+| 引擎 | ✅ **Claude + Codex / DeepSeek / GLM / Kimi / Ollama**（BYOK） | 仅 Claude | 仅 Claude |
 | 多项目并行会话 | ✅ | ✅ | ✅ |
 | Agent 可驱动浏览器 & 数据库（Chrome / Postgres / MySQL / Redis） | ✅ 智能气泡 | ❌ 仅只读预览面板 | ❌ |
 | 局域网共享评审页 | ✅ | ❌ | ❌ |
@@ -86,6 +86,7 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 - **Claude** *(默认)* —— 完整官方 Agent SDK；`claude` CLI 已配置即零额外设置
 - **Codex** —— 直接读 `~/.codex` 配置，聊天 / Shell / 气泡都一样
 - **DeepSeek** —— 通过 Claude SDK 走 Anthropic 兼容端点；粘 Key，选 `v4-pro` 或 `v4-flash`
+- **GLM** *(智谱 / BigModel)* —— 粘 BigModel Key，模型选择器实时列出可用模型（默认 `glm-5.2`），还能一键**查询 Coding Plan 额度**；一个 Key 两套接入点，用 **Region** 在 `open.bigmodel.cn` 和 `api.z.ai` 之间切
 - **Kimi** *(Moonshot)* —— 粘 Kimi Code Key，模型选择器实时列出可用模型（`kimi-for-coding`、`k3` …），还能一键**查询额度**；不再需要 `kimi` CLI
 - **Ollama** —— 自动拉起守护进程；从聊天头部下拉任意已 pull 的模型；完全离线
 - 每个引擎跑在**独立 tab，独立会话历史**；新建 tab 时下拉切换
@@ -177,10 +178,11 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 
 - **Codex** —— 执行一次 `codex login` 即可生成 `~/.codex` 配置
 - **DeepSeek** —— 到 [api-docs.deepseek.com](https://api-docs.deepseek.com/) 申请 API Key，在引擎选择器里粘贴
+- **GLM（智谱 / BigModel）** —— 到 [bigmodel.cn/apikey/platform](https://bigmodel.cn/apikey/platform) 申请 API Key（形如 `<id>.<secret>`），粘进聊天头部模型选择器的 **API Key** 输入框。同一个 Key 在两套接入点都能用，所以 **Region**（`open.bigmodel.cn` / `api.z.ai`）只是路由：默认跟着界面语言走，也能在选择器里手动覆盖。
 - **Kimi (Moonshot)** —— 到 [kimi.com/code/console](https://www.kimi.com/code/console) 申请 **Kimi Code** API Key（`sk-kimi-…`），粘进聊天头部模型选择器的 **API Key** 输入框。*（`platform.moonshot.cn` 的开放平台 Key 是另一个产品，在这里用不了。）* 不再需要 `kimi` CLI。
 - **Ollama** —— 安装 [ollama.com](https://ollama.com/) 并 `ollama pull <model>`；Cockpit 会自动拉起守护进程
 
-> API Key 仅保存在本机，每个引擎一个文件：`~/.cockpit/<引擎>/credentials.json`（例如 `~/.cockpit/kimi/credentials.json`），**不写进** `settings.json`。无云端中转。
+> API Key 仅保存在本机，每个引擎一个文件：`~/.cockpit/<引擎>/credentials.json`（例如 `~/.cockpit/kimi/credentials.json`、`~/.cockpit/glm/credentials.json`），**不写进** `settings.json`。无云端中转。
 
 ## 安装
 

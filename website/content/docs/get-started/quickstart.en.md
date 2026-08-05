@@ -206,6 +206,6 @@ rm -rf ~/.cockpit
 
 ## What's next
 
-- [Engines Overview](/en/docs/agent/engines/) — add Codex, DeepSeek, Kimi, or Ollama as alternative tabs
+- [Engines Overview](/en/docs/agent/engines/) — add Codex, DeepSeek, GLM, Kimi, or Ollama as alternative tabs
 - [Skills](/en/docs/agent/skills/) — what `/qa /fx /ex /go /cg /cc /cr` actually do
 - [CLI Reference](/en/docs/reference/cli/) — drive bubbles from external scripts

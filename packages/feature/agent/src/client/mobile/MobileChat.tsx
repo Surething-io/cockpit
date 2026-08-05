@@ -21,6 +21,7 @@ interface ResolvedRun {
   ollamaModel?: string;
   deepseekModel?: EngineModelId;
   kimiModel?: EngineModelId;
+  glmModel?: EngineModelId;
   chatMode?: ChatMode;
 }
 
@@ -62,6 +63,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
           ollamaModels?: Record<string, string>;
           deepseekModels?: Record<string, string>;
           kimiModels?: Record<string, string>;
+          glmModels?: Record<string, string>;
           chatModes?: Record<string, string>;
         };
       },
@@ -75,6 +77,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
           ollamaModel: d.ollamaModels?.[initialSessionId],
           deepseekModel: d.deepseekModels?.[initialSessionId] as EngineModelId | undefined,
           kimiModel: d.kimiModels?.[initialSessionId] as EngineModelId | undefined,
+          glmModel: d.glmModels?.[initialSessionId] as EngineModelId | undefined,
           chatMode: d.chatModes?.[initialSessionId] as ChatMode | undefined,
         });
       }
@@ -131,7 +134,12 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     chatMode,
     planMode: false,
     ollamaModel: resolved.ollamaModel,
-    engineModel: engine === 'kimi' ? resolved.kimiModel : resolved.deepseekModel,
+    engineModel:
+      engine === 'kimi'
+        ? resolved.kimiModel
+        : engine === 'glm'
+          ? resolved.glmModel
+          : resolved.deepseekModel,
     onSessionId: setSessionId,
     onFetchTitle: noop,
     // Mirrors Chat.tsx: when a run this screen ORIGINATED ends, reconcile from disk so

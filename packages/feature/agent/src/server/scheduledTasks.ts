@@ -4,7 +4,8 @@ import {
   getSessionFilePath,
   getClaudeSessionPath, getClaude2SessionPath, getOllamaSessionPath,
   getDeepseekSessionPath, getDeepseekBuiltinSessionPath,
-  getKimiSessionPath, getKimiBuiltinSessionPath, findCodexSessionPath,
+  getKimiSessionPath, getKimiBuiltinSessionPath,
+  getGlmSessionPath, getGlmBuiltinSessionPath, findCodexSessionPath,
 } from '@cockpit/shared-utils';
 import { updateGlobalState } from './state/globalState';
 import { isRunActive, getRunSnapshot, getRunSessionId, requestStop } from './sessionRunHub';
@@ -25,7 +26,7 @@ export interface ScheduledTask {
   tabId: string;
   sessionId: string;       // chat session id
   engine?: string;         // ChatEngine at creation; absent = 'claude' (pre-persistence tasks)
-  model?: string;          // ollama/deepseek/kimi: model name snapshot at creation
+  model?: string;          // ollama/deepseek/kimi/glm: model name snapshot at creation
   language?: string;       // UI language snapshot at creation; picks the taskFile prompt wording
   message: string;         // mutually exclusive with taskFile — exactly one is set
   taskFile?: string;       // absolute path to a file describing the task; referenced, never inlined
@@ -148,7 +149,7 @@ export function getNextCronTime(cronExpr: string, after: Date = new Date()): num
 
 /**
  * Single execution path for ALL engines (claude / claude2 / ollama / codex / kimi /
- * deepseek). Since #10 ws-converge every engine's /api/chat[/<engine>] route only STARTS a
+ * deepseek / glm). Since #10 ws-converge every engine's /api/chat[/<engine>] route only STARTS a
  * detached run and returns its runKey as JSON (no SSE to drain); the route owns session
  * persistence, 'loading'/'unread' global state, the run registry and the 409 concurrent-run
  * guard. We POST to start the run, then poll the registry until it leaves "running".
@@ -247,14 +248,23 @@ const dispatchEngineMessageEff = (
 const BUILTIN_LOOP_PATHS: Record<string, (cwd: string, sessionId: string) => string> = {
   deepseek: getDeepseekBuiltinSessionPath,
   kimi: getKimiBuiltinSessionPath,
+  glm: getGlmBuiltinSessionPath,
+};
+
+/** Claude Agent SDK transcript path for those same engines, keyed the same way so a new
+ *  two-store engine is two map entries rather than another `if (engine === ...)` branch. */
+const SDK_STORE_PATHS: Record<string, (cwd: string, sessionId: string) => string> = {
+  deepseek: getDeepseekSessionPath,
+  kimi: getKimiSessionPath,
+  glm: getGlmSessionPath,
 };
 
 /**
  * Does this task's session live in its engine's Built-in Agent store?
  *
- * deepseek and kimi each run the same two loops (Claude Agent SDK / our built-in agent) and
- * write a different store per mode, so the store IS the answer — the task never snapshots a
- * mode. ollama is absent on purpose: it only ever runs the built-in loop, so it needs no
+ * deepseek, kimi and glm each run the same two loops (Claude Agent SDK / our built-in agent)
+ * and write a different store per mode, so the store IS the answer — the task never snapshots
+ * a mode. ollama is absent on purpose: it only ever runs the built-in loop, so it needs no
  * probe (see readSessionNoHistory, which special-cases it).
  */
 function isBuiltinLoopSession(engine: string, task: ScheduledTask): boolean {
@@ -278,7 +288,7 @@ interface ProjectSessionState {
  *
  * Gated on the engines that actually honor it, mirroring the client's `canDropHistory`:
  * the built-in agent loop reads params.noHistory directly (ollama always runs that loop,
- * deepseek/kimi only in builtin mode), and claude/claude2 honor it in the SDK loop by stashing
+ * deepseek/kimi/glm only in builtin mode), and claude/claude2 honor it in the SDK loop by stashing
  * the transcript for the turn. Scheduled runs always take the SDK path — dispatch never
  * passes mode:'pty' — so the PTY exclusion cannot apply here. Passing the flag to an engine
  * that ignores it would read as support that isn't there.
@@ -302,11 +312,11 @@ export async function readSessionNoHistory(
 function sessionPathFor(engine: string, task: ScheduledTask): string | null {
   if (engine === 'claude2') return getClaude2SessionPath(task.cwd, task.sessionId);
   if (engine === 'ollama') return getOllamaSessionPath(task.cwd, task.sessionId);
-  // DeepSeek/Kimi have one store per execution mode; the built-in one is checked first so a
-  // built-in session isn't reported missing (which would restart it as a fresh SDK run).
+  // DeepSeek/Kimi/GLM have one store per execution mode; the built-in one is checked first so
+  // a built-in session isn't reported missing (which would restart it as a fresh SDK run).
   if (isBuiltinLoopSession(engine, task)) return BUILTIN_LOOP_PATHS[engine](task.cwd, task.sessionId);
-  if (engine === 'deepseek') return getDeepseekSessionPath(task.cwd, task.sessionId);
-  if (engine === 'kimi') return getKimiSessionPath(task.cwd, task.sessionId);
+  const sdkStorePath = SDK_STORE_PATHS[engine];
+  if (sdkStorePath) return sdkStorePath(task.cwd, task.sessionId);
   if (engine === 'codex') return findCodexSessionPath(task.sessionId);
   return getClaudeSessionPath(task.cwd, task.sessionId);
 }
@@ -322,7 +332,7 @@ export const sendChatMessageEff = (task: ScheduledTask): Effect.Effect<boolean, 
   Effect.gen(function* () {
     const engine = task.engine ?? 'claude';
 
-    if (!['claude', 'claude2', 'ollama', 'codex', 'kimi', 'deepseek'].includes(engine)) {
+    if (!['claude', 'claude2', 'ollama', 'codex', 'kimi', 'deepseek', 'glm'].includes(engine)) {
       return yield* Effect.fail(
         new AgentError({
           provider: 'claude',

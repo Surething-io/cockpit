@@ -203,6 +203,6 @@ rm -rf ~/.cockpit
 
 ## 下一步
 
-- [引擎概览](/zh/docs/agent/engines/) —— 接入 Codex / DeepSeek / Kimi / Ollama
+- [引擎概览](/zh/docs/agent/engines/) —— 接入 Codex / DeepSeek / GLM / Kimi / Ollama
 - [Skills](/zh/docs/agent/skills/) —— `/qa /fx /ex /go /cg /cc /cr` 到底干什么
 - [CLI 参考](/zh/docs/reference/cli/) —— 用外部脚本驱动气泡

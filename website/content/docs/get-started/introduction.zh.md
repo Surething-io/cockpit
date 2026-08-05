@@ -3,7 +3,7 @@ OpenCockpit 是 Claude Code 的开源 GUI —— 也是你后续想接入的任�
 ## 你能得到什么
 
 - **多项目并行会话。** 跨不同项目同时跑 5+ 个 agent 会话。每个会话有自己的 tab；结束时桌面会弹 toast 通知你。
-- **接入任意 agent。** Claude 开箱即用。Codex、DeepSeek、Kimi（月之暗面）、本地 Ollama 模型只需新开一个 tab —— 粘贴 API key（Ollama 连 key 都不要）。
+- **接入任意 agent。** Claude 开箱即用。Codex、DeepSeek、GLM（智谱）、Kimi（月之暗面）、本地 Ollama 模型只需新开一个 tab —— 粘贴 API key（Ollama 连 key 都不要）。
 - **不止于聊天。** 真实终端、Chrome 自动化、PostgreSQL / MySQL / Redis / Neo4j / Jupyter 气泡 —— 全部在同一个窗口里，agent 都能驱动。
 - **代码感知的导航。** LSP 跳转定义、函数调用图（Code Map）、让 AI 通过 HTTP 探索项目图的 `/cg` 斜杠命令。
 
@@ -13,7 +13,7 @@ Cockpit 整个 UI 就是三个并行渲染的面板。它们永远不卸载 —�
 
 | 面板 | 快捷键 | 作用 |
 |---|---|---|
-| **Agent** | `Cmd+1` | 多 tab 对话：Claude / Codex / DeepSeek / Kimi / Ollama |
+| **Agent** | `Cmd+1` | 多 tab 对话：Claude / Codex / DeepSeek / GLM / Kimi / Ollama |
 | **Explorer** | `Cmd+2` | 文件浏览、代码查看、Git、LSP、代码图 |
 | **Console** | `Cmd+3` | 终端 + 浏览器 + 数据库气泡，全部命令驱动 |
 
@@ -21,7 +21,7 @@ Cockpit 整个 UI 就是三个并行渲染的面板。它们永远不卸载 —�
 
 聊天界面。每个 tab 是一个独立会话，对接你选的引擎。
 
-- **引擎。** Claude / Codex / DeepSeek / Kimi（月之暗面）/ Ollama —— 每 tab 独立切换。Claude 开箱即用；其它一次性配 key（Ollama 连 key 都不用）。
+- **引擎。** Claude / Codex / DeepSeek / GLM（智谱）/ Kimi（月之暗面）/ Ollama —— 每 tab 独立切换。Claude 开箱即用；其它一次性配 key（Ollama 连 key 都不用）。
 - **会话。** 把会话固定到侧栏、fork 一份分叉对话、通过侧栏 sessions 图标打开 Session Browser 跨项目搜索。
 - **AI 模式斜杠命令。** 在聊天输入框打 `/` 弹出**六个**模式菜单，改变 AI 接下来的工作方式：`/qa`（改代码前先澄清需求）、`/fx`（bug 证据链，只分析）、`/ex`（深度结构化分析）、`/go`（落地模式 —— MVP 分阶段实现 + 自验证）、`/cg`（CodeGraph 探索）、`/cc`（Cockpit CLI 端到端验证）。通过 `SKILL.md` 安装的 Skills 也在同一菜单里以 `/skill-name` 出现。
 - **Shell 前缀。** 行首 `!` 表示输入是 shell 命令，输出会拼回 prompt。
@@ -95,10 +95,10 @@ Cockpit 整个 UI 就是三个并行渲染的面板。它们永远不卸载 —�
 
 - **不是托管产品。** 一切都在本地跑，自带 key。没有 SaaS 套餐。
 - **不是代码编辑器。** Cockpit 查看和评审代码，但深度编辑体验属于 VS Code / Cursor / nvim。它跟你现有编辑器无缝共存。
-- **不是 Claude 套壳。** Claude 是默认值，但每个面板都不绑定模型。代码库已经内置了五种模型适配。
+- **不是 Claude 套壳。** Claude 是默认值，但每个面板都不绑定模型。代码库已经内置了六种模型适配。
 
 ## 下一步
 
 - [快速开始](/zh/docs/get-started/quickstart/) —— 安装、启动、三面板端到端实战
 - [Skills](/zh/docs/agent/skills/) —— 大多数用户希望自己第一篇就读到的页
-- [引擎概览](/zh/docs/agent/engines/) —— 接入 Codex / DeepSeek / Kimi / Ollama
+- [引擎概览](/zh/docs/agent/engines/) —— 接入 Codex / DeepSeek / GLM / Kimi / Ollama

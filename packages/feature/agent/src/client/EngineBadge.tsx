@@ -21,6 +21,8 @@ const ENGINE_CLASS: Record<string, string> = {
   ollama: 'bg-blue-500/15 text-blue-11',
   codex: 'bg-green-500/15 text-green-11',
   kimi: 'bg-purple-500/15 text-purple-11',
+  // Amber — matches the GL chip in TabBar; the same session shows both.
+  glm: 'bg-amber-500/15 text-amber-400',
   // Matches the DS badge in TabBar; the -11 scale has no sky token.
   deepseek: 'bg-sky-500/15 text-sky-400',
 };

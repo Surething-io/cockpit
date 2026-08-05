@@ -1,10 +1,11 @@
-Cockpit 开箱支持 5 个 AI 引擎(再加一个 **Claude 2** 入口,共 6 个 tab 选项)。每个 Agent tab 选一个,可以跨 tab 混用,不用重启 —— 按本地是否有模型、账号在谁那、当前任务哪个最擅长来挑。
+Cockpit 开箱支持 6 个 AI 引擎(再加一个 **Claude 2** 入口,共 7 个 tab 选项)。每个 Agent tab 选一个,可以跨 tab 混用,不用重启 —— 按本地是否有模型、账号在谁那、当前任务哪个最擅长来挑。
 
 | 引擎 | 登录方式 | 何时用 |
 |---|---|---|
 | [Claude](#claude) | Anthropic `claude` CLI 登录(或 **Claude 2** 用第二个账号) | 默认。综合能力最强。 |
 | [Codex](#codex) | `codex` CLI 登录 | 已经有 Codex / GPT 订阅时。 |
 | [DeepSeek](#deepseek) | 在 DeepSeek 选择器里粘 API key | 推理强、便宜。 |
+| [GLM](#glm) | 在 GLM 选择器里粘 API key | 智谱的模型,国内站和国际站都能走。 |
 | [Kimi](#kimi) | 在 Kimi 选择器里粘 API key | 长上下文,国内多用。 |
 | [Ollama](#ollama) | 不用 —— 本地跑 | 离线、敏感数据、自定义模型。 |
 
@@ -19,6 +20,7 @@ Cockpit 开箱支持 5 个 AI 引擎(再加一个 **Claude 2** 入口,共 6 个 
 | **Claude** | 终端跑一次 `claude` CLI 登录 | 默认。最强通用模型。 | Anthropic |
 | **Codex** | 终端跑一次 `codex` CLI 登录 | 已有 Codex / GPT 订阅时。 | OpenAI |
 | **DeepSeek** | 在引擎头部的 DeepSeek 选择器里粘 API key | 推理强、价格低。 | DeepSeek |
+| **GLM** | 在引擎头部的 GLM 选择器里粘 API key | 智谱的模型,国内站**或**国际站两套接入点。 | 智谱 / BigModel(按量付费或 Coding Plan) |
 | **Kimi** | 在引擎头部的 Kimi 选择器里粘 API key | 长上下文,国内主用。 | 月之暗面(Kimi Code 订阅) |
 | **Ollama** | 不需要 —— 本地 | 离线、敏感数据、自定义模型。 | 没人(你自己的电脑) |
 
@@ -28,28 +30,29 @@ Cockpit 开箱支持 5 个 AI 引擎(再加一个 **Claude 2** 入口,共 6 个 
 
 每个 Agent tab 头部有引擎选择器。新建 tab 时引擎默认是 **Claude**。给已有 tab 换引擎会开新会话 —— Claude 历史无法带到 Codex tab,因为每个引擎都有自己的对话格式。
 
-可以同时开比如 5 个 tab:
+可以同时开比如 6 个 tab:
 
 - Tab 1:Claude 跑 `~/code/backend`
 - Tab 2:DeepSeek 跑同项目做便宜的二次意见
 - Tab 3:Codex 跑另一个项目
 - Tab 4:Kimi 跑笔记本,吃它的长上下文窗口
-- Tab 5:Ollama 跑本地模型,离线写草稿
+- Tab 5:GLM 跑脚本,记在你的 BigModel Coding Plan 上
+- Tab 6:Ollama 跑本地模型,离线写草稿
 
 Cockpit 的会话浏览器(侧栏顶部网格图标)能看到全部。
 
 ### 各引擎能做什么
 
-|  | Claude | Codex | DeepSeek | Kimi | Ollama |
-|---|---|---|---|---|---|
-| 能读 & 改你的文件 | ✅ | ✅ | ✅ | ✅ | ⚠️ 看模型 |
-| 接受图片附件 | ✅ | ✅ | ✅ | ✅(仅 SDK 模式) | ❌ |
-| 流式输出(边想边说) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 离线可用 | ❌ | ❌ | ❌ | ❌ | ✅ |
-| 多模型变体可选 | 固定(最新版) | 固定 | flash / pro | 按你的 Kimi 套餐实时拉取 | 你拉过的任意模型 |
-| UI 里显示实时成本 | ✅ | — | ✅(估算) | 显示额度而非金额 —— 见[查询额度](#查询额度) | 免费 |
+|  | Claude | Codex | DeepSeek | GLM | Kimi | Ollama |
+|---|---|---|---|---|---|---|
+| 能读 & 改你的文件 | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ 看模型 |
+| 接受图片附件 | ✅ | ✅ | ✅ | ✅(仅 SDK 模式) | ✅(仅 SDK 模式) | ❌ |
+| 流式输出(边想边说) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 离线可用 | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| 多模型变体可选 | 固定(最新版) | 固定 | flash / pro | 从 GLM 接口实时拉取 | 按你的 Kimi 套餐实时拉取 | 你拉过的任意模型 |
+| UI 里显示实时成本 | ✅ | — | ✅(估算) | 显示额度而非金额 —— 见[查询额度](#查询-coding-plan-额度) | 显示额度而非金额 —— 见[查询额度](#查询额度) | 免费 |
 
-> 图片支持是引擎级。**Ollama** 收到图片附件会**静默丢弃**(不报错,但 AI 看不到)。**Kimi** 在默认的 *Claude Agent SDK* 模式下能收图片;**Built-in Agent** 执行模式对所有引擎都不支持图片 —— 见[执行模式](#执行模式claude-agent-sdk-vs-built-in-agent)。
+> 图片支持是引擎级。**Ollama** 收到图片附件会**静默丢弃**(不报错,但 AI 看不到)。**GLM** 和 **Kimi** 在默认的 *Claude Agent SDK* 模式下能收图片;**Built-in Agent** 执行模式对所有引擎都不支持图片 —— 见[执行模式](#执行模式claude-agent-sdk-vs-built-in-agent)。
 
 ### 各引擎接入
 
@@ -58,6 +61,7 @@ Cockpit 的会话浏览器(侧栏顶部网格图标)能看到全部。
 - **Claude** —— 在终端跑一次 `claude` 按提示登录。Cockpit 自动复用你的 Claude 登录态。
 - **Codex** —— 装 OpenAI 的 `codex` CLI 并用它登录一次。Cockpit 复用同一份登录态。
 - **DeepSeek** —— 从 [platform.deepseek.com](https://platform.deepseek.com/) 拿 key,**在 Agent tab 头部的 DeepSeek 选择器里粘**(不是全局 Settings)。然后在同一个选择器里选模型变体。
+- **GLM** —— 从 [BigModel 控制台](https://bigmodel.cn/apikey/platform) 拿 key,**在 Agent tab 头部的 GLM 选择器里粘**。然后在同一个选择器里选模型,顺手确认一下 **Region(区域)**那一行 —— 见[选择区域](#选择区域)。
 - **Kimi** —— 从 [Kimi Code 控制台](https://www.kimi.com/code/console) 拿 key,**在 Agent tab 头部的 Kimi 选择器里粘**。然后在同一个选择器里选模型。
 - **Ollama** —— 装 [Ollama](https://ollama.com/) 并拉至少一个模型(`ollama pull llama3.1`)。新建 Ollama tab 时,模型选择器会列出你拉过的所有模型。
 
@@ -163,7 +167,7 @@ Cockpit 里不用粘任何东西 —— Cockpit 复用你机器上 `codex` 已�
 
 ## DeepSeek
 
-DeepSeek 是 Cockpit 里最便宜的云端引擎。跟 Claude / Codex 不同(那些复用 CLI 登录态),DeepSeek 只走 API key —— 在 tab 头部的 DeepSeek 选择器里粘一个 key 就完事。Kimi 的接入方式跟它一样。
+DeepSeek 是 Cockpit 里最便宜的云端引擎。跟 Claude / Codex 不同(那些复用 CLI 登录态),DeepSeek 只走 API key —— 在 tab 头部的 DeepSeek 选择器里粘一个 key 就完事。GLM 和 Kimi 的接入方式跟它一样。
 
 底层走 DeepSeek 的 [Anthropic 兼容端点](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api),通过 Claude Agent SDK 路由请求,所以工具调用、流式、上下文管理跟 Claude 一样。
 
@@ -200,6 +204,100 @@ DeepSeek 是 Cockpit 里最便宜的云端引擎。跟 Claude / Codex 不同(那
 - **"401 / 未授权"** —— key 错或失效,回选择器再粘一次,留心别夹空格。
 - **回复慢 / 卡** —— `pro` 本来就比 `flash` 慢;不是真的需要推理就换回 `flash`。
 - **成本估算涨得比预期快** —— `pro` 比 `flash` 贵好几倍;看 token 条能发现意外用了 `pro` 的会话。
+
+## GLM
+
+GLM 是智谱(Zhipu AI)的模型家族,通过 **BigModel** 平台售卖。结构上它跟 [DeepSeek](#deepseek)、[Kimi](#kimi) 是同一类引擎:只走 API key,有实时模型列表、额度查询,会话可 fork。
+
+GLM 有一件别的引擎都没有的事:它有**两套接入点** —— 一套在中国大陆,一套在国际站,选择器里多出一行 **Region(区域)**让你切。两边用同一个 key,见[选择区域](#选择区域)。
+
+### 接入
+
+1. 从 [BigModel 控制台](https://bigmodel.cn/apikey/platform) 拿一个 API key。GLM 的 key 是用点号分开的两段 `<id>.<secret>`,没有 `sk-` 前缀。
+
+2. 在 Cockpit 打开一个新 tab、在引擎菜单选 **GLM**,然后**点 tab 头部的模型选择器** → 把 key 粘进 **API Key** 输入框 → 保存(key 存在它自己的凭证文件 `~/.cockpit/glm/credentials.json` 里,**不在** `~/.cockpit/settings.json`,也不在 Cockpit 全局 Settings 弹窗里)。
+
+3. 在同一个选择器里挑模型。key 一存下,Cockpit 就按你的账号去拉模型列表。
+
+完事。key 永远只待在本机。
+
+### 选模型
+
+模型列表是拿你的 key **实时**从 GLM 的 `GET /models` 拉的,Cockpit 没有写死任何东西,所以上新的模型会自己冒出来。写这份文档时接口返回 8 个:
+
+`glm-4.5` · `glm-4.5-air` · `glm-4.6` · `glm-4.7` · `glm-5` · `glm-5-turbo` · `glm-5.1` · `glm-5.2`
+
+新建 GLM tab 默认用 **`glm-5.2`**。
+
+> **GLM 不提供任何单模型元信息。** 它的模型列表只有裸 id —— 没有展示名,也没有上下文窗口。所以选择器里只显示 id,Cockpit 也不给 GLM tab 设上下文窗口(Kimi tab 有,因为 Kimi 会报)。这是供应商接口的限制,不是 Cockpit 少做了什么;Agent SDK 会退回自己的默认窗口。
+
+> **`glm-5.2[1m]` 不支持。** BigModel 的 Claude Code 文档里提到过这个表示 100 万 token 上下文的 `[1m]` 后缀。Cockpit 用不了:Anthropic 兼容端点会用 HTTP 400 *"模型不存在"* 拒掉这个 id —— 两个账号上都验过,其中一个还带 Coding Plan。用裸的 `glm-5.2`。
+
+### 选择区域
+
+GLM 有两套接入点,而且**同一个 key 在两边都能用**:在 `bigmodel.cn` 上签发的 key 在 `z.ai` 上一样能通过鉴权,查到的额度也完全一致。区域纯粹是路由问题。
+
+| 区域 | Anthropic 兼容(SDK 模式) | OpenAI 兼容(Built-in Agent 模式) |
+|---|---|---|
+| **中国大陆** | `https://open.bigmodel.cn/api/anthropic` | `https://open.bigmodel.cn/api/coding/paas/v4` |
+| **International**(国际站) | `https://api.z.ai/api/anthropic` | `https://api.z.ai/api/coding/paas/v4` |
+
+默认值来自你的 **Cockpit 界面语言**:English → 国际站,其它(包括"跟随系统")→ 中国大陆。想改就在 GLM 选择器的 **Region** 那一行覆盖,你选的优先,而且会记住。
+
+语言只是**给默认值定个初始档**,永远不会盖掉你自己选过的。这是刻意的:改一下界面语言不应该悄悄把你的 API 流量路由到另一个国家的服务器。如果你的语言和账号对不上,设一次区域就不用再管了。
+
+会话**不按区域分开存**。想切随时切 —— 已有的 GLM 对话照样能续,key 也不会失效。
+
+### 执行模式:SDK vs Built-in Agent
+
+GLM 选择器里有一个**执行模式(Execution Mode)**开关,跟 Kimi 一模一样。两个选项打的是不同的 GLM 端点,**各自存一套会话记录**。所以会话一旦有消息,模式就锁死了 —— 要换模式,新开一个 tab。
+
+| | **Claude Agent SDK**(默认) | **Built-in Agent** |
+|---|---|---|
+| 谁跑这个循环 | 官方 Claude Agent SDK,指向 GLM | Cockpit 自己的 agent 循环 |
+| 端点 | 当前区域的 Anthropic 兼容地址 | 当前区域的 OpenAI 兼容地址 |
+| 图片附件 | ✅ | ❌(这个模式下所有引擎都不支持图片) |
+| 会话落盘位置 | `~/.cockpit/glm/projects/<项目>/<会话>.jsonl` | `~/.cockpit/glm-sessions/<项目>/<会话>.jsonl` |
+
+没有特别理由就留在 **Claude Agent SDK** —— 图片、子 agent 以及 SDK 带来的其它东西都在这个模式下。
+
+### 查询 Coding Plan 额度
+
+GLM 的 **Coding Plan** 是订阅制,所以 GLM tab 在模型选择器旁边放的是**查询额度**按钮而不是金额。点一下,Cockpit 会读出两个窗口还剩多少:
+
+- 一个滚动的 **5 小时**窗口,以及
+- 一个**按周**的窗口。
+
+两个都以 `剩余/上限` 显示,前面带上你的套餐档位,比如 `lite · 5h 1990/2000 · 1w 4980/5000`。鼠标悬停能看到较长那个窗口的重置时间;某个窗口用完时会变红。按钮需要已保存的 key,而且不轮询 —— 只在你点的时候查一次。
+
+> **没有 Coding Plan 就查不到额度,这是正常状态。** 纯按量付费的 BigModel key 没有套餐额度可报,按钮会回一句 *"额度查询失败，请检查 API Key"*。聊天本身完全不受影响 —— 只是改成按 token 计费而已。按钮旁边的链接直达 [BigModel 用量页](https://bigmodel.cn/coding-plan/personal/usage),那里是真实数字。
+
+### 你能用到什么
+
+- **模型选择器**,从 GLM 接口实时拉取(见上)。
+- **区域切换** —— 大陆或国际站,同一个 key,会话不受影响。
+- Claude Agent SDK 模式下的**图片附件** —— `Cmd+V` 粘图片,GLM 能看到。PNG / JPEG / WEBP / GIF。
+- 流式回复。
+- 工具调用 —— GLM 能读文件、跑 shell 命令、改代码。
+- **Fork** —— 可以从任意消息 fork 一个 GLM 会话,跟 Claude 一样。
+- 跟其它引擎一样的[逐工具调用快照](/zh/docs/agent/snapshots/)。
+- 多 tab 会话,互相独立。
+
+### 你拿不到什么
+
+- **没有可信的美元成本显示。** token 条里出现的美元数字是 Agent SDK 自带价目表算的,不是 GLM 的账单。有 Coding Plan 就用**查询额度**,按量付费就去 BigModel 控制台看。
+- **选择器里没有上下文窗口和展示名** —— GLM 两样都不报。见[选模型](#选模型)下面那条说明。
+- **没有 `[1m]` 长上下文变体。** `glm-5.2[1m]` 会被 Cockpit 用的这个端点直接拒掉。
+- **Built-in Agent 模式下没有图片。** 只有图片没有文字的消息会被拒绝并提示 *"The built-in agent requires a text prompt"*;文字 + 图片的消息会正常回答,但图片被丢弃。
+
+### 常见问题
+
+- **选择器显示 "Set API key"** —— 还没存 key。注意是 **tab 头部的 GLM 选择器**,不是 Cockpit 的全局 Settings 弹窗。
+- **"Failed to load models — check the API key" / 401** —— key 错或失效。回 [BigModel 控制台](https://bigmodel.cn/apikey/platform) 重新复制一次,留心别夹空格;GLM 的 key 是完整的 `<id>.<secret>`,两段都要。
+- **HTTP 400 "模型不存在"** —— 这个模型 id 没对你的账号开放。最常见的是带 `[1m]` 后缀,那个 Cockpit 根本用不了;从列表里挑一个裸 id。
+- **额度查不到但聊天正常** —— 你的账号没有 Coding Plan。没坏,见[查询 Coding Plan 额度](#查询-coding-plan-额度)。
+- **连接慢或不稳** —— 可能连到了远的那一边。翻一下 **Region** 那行:国内账号一般走 `open.bigmodel.cn` 最快,人在境外的话同一个 key 走 `api.z.ai` 也行。切换是安全的,会话不会丢。
+- **粘进去的图片被忽略** —— 这个 tab 在 **Built-in Agent** 模式。新开一个 tab 用 **Claude Agent SDK** 模式(会话一旦有消息就不能改模式了)。
 
 ## Kimi
 

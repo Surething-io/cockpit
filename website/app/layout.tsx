@@ -6,7 +6,7 @@ const SITE_URL = 'https://opencockpit.dev';
 const DEFAULT_TITLE = 'OpenCockpit — The Open Claude Code GUI for Any Agent';
 // Kept under 160 chars so Google SERP doesn't truncate before the closing keywords.
 const DEFAULT_DESCRIPTION =
-  'Open-source Claude Code GUI — parallel AI coding. Multi-engine (Codex/DeepSeek/Kimi/Ollama), terminal, Chrome & DB bubbles, code graph. Local, MIT.';
+  'Open-source Claude Code GUI — parallel AI coding. Multi-engine (Codex/DeepSeek/GLM/Kimi/Ollama), terminal, Chrome & DB bubbles, code graph. Local, MIT.';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -48,6 +48,8 @@ export const metadata: Metadata = {
     // Per-engine long-tail (each engine has its own search volume)
     'OpenAI Codex GUI',
     'DeepSeek GUI',
+    'GLM GUI',
+    'Zhipu GLM GUI',
     'Kimi GUI',
     'Moonshot Kimi GUI',
     'Ollama GUI',
@@ -91,6 +93,8 @@ export const metadata: Metadata = {
     // Chinese per-engine long-tail
     'Codex 中文',
     'DeepSeek 编程',
+    'GLM 编程',
+    '智谱 GLM 编程',
     'Kimi 编程',
     'Ollama 中文',
     // Chinese alternative-to

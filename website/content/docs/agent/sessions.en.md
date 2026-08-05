@@ -4,7 +4,7 @@ A **session** in Cockpit is one continuous conversation with one engine — tied
 
 Open the Agent panel (`Cmd+1`) and look at the tab strip across the top. Each tab:
 
-- Has its own engine pick (Claude / Codex / DeepSeek / Kimi / Ollama)
+- Has its own engine pick (Claude / Codex / DeepSeek / GLM / Kimi / Ollama)
 - Has its own working directory (defaults to the current project)
 - Has its own conversation history
 - Has its own token / cost counter

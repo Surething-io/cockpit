@@ -56,7 +56,7 @@ export class FSError extends Data.TaggedError("FSError")<{
   readonly cause: unknown
 }> {}
 
-export type AgentProvider = "claude" | "codex" | "ollama" | "kimi" | "deepseek"
+export type AgentProvider = "claude" | "codex" | "ollama" | "kimi" | "deepseek" | "glm"
 
 export type AgentErrorKind =
   | "auth"

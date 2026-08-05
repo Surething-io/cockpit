@@ -3,6 +3,7 @@ import { claudeSpec } from './claude';
 import { deepseekSpec } from './deepseek';
 import { ollamaSpec } from './ollama';
 import { kimiSpec } from './kimi';
+import { glmSpec } from './glm';
 import { codexSpec } from './codex';
 
 // engine name → spec. claude/claude2 share claudeSpec (the engine field selects claude2's
@@ -14,6 +15,7 @@ const SPECS: Record<string, EngineSpec> = {
   deepseek: deepseekSpec,
   ollama: ollamaSpec,
   kimi: kimiSpec,
+  glm: glmSpec,
   codex: codexSpec,
 };
 

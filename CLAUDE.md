@@ -62,7 +62,7 @@ framework boot. See `MODULES.md` for the dependency rules.
 - `/src/lib/` - Server bootstrap: `wsServer.ts` (WS server),
   `fileWatcher.ts` (fs watcher)
 - `/packages/feature/` - Self-contained domain features:
-  - `agent/` - Chat domain (Claude/Ollama/Codex/Kimi/DeepSeek), scheduled
+  - `agent/` - Chat domain (Claude/Ollama/Codex/Kimi/DeepSeek/GLM), scheduled
     tasks, slash commands, sidebar panels, tool-call snapshots (shadow git
     per project under `~/.cockpit/snapshots/`, per-call diff viewer)
   - `comments/` - Code annotation API + hooks

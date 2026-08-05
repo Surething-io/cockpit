@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
 import type { EngineModelId } from './types';
+import { defaultRegionForLanguage } from '@cockpit/shared-utils';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
   loadAgentSettings,
@@ -16,19 +17,20 @@ import {
 
 /**
  * API key + model picker for the engines configured by key rather than by a local
- * CLI login (DeepSeek, Kimi). Both providers have the same shape — one key, an
+ * CLI login (DeepSeek, Kimi, GLM). They have the same shape — one key, an
  * Anthropic-compatible endpoint for SDK mode and an OpenAI-compatible one for
  * Built-in Agent mode — so they share this component and differ only in ENGINES
  * below.
  *
- * The one real behavioural difference is where SDK-mode model ids come from:
- * DeepSeek's Anthropic-compatible endpoint has no listing API (hence a fixed pair,
- * mirrored by ALLOWED_MODELS in engines/deepseek.ts), while Kimi lists live models
- * for both protocols and gates them by membership tier — so a hardcoded list would
- * offer models the account cannot call.
+ * Two real behavioural differences, both expressed as config:
+ * - Where SDK-mode model ids come from. DeepSeek's Anthropic-compatible endpoint has
+ *   no listing API (hence a fixed pair, mirrored by ALLOWED_MODELS in
+ *   engines/deepseek.ts), while Kimi and GLM list live models for both protocols and
+ *   gate them by plan — a hardcoded list would offer models the account cannot call.
+ * - Whether the provider is served from more than one host (GLM's `regions`).
  */
 
-type Accent = 'sky' | 'purple';
+type Accent = 'sky' | 'purple' | 'amber';
 
 /** Tailwind classes must be literal strings — a `bg-${accent}-500` template never
  *  reaches the generated CSS. */
@@ -58,6 +60,17 @@ const ACCENTS: Record<Accent, {
     radio: 'border-purple-400',
     radioDot: 'bg-purple-400',
   },
+  amber: {
+    dot: 'bg-amber-500',
+    trigger: 'bg-amber-500/15 hover:bg-amber-500/25',
+    label: 'text-amber-400',
+    chevron: 'text-amber-400',
+    inputFocus: 'focus:border-amber-500',
+    save: 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300',
+    selectedRow: 'bg-amber-500/15 text-amber-300',
+    radio: 'border-amber-400',
+    radioDot: 'bg-amber-400',
+  },
 };
 
 interface EngineUiConfig {
@@ -74,6 +87,12 @@ interface EngineUiConfig {
   sdkDefaultModel?: string;
   /** Listing endpoint path, quoted in the empty-state message. */
   modelsEndpoint: string;
+  /**
+   * Providers served from more than one host. The same key works on all of them, so this
+   * is a routing preference: the UI language picks the initial one, and this row exists so
+   * a user whose language and account do not line up is not stuck.
+   */
+  regions?: { id: string; label: string; hint: string }[];
 }
 
 const ENGINES: Record<ApiKeyEngine, EngineUiConfig> = {
@@ -94,6 +113,17 @@ const ENGINES: Record<ApiKeyEngine, EngineUiConfig> = {
     apiKeysUrl: 'https://www.kimi.com/code/console',
     sdkModels: 'live',
     modelsEndpoint: '/coding/v1/models',
+  },
+  glm: {
+    label: 'GLM',
+    accent: 'amber',
+    apiKeysUrl: 'https://bigmodel.cn/apikey/platform',
+    sdkModels: 'live',
+    modelsEndpoint: '/coding/paas/v4/models',
+    regions: [
+      { id: 'cn', label: '中国大陆', hint: 'open.bigmodel.cn' },
+      { id: 'global', label: 'International', hint: 'api.z.ai' },
+    ],
   },
 };
 
@@ -122,6 +152,7 @@ interface EngineSettingsSlice {
   builtinModel?: string;
   modelContextTokens?: number;
   modelEffort?: string;
+  region?: string;
 }
 
 export function EngineConfigPicker({
@@ -147,6 +178,10 @@ export function EngineConfigPicker({
   // Models fetched from the provider's listing endpoint on open (live modes only).
   const [fetchedModels, setFetchedModels] = useState<EngineModelInfo[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  // Effective region for multi-region providers. Resolved the SAME way the server does
+  // (defaultRegionForLanguage over the PERSISTED settings.language) so the row can never
+  // claim one host while the runs go to another.
+  const [region, setRegion] = useState<string | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -229,7 +264,10 @@ export function EngineConfigPicker({
     const [credExit, settingsExit] = await Promise.all([
       BrowserRuntime.runPromiseExit(loadEngineCredentials(engine)),
       BrowserRuntime.runPromiseExit(
-        loadAgentSettings<{ engines?: Record<string, EngineSettingsSlice | undefined> }>()
+        loadAgentSettings<{
+          engines?: Record<string, EngineSettingsSlice | undefined>;
+          language?: string;
+        }>()
       ),
     ]);
     if (credExit._tag === 'Failure') {
@@ -242,8 +280,12 @@ export function EngineConfigPicker({
     setKeyInput('');
     setEditing(false);
 
-    const savedEngine = settingsExit._tag === 'Success' ? settingsExit.value?.engines?.[engine] : undefined;
+    const settings = settingsExit._tag === 'Success' ? settingsExit.value : undefined;
+    const savedEngine = settings?.engines?.[engine];
     const savedModel = builtin ? savedEngine?.builtinModel : savedEngine?.model;
+    if (config.regions) {
+      setRegion(savedEngine?.region ?? defaultRegionForLanguage(settings?.language));
+    }
 
     if (liveModels) {
       // Live list — an unreachable endpoint or a bad key surfaces here rather than at the
@@ -269,7 +311,7 @@ export function EngineConfigPicker({
       onModelChange(savedModel);
     }
     setLoading(false);
-  }, [engine, builtin, liveModels, currentModel, onModelChange, staticOptions]);
+  }, [engine, builtin, liveModels, currentModel, onModelChange, staticOptions, config.regions]);
 
   // Persist the model into /api/settings (shallow merge — send only the engines diff).
   // SDK mode also stores the model's context window and effort default so the engine can
@@ -292,6 +334,27 @@ export function EngineConfigPicker({
     const saveExit = await BrowserRuntime.runPromiseExit(saveAgentSettings({ engines }));
     if (saveExit._tag === 'Failure') throw new Error('Failed to save settings');
   }, [engine, settingsKey, builtin]);
+
+  // Region is a routing preference, so it persists like the model and takes effect on the
+  // next request — including the model list, which is why this reloads it.
+  const handleSelectRegion = useCallback(async (id: string) => {
+    setRegion(id);
+    const curExit = await BrowserRuntime.runPromiseExit(
+      loadAgentSettings<{ engines?: Record<string, Record<string, unknown>> }>()
+    );
+    const cur = curExit._tag === 'Success' ? curExit.value : {};
+    const curEngines = cur.engines || {};
+    const saveExit = await BrowserRuntime.runPromiseExit(
+      saveAgentSettings({
+        engines: { ...curEngines, [engine]: { ...(curEngines[engine] || {}), region: id } },
+      })
+    );
+    if (saveExit._tag === 'Failure') {
+      setError('Failed to save region');
+      return;
+    }
+    loadSettings();
+  }, [engine, loadSettings]);
 
   const toggle = () => {
     if (!open) {
@@ -461,6 +524,32 @@ export function EngineConfigPicker({
             </div>
 
             <div className="my-1 border-t border-border" />
+
+            {/* Region section — multi-region providers only. The same key authenticates on
+                every host, so this changes the route and nothing else: existing sessions
+                stay resumable (the store is per engine, not per host). */}
+            {config.regions && (
+              <>
+                <div className="px-3 py-1.5">
+                  <div className="text-[11px] font-medium text-muted-foreground mb-1.5">Region</div>
+                  <div className="inline-flex rounded-md border border-border overflow-hidden text-xs" role="group" data-testid={`${engine}-region-toggle`}>
+                    {config.regions.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        data-testid={`${engine}-region-${r.id}`}
+                        onClick={() => handleSelectRegion(r.id)}
+                        title={r.hint}
+                        className={`px-2 py-0.5 ${region === r.id ? 'bg-brand text-white' : 'bg-transparent text-muted-foreground hover:bg-accent'}`}
+                      >
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="my-1 border-t border-border" />
+              </>
+            )}
 
             {/* Model section */}
             <div className="px-3 py-1.5">

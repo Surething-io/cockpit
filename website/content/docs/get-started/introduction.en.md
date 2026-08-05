@@ -3,7 +3,7 @@ OpenCockpit is the open-source GUI for Claude Code — and a single canvas for w
 ## What you get
 
 - **Multi-project parallel sessions.** Run 5+ agent sessions across separate projects at once. Each one lives in its own tab; you get a desktop toast when any finishes.
-- **Bring any agent.** Claude works out of the box. Codex, DeepSeek, Kimi (Moonshot), and local Ollama models are one tab away — paste an API key (or none for Ollama).
+- **Bring any agent.** Claude works out of the box. Codex, DeepSeek, GLM (Zhipu), Kimi (Moonshot), and local Ollama models are one tab away — paste an API key (or none for Ollama).
 - **More than chat.** A real terminal, Chrome automation, and bubbles for PostgreSQL / MySQL / Redis / Neo4j / Jupyter — all inside one window your agent can drive.
 - **Code-aware navigation.** LSP go-to-definition, a Code Map of function calls, and a `/cg` slash command that lets the AI explore the project graph via HTTP.
 
@@ -13,7 +13,7 @@ Cockpit's whole UI is three panels rendered in parallel. None of them ever unmou
 
 | Panel | Cmd | What it does |
 |---|---|---|
-| **Agent** | `Cmd+1` | Multi-tab chat with Claude / Codex / DeepSeek / Kimi / Ollama |
+| **Agent** | `Cmd+1` | Multi-tab chat with Claude / Codex / DeepSeek / GLM / Kimi / Ollama |
 | **Explorer** | `Cmd+2` | File browser, code viewer, Git, LSP, code graph |
 | **Console** | `Cmd+3` | Terminal + Browser + DB bubbles, all command-driven |
 
@@ -21,7 +21,7 @@ Cockpit's whole UI is three panels rendered in parallel. None of them ever unmou
 
 The chat surface. Each tab is an independent conversation with whatever engine you picked.
 
-- **Engines.** Claude / Codex / DeepSeek / Kimi (Moonshot) / Ollama — switch per tab. Claude works out of the box; the rest need a one-time key (or none for Ollama).
+- **Engines.** Claude / Codex / DeepSeek / GLM (Zhipu) / Kimi (Moonshot) / Ollama — switch per tab. Claude works out of the box; the rest need a one-time key (or none for Ollama).
 - **Sessions.** Pin a session to the sidebar, fork it to branch the conversation, search across projects via the Session Browser (sidebar icon).
 - **AI mode slash commands.** Type `/` in the chat input to pick from **six** modes that rewire how the AI approaches the next reply: `/qa` (clarify before changing code), `/fx` (bug evidence chain, analysis only), `/ex` (deep structured analysis), `/go` (landing mode — MVP-staged implementation with self-verify), `/cg` (CodeGraph exploration), `/cc` (Cockpit-CLI-driven end-to-end verification). Skills installed via `SKILL.md` show up in the same menu as `/skill-name`.
 - **Shell prefix.** Any input starting with `!` runs as a shell command and its output is appended to the prompt.
@@ -95,10 +95,10 @@ If you spend your day driving Claude Code through a terminal and wish you could:
 
 - **Not a hosted product.** Everything runs locally; you bring your own keys. There is no SaaS plan.
 - **Not a code editor.** Cockpit views and reviews code, but a deep editing experience belongs in VS Code / Cursor / nvim. We integrate cleanly with whatever editor you already use.
-- **Not a Claude wrapper.** Claude is the default, but every panel is engine-agnostic. The codebase already ships five model adapters.
+- **Not a Claude wrapper.** Claude is the default, but every panel is engine-agnostic. The codebase already ships six model adapters.
 
 ## Next steps
 
 - [Quickstart](/en/docs/get-started/quickstart/) — install, run, and a realistic end-to-end task using all three panels
 - [Skills](/en/docs/agent/skills/) — the single page most users wish they'd read first
-- [Engines Overview](/en/docs/agent/engines/) — add Codex / DeepSeek / Kimi / Ollama as alternative tabs
+- [Engines Overview](/en/docs/agent/engines/) — add Codex / DeepSeek / GLM / Kimi / Ollama as alternative tabs

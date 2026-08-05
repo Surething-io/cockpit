@@ -2,12 +2,13 @@
  * ClaudeSdkAdapter — wraps the @anthropic-ai/claude-agent-sdk `query()`
  * AsyncIterable into a provider-neutral AgentChunk Stream.
  *
- * Supports 4 providers (Claude / Codex / Kimi / DeepSeek) by switching
+ * Supports 5 providers (Claude / Codex / Kimi / DeepSeek / GLM) by switching
  * baseURL/apiKey through env:
  *   - claude: no env override (defaults to anthropic.com)
  *   - codex:    ANTHROPIC_BASE_URL=https://api.openai.com/v1 + ANTHROPIC_API_KEY=<key>
  *   - kimi:     ANTHROPIC_BASE_URL=https://api.kimi.com/coding/ + ANTHROPIC_API_KEY=<key>
  *   - deepseek: ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic + ANTHROPIC_API_KEY=<key>
+ *   - glm:      ANTHROPIC_BASE_URL=https://open.bigmodel.cn/api/anthropic + ANTHROPIC_API_KEY=<key>
  *
  * Note: the session / tool / global-state integration from the original
  * chat.ts is out of scope here (BACKLOG). This adapter only validates
@@ -51,6 +52,13 @@ const providerEnvFor = (
     case "deepseek":
       return {
         baseUrl: "https://api.deepseek.com/anthropic",
+        apiKey: apiKeyOverride,
+      }
+    case "glm":
+      // Mainland host. The region switch that engines/glm.ts implements does not apply
+      // here — this adapter is the /api/agent/test probe, which carries no settings.
+      return {
+        baseUrl: "https://open.bigmodel.cn/api/anthropic",
         apiKey: apiKeyOverride,
       }
     case "ollama":

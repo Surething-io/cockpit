@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, KIMI_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath, getBuiltinSessionsRoot } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, KIMI_PROJECTS_DIR, GLM_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath, getBuiltinSessionsRoot } from '@cockpit/shared-utils';
 import { handler } from '@cockpit/effect-runtime/server';
 import { AppError } from '@cockpit/effect-core';
 
@@ -142,9 +142,9 @@ function countSessionFiles(dir: string): number {
  * only in where a project's real cwd can be recovered from.
  *
  * `selfDescribing`: the store's own transcripts carry the cwd, so its project dir can resolve
- * the path (Claude-format stores written by the CLI / Agent SDK — claude2, deepseek/kimi SDK).
- * The Built-in Agent stores (ollama-, deepseek- and kimi-sessions) write no cwd field, so they
- * fall back to the Claude projects dir and then the global-state lookup.
+ * the path (Claude-format stores written by the CLI / Agent SDK — claude2, deepseek/kimi/glm
+ * SDK). The Built-in Agent stores (ollama-, deepseek-, kimi- and glm-sessions) write no cwd
+ * field, so they fall back to the Claude projects dir and then the global-state lookup.
  *
  * Path resolution runs only for projects not already in the map: an existing entry already
  * has a resolved path, so an unresolvable sibling store must still contribute its count.
@@ -253,14 +253,16 @@ async function buildProjectsList() {
     // --- Source 1b: Claude2 projects dir ---
     mergeStoreIntoProjects(CLAUDE2_PROJECTS_DIR, projectMap, cwdLookup, true);
 
-    // --- Source 1c: DeepSeek/Kimi SDK-mode projects dirs (written by the Claude Agent SDK) ---
+    // --- Source 1c: DeepSeek/Kimi/GLM SDK-mode projects dirs (written by the Claude Agent SDK) ---
     mergeStoreIntoProjects(DEEPSEEK_PROJECTS_DIR, projectMap, cwdLookup, true);
     mergeStoreIntoProjects(KIMI_PROJECTS_DIR, projectMap, cwdLookup, true);
+    mergeStoreIntoProjects(GLM_PROJECTS_DIR, projectMap, cwdLookup, true);
 
-    // --- Source 2: Built-in Agent stores (ollama, deepseek/kimi Built-in Agent mode) ---
+    // --- Source 2: Built-in Agent stores (ollama, deepseek/kimi/glm Built-in Agent mode) ---
     mergeStoreIntoProjects(getBuiltinSessionsRoot('ollama'), projectMap, cwdLookup, false);
     mergeStoreIntoProjects(getBuiltinSessionsRoot('deepseek'), projectMap, cwdLookup, false);
     mergeStoreIntoProjects(getBuiltinSessionsRoot('kimi'), projectMap, cwdLookup, false);
+    mergeStoreIntoProjects(getBuiltinSessionsRoot('glm'), projectMap, cwdLookup, false);
 
     // --- Source 3: Codex sessions via cockpit session.json ---
     if (fs.existsSync(COCKPIT_PROJECTS_DIR)) {

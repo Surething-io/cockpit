@@ -20,8 +20,7 @@ const DEEPSEEK_OPENAI_BASE_URL = 'https://api.deepseek.com/v1';
 export const deepseekProvider: AnthropicCompatProvider = {
   name: 'deepseek',
   label: 'DeepSeek',
-  anthropicBaseUrl: DEEPSEEK_BASE_URL,
-  openAiBaseUrl: DEEPSEEK_OPENAI_BASE_URL,
+  endpoints: { anthropicBaseUrl: DEEPSEEK_BASE_URL, openAiBaseUrl: DEEPSEEK_OPENAI_BASE_URL },
   configDir: DEEPSEEK_DIR,
   defaultModel: DEFAULT_MODEL,
   apiKey: deepseekApiKey,

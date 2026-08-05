@@ -48,10 +48,11 @@ function toModelInfo(m: RawModel): EngineModelInfo | null {
 
 export function makeModelsRoute(opts: {
   /** AgentError provider tag. */
-  provider: 'deepseek' | 'kimi';
+  provider: 'deepseek' | 'kimi' | 'glm';
   /** Human-readable name for the "not configured" message. */
   label: string;
-  url: string;
+  /** A thunk for providers whose host depends on settings (GLM's region). */
+  url: string | (() => Promise<string>);
   store: ApiKeyStore;
 }) {
   return handler(() =>
@@ -59,7 +60,7 @@ export function makeModelsRoute(opts: {
       const models = yield* Effect.tryPromise({
         try: async () => {
           const data = await getJsonWithKey<{ data?: RawModel[] }>({
-            url: opts.url,
+            url: typeof opts.url === 'string' ? opts.url : await opts.url(),
             store: opts.store,
             label: opts.label,
           });

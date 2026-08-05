@@ -48,6 +48,7 @@ const dispatchChat = (
     case "codex":
     case "kimi":
     case "deepseek":
+    case "glm":
       return claudeChat(req)
   }
 }
@@ -62,6 +63,7 @@ const dispatchStream = (
     case "codex":
     case "kimi":
     case "deepseek":
+    case "glm":
       return claudeStream(req)
   }
 }

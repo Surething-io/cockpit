@@ -18,6 +18,7 @@ import { AgentError } from '@cockpit/effect-core';
 import { kimiApiKey } from '../../engines/credentials';
 import { KIMI_OPENAI_BASE_URL } from '../../engines/kimi';
 import { agentErrorKind, getJsonWithKey } from '../engineHttp';
+import type { EngineQuotaPayload, EngineQuotaWindow } from '../engineQuota';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,21 +35,6 @@ interface RawUsage {
   user?: { membership?: { level?: string } };
   usage?: RawDetail;
   limits?: Array<{ window?: { duration?: number; timeUnit?: string }; detail?: RawDetail }>;
-}
-
-export interface KimiQuotaWindow {
-  /** 'plan' for the subscription cycle, else a duration like '5h'. */
-  label: string;
-  limit: number | null;
-  remaining: number | null;
-  /** ISO timestamp, or null when the provider omits it. */
-  resetTime: string | null;
-}
-
-export interface KimiUsagePayload {
-  /** Membership tier with the wire prefix stripped, e.g. LEVEL_TRIAL → 'TRIAL'. */
-  membership: string;
-  windows: KimiQuotaWindow[];
 }
 
 const toNumber = (v: string | undefined): number | null => {
@@ -73,21 +59,22 @@ function windowLabel(w: { duration?: number; timeUnit?: string } | undefined): s
   return `${Math.round(minutes)}m`;
 }
 
-const toWindow = (label: string, d: RawDetail | undefined): KimiQuotaWindow => ({
+const toWindow = (label: string, d: RawDetail | undefined): EngineQuotaWindow => ({
   label,
   limit: toNumber(d?.limit),
   remaining: toNumber(d?.remaining),
   resetTime: d?.resetTime ?? null,
 });
 
-async function fetchUsage(): Promise<KimiUsagePayload> {
+async function fetchUsage(): Promise<EngineQuotaPayload> {
   const data = await getJsonWithKey<RawUsage>({
     url: USAGE_URL,
     store: kimiApiKey,
     label: 'Kimi',
   });
   return {
-    membership: (data.user?.membership?.level ?? '').replace(/^LEVEL_/, ''),
+    // LEVEL_TRIAL → 'TRIAL'; the wire prefix carries no information for a reader.
+    tier: (data.user?.membership?.level ?? '').replace(/^LEVEL_/, ''),
     windows: [
       toWindow('plan', data.usage),
       ...(data.limits || []).map((l) => toWindow(windowLabel(l.window), l.detail)),

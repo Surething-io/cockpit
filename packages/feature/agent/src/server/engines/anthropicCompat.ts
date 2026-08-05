@@ -8,7 +8,7 @@
  *
  * What is deliberately NOT shared: the model *whitelist*. DeepSeek's
  * Anthropic-compatible endpoint has no listing API, so it hardcodes a pair;
- * Kimi lists live models for both protocols. That difference is the whole
+ * Kimi and GLM list live models for both protocols. That difference is the whole
  * reason `resolveSdkModel` is a provider hook rather than a config field.
  */
 import { SETTINGS_FILE, getBuiltinSessionsRoot, readJsonFile, sanitizedSpawnEnv } from '@cockpit/shared-utils';
@@ -33,11 +33,27 @@ export interface EngineModelSettings {
    */
   modelContextTokens?: number;
   modelEffort?: string;
+  /**
+   * Chosen region id, for providers served from more than one (see `regions`). Absent
+   * means "never chosen" — the UI language picks the default. Sessions are NOT
+   * region-scoped, so changing this leaves existing transcripts resumable.
+   */
+  region?: string;
 }
 
 interface CockpitSettings {
   engines?: Record<string, EngineModelSettings | undefined>;
+  /** UI language: 'auto' | 'en' | 'zh'. Seeds the region default — see `regions.defaultFor`. */
+  language?: string;
   [key: string]: unknown;
+}
+
+/** The pair of base URLs one account is served from. */
+export interface EngineEndpoints {
+  /** Anthropic-compatible endpoint (SDK mode). */
+  anthropicBaseUrl: string;
+  /** OpenAI-compatible endpoint (Built-in Agent mode, model list, quota). */
+  openAiBaseUrl: string;
 }
 
 export interface AnthropicCompatProvider {
@@ -45,10 +61,18 @@ export interface AnthropicCompatProvider {
   name: string;
   /** Human-readable name, used in the "no API key" preflight error. */
   label: string;
-  /** Anthropic-compatible endpoint (SDK mode). */
-  anthropicBaseUrl: string;
-  /** OpenAI-compatible endpoint (Built-in Agent mode). */
-  openAiBaseUrl: string;
+  /** Endpoints for single-region providers, and the fallback for multi-region ones. */
+  endpoints: EngineEndpoints;
+  /**
+   * Providers served from more than one region (GLM: open.bigmodel.cn vs api.z.ai).
+   * The region only changes which host serves the request — the same key authenticates
+   * on both — so it is a routing preference, not part of the account's identity.
+   */
+  regions?: {
+    byId: Record<string, EngineEndpoints>;
+    /** settings.language → region id, for accounts that never chose one explicitly. */
+    defaultFor(language: string | undefined): string;
+  };
   /** CLAUDE_CONFIG_DIR for SDK mode — isolates sessions/credentials from the user's real ~/.claude. */
   configDir: string;
   /** Fallback when a request carries no model and settings hold none. */
@@ -75,6 +99,31 @@ async function readSettings(): Promise<CockpitSettings> {
   return readJsonFile<CockpitSettings>(SETTINGS_FILE, {});
 }
 
+/**
+ * Which host serves this account: the region the user picked, else the one the UI
+ * language implies. Language only seeds the DEFAULT — it is a display preference, and
+ * letting it re-route live traffic every time someone switches language would move the
+ * API calls to another country with no visible cause.
+ *
+ * Note `language` may be 'auto', which only the browser can resolve (navigator.language);
+ * server-side it falls through to the provider's own default.
+ */
+export function resolveEndpoints(
+  p: AnthropicCompatProvider,
+  saved: EngineModelSettings,
+  language: string | undefined,
+): EngineEndpoints {
+  if (!p.regions) return p.endpoints;
+  const id = saved.region || p.regions.defaultFor(language);
+  return p.regions.byId[id] ?? p.endpoints;
+}
+
+/** Same, reading settings itself — for the /api/<engine>/* routes, which have no ctx. */
+export async function readEngineEndpoints(p: AnthropicCompatProvider): Promise<EngineEndpoints> {
+  const settings = await readSettings();
+  return resolveEndpoints(p, settings.engines?.[p.name] ?? {}, settings.language);
+}
+
 /** Built-in mode: the live model list is the whitelist and the picker already filtered
  *  against it — take the first non-empty candidate and let the API reject an unknown id
  *  with its own message. */
@@ -88,12 +137,16 @@ function resolveBuiltinModel(
   return fallback;
 }
 
-function buildBuiltinConfig(p: AnthropicCompatProvider, apiKey: string): BuiltinAgentConfig {
+function buildBuiltinConfig(
+  p: AnthropicCompatProvider,
+  apiKey: string,
+  endpoints: EngineEndpoints,
+): BuiltinAgentConfig {
   return {
     sessionsRoot: getBuiltinSessionsRoot(p.name),
     defaultModel: p.defaultModel,
     createModel: async (modelName) =>
-      createOpenAiCompatModel({ baseURL: p.openAiBaseUrl, apiKey, modelName }),
+      createOpenAiCompatModel({ baseURL: endpoints.openAiBaseUrl, apiKey, modelName }),
     ...(p.builtinTemperature !== undefined && { temperature: p.builtinTemperature }),
   };
 }
@@ -104,16 +157,18 @@ function buildBuiltinConfig(p: AnthropicCompatProvider, apiKey: string): Builtin
  *
  *  Exported for tests: every value here fails SILENTLY when wrong (a bad context limit just
  *  compacts early, a bad model alias only 404s mid-turn), so it is worth pinning down. */
-export function buildEnv(
-  p: AnthropicCompatProvider,
-  apiKey: string,
-  model: string,
-  settings: EngineModelSettings,
-): Record<string, string | undefined> {
+export function buildEnv(opts: {
+  provider: AnthropicCompatProvider;
+  apiKey: string;
+  model: string;
+  settings: EngineModelSettings;
+  endpoints: EngineEndpoints;
+}): Record<string, string | undefined> {
+  const { provider: p, apiKey, model, settings, endpoints } = opts;
   const wire = p.sdkWireModel ? p.sdkWireModel(model) : model;
   return sanitizedSpawnEnv({
     ANTHROPIC_AUTH_TOKEN: undefined,
-    ANTHROPIC_BASE_URL: p.anthropicBaseUrl,
+    ANTHROPIC_BASE_URL: endpoints.anthropicBaseUrl,
     ANTHROPIC_API_KEY: apiKey, // both providers accept this as x-api-key
     ANTHROPIC_MODEL: wire,
     ANTHROPIC_SMALL_FAST_MODEL: p.smallFastModel ?? wire,
@@ -173,13 +228,15 @@ export function makeAnthropicCompatSpec(p: AnthropicCompatProvider): EngineSpec 
     runner: {
       async run(ctx) {
         const apiKey = await p.apiKey.read(); // preflight guaranteed non-empty
+        const settings = await readSettings();
+        const saved = settings.engines?.[p.name] ?? {};
+        const endpoints = resolveEndpoints(p, saved, settings.language);
         if (isBuiltinMode(ctx.params)) {
-          await runBuiltinAgent(ctx, buildBuiltinConfig(p, apiKey));
+          await runBuiltinAgent(ctx, buildBuiltinConfig(p, apiKey, endpoints));
           return;
         }
-        const settings = await readSettings();
         const model = typeof ctx.params.model === 'string' ? ctx.params.model : p.defaultModel;
-        const env = buildEnv(p, apiKey, model, settings.engines?.[p.name] ?? {});
+        const env = buildEnv({ provider: p, apiKey, model, settings: saved, endpoints });
         await runSdkLoop(ctx, buildOptions(ctx, env));
       },
       resolveTitle: (cwd, sessionId) => getSessionTitle(cwd, sessionId),

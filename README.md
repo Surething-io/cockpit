@@ -26,7 +26,7 @@
 
 ---
 
-> **OpenCockpit is the open-source Claude Code GUI** — an IDE-like workbench for the whole dev loop, and a single canvas for whatever agent you bring next. Run multi-project Claude sessions out of the box; pop open a tab for **Codex, DeepSeek, Kimi, or local Ollama** whenever you need. Built-in terminal, Chrome control, PostgreSQL / MySQL / Redis bubbles, code review, and slash modes — all local. And it's web client–server: **self-host it on a shared dev box and every teammate gets a seat.**
+> **OpenCockpit is the open-source Claude Code GUI** — an IDE-like workbench for the whole dev loop, and a single canvas for whatever agent you bring next. Run multi-project Claude sessions out of the box; pop open a tab for **Codex, DeepSeek, GLM, Kimi, or local Ollama** whenever you need. Built-in terminal, Chrome control, PostgreSQL / MySQL / Redis bubbles, code review, and slash modes — all local. And it's web client–server: **self-host it on a shared dev box and every teammate gets a seat.**
 
 https://github.com/user-attachments/assets/18f1a5dc-64f3-4ff6-b9fc-9cd08181fbb8
 
@@ -42,7 +42,7 @@ Cockpit is the instrument panel. It does **not** replace Claude Code; it stands 
 
 | Pain with raw Claude Code | What Cockpit adds |
 |---|---|
-| Stuck on one model | **5 engines side by side** in tabs: Claude (default), Codex, DeepSeek, Kimi, local Ollama — each its own session |
+| Stuck on one model | **6 engines side by side** in tabs: Claude (default), Codex, DeepSeek, GLM, Kimi, local Ollama — each its own session |
 | One session at a time, terminal chaos at 3+ projects | **Multi-project tabs**, parallel agent sessions, red-dot inbox, desktop notifications |
 | Image attachments are awkward | Drop / paste images straight into chat |
 | "What was I debugging yesterday?" | Cmd+K cross-project session browser, pinning, forking |
@@ -51,7 +51,7 @@ Cockpit is the instrument panel. It does **not** replace Claude Code; it stands 
 | Reviewing AI output is friction | **LAN-shared review pages**, line-level comments, send any comment back as AI context |
 | Same "do X but don't change code" prompt every day | **Slash modes** `/qa /fx /ex /go /cg /cc /cr` + custom `SKILL.md` via the Skills sidebar |
 | No automation hooks | One-time / interval / cron-based **scheduled tasks** |
-| "Cloud relay" trust concerns | **Fully local**. No telemetry. API keys (DeepSeek / Kimi) stay in `~/.cockpit/<engine>/credentials.json` on your laptop. |
+| "Cloud relay" trust concerns | **Fully local**. No telemetry. API keys (DeepSeek / GLM / Kimi) stay in `~/.cockpit/<engine>/credentials.json` on your laptop. |
 
 ### How it compares
 
@@ -62,7 +62,7 @@ An honest snapshot as of July 2026 — each tool wins somewhere. Spotted an erro
 | Positioning | **IDE-like workbench for the whole dev loop** | agent session companion | session manager for Claude Code |
 | Architecture | ✅ **web client–server** — deploy on a shared dev box; the whole team codes with AI in parallel, each on their own project / worktree | single-user desktop app | single-user desktop app |
 | Open source | ✅ MIT | ❌ closed source | ✅ AGPL-3.0 |
-| Engines | ✅ **Claude + Codex / DeepSeek / Kimi / Ollama** (BYOK) | Claude only | Claude only |
+| Engines | ✅ **Claude + Codex / DeepSeek / GLM / Kimi / Ollama** (BYOK) | Claude only | Claude only |
 | Parallel multi-project sessions | ✅ | ✅ | ✅ |
 | Agent-drivable browser & DB (Chrome / Postgres / MySQL / Redis) | ✅ Smart Bubbles | ❌ preview pane only | ❌ |
 | LAN-shared code review pages | ✅ | ❌ | ❌ |
@@ -86,6 +86,7 @@ An honest snapshot as of July 2026 — each tool wins somewhere. Spotted an erro
 - **Claude** *(default)* — full official Agent SDK; zero setup if `claude` CLI is already configured
 - **Codex** — reuses your `~/.codex` config; same chat, same shell + bubbles
 - **DeepSeek** — Anthropic-compatible endpoint via the Claude SDK; paste a key, pick `v4-pro` or `v4-flash`
+- **GLM** *(Zhipu / BigModel)* — BigModel key + live model picker (`glm-5.2` by default) and a Coding Plan **quota check**; one key, two hosts — switch **Region** between `open.bigmodel.cn` and `api.z.ai`
 - **Kimi** *(Moonshot)* — Kimi Code key + live model picker (`kimi-for-coding`, `k3`, …) and a **quota check**; no `kimi` CLI needed
 - **Ollama** — auto-starts the daemon; pick any pulled model from the chat header; fully offline
 - Each engine lives in its own **tab with its own session history**; switch from the new-tab dropdown
@@ -177,10 +178,11 @@ No install, no AI chat (read-only sandbox, 5 min):
 
 - **Codex** — log in once with `codex login` to populate `~/.codex`
 - **DeepSeek** — get an API key at [api-docs.deepseek.com](https://api-docs.deepseek.com/); paste it into the engine picker
+- **GLM (Zhipu / BigModel)** — get an API key (`<id>.<secret>`) at [bigmodel.cn/apikey/platform](https://bigmodel.cn/apikey/platform); paste it into the **API Key** field of the model picker in the chat header. The same key works on both hosts, so **Region** (`open.bigmodel.cn` / `api.z.ai`) is just routing — it defaults from your UI language and can be overridden in the picker.
 - **Kimi (Moonshot)** — get a **Kimi Code** API key (`sk-kimi-…`) at [kimi.com/code/console](https://www.kimi.com/code/console); paste it into the **API Key** field of the model picker in the chat header. *(A `platform.moonshot.cn` Open Platform key is a different product and will not work.)* The `kimi` CLI is no longer used.
 - **Ollama** — install [ollama.com](https://ollama.com/) and `ollama pull <model>`; Cockpit auto-starts the daemon
 
-> API keys are stored locally, each in its own file at `~/.cockpit/<engine>/credentials.json` (e.g. `~/.cockpit/kimi/credentials.json`) — never in `settings.json`. No cloud relay.
+> API keys are stored locally, each in its own file at `~/.cockpit/<engine>/credentials.json` (e.g. `~/.cockpit/kimi/credentials.json`, `~/.cockpit/glm/credentials.json`) — never in `settings.json`. No cloud relay.
 
 ## Install
 

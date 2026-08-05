@@ -18,7 +18,7 @@ interface SessionInfo {
   modifiedAt: string;
   firstMessages: string[];
   lastMessages: string[];
-  engine?: 'claude' | 'claude2' | 'ollama' | 'codex' | 'kimi' | 'deepseek';
+  engine?: 'claude' | 'claude2' | 'ollama' | 'codex' | 'kimi' | 'deepseek' | 'glm';
 }
 
 interface ProjectInfo {

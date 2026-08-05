@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, KIMI_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, getBuiltinSessionsRoot, findCodexSessionPath } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, KIMI_PROJECTS_DIR, GLM_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, getBuiltinSessionsRoot, findCodexSessionPath } from '@cockpit/shared-utils';
 import { dynamicHandler } from '@cockpit/effect-runtime/server';
 import { AppError, ValidationError } from '@cockpit/effect-core';
 import { generateTitle } from '../../sessionTitle';
@@ -29,7 +29,7 @@ interface SessionInfo {
    * here: `/api/session-by-path` re-derives it, including the sdk-vs-builtin execution mode
    * this field deliberately does not carry, and Chat writes the answer into session.json.
    */
-  engine?: 'claude' | 'claude2' | 'ollama' | 'codex' | 'kimi' | 'deepseek';
+  engine?: 'claude' | 'claude2' | 'ollama' | 'codex' | 'kimi' | 'deepseek' | 'glm';
 }
 
 interface TranscriptLine {
@@ -215,7 +215,7 @@ export const GET = dynamicHandler<
 
 async function loadSessions(encodedPath: string) {
     // Collect session files from all engine directories. Every store here holds
-    // Claude-format transcripts, so one parser covers them all. DeepSeek and Kimi each
+    // Claude-format transcripts, so one parser covers them all. DeepSeek, Kimi and GLM each
     // contribute TWO stores because their execution modes don't share one: SDK mode is
     // written by the Agent SDK under <engine>/projects, Built-in Agent mode by us under
     // <engine>-sessions.
@@ -226,6 +226,8 @@ async function loadSessions(encodedPath: string) {
     const deepseekBuiltinDir = path.join(getBuiltinSessionsRoot('deepseek'), encodedPath);
     const kimiSdkDir = path.join(KIMI_PROJECTS_DIR, encodedPath);
     const kimiBuiltinDir = path.join(getBuiltinSessionsRoot('kimi'), encodedPath);
+    const glmSdkDir = path.join(GLM_PROJECTS_DIR, encodedPath);
+    const glmBuiltinDir = path.join(getBuiltinSessionsRoot('glm'), encodedPath);
 
     const allSessionFiles = [
       ...collectSessionFiles(claudeDir, 'claude'),
@@ -235,6 +237,8 @@ async function loadSessions(encodedPath: string) {
       ...collectSessionFiles(deepseekBuiltinDir, 'deepseek'),
       ...collectSessionFiles(kimiSdkDir, 'kimi'),
       ...collectSessionFiles(kimiBuiltinDir, 'kimi'),
+      ...collectSessionFiles(glmSdkDir, 'glm'),
+      ...collectSessionFiles(glmBuiltinDir, 'glm'),
     ];
 
     // Deduplicate by filename (same sessionId could theoretically appear in both)

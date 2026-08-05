@@ -37,9 +37,9 @@
 
 > 不支持拖放 —— 只有粘贴。
 
-支持图片的引擎:**Claude**、**Codex**、**DeepSeek**、**Kimi**。**Ollama** tab 收到图片附件**静默丢弃**(不报错也不警告)。
+支持图片的引擎:**Claude**、**Codex**、**DeepSeek**、**GLM**、**Kimi**。**Ollama** tab 收到图片附件**静默丢弃**(不报错也不警告)。
 
-> DeepSeek 和 Kimi 只有在默认的 **Claude Agent SDK** 执行模式下才看得到图片。**Built-in Agent** 模式完全不支持图片:只有图片没有文字的消息会被直接拒绝,跟文字一起发的图片会被丢弃。
+> DeepSeek、GLM 和 Kimi 只有在默认的 **Claude Agent SDK** 执行模式下才看得到图片。**Built-in Agent** 模式完全不支持图片:只有图片没有文字的消息会被直接拒绝,跟文字一起发的图片会被丢弃。
 
 ## 在聊天里跑 shell 命令 —— `!` 前缀
 

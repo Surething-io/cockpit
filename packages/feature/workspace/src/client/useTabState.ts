@@ -28,6 +28,7 @@ export interface TabInfo {
   ollamaModel?: string;
   deepseekModel?: DeepseekModel;
   kimiModel?: EngineModelId;
+  glmModel?: EngineModelId;
   chatMode?: ChatMode;
   planMode?: boolean;
   /** ollama only: send every user message with no prior history (independent task) */
@@ -125,6 +126,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         const savedOllamaModels: Record<string, string> = data.ollamaModels || {};
         const savedDeepseekModels: Record<string, string> = data.deepseekModels || {};
         const savedKimiModels: Record<string, string> = data.kimiModels || {};
+        const savedGlmModels: Record<string, string> = data.glmModels || {};
         const savedChatModes: Record<string, string> = data.chatModes || {};
         const savedPlanModes: Record<string, boolean> = data.planModes || {};
         const savedNoHistories: Record<string, boolean> = data.noHistories || {};
@@ -152,6 +154,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
               ollamaModel: savedOllamaModels[sessionId] || prev?.ollamaModel || undefined,
               deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || prev?.deepseekModel || undefined,
               kimiModel: (savedKimiModels[sessionId] as EngineModelId) || prev?.kimiModel || undefined,
+              glmModel: (savedGlmModels[sessionId] as EngineModelId) || prev?.glmModel || undefined,
               chatMode: (savedChatModes[sessionId] as ChatMode) || prev?.chatMode || undefined,
               planMode: savedPlanModes[sessionId] ?? prev?.planMode,
               noHistory: savedNoHistories[sessionId] ?? prev?.noHistory,
@@ -197,6 +200,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     const ollamaModels: Record<string, string> = {};
     const deepseekModels: Record<string, string> = {};
     const kimiModels: Record<string, string> = {};
+    const glmModels: Record<string, string> = {};
     const chatModes: Record<string, string> = {};
     const planModes: Record<string, boolean> = {};
     const noHistories: Record<string, boolean> = {};
@@ -212,6 +216,9 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       }
       if (tab.sessionId && tab.kimiModel) {
         kimiModels[tab.sessionId] = tab.kimiModel;
+      }
+      if (tab.sessionId && tab.glmModel) {
+        glmModels[tab.sessionId] = tab.glmModel;
       }
       // Persist the DECIDED value for sessions THIS tab has open, so switching back to the
       // default actually overrides a previously-saved non-default. The server merge is a
@@ -250,6 +257,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         ollamaModels,
         deepseekModels,
         kimiModels,
+        glmModels,
         chatModes,
         planModes,
         noHistories,
@@ -299,6 +307,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       const ollamaModels = (data.ollamaModels || {}) as Record<string, string>;
       const deepseekModels = (data.deepseekModels || {}) as Record<string, string>;
       const kimiModels = (data.kimiModels || {}) as Record<string, string>;
+      const glmModels = (data.glmModels || {}) as Record<string, string>;
       const chatModes = (data.chatModes || {}) as Record<string, string>;
       const planModes = (data.planModes || {}) as Record<string, boolean>;
       const noHistories = (data.noHistories || {}) as Record<string, boolean>;
@@ -323,6 +332,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         ollamaModel: ollamaModels[sid] || undefined,
         deepseekModel: (deepseekModels[sid] as DeepseekModel) || undefined,
         kimiModel: (kimiModels[sid] as EngineModelId) || undefined,
+        glmModel: (glmModels[sid] as EngineModelId) || undefined,
         chatMode: (chatModes[sid] as ChatMode) || undefined,
         planMode: planModes[sid] || undefined,
         noHistory: noHistories[sid] || undefined,
@@ -368,13 +378,14 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       ollamaModel?: string;
       deepseekModel?: DeepseekModel;
       kimiModel?: EngineModelId;
+      glmModel?: EngineModelId;
       chatMode?: ChatMode;
       planMode?: boolean;
       noHistory?: boolean;
       appendToEnd?: boolean;
     }
   ) => {
-    const { engine, ollamaModel, deepseekModel, kimiModel, chatMode, planMode, noHistory, appendToEnd = false } = opts ?? {};
+    const { engine, ollamaModel, deepseekModel, kimiModel, glmModel, chatMode, planMode, noHistory, appendToEnd = false } = opts ?? {};
     const newTab: TabInfo = {
       id: `tab-${Date.now()}`,
       cwd,
@@ -384,6 +395,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       ollamaModel,
       deepseekModel,
       kimiModel,
+      glmModel,
       chatMode,
       planMode,
       noHistory,
@@ -485,6 +497,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         ollamaModel: data?.ollamaModels?.[sid],
         deepseekModel: data?.deepseekModels?.[sid] as DeepseekModel | undefined,
         kimiModel: data?.kimiModels?.[sid] as EngineModelId | undefined,
+        glmModel: data?.glmModels?.[sid] as EngineModelId | undefined,
         planMode: data?.planModes?.[sid],
         noHistory: data?.noHistories?.[sid],
         appendToEnd: true,
@@ -512,6 +525,13 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   // is not entitled to. The picker in the chat header switches it.
   const handleNewKimiTab = useCallback(() => {
     addTab(initialCwd, undefined, 'New Kimi Chat', { engine: 'kimi', kimiModel: 'kimi-for-coding', appendToEnd: true });
+  }, [initialCwd, addTab]);
+
+  // Create new GLM tab (appended to end). Seeded with an explicit model for the same reason
+  // kimi is: the tab's model must be DECIDED at creation, otherwise nothing is persisted for
+  // the session and the picker has no value to show until the first round trip.
+  const handleNewGlmTab = useCallback(() => {
+    addTab(initialCwd, undefined, 'New GLM Chat', { engine: 'glm', glmModel: 'glm-5.2', appendToEnd: true });
   }, [initialCwd, addTab]);
 
   // Create new Ollama tab (appended to end)
@@ -562,6 +582,15 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     );
   }, []);
 
+  // Update GLM model for a tab
+  const updateTabGlmModel = useCallback((tabId: string, model: EngineModelId) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, glmModel: model } : tab
+      )
+    );
+  }, []);
+
   // Update execution mode (sdk/pty) for a tab
   const updateTabChatMode = useCallback((tabId: string, chatMode: ChatMode) => {
     setTabs((prev) =>
@@ -599,6 +628,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       ollamaModel: source?.ollamaModel,
       deepseekModel: source?.deepseekModel,
       kimiModel: source?.kimiModel,
+      glmModel: source?.glmModel,
       chatMode: source?.chatMode,
     });
   }, [initialCwd, addTab]);
@@ -727,6 +757,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     handleNewClaude2Tab,
     handleNewCodexTab,
     handleNewKimiTab,
+    handleNewGlmTab,
     handleNewOllamaTab,
     handleNewDeepseekTab,
     handleOpenSession,
@@ -735,6 +766,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     updateTabOllamaModel,
     updateTabDeepseekModel,
     updateTabKimiModel,
+    updateTabGlmModel,
     updateTabChatMode,
     updateTabPlanMode,
     updateTabNoHistory,

@@ -4,7 +4,7 @@ Cockpit 里的**会话**指一个引擎上的一段连续对话 —— 绑定一
 
 打开 Agent 面板(`Cmd+1`),看顶部的 tab 条。每个 tab:
 
-- 有自己的引擎选择(Claude / Codex / DeepSeek / Kimi / Ollama)
+- 有自己的引擎选择(Claude / Codex / DeepSeek / GLM / Kimi / Ollama)
 - 有自己的工作目录(默认当前项目)
 - 有自己的对话历史
 - 有自己的 token / 成本计数

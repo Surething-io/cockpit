@@ -23,6 +23,8 @@ interface ChatPanelProps {
   onDeepseekModelChange?: (tabId: string, model: EngineModelId) => void;
   kimiModel?: EngineModelId;
   onKimiModelChange?: (tabId: string, model: EngineModelId) => void;
+  glmModel?: EngineModelId;
+  onGlmModelChange?: (tabId: string, model: EngineModelId) => void;
   chatMode?: ChatMode;
   onChatModeChange?: (tabId: string, chatMode: ChatMode) => void;
   planMode?: boolean;
@@ -54,7 +56,7 @@ interface ChatPanelProps {
   onShowFileDiff?: (toolCalls: ToolCallInfo[], cwd?: string) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, chatMode, onChatModeChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, chatMode, onChatModeChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -83,6 +85,10 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
     onKimiModelChange?.(tabId, model);
   }, [tabId, onKimiModelChange]);
 
+  const handleGlmModelChange = useCallback((model: EngineModelId) => {
+    onGlmModelChange?.(tabId, model);
+  }, [tabId, onGlmModelChange]);
+
   const handleChatModeChange = useCallback((m: ChatMode) => {
     onChatModeChange?.(tabId, m);
   }, [tabId, onChatModeChange]);
@@ -108,6 +114,8 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
       onDeepseekModelChange={handleDeepseekModelChange}
       kimiModel={kimiModel}
       onKimiModelChange={handleKimiModelChange}
+      glmModel={glmModel}
+      onGlmModelChange={handleGlmModelChange}
       chatMode={chatMode}
       onChatModeChange={handleChatModeChange}
       planMode={planMode}

@@ -21,7 +21,7 @@ Each row in the panel shows a **countdown to the next fire** (e.g. `next: in 23m
 A scheduled task carries:
 
 - **Project** — which project's working directory it runs in.
-- **Engine** — Claude / Codex / DeepSeek / Kimi / Ollama.
+- **Engine** — Claude / Codex / DeepSeek / GLM / Kimi / Ollama.
 - **Prompt** — what message to send. Can be a single line, can be multi-line.
 - **Schedule** — one of the three types above.
 

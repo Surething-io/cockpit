@@ -525,10 +525,10 @@ export function useChatStream(
       const usePty = chatMode === 'pty' && isClaudeEngine;
       // The engines configured by API key. Both offer Built-in Agent mode — server runs
       // engines/builtinAgent against their OpenAI-compatible endpoint instead of the Agent SDK.
-      const isApiKeyEngine = engine === 'deepseek' || engine === 'kimi';
+      const isApiKeyEngine = engine === 'deepseek' || engine === 'kimi' || engine === 'glm';
       const useBuiltin = chatMode === 'builtin' && isApiKeyEngine;
       // Independent task: the Built-in Agent loop honours it directly (ollama,
-      // deepseek/kimi + builtin), and claude/claude2 honour it in SDK mode by stashing the
+      // deepseek/kimi/glm + builtin), and claude/claude2 honour it in SDK mode by stashing the
       // transcript for the turn. PTY is excluded — the interactive CLI owns the context.
       const canDropHistory = engine === 'ollama' || useBuiltin || (isClaudeEngine && !usePty);
 
@@ -540,7 +540,7 @@ export function useChatStream(
           throw new Error('Please select an Ollama model first (click the model picker above)');
         }
 
-        const apiUrl = engine === 'codex' ? '/api/chat/codex' : engine === 'kimi' ? '/api/chat/kimi' : engine === 'ollama' ? '/api/chat/ollama' : engine === 'deepseek' ? '/api/chat/deepseek' : '/api/chat';
+        const apiUrl = engine === 'codex' ? '/api/chat/codex' : engine === 'kimi' ? '/api/chat/kimi' : engine === 'ollama' ? '/api/chat/ollama' : engine === 'deepseek' ? '/api/chat/deepseek' : engine === 'glm' ? '/api/chat/glm' : '/api/chat';
         // POST only STARTS the detached run and returns its runKey — no SSE body to read.
         // The ws consumer (above) tails /ws/session-stream and drives the UI from here.
         const response = await fetch(apiUrl, {

@@ -56,6 +56,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     handleNewClaude2Tab,
     handleNewCodexTab,
     handleNewKimiTab,
+    handleNewGlmTab,
     handleNewOllamaTab,
     handleNewDeepseekTab,
     handleOpenSession,
@@ -64,6 +65,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     updateTabOllamaModel,
     updateTabDeepseekModel,
     updateTabKimiModel,
+    updateTabGlmModel,
     updateTabChatMode,
     updateTabPlanMode,
     updateTabNoHistory,
@@ -398,6 +400,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                     onNewClaude2Tab={handleNewClaude2Tab}
                     onNewCodexTab={handleNewCodexTab}
                     onNewKimiTab={handleNewKimiTab}
+                    onNewGlmTab={handleNewGlmTab}
                     onNewOllamaTab={handleNewOllamaTab}
                     onNewDeepseekTab={handleNewDeepseekTab}
                     onOpenProjectSessions={() => setIsProjectSessionsOpen(true)}
@@ -424,6 +427,8 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                           onDeepseekModelChange={updateTabDeepseekModel}
                           kimiModel={tab.kimiModel}
                           onKimiModelChange={updateTabKimiModel}
+                          glmModel={tab.glmModel}
+                          onGlmModelChange={updateTabGlmModel}
                           chatMode={tab.chatMode}
                           onChatModeChange={updateTabChatMode}
                           planMode={tab.planMode}
@@ -506,6 +511,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
               onNewClaude2Tab={handleNewClaude2Tab}
               onNewCodexTab={handleNewCodexTab}
               onNewKimiTab={handleNewKimiTab}
+              onNewGlmTab={handleNewGlmTab}
               onNewDeepseekTab={handleNewDeepseekTab}
               onDragStart={handleTabDragStart}
               onDragOver={handleTabDragOver}
@@ -530,6 +536,8 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                     onDeepseekModelChange={updateTabDeepseekModel}
                     kimiModel={tab.kimiModel}
                     onKimiModelChange={updateTabKimiModel}
+                    glmModel={tab.glmModel}
+                    onGlmModelChange={updateTabGlmModel}
                     chatMode={tab.chatMode}
                     onChatModeChange={updateTabChatMode}
                     planMode={tab.planMode}

@@ -21,6 +21,7 @@ interface ProjectState {
   ollamaModels?: Record<string, string>
   deepseekModels?: Record<string, string>
   kimiModels?: Record<string, string>
+  glmModels?: Record<string, string>
   chatModes?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>
@@ -113,6 +114,7 @@ export const POST = handler((req) =>
           const ollamaModels = carryOver(existing.ollamaModels, body.ollamaModels)
           const deepseekModels = carryOver(existing.deepseekModels, body.deepseekModels)
           const kimiModels = carryOver(existing.kimiModels, body.kimiModels)
+          const glmModels = carryOver(existing.glmModels, body.glmModels)
           const chatModes = carryOver(existing.chatModes, body.chatModes, (v) => v === "sdk")
           const planModes = carryOver(existing.planModes, body.planModes, (v) => !v)
           const noHistories = carryOver(existing.noHistories, body.noHistories, (v) => !v)
@@ -124,6 +126,7 @@ export const POST = handler((req) =>
             ...(Object.keys(ollamaModels).length ? { ollamaModels } : {}),
             ...(Object.keys(deepseekModels).length ? { deepseekModels } : {}),
             ...(Object.keys(kimiModels).length ? { kimiModels } : {}),
+            ...(Object.keys(glmModels).length ? { glmModels } : {}),
             ...(Object.keys(chatModes).length ? { chatModes } : {}),
             ...(Object.keys(planModes).length ? { planModes } : {}),
             ...(Object.keys(noHistories).length ? { noHistories } : {}),

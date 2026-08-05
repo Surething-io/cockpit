@@ -8,6 +8,7 @@
  */
 import {
   DEEPSEEK_CREDENTIALS_FILE,
+  GLM_CREDENTIALS_FILE,
   KIMI_CREDENTIALS_FILE,
   readJsonFile,
   writeJsonFile,
@@ -41,6 +42,7 @@ function createApiKeyStore(file: string): ApiKeyStore {
 
 export const deepseekApiKey = createApiKeyStore(DEEPSEEK_CREDENTIALS_FILE);
 export const kimiApiKey = createApiKeyStore(KIMI_CREDENTIALS_FILE);
+export const glmApiKey = createApiKeyStore(GLM_CREDENTIALS_FILE);
 
 /** Mask all but the last 4 chars, e.g. sk-1234abcd → sk-•••••bcd */
 export function maskApiKey(key: string): string {

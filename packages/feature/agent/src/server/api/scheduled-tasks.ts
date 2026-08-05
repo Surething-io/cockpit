@@ -21,6 +21,24 @@ import {
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
+/** Engines sendChatMessageEff knows how to dispatch — keep in sync with the allowlist there. */
+const SCHEDULABLE_ENGINES = [
+  "claude",
+  "claude2",
+  "ollama",
+  "codex",
+  "kimi",
+  "deepseek",
+  "glm",
+]
+
+/**
+ * Engines whose chat route accepts a `model` param, so snapshotting the picker's choice on
+ * the task means something. The others resolve their model themselves (claude/claude2 from
+ * the CLI config, codex from its own settings) and would silently ignore the field.
+ */
+const MODEL_AWARE_ENGINES = new Set(["ollama", "deepseek", "kimi", "glm"])
+
 /**
  * A task carries its instruction EITHER inline (`message`) OR by reference
  * (`taskFile`, an absolute path the agent reads at fire time) — never both, so
@@ -115,10 +133,7 @@ export const POST = handler((req) =>
     const validated = yield* validateTaskSourceEff(message, taskFile)
     // Safety net: engine must be one sendChatMessageEff knows how to dispatch
     // (all current ChatEngine values; rejects only unknown/future ids).
-    if (
-      engine &&
-      !["claude", "claude2", "ollama", "codex", "kimi", "deepseek"].includes(engine)
-    ) {
+    if (engine && !SCHEDULABLE_ENGINES.includes(engine)) {
       return yield* Effect.fail(
         new ValidationError({
           field: "engine",
@@ -151,10 +166,7 @@ export const POST = handler((req) =>
       sessionId,
       engine,
       // model snapshot only matters for engines whose chat route accepts it
-      model:
-        engine === "ollama" || engine === "deepseek" || engine === "kimi"
-          ? model
-          : undefined,
+      model: engine && MODEL_AWARE_ENGINES.has(engine) ? model : undefined,
       language,
       message: validated.message,
       taskFile: validated.taskFile,

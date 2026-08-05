@@ -25,6 +25,7 @@ export interface LoadedProjectState {
   ollamaModels?: Record<string, string>
   deepseekModels?: Record<string, string>
   kimiModels?: Record<string, string>
+  glmModels?: Record<string, string>
   chatModes?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>
@@ -53,6 +54,7 @@ export interface ProjectStateSave {
   ollamaModels?: Record<string, string>
   deepseekModels?: Record<string, string>
   kimiModels?: Record<string, string>
+  glmModels?: Record<string, string>
   chatModes?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>

@@ -12,6 +12,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync, readdirSync, statSync } from "fs"
 import { join } from "path"
+import { normalizeCodexSessionId } from "./paths"
 
 const repoRoot = join(__dirname, "..", "..", "..", "..")
 const pkg = JSON.parse(
@@ -68,5 +69,21 @@ describe("package.json#files", () => {
     // Asserts coverage, not an exact inventory: adding a test next to shipped
     // source stays fine, it just must not slip into the tarball.
     expect(uncovered).toEqual([])
+  })
+})
+
+describe("normalizeCodexSessionId", () => {
+  it("extracts the thread id from Codex rollout filenames", () => {
+    expect(
+      normalizeCodexSessionId(
+        "rollout-2026-08-06T16-15-38-019fd624-69f8-7210-92b8-d3a9c3ce2ceb.jsonl"
+      )
+    ).toBe("019fd624-69f8-7210-92b8-d3a9c3ce2ceb")
+  })
+
+  it("leaves plain thread ids unchanged", () => {
+    expect(normalizeCodexSessionId("019fd624-69f8-7210-92b8-d3a9c3ce2ceb")).toBe(
+      "019fd624-69f8-7210-92b8-d3a9c3ce2ceb"
+    )
   })
 })

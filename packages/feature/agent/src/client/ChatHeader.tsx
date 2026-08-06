@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { ChatEngine } from './types';
+import { buildResumeCommand } from './resumeCommand';
 
 // ============================================
 // Chat Header
@@ -16,6 +18,8 @@ import { useTranslation } from 'react-i18next';
 interface ChatHeaderProps {
   cwd?: string;
   sessionId: string | null;
+  /** Selects the resume command shape; undefined reads as claude. */
+  engine?: ChatEngine;
   onOpenProjectSessions: () => void;
   // Optional host-delegated callbacks (rendered by app layer when standalone
   // Chat is mounted; left undefined when wrapped in TabManager).
@@ -26,12 +30,14 @@ interface ChatHeaderProps {
 export function ChatHeader({
   cwd,
   sessionId,
+  engine,
   onOpenProjectSessions,
   onOpenSessionBrowser,
   onOpenSettings,
 }: ChatHeaderProps) {
   const { t } = useTranslation();
   const [copiedCommand, setCopiedCommand] = useState(false);
+  const resumeCommand = sessionId ? buildResumeCommand(engine, sessionId) : null;
 
   return (
     <div className="border-b border-border px-4 py-3 bg-card">
@@ -85,12 +91,11 @@ export function ChatHeader({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             </svg>
           </button>
-          {/* Copy claude -r command button */}
-          {sessionId && (
+          {/* Copy resume command button — engine-specific, see buildResumeCommand */}
+          {resumeCommand && (
             <button
               onClick={() => {
-                const command = `claude -r ${sessionId}`;
-                navigator.clipboard.writeText(command).then(() => {
+                navigator.clipboard.writeText(resumeCommand).then(() => {
                   setCopiedCommand(true);
                   setTimeout(() => setCopiedCommand(false), 2000);
                 });
@@ -100,7 +105,7 @@ export function ChatHeader({
                   ? 'text-green-500 bg-green-500/10'
                   : 'text-muted-foreground hover:text-foreground hover:bg-accent'
               }`}
-              title={copiedCommand ? t('chat.copiedCommandTooltip') : t('chat.copyCommandTooltip', { sessionId })}
+              title={copiedCommand ? t('chat.copiedCommandTooltip') : t('chat.copyCommandTooltip', { command: resumeCommand })}
             >
               {copiedCommand ? (
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -6,6 +6,7 @@
 import { Effect } from "effect"
 import {
   getSessionFilePath,
+  normalizeCodexSessionId,
   readJsonFile,
   writeJsonFile,
   withFileLock,
@@ -25,6 +26,15 @@ interface ProjectState {
   chatModes?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>
+}
+
+function normalizeCodexEngineMap(engines?: Record<string, string>): Record<string, string> | undefined {
+  if (!engines) return undefined
+  const out: Record<string, string> = {}
+  for (const [sid, engine] of Object.entries(engines)) {
+    out[engine === "codex" ? normalizeCodexSessionId(sid) : sid] = engine
+  }
+  return out
 }
 
 export const GET = handler((req) =>
@@ -78,9 +88,19 @@ export const POST = handler((req) =>
       try: () =>
         withFileLock(filePath, async () => {
           const existing = await readJsonFile<ProjectState>(filePath, { sessions: [] })
-          const closed = new Set(closedIds)
+          const existingEngines = normalizeCodexEngineMap(existing.engines)
+          const incomingEngines = normalizeCodexEngineMap(body.engines)
+          const normalizeSessionId = (sid: string) => {
+            const normalized = normalizeCodexSessionId(sid)
+            if (normalized === sid) return sid
+            return existing.engines?.[sid] === "codex" || body.engines?.[sid] === "codex"
+              ? normalized
+              : sid
+          }
+          const closed = new Set(closedIds.map(normalizeSessionId))
           const union: string[] = []
-          for (const sid of [...existing.sessions, ...incoming]) {
+          for (const rawSid of [...existing.sessions, ...incoming]) {
+            const sid = normalizeSessionId(rawSid)
             if (!closed.has(sid) && !union.includes(sid)) union.push(sid)
           }
           const inSet = new Set(union)
@@ -110,7 +130,7 @@ export const POST = handler((req) =>
             }
             return m
           }
-          const engines = carryOver(existing.engines, body.engines, (v) => v === "claude")
+          const engines = carryOver(existingEngines, incomingEngines, (v) => v === "claude")
           const ollamaModels = carryOver(existing.ollamaModels, body.ollamaModels)
           const deepseekModels = carryOver(existing.deepseekModels, body.deepseekModels)
           const kimiModels = carryOver(existing.kimiModels, body.kimiModels)
@@ -118,7 +138,7 @@ export const POST = handler((req) =>
           const chatModes = carryOver(existing.chatModes, body.chatModes, (v) => v === "sdk")
           const planModes = carryOver(existing.planModes, body.planModes, (v) => !v)
           const noHistories = carryOver(existing.noHistories, body.noHistories, (v) => !v)
-          const active = body.activeSessionId ?? existing.activeSessionId
+          const active = normalizeSessionId(body.activeSessionId ?? existing.activeSessionId ?? "")
           const next: ProjectState = {
             sessions: union,
             ...(active && inSet.has(active) ? { activeSessionId: active } : {}),

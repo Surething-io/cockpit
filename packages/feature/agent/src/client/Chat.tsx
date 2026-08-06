@@ -637,6 +637,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           <ChatHeader
             cwd={initialCwd}
             sessionId={sessionId}
+            engine={engine}
             onOpenProjectSessions={() => setIsProjectSessionsOpen(true)}
             onOpenSessionBrowser={onOpenSessionBrowser}
             onOpenSettings={onOpenSettings}

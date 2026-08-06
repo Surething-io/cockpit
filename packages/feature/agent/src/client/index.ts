@@ -34,6 +34,7 @@ export { QuickPromptsPopover } from './QuickPromptsPopover';
 export { TokenStatsModal } from './TokenStatsModal';
 export { SlashCommandMenu } from './SlashCommandMenu';
 export { getSlashCommands, slashCommands, getMarkdown, type SlashCommand } from './slashCommands';
+export { buildResumeCommand } from './resumeCommand';
 
 // Context
 export { ChatProvider, useChatContext, useChatContextOptional } from './ChatContext';

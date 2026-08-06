@@ -9,6 +9,7 @@ import { loadSessionsByProject } from './effect/agentClient';
 import { EngineBadge } from './EngineBadge';
 
 interface SessionInfo {
+  sessionId?: string;
   path: string;
   title: string;
   modifiedAt: string;
@@ -46,7 +47,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
     setError(null);
 
     // Encode cwd as directory name format
-    const encodedPath = cwd.replace(/\//g, '-');
+    const encodedPath = cwd.replace(/[/.]/g, '-');
     const exit = await BrowserRuntime.runPromiseExit(loadSessionsByProject<SessionInfo>(encodedPath));
     if (exit._tag === 'Success') {
       setSessions(exit.value as SessionInfo[]);
@@ -81,7 +82,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
   const handleSessionClick = (session: SessionInfo) => {
     // Extract sessionId from sessionPath (filename without .jsonl)
     const fileName = session.path.split('/').pop() || '';
-    const sessionId = fileName.replace('.jsonl', '');
+    const sessionId = session.sessionId || fileName.replace('.jsonl', '');
 
     if (onSelectSession) {
       // Use onSelectSession callback if provided (adds a new tab in TabManager)

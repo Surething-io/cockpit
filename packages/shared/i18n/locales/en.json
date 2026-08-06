@@ -487,7 +487,7 @@
     "context": "Context",
     "output": "Output",
     "copiedCommandTooltip": "Copied!",
-    "copyCommandTooltip": "Copy command: claude -r {{sessionId}}",
+    "copyCommandTooltip": "Copy command: {{command}}",
     "executedCommand": "Executed `{{command}}`{{exitInfo}}, output:\n```\n{{output}}\n```",
     "executedCommandFailed": "Failed to execute `{{command}}`: {{error}}",
     "executionMode": "Execution Mode",

@@ -11,6 +11,7 @@ import { Topics } from '@cockpit/effect-services';
 import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { fetchBranches } from '@cockpit/feature-explorer';
+import { buildResumeCommand } from '@cockpit/feature-agent';
 import { createGitWorktree, openInVscode, openInCursor } from './effect/workspaceClient';
 
 // ============================================
@@ -194,6 +195,13 @@ export function TabManagerTopBar({
   onBranchSwitched,
 }: TabManagerTopBarProps) {
   const { t } = useTranslation();
+  // Null (button hidden) until the tab has a session id. `engine` may still be
+  // undefined here — a tab reopened from the session list resolves it one
+  // round-trip later; buildResumeCommand reads that as claude, same as the rest
+  // of the app.
+  const resumeCommand = activeTab?.sessionId
+    ? buildResumeCommand(activeTab.engine, activeTab.sessionId)
+    : null;
   return (
     <div className="border-b border-border bg-card shrink-0">
       <div className="flex items-center justify-between px-4 py-2 relative">
@@ -311,17 +319,16 @@ export function TabManagerTopBar({
               <path d="M4.5 2L20.5 12L4.5 22V2Z" />
             </svg>
           </button>
-          {/* Copy claude -r command button */}
-          {activeTab?.sessionId && (
+          {/* Copy resume command button — engine-specific, see buildResumeCommand */}
+          {resumeCommand && (
             <button
               onClick={() => {
-                const command = `claude -r ${activeTab.sessionId}`;
-                navigator.clipboard.writeText(command).then(() => {
-                  toast(t('toast.copiedCommand', { command }), 'success');
+                navigator.clipboard.writeText(resumeCommand).then(() => {
+                  toast(t('toast.copiedCommand', { command: resumeCommand }), 'success');
                 });
               }}
               className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
-              title={t('chat.copyCommandTooltip', { sessionId: activeTab.sessionId })}
+              title={t('chat.copyCommandTooltip', { command: resumeCommand })}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />

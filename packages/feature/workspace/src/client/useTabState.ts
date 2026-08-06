@@ -35,6 +35,13 @@ export interface TabInfo {
   noHistory?: boolean;
 }
 
+const CODEX_THREAD_ID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\.jsonl)?$/i;
+
+function normalizeCodexSessionId(sessionId: string): string {
+  const match = sessionId.match(CODEX_THREAD_ID_RE);
+  return match?.[1] ?? sessionId;
+}
+
 // ============================================
 // Hook
 // ============================================
@@ -120,9 +127,19 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         )
       );
       if (data) {
-        const savedSessions: string[] = data.sessions || [];
-        const savedActiveSessionId: string | undefined = data.activeSessionId;
-        const savedEngines: Record<string, string> = data.engines || {};
+        const rawEngines: Record<string, string> = data.engines || {};
+        const savedEngines: Record<string, string> = {};
+        for (const [sid, engine] of Object.entries(rawEngines)) {
+          savedEngines[engine === 'codex' ? normalizeCodexSessionId(sid) : sid] = engine;
+        }
+        const savedSessions: string[] = [];
+        for (const sid of data.sessions || []) {
+          const normalized = rawEngines[sid] === 'codex' ? normalizeCodexSessionId(sid) : sid;
+          if (!savedSessions.includes(normalized)) savedSessions.push(normalized);
+        }
+        const savedActiveSessionId: string | undefined = data.activeSessionId && rawEngines[data.activeSessionId] === 'codex'
+          ? normalizeCodexSessionId(data.activeSessionId)
+          : data.activeSessionId;
         const savedOllamaModels: Record<string, string> = data.ollamaModels || {};
         const savedDeepseekModels: Record<string, string> = data.deepseekModels || {};
         const savedKimiModels: Record<string, string> = data.kimiModels || {};
@@ -302,8 +319,16 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       loadProjectState(initialCwd).pipe(Effect.catchAll(() => Effect.succeed(null)))
     ).then((data) => {
       if (!data) return;
-      const saved: string[] = data.sessions || [];
-      const engines = (data.engines || {}) as Record<string, string>;
+      const rawEngines = (data.engines || {}) as Record<string, string>;
+      const engines: Record<string, string> = {};
+      for (const [sid, engine] of Object.entries(rawEngines)) {
+        engines[engine === 'codex' ? normalizeCodexSessionId(sid) : sid] = engine;
+      }
+      const saved: string[] = [];
+      for (const sid of data.sessions || []) {
+        const normalized = rawEngines[sid] === 'codex' ? normalizeCodexSessionId(sid) : sid;
+        if (!saved.includes(normalized)) saved.push(normalized);
+      }
       const ollamaModels = (data.ollamaModels || {}) as Record<string, string>;
       const deepseekModels = (data.deepseekModels || {}) as Record<string, string>;
       const kimiModels = (data.kimiModels || {}) as Record<string, string>;

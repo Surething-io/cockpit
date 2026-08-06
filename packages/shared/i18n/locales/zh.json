@@ -487,7 +487,7 @@
     "context": "上下文",
     "output": "输出",
     "copiedCommandTooltip": "已复制!",
-    "copyCommandTooltip": "复制命令: claude -r {{sessionId}}",
+    "copyCommandTooltip": "复制命令: {{command}}",
     "executedCommand": "执行了 `{{command}}`{{exitInfo}}，输出：\n```\n{{output}}\n```",
     "executedCommandFailed": "执行 `{{command}}` 失败：{{error}}",
     "executionMode": "执行模式",

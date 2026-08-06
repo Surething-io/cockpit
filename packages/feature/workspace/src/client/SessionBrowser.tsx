@@ -13,6 +13,7 @@ import {
 import { EngineBadge } from '@cockpit/feature-agent';
 
 interface SessionInfo {
+  sessionId?: string;
   path: string;
   title: string;
   modifiedAt: string;
@@ -165,10 +166,10 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  const handleSessionClick = (cwd: string, sessionPath: string) => {
+  const handleSessionClick = (cwd: string, session: SessionInfo) => {
     // Extract sessionId from sessionPath (filename without .jsonl)
-    const fileName = sessionPath.split('/').pop() || '';
-    const sessionId = fileName.replace('.jsonl', '');
+    const fileName = session.path.split('/').pop() || '';
+    const sessionId = session.sessionId || fileName.replace('.jsonl', '');
 
     // Use onSelectSession callback if provided; otherwise notify parent Workspace to open
     if (onSelectSession) {
@@ -340,7 +341,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
                         {state.sessions.map((session) => (
                           <div
                             key={session.path}
-                            onClick={() => handleSessionClick(project.fullPath, session.path)}
+                            onClick={() => handleSessionClick(project.fullPath, session)}
                             className="p-3 bg-secondary rounded border border-border hover:border-brand hover:shadow-md cursor-pointer transition-all"
                           >
                             {/* Session Title + Engine Badge */}

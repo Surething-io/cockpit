@@ -3,7 +3,24 @@ import type { ImageMediaType, MessageImage } from '@cockpit/shared-utils';
 export const CODEX_IMAGE_ONLY_TEXT = '[Image]';
 
 export function normalizeCodexToolName(name: string): string {
-  return name === 'shell_command' || name === 'exec_command' ? 'Bash' : name;
+  if (name === 'shell_command' || name === 'exec_command') return 'Bash';
+  if (name === 'apply_patch') return 'ApplyPatch';
+  return name;
+}
+
+/**
+ * Parse an apply_patch body into a `{ changes: [{path, kind}] }` input, matching the
+ * shape the live codex engine emits for `file_change` items so the bubble renders the
+ * same way whether streamed live or rebuilt on resume.
+ */
+export function parseCodexPatchInput(input: string): { changes: Array<{ path: string; kind: string }> } {
+  const changes: Array<{ path: string; kind: string }> = [];
+  const re = /^\*\*\* (Add|Update|Delete) File: (.+)$/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(input))) {
+    changes.push({ path: m[2].trim(), kind: m[1].toLowerCase() });
+  }
+  return { changes };
 }
 
 export function normalizeCodexToolInput(

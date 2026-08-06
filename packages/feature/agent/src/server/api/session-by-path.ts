@@ -10,7 +10,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '@cockpit/effect-core';
-import { CODEX_IMAGE_ONLY_TEXT, extractCodexUserContent, normalizeCodexToolInput, normalizeCodexToolName } from './session/codexTools';
+import { CODEX_IMAGE_ONLY_TEXT, extractCodexUserContent, normalizeCodexToolInput, normalizeCodexToolName, parseCodexPatchInput } from './session/codexTools';
 import { generateTitle } from '../sessionTitle';
 import { appendTextPart, appendToolPart, joinAssistantText } from '../../shared/assistantText';
 import type { MessagePart } from '../../shared/assistantText';
@@ -697,6 +697,7 @@ interface CodexPayload {
   role?: string;
   name?: string;
   arguments?: string;
+  input?: string; // custom_tool_call (apply_patch) body
   call_id?: string;
   output?: string;
   content?: Array<{ type?: string; text?: string; image_url?: string }>;
@@ -807,6 +808,33 @@ async function parseCodexTranscriptFile(
 
       // Tool result (function_call_output)
       if (payload.type === 'function_call_output' && payload.call_id) {
+        const assistant = ensureAssistant(timestamp);
+        const tc = assistant.toolCalls?.find(t => t.id === payload.call_id);
+        if (tc) {
+          tc.result = payload.output || '';
+          tc.isLoading = false;
+        }
+      }
+
+      // Custom tool call (apply_patch) — codex's file editor. Surface it as its own
+      // tool call so the edit shows a bubble and its FileDiff resolves (matches the
+      // live engine's file_change handling).
+      if (payload.type === 'custom_tool_call' && payload.name === 'apply_patch') {
+        const assistant = ensureAssistant(timestamp);
+        assistant.toolCalls = assistant.toolCalls || [];
+        const callId = payload.call_id || `tool-${msgCounter++}`;
+        assistant.parts = appendToolPart(assistant.parts, callId);
+        assistant.toolCalls.push({
+          id: callId,
+          name: normalizeCodexToolName(payload.name),
+          input: parseCodexPatchInput(payload.input || ''),
+          isLoading: false,
+        });
+        toolSinceText = true;
+      }
+
+      // Custom tool call result (apply_patch output)
+      if (payload.type === 'custom_tool_call_output' && payload.call_id) {
         const assistant = ensureAssistant(timestamp);
         const tc = assistant.toolCalls?.find(t => t.id === payload.call_id);
         if (tc) {

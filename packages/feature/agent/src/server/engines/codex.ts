@@ -31,6 +31,7 @@ function writeImagesToTemp(images: ImageData[]): string[] {
 
 interface CodexItem {
   id?: string;
+  call_id?: string;
   type?: string; // 'agent_message' | 'reasoning' | 'command_execution' | 'error'
   text?: string;
   message?: string;
@@ -47,6 +48,10 @@ interface CodexEvent {
   message?: string;
   error?: { message?: string };
   usage?: { input_tokens?: number; output_tokens?: number; cached_input_tokens?: number };
+}
+
+export function codexToolUseId(item: CodexItem): string {
+  return item.call_id || item.id || `tool-${randomUUID()}`;
 }
 
 export const codexSpec: EngineSpec = {
@@ -73,15 +78,23 @@ export const codexSpec: EngineSpec = {
           }
         };
 
-        // codex-cli ≥0.141: --full-auto deprecated (→ --sandbox workspace-write); a non-trusted
-        // dir needs --skip-git-repo-check. `resume` is exec-only (no -C/--sandbox). Prompt positional.
+        // codex-cli >=0.141: --full-auto deprecated; --sandbox workspace-write still blocks writes
+        // outside the workspace root, so use --dangerously-bypass-approvals-and-sandbox instead.
+        // Cockpit already runs the agent with the user's own privileges. A non-trusted dir needs
+        // --skip-git-repo-check. `resume` is exec-only (no -C). Prompt positional.
         const args: string[] = ['exec'];
         if (sessionId) {
-          args.push('resume', sessionId, '--json');
+          args.push(
+            'resume',
+            sessionId,
+            '--json',
+            '--dangerously-bypass-approvals-and-sandbox',
+            '--skip-git-repo-check',
+          );
           for (const imgPath of imageFiles) args.push('--image', imgPath);
           args.push(prompt);
         } else {
-          args.push('--json', '--sandbox', 'workspace-write', '--skip-git-repo-check');
+          args.push('--json', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check');
           if (cwd) args.push('-C', cwd);
           for (const imgPath of imageFiles) args.push('--image', imgPath);
           args.push(prompt);
@@ -125,7 +138,7 @@ export const codexSpec: EngineSpec = {
                 });
               }
               if (item.type === 'command_execution') {
-                const toolUseId = item.id || `tool-${randomUUID()}`;
+                const toolUseId = codexToolUseId(item);
                 if (!pendingToolCalls.has(toolUseId)) {
                   ctx.emit({
                     type: 'assistant',
@@ -143,7 +156,7 @@ export const codexSpec: EngineSpec = {
             case 'item.started': {
               const item = event.item;
               if (item?.type === 'command_execution' && item.command) {
-                const toolUseId = item.id || `tool-${randomUUID()}`;
+                const toolUseId = codexToolUseId(item);
                 pendingToolCalls.set(toolUseId, toolUseId);
                 ctx.emit({
                   type: 'assistant',

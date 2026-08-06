@@ -27,6 +27,7 @@ import {
 import { loadSnapshotDiffsForToolIds, type SnapshotDiffDto } from './effect/snapshotClient';
 import { classifyPath, classifyFiles, type ChangeClass } from './changeClass';
 import type { ToolCallInfo } from './types';
+import { isMutatingToolName } from '../shared/toolMutation';
 
 // Layout mirrors the Explorer "History" tab: a commit list on the left
 // (one entry per tool call = one shadow-git snapshot commit), and a
@@ -267,21 +268,21 @@ export function FileDiffViewer({ toolCalls, cwd, onClose, onContentSearch }: Dif
       : Effect.succeed([] as SnapshotDiffDto[]),
     [cwd, toolIdsKey, retryTick],
   );
-  const declaredWriteIds = useMemo(
+  const snapshotBackedIds = useMemo(
     () =>
       toolCalls
-        .filter((tc) => ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(tc.name))
+        .filter((tc) => isMutatingToolName(tc.name))
         .map((tc) => tc.id),
     [toolCalls],
   );
   useEffect(() => {
     if (snapshotsQ.status !== 'success' || retryTick >= 2) return;
     const landed = new Set(snapshotsQ.data.map((d) => d.commit.toolId));
-    if (declaredWriteIds.some((id) => !landed.has(id))) {
+    if (snapshotBackedIds.some((id) => !landed.has(id))) {
       const t = setTimeout(() => setRetryTick((v) => v + 1), 2000);
       return () => clearTimeout(t);
     }
-  }, [snapshotsQ, retryTick, declaredWriteIds]);
+  }, [snapshotsQ, retryTick, snapshotBackedIds]);
 
   // Keep the last non-empty result while a refetch is in flight — the retry
   // must not flash the whole modal back to the loading state.

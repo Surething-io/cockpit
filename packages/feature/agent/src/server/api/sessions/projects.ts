@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, KIMI_PROJECTS_DIR, GLM_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath, getBuiltinSessionsRoot } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, KIMI_PROJECTS_DIR, GLM_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath, getBuiltinSessionsRoot, listCodexSessions, normalizeCodexSessionId } from '@cockpit/shared-utils';
 import { handler } from '@cockpit/effect-runtime/server';
 import { AppError } from '@cockpit/effect-core';
 
@@ -188,27 +188,25 @@ function mergeStoreIntoProjects(
   }
 }
 
-// Count codex sessions from cockpit session.json. Codex is the only engine that needs
+// Read codex sessions from cockpit session.json. Codex is the only engine that needs
 // this: its transcripts live outside the cwd-encoded layout, so there is no project dir
 // to scan — the session.json engines map is the only record that ties one to a project.
-function countCodexSessionsFromCockpitState(encodedDirName: string): number {
+function codexSessionIdsFromCockpitState(encodedDirName: string): string[] {
   try {
     const sessionJsonPath = path.join(COCKPIT_PROJECTS_DIR, encodedDirName, 'session.json');
-    if (!fs.existsSync(sessionJsonPath)) return 0;
+    if (!fs.existsSync(sessionJsonPath)) return [];
     const content = fs.readFileSync(sessionJsonPath, 'utf-8');
     const state = JSON.parse(content) as {
       sessions?: string[];
       engines?: Record<string, string>;
     };
-    if (!state.sessions || !state.engines) return 0;
+    if (!state.sessions || !state.engines) return [];
 
-    let count = 0;
-    for (const sessionId of state.sessions) {
-      if (state.engines[sessionId] === 'codex') count++;
-    }
-    return count;
+    return state.sessions
+      .filter((sessionId) => state.engines![sessionId] === 'codex')
+      .map(normalizeCodexSessionId);
   } catch {
-    return 0;
+    return [];
   }
 }
 
@@ -264,27 +262,43 @@ async function buildProjectsList() {
     mergeStoreIntoProjects(getBuiltinSessionsRoot('kimi'), projectMap, cwdLookup, false);
     mergeStoreIntoProjects(getBuiltinSessionsRoot('glm'), projectMap, cwdLookup, false);
 
-    // --- Source 3: Codex sessions via cockpit session.json ---
+    // --- Source 3: Codex sessions via cockpit session.json + global Codex index ---
+    const codexByProject = new Map<string, Set<string>>();
+    const codexProjectPaths = new Map<string, string>();
     if (fs.existsSync(COCKPIT_PROJECTS_DIR)) {
       const cockpitDirs = fs.readdirSync(COCKPIT_PROJECTS_DIR, { withFileTypes: true })
         .filter(dirent => dirent.isDirectory())
         .map(dirent => dirent.name);
 
       for (const dirName of cockpitDirs) {
-        const engineCount = countCodexSessionsFromCockpitState(dirName);
-        if (engineCount === 0) continue;
+        const ids = codexSessionIdsFromCockpitState(dirName);
+        if (ids.length === 0) continue;
+        codexByProject.set(dirName, new Set(ids));
+      }
+    }
 
-        const existing = projectMap.get(dirName);
-        if (existing) {
-          existing.sessionCount += engineCount;
-        } else {
-          const claudeDir = path.join(CLAUDE_PROJECTS_DIR, dirName);
-          const claudeDirExists = fs.existsSync(claudeDir) ? claudeDir : undefined;
-          const fullPath = resolveProjectPath(dirName, cwdLookup, claudeDirExists);
-          if (!fullPath) continue;
+    for (const session of listCodexSessions()) {
+      const dirName = encodePath(session.cwd);
+      const ids = codexByProject.get(dirName) ?? new Set<string>();
+      ids.add(session.id);
+      codexByProject.set(dirName, ids);
+      codexProjectPaths.set(dirName, session.cwd);
+    }
 
-          projectMap.set(dirName, { fullPath, sessionCount: engineCount });
-        }
+    for (const [dirName, ids] of codexByProject) {
+      const engineCount = ids.size;
+      if (engineCount === 0) continue;
+
+      const existing = projectMap.get(dirName);
+      if (existing) {
+        existing.sessionCount += engineCount;
+      } else {
+        const claudeDir = path.join(CLAUDE_PROJECTS_DIR, dirName);
+        const claudeDirExists = fs.existsSync(claudeDir) ? claudeDir : undefined;
+        const fullPath = codexProjectPaths.get(dirName) ?? resolveProjectPath(dirName, cwdLookup, claudeDirExists);
+        if (!fullPath) continue;
+
+        projectMap.set(dirName, { fullPath, sessionCount: engineCount });
       }
     }
 

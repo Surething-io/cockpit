@@ -10,6 +10,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '@cockpit/effect-core';
+import { CODEX_IMAGE_ONLY_TEXT, extractCodexUserContent, normalizeCodexToolInput, normalizeCodexToolName } from './session/codexTools';
 import { generateTitle } from '../sessionTitle';
 import { appendTextPart, appendToolPart, joinAssistantText } from '../../shared/assistantText';
 import type { MessagePart } from '../../shared/assistantText';
@@ -698,7 +699,7 @@ interface CodexPayload {
   arguments?: string;
   call_id?: string;
   output?: string;
-  content?: Array<{ type?: string; text?: string }>;
+  content?: Array<{ type?: string; text?: string; image_url?: string }>;
 }
 
 async function parseCodexTranscriptFile(
@@ -750,23 +751,21 @@ async function parseCodexTranscriptFile(
     if (type === 'response_item') {
       // User message
       if (payload.type === 'message' && payload.role === 'user') {
-        const text = payload.content
-          ?.filter(c => c.type === 'input_text' && c.text)
-          .map(c => c.text!)
-          .join('') || '';
+        const { text, images } = extractCodexUserContent(payload.content);
         // Skip system/developer messages (permissions, AGENTS.md, env context)
-        if (!text || text.startsWith('<') || text.startsWith('#')) continue;
+        if (images.length === 0 && (!text || text.startsWith('<') || text.startsWith('#'))) continue;
 
         flushAssistant();
         messages.push({
           id: `codex-user-${msgCounter++}`,
           role: 'user',
           content: text,
+          ...(images.length > 0 ? { images } : {}),
           timestamp,
         });
         // First real user message becomes the title
         if (title === 'Untitled Session') {
-          title = text.slice(0, 80);
+          title = (text || CODEX_IMAGE_ONLY_TEXT).slice(0, 80);
         }
       }
 
@@ -799,8 +798,8 @@ async function parseCodexTranscriptFile(
         assistant.parts = appendToolPart(assistant.parts, callId);
         assistant.toolCalls.push({
           id: callId,
-          name: payload.name === 'shell_command' ? 'Bash' : payload.name,
-          input,
+          name: normalizeCodexToolName(payload.name),
+          input: normalizeCodexToolInput(payload.name, input),
           isLoading: false,
         });
         toolSinceText = true;

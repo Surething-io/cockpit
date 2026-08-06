@@ -1,7 +1,7 @@
 import { homedir } from 'os';
-import { join, resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 import { mkdir, readFile, writeFile } from 'fs/promises';
-import { existsSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
+import { closeSync, existsSync, mkdirSync, openSync, readSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, readdirSync, readFileSync } from 'fs';
 import { execSync } from 'child_process';
 
 // ============================================
@@ -23,6 +23,7 @@ export const NOTE_FILE = join(COCKPIT_DIR, 'note.md');
 export const SCHEDULED_TASKS_FILE = join(COCKPIT_DIR, 'scheduled-tasks.json');
 export const SETTINGS_FILE = join(COCKPIT_DIR, 'settings.json');
 export const SKILLS_FILE = join(COCKPIT_DIR, 'skills.json');
+export const CODEX_SESSION_INDEX_FILE = join(COCKPIT_DIR, 'codex-session-index.json');
 // Global registry of HTML "mini-app" file paths, launched as console browser
 // bubbles. Same shape/mechanics as skills.json (manual add/remove of absolute
 // paths), but the enrichment reads each file's <title>/<meta> head.
@@ -386,25 +387,202 @@ export function getGlmBuiltinSessionPath(cwd: string, sessionId: string): string
   return getBuiltinSessionPath('glm', cwd, sessionId);
 }
 
+export const CODEX_SESSIONS_DIR = join(HOME_DIR, '.codex', 'sessions');
+
+const CODEX_THREAD_ID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\.jsonl)?$/i;
+
+export function normalizeCodexSessionId(sessionIdOrPath: string): string {
+  const match = sessionIdOrPath.match(CODEX_THREAD_ID_RE);
+  return match?.[1] ?? sessionIdOrPath;
+}
+
+export interface CodexSessionIndexEntry {
+  id: string;
+  path: string;
+  cwd: string;
+  cwdRealpath: string;
+  modifiedAt: number;
+  size: number;
+}
+
+interface CodexSessionIndexFile {
+  version: 1;
+  updatedAt: number;
+  files: Record<string, CodexSessionIndexEntry>;
+}
+
+const emptyCodexIndex = (): CodexSessionIndexFile => ({
+  version: 1,
+  updatedAt: 0,
+  files: {},
+});
+
+function safeRealpath(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+}
+
+function readCodexIndex(): CodexSessionIndexFile {
+  try {
+    const raw = JSON.parse(readFileSync(CODEX_SESSION_INDEX_FILE, 'utf-8')) as Partial<CodexSessionIndexFile>;
+    if (raw.version !== 1 || !raw.files || typeof raw.files !== 'object') return emptyCodexIndex();
+    return { version: 1, updatedAt: raw.updatedAt || 0, files: raw.files as Record<string, CodexSessionIndexEntry> };
+  } catch {
+    return emptyCodexIndex();
+  }
+}
+
+function writeCodexIndex(index: CodexSessionIndexFile): void {
+  let tmp: string | null = null;
+  try {
+    mkdirSync(dirname(CODEX_SESSION_INDEX_FILE), { recursive: true });
+    tmp = `${CODEX_SESSION_INDEX_FILE}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
+    writeFileSync(tmp, JSON.stringify(index, null, 2), 'utf-8');
+    renameSync(tmp, CODEX_SESSION_INDEX_FILE);
+  } catch {
+    if (tmp) {
+      try { unlinkSync(tmp); } catch { /* ignore */ }
+    }
+  }
+}
+
+function listCodexSessionFiles(): string[] {
+  if (!existsSync(CODEX_SESSIONS_DIR)) return [];
+  const out: string[] = [];
+  const stack = [CODEX_SESSIONS_DIR];
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) stack.push(full);
+      else if (entry.isFile() && entry.name.endsWith('.jsonl')) out.push(full);
+    }
+  }
+  return out;
+}
+
+function readFirstLine(filePath: string, maxBytes = 1024 * 1024): string | null {
+  let fd: number | null = null;
+  try {
+    fd = openSync(filePath, 'r');
+    const chunks: Buffer[] = [];
+    let total = 0;
+    while (total < maxBytes) {
+      const buf = Buffer.alloc(Math.min(64 * 1024, maxBytes - total));
+      const n = readSync(fd, buf, 0, buf.length, total);
+      if (n <= 0) break;
+      const slice = buf.subarray(0, n);
+      const nl = slice.indexOf(10);
+      if (nl >= 0) {
+        chunks.push(slice.subarray(0, nl));
+        return Buffer.concat(chunks).toString('utf-8');
+      }
+      chunks.push(slice);
+      total += n;
+    }
+    return chunks.length ? Buffer.concat(chunks).toString('utf-8') : null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try { closeSync(fd); } catch { /* ignore */ }
+    }
+  }
+}
+
+function parseCodexSessionMeta(filePath: string): Omit<CodexSessionIndexEntry, 'path' | 'modifiedAt' | 'size'> | null {
+  const line = readFirstLine(filePath);
+  if (!line) return null;
+  try {
+    const entry = JSON.parse(line) as {
+      type?: string;
+      payload?: { id?: string; cwd?: string };
+    };
+    const id = entry.payload?.id;
+    const cwd = entry.payload?.cwd;
+    if (entry.type !== 'session_meta' || !id || !cwd) return null;
+    return { id, cwd, cwdRealpath: safeRealpath(cwd) };
+  } catch {
+    return null;
+  }
+}
+
+export function refreshCodexSessionIndex(): CodexSessionIndexFile {
+  const index = readCodexIndex();
+  const files = listCodexSessionFiles();
+  const existing = new Set(files);
+
+  for (const filePath of Object.keys(index.files)) {
+    if (!existing.has(filePath)) delete index.files[filePath];
+  }
+
+  for (const filePath of files) {
+    let st: ReturnType<typeof statSync>;
+    try {
+      st = statSync(filePath);
+    } catch {
+      delete index.files[filePath];
+      continue;
+    }
+
+    const cached = index.files[filePath];
+    if (cached) {
+      cached.modifiedAt = st.mtimeMs;
+      cached.size = st.size;
+      continue;
+    }
+
+    const meta = parseCodexSessionMeta(filePath);
+    if (!meta) continue;
+    index.files[filePath] = {
+      ...meta,
+      path: filePath,
+      modifiedAt: st.mtimeMs,
+      size: st.size,
+    };
+  }
+
+  index.updatedAt = Date.now();
+  writeCodexIndex(index);
+  return index;
+}
+
+export function listCodexSessions(): CodexSessionIndexEntry[] {
+  const index = refreshCodexSessionIndex();
+  return Object.values(index.files).sort((a, b) => b.modifiedAt - a.modifiedAt);
+}
+
+export function listCodexSessionsByEncodedPath(encodedPath: string): CodexSessionIndexEntry[] {
+  return listCodexSessions().filter(
+    (entry) => encodePath(entry.cwd) === encodedPath || encodePath(entry.cwdRealpath) === encodedPath
+  );
+}
+
 /**
  * Find a Codex session file by thread_id.
- * Codex stores sessions at ~/.codex/sessions/YYYY/MM/DD/rollout-<timestamp>-<thread_id>.jsonl
- * We glob for the thread_id suffix since we don't know the exact date/timestamp.
+ * Codex stores sessions at ~/.codex/sessions/YYYY/MM/DD/rollout-<timestamp>-<thread_id>.jsonl.
  */
 export function findCodexSessionPath(threadId: string): string | null {
-  const codexSessionsDir = join(HOME_DIR, '.codex', 'sessions');
-  if (!existsSync(codexSessionsDir)) return null;
+  const normalizedThreadId = normalizeCodexSessionId(threadId);
+  const cached = Object.values(readCodexIndex().files).find((entry) => entry.id === normalizedThreadId);
+  if (cached && existsSync(cached.path)) return cached.path;
 
-  // Walk year/month/day directories looking for a file ending with the thread_id
+  if (!existsSync(CODEX_SESSIONS_DIR)) return null;
   try {
     const result = execSync(
-      `find ${JSON.stringify(codexSessionsDir)} -name "*${threadId}.jsonl" -type f 2>/dev/null`,
+      `find ${JSON.stringify(CODEX_SESSIONS_DIR)} -name "*${normalizedThreadId}.jsonl" -type f 2>/dev/null`,
       { encoding: 'utf8', timeout: 3000 }
     ).trim();
-    if (result) {
-      // Return first match
-      return result.split('\n')[0];
-    }
+    if (result) return result.split('\n')[0];
   } catch { /* ignore */ }
   return null;
 }

@@ -220,11 +220,11 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     if (!hasFileChanges || paramsHaveChanges || !cwd) return;
     const toolIds = (message.toolCalls ?? []).map(tc => tc.id).filter(Boolean);
     if (toolIds.length === 0) return;
-    // Edit/Write family declare their target files; if such a writer has no
-    // commit yet the snapshot just hasn't landed (writes are fire-and-forget),
-    // so retry a couple times before settling on "no changes".
-    const declaredWriteIds = (message.toolCalls ?? [])
-      .filter(tc => ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(tc.name))
+    // Snapshot writes are fire-and-forget after tool_result. Bash/Codex and
+    // other mutating tools often have no file params to fall back to, so a
+    // single early list query can race the commit and hide the entry forever.
+    const snapshotBackedIds = (message.toolCalls ?? [])
+      .filter(tc => isMutatingToolName(tc.name))
       .map(tc => tc.id);
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -238,7 +238,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
           return;
         }
         const landed = new Set(commits.map(c => c.toolId));
-        const pending = declaredWriteIds.some(id => !landed.has(id));
+        const pending = snapshotBackedIds.some(id => !landed.has(id));
         if (pending && attempt < 2) {
           attempt += 1;
           timer = setTimeout(check, 2000);

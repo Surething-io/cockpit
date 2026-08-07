@@ -18,14 +18,11 @@ export interface DispatchParams {
   language?: string;
   engine?: string;
   model?: string;
-  // Execution mode. 'pty' → Claude Code CLI (claude only); 'builtin' → the Built-in
-  // Agent loop (deepseek only); absent/anything else → the vendor SDK loop. Runners that
-  // support only one mode ignore this.
+  // Execution mode. 'builtin' → the Built-in Agent loop (API-key engines only);
+  // absent/anything else → the vendor SDK loop. Runners that support only one mode ignore this.
   mode?: string;
   // claude-only (other runners ignore)
   permissionMode?: string;
-  ptyCols?: number;
-  ptyRows?: number;
   // Send ONLY this turn to the model, no prior messages — each user message becomes an
   // independent task. The transcript is still read/written either way, so the UI history
   // stays continuous; this only affects what the model is given.
@@ -33,13 +30,11 @@ export interface DispatchParams {
   // Honored by two different mechanisms:
   //  - Built-in Agent (ollama, deepseek in mode:'builtin') simply omits the prior messages
   //    when assembling the request (builtinAgent/index.ts).
-  //  - claude in SDK mode stashes the transcript for the turn, because its history
+  //  - claude stashes the transcript for the turn, because its history
   //    IS the provider session and the only lever is whether that file is there
-  //    (shared/noHistoryTranscript.ts). Not available in mode:'pty' — the interactive CLI
-  //    holds the context itself.
+  //    (shared/noHistoryTranscript.ts).
   //  - codex stashes the rollout and leaves a session_meta-only stub for the resumed turn
-  //    (shared/noHistoryRollout.ts). Its CLI mode is non-interactive, so the same file
-  //    trick works there too.
+  //    (shared/noHistoryRollout.ts).
   // Ignored by kimi and deepseek-SDK, whose context lives with the vendor.
   noHistory?: boolean;
 }

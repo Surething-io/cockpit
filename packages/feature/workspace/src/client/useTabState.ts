@@ -42,6 +42,11 @@ function normalizeCodexSessionId(sessionId: string): string {
   return match?.[1] ?? sessionId;
 }
 
+function normalizeChatMode(mode: string | undefined): ChatMode | undefined {
+  if (!mode) return undefined;
+  return mode === 'builtin' ? 'builtin' : 'sdk';
+}
+
 // ============================================
 // Hook
 // ============================================
@@ -172,7 +177,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
               deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || prev?.deepseekModel || undefined,
               kimiModel: (savedKimiModels[sessionId] as EngineModelId) || prev?.kimiModel || undefined,
               glmModel: (savedGlmModels[sessionId] as EngineModelId) || prev?.glmModel || undefined,
-              chatMode: (savedChatModes[sessionId] as ChatMode) || prev?.chatMode || undefined,
+              chatMode: normalizeChatMode(savedChatModes[sessionId]) || prev?.chatMode || undefined,
               planMode: savedPlanModes[sessionId] ?? prev?.planMode,
               noHistory: savedNoHistories[sessionId] ?? prev?.noHistory,
             };
@@ -358,7 +363,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         deepseekModel: (deepseekModels[sid] as DeepseekModel) || undefined,
         kimiModel: (kimiModels[sid] as EngineModelId) || undefined,
         glmModel: (glmModels[sid] as EngineModelId) || undefined,
-        chatMode: (chatModes[sid] as ChatMode) || undefined,
+        chatMode: normalizeChatMode(chatModes[sid]),
         planMode: planModes[sid] || undefined,
         noHistory: noHistories[sid] || undefined,
       }));
@@ -518,7 +523,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       }
       addTab(initialCwd, sid, title, {
         engine: data?.engines?.[sid] as ChatEngine | undefined,
-        chatMode: data?.chatModes?.[sid] as ChatMode | undefined,
+        chatMode: normalizeChatMode(data?.chatModes?.[sid]),
         ollamaModel: data?.ollamaModels?.[sid],
         deepseekModel: data?.deepseekModels?.[sid] as DeepseekModel | undefined,
         kimiModel: data?.kimiModels?.[sid] as EngineModelId | undefined,
@@ -611,7 +616,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     );
   }, []);
 
-  // Update execution mode (sdk/pty) for a tab
+  // Update execution mode (sdk/builtin) for a tab
   const updateTabChatMode = useCallback((tabId: string, chatMode: ChatMode) => {
     setTabs((prev) =>
       prev.map((tab) =>

@@ -503,7 +503,6 @@
     "quotaEmpty": "No quota returned",
     "quotaResetAt": "Resets {{time}}",
     "openProviderConsole": "Open the provider console",
-    "ptyModeHint": "Subscription billing mode: uses interactive claude CLI",
     "planMode": "Plan mode",
     "planModeDesc": "read-only · plan first, no edits",
     "planModeOn": "Plan mode on — read-only; send a task to get a plan",
@@ -512,19 +511,10 @@
     "noHistory": "Independent task",
     "noHistoryDesc": "no history sent",
     "noHistoryHint": "Independent task: each message is sent to the model on its own, with no prior conversation. The transcript above still records everything.",
-    "noHistoryPtyHint": "Not available in PTY mode: the interactive claude CLI holds the conversation itself. Switch to SDK mode to use it.",
     "planTitle": "Plan (awaiting your review)",
     "approvePlan": "Approve & run",
     "planApproveHint": "No approval dialog here — click to exit plan mode and execute",
-    "approvePlanPrompt": "Approved — proceed with the plan above.",
-    "ptyTerminal": "PTY Terminal",
-    "ptyRunning": "running",
-    "ptyCollapse": "Collapse",
-    "ptyExpand": "Expand",
-    "ptyStuck": "PTY seems stuck (waiting for a dialog?). Please handle it in the terminal below.",
-    "ptyTimedOut": "PTY timed out without manual handling; the turn was terminated.",
-    "ptyCrash": "Claude CLI render crash (upstream bug): {{error}}. This session's history may contain edits that fail to render.",
-    "ptyQuestionEsc": "AI asked an interactive question, which cannot be answered in this mode; it was auto-cancelled and the turn was ended. See the question in the chat and answer it in your next message."
+    "approvePlanPrompt": "Approved — proceed with the plan above."
   },
   "console": {
     "enterCommandOrUrl": "Enter a command or URL to start",

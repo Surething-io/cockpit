@@ -5,7 +5,6 @@ import {
 import { getSessionTitle } from '../state/globalState';
 import { runSdkLoop, type BuildSdkOptions } from './shared/sdkLoop';
 import { stashTranscript, mergeStashedTranscript } from './shared/noHistoryTranscript';
-import { runPtyTurn } from './shared/ptyBranch';
 import type { EngineSpec, RunCtx } from './types';
 
 type PlanPermissionResult =
@@ -98,13 +97,6 @@ export const claudeSpec: EngineSpec = {
   name: 'claude',
   runner: {
     async run(ctx) {
-      const { mode, engine } = ctx.params;
-      // PTY mode (subscription billing) — claude only.
-      if (mode === 'pty' && (!engine || engine === 'claude')) {
-        await runPtyTurn(ctx);
-        return;
-      }
-
       // "Independent task": run this turn with the transcript stashed, then merge it back.
       // A session with no transcript yet (ctx.sessionId unset) is already context-free, so
       // there is nothing to stash and the plain path applies.

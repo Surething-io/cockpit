@@ -9,11 +9,10 @@ import type { ChatEngine } from './types';
  * is no command to paste; those copy `<engine> <sessionId>`, the two identifiers
  * needed to find the session again.
  *
- * Keep in sync with the spawn site `server/engines/codex.ts` (`resume <threadId>`).
+ * Keep Codex's output in the interactive form humans paste into a terminal.
  */
 export function buildResumeCommand(engine: ChatEngine | undefined, sessionId: string): string {
   switch (engine) {
-    // Cockpit spawns `codex exec resume` because it needs one-shot JSON output.
     // A human pasting this wants to keep talking, which is the interactive form.
     case 'codex':
       return `codex resume ${sessionId}`;

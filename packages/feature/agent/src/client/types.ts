@@ -115,12 +115,8 @@ export type DeepseekModel = EngineModelId;
  * - `sdk`: `@anthropic-ai/claude-agent-sdk`'s `query()` (headless). claude (Agent SDK
  *   billing bucket) and deepseek/kimi/glm (their Anthropic-compatible endpoints). The default
  *   everywhere.
- * - `pty`: spawns the interactive `claude` CLI (pseudo-terminal driven) → subscription quota.
- *   claude only. Switchable at any time; resuming a session that has SDK edit history
- *   via PTY may crash upstream rendering — the driver's crash detection covers that (errors
- *   instead of hanging), so the user can switch back to SDK.
  * - `builtin`: Cockpit's own agent loop (server engines/builtinAgent) against the provider's
  *   OpenAI-compatible endpoint. deepseek, kimi and glm. NOT switchable mid-session: it keeps its
  *   own transcript store, so the UI locks the choice once a session has messages.
  */
-export type ChatMode = 'sdk' | 'pty' | 'builtin';
+export type ChatMode = 'sdk' | 'builtin';

@@ -3,7 +3,7 @@
  * into the Effect-based SnapshotService.
  *
  * The orchestrator's ctx.emit is the ONE point every engine's events flow
- * through (claude sdk/pty, codex, kimi, ollama, deepseek), so hooking here
+ * through (claude, codex, kimi, ollama, deepseek), so hooking here
  * covers all providers without per-engine wiring. Snapshots are fire-and-
  * forget: a failed snapshot logs a warning and never disturbs the run.
  *

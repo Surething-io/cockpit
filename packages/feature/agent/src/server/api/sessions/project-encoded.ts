@@ -194,7 +194,7 @@ async function parseSessionFile(filePath: string): Promise<{ aiTitle: string; su
       if (obj.type === 'ai-title' && obj.aiTitle) {
         aiTitle = obj.aiTitle;
       }
-      // Extract summary (standard Claude Code CLI)
+      // Extract summary (standard Claude transcript)
       if (obj.type === 'summary' && obj.summary) {
         summary = obj.summary;
       }

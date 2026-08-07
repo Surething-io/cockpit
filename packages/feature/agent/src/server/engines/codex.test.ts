@@ -1,10 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
-import { EventEmitter } from 'events';
-import { PassThrough } from 'stream';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { spawn } from 'child_process';
 import { codexSpec, codexToolUseId, resolveCodexCallId, resolveCodexPatchCallId, resolveCodexSpawnCall, parsePatchFiles, createRolloutCallReader } from './codex';
 
 const mocks = vi.hoisted(() => ({ rolloutPath: null as string | null }));
@@ -16,7 +13,6 @@ const sdkMocks = vi.hoisted(() => ({
   throwCtorOnce: false,
 }));
 
-vi.mock('child_process', () => ({ spawn: vi.fn() }));
 vi.mock('@openai/codex-sdk', () => ({
   Codex: vi.fn(function MockCodex(this: { startThread: unknown; resumeThread: unknown }, options) {
     sdkMocks.codexCtor(options);
@@ -35,6 +31,32 @@ vi.mock('@cockpit/shared-utils', () => ({
   sanitizedSpawnEnv: () => ({}),
   findCodexSessionPath: () => mocks.rolloutPath,
 }));
+
+function createEventStream() {
+  const queue: unknown[] = [];
+  const waiters: Array<() => void> = [];
+  let closed = false;
+  const wake = () => waiters.shift()?.();
+  return {
+    push(event: unknown) {
+      queue.push(event);
+      wake();
+    },
+    close() {
+      closed = true;
+      wake();
+    },
+    async *events() {
+      while (!closed || queue.length > 0) {
+        if (queue.length > 0) {
+          yield queue.shift();
+          continue;
+        }
+        await new Promise<void>((resolve) => waiters.push(resolve));
+      }
+    },
+  };
+}
 
 const fnCall = (callId: string, cmd: string) =>
   JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'exec_command', call_id: callId, arguments: JSON.stringify({ cmd }) } }) + '\n';
@@ -173,90 +195,6 @@ describe('createRolloutCallReader', () => {
   });
 });
 
-describe('codex argv assembly', () => {
-  interface FakeChild extends EventEmitter { stdout: PassThrough; stderr: PassThrough; kill: () => void }
-
-  const makeChild = (): FakeChild => {
-    const c = new EventEmitter() as FakeChild;
-    c.stdout = new PassThrough();
-    c.stderr = new PassThrough();
-    c.kill = vi.fn();
-    return c;
-  };
-
-  let child: FakeChild;
-
-  beforeEach(() => {
-    child = makeChild();
-    vi.mocked(spawn).mockReset();
-    vi.mocked(spawn).mockReturnValue(child as never);
-  });
-
-  const run = (over: Partial<Parameters<typeof codexSpec.runner.run>[0]> = {}) =>
-    codexSpec.runner.run({
-      prompt: 'fix the grants tab',
-      images: undefined,
-      cwd: '/repo',
-      sessionId: undefined,
-      params: { mode: 'pty' } as never,
-      signal: new AbortController().signal,
-      emit: vi.fn(),
-      rekey: vi.fn(),
-      currentKey: () => 'k',
-      ...over,
-    } as never);
-
-  const argv = (): string[] => vi.mocked(spawn).mock.calls[0][1] as string[];
-  const png = { media_type: 'image/png', data: Buffer.from('x').toString('base64') } as never;
-
-  it('separates the prompt with `--` so variadic --image cannot swallow it', () => {
-    const p = run({ images: [png, png] });
-    const a = argv();
-    // The prompt must be the sole positional AFTER `--`; without it codex treats it as
-    // another --image value and dies with "No prompt provided via stdin".
-    expect(a[a.length - 2]).toBe('--');
-    expect(a[a.length - 1]).toBe('fix the grants tab');
-    expect(a.indexOf('--image')).toBeLessThan(a.indexOf('--'));
-    child.emit('close', 0);
-    return p;
-  });
-
-  it('separates the prompt with `--` on the resume branch too', () => {
-    const p = run({ sessionId: 'thread_1', images: [png] });
-    const a = argv();
-    expect(a.slice(0, 3)).toEqual(['exec', 'resume', 'thread_1']);
-    expect(a[a.length - 2]).toBe('--');
-    expect(a[a.length - 1]).toBe('fix the grants tab');
-    child.emit('close', 0);
-    return p;
-  });
-
-  it('accepts an images-only turn, sending "" as the positional prompt', () => {
-    // codex handles `--image <file> -- ""` fine (verified against the real CLI), so an
-    // images-only message must reach it instead of being rejected with a 400 up front.
-    const p = run({ prompt: undefined, images: [png] });
-    const a = argv();
-    expect(a[a.length - 2]).toBe('--');
-    expect(a[a.length - 1]).toBe('');
-    expect(a).toContain('--image');
-    child.emit('close', 0);
-    return p;
-  });
-
-  it('has no preflight rejecting images-only messages', () => {
-    expect(codexSpec.preflight).toBeUndefined();
-  });
-
-  it('still passes `--` when there are no images', () => {
-    const p = run();
-    const a = argv();
-    expect(a).not.toContain('--image');
-    expect(a[a.length - 2]).toBe('--');
-    child.emit('close', 0);
-    return p;
-  });
-});
-
 describe('codex mode routing', () => {
   const events = async function* () {
     yield { type: 'thread.started', thread_id: 'sdk-thread' };
@@ -274,7 +212,6 @@ describe('codex mode routing', () => {
     sdkMocks.resumeThread.mockClear();
     sdkMocks.runStreamed.mockReset();
     sdkMocks.throwCtorOnce = false;
-    vi.mocked(spawn).mockReset();
     sdkMocks.runStreamed.mockResolvedValue({ events: events() });
   });
 
@@ -293,7 +230,6 @@ describe('codex mode routing', () => {
       currentKey: () => 'k',
     } as never);
 
-    expect(spawn).not.toHaveBeenCalled();
     expect(sdkMocks.codexCtor).toHaveBeenCalledWith({ env: {} });
     expect(sdkMocks.startThread).toHaveBeenCalledWith({
       workingDirectory: '/repo',
@@ -380,6 +316,10 @@ describe('codex mode routing', () => {
     ]);
   });
 
+  it('has no preflight rejecting images-only messages', () => {
+    expect(codexSpec.preflight).toBeUndefined();
+  });
+
   it('ignores unknown SDK item types without failing the turn', async () => {
     const unknownEvents = async function* () {
       yield { type: 'thread.started', thread_id: 'sdk-thread' };
@@ -405,55 +345,6 @@ describe('codex mode routing', () => {
     } as never);
 
     expect(emit).toHaveBeenCalledWith(expect.objectContaining({ type: 'result', subtype: 'success' }));
-  });
-});
-
-describe('codex exit handling', () => {
-  interface FakeChild extends EventEmitter { stdout: PassThrough; stderr: PassThrough; kill: () => void }
-
-  const makeChild = (): FakeChild => {
-    const c = new EventEmitter() as FakeChild;
-    c.stdout = new PassThrough();
-    c.stderr = new PassThrough();
-    c.kill = vi.fn();
-    return c;
-  };
-
-  let child: FakeChild;
-
-  beforeEach(() => {
-    child = makeChild();
-    vi.mocked(spawn).mockReset();
-    vi.mocked(spawn).mockReturnValue(child as never);
-  });
-
-  const run = () =>
-    codexSpec.runner.run({
-      prompt: 'hi', images: undefined, cwd: '/repo', sessionId: undefined,
-      params: { mode: 'pty' } as never, signal: new AbortController().signal,
-      emit: vi.fn(), rekey: vi.fn(), currentKey: () => 'k',
-    } as never);
-
-  it('rejects on a non-zero exit that produced no JSONL error event', async () => {
-    const p = run();
-    child.stderr.write('No prompt provided via stdin.\n');
-    await new Promise((r) => setImmediate(r));
-    child.emit('close', 1);
-    await expect(p).rejects.toThrow('No prompt provided via stdin.');
-  });
-
-  it('rejects with the exit code when stderr is empty', async () => {
-    const p = run();
-    child.emit('close', 3);
-    await expect(p).rejects.toThrow('Codex exited with code 3');
-  });
-
-  it('resolves on exit 0 even though codex writes warnings to stderr', async () => {
-    const p = run();
-    child.stderr.write('ERROR codex_models_manager::cache: failed to load models cache\n');
-    await new Promise((r) => setImmediate(r));
-    child.emit('close', 0);
-    await expect(p).resolves.toBeUndefined();
   });
 });
 
@@ -508,36 +399,30 @@ describe('createRolloutCallReader spawn_agent', () => {
 });
 
 describe('codex sub-agents (collab_tool_call)', () => {
-  interface FakeChild extends EventEmitter { stdout: PassThrough; stderr: PassThrough; kill: () => void }
-
-  const makeChild = (): FakeChild => {
-    const c = new EventEmitter() as FakeChild;
-    c.stdout = new PassThrough();
-    c.stderr = new PassThrough();
-    c.kill = vi.fn();
-    return c;
-  };
-
-  let child: FakeChild;
   let emit: ReturnType<typeof vi.fn>;
+  let stream: ReturnType<typeof createEventStream>;
 
   beforeEach(() => {
     mocks.rolloutPath = null;
-    child = makeChild();
     emit = vi.fn();
-    vi.mocked(spawn).mockReset();
-    vi.mocked(spawn).mockReturnValue(child as never);
+    stream = createEventStream();
+    sdkMocks.codexCtor.mockClear();
+    sdkMocks.startThread.mockClear();
+    sdkMocks.resumeThread.mockClear();
+    sdkMocks.runStreamed.mockReset();
+    sdkMocks.throwCtorOnce = false;
+    sdkMocks.runStreamed.mockResolvedValue({ events: stream.events() });
   });
 
   const run = () =>
     codexSpec.runner.run({
       prompt: 'review the PR', images: undefined, cwd: '/repo', sessionId: undefined,
-      params: { mode: 'pty' } as never, signal: new AbortController().signal,
+      params: {} as never, signal: new AbortController().signal,
       emit, rekey: vi.fn(), currentKey: () => 'k',
     } as never);
 
   const feed = async (event: unknown) => {
-    child.stdout.write(JSON.stringify(event) + '\n');
+    stream.push(event);
     await new Promise((r) => setImmediate(r));
   };
 
@@ -575,7 +460,7 @@ describe('codex sub-agents (collab_tool_call)', () => {
     await feed(waitCompleted('completed', '2 条 findings'));
     expect(toolResults()).toEqual([{ tool_use_id: 'item_0', content: '2 条 findings' }]);
 
-    child.emit('close', 0);
+    stream.close();
     await p;
   });
 
@@ -602,7 +487,7 @@ describe('codex sub-agents (collab_tool_call)', () => {
       input: { subagent_type: 'explorer', description: 'Turing (explorer)', prompt: '审查 Part A', agent_id: 'agent-1' },
     }]);
 
-    child.emit('close', 0);
+    stream.close();
     await p;
   });
 
@@ -613,7 +498,7 @@ describe('codex sub-agents (collab_tool_call)', () => {
 
     expect(toolResults()).toHaveLength(0);
 
-    child.emit('close', 0);
+    stream.close();
     await p;
   });
 
@@ -624,7 +509,7 @@ describe('codex sub-agents (collab_tool_call)', () => {
 
     expect(toolResults()).toEqual([{ tool_use_id: 'item_0', content: 'Selected model is at capacity.' }]);
 
-    child.emit('close', 0);
+    stream.close();
     await p;
   });
 
@@ -637,42 +522,36 @@ describe('codex sub-agents (collab_tool_call)', () => {
     expect(toolUses()).toHaveLength(0);
     expect(toolResults()).toHaveLength(0);
 
-    child.emit('close', 0);
+    stream.close();
     await p;
   });
 });
 
 describe('codex mcp / web_search / todo_list items', () => {
-  interface FakeChild extends EventEmitter { stdout: PassThrough; stderr: PassThrough; kill: () => void }
-
-  const makeChild = (): FakeChild => {
-    const c = new EventEmitter() as FakeChild;
-    c.stdout = new PassThrough();
-    c.stderr = new PassThrough();
-    c.kill = vi.fn();
-    return c;
-  };
-
-  let child: FakeChild;
   let emit: ReturnType<typeof vi.fn>;
+  let stream: ReturnType<typeof createEventStream>;
 
   beforeEach(() => {
     mocks.rolloutPath = null;
-    child = makeChild();
     emit = vi.fn();
-    vi.mocked(spawn).mockReset();
-    vi.mocked(spawn).mockReturnValue(child as never);
+    stream = createEventStream();
+    sdkMocks.codexCtor.mockClear();
+    sdkMocks.startThread.mockClear();
+    sdkMocks.resumeThread.mockClear();
+    sdkMocks.runStreamed.mockReset();
+    sdkMocks.throwCtorOnce = false;
+    sdkMocks.runStreamed.mockResolvedValue({ events: stream.events() });
   });
 
   const run = () =>
     codexSpec.runner.run({
       prompt: 'do it', images: undefined, cwd: '/repo', sessionId: undefined,
-      params: { mode: 'pty' } as never, signal: new AbortController().signal,
+      params: {} as never, signal: new AbortController().signal,
       emit, rekey: vi.fn(), currentKey: () => 'k',
     } as never);
 
   const feed = async (event: unknown) => {
-    child.stdout.write(JSON.stringify(event) + '\n');
+    stream.push(event);
     await new Promise((r) => setImmediate(r));
   };
 
@@ -697,7 +576,7 @@ describe('codex mcp / web_search / todo_list items', () => {
     expect(toolUses()).toHaveLength(1);
     expect(toolResults()).toEqual([{ tool_use_id: 'item_0', content: 'Mcp error: -32602' }]);
 
-    child.emit('close', 0);
+    stream.close();
     await p;
   });
 
@@ -717,7 +596,7 @@ describe('codex mcp / web_search / todo_list items', () => {
 
     expect(toolUses()[0]).toMatchObject({ id: 'call_m1', name: 'mcp__node_repl__js' });
 
-    child.emit('close', 0);
+    stream.close();
     await p;
   });
 
@@ -736,7 +615,7 @@ describe('codex mcp / web_search / todo_list items', () => {
       { tool_use_id: 'ws_2', content: 'https://x.dev' },
     ]);
 
-    child.emit('close', 0);
+    stream.close();
     await p;
   });
 
@@ -752,7 +631,7 @@ describe('codex mcp / web_search / todo_list items', () => {
     }]);
     expect(toolResults()).toEqual([{ tool_use_id: 'item_0', content: '1/2 completed' }]);
 
-    child.emit('close', 0);
+    stream.close();
     await p;
   });
 });

@@ -61,7 +61,6 @@ describe('readSessionNoHistory (scheduled fire honors "independent task")', () =
   });
 
   it('reads it for claude, which honors it by stashing the transcript', async () => {
-    // Scheduled dispatch never passes mode:'pty', so this always takes the SDK path.
     expect(await readSessionNoHistory(task(SID), 'claude', false)).toBe(true);
   });
 

@@ -288,10 +288,8 @@ interface ProjectSessionState {
  * Gated on the engines that actually honor it, mirroring the client's `canDropHistory`:
  * the built-in agent loop reads params.noHistory directly (ollama always runs that loop,
  * deepseek/kimi/glm only in builtin mode), claude honors it in the SDK loop by stashing
- * the transcript for the turn, and codex stashes its rollout. Scheduled runs always take
- * the SDK path — dispatch never passes mode:'pty' — so the Claude PTY exclusion cannot
- * apply here. Passing the flag to an engine that ignores it would read as support that
- * isn't there.
+ * the transcript for the turn, and codex stashes its rollout. Passing the flag to an engine
+ * that ignores it would read as support that isn't there.
  */
 export async function readSessionNoHistory(
   task: ScheduledTask,

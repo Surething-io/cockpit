@@ -72,13 +72,14 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     BrowserRuntime.runPromiseExit(eff).then((exit) => {
       if (exit._tag === 'Success' && exit.value) {
         const d = exit.value;
+        const rawMode = d.chatModes?.[initialSessionId];
         setResolved({
           engine: d.engines?.[initialSessionId] as ChatEngine | undefined,
           ollamaModel: d.ollamaModels?.[initialSessionId],
           deepseekModel: d.deepseekModels?.[initialSessionId] as EngineModelId | undefined,
           kimiModel: d.kimiModels?.[initialSessionId] as EngineModelId | undefined,
           glmModel: d.glmModels?.[initialSessionId] as EngineModelId | undefined,
-          chatMode: d.chatModes?.[initialSessionId] as ChatMode | undefined,
+          chatMode: rawMode === 'builtin' ? 'builtin' : 'sdk',
         });
       }
     });
@@ -114,7 +115,8 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   // Mode matters as much as engine — a Built-in Agent session driven through the SDK loop
   // resumes an id that loop has never written.
   const engine: ChatEngine | undefined = loadedEngine ?? resolved.engine ?? undefined;
-  const chatMode: ChatMode = loadedMode ?? resolved.chatMode ?? 'sdk';
+  const rawChatMode = loadedMode ?? resolved.chatMode ?? 'sdk';
+  const chatMode: ChatMode = rawChatMode === 'builtin' ? 'builtin' : 'sdk';
 
   const noop = useCallback(() => {}, []);
   // Reconcile-on-run-end (mirrors Chat.tsx): useChatStream is constructed before
@@ -124,7 +126,6 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   const {
     isLoading,
     apiRetryInfo,
-    ptyNotice,
     handleSend,
     handleStop,
   } = useChatStream(messages, setMessages, {
@@ -207,7 +208,6 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
           sessionId={sessionId}
           engine={engine}
           apiRetryInfo={apiRetryInfo}
-          ptyNotice={ptyNotice}
           hasMoreHistory={hasMoreHistory}
           isLoadingMore={isLoadingMore}
           onLoadMore={loadMoreHistory}

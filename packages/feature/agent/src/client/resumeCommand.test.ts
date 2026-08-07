@@ -8,7 +8,7 @@ describe('buildResumeCommand', () => {
     expect(buildResumeCommand('claude', ID)).toBe(`claude -r ${ID}`);
   });
 
-  // Interactive form, not the `codex exec resume` that Cockpit itself spawns.
+  // Interactive form for humans pasting it into a terminal.
   it('uses codex resume for codex', () => {
     expect(buildResumeCommand('codex', ID)).toBe(`codex resume ${ID}`);
   });

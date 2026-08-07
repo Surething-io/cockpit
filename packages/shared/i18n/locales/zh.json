@@ -503,7 +503,6 @@
     "quotaEmpty": "未返回额度信息",
     "quotaResetAt": "{{time}} 重置",
     "openProviderConsole": "打开服务商控制台",
-    "ptyModeHint": "订阅计费模式：用交互式 claude CLI 驱动",
     "planMode": "计划模式",
     "planModeDesc": "只读·先出计划不改代码",
     "planModeOn": "已开启计划模式——只读;发一个任务即可拿到计划",
@@ -512,19 +511,10 @@
     "noHistory": "独立任务",
     "noHistoryDesc": "不发送历史",
     "noHistoryHint": "独立任务：每条消息单独发给模型，不带之前的对话。上方的会话记录照常保留。",
-    "noHistoryPtyHint": "PTY 模式下不可用：对话由交互式 claude CLI 自己持有。切换到 SDK 模式即可使用。",
     "planTitle": "计划（待你确认）",
     "approvePlan": "批准并执行",
     "planApproveHint": "本环境无审批弹窗，点此退出计划模式并执行",
-    "approvePlanPrompt": "已批准，按上述计划开始执行。",
-    "ptyTerminal": "PTY 终端",
-    "ptyRunning": "运行中",
-    "ptyCollapse": "收起",
-    "ptyExpand": "展开",
-    "ptyStuck": "PTY 似乎卡住（可能在等待对话框输入），请在 PTY 终端手动处理。",
-    "ptyTimedOut": "PTY 超时未人工处理，已结束该回合。",
-    "ptyCrash": "Claude CLI 渲染崩溃（上游 bug）：{{error}}。该会话历史可能含无法渲染的编辑记录。",
-    "ptyQuestionEsc": "AI 的交互式提问无法在本模式中应答，已自动取消并结束本轮。问题内容见聊天区，下一条消息直接回答即可。"
+    "approvePlanPrompt": "已批准，按上述计划开始执行。"
   },
   "console": {
     "enterCommandOrUrl": "输入命令或网址开始使用",

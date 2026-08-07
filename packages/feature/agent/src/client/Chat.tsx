@@ -20,7 +20,6 @@ import { useChatHistory } from './useChatHistory';
 import { useChatStream } from './useChatStream';
 import { MessageList, MessageListHandle } from './MessageList';
 import { ChatInput } from './ChatInput';
-import { XtermFloatingWindow, XtermFloatingHandle } from './XtermFloatingWindow';
 import type { ChatMessage, TokenUsage, ImageInfo, ChatEngine, EngineModelId, ChatMode, ToolCallInfo } from './types';
 // In-package siblings (chat-only)
 import { ProjectSessionsModal } from './ProjectSessionsModal';
@@ -134,21 +133,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // endpoint); lifted here so the balance/quota button on the execution-mode row above it
   // can gate on a live value rather than a copy that goes stale after a key is saved.
   const [engineHasKey, setEngineHasKey] = useState(false);
-  // PTY floating window: receives raw terminal output
-  const ptyWindowRef = useRef<XtermFloatingHandle>(null);
-  const handlePtyOutput = useCallback((data: string) => {
-    ptyWindowRef.current?.write(data);
-  }, []);
-  // Manual fallback: floating-window keys → written into the running PTY's stdin
-  const handlePtyInput = useCallback((data: string) => {
-    if (!sessionId) return;
-    fetch('/api/chat/pty-input', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, data }),
-    }).catch(() => {});
-  }, [sessionId]);
-  const prevPtyLoadingRef = useRef(false);
   const messageListRef = useRef<MessageListHandle>(null);
   const handleSendRef = useRef<((message: string) => void) | null>(null);
 
@@ -211,16 +195,15 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // The store outranks the persisted value deliberately: session.json is a UI-written cache
   // that CAN be wrong (reopening a session used to stamp it with the default 'sdk', which is
   // exactly the bug this ordering fixes), while the store is where the bytes physically are.
-  // Where the store cannot tell — claude sdk-vs-pty share a directory — it reports nothing
-  // and the persisted value survives untouched.
+  // Where the store cannot tell, it reports nothing and the persisted value survives untouched.
   //
   // Resolution must happen BEFORE any use: `undefined` means "not known yet", NOT "claude",
   // yet every downstream check (`!engine`, the apiUrl fallback) reads the two identically.
   const engine = loadedEngine ?? engineProp ?? undefined;
-  const chatMode = loadedMode ?? chatModeProp ?? localChatMode;
+  const rawChatMode = loadedMode ?? chatModeProp ?? localChatMode;
+  const chatMode: ChatMode = rawChatMode === 'builtin' ? 'builtin' : 'sdk';
   const isClaudeEngine = !engine || engine === 'claude';
   const isCodexEngine = engine === 'codex';
-  const hasSdkCliToggle = isClaudeEngine || isCodexEngine;
   // Engines configured by API key rather than by a local CLI login. They share one UI: a
   // key+model picker, an SDK ↔ Built-in Agent toggle, and a consumption readout.
   const apiKeyEngine: ApiKeyEngine | null =
@@ -244,12 +227,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // message array). Claude/Codex get it by stashing their vendor transcript/rollout for
   // the turn — see server/engines/shared/noHistoryTranscript.ts and noHistoryRollout.ts.
   const supportsNoHistory = engine === 'ollama' || isBuiltinLoop || isClaudeEngine || isCodexEngine;
-  // ...but not in PTY mode: there the conversation is held by an interactive `claude` CLI
-  // process, so no amount of file juggling drops its context. Codex CLI is non-interactive
-  // `codex exec`, so the rollout-stub mechanism still works there. Shown disabled rather than
-  // hidden — flipping the engine's execution mode also flips its billing, which is not a
-  // decision this checkbox should make silently on the user's behalf.
-  const noHistoryDisabled = isClaudeEngine && chatMode === 'pty';
 
   // Write what the store proved back into the host's per-tab record — repair, not just
   // fill-in: session.json may hold no entry (a tab reopened from a session list never had
@@ -260,7 +237,9 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     if (loadedEngine && engineProp !== loadedEngine) onEngineChange?.(loadedEngine);
   }, [engineProp, loadedEngine, onEngineChange]);
   useEffect(() => {
-    if (loadedMode && chatModeProp !== loadedMode) onChatModeChange?.(loadedMode);
+    if (!loadedMode) return;
+    const normalized = loadedMode === 'builtin' ? 'builtin' : 'sdk';
+    if (chatModeProp !== normalized) onChatModeChange?.(normalized);
   }, [chatModeProp, loadedMode, onChatModeChange]);
 
   // Stream hook
@@ -269,7 +248,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     tokenUsage: streamTokenUsage,
     rateLimitInfo,
     apiRetryInfo,
-    ptyNotice,
     handleSend,
     handleStop,
   } = useChatStream(messages, setMessages, {
@@ -283,7 +261,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     engineModel,
     onSessionId: setSessionId,
     onFetchTitle: fetchSessionTitle,
-    onPtyOutput: handlePtyOutput,
     onRunComplete: () => reconcileFromDiskRef.current?.(),
   });
 
@@ -415,14 +392,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     if (isLoading || liveRunning) return;
     loadHistoryByCwdAndSessionId(initialCwd, sid, true, 10, undefined, true);
   }, [refreshSignal, sessionId, loadedSessionId, initialCwd, isLoading, liveRunning, loadHistoryByCwdAndSessionId]);
-
-  // PTY floating window: clear the screen at the start of a new turn (isLoading rising edge)
-  useEffect(() => {
-    if (chatMode === 'pty' && isLoading && !prevPtyLoadingRef.current) {
-      ptyWindowRef.current?.clear();
-    }
-    prevPtyLoadingRef.current = isLoading;
-  }, [isLoading, chatMode]);
 
   // Merge token usage: stream takes priority, fallback to history
   const tokenUsage = streamTokenUsage || historyTokenUsage;
@@ -594,25 +563,18 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   /* Independent task: each message is sent WITHOUT the prior turns. Stays on until unchecked —
      it's a session-level mode, not a one-shot. The transcript keeps recording, so the history
      above is unaffected.
-     One shared node mounted into whichever engine's option row is visible (claude execution-mode
-     row / ollama / deepseek), rather than a copy per row — adding an engine here means adding a
+     One shared node mounted into whichever engine's option row is visible (claude/codex /
+     ollama / deepseek), rather than a copy per row — adding an engine here means adding a
      mount point, so keep `supportsNoHistory` and the mount points in step. */
   const independentTaskToggle = supportsNoHistory ? (
     <label
-      className={`flex items-center gap-1.5 ml-2 pl-3 border-l border-border text-xs select-none ${
-        noHistoryDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-      }`}
-      title={
-        noHistoryDisabled
-          ? t('chat.noHistoryPtyHint', { defaultValue: 'Not available in PTY mode: the interactive claude CLI holds the conversation itself. Switch to SDK mode to use it.' })
-          : t('chat.noHistoryHint', { defaultValue: 'Independent task: each message is sent to the model on its own, with no prior conversation. The transcript above still records everything.' })
-      }
+      className="flex items-center gap-1.5 text-xs cursor-pointer select-none"
+      title={t('chat.noHistoryHint', { defaultValue: 'Independent task: each message is sent to the model on its own, with no prior conversation. The transcript above still records everything.' })}
     >
       <input
         type="checkbox"
         data-testid="nohistory-toggle"
-        checked={noHistory && !noHistoryDisabled}
-        disabled={noHistoryDisabled}
+        checked={noHistory}
         onChange={(e) => setNoHistory(e.target.checked)}
         className="accent-brand"
       />
@@ -687,36 +649,14 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           </div>
         )}
 
-        {/* Execution mode (Claude / Codex): SDK by default, CLI as an explicit fallback. */}
-        {hasSdkCliToggle && (
+        {/* Claude / Codex SDK options. CLI execution modes were intentionally removed. */}
+        {(isClaudeEngine || isCodexEngine) && (
           <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card/50">
-            <span className="text-xs text-muted-foreground">{t('chat.executionMode', { defaultValue: 'Execution mode' })}</span>
-            <div className="inline-flex rounded-md border border-border overflow-hidden text-xs" role="group" data-testid="chatmode-toggle">
-              <button
-                type="button"
-                data-testid="chatmode-sdk"
-                onClick={() => setChatMode('sdk')}
-                className={`px-2 py-0.5 ${chatMode === 'sdk' ? 'bg-brand text-white' : 'bg-transparent text-muted-foreground hover:bg-accent'}`}
-              >
-                {isCodexEngine ? 'Codex SDK' : 'Claude Agent SDK'}
-              </button>
-              <button
-                type="button"
-                data-testid="chatmode-pty"
-                onClick={() => setChatMode('pty')}
-                className={`px-2 py-0.5 ${chatMode === 'pty' ? 'bg-brand text-white' : 'bg-transparent text-muted-foreground hover:bg-accent'}`}
-                title={isCodexEngine
-                  ? t('chat.codexCliModeHint', { defaultValue: 'Fallback mode: driven by codex exec JSON output' })
-                  : t('chat.ptyModeHint', { defaultValue: 'Subscription-billing mode: driven by the interactive claude CLI' })}
-              >
-                {isCodexEngine ? 'Codex CLI' : 'Claude Code CLI'}
-              </button>
-            </div>
-            {/* Plan mode (SDK only): read-only exploration → produces a plan without editing.
+            {/* Plan mode: read-only exploration → produces a plan without editing.
                 Plan-only — uncheck and resend to actually implement. */}
-            {isClaudeEngine && chatMode === 'sdk' && (
+            {isClaudeEngine && (
               <label
-                className="flex items-center gap-1.5 ml-2 pl-3 border-l border-border text-xs cursor-pointer select-none"
+                className="flex items-center gap-1.5 text-xs cursor-pointer select-none"
                 title={t('chat.planModeHint', { defaultValue: 'Plan mode: read-only exploration that produces a plan without editing. Uncheck and resend to implement.' })}
               >
                 <input
@@ -733,7 +673,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
                 <span className="text-muted-foreground">{t('chat.planModeDesc', { defaultValue: 'read-only · plan first, no edits' })}</span>
               </label>
             )}
-            {/* Shown in both modes; only Claude PTY disables it — see noHistoryDisabled. */}
             {independentTaskToggle}
           </div>
         )}
@@ -779,7 +718,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             sessionId={sessionId}
             engine={engine}
             apiRetryInfo={apiRetryInfo}
-            ptyNotice={ptyNotice}
             hasMoreHistory={hasMoreHistory}
             isLoadingMore={isLoadingMore}
             onLoadMore={loadMoreHistory}
@@ -809,13 +747,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           onCreateScheduledTask={handleCreateScheduledTask}
         />
 
-        {/* PTY-mode floating window (dual-view: live terminal) */}
-        <XtermFloatingWindow
-          ref={ptyWindowRef}
-          visible={isClaudeEngine && chatMode === 'pty'}
-          running={isLoading}
-          onInput={handlePtyInput}
-        />
       </div>
 
       {/* Project Sessions Modal — chat-domain modal (per-cwd session list).

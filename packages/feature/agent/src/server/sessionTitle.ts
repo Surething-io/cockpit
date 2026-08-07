@@ -11,7 +11,7 @@
  *                 higher quality than `summary` (which accumulates many stale
  *                 compaction entries).
  *   2. summary  — the `{"type":"summary","summary":...}` line written by the
- *                 standard Claude Code CLI.
+ *                 standard Claude transcript.
  *   3. first meaningful user message (bare `/command` gets its follow-up
  *                 content appended).
  *   4. 'Untitled Session'.

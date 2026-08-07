@@ -1,8 +1,6 @@
-import { spawn } from 'child_process';
 import type { Input, ThreadOptions } from '@openai/codex-sdk';
 import { sanitizedSpawnEnv, findCodexSessionPath } from '@cockpit/shared-utils';
 import { randomUUID } from 'crypto';
-import { createInterface } from 'readline';
 import { writeFileSync, unlinkSync, mkdirSync, existsSync, statSync, openSync, readSync, closeSync } from 'fs';
 import { StringDecoder } from 'string_decoder';
 import { join } from 'path';
@@ -25,8 +23,8 @@ import {
   parseCodexSpawnOutput,
 } from '../api/session/codexTools';
 
-// Codex CLI JSONL → event adapter. Spawns `codex exec --json` and translates its JSONL stdout
-// into the same event shapes the other engines emit.
+// Codex SDK event adapter. Translates Codex JSON events into the same event shapes the
+// other engines emit.
 
 const MEDIA_EXT: Record<string, string> = {
   'image/png': '.png',
@@ -699,89 +697,20 @@ async function runCodexSdk(ctx: RunCtx): Promise<void> {
   }
 }
 
-function runCodexCli(ctx: RunCtx): Promise<void> {
-  const { cwd, sessionId } = ctx;
-  const prompt = ctx.prompt ?? '';
-  const imageFiles = ctx.images && ctx.images.length > 0 ? writeImagesToTemp(ctx.images) : [];
-  const adapter = createCodexEventAdapter(ctx);
-
-  return new Promise<void>((resolve, reject) => {
-    // codex-cli >=0.141: --full-auto deprecated; --sandbox workspace-write still blocks writes
-    // outside the workspace root, so use --dangerously-bypass-approvals-and-sandbox instead.
-    // Cockpit already runs the agent with the user's own privileges. A non-trusted dir needs
-    // --skip-git-repo-check. `resume` is exec-only (no -C). Prompt positional.
-    //
-    // The prompt MUST be separated by `--`: on `codex exec` the image flag is declared
-    // variadic (`-i, --image <FILE>...`), so `--image a.png "my prompt"` greedily swallows
-    // the prompt as a second image path. Codex then falls back to reading the prompt from
-    // stdin, which is 'ignore' here, and dies with "No prompt provided via stdin" (exit 1).
-    // `--` ends option parsing so the prompt always lands on the positional.
-    const args: string[] = ['exec'];
-    if (sessionId) {
-      args.push(
-        'resume',
-        sessionId,
-        '--json',
-        '--dangerously-bypass-approvals-and-sandbox',
-        '--skip-git-repo-check',
-      );
-      for (const imgPath of imageFiles) args.push('--image', imgPath);
-      args.push('--', prompt);
-    } else {
-      args.push('--json', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check');
-      if (cwd) args.push('-C', cwd);
-      for (const imgPath of imageFiles) args.push('--image', imgPath);
-      args.push('--', prompt);
-    }
-
-    const child = spawn('codex', args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      cwd: cwd || undefined,
-      env: sanitizedSpawnEnv(),
-    });
-    ctx.signal.addEventListener('abort', () => child.kill('SIGTERM'), { once: true });
-
-    const cleanup = () => cleanupImageFiles(imageFiles);
-    const rl = createInterface({ input: child.stdout! });
-    rl.on('line', (line) => {
-      let event: CodexEvent;
-      try { event = JSON.parse(line); } catch { return; }
-      adapter.handle(event);
-    });
-
-    let stderrBuf = '';
-    child.stderr?.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString(); });
-    child.on('error', (err) => { cleanup(); reject(err); });
-    child.on('close', (code) => {
-      cleanup();
-      const stderr = stderrBuf.trim();
-      if (code !== 0 && stderr) console.error(`[Codex] exited with code ${code}: ${stderr}`);
-      try { adapter.assertSuccess(); } catch (error) { reject(error); return; }
-      if (code !== 0) {
-        reject(new Error(stderr || `Codex exited with code ${code}`));
-        return;
-      }
-      resolve();
-    });
-  });
-}
-
 export const codexSpec: EngineSpec = {
   name: 'codex',
   // No preflight: the orchestrator's own "prompt or images" check is sufficient.
   runner: {
     async run(ctx: RunCtx) {
-      // Match Claude's shape: explicit pty means CLI mode, omitted/anything else means SDK.
-      const runSelectedMode = () => (ctx.params.mode === 'pty' ? runCodexCli(ctx) : runCodexSdk(ctx));
       if (ctx.params.noHistory !== true || !ctx.sessionId) {
-        await runSelectedMode();
+        await runCodexSdk(ctx);
         return;
       }
 
       const sessionPath = findCodexSessionPath(ctx.sessionId);
       const stashed = sessionPath ? stashCodexRollout(sessionPath) : false;
       try {
-        await runSelectedMode();
+        await runCodexSdk(ctx);
       } finally {
         if (stashed && sessionPath) mergeStashedCodexRollout(sessionPath);
       }

@@ -4,13 +4,13 @@ import type { ChatMessage, ToolCallInfo } from './types';
 // Single engine-agnostic stream→messages reducer (#10 line 1).
 //
 // Pure: maps the SSE events every engine route emits (claude/deepseek/kimi SDK, codex,
-// ollama, PTY — all share this vocabulary, verified) into ChatMessage updates,
+// ollama — all share this vocabulary, verified) into ChatMessage updates,
 // scoped to the current turn's assistant bubble (`assistantId`). The caller owns the
 // assistant placeholder lifecycle:
 //   - originator (useChatStream): creates it on send, passes its id (behavior unchanged)
 //   - viewer (useLiveStream): creates it on `system.init`, passes its id
 // Hook-side concerns (throttling, onSessionId/onFetchTitle/token usage/retry & rate-limit
-// indicators, pty_output→xterm) stay OUT of here.
+// indicators) stay OUT of here.
 
 interface Block {
   type?: string;

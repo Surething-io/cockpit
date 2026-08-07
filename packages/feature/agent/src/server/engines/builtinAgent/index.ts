@@ -1,9 +1,8 @@
 /**
  * Built-in Agent — Cockpit's own agent loop.
  *
- * The third execution mode, alongside the vendor ones:
+ * Built-in Agent is an alternate execution mode for API-key engines:
  *   - shared/sdkLoop.ts   → Claude Agent SDK   (vendor SDK drives the loop)
- *   - shared/ptyBranch.ts → Claude Code CLI    (vendor CLI drives the loop)
  *   - this file           → Built-in Agent     (we drive the loop)
  *
  * We own the system prompt (prompt.ts), the tools (tools.ts) and the transcript

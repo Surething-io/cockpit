@@ -34,8 +34,6 @@ interface MessageListProps {
   sessionId?: string | null;
   engine?: ChatEngine;
   apiRetryInfo?: ApiRetryInfo | null;
-  /** PTY notice (stuck / timed-out) shown in the loading bubble */
-  ptyNotice?: string | null;
   hasMoreHistory?: boolean;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
@@ -54,7 +52,7 @@ export interface MessageListHandle {
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
-  { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, ptyNotice, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch, onShowFileDiff, onApprovePlan },
+  { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch, onShowFileDiff, onApprovePlan },
   ref
 ) {
   const { t, i18n } = useTranslation();
@@ -605,14 +603,6 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                           </div>
                         )}
                       </div>
-                    </div>
-                  )}
-                  {ptyNotice && (
-                    <div className="mt-2 flex items-start gap-2 text-xs text-amber-400 border-t border-border/50 pt-2">
-                      <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" />
-                      </svg>
-                      <div className="flex-1 min-w-0 break-words">{ptyNotice}</div>
                     </div>
                   )}
                 </div>

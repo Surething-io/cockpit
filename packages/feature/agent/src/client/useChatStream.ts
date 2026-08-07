@@ -15,7 +15,6 @@ import type {
 } from './types';
 import i18n from '@cockpit/shared-i18n';
 import { useWebSocket } from '@cockpit/shared-ui';
-import { PTY_COLS, PTY_ROWS } from './XtermFloatingWindow';
 
 // Provisional run id the client generates per send so it can subscribe to the run's
 // /ws/session-stream immediately — before the engine reveals its real sessionId.
@@ -37,19 +36,17 @@ interface UseChatStreamOptions {
   sessionId: string | null;
   cwd?: string;
   engine?: ChatEngine;
-  /** 'pty' -> CLI mode. Claude uses an interactive PTY; Codex uses non-interactive codex exec JSON. */
+  /** Execution mode. Only API-key engines use 'builtin'; Claude/Codex always use SDK. */
   chatMode?: ChatMode;
   /** Plan mode (SDK + claude engine only): read-only exploration that produces a plan without editing */
   planMode?: boolean;
-  /** Independent-task mode (ollama only): send each user message with no prior history */
+  /** Independent-task mode: send each user message with no prior history */
   noHistory?: boolean;
   ollamaModel?: string;
   /** Model for the API-key engines (deepseek / kimi) — whichever of them is running. */
   engineModel?: EngineModelId;
   onSessionId: (sid: string) => void;
   onFetchTitle: (sid: string) => void;
-  /** PTY mode: raw terminal output (forwarded to the floating-window xterm) */
-  onPtyOutput?: (data: string) => void;
   /**
    * A run (launch turn + any #bg follow-up turns) just ended. The originator should reconcile
    * from disk here so its live `user-*` / `assistant-*` / `auto-*` bubbles converge to the
@@ -65,7 +62,6 @@ interface UseChatStreamReturn {
   tokenUsage: TokenUsage | null;
   rateLimitInfo: RateLimitInfo | null;
   apiRetryInfo: ApiRetryInfo | null;
-  ptyNotice: string | null;
   handleSend: (
     content: string,
     images?: ImageInfo[],
@@ -82,14 +78,12 @@ interface UseChatStreamReturn {
 export function useChatStream(
   messages: ChatMessage[],
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  { sessionId, cwd, engine, chatMode, planMode, noHistory, ollamaModel, engineModel, onSessionId, onFetchTitle, onPtyOutput, onRunComplete }: UseChatStreamOptions
+  { sessionId, cwd, engine, chatMode, planMode, noHistory, ollamaModel, engineModel, onSessionId, onFetchTitle, onRunComplete }: UseChatStreamOptions
 ): UseChatStreamReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const [rateLimitInfo, setRateLimitInfo] = useState<RateLimitInfo | null>(null);
   const [apiRetryInfo, setApiRetryInfo] = useState<ApiRetryInfo | null>(null);
-  // PTY notice (stuck / timed-out): shown in the loading bubble, like apiRetryInfo
-  const [ptyNotice, setPtyNotice] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // #10 ws-converge: the active detached run the originator is tailing over
@@ -190,29 +184,6 @@ export function useChatStream(
   // SSE event handling
   const handleStreamEvent = useCallback((event: Record<string, unknown>, messageId: string) => {
     const eventType = event.type as string;
-
-    // PTY mode: raw terminal output → floating window (does not enter the message stream)
-    if (eventType === 'pty_output') {
-      onPtyOutput?.(event.data as string);
-      return;
-    }
-
-    // PTY notice: easy-to-notice, in the message area (not a corner toast).
-    // - transient (stuck): shown in the loading bubble (like apiRetryInfo); user can take over in the terminal.
-    // - terminal (timed-out): written as the assistant message content so it persists after the turn ends.
-    if (eventType === 'pty_notice') {
-      // Server sends a messageKey (+ optional params); resolve via i18n on the client.
-      const m = event.messageKey
-        ? i18n.t(event.messageKey as string, (event.params as Record<string, unknown>) || {})
-        : (event.message as string | undefined);
-      if (!m) return;
-      if (event.terminal) {
-        setMessages((prev) => prev.map((msg) => (msg.id === messageId ? { ...msg, content: m, isStreaming: false } : msg)));
-      } else {
-        setPtyNotice(m);
-      }
-      return;
-    }
 
     // Handle session_id + turn boundary. Each turn (including a follow-up turn the SDK auto-runs
     // after a background task completes) starts with a system.init.
@@ -326,7 +297,6 @@ export function useChatStream(
     if (eventType === 'stream_event') {
       // Any actual stream content means the retry / stuck state (if any) has cleared
       setApiRetryInfo(prev => prev ? null : prev);
-      setPtyNotice(prev => prev ? null : prev);
       const streamEvent = event.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
       if (streamEvent?.type === 'content_block_delta' && streamEvent.delta?.type === 'text_delta') {
         const deltaText = streamEvent.delta.text || '';
@@ -404,11 +374,11 @@ export function useChatStream(
       // Finalize the assistant bubble (resultText fallback + isStreaming off + toolCalls done)
       setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
     }
-  }, [setMessages, flushStreamBuffer, onSessionId, onFetchTitle, cwd, engine, onPtyOutput]);
+  }, [setMessages, flushStreamBuffer, onSessionId, onFetchTitle, cwd, engine]);
 
   // #10 ws-converge: tail the active detached run over /ws/session-stream and feed every
   // event through the SAME handleStreamEvent the SSE path used — so token usage, title,
-  // retry/pty indicators, deltas, tools, result and errors are all reused unchanged.
+  // retry indicators, deltas, tools, result and errors are all reused unchanged.
   // At most one socket per hook (enabled only while a run is active).
   useWebSocket({
     url: activeRun
@@ -501,9 +471,8 @@ export function useChatStream(
       };
       setMessages((prev) => [...prev, userMessage]);
       setIsLoading(true);
-      // Fresh send: clear stale retry / pty notice from a previous turn
+      // Fresh send: clear stale retry notice from a previous turn
       setApiRetryInfo(null);
-      setPtyNotice(null);
 
       // Create assistant message placeholder
       const assistantMessageId = `assistant-${Date.now()}`;
@@ -520,20 +489,15 @@ export function useChatStream(
       sawResultRef.current = false;
       turnActiveRef.current = false;
 
-      // CLI mode. Claude uses an interactive PTY; Codex uses non-interactive codex exec JSON.
       const isClaudeEngine = !engine || engine === 'claude';
-      const isCodexEngine = engine === 'codex';
-      const useCliMode = chatMode === 'pty' && (isClaudeEngine || isCodexEngine);
-      const useClaudePty = chatMode === 'pty' && isClaudeEngine;
       // The engines configured by API key. Both offer Built-in Agent mode — server runs
       // engines/builtinAgent against their OpenAI-compatible endpoint instead of the Agent SDK.
       const isApiKeyEngine = engine === 'deepseek' || engine === 'kimi' || engine === 'glm';
       const useBuiltin = chatMode === 'builtin' && isApiKeyEngine;
       // Independent task: the Built-in Agent loop honours it directly (ollama,
-      // deepseek/kimi/glm + builtin). Claude SDK and Codex stash their vendor
-      // transcript/rollout for the turn; Claude PTY is excluded because that interactive
-      // process owns its context in memory.
-      const canDropHistory = engine === 'ollama' || useBuiltin || (isClaudeEngine && !useClaudePty) || isCodexEngine;
+      // deepseek/kimi/glm + builtin). Claude and Codex stash their vendor
+      // transcript/rollout for the turn.
+      const canDropHistory = engine === 'ollama' || useBuiltin || isClaudeEngine || engine === 'codex';
 
       const runId = genRunId();
 
@@ -558,12 +522,10 @@ export function useChatStream(
             language: i18n.language,
             ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
             ...(isApiKeyEngine && engineModel && { model: engineModel }),
-            ...(useCliMode && { mode: 'pty' }),
-            ...(useClaudePty && { ptyCols: PTY_COLS, ptyRows: PTY_ROWS }),
             ...(useBuiltin && { mode: 'builtin' }),
             // Plan mode: only meaningful in SDK mode on a claude engine (PTY has its own
             // Shift+Tab plan). When unchecked, omit → server defaults to bypassPermissions.
-            ...(usePlanMode && !useClaudePty && isClaudeEngine && { permissionMode: 'plan' }),
+            ...(usePlanMode && isClaudeEngine && { permissionMode: 'plan' }),
             // Independent task (see canDropHistory). Omitted when off.
             ...(canDropHistory && noHistory && { noHistory: true }),
           }),
@@ -623,7 +585,6 @@ export function useChatStream(
     tokenUsage,
     rateLimitInfo,
     apiRetryInfo,
-    ptyNotice,
     handleSend,
     handleStop,
     abortControllerRef,

@@ -7,7 +7,7 @@
  * when we pass `resume: <sid>`. The only lever we have is whether that file is there.
  *
  * So an independent turn runs with the transcript MOVED ASIDE and `sessionId: <sid>` in
- * place of `resume` — the CLI finds no file, starts with an empty context, and writes this
+ * place of `resume` — Claude finds no file, starts with an empty context, and writes this
  * turn to the same path it would have resumed. Afterwards the stashed history and the fresh
  * turn are concatenated back into one file.
  *

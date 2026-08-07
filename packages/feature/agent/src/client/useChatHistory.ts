@@ -63,9 +63,14 @@ interface SessionPageData {
   sessionId?: string;
   title?: string;
   engine?: ChatEngine;
-  mode?: ChatMode;
+  mode?: string;
   usage?: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
 }
+
+const normalizeChatMode = (mode: string | undefined): ChatMode | null => {
+  if (!mode) return null;
+  return mode === 'builtin' ? 'builtin' : 'sdk';
+};
 
 // ============================================
 // Types
@@ -212,7 +217,7 @@ export function useChatHistory(
           setLoadedEngine(data.engine);
         }
         if (data.mode) {
-          setLoadedMode(data.mode);
+          setLoadedMode(normalizeChatMode(data.mode));
         }
         // Notify parent component of title change
         if (data.title) {

@@ -17,7 +17,6 @@
 
 /** Colors are per engine; 'claude' intentionally has no entry and takes the neutral fallback. */
 const ENGINE_CLASS: Record<string, string> = {
-  claude2: 'bg-orange-500/15 text-orange-11',
   ollama: 'bg-blue-500/15 text-blue-11',
   codex: 'bg-green-500/15 text-green-11',
   kimi: 'bg-purple-500/15 text-purple-11',

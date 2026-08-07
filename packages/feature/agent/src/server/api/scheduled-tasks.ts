@@ -24,7 +24,6 @@ export const dynamic = "force-dynamic"
 /** Engines sendChatMessageEff knows how to dispatch — keep in sync with the allowlist there. */
 const SCHEDULABLE_ENGINES = [
   "claude",
-  "claude2",
   "ollama",
   "codex",
   "kimi",
@@ -34,7 +33,7 @@ const SCHEDULABLE_ENGINES = [
 
 /**
  * Engines whose chat route accepts a `model` param, so snapshotting the picker's choice on
- * the task means something. The others resolve their model themselves (claude/claude2 from
+ * the task means something. The others resolve their model themselves (claude from
  * the CLI config, codex from its own settings) and would silently ignore the field.
  */
 const MODEL_AWARE_ENGINES = new Set(["ollama", "deepseek", "kimi", "glm"])

@@ -53,7 +53,6 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     switchTab,
     handleSelectSession,
     handleNewTab,
-    handleNewClaude2Tab,
     handleNewCodexTab,
     handleNewKimiTab,
     handleNewGlmTab,
@@ -397,7 +396,6 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                     onCloseTab={closeTab}
                     onCloseAllTabs={closeAllTabs}
                     onNewTab={handleNewTab}
-                    onNewClaude2Tab={handleNewClaude2Tab}
                     onNewCodexTab={handleNewCodexTab}
                     onNewKimiTab={handleNewKimiTab}
                     onNewGlmTab={handleNewGlmTab}
@@ -508,7 +506,6 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
               onCloseTab={closeTab}
               onCloseAllTabs={closeAllTabs}
               onNewTab={handleNewTab}
-              onNewClaude2Tab={handleNewClaude2Tab}
               onNewCodexTab={handleNewCodexTab}
               onNewKimiTab={handleNewKimiTab}
               onNewGlmTab={handleNewGlmTab}

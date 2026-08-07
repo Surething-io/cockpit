@@ -218,7 +218,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // yet every downstream check (`!engine`, the apiUrl fallback) reads the two identically.
   const engine = loadedEngine ?? engineProp ?? undefined;
   const chatMode = loadedMode ?? chatModeProp ?? localChatMode;
-  const isClaudeEngine = !engine || engine === 'claude' || engine === 'claude2';
+  const isClaudeEngine = !engine || engine === 'claude';
   // Engines configured by API key rather than by a local CLI login. They share one UI: a
   // key+model picker, an SDK ↔ Built-in Agent toggle, and a consumption readout.
   const apiKeyEngine: ApiKeyEngine | null =
@@ -239,7 +239,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const isBuiltinLoop = apiKeyEngine !== null && chatMode === 'builtin';
   const modeLocked = Boolean(initialSessionId) || messages.length > 0;
   // Independent task. The Built-in Agent engines get it by construction (they assemble the
-  // message array). claude/claude2 get it in SDK mode by stashing the transcript for the
+  // message array). claude gets it in SDK mode by stashing the transcript for the
   // turn — see server/engines/shared/noHistoryTranscript.ts.
   const supportsNoHistory = engine === 'ollama' || isBuiltinLoop || isClaudeEngine;
   // ...but not in PTY mode: there the conversation is held by an interactive `claude` CLI
@@ -684,7 +684,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           </div>
         )}
 
-        {/* Execution mode (claude/claude2 only): SDK ↔ PTY (subscription billing). Switchable dynamically at any time.
+        {/* Execution mode (claude only): SDK ↔ PTY (subscription billing). Switchable dynamically at any time.
             After switching to PTY, subsequent messages resume via `claude -r`; if the session contains SDK edit history,
             upstream rendering may crash — covered by the driver's crash detection (errors instead of hanging), and the
             user can switch back to SDK. */}

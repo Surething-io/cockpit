@@ -3,7 +3,7 @@ import { join } from 'path';
 import { createReadStream } from 'fs';
 import { createInterface } from 'readline';
 import { Effect } from 'effect';
-import { CLAUDE_DIR, CLAUDE2_DIR, COCKPIT_DIR, ensureDir } from '@cockpit/shared-utils';
+import { CLAUDE_DIR, COCKPIT_DIR, ensureDir } from '@cockpit/shared-utils';
 import { handler, ok } from '@cockpit/effect-runtime/server';
 import { AppError, NotFoundError } from '@cockpit/effect-core';
 
@@ -269,17 +269,10 @@ async function writeCache(cacheFile: string, data: unknown): Promise<void> {
   }
 }
 
-export const GET = handler((req) =>
+export const GET = handler(() =>
   Effect.gen(function* () {
-    const engine = new URL(req.url).searchParams.get('engine') || 'claude';
-    const projectsDir =
-      engine === 'claude2'
-        ? join(CLAUDE2_DIR, 'projects')
-        : join(CLAUDE_DIR, 'projects');
-    const cacheFile =
-      engine === 'claude2'
-        ? join(COCKPIT_DIR, 'stats-cache-claude2.json')
-        : join(COCKPIT_DIR, 'stats-cache.json');
+    const projectsDir = join(CLAUDE_DIR, 'projects');
+    const cacheFile = join(COCKPIT_DIR, 'stats-cache.json');
 
     const cached = yield* Effect.tryPromise({
       try: () => readCache(cacheFile),

@@ -37,7 +37,7 @@ interface UseChatStreamOptions {
   sessionId: string | null;
   cwd?: string;
   engine?: ChatEngine;
-  /** 'pty' → subscription-billing mode (interactive claude CLI); defaults to 'sdk'. Only effective for claude/claude2 */
+  /** 'pty' → subscription-billing mode (interactive claude CLI); defaults to 'sdk'. Only effective for claude */
   chatMode?: ChatMode;
   /** Plan mode (SDK + claude engine only): read-only exploration that produces a plan without editing */
   planMode?: boolean;
@@ -520,15 +520,15 @@ export function useChatStream(
       sawResultRef.current = false;
       turnActiveRef.current = false;
 
-      // PTY mode (claude/claude2 only). Images are written to temp files by the backend driver + the prompt carries the paths for claude to read.
-      const isClaudeEngine = !engine || engine === 'claude' || engine === 'claude2';
+      // PTY mode (claude only). Images are written to temp files by the backend driver + the prompt carries the paths for claude to read.
+      const isClaudeEngine = !engine || engine === 'claude';
       const usePty = chatMode === 'pty' && isClaudeEngine;
       // The engines configured by API key. Both offer Built-in Agent mode — server runs
       // engines/builtinAgent against their OpenAI-compatible endpoint instead of the Agent SDK.
       const isApiKeyEngine = engine === 'deepseek' || engine === 'kimi' || engine === 'glm';
       const useBuiltin = chatMode === 'builtin' && isApiKeyEngine;
       // Independent task: the Built-in Agent loop honours it directly (ollama,
-      // deepseek/kimi/glm + builtin), and claude/claude2 honour it in SDK mode by stashing the
+      // deepseek/kimi/glm + builtin), and claude honours it in SDK mode by stashing the
       // transcript for the turn. PTY is excluded — the interactive CLI owns the context.
       const canDropHistory = engine === 'ollama' || useBuiltin || (isClaudeEngine && !usePty);
 
@@ -555,7 +555,6 @@ export function useChatStream(
             language: i18n.language,
             ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
             ...(isApiKeyEngine && engineModel && { model: engineModel }),
-            ...(engine === 'claude2' && { engine: 'claude2' }),
             ...(usePty && { mode: 'pty', ptyCols: PTY_COLS, ptyRows: PTY_ROWS }),
             ...(useBuiltin && { mode: 'builtin' }),
             // Plan mode: only meaningful in SDK mode on a claude engine (PTY has its own

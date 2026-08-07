@@ -33,7 +33,7 @@ function follow(ctx: RunCtx): AbortController {
 }
 
 /**
- * Shared SDK run loop for Anthropic-SDK engines (claude / claude2 / deepseek).
+ * Shared SDK run loop for Anthropic-SDK engines (claude / deepseek).
  *
  * Identical across these engines: build content (text ∪ images) → query() → stream events to
  * the registry → on system.init rekey to the real sessionId → on context compaction (stream

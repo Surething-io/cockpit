@@ -1,8 +1,6 @@
 import {
-  CLAUDE2_DIR,
   sanitizedSpawnEnv,
   getClaudeSessionPath,
-  getClaude2SessionPath,
 } from '@cockpit/shared-utils';
 import { getSessionTitle } from '../state/globalState';
 import { runSdkLoop, type BuildSdkOptions } from './shared/sdkLoop';
@@ -61,9 +59,9 @@ export function planPermission(
   return { behavior: 'allow', updatedInput: input };
 }
 
-/** Build claude/claude2 SDK options for one attempt. claude2 overrides the config dir. */
+/** Build claude SDK options for one attempt. */
 function buildClaudeOptions(ctx: RunCtx, independent: boolean): BuildSdkOptions {
-  const { engine, permissionMode } = ctx.params;
+  const { permissionMode } = ctx.params;
   const isPlan = permissionMode === 'plan';
   return (abort, resume, isRetry) => ({
     // Independent task: resume is what makes the CLI load the transcript, so the first
@@ -90,10 +88,9 @@ function buildClaudeOptions(ctx: RunCtx, independent: boolean): BuildSdkOptions 
     }),
     includePartialMessages: true,
     abortController: abort,
-    // env is ALWAYS passed (not just for claude2): without it the SDK inherits
-    // process.env verbatim, handing the agent this server's NODE_ENV=production.
-    // See sanitizedSpawnEnv. claude2 additionally points at ~/.claude2.
-    env: sanitizedSpawnEnv(engine === 'claude2' ? { CLAUDE_CONFIG_DIR: CLAUDE2_DIR } : {}),
+    // env is ALWAYS passed: without it the SDK inherits process.env verbatim,
+    // handing the agent this server's NODE_ENV=production. See sanitizedSpawnEnv.
+    env: sanitizedSpawnEnv({}),
   });
 }
 
@@ -102,8 +99,8 @@ export const claudeSpec: EngineSpec = {
   runner: {
     async run(ctx) {
       const { mode, engine } = ctx.params;
-      // PTY mode (subscription billing) — claude/claude2 only.
-      if (mode === 'pty' && (!engine || engine === 'claude' || engine === 'claude2')) {
+      // PTY mode (subscription billing) — claude only.
+      if (mode === 'pty' && (!engine || engine === 'claude')) {
         await runPtyTurn(ctx);
         return;
       }
@@ -122,10 +119,7 @@ export const claudeSpec: EngineSpec = {
         return;
       }
 
-      const sessionPath =
-        engine === 'claude2'
-          ? getClaude2SessionPath(ctx.cwd, ctx.sessionId!)
-          : getClaudeSessionPath(ctx.cwd, ctx.sessionId!);
+      const sessionPath = getClaudeSessionPath(ctx.cwd, ctx.sessionId!);
       const stashed = stashTranscript(sessionPath);
       try {
         await runSdkLoop(ctx, buildClaudeOptions(ctx, true));

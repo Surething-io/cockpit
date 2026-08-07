@@ -1,8 +1,8 @@
-Cockpit talks to 6 AI engines out of the box (plus a **Claude 2** entry, so 7 picker options total). Each Agent tab picks one engine; you can mix and match across tabs without restarting — pick by what's running locally, what billing account you're on, or which model is best at the task in front of you.
+Cockpit talks to 6 AI engines out of the box. Each Agent tab picks one engine; you can mix and match across tabs without restarting — pick by what's running locally, what billing account you're on, or which model is best at the task in front of you.
 
 | Engine | How to sign in | When to use |
 |---|---|---|
-| [Claude](#claude) | Anthropic `claude` CLI login (or **Claude 2** for a second account) | Default. Best general-purpose model. |
+| [Claude](#claude) | Anthropic `claude` CLI login | Default. Best general-purpose model. |
 | [Codex](#codex) | `codex` CLI login | If you already have a Codex / GPT subscription. |
 | [DeepSeek](#deepseek) | Paste API key in the per-tab DeepSeek picker | Strong reasoning at lower cost. |
 | [GLM](#glm) | Paste API key in the per-tab GLM picker | Zhipu's models, on a mainland or an international host. |
@@ -23,8 +23,6 @@ Cockpit talks to 6 AI engines out of the box (plus a **Claude 2** entry, so 7 pi
 | **GLM** | Paste an API key in the per-tab GLM picker | Zhipu's models, served from a mainland **or** an international host. | Zhipu / BigModel (pay-as-you-go or Coding Plan) |
 | **Kimi** | Paste an API key in the per-tab Kimi picker | Long context, mostly used in China. | Moonshot (Kimi Code subscription) |
 | **Ollama** | Nothing — it's local | Offline use, sensitive data, custom models. | Nobody (your own machine) |
-
-The engine picker in each tab also has a **Claude 2** entry — that's the **same engine** as Claude, just pointed at a second config directory (`~/.claude2`) so it uses a *different* Anthropic account. See the [Claude](#claude) section for setup.
 
 ### How engine selection works
 
@@ -97,26 +95,6 @@ That's it. Open Cockpit, create a new Agent tab, start chatting.
 - **Streaming** — replies appear word-by-word as Claude thinks.
 - **Cost visible in the UI** — every message shows tokens used and the running USD total per session.
 
-### Use a second Claude account: "Claude 2"
-
-If you have **two** Anthropic accounts — say, one personal and one billed to your company — Cockpit lets you use both at once. The engine picker has two entries: **Claude** and **Claude 2**. They're the **exact same engine**; "Claude 2" just points `CLAUDE_CONFIG_DIR` at `~/.claude2` so the two tabs don't share billing.
-
-Setup for the second account:
-
-1. Open a fresh terminal and tell `claude` to use the second config folder:
-
-```bash
-CLAUDE_CONFIG_DIR=~/.claude2 claude
-```
-
-2. Log in with your second Anthropic account when prompted.
-
-3. Back in Cockpit, open a tab and pick **Claude 2** in the engine menu. It now talks to that second account.
-
-You can keep one tab on **Claude** (personal) and another on **Claude 2** (work), side by side. Cockpit tracks tokens and cost separately.
-
-> The path has to be **exactly** `~/.claude2` — it's hard-coded in Cockpit. Any other path won't be found. If you only have one Claude account, ignore "Claude 2" entirely.
-
 ### Switching models
 
 Cockpit always uses Anthropic's current recommended Claude model. **There is no model picker** — you get the latest the service offers. Watch Anthropic's announcements to know which model is current; Cockpit picks it up automatically when the official SDK updates.
@@ -124,7 +102,6 @@ Cockpit always uses Anthropic's current recommended Claude model. **There is no 
 ### Common issues
 
 - **"Not logged in" / immediate error on first message** — run `claude` in a terminal and make sure the login completed. Cockpit can only use a login that already works for `claude` on its own.
-- **Switching accounts mid-day** — using **Claude 2** is far simpler than logging out and back in.
 
 ## Codex
 

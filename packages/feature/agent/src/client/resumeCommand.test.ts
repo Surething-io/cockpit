@@ -8,12 +8,6 @@ describe('buildResumeCommand', () => {
     expect(buildResumeCommand('claude', ID)).toBe(`claude -r ${ID}`);
   });
 
-  // claude2's transcripts live in ~/.claude2/projects; without the prefix the CLI
-  // searches ~/.claude/projects and cannot find the session.
-  it('prefixes claude2 with its CLAUDE_CONFIG_DIR', () => {
-    expect(buildResumeCommand('claude2', ID)).toBe(`CLAUDE_CONFIG_DIR=~/.claude2 claude -r ${ID}`);
-  });
-
   // Interactive form, not the `codex exec resume` that Cockpit itself spawns.
   it('uses codex resume for codex', () => {
     expect(buildResumeCommand('codex', ID)).toBe(`codex resume ${ID}`);

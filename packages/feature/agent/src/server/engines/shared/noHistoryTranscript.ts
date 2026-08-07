@@ -31,7 +31,7 @@
  */
 import * as fs from 'fs';
 import { join, basename } from 'path';
-import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR } from '@cockpit/shared-utils';
 
 /**
  * Stash location: inside the session's OWN directory — the same one the vendor uses for
@@ -135,11 +135,11 @@ export function mergeStashedTranscript(sessionPath: string): 'merged' | 'restore
  *
  * Without this the affected session stays missing from every session list until someone
  * happens to start another independent turn in it — and the only copy of the conversation
- * sits under a filename nothing reads. Runs over the two SDK stores that can produce a
- * stash (claude, claude2). Returns the number of sessions repaired.
+ * sits under a filename nothing reads. Runs over the SDK store that can produce a
+ * stash (claude). Returns the number of sessions repaired.
  */
 export function recoverStashedTranscripts(
-  roots: readonly string[] = [CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR],
+  roots: readonly string[] = [CLAUDE_PROJECTS_DIR],
 ): number {
   let repaired = 0;
   for (const root of roots) {

@@ -2,7 +2,7 @@ import { existsSync } from 'fs';
 import {
   SCHEDULED_TASKS_FILE, readJsonFile, writeJsonFile, mutateJsonFile, withFileLock,
   getSessionFilePath,
-  getClaudeSessionPath, getClaude2SessionPath, getOllamaSessionPath,
+  getClaudeSessionPath, getOllamaSessionPath,
   getDeepseekSessionPath, getDeepseekBuiltinSessionPath,
   getKimiSessionPath, getKimiBuiltinSessionPath,
   getGlmSessionPath, getGlmBuiltinSessionPath, findCodexSessionPath,
@@ -148,18 +148,18 @@ export function getNextCronTime(cronExpr: string, after: Date = new Date()): num
 // ============================================
 
 /**
- * Single execution path for ALL engines (claude / claude2 / ollama / codex / kimi /
+ * Single execution path for ALL engines (claude / ollama / codex / kimi /
  * deepseek / glm). Since #10 ws-converge every engine's /api/chat[/<engine>] route only STARTS a
  * detached run and returns its runKey as JSON (no SSE to drain); the route owns session
  * persistence, 'loading'/'unread' global state, the run registry and the 409 concurrent-run
  * guard. We POST to start the run, then poll the registry until it leaves "running".
  *
- * claude/claude2 used to bypass the route with a direct SDK query(), which left them OUT of
+ * claude used to bypass the route with a direct SDK query(), which left it OUT of
  * the run registry — so the 409 guard couldn't see them and two writers could corrupt the
  * jsonl. Routing them through /api/chat closes that hole and makes scheduled claude runs
  * stream live to viewers like every other engine. The route covers everything the old
- * direct path did (resume, cwd, bypassPermissions, claude2 CLAUDE_CONFIG_DIR via `engine`,
- * settingSources, the 1-compaction retry) and additionally expands slash commands.
+ * direct path did (resume, cwd, bypassPermissions, settingSources, the 1-compaction
+ * retry) and additionally expands slash commands.
  *
  * Scheduled tasks always resume an existing session, so the runKey is the task's sessionId.
  */
@@ -189,7 +189,7 @@ const dispatchEngineMessageEff = (
         // the engine generates a fresh id (captured below via getRunSessionId).
         ...(startFresh ? {} : { sessionId: task.sessionId }),
         cwd: task.cwd,
-        engine, // selects claude2's CLAUDE_CONFIG_DIR; no-op for the others
+        engine,
         ...(task.model && { model: task.model }),
         ...(builtinLoop && { mode: 'builtin' }),
         ...(noHistory && { noHistory: true }),
@@ -235,10 +235,9 @@ const dispatchEngineMessageEff = (
       }
       return true as const;
     },
-    // claude2 shares the 'claude' provider for error classification (same SDK).
     catch: (cause) =>
       new AgentError({
-        provider: (engine === 'claude2' ? 'claude' : engine) as AgentProvider,
+        provider: engine as AgentProvider,
         kind: 'unknown',
         cause,
       }),
@@ -288,7 +287,7 @@ interface ProjectSessionState {
  *
  * Gated on the engines that actually honor it, mirroring the client's `canDropHistory`:
  * the built-in agent loop reads params.noHistory directly (ollama always runs that loop,
- * deepseek/kimi/glm only in builtin mode), and claude/claude2 honor it in the SDK loop by stashing
+ * deepseek/kimi/glm only in builtin mode), and claude honors it in the SDK loop by stashing
  * the transcript for the turn. Scheduled runs always take the SDK path — dispatch never
  * passes mode:'pty' — so the PTY exclusion cannot apply here. Passing the flag to an engine
  * that ignores it would read as support that isn't there.
@@ -298,8 +297,7 @@ export async function readSessionNoHistory(
   engine: string,
   builtinLoop: boolean,
 ): Promise<boolean> {
-  const sdkClaude = engine === 'claude' || engine === 'claude2';
-  if (engine !== 'ollama' && !builtinLoop && !sdkClaude) return false;
+  if (engine !== 'ollama' && !builtinLoop && engine !== 'claude') return false;
   const state = await readJsonFile<ProjectSessionState>(getSessionFilePath(task.cwd), {});
   return state.noHistories?.[task.sessionId] === true;
 }
@@ -310,7 +308,6 @@ export async function readSessionNoHistory(
  * sessionId and returns null when not found.
  */
 function sessionPathFor(engine: string, task: ScheduledTask): string | null {
-  if (engine === 'claude2') return getClaude2SessionPath(task.cwd, task.sessionId);
   if (engine === 'ollama') return getOllamaSessionPath(task.cwd, task.sessionId);
   // DeepSeek/Kimi/GLM have one store per execution mode; the built-in one is checked first so
   // a built-in session isn't reported missing (which would restart it as a fresh SDK run).
@@ -332,7 +329,7 @@ export const sendChatMessageEff = (task: ScheduledTask): Effect.Effect<boolean, 
   Effect.gen(function* () {
     const engine = task.engine ?? 'claude';
 
-    if (!['claude', 'claude2', 'ollama', 'codex', 'kimi', 'deepseek', 'glm'].includes(engine)) {
+    if (!['claude', 'ollama', 'codex', 'kimi', 'deepseek', 'glm'].includes(engine)) {
       return yield* Effect.fail(
         new AgentError({
           provider: 'claude',
@@ -349,7 +346,7 @@ export const sendChatMessageEff = (task: ScheduledTask): Effect.Effect<boolean, 
     if (task.taskFile && !existsSync(task.taskFile)) {
       return yield* Effect.fail(
         new AgentError({
-          provider: (engine === 'claude2' ? 'claude' : engine) as AgentProvider,
+          provider: engine as AgentProvider,
           kind: 'unknown',
           cause: new Error(`task file not found: ${task.taskFile} (task ${task.id})`),
         }),

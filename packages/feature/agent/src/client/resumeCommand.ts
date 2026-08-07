@@ -9,17 +9,10 @@ import type { ChatEngine } from './types';
  * is no command to paste; those copy `<engine> <sessionId>`, the two identifiers
  * needed to find the session again.
  *
- * Keep in sync with the spawn sites: `server/engines/claude.ts` (claude2's
- * CLAUDE_CONFIG_DIR) and `server/engines/codex.ts` (`resume <threadId>`).
+ * Keep in sync with the spawn site `server/engines/codex.ts` (`resume <threadId>`).
  */
 export function buildResumeCommand(engine: ChatEngine | undefined, sessionId: string): string {
   switch (engine) {
-    // claude2 is not a second CLI — it is the same `claude` pointed at ~/.claude2
-    // (CLAUDE2_DIR in shared-utils/paths). Its transcripts live in
-    // ~/.claude2/projects, so a bare `claude -r` searches ~/.claude/projects and
-    // reports the session as unknown. The env prefix is what makes it resumable.
-    case 'claude2':
-      return `CLAUDE_CONFIG_DIR=~/.claude2 claude -r ${sessionId}`;
     // Cockpit spawns `codex exec resume` because it needs one-shot JSON output.
     // A human pasting this wants to keep talking, which is the interactive form.
     case 'codex':

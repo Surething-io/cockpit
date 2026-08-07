@@ -8,7 +8,7 @@
  * here. These are the stores cockpit writes itself (via appendFileSync) with no
  * cleanup. Every other engine's sessions are cleaned by their own external CLI /
  * Agent SDK:
- *   - claude / claude2            -> ~/.claude(2)/projects (Claude CLI cleanupPeriodDays)
+ *   - claude                      -> ~/.claude/projects (Claude CLI cleanupPeriodDays)
  *   - deepseek / kimi / glm (SDK) -> ~/.cockpit/<engine>/projects (Claude Agent SDK)
  *   - codex                       -> ~/.codex (external CLI)
  * so this sweep deliberately never touches them.

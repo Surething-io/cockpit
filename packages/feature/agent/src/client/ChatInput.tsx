@@ -157,7 +157,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
   // Client-side commands that perform a UI action instead of expanding to a prompt.
   // `/plan` toggles plan mode (consumed in Chat.wrappedHandleSend) — only on claude engines.
   const localCommands = useMemo<CommandInfo[]>(() => {
-    const isClaude = !_engine || _engine === 'claude' || _engine === 'claude2';
+    const isClaude = !_engine || _engine === 'claude';
     if (!isClaude) return [];
     return [{
       name: '/plan',

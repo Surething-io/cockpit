@@ -3,7 +3,7 @@ import { mapLineToEvents, initEvent, resultEvent } from '../../pty/ptySseMapper'
 import type { RunCtx } from '../types';
 
 /**
- * Claude/Claude2 PTY turn (subscription billing): driven by the interactive claude CLI via
+ * Claude PTY turn (subscription billing): driven by the interactive claude CLI via
  * jsonl → event mapping. claude-only; used when params.mode === 'pty'.
  *
  * Lifecycle (markRunIdle / 'unread' teardown) is owned by the orchestrator: this only emits

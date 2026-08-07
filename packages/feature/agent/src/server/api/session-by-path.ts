@@ -336,7 +336,7 @@ export const POST = handler((req) =>
       );
     }
 
-    // Resolve session file across 7 engines (claude/claude2/deepseek/codex/kimi/glm/ollama)
+    // Resolve session file across 6 engines (claude/deepseek/codex/kimi/glm/ollama)
     const resolved = yield* Effect.sync(() => resolveSessionPath(cwd, sessionId));
     if (!resolved) {
       return yield* Effect.fail(
@@ -447,7 +447,7 @@ export const POST = handler((req) =>
     const parseResult = yield* Effect.tryPromise({
       try: async () => {
         if (engine === 'codex') return parseCodexTranscriptFile(sessionPath);
-        // Everything else (claude/claude2/ollama/deepseek/kimi/glm) writes Claude-style
+        // Everything else (claude/ollama/deepseek/kimi/glm) writes Claude-style
         // transcripts, in both SDK and Built-in Agent mode, so one parser covers them.
         // ollama has done so since v1.0.186; the AI SDK ModelMessage legacy fallback
         // (v1.0.184–185 only) was removed.

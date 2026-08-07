@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import {
   getClaudeSessionPath,
-  getClaude2SessionPath,
   getDeepseekSessionPath,
   getDeepseekBuiltinSessionPath,
   getKimiSessionPath,
@@ -14,7 +13,6 @@ import {
 
 export type SessionEngine =
   | 'claude'
-  | 'claude2'
   | 'codex'
   | 'kimi'
   | 'ollama'
@@ -35,8 +33,8 @@ export interface SessionStore {
  * MUST be reported alongside the engine (collapsing them to `engine: 'deepseek'` alone loses
  * the half that decides which loop resumes the session).
  *
- * `mode` is deliberately absent where the store cannot prove it: claude/claude2 write the
- * same directory whether they ran through the SDK or the PTY, so guessing there would
+ * `mode` is deliberately absent where the store cannot prove it: claude writes the
+ * same directory whether it ran through the SDK or the PTY, so guessing there would
  * replace one wrong answer with another. Absent means "unknown, keep what the tab had".
  */
 export function resolveSessionPath(
@@ -46,10 +44,6 @@ export function resolveSessionPath(
   const sessionPath = getClaudeSessionPath(cwd, sessionId);
   if (fs.existsSync(sessionPath)) {
     return { sessionPath, engine: 'claude' };
-  }
-  const claude2Path = getClaude2SessionPath(cwd, sessionId);
-  if (fs.existsSync(claude2Path)) {
-    return { sessionPath: claude2Path, engine: 'claude2' };
   }
   const deepseekPath = getDeepseekSessionPath(cwd, sessionId);
   if (fs.existsSync(deepseekPath)) {
@@ -124,8 +118,6 @@ export function newSessionPathInStore(
   switch (store.engine) {
     case 'claude':
       return getClaudeSessionPath(cwd, newSessionId);
-    case 'claude2':
-      return getClaude2SessionPath(cwd, newSessionId);
     case 'deepseek':
       return store.mode === 'builtin'
         ? getDeepseekBuiltinSessionPath(cwd, newSessionId)

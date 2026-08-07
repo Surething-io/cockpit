@@ -410,13 +410,11 @@ export const readFileForPreview = (
   httpJson(`/api/file?path=${encodeURIComponent(path)}`)
 
 // ─────────────────────────────────────────────────────────
-// /api/claude-stats?engine= (token usage)
+// /api/claude-stats (token usage)
 // ─────────────────────────────────────────────────────────
 
-export const loadClaudeStats = <A = Record<string, unknown>>(
-  engine: string
-): Effect.Effect<A, AppError> =>
-  httpJson(`/api/claude-stats?engine=${encodeURIComponent(engine)}`)
+export const loadClaudeStats = <A = Record<string, unknown>>(): Effect.Effect<A, AppError> =>
+  httpJson('/api/claude-stats')
 
 // ─────────────────────────────────────────────────────────
 // /api/prompts/config — chat input quick prompts (GET scope=global / cwd=, POST full array)

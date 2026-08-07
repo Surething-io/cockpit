@@ -4,7 +4,6 @@ import {
   writeJsonFile,
   withFileLock,
   getClaudeSessionPath,
-  getClaude2SessionPath,
   getOllamaSessionPath,
   getDeepseekSessionPath,
   getDeepseekBuiltinSessionPath,
@@ -22,7 +21,6 @@ import {
  *  ran in. */
 const CLAUDE_STYLE_PATHS = [
   getClaudeSessionPath,
-  getClaude2SessionPath,
   getOllamaSessionPath,
   getDeepseekSessionPath,
   getDeepseekBuiltinSessionPath,

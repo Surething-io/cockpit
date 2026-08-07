@@ -583,7 +583,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                 <div className="bg-accent rounded-2xl rounded-bl-md px-4 py-3 max-w-[90%]">
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <span className="inline-block w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-                    <span className="text-sm">{engine === 'claude2' ? 'Claude 2 is thinking...' : engine === 'codex' ? 'Codex is thinking...' : engine === 'kimi' ? 'Kimi is thinking...' : engine === 'ollama' ? 'Ollama is thinking...' : engine === 'deepseek' ? 'DeepSeek is thinking...' : engine === 'glm' ? 'GLM is thinking...' : t('chat.claudeThinking')}</span>
+                    <span className="text-sm">{engine === 'codex' ? 'Codex is thinking...' : engine === 'kimi' ? 'Kimi is thinking...' : engine === 'ollama' ? 'Ollama is thinking...' : engine === 'deepseek' ? 'DeepSeek is thinking...' : engine === 'glm' ? 'GLM is thinking...' : t('chat.claudeThinking')}</span>
                   </div>
                   {apiRetryInfo && (
                     <div className="mt-2 flex items-start gap-2 text-xs text-amber-400 border-t border-border/50 pt-2">

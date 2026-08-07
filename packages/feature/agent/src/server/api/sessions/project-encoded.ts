@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, CLAUDE2_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, KIMI_PROJECTS_DIR, GLM_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, getBuiltinSessionsRoot, findCodexSessionPath, listCodexSessionsByEncodedPath, normalizeCodexSessionId } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, KIMI_PROJECTS_DIR, GLM_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, getBuiltinSessionsRoot, findCodexSessionPath, listCodexSessionsByEncodedPath, normalizeCodexSessionId } from '@cockpit/shared-utils';
 import { dynamicHandler } from '@cockpit/effect-runtime/server';
 import { AppError, ValidationError } from '@cockpit/effect-core';
 import { generateTitle } from '../../sessionTitle';
@@ -31,7 +31,7 @@ interface SessionInfo {
    * here: `/api/session-by-path` re-derives it, including the sdk-vs-builtin execution mode
    * this field deliberately does not carry, and Chat writes the answer into session.json.
    */
-  engine?: 'claude' | 'claude2' | 'ollama' | 'codex' | 'kimi' | 'deepseek' | 'glm';
+  engine?: 'claude' | 'ollama' | 'codex' | 'kimi' | 'deepseek' | 'glm';
 }
 
 interface SessionListCacheEntry {
@@ -315,7 +315,6 @@ async function loadSessions(encodedPath: string) {
   // written by the Agent SDK under <engine>/projects, Built-in Agent mode by us under
   // <engine>-sessions.
   const claudeDir = path.join(CLAUDE_PROJECTS_DIR, encodedPath);
-  const claude2Dir = path.join(CLAUDE2_PROJECTS_DIR, encodedPath);
   const ollamaDir = path.join(getBuiltinSessionsRoot('ollama'), encodedPath);
   const deepseekSdkDir = path.join(DEEPSEEK_PROJECTS_DIR, encodedPath);
   const deepseekBuiltinDir = path.join(getBuiltinSessionsRoot('deepseek'), encodedPath);
@@ -326,7 +325,6 @@ async function loadSessions(encodedPath: string) {
 
   const allSessionFiles = [
     ...collectSessionFiles(claudeDir, 'claude'),
-    ...collectSessionFiles(claude2Dir, 'claude2'),
     ...collectSessionFiles(ollamaDir, 'ollama'),
     ...collectSessionFiles(deepseekSdkDir, 'deepseek'),
     ...collectSessionFiles(deepseekBuiltinDir, 'deepseek'),

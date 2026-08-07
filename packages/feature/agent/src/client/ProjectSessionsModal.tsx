@@ -17,7 +17,7 @@ interface SessionInfo {
   lastMessages: string[];
   /** Untruncated full-text corpus (title + summary + all user messages), lowercased. */
   searchText?: string;
-  engine?: 'claude' | 'claude2' | 'ollama' | 'codex' | 'kimi' | 'deepseek' | 'glm';
+  engine?: 'claude' | 'ollama' | 'codex' | 'kimi' | 'deepseek' | 'glm';
 }
 
 interface ProjectSessionsModalProps {

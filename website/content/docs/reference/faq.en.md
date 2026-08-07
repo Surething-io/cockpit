@@ -37,10 +37,6 @@ Cockpit doesn't manage Claude's login — it uses the `claude` CLI's own login. 
 
 Your Claude session token expired. Run `claude` again to refresh it.
 
-**I want to use my work Claude account in one tab and my personal in another**
-
-That's what Claude 2 is for — see [Engines → Claude](/en/docs/agent/engines/#claude).
-
 ## A bubble isn't behaving
 
 **Browser bubble shows a blank page**

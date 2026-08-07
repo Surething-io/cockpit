@@ -418,19 +418,18 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
   const [tokenChartMode, setTokenChartMode] = useState<'tokens' | 'cost'>('tokens');
   const [focusedModel, setFocusedModel] = useState<string | null>(null);
   const { resolvedTheme } = useTheme();
-  const [statsEngine, setStatsEngine] = useState<'claude' | 'claude2'>('claude');
 
   useEffect(() => {
     if (!isOpen) return;
     queueMicrotask(() => setLoading(true));
-    BrowserRuntime.runPromiseExit(loadClaudeStats(statsEngine)).then((exit) => {
+    BrowserRuntime.runPromiseExit(loadClaudeStats()).then((exit) => {
       if (exit._tag === 'Success') {
         const data = exit.value as { error?: unknown } & Record<string, unknown>;
         if (!data.error) queueMicrotask(() => setStats(data as unknown as StatsData));
       }
       queueMicrotask(() => setLoading(false));
     });
-  }, [isOpen, statsEngine]);
+  }, [isOpen]);
 
   // One color allocation for every model we know about, shared by the charts,
   // the legend and the breakdown table.
@@ -626,22 +625,6 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
         <div className="flex items-center justify-between px-6 py-3 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-medium text-foreground">{t('tokenStats.title')}</h2>
-            {/* Engine toggle */}
-            <div className="flex bg-muted rounded-md p-0.5">
-              {(['claude', 'claude2'] as const).map(eng => (
-                <button
-                  key={eng}
-                  className={`px-2.5 py-0.5 text-[11px] rounded transition-colors ${
-                    statsEngine === eng
-                      ? 'bg-background text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  onClick={() => { setStats(null); setStatsEngine(eng); }}
-                >
-                  {eng === 'claude' ? 'Claude' : 'Claude 2'}
-                </button>
-              ))}
-            </div>
             {/* Time range toggle */}
             <div className="flex bg-muted rounded-md p-0.5">
               {rangeButtons.map(b => (

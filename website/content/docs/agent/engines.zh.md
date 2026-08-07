@@ -1,8 +1,8 @@
-Cockpit 开箱支持 6 个 AI 引擎(再加一个 **Claude 2** 入口,共 7 个 tab 选项)。每个 Agent tab 选一个,可以跨 tab 混用,不用重启 —— 按本地是否有模型、账号在谁那、当前任务哪个最擅长来挑。
+Cockpit 开箱支持 6 个 AI 引擎。每个 Agent tab 选一个,可以跨 tab 混用,不用重启 —— 按本地是否有模型、账号在谁那、当前任务哪个最擅长来挑。
 
 | 引擎 | 登录方式 | 何时用 |
 |---|---|---|
-| [Claude](#claude) | Anthropic `claude` CLI 登录(或 **Claude 2** 用第二个账号) | 默认。综合能力最强。 |
+| [Claude](#claude) | Anthropic `claude` CLI 登录 | 默认。综合能力最强。 |
 | [Codex](#codex) | `codex` CLI 登录 | 已经有 Codex / GPT 订阅时。 |
 | [DeepSeek](#deepseek) | 在 DeepSeek 选择器里粘 API key | 推理强、便宜。 |
 | [GLM](#glm) | 在 GLM 选择器里粘 API key | 智谱的模型,国内站和国际站都能走。 |
@@ -23,8 +23,6 @@ Cockpit 开箱支持 6 个 AI 引擎(再加一个 **Claude 2** 入口,共 7 个 
 | **GLM** | 在引擎头部的 GLM 选择器里粘 API key | 智谱的模型,国内站**或**国际站两套接入点。 | 智谱 / BigModel(按量付费或 Coding Plan) |
 | **Kimi** | 在引擎头部的 Kimi 选择器里粘 API key | 长上下文,国内主用。 | 月之暗面(Kimi Code 订阅) |
 | **Ollama** | 不需要 —— 本地 | 离线、敏感数据、自定义模型。 | 没人(你自己的电脑) |
-
-引擎选择器里还有一个 **Claude 2** —— 它跟 Claude 是**同一个引擎**,只是用第二份配置目录(`~/.claude2`)指向**第二个 Anthropic 账号**,让你能同时跑两个 Claude tab 走不同账单。配置方式见 [Claude](#claude) 章。
 
 ### 引擎选择怎么工作
 
@@ -97,26 +95,6 @@ claude
 - **流式输出** —— 回复一边想一边出。
 - **UI 里显示成本** —— 每条消息都显示用了多少 token,整个会话的累计 USD 也实时更新。
 
-### 用第二个 Claude 账号:"Claude 2"
-
-如果你有**两个** Anthropic 账号 —— 比如一个个人、一个公司账单 —— Cockpit 允许两个同时用。引擎选择器里会看到两个条目:**Claude** 和 **Claude 2**。它们是完全同一个引擎;"Claude 2" 只是把 `CLAUDE_CONFIG_DIR` 指向 `~/.claude2`,让两个 tab 不共用账单。
-
-第二个账号的配置方式:
-
-1. 开一个干净的终端,告诉 `claude` 用第二个配置目录:
-
-```bash
-CLAUDE_CONFIG_DIR=~/.claude2 claude
-```
-
-2. 按提示用第二个 Anthropic 账号登录。
-
-3. 回到 Cockpit,新开一个 tab 在引擎菜单选 **Claude 2**。这个 tab 就接到第二个账号了。
-
-可以并排开一个 **Claude** tab(个人)+ 一个 **Claude 2** tab(工作)。Cockpit 分开统计两边的 token 和成本。
-
-> 路径**必须正好**是 `~/.claude2`(代码里硬编码)。改成别的路径 Cockpit 找不到。如果你只有一个 Claude 账号,完全无视 "Claude 2"。
-
 ### 模型切换
 
 Cockpit 始终用 Anthropic 当前推荐的 Claude 模型。**没有模型选择器** —— 服务给的最新版你就用最新版。要关注当前是哪个模型,看 Anthropic 的官方公告;官方 SDK 更新时 Cockpit 自动跟进。
@@ -124,7 +102,6 @@ Cockpit 始终用 Anthropic 当前推荐的 Claude 模型。**没有模型选择
 ### 常见问题
 
 - **第一条消息就报"未登录"/ 直接出错** —— 在终端跑一次 `claude`,确认登录走完。Cockpit 只能用 `claude` 自己已经能用的那份登录。
-- **白天要切账号** —— 走 **Claude 2** 比登出再登入简单得多。
 
 ## Codex
 

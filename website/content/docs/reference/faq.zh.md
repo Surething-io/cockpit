@@ -37,10 +37,6 @@ Cockpit 不管 Claude 登录 —— 它用 `claude` CLI 自己的登录态。在
 
 Claude session token 过期。再跑一次 `claude` 刷新。
 
-**想在一个 tab 用工作账号、另一个 tab 用个人账号**
-
-Claude 2 就为这个 —— 见 [引擎 → Claude](/zh/docs/agent/engines/#claude)。
-
 ## 气泡行为异常
 
 **浏览器气泡显示空白页**

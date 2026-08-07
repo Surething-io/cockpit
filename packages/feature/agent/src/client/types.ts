@@ -99,7 +99,7 @@ export interface RateLimitInfo {
 // Chat engine / model selection types — used by useChatStream, ChatPanel,
 // MessageList, etc. Migrated here from useTabState so the types live with
 // the agent feature instead of a generic tab-state hook.
-export type ChatEngine = 'claude' | 'claude2' | 'codex' | 'kimi' | 'ollama' | 'deepseek' | 'glm';
+export type ChatEngine = 'claude' | 'codex' | 'kimi' | 'ollama' | 'deepseek' | 'glm';
 /**
  * A model id for the API-key engines (deepseek, kimi, glm). Deliberately a plain string, not a
  * union: the pickers fill their lists live from /api/<engine>/models, so any id the account
@@ -112,11 +112,11 @@ export type EngineModelId = string;
 export type DeepseekModel = EngineModelId;
 /**
  * Execution mode — which loop actually drives the turn.
- * - `sdk`: `@anthropic-ai/claude-agent-sdk`'s `query()` (headless). claude/claude2 (Agent SDK
+ * - `sdk`: `@anthropic-ai/claude-agent-sdk`'s `query()` (headless). claude (Agent SDK
  *   billing bucket) and deepseek/kimi/glm (their Anthropic-compatible endpoints). The default
  *   everywhere.
  * - `pty`: spawns the interactive `claude` CLI (pseudo-terminal driven) → subscription quota.
- *   claude/claude2 only. Switchable at any time; resuming a session that has SDK edit history
+ *   claude only. Switchable at any time; resuming a session that has SDK edit history
  *   via PTY may crash upstream rendering — the driver's crash detection covers that (errors
  *   instead of hanging), so the user can switch back to SDK.
  * - `builtin`: Cockpit's own agent loop (server engines/builtinAgent) against the provider's

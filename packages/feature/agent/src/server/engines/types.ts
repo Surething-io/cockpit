@@ -18,7 +18,7 @@ export interface DispatchParams {
   language?: string;
   engine?: string;
   model?: string;
-  // Execution mode. 'pty' → Claude Code CLI (claude/claude2 only); 'builtin' → the Built-in
+  // Execution mode. 'pty' → Claude Code CLI (claude only); 'builtin' → the Built-in
   // Agent loop (deepseek only); absent/anything else → the vendor SDK loop. Runners that
   // support only one mode ignore this.
   mode?: string;
@@ -33,7 +33,7 @@ export interface DispatchParams {
   // Honored by two different mechanisms:
   //  - Built-in Agent (ollama, deepseek in mode:'builtin') simply omits the prior messages
   //    when assembling the request (builtinAgent/index.ts).
-  //  - claude/claude2 in SDK mode stash the transcript for the turn, because their history
+  //  - claude in SDK mode stashes the transcript for the turn, because its history
   //    IS the provider session and the only lever is whether that file is there
   //    (shared/noHistoryTranscript.ts). Not available in mode:'pty' — the interactive CLI
   //    holds the context itself.

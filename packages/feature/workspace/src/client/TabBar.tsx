@@ -40,7 +40,7 @@ function TabNumberIcon({ number, isActive }: { number: number; isActive: boolean
 // NewTabButton with engine picker popover
 // ============================================
 
-function NewTabButton({ onNewTab, onNewClaude2Tab, onNewCodexTab, onNewKimiTab, onNewGlmTab, onNewOllamaTab, onNewDeepseekTab }: { onNewTab: () => void; onNewClaude2Tab?: () => void; onNewCodexTab?: () => void; onNewKimiTab?: () => void; onNewGlmTab?: () => void; onNewOllamaTab?: () => void; onNewDeepseekTab?: () => void }) {
+function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewGlmTab, onNewOllamaTab, onNewDeepseekTab }: { onNewTab: () => void; onNewCodexTab?: () => void; onNewKimiTab?: () => void; onNewGlmTab?: () => void; onNewOllamaTab?: () => void; onNewDeepseekTab?: () => void }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -79,10 +79,9 @@ function NewTabButton({ onNewTab, onNewClaude2Tab, onNewCodexTab, onNewKimiTab, 
     setOpen(v => !v);
   };
 
-  const pick = (engine: 'claude' | 'claude2' | 'codex' | 'kimi' | 'glm' | 'ollama' | 'deepseek') => {
+  const pick = (engine: 'claude' | 'codex' | 'kimi' | 'glm' | 'ollama' | 'deepseek') => {
     setOpen(false);
-    if (engine === 'claude2') onNewClaude2Tab?.();
-    else if (engine === 'codex') onNewCodexTab?.();
+    if (engine === 'codex') onNewCodexTab?.();
     else if (engine === 'kimi') onNewKimiTab?.();
     else if (engine === 'glm') onNewGlmTab?.();
     else if (engine === 'ollama') onNewOllamaTab?.();
@@ -114,13 +113,6 @@ function NewTabButton({ onNewTab, onNewClaude2Tab, onNewCodexTab, onNewKimiTab, 
           >
             <span className="w-2 h-2 rounded-full bg-brand flex-shrink-0" />
             Claude Code
-          </button>
-          <button
-            onClick={() => pick('claude2')}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors whitespace-nowrap"
-          >
-            <span className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0" />
-            Claude 2
           </button>
           <button
             onClick={() => pick('codex')}
@@ -179,7 +171,6 @@ interface TabBarProps {
   onCloseTab: (tabId: string) => void;
   onCloseAllTabs?: () => void;
   onNewTab: () => void;
-  onNewClaude2Tab?: () => void;
   onNewCodexTab?: () => void;
   onNewKimiTab?: () => void;
   onNewGlmTab?: () => void;
@@ -206,7 +197,6 @@ export function TabBar({
   onCloseTab,
   onCloseAllTabs,
   onNewTab,
-  onNewClaude2Tab,
   onNewCodexTab,
   onNewKimiTab,
   onNewGlmTab,
@@ -282,9 +272,6 @@ export function TabBar({
                 )}
               </div>
               <span className="flex-1 min-w-0 truncate">{tab.title}</span>
-              {tab.engine === 'claude2' && (
-                <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-orange-500/15 text-orange-400 font-medium leading-relaxed">C2</span>
-              )}
               {tab.engine === 'codex' && (
                 <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-emerald-500/15 text-emerald-400 font-medium leading-relaxed">CX</span>
               )}
@@ -320,7 +307,7 @@ export function TabBar({
           </Tooltip>
         ))}
         {/* New tab button with engine picker */}
-        <NewTabButton onNewTab={onNewTab} onNewClaude2Tab={onNewClaude2Tab} onNewCodexTab={onNewCodexTab} onNewKimiTab={onNewKimiTab} onNewGlmTab={onNewGlmTab} onNewOllamaTab={onNewOllamaTab} onNewDeepseekTab={onNewDeepseekTab} />
+        <NewTabButton onNewTab={onNewTab} onNewCodexTab={onNewCodexTab} onNewKimiTab={onNewKimiTab} onNewGlmTab={onNewGlmTab} onNewOllamaTab={onNewOllamaTab} onNewDeepseekTab={onNewDeepseekTab} />
         {/* Close-all button — one click closes every tab (resets to a single
             blank tab). Only shown when more than one tab exists. */}
         {onCloseAllTabs && tabs.length > 1 && (

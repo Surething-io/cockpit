@@ -535,11 +535,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     addTab(initialCwd, undefined, undefined, { appendToEnd: true });
   }, [initialCwd, addTab]);
 
-  // Create new Claude 2 tab (appended to end)
-  const handleNewClaude2Tab = useCallback(() => {
-    addTab(initialCwd, undefined, 'New Claude 2 Chat', { engine: 'claude2', appendToEnd: true });
-  }, [initialCwd, addTab]);
-
   // Create new Codex tab (appended to end)
   const handleNewCodexTab = useCallback(() => {
     addTab(initialCwd, undefined, 'New Codex Chat', { engine: 'codex', appendToEnd: true });
@@ -779,7 +774,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     switchTab,
     handleSelectSession,
     handleNewTab,
-    handleNewClaude2Tab,
     handleNewCodexTab,
     handleNewKimiTab,
     handleNewGlmTab,

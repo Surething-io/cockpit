@@ -110,7 +110,7 @@ export const POST = dynamicHandler<
       );
     }
     // Probe every engine store, not just Claude's: the button is offered on deepseek /
-    // kimi / ollama / claude2 chats too, whose transcripts live under different roots
+    // kimi / ollama chats too, whose transcripts live under different roots
     // entirely — and deepseek/kimi have two roots each (SDK vs Built-in Agent mode), so
     // resolveSessionPath is also what decides which of the two the fork gets written into.
     const store = resolveSessionPath(cwd, originalSessionId);

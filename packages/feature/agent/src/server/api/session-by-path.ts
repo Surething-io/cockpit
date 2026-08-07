@@ -3,6 +3,7 @@ import * as readline from 'readline';
 import { join } from 'path';
 import { Effect } from 'effect';
 import { resolveSessionPath } from './session/sessionStore';
+import { findCodexSessionEntry } from '@cockpit/shared-utils';
 import { injectionKind, isHumanTurnStart } from '../../shared/transcriptTurns';
 import { handler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import {
@@ -10,7 +11,21 @@ import {
   NotFoundError,
   ValidationError,
 } from '@cockpit/effect-core';
-import { CODEX_IMAGE_ONLY_TEXT, extractCodexUserContent, normalizeCodexToolInput, normalizeCodexToolName, parseCodexPatchInput } from './session/codexTools';
+import {
+  CODEX_AGENT_FN_NAMES,
+  CODEX_IMAGE_ONLY_TEXT,
+  CODEX_SPAWN_FN_NAME,
+  CODEX_WAIT_FN_NAME,
+  codexAgentResultText,
+  codexSpawnDescription,
+  codexWebSearchCall,
+  extractCodexUserContent,
+  normalizeCodexToolInput,
+  normalizeCodexToolName,
+  parseCodexPatchInput,
+  parseCodexSpawnOutput,
+  parseCodexWaitOutput,
+} from './session/codexTools';
 import { generateTitle } from '../sessionTitle';
 import { appendTextPart, appendToolPart, joinAssistantText } from '../../shared/assistantText';
 import type { MessagePart } from '../../shared/assistantText';
@@ -68,6 +83,9 @@ interface MessageImage {
   media_type: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
   data: string;
 }
+
+/** One entry of ChatMessage.toolCalls, named so the codex parser can hold references. */
+type CodexToolCall = NonNullable<ChatMessage['toolCalls']>[number];
 
 interface ChatMessage {
   id: string;
@@ -157,6 +175,70 @@ interface WorkflowJournal {
   phases?: Array<{ title?: string; detail?: string }>;
   summary?: string;
   workflowProgress?: WorkflowAgentEntry[];
+}
+
+/**
+ * Codex counterpart of findSubagentTranscript. Codex has no `subagents/` sidecar: a
+ * sub-agent's transcript is an ordinary rollout of its own, in the shared
+ * `~/.codex/sessions` tree, keyed by its thread id. The only link back to the
+ * spawning call is inside the parent rollout — `spawn_agent`'s function_call_output
+ * (`{"agent_id":…,"nickname":…}`) sits under the tool call's `call_id`, which IS the
+ * tool_use id the client drilled in with. So: scan the parent for that call_id, then
+ * resolve the child rollout by the agent id it names.
+ */
+async function findCodexSubagentTranscript(
+  sessionPath: string,
+  toolUseId: string
+): Promise<{ transcriptPath: string; meta: SubagentMeta } | null> {
+  const rl = readline.createInterface({
+    input: fs.createReadStream(sessionPath),
+    crlfDelay: Infinity,
+  });
+
+  let agentId: string | null = null;
+  let agentType: string | undefined;
+  try {
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+      let payload: {
+        type?: string;
+        name?: string;
+        call_id?: string;
+        arguments?: string;
+        output?: string;
+      } | undefined;
+      try {
+        payload = (JSON.parse(line) as { payload?: typeof payload }).payload;
+      } catch { continue; }
+      if (!payload || payload.call_id !== toolUseId) continue;
+
+      if (payload.type === 'function_call' && payload.name === CODEX_SPAWN_FN_NAME) {
+        try {
+          const args = JSON.parse(payload.arguments || '{}') as { agent_type?: unknown };
+          if (typeof args.agent_type === 'string') agentType = args.agent_type;
+        } catch { /* keep going: the output line is what actually matters */ }
+      } else if (payload.type === 'function_call_output') {
+        const parsed = parseCodexSpawnOutput(payload.output || '');
+        if (parsed) { agentId = parsed.agentId; break; }
+      }
+    }
+  } finally {
+    rl.close();
+  }
+
+  if (!agentId) return null;
+  const entry = findCodexSessionEntry(agentId);
+  if (!entry || !fs.existsSync(entry.path)) return null;
+  return {
+    transcriptPath: entry.path,
+    // The child's own session_meta is authoritative for role/nickname; fall back to
+    // the spawn arguments when this rollout predates those fields.
+    meta: {
+      agentType: entry.agentRole || agentType,
+      description: entry.agentNickname,
+      toolUseId,
+    },
+  };
 }
 
 // Locate the subagent transcript spawned by a given tool_use id.
@@ -270,7 +352,13 @@ export const POST = handler((req) =>
           new ValidationError({ field: 'toolUseId', reason: 'invalid' })
         );
       }
-      const sub = yield* Effect.sync(() => findSubagentTranscript(sessionPath, toolUseId));
+      const sub = yield* engine === 'codex'
+        ? Effect.tryPromise({
+            try: () => findCodexSubagentTranscript(sessionPath, toolUseId),
+            catch: (cause) =>
+              new AppError({ message: 'findCodexSubagentTranscript failed', cause }),
+          })
+        : Effect.sync(() => findSubagentTranscript(sessionPath, toolUseId));
       if (!sub) {
         return yield* Effect.fail(
           new NotFoundError({ resource: 'subagent', id: toolUseId })
@@ -280,8 +368,12 @@ export const POST = handler((req) =>
       if (ifFingerprint && ifFingerprint === subFingerprint) {
         return ok({ notModified: true, fingerprint: subFingerprint });
       }
+      // Same drill-in contract for both engines, each with its own transcript parser.
       const subResult = yield* Effect.tryPromise({
-        try: () => parseTranscriptFile(sub.transcriptPath),
+        try: () =>
+          engine === 'codex'
+            ? parseCodexTranscriptFile(sub.transcriptPath)
+            : parseTranscriptFile(sub.transcriptPath),
         catch: (cause) =>
           new AppError({ message: 'parseTranscriptFile failed', cause }),
       });
@@ -696,11 +788,17 @@ interface CodexPayload {
   type?: string;
   role?: string;
   name?: string;
+  /** `mcp__<server>` for MCP calls, `multi_agent_v1` for sub-agent tools. */
+  namespace?: string;
   arguments?: string;
   input?: string; // custom_tool_call (apply_patch) body
   call_id?: string;
   output?: string;
   content?: Array<{ type?: string; text?: string; image_url?: string }>;
+  // web_search_end (an event_msg, not a response_item) — the only persisted web
+  // search line carrying both the stable `ws_…` id and the query.
+  query?: string;
+  action?: { type?: string; query?: string; queries?: string[]; url?: string };
 }
 
 async function parseCodexTranscriptFile(
@@ -716,6 +814,14 @@ async function parseCodexTranscriptFile(
   let msgCounter = 0;
   // Paragraph-break only across a tool call (see assistantText.ts).
   let toolSinceText = false;
+
+  // Sub-agent wiring. All three are session-scoped, not per-message: a `wait_agent`
+  // routinely lands in a later turn (so a later assistant message) than the
+  // `spawn_agent` whose bubble it completes. The maps hold live references into
+  // `messages`, so filling a result later mutates the already-pushed bubble.
+  const spawnByCallId = new Map<string, CodexToolCall>();
+  const agentToCall = new Map<string, CodexToolCall>();
+  const waitCallIds = new Set<string>();
 
   const flushAssistant = () => {
     if (currentAssistant) {
@@ -791,28 +897,74 @@ async function parseCodexTranscriptFile(
 
       // Tool call (function_call)
       if (payload.type === 'function_call' && payload.name) {
-        const assistant = ensureAssistant(timestamp);
-        let input: Record<string, unknown> = {};
-        try { input = JSON.parse(payload.arguments || '{}'); } catch { /* */ }
-        assistant.toolCalls = assistant.toolCalls || [];
-        const callId = payload.call_id || `tool-${msgCounter++}`;
-        assistant.parts = appendToolPart(assistant.parts, callId);
-        assistant.toolCalls.push({
-          id: callId,
-          name: normalizeCodexToolName(payload.name),
-          input: normalizeCodexToolInput(payload.name, input),
-          isLoading: false,
-        });
-        toolSinceText = true;
+        const fnName = payload.name;
+        if (fnName === CODEX_WAIT_FN_NAME && payload.call_id) waitCallIds.add(payload.call_id);
+        // Multi-agent plumbing gets no bubble of its own: `spawn_agent` is the only one
+        // that becomes a Task, and the rest merely feed it (see codexTools). This must
+        // match the live engine's handleCollabItem or the turn changes shape on refresh.
+        const isAgentPlumbing = CODEX_AGENT_FN_NAMES.has(fnName) && fnName !== CODEX_SPAWN_FN_NAME;
+
+        if (!isAgentPlumbing) {
+          const assistant = ensureAssistant(timestamp);
+          let input: Record<string, unknown> = {};
+          try { input = JSON.parse(payload.arguments || '{}'); } catch { /* */ }
+          assistant.toolCalls = assistant.toolCalls || [];
+          const callId = payload.call_id || `tool-${msgCounter++}`;
+          assistant.parts = appendToolPart(assistant.parts, callId);
+          const toolCall: CodexToolCall = {
+            id: callId,
+            // The namespace is what turns a bare `js` into `mcp__node_repl__js`.
+            name: normalizeCodexToolName(fnName, payload.namespace),
+            input: normalizeCodexToolInput(fnName, input),
+            isLoading: false,
+          };
+          assistant.toolCalls.push(toolCall);
+          if (fnName === CODEX_SPAWN_FN_NAME) spawnByCallId.set(callId, toolCall);
+          toolSinceText = true;
+        }
       }
 
       // Tool result (function_call_output)
       if (payload.type === 'function_call_output' && payload.call_id) {
-        const assistant = ensureAssistant(timestamp);
-        const tc = assistant.toolCalls?.find(t => t.id === payload.call_id);
-        if (tc) {
-          tc.result = payload.output || '';
-          tc.isLoading = false;
+        const callId = payload.call_id;
+        const spawned = spawnByCallId.get(callId);
+        const output = payload.output || '';
+
+        if (spawned) {
+          // `spawn_agent`'s output is bookkeeping (`{agent_id, nickname}`), not a report,
+          // so it deliberately does NOT become the bubble's result: the report arrives
+          // later, from the wait_agent that collects this agent. Leaving `result` unset
+          // until then is also what keeps the drill-in view polling the sub-agent's
+          // still-growing rollout — including for an agent that was never waited on.
+          const parsed = parseCodexSpawnOutput(output);
+          if (parsed) {
+            agentToCall.set(parsed.agentId, spawned);
+            spawned.input = {
+              ...spawned.input,
+              agent_id: parsed.agentId,
+              description: codexSpawnDescription(
+                parsed.nickname,
+                typeof spawned.input.subagent_type === 'string' ? spawned.input.subagent_type : undefined,
+                typeof spawned.input.prompt === 'string' ? spawned.input.prompt : ''
+              ),
+            };
+          }
+        } else if (waitCallIds.has(callId)) {
+          // Route each agent's report onto the bubble its spawn_agent created. Agents
+          // spawned in an earlier turn are not in the map (codex cannot reach them across
+          // an `exec resume` either) and are simply skipped.
+          for (const state of parseCodexWaitOutput(output)) {
+            if (!state.done) continue;
+            const tc = agentToCall.get(state.agentId);
+            if (tc) tc.result = codexAgentResultText(state);
+          }
+        } else {
+          const assistant = ensureAssistant(timestamp);
+          const tc = assistant.toolCalls?.find(t => t.id === callId);
+          if (tc) {
+            tc.result = output;
+            tc.isLoading = false;
+          }
         }
       }
 
@@ -842,6 +994,18 @@ async function parseCodexTranscriptFile(
           tc.isLoading = false;
         }
       }
+    }
+
+    // Web search. Unlike every other tool this is NOT persisted as a function_call:
+    // the `response_item`/`web_search_call` line has no id at all, so the only usable
+    // record is this event_msg — which carries the same `ws_…` id the live item uses.
+    if (type === 'event_msg' && payload.type === 'web_search_end' && payload.call_id) {
+      const assistant = ensureAssistant(timestamp);
+      const { name, input, result } = codexWebSearchCall(payload.query, payload.action);
+      assistant.toolCalls = assistant.toolCalls || [];
+      assistant.parts = appendToolPart(assistant.parts, payload.call_id);
+      assistant.toolCalls.push({ id: payload.call_id, name, input, result, isLoading: false });
+      toolSinceText = true;
     }
 
     // Usage from response_completed or event_msg

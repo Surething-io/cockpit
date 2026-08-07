@@ -1,8 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { appendFileSync, mkdtempSync, writeFileSync } from 'fs';
+import { EventEmitter } from 'events';
+import { PassThrough } from 'stream';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { codexToolUseId, resolveCodexCallId, resolveCodexPatchCallId, parsePatchFiles, createRolloutCallReader } from './codex';
+import { spawn } from 'child_process';
+import { codexSpec, codexToolUseId, resolveCodexCallId, resolveCodexPatchCallId, resolveCodexSpawnCall, parsePatchFiles, createRolloutCallReader } from './codex';
+
+const mocks = vi.hoisted(() => ({ rolloutPath: null as string | null }));
+
+vi.mock('child_process', () => ({ spawn: vi.fn() }));
+vi.mock('@cockpit/shared-utils', () => ({
+  sanitizedSpawnEnv: () => ({}),
+  findCodexSessionPath: () => mocks.rolloutPath,
+}));
 
 const fnCall = (callId: string, cmd: string) =>
   JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'exec_command', call_id: callId, arguments: JSON.stringify({ cmd }) } }) + '\n';
@@ -138,5 +149,438 @@ describe('createRolloutCallReader', () => {
     expect(read(path).exec.length).toBe(2);
     writeFileSync(path, fnCall('call_9', 'echo Z'));
     expect(read(path).exec.map(c => c.callId)).toEqual(['call_9']);
+  });
+});
+
+describe('codex argv assembly', () => {
+  interface FakeChild extends EventEmitter { stdout: PassThrough; stderr: PassThrough; kill: () => void }
+
+  const makeChild = (): FakeChild => {
+    const c = new EventEmitter() as FakeChild;
+    c.stdout = new PassThrough();
+    c.stderr = new PassThrough();
+    c.kill = vi.fn();
+    return c;
+  };
+
+  let child: FakeChild;
+
+  beforeEach(() => {
+    child = makeChild();
+    vi.mocked(spawn).mockReset();
+    vi.mocked(spawn).mockReturnValue(child as never);
+  });
+
+  const run = (over: Partial<Parameters<typeof codexSpec.runner.run>[0]> = {}) =>
+    codexSpec.runner.run({
+      prompt: 'fix the grants tab',
+      images: undefined,
+      cwd: '/repo',
+      sessionId: undefined,
+      params: {} as never,
+      signal: new AbortController().signal,
+      emit: vi.fn(),
+      rekey: vi.fn(),
+      currentKey: () => 'k',
+      ...over,
+    } as never);
+
+  const argv = (): string[] => vi.mocked(spawn).mock.calls[0][1] as string[];
+  const png = { media_type: 'image/png', data: Buffer.from('x').toString('base64') } as never;
+
+  it('separates the prompt with `--` so variadic --image cannot swallow it', () => {
+    const p = run({ images: [png, png] });
+    const a = argv();
+    // The prompt must be the sole positional AFTER `--`; without it codex treats it as
+    // another --image value and dies with "No prompt provided via stdin".
+    expect(a[a.length - 2]).toBe('--');
+    expect(a[a.length - 1]).toBe('fix the grants tab');
+    expect(a.indexOf('--image')).toBeLessThan(a.indexOf('--'));
+    child.emit('close', 0);
+    return p;
+  });
+
+  it('separates the prompt with `--` on the resume branch too', () => {
+    const p = run({ sessionId: 'thread_1', images: [png] });
+    const a = argv();
+    expect(a.slice(0, 3)).toEqual(['exec', 'resume', 'thread_1']);
+    expect(a[a.length - 2]).toBe('--');
+    expect(a[a.length - 1]).toBe('fix the grants tab');
+    child.emit('close', 0);
+    return p;
+  });
+
+  it('accepts an images-only turn, sending "" as the positional prompt', () => {
+    // codex handles `--image <file> -- ""` fine (verified against the real CLI), so an
+    // images-only message must reach it instead of being rejected with a 400 up front.
+    const p = run({ prompt: undefined, images: [png] });
+    const a = argv();
+    expect(a[a.length - 2]).toBe('--');
+    expect(a[a.length - 1]).toBe('');
+    expect(a).toContain('--image');
+    child.emit('close', 0);
+    return p;
+  });
+
+  it('has no preflight rejecting images-only messages', () => {
+    expect(codexSpec.preflight).toBeUndefined();
+  });
+
+  it('still passes `--` when there are no images', () => {
+    const p = run();
+    const a = argv();
+    expect(a).not.toContain('--image');
+    expect(a[a.length - 2]).toBe('--');
+    child.emit('close', 0);
+    return p;
+  });
+});
+
+describe('codex exit handling', () => {
+  interface FakeChild extends EventEmitter { stdout: PassThrough; stderr: PassThrough; kill: () => void }
+
+  const makeChild = (): FakeChild => {
+    const c = new EventEmitter() as FakeChild;
+    c.stdout = new PassThrough();
+    c.stderr = new PassThrough();
+    c.kill = vi.fn();
+    return c;
+  };
+
+  let child: FakeChild;
+
+  beforeEach(() => {
+    child = makeChild();
+    vi.mocked(spawn).mockReset();
+    vi.mocked(spawn).mockReturnValue(child as never);
+  });
+
+  const run = () =>
+    codexSpec.runner.run({
+      prompt: 'hi', images: undefined, cwd: '/repo', sessionId: undefined,
+      params: {} as never, signal: new AbortController().signal,
+      emit: vi.fn(), rekey: vi.fn(), currentKey: () => 'k',
+    } as never);
+
+  it('rejects on a non-zero exit that produced no JSONL error event', async () => {
+    const p = run();
+    child.stderr.write('No prompt provided via stdin.\n');
+    await new Promise((r) => setImmediate(r));
+    child.emit('close', 1);
+    await expect(p).rejects.toThrow('No prompt provided via stdin.');
+  });
+
+  it('rejects with the exit code when stderr is empty', async () => {
+    const p = run();
+    child.emit('close', 3);
+    await expect(p).rejects.toThrow('Codex exited with code 3');
+  });
+
+  it('resolves on exit 0 even though codex writes warnings to stderr', async () => {
+    const p = run();
+    child.stderr.write('ERROR codex_models_manager::cache: failed to load models cache\n');
+    await new Promise((r) => setImmediate(r));
+    child.emit('close', 0);
+    await expect(p).resolves.toBeUndefined();
+  });
+});
+
+describe('resolveCodexSpawnCall', () => {
+  const calls = [
+    { callId: 'call_a', args: { message: 'A' }, agentId: 'agent-1' },
+    { callId: 'call_b', args: { message: 'B' }, agentId: 'agent-2' },
+  ];
+
+  it('matches on the sub-agent thread id, not turn order', () => {
+    expect(resolveCodexSpawnCall(calls, 0, 'agent-2')?.callId).toBe('call_b');
+  });
+
+  it('falls back to turn order before codex has flushed the spawn output', () => {
+    const pending = [{ callId: 'call_a', args: {} }];
+    expect(resolveCodexSpawnCall(pending, 0, 'agent-9')?.callId).toBe('call_a');
+  });
+
+  it('returns null when the rollout has no entry for this index', () => {
+    expect(resolveCodexSpawnCall([], 0, undefined)).toBeNull();
+  });
+});
+
+describe('createRolloutCallReader spawn_agent', () => {
+  const spawnLine = (callId: string, agentType: string, message: string) =>
+    JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'spawn_agent', namespace: 'multi_agent_v1', call_id: callId, arguments: JSON.stringify({ agent_type: agentType, message }) } }) + '\n';
+  const spawnOut = (callId: string, agentId: string, nickname: string) =>
+    JSON.stringify({ type: 'response_item', payload: { type: 'function_call_output', call_id: callId, output: JSON.stringify({ agent_id: agentId, nickname }) } }) + '\n';
+
+  it('back-fills the agent id from an output appended after the call', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'codex-spawn-')), 'r.jsonl');
+    const read = createRolloutCallReader();
+
+    // Codex writes the call first and the output only when the tool returns, so the
+    // reader must survive seeing them on two separate reads.
+    writeFileSync(path, spawnLine('call_s1', 'explorer', 'go'));
+    expect(read(path).spawn).toEqual([{ callId: 'call_s1', args: { agent_type: 'explorer', message: 'go' } }]);
+
+    appendFileSync(path, noise + spawnOut('call_s1', 'agent-1', 'Turing'));
+    expect(read(path).spawn).toEqual([
+      { callId: 'call_s1', args: { agent_type: 'explorer', message: 'go' }, agentId: 'agent-1', nickname: 'Turing' },
+    ]);
+  });
+
+  it('keeps spawn calls out of the exec list so command call_ids stay aligned', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'codex-spawn-')), 'r.jsonl');
+    writeFileSync(path, fnCall('call_1', 'ls') + spawnLine('call_s1', 'explorer', 'go') + fnCall('call_2', 'pwd'));
+    const calls = createRolloutCallReader()(path);
+    expect(calls.exec.map(c => c.callId)).toEqual(['call_1', 'call_2']);
+    expect(calls.spawn.map(c => c.callId)).toEqual(['call_s1']);
+  });
+});
+
+describe('codex sub-agents (collab_tool_call)', () => {
+  interface FakeChild extends EventEmitter { stdout: PassThrough; stderr: PassThrough; kill: () => void }
+
+  const makeChild = (): FakeChild => {
+    const c = new EventEmitter() as FakeChild;
+    c.stdout = new PassThrough();
+    c.stderr = new PassThrough();
+    c.kill = vi.fn();
+    return c;
+  };
+
+  let child: FakeChild;
+  let emit: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mocks.rolloutPath = null;
+    child = makeChild();
+    emit = vi.fn();
+    vi.mocked(spawn).mockReset();
+    vi.mocked(spawn).mockReturnValue(child as never);
+  });
+
+  const run = () =>
+    codexSpec.runner.run({
+      prompt: 'review the PR', images: undefined, cwd: '/repo', sessionId: undefined,
+      params: {} as never, signal: new AbortController().signal,
+      emit, rekey: vi.fn(), currentKey: () => 'k',
+    } as never);
+
+  const feed = async (event: unknown) => {
+    child.stdout.write(JSON.stringify(event) + '\n');
+    await new Promise((r) => setImmediate(r));
+  };
+
+  // Verified against codex 0.141: a spawn's item.started has an EMPTY
+  // receiver_thread_ids, so the agent is only identifiable on item.completed.
+  const spawnStarted = { type: 'item.started', item: { id: 'item_0', type: 'collab_tool_call', tool: 'spawn_agent', sender_thread_id: 't', receiver_thread_ids: [], prompt: 'go', agents_states: {}, status: 'in_progress' } };
+  const spawnCompleted = { type: 'item.completed', item: { id: 'item_0', type: 'collab_tool_call', tool: 'spawn_agent', sender_thread_id: 't', receiver_thread_ids: ['agent-1'], prompt: 'go', agents_states: { 'agent-1': { status: 'pending_init', message: null } }, status: 'completed' } };
+  const waitCompleted = (status: string, message: string | null) => ({ type: 'item.completed', item: { id: 'item_1', type: 'collab_tool_call', tool: 'wait', sender_thread_id: 't', receiver_thread_ids: ['agent-1'], prompt: null, agents_states: { 'agent-1': { status, message } }, status: 'completed' } });
+
+  const toolUses = () => emit.mock.calls
+    .map(([e]) => e)
+    .filter((e) => e.type === 'assistant')
+    .flatMap((e) => e.message.content)
+    .filter((b: { type?: string }) => b.type === 'tool_use');
+  const toolResults = () => emit.mock.calls
+    .map(([e]) => e)
+    .filter((e) => e.type === 'user')
+    .flatMap((e) => e.message.content);
+
+  it('emits one Task tool_use for a spawn and leaves it open until the wait reports', async () => {
+    const p = run();
+    await feed(spawnStarted);
+
+    // item.started must not produce a bubble — it cannot name the agent yet, and a
+    // second bubble would appear on item.completed.
+    expect(toolUses()).toHaveLength(0);
+
+    await feed(spawnCompleted);
+    expect(toolUses()).toEqual([
+      { type: 'tool_use', id: 'item_0', name: 'Task', input: { description: 'go', prompt: 'go', agent_id: 'agent-1' } },
+    ]);
+    // No result yet: the bubble stays loading, which is what keeps the drill-in polling.
+    expect(toolResults()).toHaveLength(0);
+
+    await feed(waitCompleted('completed', '2 条 findings'));
+    expect(toolResults()).toEqual([{ tool_use_id: 'item_0', content: '2 条 findings' }]);
+
+    child.emit('close', 0);
+    await p;
+  });
+
+  it('keys the bubble by the persistent call_id when the rollout is readable', async () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'codex-live-spawn-')), 'r.jsonl');
+    writeFileSync(
+      path,
+      JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'spawn_agent', call_id: 'call_s1', arguments: JSON.stringify({ agent_type: 'explorer', message: '审查 Part A' }) } }) + '\n'
+        + JSON.stringify({ type: 'response_item', payload: { type: 'function_call_output', call_id: 'call_s1', output: JSON.stringify({ agent_id: 'agent-1', nickname: 'Turing' }) } }) + '\n'
+    );
+    mocks.rolloutPath = path;
+
+    const p = run();
+    await feed({ type: 'thread.started', thread_id: 'thread-1' });
+    await feed(spawnCompleted);
+
+    // call_id (not item_0) is what the resume parser keys on — a bubble minted under
+    // item_0 would lose its drill-in and its snapshot on the next refresh. The
+    // rollout also supplies agent_type and the nickname the header shows.
+    expect(toolUses()).toEqual([{
+      type: 'tool_use',
+      id: 'call_s1',
+      name: 'Task',
+      input: { subagent_type: 'explorer', description: 'Turing (explorer)', prompt: '审查 Part A', agent_id: 'agent-1' },
+    }]);
+
+    child.emit('close', 0);
+    await p;
+  });
+
+  it('keeps the bubble open when a wait times out with the agent still running', async () => {
+    const p = run();
+    await feed(spawnCompleted);
+    await feed(waitCompleted('running', null));
+
+    expect(toolResults()).toHaveLength(0);
+
+    child.emit('close', 0);
+    await p;
+  });
+
+  it('surfaces an errored agent as the bubble result', async () => {
+    const p = run();
+    await feed(spawnCompleted);
+    await feed(waitCompleted('errored', 'Selected model is at capacity.'));
+
+    expect(toolResults()).toEqual([{ tool_use_id: 'item_0', content: 'Selected model is at capacity.' }]);
+
+    child.emit('close', 0);
+    await p;
+  });
+
+  it('ignores reports for agents spawned in an earlier turn', async () => {
+    const p = run();
+    // codex cannot reach a previous turn's agents after `exec resume`; such a report
+    // has no bubble of ours and must not be attached to an unrelated tool call.
+    await feed({ type: 'item.completed', item: { id: 'item_0', type: 'collab_tool_call', tool: 'close_agent', receiver_thread_ids: ['stale-agent'], agents_states: { 'stale-agent': { status: 'not_found', message: null } }, status: 'completed' } });
+
+    expect(toolUses()).toHaveLength(0);
+    expect(toolResults()).toHaveLength(0);
+
+    child.emit('close', 0);
+    await p;
+  });
+});
+
+describe('codex mcp / web_search / todo_list items', () => {
+  interface FakeChild extends EventEmitter { stdout: PassThrough; stderr: PassThrough; kill: () => void }
+
+  const makeChild = (): FakeChild => {
+    const c = new EventEmitter() as FakeChild;
+    c.stdout = new PassThrough();
+    c.stderr = new PassThrough();
+    c.kill = vi.fn();
+    return c;
+  };
+
+  let child: FakeChild;
+  let emit: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mocks.rolloutPath = null;
+    child = makeChild();
+    emit = vi.fn();
+    vi.mocked(spawn).mockReset();
+    vi.mocked(spawn).mockReturnValue(child as never);
+  });
+
+  const run = () =>
+    codexSpec.runner.run({
+      prompt: 'do it', images: undefined, cwd: '/repo', sessionId: undefined,
+      params: {} as never, signal: new AbortController().signal,
+      emit, rekey: vi.fn(), currentKey: () => 'k',
+    } as never);
+
+  const feed = async (event: unknown) => {
+    child.stdout.write(JSON.stringify(event) + '\n');
+    await new Promise((r) => setImmediate(r));
+  };
+
+  const toolUses = () => emit.mock.calls.map(([e]) => e).filter((e) => e.type === 'assistant')
+    .flatMap((e) => e.message.content).filter((b: { type?: string }) => b.type === 'tool_use');
+  const toolResults = () => emit.mock.calls.map(([e]) => e).filter((e) => e.type === 'user')
+    .flatMap((e) => e.message.content);
+
+  it('opens an MCP bubble on item.started and fills its error on item.completed', async () => {
+    const p = run();
+    const base = { id: 'item_0', type: 'mcp_tool_call', server: 'node_repl', tool: 'js', arguments: { code: '2 + 2' } };
+    await feed({ type: 'item.started', item: { ...base, result: null, error: null, status: 'in_progress' } });
+
+    expect(toolUses()).toEqual([
+      { type: 'tool_use', id: 'item_0', name: 'mcp__node_repl__js', input: { code: '2 + 2' } },
+    ]);
+    expect(toolResults()).toHaveLength(0);
+
+    await feed({ type: 'item.completed', item: { ...base, result: null, error: { message: 'Mcp error: -32602' }, status: 'failed' } });
+
+    // One bubble, not two: item.completed must reuse the id item.started minted.
+    expect(toolUses()).toHaveLength(1);
+    expect(toolResults()).toEqual([{ tool_use_id: 'item_0', content: 'Mcp error: -32602' }]);
+
+    child.emit('close', 0);
+    await p;
+  });
+
+  it('keys an MCP bubble by the rollout call_id, guarded by server+tool', async () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'codex-mcp-')), 'r.jsonl');
+    writeFileSync(path, JSON.stringify({
+      type: 'response_item',
+      payload: { type: 'function_call', name: 'js', namespace: 'mcp__node_repl', call_id: 'call_m1', arguments: '{"code":"2 + 2"}' },
+    }) + '\n');
+    mocks.rolloutPath = path;
+
+    const p = run();
+    await feed({ type: 'thread.started', thread_id: 'thread-1' });
+    // MCP tools are unknown names, so isMutatingToolName treats them as mutating and
+    // they get snapshots — the id has to be the persistent one or the diff is orphaned.
+    await feed({ type: 'item.started', item: { id: 'item_0', type: 'mcp_tool_call', server: 'node_repl', tool: 'js', arguments: { code: '2 + 2' }, status: 'in_progress' } });
+
+    expect(toolUses()[0]).toMatchObject({ id: 'call_m1', name: 'mcp__node_repl__js' });
+
+    child.emit('close', 0);
+    await p;
+  });
+
+  it('emits a web search as WebSearch and an opened page as WebFetch', async () => {
+    const p = run();
+    await feed({ type: 'item.completed', item: { id: 'ws_1', type: 'web_search', query: 'codex cli', action: { type: 'search', query: 'codex cli', queries: ['codex cli', 'openai codex'] } } });
+    await feed({ type: 'item.completed', item: { id: 'ws_2', type: 'web_search', query: 'https://x.dev', action: { type: 'open_page', url: 'https://x.dev' } } });
+
+    expect(toolUses()).toEqual([
+      { type: 'tool_use', id: 'ws_1', name: 'WebSearch', input: { query: 'codex cli' } },
+      { type: 'tool_use', id: 'ws_2', name: 'WebFetch', input: { url: 'https://x.dev' } },
+    ]);
+    // Neither may stay loading: codex reports no hits, so there is nothing else coming.
+    expect(toolResults()).toEqual([
+      { tool_use_id: 'ws_1', content: 'codex cli\nopenai codex' },
+      { tool_use_id: 'ws_2', content: 'https://x.dev' },
+    ]);
+
+    child.emit('close', 0);
+    await p;
+  });
+
+  it('emits a plan as TodoWrite with claude-shaped todo statuses', async () => {
+    const p = run();
+    await feed({ type: 'item.completed', item: { id: 'item_0', type: 'todo_list', items: [{ text: '读文件', completed: true }, { text: '分析', completed: false }] } });
+
+    expect(toolUses()).toEqual([{
+      type: 'tool_use',
+      id: 'item_0',
+      name: 'TodoWrite',
+      input: { todos: [{ content: '读文件', status: 'completed' }, { content: '分析', status: 'pending' }] },
+    }]);
+    expect(toolResults()).toEqual([{ tool_use_id: 'item_0', content: '1/2 completed' }]);
+
+    child.emit('close', 0);
+    await p;
   });
 });

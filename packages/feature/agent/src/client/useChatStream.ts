@@ -566,14 +566,15 @@ export function useChatStream(
           }),
         });
 
-        if (response.status === 400 && isApiKeyEngine) {
-          // Surface the readable error (likely "API key is not configured")
-          const errBody = await response.json().catch(() => null);
-          throw new Error(errBody?.error || `${engine} request failed`);
-        }
-
         if (!response.ok) {
-          throw new Error(i18n.t('chat.requestFailed', { defaultValue: 'Request failed' }));
+          // Every dispatch rejection carries a readable `error` ("API key is not configured",
+          // "session is already running", …). Surface it for ALL engines: this branch used to be
+          // limited to the api-key ones, so any other engine's 4xx collapsed into a bare
+          // "Request failed" and the actual reason was only visible in the server log.
+          const errBody = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(
+            errBody?.error || i18n.t('chat.requestFailed', { defaultValue: 'Request failed' })
+          );
         }
 
         const startBody = (await response.json().catch(() => ({}))) as { runKey?: string };

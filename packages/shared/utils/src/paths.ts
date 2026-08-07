@@ -403,16 +403,27 @@ export interface CodexSessionIndexEntry {
   cwdRealpath: string;
   modifiedAt: number;
   size: number;
+  /** Set when this rollout is a sub-agent codex spawned, not a session the user started. */
+  parentThreadId?: string;
+  agentRole?: string;
+  agentNickname?: string;
 }
 
+// Bumped 1 → 2 when sub-agent fields were added. readCodexIndex discards the whole
+// file on a version mismatch, which is the ONLY thing that re-parses already-indexed
+// rollouts: refreshCodexSessionIndex short-circuits on a cache hit and only refreshes
+// mtime/size, so without this bump every previously seen sub-agent would keep its
+// stale (unflagged) entry and go on polluting the session list forever.
+const CODEX_INDEX_VERSION = 2;
+
 interface CodexSessionIndexFile {
-  version: 1;
+  version: number;
   updatedAt: number;
   files: Record<string, CodexSessionIndexEntry>;
 }
 
 const emptyCodexIndex = (): CodexSessionIndexFile => ({
-  version: 1,
+  version: CODEX_INDEX_VERSION,
   updatedAt: 0,
   files: {},
 });
@@ -428,8 +439,12 @@ function safeRealpath(p: string): string {
 function readCodexIndex(): CodexSessionIndexFile {
   try {
     const raw = JSON.parse(readFileSync(CODEX_SESSION_INDEX_FILE, 'utf-8')) as Partial<CodexSessionIndexFile>;
-    if (raw.version !== 1 || !raw.files || typeof raw.files !== 'object') return emptyCodexIndex();
-    return { version: 1, updatedAt: raw.updatedAt || 0, files: raw.files as Record<string, CodexSessionIndexEntry> };
+    if (raw.version !== CODEX_INDEX_VERSION || !raw.files || typeof raw.files !== 'object') return emptyCodexIndex();
+    return {
+      version: CODEX_INDEX_VERSION,
+      updatedAt: raw.updatedAt || 0,
+      files: raw.files as Record<string, CodexSessionIndexEntry>,
+    };
   } catch {
     return emptyCodexIndex();
   }
@@ -505,12 +520,35 @@ function parseCodexSessionMeta(filePath: string): Omit<CodexSessionIndexEntry, '
   try {
     const entry = JSON.parse(line) as {
       type?: string;
-      payload?: { id?: string; cwd?: string };
+      payload?: {
+        id?: string;
+        cwd?: string;
+        // Present only on a sub-agent rollout (codex `spawn_agent`). Such a file is a
+        // normal rollout in every other respect, so this is the only way to tell one
+        // from a session the user actually started.
+        parent_thread_id?: string;
+        thread_source?: string;
+        agent_role?: string;
+        agent_nickname?: string;
+      };
     };
     const id = entry.payload?.id;
     const cwd = entry.payload?.cwd;
     if (entry.type !== 'session_meta' || !id || !cwd) return null;
-    return { id, cwd, cwdRealpath: safeRealpath(cwd) };
+    const p = entry.payload!;
+    const isSubagent = p.thread_source === 'subagent' || !!p.parent_thread_id;
+    return {
+      id,
+      cwd,
+      cwdRealpath: safeRealpath(cwd),
+      ...(isSubagent
+        ? {
+            parentThreadId: p.parent_thread_id || '',
+            ...(p.agent_role ? { agentRole: p.agent_role } : {}),
+            ...(p.agent_nickname ? { agentNickname: p.agent_nickname } : {}),
+          }
+        : {}),
+    };
   } catch {
     return null;
   }
@@ -556,9 +594,44 @@ export function refreshCodexSessionIndex(): CodexSessionIndexFile {
   return index;
 }
 
+/**
+ * True for a rollout codex wrote for a sub-agent it spawned. Tested on presence, not
+ * truthiness: `parentThreadId` is `''` when a rollout is flagged `thread_source:
+ * "subagent"` without naming its parent.
+ */
+export function isCodexSubagentEntry(entry: CodexSessionIndexEntry): boolean {
+  return entry.parentThreadId !== undefined;
+}
+
+/**
+ * Sessions the user started. Sub-agent rollouts are deliberately excluded: they sit in
+ * the same directory with the same cwd as their parent, so they would otherwise show up
+ * as top-level sessions titled with whatever prompt spawned them. Their content is
+ * reachable from the parent's Task bubble (drill-in), and codex cannot resume a closed
+ * sub-agent anyway.
+ *
+ * They stay IN the index — findCodexSessionPath reads it directly, and the drill-in
+ * depends on being able to locate a sub-agent by id.
+ */
 export function listCodexSessions(): CodexSessionIndexEntry[] {
   const index = refreshCodexSessionIndex();
+  return Object.values(index.files)
+    .filter((entry) => !isCodexSubagentEntry(entry))
+    .sort((a, b) => b.modifiedAt - a.modifiedAt);
+}
+
+/** Every indexed rollout, sub-agents included. For lookups, not for listing. */
+export function listAllCodexSessions(): CodexSessionIndexEntry[] {
+  const index = refreshCodexSessionIndex();
   return Object.values(index.files).sort((a, b) => b.modifiedAt - a.modifiedAt);
+}
+
+/** Look up an indexed rollout by codex thread id (sub-agents included). */
+export function findCodexSessionEntry(threadId: string): CodexSessionIndexEntry | null {
+  const normalized = normalizeCodexSessionId(threadId);
+  const cached = Object.values(readCodexIndex().files).find((e) => e.id === normalized);
+  if (cached && existsSync(cached.path)) return cached;
+  return Object.values(refreshCodexSessionIndex().files).find((e) => e.id === normalized) ?? null;
 }
 
 export function listCodexSessionsByEncodedPath(encodedPath: string): CodexSessionIndexEntry[] {

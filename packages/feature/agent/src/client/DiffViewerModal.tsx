@@ -65,6 +65,8 @@ interface CallEntry {
   shortHash?: string;
   toolName: string;
   subject: string;
+  /** Full display text when the snapshot commit subject was shortened. */
+  fullSubject?: string;
   /** Unix epoch seconds; absent for legacy pseudo-calls. */
   timestamp?: number;
   files: CallFile[];
@@ -123,6 +125,30 @@ function callsFromSnapshots(diffs: SnapshotDiffDto[]): CallEntry[] {
   });
 }
 
+function toolCallDetail(toolCall: ToolCallInfo | undefined): string | undefined {
+  if (!toolCall) return undefined;
+  const input = toolCall.input;
+  if (typeof input.description === 'string' && input.description) return input.description;
+  if (typeof input.command === 'string' && input.command) return input.command;
+  if (typeof input.prompt === 'string' && input.prompt) return input.prompt;
+  if (typeof input.file_path === 'string' && input.file_path) return input.file_path;
+  if (typeof input.notebook_path === 'string' && input.notebook_path) return input.notebook_path;
+  return undefined;
+}
+
+function hydrateFullSubjects(calls: CallEntry[], toolCalls: ToolCallInfo[]): CallEntry[] {
+  const toolCallById = new Map(toolCalls.map((tc) => [tc.id, tc]));
+  return calls.map((call) => {
+    const detail = toolCallDetail(toolCallById.get(call.key));
+    if (!detail) return call;
+    return { ...call, fullSubject: `[${call.toolName}] ${detail}` };
+  });
+}
+
+function callSubject(call: CallEntry): string {
+  return call.fullSubject || call.subject;
+}
+
 function toRelativePath(filePath: string, cwd?: string): string {
   if (cwd && filePath.startsWith(cwd)) {
     const rel = filePath.slice(cwd.length);
@@ -178,7 +204,8 @@ export function resolveDiffCalls(
   cwd?: string,
 ): CallEntry[] {
   const fromSnapshots = callsFromSnapshots(diffs);
-  return fromSnapshots.length > 0 ? fromSnapshots : callsFromToolParams(toolCalls, cwd);
+  const resolved = fromSnapshots.length > 0 ? fromSnapshots : callsFromToolParams(toolCalls, cwd);
+  return hydrateFullSubjects(resolved, toolCalls);
 }
 
 /**
@@ -459,8 +486,8 @@ export function FileDiffViewer({ toolCalls, cwd, onClose, onContentSearch }: Dif
                       </span>
                     )}
                   </div>
-                  <div className="text-sm text-foreground truncate mt-0.5" data-tooltip={call.subject}>
-                    {call.subject}
+                  <div className="text-sm text-foreground whitespace-pre-wrap break-words mt-0.5" data-tooltip={callSubject(call)}>
+                    {callSubject(call)}
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
                     <span>{t('commitDetail.nChanges', { count: call.files.length })}</span>
@@ -497,10 +524,9 @@ export function FileDiffViewer({ toolCalls, cwd, onClose, onContentSearch }: Dif
                     <span>{formatCallTime(displayCall.timestamp)}</span>
                   )}
                   {/* Description (commit subject). Takes the flexible middle and
-                      truncates; full text on hover. min-w-0 lets it shrink so
-                      the trailing toggles keep their space. */}
-                  <span className="flex-1 min-w-0 truncate" data-tooltip={displayCall.subject}>
-                    {displayCall.subject}
+                      wraps so long commands remain readable in-place. */}
+                  <span className="flex-1 min-w-0 whitespace-pre-wrap break-words" data-tooltip={callSubject(displayCall)}>
+                    {callSubject(displayCall)}
                   </span>
                   {displayCall.truncated && (
                     <span className="text-amber-500">{t('diffViewer.truncated')}</span>

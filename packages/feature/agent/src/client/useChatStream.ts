@@ -37,7 +37,7 @@ interface UseChatStreamOptions {
   sessionId: string | null;
   cwd?: string;
   engine?: ChatEngine;
-  /** 'pty' → subscription-billing mode (interactive claude CLI); defaults to 'sdk'. Only effective for claude */
+  /** 'pty' -> CLI mode. Claude uses an interactive PTY; Codex uses non-interactive codex exec JSON. */
   chatMode?: ChatMode;
   /** Plan mode (SDK + claude engine only): read-only exploration that produces a plan without editing */
   planMode?: boolean;
@@ -520,17 +520,20 @@ export function useChatStream(
       sawResultRef.current = false;
       turnActiveRef.current = false;
 
-      // PTY mode (claude only). Images are written to temp files by the backend driver + the prompt carries the paths for claude to read.
+      // CLI mode. Claude uses an interactive PTY; Codex uses non-interactive codex exec JSON.
       const isClaudeEngine = !engine || engine === 'claude';
-      const usePty = chatMode === 'pty' && isClaudeEngine;
+      const isCodexEngine = engine === 'codex';
+      const useCliMode = chatMode === 'pty' && (isClaudeEngine || isCodexEngine);
+      const useClaudePty = chatMode === 'pty' && isClaudeEngine;
       // The engines configured by API key. Both offer Built-in Agent mode — server runs
       // engines/builtinAgent against their OpenAI-compatible endpoint instead of the Agent SDK.
       const isApiKeyEngine = engine === 'deepseek' || engine === 'kimi' || engine === 'glm';
       const useBuiltin = chatMode === 'builtin' && isApiKeyEngine;
       // Independent task: the Built-in Agent loop honours it directly (ollama,
-      // deepseek/kimi/glm + builtin), and claude honours it in SDK mode by stashing the
-      // transcript for the turn. PTY is excluded — the interactive CLI owns the context.
-      const canDropHistory = engine === 'ollama' || useBuiltin || (isClaudeEngine && !usePty);
+      // deepseek/kimi/glm + builtin). Claude SDK and Codex stash their vendor
+      // transcript/rollout for the turn; Claude PTY is excluded because that interactive
+      // process owns its context in memory.
+      const canDropHistory = engine === 'ollama' || useBuiltin || (isClaudeEngine && !useClaudePty) || isCodexEngine;
 
       const runId = genRunId();
 
@@ -555,12 +558,13 @@ export function useChatStream(
             language: i18n.language,
             ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
             ...(isApiKeyEngine && engineModel && { model: engineModel }),
-            ...(usePty && { mode: 'pty', ptyCols: PTY_COLS, ptyRows: PTY_ROWS }),
+            ...(useCliMode && { mode: 'pty' }),
+            ...(useClaudePty && { ptyCols: PTY_COLS, ptyRows: PTY_ROWS }),
             ...(useBuiltin && { mode: 'builtin' }),
             // Plan mode: only meaningful in SDK mode on a claude engine (PTY has its own
             // Shift+Tab plan). When unchecked, omit → server defaults to bypassPermissions.
-            ...(usePlanMode && !usePty && isClaudeEngine && { permissionMode: 'plan' }),
-            // Independent task — Built-in Agent only (see canDropHistory). Omitted when off.
+            ...(usePlanMode && !useClaudePty && isClaudeEngine && { permissionMode: 'plan' }),
+            // Independent task (see canDropHistory). Omitted when off.
             ...(canDropHistory && noHistory && { noHistory: true }),
           }),
         });

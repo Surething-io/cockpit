@@ -65,11 +65,12 @@ describe('readSessionNoHistory (scheduled fire honors "independent task")', () =
     expect(await readSessionNoHistory(task(SID), 'claude', false)).toBe(true);
   });
 
-  it('stays false for the external-CLI engines, mirroring the client gate', async () => {
-    // codex and kimi are driven by their own CLIs, which own the conversation context.
-    for (const engine of ['codex', 'kimi']) {
-      expect(await readSessionNoHistory(task(SID), engine, false)).toBe(false);
-    }
+  it('reads it for codex, which honors it by stashing the rollout', async () => {
+    expect(await readSessionNoHistory(task(SID), 'codex', false)).toBe(true);
+  });
+
+  it('stays false for kimi SDK mode, mirroring the client gate', async () => {
+    expect(await readSessionNoHistory(task(SID), 'kimi', false)).toBe(false);
   });
 
   it('is false when the project has no state file at all', async () => {

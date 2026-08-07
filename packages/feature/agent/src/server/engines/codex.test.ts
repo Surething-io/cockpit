@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { appendFileSync, mkdtempSync, writeFileSync } from 'fs';
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
 import { join } from 'path';
@@ -8,8 +8,29 @@ import { spawn } from 'child_process';
 import { codexSpec, codexToolUseId, resolveCodexCallId, resolveCodexPatchCallId, resolveCodexSpawnCall, parsePatchFiles, createRolloutCallReader } from './codex';
 
 const mocks = vi.hoisted(() => ({ rolloutPath: null as string | null }));
+const sdkMocks = vi.hoisted(() => ({
+  codexCtor: vi.fn(),
+  startThread: vi.fn(),
+  resumeThread: vi.fn(),
+  runStreamed: vi.fn(),
+  throwCtorOnce: false,
+}));
 
 vi.mock('child_process', () => ({ spawn: vi.fn() }));
+vi.mock('@openai/codex-sdk', () => ({
+  Codex: vi.fn(function MockCodex(this: { startThread: unknown; resumeThread: unknown }, options) {
+    sdkMocks.codexCtor(options);
+    if (sdkMocks.throwCtorOnce) {
+      sdkMocks.throwCtorOnce = false;
+      throw new Error('Unable to locate Codex CLI binaries. Ensure @openai/codex is installed with optional dependencies.');
+    }
+    const thread = { runStreamed: sdkMocks.runStreamed };
+    sdkMocks.startThread.mockReturnValue(thread);
+    sdkMocks.resumeThread.mockReturnValue(thread);
+    this.startThread = sdkMocks.startThread;
+    this.resumeThread = sdkMocks.resumeThread;
+  }),
+}));
 vi.mock('@cockpit/shared-utils', () => ({
   sanitizedSpawnEnv: () => ({}),
   findCodexSessionPath: () => mocks.rolloutPath,
@@ -177,7 +198,7 @@ describe('codex argv assembly', () => {
       images: undefined,
       cwd: '/repo',
       sessionId: undefined,
-      params: {} as never,
+      params: { mode: 'pty' } as never,
       signal: new AbortController().signal,
       emit: vi.fn(),
       rekey: vi.fn(),
@@ -236,6 +257,157 @@ describe('codex argv assembly', () => {
   });
 });
 
+describe('codex mode routing', () => {
+  const events = async function* () {
+    yield { type: 'thread.started', thread_id: 'sdk-thread' };
+    yield { type: 'item.completed', item: { id: 'msg_1', type: 'agent_message', text: 'from sdk' } };
+    yield {
+      type: 'turn.completed',
+      usage: { input_tokens: 1, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 2, reasoning_output_tokens: 0 },
+    };
+  };
+
+  beforeEach(() => {
+    mocks.rolloutPath = null;
+    sdkMocks.codexCtor.mockClear();
+    sdkMocks.startThread.mockClear();
+    sdkMocks.resumeThread.mockClear();
+    sdkMocks.runStreamed.mockReset();
+    sdkMocks.throwCtorOnce = false;
+    vi.mocked(spawn).mockReset();
+    sdkMocks.runStreamed.mockResolvedValue({ events: events() });
+  });
+
+  it('defaults to the Codex SDK path', async () => {
+    const emit = vi.fn();
+    const rekey = vi.fn();
+    await codexSpec.runner.run({
+      prompt: 'hello',
+      images: undefined,
+      cwd: '/repo',
+      sessionId: undefined,
+      params: {} as never,
+      signal: new AbortController().signal,
+      emit,
+      rekey,
+      currentKey: () => 'k',
+    } as never);
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(sdkMocks.codexCtor).toHaveBeenCalledWith({ env: {} });
+    expect(sdkMocks.startThread).toHaveBeenCalledWith({
+      workingDirectory: '/repo',
+      sandboxMode: 'danger-full-access',
+      approvalPolicy: 'never',
+      skipGitRepoCheck: true,
+    });
+    expect(sdkMocks.runStreamed).toHaveBeenCalledWith('hello', { signal: expect.any(AbortSignal) });
+    expect(rekey).toHaveBeenCalledWith('sdk-thread');
+    expect(emit).toHaveBeenCalledWith({ type: 'assistant', message: { content: [{ type: 'text', text: 'from sdk' }] } });
+  });
+
+  it('falls back to PATH codex when the bundled SDK binary is unavailable', async () => {
+    sdkMocks.throwCtorOnce = true;
+
+    await codexSpec.runner.run({
+      prompt: 'hello',
+      images: undefined,
+      cwd: '/repo',
+      sessionId: undefined,
+      params: {} as never,
+      signal: new AbortController().signal,
+      emit: vi.fn(),
+      rekey: vi.fn(),
+      currentKey: () => 'k',
+    } as never);
+
+    expect(sdkMocks.codexCtor).toHaveBeenNthCalledWith(1, { env: {} });
+    expect(sdkMocks.codexCtor).toHaveBeenNthCalledWith(2, { codexPathOverride: 'codex', env: {} });
+  });
+
+  it('stashes the Codex rollout while running an SDK no-history turn', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-run-nohistory-'));
+    const sessionPath = join(dir, 'rollout-2026-08-08T00-00-00-sdk-thread.jsonl');
+    const meta = JSON.stringify({
+      type: 'session_meta',
+      payload: { id: 'sdk-thread', cwd: '/repo', source: 'exec', thread_source: 'user' },
+    });
+    const oldLine = JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'old' }] } });
+    const newLine = JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'new' }] } });
+    writeFileSync(sessionPath, `${meta}\n${oldLine}\n`);
+    mocks.rolloutPath = sessionPath;
+    sdkMocks.runStreamed.mockImplementation(async () => {
+      expect(readFileSync(sessionPath, 'utf-8').trim().split('\n')).toEqual([meta]);
+      appendFileSync(sessionPath, `${newLine}\n`);
+      return { events: events() };
+    });
+
+    try {
+      await codexSpec.runner.run({
+        prompt: 'new',
+        images: undefined,
+        cwd: '/repo',
+        sessionId: 'sdk-thread',
+        params: { noHistory: true } as never,
+        signal: new AbortController().signal,
+        emit: vi.fn(),
+        rekey: vi.fn(),
+        currentKey: () => 'k',
+      } as never);
+
+      expect(readFileSync(sessionPath, 'utf-8').trim().split('\n')).toEqual([meta, oldLine, newLine]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('sends a non-empty text placeholder for SDK images-only turns', async () => {
+    await codexSpec.runner.run({
+      prompt: undefined,
+      images: [{ media_type: 'image/png', data: Buffer.from('x').toString('base64') }] as never,
+      cwd: '/repo',
+      sessionId: undefined,
+      params: {} as never,
+      signal: new AbortController().signal,
+      emit: vi.fn(),
+      rekey: vi.fn(),
+      currentKey: () => 'k',
+    } as never);
+
+    expect(sdkMocks.runStreamed.mock.calls[0][0]).toMatchObject([
+      { type: 'text', text: '[Image]' },
+      { type: 'local_image' },
+    ]);
+  });
+
+  it('ignores unknown SDK item types without failing the turn', async () => {
+    const unknownEvents = async function* () {
+      yield { type: 'thread.started', thread_id: 'sdk-thread' };
+      yield { type: 'item.completed', item: { id: 'future_1', type: 'future_item', text: 'metadata' } };
+      yield {
+        type: 'turn.completed',
+        usage: { input_tokens: 1, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0 },
+      };
+    };
+    const emit = vi.fn();
+    sdkMocks.runStreamed.mockResolvedValue({ events: unknownEvents() });
+
+    await codexSpec.runner.run({
+      prompt: 'hello',
+      images: undefined,
+      cwd: '/repo',
+      sessionId: undefined,
+      params: {} as never,
+      signal: new AbortController().signal,
+      emit,
+      rekey: vi.fn(),
+      currentKey: () => 'k',
+    } as never);
+
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ type: 'result', subtype: 'success' }));
+  });
+});
+
 describe('codex exit handling', () => {
   interface FakeChild extends EventEmitter { stdout: PassThrough; stderr: PassThrough; kill: () => void }
 
@@ -258,7 +430,7 @@ describe('codex exit handling', () => {
   const run = () =>
     codexSpec.runner.run({
       prompt: 'hi', images: undefined, cwd: '/repo', sessionId: undefined,
-      params: {} as never, signal: new AbortController().signal,
+      params: { mode: 'pty' } as never, signal: new AbortController().signal,
       emit: vi.fn(), rekey: vi.fn(), currentKey: () => 'k',
     } as never);
 
@@ -360,7 +532,7 @@ describe('codex sub-agents (collab_tool_call)', () => {
   const run = () =>
     codexSpec.runner.run({
       prompt: 'review the PR', images: undefined, cwd: '/repo', sessionId: undefined,
-      params: {} as never, signal: new AbortController().signal,
+      params: { mode: 'pty' } as never, signal: new AbortController().signal,
       emit, rekey: vi.fn(), currentKey: () => 'k',
     } as never);
 
@@ -495,7 +667,7 @@ describe('codex mcp / web_search / todo_list items', () => {
   const run = () =>
     codexSpec.runner.run({
       prompt: 'do it', images: undefined, cwd: '/repo', sessionId: undefined,
-      params: {} as never, signal: new AbortController().signal,
+      params: { mode: 'pty' } as never, signal: new AbortController().signal,
       emit, rekey: vi.fn(), currentKey: () => 'k',
     } as never);
 

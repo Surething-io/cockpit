@@ -121,7 +121,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     setLocalPlanMode(p);
     onPlanModeChange?.(p);
   }, [onPlanModeChange]);
-  // Independent-task mode (per-tab, Built-in Agent only): each user message is sent with no
+  // Independent-task mode (per-tab): each user message is sent with no
   // prior history, so the model treats every turn as a standalone task. Same controlled-with-
   // local-fallback shape as planMode above; persisted via TabInfo.noHistory.
   const [localNoHistory, setLocalNoHistory] = useState(false);
@@ -219,6 +219,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const engine = loadedEngine ?? engineProp ?? undefined;
   const chatMode = loadedMode ?? chatModeProp ?? localChatMode;
   const isClaudeEngine = !engine || engine === 'claude';
+  const isCodexEngine = engine === 'codex';
+  const hasSdkCliToggle = isClaudeEngine || isCodexEngine;
   // Engines configured by API key rather than by a local CLI login. They share one UI: a
   // key+model picker, an SDK ↔ Built-in Agent toggle, and a consumption readout.
   const apiKeyEngine: ApiKeyEngine | null =
@@ -239,11 +241,12 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const isBuiltinLoop = apiKeyEngine !== null && chatMode === 'builtin';
   const modeLocked = Boolean(initialSessionId) || messages.length > 0;
   // Independent task. The Built-in Agent engines get it by construction (they assemble the
-  // message array). claude gets it in SDK mode by stashing the transcript for the
-  // turn — see server/engines/shared/noHistoryTranscript.ts.
-  const supportsNoHistory = engine === 'ollama' || isBuiltinLoop || isClaudeEngine;
+  // message array). Claude/Codex get it by stashing their vendor transcript/rollout for
+  // the turn — see server/engines/shared/noHistoryTranscript.ts and noHistoryRollout.ts.
+  const supportsNoHistory = engine === 'ollama' || isBuiltinLoop || isClaudeEngine || isCodexEngine;
   // ...but not in PTY mode: there the conversation is held by an interactive `claude` CLI
-  // process, so no amount of file juggling drops its context. Shown disabled rather than
+  // process, so no amount of file juggling drops its context. Codex CLI is non-interactive
+  // `codex exec`, so the rollout-stub mechanism still works there. Shown disabled rather than
   // hidden — flipping the engine's execution mode also flips its billing, which is not a
   // decision this checkbox should make silently on the user's behalf.
   const noHistoryDisabled = isClaudeEngine && chatMode === 'pty';
@@ -684,11 +687,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           </div>
         )}
 
-        {/* Execution mode (claude only): SDK ↔ PTY (subscription billing). Switchable dynamically at any time.
-            After switching to PTY, subsequent messages resume via `claude -r`; if the session contains SDK edit history,
-            upstream rendering may crash — covered by the driver's crash detection (errors instead of hanging), and the
-            user can switch back to SDK. */}
-        {isClaudeEngine && (
+        {/* Execution mode (Claude / Codex): SDK by default, CLI as an explicit fallback. */}
+        {hasSdkCliToggle && (
           <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card/50">
             <span className="text-xs text-muted-foreground">{t('chat.executionMode', { defaultValue: 'Execution mode' })}</span>
             <div className="inline-flex rounded-md border border-border overflow-hidden text-xs" role="group" data-testid="chatmode-toggle">
@@ -698,21 +698,23 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
                 onClick={() => setChatMode('sdk')}
                 className={`px-2 py-0.5 ${chatMode === 'sdk' ? 'bg-brand text-white' : 'bg-transparent text-muted-foreground hover:bg-accent'}`}
               >
-                Claude Agent SDK
+                {isCodexEngine ? 'Codex SDK' : 'Claude Agent SDK'}
               </button>
               <button
                 type="button"
                 data-testid="chatmode-pty"
                 onClick={() => setChatMode('pty')}
                 className={`px-2 py-0.5 ${chatMode === 'pty' ? 'bg-brand text-white' : 'bg-transparent text-muted-foreground hover:bg-accent'}`}
-                title={t('chat.ptyModeHint', { defaultValue: 'Subscription-billing mode: driven by the interactive claude CLI' })}
+                title={isCodexEngine
+                  ? t('chat.codexCliModeHint', { defaultValue: 'Fallback mode: driven by codex exec JSON output' })
+                  : t('chat.ptyModeHint', { defaultValue: 'Subscription-billing mode: driven by the interactive claude CLI' })}
               >
-                Claude Code CLI
+                {isCodexEngine ? 'Codex CLI' : 'Claude Code CLI'}
               </button>
             </div>
             {/* Plan mode (SDK only): read-only exploration → produces a plan without editing.
                 Plan-only — uncheck and resend to actually implement. */}
-            {chatMode === 'sdk' && (
+            {isClaudeEngine && chatMode === 'sdk' && (
               <label
                 className="flex items-center gap-1.5 ml-2 pl-3 border-l border-border text-xs cursor-pointer select-none"
                 title={t('chat.planModeHint', { defaultValue: 'Plan mode: read-only exploration that produces a plan without editing. Uncheck and resend to implement.' })}
@@ -731,7 +733,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
                 <span className="text-muted-foreground">{t('chat.planModeDesc', { defaultValue: 'read-only · plan first, no edits' })}</span>
               </label>
             )}
-            {/* Shown in both modes, disabled under PTY — see noHistoryDisabled. */}
+            {/* Shown in both modes; only Claude PTY disables it — see noHistoryDisabled. */}
             {independentTaskToggle}
           </div>
         )}

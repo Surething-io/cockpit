@@ -37,7 +37,10 @@ export interface DispatchParams {
   //    IS the provider session and the only lever is whether that file is there
   //    (shared/noHistoryTranscript.ts). Not available in mode:'pty' — the interactive CLI
   //    holds the context itself.
-  // Ignored by codex, kimi and deepseek-SDK, whose context lives with the vendor.
+  //  - codex stashes the rollout and leaves a session_meta-only stub for the resumed turn
+  //    (shared/noHistoryRollout.ts). Its CLI mode is non-interactive, so the same file
+  //    trick works there too.
+  // Ignored by kimi and deepseek-SDK, whose context lives with the vendor.
   noHistory?: boolean;
 }
 

@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import type { Input, ThreadOptions } from '@openai/codex-sdk';
 import { sanitizedSpawnEnv, findCodexSessionPath } from '@cockpit/shared-utils';
 import { randomUUID } from 'crypto';
 import { createInterface } from 'readline';
@@ -7,8 +8,10 @@ import { StringDecoder } from 'string_decoder';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import type { EngineSpec, ImageData, RunCtx } from './types';
+import { mergeStashedCodexRollout, stashCodexRollout } from './shared/noHistoryRollout';
 import {
   CODEX_MCP_NAMESPACE_PREFIX,
+  CODEX_IMAGE_ONLY_TEXT,
   CODEX_SPAWN_FN_NAME,
   CODEX_TOOL_NAMES,
   codexAgentResultText,
@@ -85,7 +88,7 @@ interface CodexEvent {
   item?: CodexItem;
   message?: string;
   error?: { message?: string };
-  usage?: { input_tokens?: number; output_tokens?: number; cached_input_tokens?: number };
+  usage?: { input_tokens?: number; output_tokens?: number; cached_input_tokens?: number; cache_write_input_tokens?: number };
 }
 
 export function codexToolUseId(item: CodexItem): string {
@@ -338,429 +341,451 @@ export function resolveCodexMcpCallId(
   return target.callId;
 }
 
-export const codexSpec: EngineSpec = {
-  name: 'codex',
-  // No preflight: the orchestrator's own "prompt or images" check is sufficient. This used to
-  // require a text prompt because an images-only message would push `undefined` as the positional
-  // arg; it now passes '' instead, which codex accepts — verified end-to-end that `codex exec
-  // --image <file> -- ""` reads the image and answers, on both the fresh and resume branches.
-  runner: {
-    run(ctx: RunCtx) {
-      const { cwd, sessionId } = ctx;
-      // Images-only turns have no text. '' is a valid positional (and, thanks to the `--`
-      // separator below, is never mistaken for a missing arg → no stdin fallback).
-      const prompt = ctx.prompt ?? '';
-      const imageFiles = ctx.images && ctx.images.length > 0 ? writeImagesToTemp(ctx.images) : [];
+interface CodexEventAdapter {
+  handle(event: CodexEvent): void;
+  assertSuccess(): void;
+}
 
-      return new Promise<void>((resolve, reject) => {
-        let terminated = false;
-        let failure: Error | null = null;
-        const cleanup = () => {
-          for (const f of imageFiles) {
-            try { unlinkSync(f); } catch { /* ignore */ }
-          }
-        };
+function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
+  const { sessionId } = ctx;
+  let terminated = false;
+  let failure: Error | null = null;
+  const pendingToolCalls = new Map<string, string>(); // item.id -> tool_use_id
 
-        // codex-cli >=0.141: --full-auto deprecated; --sandbox workspace-write still blocks writes
-        // outside the workspace root, so use --dangerously-bypass-approvals-and-sandbox instead.
-        // Cockpit already runs the agent with the user's own privileges. A non-trusted dir needs
-        // --skip-git-repo-check. `resume` is exec-only (no -C). Prompt positional.
-        //
-        // The prompt MUST be separated by `--`: on `codex exec` the image flag is declared
-        // variadic (`-i, --image <FILE>...`), so `--image a.png "my prompt"` greedily swallows
-        // the prompt as a second image path. Codex then falls back to reading the prompt from
-        // stdin, which is 'ignore' here, and dies with "No prompt provided via stdin" (exit 1).
-        // `--` ends option parsing so the prompt always lands on the positional. (`codex exec
-        // resume` declares --image non-variadic, but `--` is harmless there and keeps both
-        // branches immune if that ever changes.)
-        const args: string[] = ['exec'];
-        if (sessionId) {
-          args.push(
-            'resume',
-            sessionId,
-            '--json',
-            '--dangerously-bypass-approvals-and-sandbox',
-            '--skip-git-repo-check',
-          );
-          for (const imgPath of imageFiles) args.push('--image', imgPath);
-          args.push('--', prompt);
-        } else {
-          args.push('--json', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check');
-          if (cwd) args.push('-C', cwd);
-          for (const imgPath of imageFiles) args.push('--image', imgPath);
-          args.push('--', prompt);
+  // Map live items to their persistent rollout call_id so snapshots survive a
+  // refresh (see createRolloutCallReader). command_execution <-> exec list and
+  // file_change (apply_patch) <-> patch list are matched independently, each by
+  // its own per-turn order. Resolved lazily, cached per item.id; falls back to
+  // codexToolUseId (item.id) on any mismatch.
+  let rolloutPath: string | null = null;
+  let execBase = 0;  // # of exec calls in the rollout before this turn (resume offset)
+  let patchBase = 0; // # of apply_patch calls in the rollout before this turn
+  let execSeen = 0;  // # of distinct command_execution items seen this turn
+  let patchSeen = 0; // # of distinct file_change items seen this turn
+  let spawnBase = 0; // # of spawn_agent calls in the rollout before this turn
+  let spawnSeen = 0; // # of distinct spawn_agent items seen this turn
+  let mcpBase = 0;   // # of MCP calls in the rollout before this turn
+  let mcpSeen = 0;   // # of distinct mcp_tool_call items seen this turn
+  const agentToolUseIds = new Map<string, string>();
+  let codexThreadId: string | null = sessionId || null;
+  let rolloutLookups = 0;
+  const MAX_ROLLOUT_LOOKUPS = 8;
+  const resolvedToolUseIds = new Map<string, string>();
+  const readRollout = createRolloutCallReader();
+
+  if (sessionId) {
+    try {
+      rolloutPath = findCodexSessionPath(sessionId);
+      if (rolloutPath) {
+        const c = readRollout(rolloutPath);
+        execBase = c.exec.length; patchBase = c.patch.length; spawnBase = c.spawn.length; mcpBase = c.mcp.length;
+      }
+    } catch { rolloutPath = null; execBase = 0; patchBase = 0; spawnBase = 0; mcpBase = 0; }
+  }
+
+  const ensureRolloutPath = (): string | null => {
+    if (rolloutPath || !codexThreadId || rolloutLookups >= MAX_ROLLOUT_LOOKUPS) return rolloutPath;
+    rolloutLookups += 1;
+    try { rolloutPath = findCodexSessionPath(codexThreadId); } catch { rolloutPath = null; }
+    return rolloutPath;
+  };
+
+  const resolveExecToolUseId = (item: CodexItem): string => {
+    const key = item.id || item.call_id || `codex-${randomUUID()}`;
+    const cached = resolvedToolUseIds.get(key);
+    if (cached) return cached;
+
+    let toolUseId = codexToolUseId(item);
+    const path = ensureRolloutPath();
+    if (!item.call_id && path) {
+      const callId = resolveCodexCallId(readRollout(path).exec, execBase + execSeen, item.command || '');
+      if (callId) toolUseId = callId;
+    }
+    resolvedToolUseIds.set(key, toolUseId);
+    execSeen += 1;
+    return toolUseId;
+  };
+
+  const resolvePatchToolUseId = (item: CodexItem): string => {
+    const key = item.id || item.call_id || `codex-${randomUUID()}`;
+    const cached = resolvedToolUseIds.get(key);
+    if (cached) return cached;
+
+    let toolUseId = codexToolUseId(item);
+    const path = ensureRolloutPath();
+    if (!item.call_id && path) {
+      const paths = (item.changes || []).map((c) => c.path || '').filter(Boolean);
+      const callId = resolveCodexPatchCallId(readRollout(path).patch, patchBase + patchSeen, paths);
+      if (callId) toolUseId = callId;
+    }
+    resolvedToolUseIds.set(key, toolUseId);
+    patchSeen += 1;
+    return toolUseId;
+  };
+
+  const patchInput = (item: CodexItem) => ({
+    changes: (item.changes || []).map((c) => ({ path: c.path || '', kind: c.kind || 'update' })),
+  });
+  const patchResultText = (item: CodexItem): string => {
+    const cs = item.changes || [];
+    if (cs.length === 0) return 'apply_patch';
+    return cs.map((c) => `${c.kind || 'update'} ${c.path || ''}`.trim()).join('\n');
+  };
+
+  const emitSpawn = (item: CodexItem) => {
+    const agentIds = item.receiver_thread_ids ?? [];
+    const path = ensureRolloutPath();
+    const entry = path
+      ? resolveCodexSpawnCall(readRollout(path).spawn, spawnBase + spawnSeen, agentIds[0])
+      : null;
+    spawnSeen += 1;
+
+    const toolUseId = entry?.callId || codexToolUseId(item);
+    const args = entry?.args && Object.keys(entry.args).length > 0
+      ? entry.args
+      : { message: item.prompt || '' };
+    const input = parseCodexSpawnInput(args, {
+      nickname: entry?.nickname,
+      agentId: agentIds[0] || entry?.agentId,
+    });
+    for (const id of agentIds) agentToolUseIds.set(id, toolUseId);
+    pendingToolCalls.set(toolUseId, toolUseId);
+    ctx.emit({
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.task, input }] },
+    });
+  };
+
+  const emitAgentReports = (item: CodexItem) => {
+    for (const state of parseCodexAgentsStates(item.agents_states)) {
+      if (!state.done) continue;
+      const toolUseId = agentToolUseIds.get(state.agentId);
+      if (!toolUseId) continue;
+      ctx.emit({
+        type: 'user',
+        message: { content: [{ tool_use_id: toolUseId, content: codexAgentResultText(state) }] },
+      });
+      pendingToolCalls.delete(toolUseId);
+      agentToolUseIds.delete(state.agentId);
+    }
+  };
+
+  const resolveMcpToolUseId = (item: CodexItem): string => {
+    const key = item.id || `codex-${randomUUID()}`;
+    const cached = resolvedToolUseIds.get(key);
+    if (cached) return cached;
+
+    let toolUseId = codexToolUseId(item);
+    const path = ensureRolloutPath();
+    if (!item.call_id && path) {
+      const callId = resolveCodexMcpCallId(readRollout(path).mcp, mcpBase + mcpSeen, item.server, item.tool);
+      if (callId) toolUseId = callId;
+    }
+    resolvedToolUseIds.set(key, toolUseId);
+    mcpSeen += 1;
+    return toolUseId;
+  };
+
+  const emitMcpCall = (item: CodexItem, done: boolean) => {
+    const toolUseId = resolveMcpToolUseId(item);
+    const name = codexMcpToolName(item.server || 'mcp', item.tool || 'tool');
+    if (!pendingToolCalls.has(toolUseId)) {
+      pendingToolCalls.set(toolUseId, toolUseId);
+      ctx.emit({
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', id: toolUseId, name, input: item.arguments || {} }] },
+      });
+    }
+    if (!done) return;
+    ctx.emit({
+      type: 'user',
+      message: { content: [{ tool_use_id: toolUseId, content: codexMcpResultText(item) || `(${item.status || 'completed'})` }] },
+    });
+    pendingToolCalls.delete(toolUseId);
+  };
+
+  const emitWebSearch = (item: CodexItem) => {
+    const toolUseId = codexToolUseId(item);
+    const { name, input, result } = codexWebSearchCall(item.query, item.action);
+    ctx.emit({
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', id: toolUseId, name, input }] },
+    });
+    ctx.emit({ type: 'user', message: { content: [{ tool_use_id: toolUseId, content: result }] } });
+  };
+
+  const emitTodoList = (item: CodexItem) => {
+    const toolUseId = codexToolUseId(item);
+    const input = codexTodoInput(item.items);
+    ctx.emit({
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.todo, input }] },
+    });
+    ctx.emit({
+      type: 'user',
+      message: { content: [{ tool_use_id: toolUseId, content: codexTodoResultText(input.todos) }] },
+    });
+  };
+
+  const handleCollabItem = (item: CodexItem) => {
+    if (item.tool === CODEX_SPAWN_FN_NAME) { emitSpawn(item); return; }
+    emitAgentReports(item);
+  };
+
+  const handle = (event: CodexEvent): void => {
+    if (terminated) return;
+    switch (event.type) {
+      case 'thread.started': {
+        const threadId = event.thread_id || `codex-${randomUUID()}`;
+        if (event.thread_id) codexThreadId = event.thread_id;
+        ctx.rekey(threadId);
+        ctx.emit({ type: 'system', subtype: 'init', session_id: threadId });
+        ensureRolloutPath();
+        break;
+      }
+      case 'item.completed': {
+        const item = event.item;
+        if (!item) break;
+        if (item.type === 'agent_message' && item.text) {
+          ctx.emit({ type: 'assistant', message: { content: [{ type: 'text', text: item.text }] } });
         }
-
-        const child = spawn('codex', args, {
-          stdio: ['ignore', 'pipe', 'pipe'],
-          cwd: cwd || undefined,
-          env: sanitizedSpawnEnv(),
-        });
-        ctx.signal.addEventListener('abort', () => child.kill('SIGTERM'), { once: true });
-
-        const pendingToolCalls = new Map<string, string>(); // item.id → tool_use_id
-
-        // Map live items to their persistent rollout call_id so snapshots survive a
-        // refresh (see createRolloutCallReader). command_execution ↔ exec list and
-        // file_change (apply_patch) ↔ patch list are matched independently, each by
-        // its own per-turn order. Resolved lazily, cached per item.id; falls back to
-        // codexToolUseId (item.id) on any mismatch.
-        let rolloutPath: string | null = null;
-        let execBase = 0;  // # of exec calls in the rollout before this turn (resume offset)
-        let patchBase = 0; // # of apply_patch calls in the rollout before this turn
-        let execSeen = 0;  // # of distinct command_execution items seen this turn
-        let patchSeen = 0; // # of distinct file_change items seen this turn
-        let spawnBase = 0; // # of spawn_agent calls in the rollout before this turn
-        let spawnSeen = 0; // # of distinct spawn_agent items seen this turn
-        let mcpBase = 0;   // # of MCP calls in the rollout before this turn
-        let mcpSeen = 0;   // # of distinct mcp_tool_call items seen this turn
-        // Sub-agent thread id → the tool_use id of the Task bubble its spawn created.
-        // `wait` reports results per agent id, so this is how a report finds its bubble.
-        const agentToolUseIds = new Map<string, string>();
-        let codexThreadId: string | null = sessionId || null; // for lazy rollout lookup
-        let rolloutLookups = 0;
-        const MAX_ROLLOUT_LOOKUPS = 8; // bound find() retries for a never-appearing file
-        const resolvedToolUseIds = new Map<string, string>(); // item.id → resolved tool_use_id
-        const readRollout = createRolloutCallReader(); // incremental, append-only reader
-
-        // Resume: the session file already exists and is findable by the known id, so
-        // capture the pre-turn call counts eagerly — before codex appends this turn.
-        if (sessionId) {
-          try {
-            rolloutPath = findCodexSessionPath(sessionId);
-            if (rolloutPath) {
-              const c = readRollout(rolloutPath);
-              execBase = c.exec.length; patchBase = c.patch.length; spawnBase = c.spawn.length; mcpBase = c.mcp.length;
-            }
-          } catch { rolloutPath = null; execBase = 0; patchBase = 0; spawnBase = 0; mcpBase = 0; }
+        if (item.type === 'error' && (item.message || item.text)) {
+          ctx.emit({ type: 'error', error: item.message || item.text });
         }
-
-        // A brand-new session's rollout does NOT exist yet at thread.started, so keep
-        // retrying to locate it (bounded). bases stay 0 — a fresh session has no
-        // prior-turn calls, so the incremental reader aligns from index 0.
-        const ensureRolloutPath = (): string | null => {
-          if (rolloutPath || !codexThreadId || rolloutLookups >= MAX_ROLLOUT_LOOKUPS) return rolloutPath;
-          rolloutLookups += 1;
-          try { rolloutPath = findCodexSessionPath(codexThreadId); } catch { rolloutPath = null; }
-          return rolloutPath;
-        };
-
-        const resolveExecToolUseId = (item: CodexItem): string => {
-          const key = item.id || item.call_id || `codex-${randomUUID()}`;
-          const cached = resolvedToolUseIds.get(key);
-          if (cached) return cached; // second sighting (started→completed): keep it stable, don't advance
-
-          let toolUseId = codexToolUseId(item); // fallback: item.call_id || item.id || tool-uuid
-          const path = ensureRolloutPath();
-          if (!item.call_id && path) {
-            const callId = resolveCodexCallId(readRollout(path).exec, execBase + execSeen, item.command || '');
-            if (callId) toolUseId = callId;
-          }
-          resolvedToolUseIds.set(key, toolUseId);
-          execSeen += 1;
-          return toolUseId;
-        };
-
-        const resolvePatchToolUseId = (item: CodexItem): string => {
-          const key = item.id || item.call_id || `codex-${randomUUID()}`;
-          const cached = resolvedToolUseIds.get(key);
-          if (cached) return cached;
-
-          let toolUseId = codexToolUseId(item);
-          const path = ensureRolloutPath();
-          if (!item.call_id && path) {
-            const paths = (item.changes || []).map((c) => c.path || '').filter(Boolean);
-            const callId = resolveCodexPatchCallId(readRollout(path).patch, patchBase + patchSeen, paths);
-            if (callId) toolUseId = callId;
-          }
-          resolvedToolUseIds.set(key, toolUseId);
-          patchSeen += 1;
-          return toolUseId;
-        };
-
-        // Summarize a file_change item for the tool bubble + result text.
-        const patchInput = (item: CodexItem) => ({
-          changes: (item.changes || []).map((c) => ({ path: c.path || '', kind: c.kind || 'update' })),
-        });
-        const patchResultText = (item: CodexItem): string => {
-          const cs = item.changes || [];
-          if (cs.length === 0) return 'apply_patch';
-          return cs.map((c) => `${c.kind || 'update'} ${c.path || ''}`.trim()).join('\n');
-        };
-
-        // --- Sub-agents (collab_tool_call) -----------------------------------------
-        // codex's multi-agent tools, normalized onto claude's shape: ONE Task bubble per
-        // sub-agent. `spawn_agent` opens it and leaves it loading; the `wait` that collects
-        // that agent's report closes it. Nothing else gets a bubble.
-        //
-        // Keeping the bubble loading is not just cosmetic: the sub-agent's transcript is a
-        // SEPARATE rollout keyed by its own thread id, and the drill-in view
-        // (SubagentTranscriptModal → /api/session-by-path) only polls that file while the
-        // tool call has no result. Loading == "you can watch it work".
-        const emitSpawn = (item: CodexItem) => {
-          const agentIds = item.receiver_thread_ids ?? [];
-          const path = ensureRolloutPath();
-          const entry = path
-            ? resolveCodexSpawnCall(readRollout(path).spawn, spawnBase + spawnSeen, agentIds[0])
-            : null;
-          spawnSeen += 1;
-
-          const toolUseId = entry?.callId || codexToolUseId(item);
-          // Prefer the rollout's arguments (they carry agent_type; the live item only has
-          // the prompt), and its nickname, which is the bubble's header label.
-          const args = entry?.args && Object.keys(entry.args).length > 0
-            ? entry.args
-            : { message: item.prompt || '' };
-          const input = parseCodexSpawnInput(args, {
-            nickname: entry?.nickname,
-            agentId: agentIds[0] || entry?.agentId,
+        if (item.type === 'reasoning' && item.text) {
+          ctx.emit({
+            type: 'assistant',
+            message: { content: [{ type: 'text', text: `<details><summary>Reasoning</summary>\n\n${item.text}\n\n</details>` }] },
           });
-          // A batch spawn can return several agents on one call; they share the bubble.
-          for (const id of agentIds) agentToolUseIds.set(id, toolUseId);
+        }
+        if (item.type === 'command_execution') {
+          const toolUseId = resolveExecToolUseId(item);
+          if (!pendingToolCalls.has(toolUseId)) {
+            ctx.emit({
+              type: 'assistant',
+              message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.bash, input: { command: item.command || '' } }] },
+            });
+          }
+          ctx.emit({
+            type: 'user',
+            message: { content: [{ tool_use_id: toolUseId, content: item.aggregated_output || `(exit code: ${item.exit_code ?? 'unknown'})` }] },
+          });
+          pendingToolCalls.delete(toolUseId);
+        }
+        if (item.type === 'collab_tool_call') handleCollabItem(item);
+        if (item.type === 'mcp_tool_call') emitMcpCall(item, true);
+        if (item.type === 'web_search') emitWebSearch(item);
+        if (item.type === 'todo_list') emitTodoList(item);
+        if (item.type === 'file_change') {
+          const toolUseId = resolvePatchToolUseId(item);
+          if (!pendingToolCalls.has(toolUseId)) {
+            ctx.emit({
+              type: 'assistant',
+              message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.applyPatch, input: patchInput(item) }] },
+            });
+          }
+          ctx.emit({
+            type: 'user',
+            message: { content: [{ tool_use_id: toolUseId, content: patchResultText(item) }] },
+          });
+          pendingToolCalls.delete(toolUseId);
+        }
+        break;
+      }
+      case 'item.started': {
+        const item = event.item;
+        if (item?.type === 'mcp_tool_call') emitMcpCall(item, false);
+        if (item?.type === 'command_execution' && item.command) {
+          const toolUseId = resolveExecToolUseId(item);
           pendingToolCalls.set(toolUseId, toolUseId);
           ctx.emit({
             type: 'assistant',
-            message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.task, input }] },
+            message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.bash, input: { command: item.command } }] },
           });
-        };
-
-        const emitAgentReports = (item: CodexItem) => {
-          for (const state of parseCodexAgentsStates(item.agents_states)) {
-            if (!state.done) continue; // still running (wait timed out) → keep it spinning
-            const toolUseId = agentToolUseIds.get(state.agentId);
-            if (!toolUseId) continue; // spawned in an earlier turn → not our bubble to close
-            ctx.emit({
-              type: 'user',
-              message: { content: [{ tool_use_id: toolUseId, content: codexAgentResultText(state) }] },
-            });
-            pendingToolCalls.delete(toolUseId);
-            agentToolUseIds.delete(state.agentId);
-          }
-        };
-
-        // --- MCP / web_search / todo_list ------------------------------------------
-        // All three normalize onto claude's vocabulary so they reuse its renderers:
-        // `mcp__<server>__<tool>` (codex's own rollout namespace spells it the same
-        // way), WebSearch/WebFetch, and TodoWrite (MessageBubble renders its checklist).
-        const resolveMcpToolUseId = (item: CodexItem): string => {
-          const key = item.id || `codex-${randomUUID()}`;
-          const cached = resolvedToolUseIds.get(key);
-          if (cached) return cached; // started→completed: keep it stable, don't advance
-
-          let toolUseId = codexToolUseId(item);
-          const path = ensureRolloutPath();
-          if (!item.call_id && path) {
-            const callId = resolveCodexMcpCallId(readRollout(path).mcp, mcpBase + mcpSeen, item.server, item.tool);
-            if (callId) toolUseId = callId;
-          }
-          resolvedToolUseIds.set(key, toolUseId);
-          mcpSeen += 1;
-          return toolUseId;
-        };
-
-        const emitMcpCall = (item: CodexItem, done: boolean) => {
-          const toolUseId = resolveMcpToolUseId(item);
-          const name = codexMcpToolName(item.server || 'mcp', item.tool || 'tool');
-          if (!pendingToolCalls.has(toolUseId)) {
-            pendingToolCalls.set(toolUseId, toolUseId);
-            ctx.emit({
-              type: 'assistant',
-              message: { content: [{ type: 'tool_use', id: toolUseId, name, input: item.arguments || {} }] },
-            });
-          }
-          if (!done) return;
-          ctx.emit({
-            type: 'user',
-            message: { content: [{ tool_use_id: toolUseId, content: codexMcpResultText(item) || `(${item.status || 'completed'})` }] },
-          });
-          pendingToolCalls.delete(toolUseId);
-        };
-
-        const emitWebSearch = (item: CodexItem) => {
-          // The `ws_…` item id IS the rollout's call_id here, so no lookup is needed
-          // and live/resume agree on the bubble id for free.
-          const toolUseId = codexToolUseId(item);
-          const { name, input, result } = codexWebSearchCall(item.query, item.action);
+        }
+        if (item?.type === 'file_change' && (item.changes?.length ?? 0) > 0) {
+          const toolUseId = resolvePatchToolUseId(item);
+          pendingToolCalls.set(toolUseId, toolUseId);
           ctx.emit({
             type: 'assistant',
-            message: { content: [{ type: 'tool_use', id: toolUseId, name, input }] },
+            message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.applyPatch, input: patchInput(item) }] },
           });
-          ctx.emit({ type: 'user', message: { content: [{ tool_use_id: toolUseId, content: result }] } });
-        };
-
-        const emitTodoList = (item: CodexItem) => {
-          const toolUseId = codexToolUseId(item);
-          const input = codexTodoInput(item.items);
-          ctx.emit({
-            type: 'assistant',
-            message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.todo, input }] },
-          });
-          ctx.emit({
-            type: 'user',
-            message: { content: [{ tool_use_id: toolUseId, content: codexTodoResultText(input.todos) }] },
-          });
-        };
-
-        const handleCollabItem = (item: CodexItem) => {
-          if (item.tool === CODEX_SPAWN_FN_NAME) { emitSpawn(item); return; }
-          // wait / close_agent / send_input / resume_agent: no bubble of their own, but any
-          // of them can carry a terminal agents_states, so harvest reports from all.
-          emitAgentReports(item);
-        };
-
-        const rl = createInterface({ input: child.stdout! });
-
-        rl.on('line', (line) => {
-          if (terminated) return;
-          let event: CodexEvent;
-          try { event = JSON.parse(line); } catch { return; }
-
-          switch (event.type) {
-            case 'thread.started': {
-              const threadId = event.thread_id || `codex-${randomUUID()}`;
-              if (event.thread_id) codexThreadId = event.thread_id; // enable lazy lookup
-              ctx.rekey(threadId); // rekey provisional runId → codex thread id (+ loading)
-              ctx.emit({ type: 'system', subtype: 'init', session_id: threadId });
-              // Try once here too (a fresh session's file usually appears shortly after);
-              // if still missing, resolveToolUseId keeps retrying. base stays 0 for fresh.
-              ensureRolloutPath();
-              break;
-            }
-            case 'item.completed': {
-              const item = event.item;
-              if (!item) break;
-              if (item.type === 'agent_message' && item.text) {
-                ctx.emit({ type: 'assistant', message: { content: [{ type: 'text', text: item.text }] } });
-              }
-              if (item.type === 'error' && (item.message || item.text)) {
-                ctx.emit({ type: 'error', error: item.message || item.text });
-              }
-              if (item.type === 'reasoning' && item.text) {
-                ctx.emit({
-                  type: 'assistant',
-                  message: { content: [{ type: 'text', text: `<details><summary>Reasoning</summary>\n\n${item.text}\n\n</details>` }] },
-                });
-              }
-              if (item.type === 'command_execution') {
-                const toolUseId = resolveExecToolUseId(item);
-                if (!pendingToolCalls.has(toolUseId)) {
-                  ctx.emit({
-                    type: 'assistant',
-                    message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.bash, input: { command: item.command || '' } }] },
-                  });
-                }
-                ctx.emit({
-                  type: 'user',
-                  message: { content: [{ tool_use_id: toolUseId, content: item.aggregated_output || `(exit code: ${item.exit_code ?? 'unknown'})` }] },
-                });
-                pendingToolCalls.delete(toolUseId);
-              }
-              if (item.type === 'collab_tool_call') {
-                // Sub-agent lifecycle. Handled ONLY on item.completed: a spawn's
-                // item.started carries an empty receiver_thread_ids, so the agent it
-                // created is not yet identifiable there. (codex 0.141 emits no
-                // item.updated for these, so there is no third state to track.)
-                handleCollabItem(item);
-              }
-              if (item.type === 'mcp_tool_call') emitMcpCall(item, true);
-              // web_search / todo_list complete in one shot and expose no result
-              // payload, so they are emitted whole here rather than started early.
-              if (item.type === 'web_search') emitWebSearch(item);
-              if (item.type === 'todo_list') emitTodoList(item);
-              if (item.type === 'file_change') {
-                // apply_patch edit — surface as its own tool call so it (a) shows a
-                // bubble and (b) triggers a snapshot keyed to this call, instead of its
-                // diff being captured by the next (often read-only) command's snapshot.
-                const toolUseId = resolvePatchToolUseId(item);
-                if (!pendingToolCalls.has(toolUseId)) {
-                  ctx.emit({
-                    type: 'assistant',
-                    message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.applyPatch, input: patchInput(item) }] },
-                  });
-                }
-                ctx.emit({
-                  type: 'user',
-                  message: { content: [{ tool_use_id: toolUseId, content: patchResultText(item) }] },
-                });
-                pendingToolCalls.delete(toolUseId);
-              }
-              break;
-            }
-            case 'item.started': {
-              const item = event.item;
-              // An MCP call can run for a while, so open its bubble now and let
-              // item.completed fill the result (same two-phase shape as exec/patch).
-              if (item?.type === 'mcp_tool_call') emitMcpCall(item, false);
-              if (item?.type === 'command_execution' && item.command) {
-                const toolUseId = resolveExecToolUseId(item);
-                pendingToolCalls.set(toolUseId, toolUseId);
-                ctx.emit({
-                  type: 'assistant',
-                  message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.bash, input: { command: item.command } }] },
-                });
-              }
-              if (item?.type === 'file_change' && (item.changes?.length ?? 0) > 0) {
-                const toolUseId = resolvePatchToolUseId(item);
-                pendingToolCalls.set(toolUseId, toolUseId);
-                ctx.emit({
-                  type: 'assistant',
-                  message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.applyPatch, input: patchInput(item) }] },
-                });
-              }
-              break;
-            }
-            case 'turn.completed': {
-              const usage = event.usage || {};
-              ctx.emit({
-                type: 'result',
-                subtype: 'success',
-                usage: {
-                  input_tokens: usage.input_tokens || 0,
-                  output_tokens: usage.output_tokens || 0,
-                  cache_creation_input_tokens: 0,
-                  cache_read_input_tokens: usage.cached_input_tokens || 0,
-                },
-                total_cost_usd: 0,
-              });
-              break;
-            }
-            case 'turn.failed': {
-              // Fail the run so it terminates 'error' (scheduled tasks must not misread as success).
-              terminated = true;
-              failure = new Error(event.error?.message || 'Codex turn failed');
-              break;
-            }
-            case 'error': {
-              terminated = true;
-              failure = new Error(event.message || 'Codex error');
-              break;
-            }
-            // 'turn.started' — no action
-          }
+        }
+        break;
+      }
+      case 'turn.completed': {
+        const usage = event.usage || {};
+        ctx.emit({
+          type: 'result',
+          subtype: 'success',
+          usage: {
+            input_tokens: usage.input_tokens || 0,
+            output_tokens: usage.output_tokens || 0,
+            cache_creation_input_tokens: usage.cache_write_input_tokens || 0,
+            cache_read_input_tokens: usage.cached_input_tokens || 0,
+          },
+          total_cost_usd: 0,
         });
+        break;
+      }
+      case 'turn.failed': {
+        terminated = true;
+        failure = new Error(event.error?.message || 'Codex turn failed');
+        break;
+      }
+      case 'error': {
+        terminated = true;
+        failure = new Error(event.message || 'Codex error');
+        break;
+      }
+      // 'turn.started' and 'item.updated' currently do not need UI changes.
+    }
+  };
 
-        let stderrBuf = '';
-        child.stderr?.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString(); });
-        child.on('error', (err) => { cleanup(); reject(err); });
-        child.on('close', (code) => {
-          cleanup();
-          const stderr = stderrBuf.trim();
-          if (code !== 0 && stderr) console.error(`[Codex] exited with code ${code}: ${stderr}`);
-          if (failure) { reject(failure); return; }
-          // A non-zero exit with no JSONL error event used to resolve() — the run was marked
-          // 'unread' and the user saw an empty reply while the real cause sat in the server log
-          // only (e.g. codex dying on a malformed argv before emitting a single event). Fail the
-          // run instead so the error reaches the UI. An explicit stop also lands here (SIGTERM →
-          // code null), but the orchestrator discards this rejection when its signal is aborted.
-          // stderr is NOT a usable signal: codex writes warnings there on fully successful runs.
-          if (code !== 0) {
-            reject(new Error(stderr || `Codex exited with code ${code}`));
-            return;
-          }
-          resolve();
-        });
-      });
+  return {
+    handle,
+    assertSuccess() {
+      if (failure) throw failure;
     },
-    // No resolveTitle → teardown 'unread' with undefined title (matches original).
+  };
+}
+
+function cleanupImageFiles(imageFiles: string[]): void {
+  for (const f of imageFiles) {
+    try { unlinkSync(f); } catch { /* ignore */ }
+  }
+}
+
+function codexSdkInput(prompt: string, imageFiles: string[]): Input {
+  if (imageFiles.length === 0) return prompt;
+  return [
+    { type: 'text', text: prompt || CODEX_IMAGE_ONLY_TEXT },
+    ...imageFiles.map((path) => ({ type: 'local_image' as const, path })),
+  ];
+}
+
+function codexThreadOptions(ctx: RunCtx): ThreadOptions {
+  return {
+    ...(ctx.params.model ? { model: ctx.params.model } : {}),
+    ...(ctx.cwd ? { workingDirectory: ctx.cwd } : {}),
+    sandboxMode: 'danger-full-access',
+    approvalPolicy: 'never',
+    skipGitRepoCheck: true,
+  };
+}
+
+async function runCodexSdk(ctx: RunCtx): Promise<void> {
+  const imageFiles = ctx.images && ctx.images.length > 0 ? writeImagesToTemp(ctx.images) : [];
+  const adapter = createCodexEventAdapter(ctx);
+  try {
+    const { Codex } = await import('@openai/codex-sdk');
+    const env = sanitizedSpawnEnv({});
+    let codex: InstanceType<typeof Codex>;
+    try {
+      codex = new Codex({ env });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (!message.includes('Unable to locate Codex CLI binaries')) throw error;
+      codex = new Codex({ codexPathOverride: 'codex', env });
+    }
+    const thread = ctx.sessionId
+      ? codex.resumeThread(ctx.sessionId, codexThreadOptions(ctx))
+      : codex.startThread(codexThreadOptions(ctx));
+    const { events } = await thread.runStreamed(codexSdkInput(ctx.prompt ?? '', imageFiles), { signal: ctx.signal });
+    for await (const event of events) adapter.handle(event as CodexEvent);
+    adapter.assertSuccess();
+  } finally {
+    cleanupImageFiles(imageFiles);
+  }
+}
+
+function runCodexCli(ctx: RunCtx): Promise<void> {
+  const { cwd, sessionId } = ctx;
+  const prompt = ctx.prompt ?? '';
+  const imageFiles = ctx.images && ctx.images.length > 0 ? writeImagesToTemp(ctx.images) : [];
+  const adapter = createCodexEventAdapter(ctx);
+
+  return new Promise<void>((resolve, reject) => {
+    // codex-cli >=0.141: --full-auto deprecated; --sandbox workspace-write still blocks writes
+    // outside the workspace root, so use --dangerously-bypass-approvals-and-sandbox instead.
+    // Cockpit already runs the agent with the user's own privileges. A non-trusted dir needs
+    // --skip-git-repo-check. `resume` is exec-only (no -C). Prompt positional.
+    //
+    // The prompt MUST be separated by `--`: on `codex exec` the image flag is declared
+    // variadic (`-i, --image <FILE>...`), so `--image a.png "my prompt"` greedily swallows
+    // the prompt as a second image path. Codex then falls back to reading the prompt from
+    // stdin, which is 'ignore' here, and dies with "No prompt provided via stdin" (exit 1).
+    // `--` ends option parsing so the prompt always lands on the positional.
+    const args: string[] = ['exec'];
+    if (sessionId) {
+      args.push(
+        'resume',
+        sessionId,
+        '--json',
+        '--dangerously-bypass-approvals-and-sandbox',
+        '--skip-git-repo-check',
+      );
+      for (const imgPath of imageFiles) args.push('--image', imgPath);
+      args.push('--', prompt);
+    } else {
+      args.push('--json', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check');
+      if (cwd) args.push('-C', cwd);
+      for (const imgPath of imageFiles) args.push('--image', imgPath);
+      args.push('--', prompt);
+    }
+
+    const child = spawn('codex', args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: cwd || undefined,
+      env: sanitizedSpawnEnv(),
+    });
+    ctx.signal.addEventListener('abort', () => child.kill('SIGTERM'), { once: true });
+
+    const cleanup = () => cleanupImageFiles(imageFiles);
+    const rl = createInterface({ input: child.stdout! });
+    rl.on('line', (line) => {
+      let event: CodexEvent;
+      try { event = JSON.parse(line); } catch { return; }
+      adapter.handle(event);
+    });
+
+    let stderrBuf = '';
+    child.stderr?.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString(); });
+    child.on('error', (err) => { cleanup(); reject(err); });
+    child.on('close', (code) => {
+      cleanup();
+      const stderr = stderrBuf.trim();
+      if (code !== 0 && stderr) console.error(`[Codex] exited with code ${code}: ${stderr}`);
+      try { adapter.assertSuccess(); } catch (error) { reject(error); return; }
+      if (code !== 0) {
+        reject(new Error(stderr || `Codex exited with code ${code}`));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+export const codexSpec: EngineSpec = {
+  name: 'codex',
+  // No preflight: the orchestrator's own "prompt or images" check is sufficient.
+  runner: {
+    async run(ctx: RunCtx) {
+      // Match Claude's shape: explicit pty means CLI mode, omitted/anything else means SDK.
+      const runSelectedMode = () => (ctx.params.mode === 'pty' ? runCodexCli(ctx) : runCodexSdk(ctx));
+      if (ctx.params.noHistory !== true || !ctx.sessionId) {
+        await runSelectedMode();
+        return;
+      }
+
+      const sessionPath = findCodexSessionPath(ctx.sessionId);
+      const stashed = sessionPath ? stashCodexRollout(sessionPath) : false;
+      try {
+        await runSelectedMode();
+      } finally {
+        if (stashed && sessionPath) mergeStashedCodexRollout(sessionPath);
+      }
+    },
+    // No resolveTitle -> teardown 'unread' with undefined title (matches original).
   },
 };

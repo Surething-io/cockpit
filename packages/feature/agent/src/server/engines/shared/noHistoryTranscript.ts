@@ -50,6 +50,22 @@ function readLines(filePath: string): string[] {
     .filter((line) => line.trim().length > 0);
 }
 
+function hasOnlyCompleteJsonLines(lines: string[]): boolean {
+  for (const line of lines) {
+    try {
+      JSON.parse(line);
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+function replaceWithStash(stash: string, sessionPath: string): void {
+  if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
+  fs.renameSync(stash, sessionPath);
+}
+
 /** Last uuid in the stashed history — the entry the resumed turn must chain onto. */
 function tailUuid(lines: string[]): string | null {
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -118,7 +134,12 @@ export function mergeStashedTranscript(sessionPath: string): 'merged' | 'restore
   if (turn.length === 0) {
     // The turn produced nothing (aborted before the first write, or the process died).
     // Restore verbatim — rename rather than rewrite, so the bytes are untouched.
-    fs.renameSync(stash, sessionPath);
+    replaceWithStash(stash, sessionPath);
+    return 'restored';
+  }
+
+  if (!hasOnlyCompleteJsonLines(turn)) {
+    replaceWithStash(stash, sessionPath);
     return 'restored';
   }
 

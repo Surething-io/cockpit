@@ -99,6 +99,16 @@ describe('mergeStashedTranscript', () => {
     expect(fs.existsSync(noHistoryStashPath(sessionPath))).toBe(false);
   });
 
+  it('restores verbatim when the isolated turn has an incomplete JSON line', () => {
+    fs.mkdirSync(join(projectDir, SID), { recursive: true });
+    fs.writeFileSync(noHistoryStashPath(sessionPath), HISTORY.join('\n') + '\n');
+    fs.writeFileSync(sessionPath, `${TURN[0]}\n{"type":"assistant"\n`);
+
+    expect(mergeStashedTranscript(sessionPath)).toBe('restored');
+    expect(readEntries(sessionPath).map((e) => e.uuid)).toEqual(['u1', 'a1']);
+    expect(fs.existsSync(noHistoryStashPath(sessionPath))).toBe(false);
+  });
+
   it('does nothing when there is no stash', () => {
     fs.writeFileSync(sessionPath, HISTORY.join('\n') + '\n');
     expect(mergeStashedTranscript(sessionPath)).toBe('none');

@@ -37,6 +37,17 @@ function isSessionMeta(line: string): boolean {
   }
 }
 
+function hasOnlyCompleteJsonLines(lines: string[]): boolean {
+  for (const line of lines) {
+    try {
+      JSON.parse(line);
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
 function replaceWithStash(stash: string, sessionPath: string): void {
   if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
   fs.renameSync(stash, sessionPath);
@@ -92,6 +103,14 @@ export function mergeStashedCodexRollout(sessionPath: string): 'merged' | 'resto
     return 'restored';
   }
 
+  if (!hasOnlyCompleteJsonLines(turnLines)) {
+    replaceWithStash(stash, sessionPath);
+    return 'restored';
+  }
+
+  // Codex rollout entries are append-only JSONL records keyed by call_id / item id; unlike
+  // Claude transcripts, they do not carry a cross-line parentUuid chain that needs a seam
+  // rewrite when an isolated turn is appended back onto the stashed history.
   fs.writeFileSync(sessionPath, [...history, ...turnLines].join('\n') + '\n', 'utf-8');
   fs.unlinkSync(stash);
   return 'merged';

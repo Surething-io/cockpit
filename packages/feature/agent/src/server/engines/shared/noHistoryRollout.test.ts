@@ -116,6 +116,19 @@ describe('mergeStashedCodexRollout', () => {
     ]);
   });
 
+  it('restores the original rollout when the isolated turn has an incomplete JSON line', () => {
+    fs.writeFileSync(codexNoHistoryStashPath(sessionPath), HISTORY.join('\n') + '\n');
+    fs.writeFileSync(sessionPath, `${META}\n${TURN[1]}\n{"type":"response_item"\n`);
+
+    expect(mergeStashedCodexRollout(sessionPath)).toBe('restored');
+    expect(readEntries(sessionPath).map((entry) => entry.type)).toEqual([
+      'session_meta',
+      'response_item',
+      'response_item',
+    ]);
+    expect(fs.existsSync(codexNoHistoryStashPath(sessionPath))).toBe(false);
+  });
+
   it('does nothing when there is no stash', () => {
     fs.writeFileSync(sessionPath, HISTORY.join('\n') + '\n');
     expect(mergeStashedCodexRollout(sessionPath)).toBe('none');

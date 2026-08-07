@@ -21,6 +21,7 @@ import { runBashHandler } from './effect/bashStreamHandler';
 import { runSessionStreamHandler } from './effect/sessionStreamHandler';
 import { wireCodeIndexToFileWatcher } from './codeIndexSync';
 import { recoverStashedTranscripts } from '@cockpit/feature-agent/server/engines/shared/noHistoryTranscript';
+import { recoverStashedCodexRollouts } from '@cockpit/feature-agent/server/engines/shared/noHistoryRollout';
 // globalStateClients + broadcastToGlobalState live in a side-effect-free module so API
 // routes can broadcast without importing this server.
 import { globalStateClients, broadcastToGlobalState } from './globalStateBroadcast';
@@ -33,17 +34,20 @@ export { broadcastToGlobalState };
 // per process. `wireCodeIndexToFileWatcher` is itself idempotent.
 wireCodeIndexToFileWatcher();
 
-// Fold back any transcript stashed by an "independent task" turn that never finished (crash
-// or kill). Until this runs, the affected session has no <sid>.jsonl, so it is missing from
-// every session list and its only copy sits under a filename nothing reads. Same boot-path
-// reasoning as above; the sweep is idempotent and a no-op when nothing was left behind.
+// Fold back any history stashed by an "independent task" turn that never finished (crash
+// or kill). Until this runs, the affected session may be missing from session lists or
+// have only a stub rollout. Same boot-path reasoning as above; the sweeps are idempotent
+// and no-ops when nothing was left behind.
 try {
-  const repaired = recoverStashedTranscripts();
-  if (repaired > 0) {
-    console.log(`[cockpit] recovered ${repaired} session transcript(s) from an interrupted independent task`);
+  const transcriptRepaired = recoverStashedTranscripts();
+  const codexRepaired = recoverStashedCodexRollouts();
+  if (transcriptRepaired > 0 || codexRepaired > 0) {
+    console.log(
+      `[cockpit] recovered ${transcriptRepaired} session transcript(s) and ${codexRepaired} Codex rollout(s) from interrupted independent task(s)`,
+    );
   }
 } catch (err) {
-  console.error('[cockpit] transcript recovery sweep failed:', err);
+  console.error('[cockpit] independent-task recovery sweep failed:', err);
 }
 
 // ─────────────────────────────────────────────────────────

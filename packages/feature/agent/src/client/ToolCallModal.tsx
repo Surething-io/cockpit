@@ -23,6 +23,7 @@ const TOOL_ICONS: Record<string, string> = {
   Read: '📄',
   Write: '✏️',
   Edit: '📝',
+  ApplyPatch: '🧩',
   Bash: '💻',
   Glob: '🔍',
   Grep: '🔎',
@@ -38,6 +39,10 @@ const TOOL_ICONS: Record<string, string> = {
 function parseWorkflowRunId(result?: string): string | null {
   if (!result) return null;
   return result.match(/subagents\/workflows\/(wf_[A-Za-z0-9_-]+)/)?.[1] ?? null;
+}
+
+function isPatchChange(value: unknown): value is { path?: unknown; kind?: unknown } {
+  return typeof value === 'object' && value !== null;
 }
 
 // ============================================
@@ -69,13 +74,22 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
   const isSkill = toolCall.name === 'Skill';
   // The header text slot carries a description (Agent) / name (Workflow/Skill),
   // not a path — skip relative-path conversion and the copy-path icon for these.
-  const hideCopyIcon = isAgentTool || isWorkflow || isSkill;
+  const hideCopyIcon = toolCall.name === 'ApplyPatch' || isAgentTool || isWorkflow || isSkill;
 
   // Extract file path or key info from input
   const getDisplayInfo = () => {
     const input = toolCall.input;
     if (toolCall.name === 'Bash' && input.command && typeof input.command === 'string') {
       return input.command;
+    }
+    if (toolCall.name === 'ApplyPatch' && Array.isArray(input.changes)) {
+      const changes = input.changes.filter(isPatchChange).flatMap((change) => {
+        const path = typeof change.path === 'string' ? change.path : '';
+        if (!path) return [];
+        const kind = typeof change.kind === 'string' && change.kind ? change.kind : 'update';
+        return `${kind} ${getRelativePath(path)}`;
+      });
+      if (changes.length > 0) return changes.join(' · ');
     }
     if (isAgentTool && input.description && typeof input.description === 'string') {
       return input.description;
@@ -130,7 +144,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
   };
 
   const displayInfo = getDisplayInfo();
-  const skipRelativePath = toolCall.name === 'Glob' || toolCall.name === 'Grep' || toolCall.name === 'Bash' || isAgentTool || isWorkflow || isSkill;
+  const skipRelativePath = toolCall.name === 'Glob' || toolCall.name === 'Grep' || toolCall.name === 'Bash' || toolCall.name === 'ApplyPatch' || isAgentTool || isWorkflow || isSkill;
   const displayPath = displayInfo ? (skipRelativePath ? displayInfo : getRelativePath(displayInfo)) : null;
 
   const openPreview = (type: 'input' | 'result') => {

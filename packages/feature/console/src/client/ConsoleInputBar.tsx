@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Zap, Variable, LayoutGrid, List, AppWindow } from 'lucide-react';
+import { Zap, Variable, LayoutGrid, List } from 'lucide-react';
 import { QuickCommandsPopover, useQuickCommands } from './QuickCommandsPopover';
 import { matchInput } from './useConsoleState';
 import type { CustomCommand } from '@/app/api/services/config/route';
@@ -308,17 +308,6 @@ export function ConsoleInputBar({
   return (
     <div className="border-t border-border p-4">
       <form onSubmit={handleSubmit} className="relative flex gap-2 items-center">
-        {/* HTML apps launcher — opens the HtmlAppsModal (rendered in Workspace)
-            via a window event, mirroring the sidebar's Skills button. */}
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent('cockpit-open-html-apps'))}
-          className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
-          title={t('console.htmlApps')}
-        >
-          <AppWindow className="w-4 h-4" />
-        </button>
-
         {/* Quick command button */}
         <div className="relative">
           <button

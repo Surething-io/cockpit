@@ -6,18 +6,13 @@ import { ProjectSidebar, ProjectInfo } from './ProjectSidebar';
 import { EmptyState } from './EmptyState';
 import { SessionBrowser } from './SessionBrowser';
 import { SettingsModal } from './SettingsModal';
+import { HtmlAppsModal } from '@cockpit/feature-explorer';
 import { TokenStatsModal } from '@cockpit/feature-agent';
 import { NoteModal } from './NoteModal';
 import { SkillsModal } from '@cockpit/feature-skills';
 import { SessionCompleteToastContainer, showSessionCompleteToast } from '@cockpit/feature-agent';
 import { useEffectQuery } from '@cockpit/effect-react';
 import { fetchProjects, saveProjects as saveProjectsEffect } from './effect/projectClient';
-
-interface ProjectsData {
-  projects: ProjectInfo[];
-  activeIndex: number;
-  collapsed: boolean;
-}
 
 interface WorkspaceProps {
   initialCwd?: string;
@@ -35,6 +30,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   const [isNoteOpen, setIsNoteOpen] = useState(false);
   const [noteProjectCwd, setNoteProjectCwd] = useState<string | null>(null);
   const [isSkillsOpen, setIsSkillsOpen] = useState(false);
+  const [isHtmlAppsOpen, setIsHtmlAppsOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   // Lazy load: only render project iframes that have been activated before (ever-growing set)
   const [loadedCwds, setLoadedCwds] = useState<Set<string>>(new Set());
@@ -111,6 +107,16 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   }, [activeIndex, projects]);
 
   // (Initial load moved to useEffectQuery + sync useEffect above)
+
+  const handleOpenHtmlApp = useCallback((path: string) => {
+    const cwd = projects[activeIndex]?.cwd;
+    const iframe = cwd ? iframeRefs.current.get(cwd) : null;
+    const targetWindow = iframe?.contentWindow;
+    if (!targetWindow) return;
+    const event = targetWindow.document.createEvent('CustomEvent');
+    event.initCustomEvent('console-open-browser', false, false, { url: path });
+    targetWindow.dispatchEvent(event);
+  }, [activeIndex, projects]);
 
   // Utility function to update the browser address bar URL
   const updateUrl = useCallback((cwd: string, sessionId?: string) => {
@@ -470,6 +476,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenNote={(cwd) => { setNoteProjectCwd(cwd ?? null); setIsNoteOpen(true); }}
         onOpenSkills={() => setIsSkillsOpen(true)}
+        onOpenApps={() => setIsHtmlAppsOpen(true)}
         onSwitchProject={handleSwitchProject}
         onAddProject={(cwd) => {
           const existingIndex = projects.findIndex(p => p.cwd === cwd);
@@ -562,6 +569,13 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
       <SkillsModal
         isOpen={isSkillsOpen}
         onClose={() => setIsSkillsOpen(false)}
+      />
+
+      {/* HTML Apps Modal */}
+      <HtmlAppsModal
+        isOpen={isHtmlAppsOpen}
+        onClose={() => setIsHtmlAppsOpen(false)}
+        onOpenApp={handleOpenHtmlApp}
       />
 
       {/* Bottom-left session complete notification */}

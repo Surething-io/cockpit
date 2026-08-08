@@ -29,7 +29,7 @@ interface SkillsModalProps {
 }
 
 export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
@@ -90,6 +90,9 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
         s.path.toLowerCase().includes(q)
     );
   }, [skills, query]);
+  const docsUrl = i18n.resolvedLanguage?.startsWith('zh')
+    ? 'https://opencockpit.dev/zh/docs/agent/skills/'
+    : 'https://opencockpit.dev/en/docs/agent/skills/';
 
   const handleAdd = useCallback(async () => {
     const p = addPath.trim();
@@ -196,10 +199,35 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
             {loading ? (
               <div className="text-center text-muted-foreground py-8 text-sm">{t('common.loading')}</div>
             ) : filtered.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8 text-sm">
-                {skills.length === 0
-                  ? t('skills.emptyNoSkills')
-                  : t('skills.emptyNoMatch')}
+              <div className="text-center text-muted-foreground py-8 text-sm space-y-2">
+                {skills.length === 0 ? (
+                  <>
+                    <p>{t('skills.emptyNoSkills')}</p>
+                    <p>
+                      {t('skills.emptyIntroPrefix')}{' '}
+                      <code className="px-1.5 py-0.5 rounded bg-muted text-foreground font-mono text-xs">/skillify</code>
+                      {' '}{t('skills.emptyIntroSuffix')}
+                    </p>
+                    <p>
+                      <button
+                        type="button"
+                        onClick={() => setShowAdd(true)}
+                        className="text-brand hover:underline"
+                      >
+                        {t('skills.addSkill')}
+                      </button>
+                      {' · '}
+                      <a
+                        href={docsUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-brand hover:underline"
+                      >
+                        {t('skills.viewDocs')}
+                      </a>
+                    </p>
+                  </>
+                ) : t('skills.emptyNoMatch')}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

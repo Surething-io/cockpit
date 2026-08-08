@@ -103,7 +103,7 @@ For anything more involved, the AI writes the backend as a **script file** next 
 A page earns a spot in the **HTML panel** by declaring a few \`<head>\` meta tags (\`cockpit-name\`, \`description\`, \`cockpit-icon\`). After that:
 
 - **Bookmark** it from the chat preview, the Explorer file browser, or open it straight into a Console browser bubble — the two buttons are everywhere a \`.html\` shows up.
-- The **HTML panel** (a button on the Console input bar) is a card grid of everything you've saved — preview, delete, copy path, or click to run.
+- The **HTML panel** (opened from **Apps** in the bottom-left sidebar) is a card grid of everything you've saved — preview, delete, copy path, or click to run.
 - Type \`/\` in the Console input bar and your apps appear ahead of custom commands. \`/repo-dashboard\` opens it in a bubble. The short name is the \`cockpit-name\` from the meta head.
 
 The registry is just \`~/.cockpit/html.json\` holding absolute paths — the same mechanism as \`skills.json\`. The HTML files stay in your project; the panel is a bookmark folder.
@@ -171,7 +171,7 @@ const h = cockpit.bash("tail -f ./build.log", {
 页面只要在 \`<head>\` 里声明几个 meta(\`cockpit-name\`、\`description\`、\`cockpit-icon\`),就能进 **HTML 面板**。之后:
 
 - 从聊天预览、Explorer 文件浏览器**收藏**它,或直接在 Console 浏览器气泡里打开 —— 只要有 \`.html\` 露面,那两个按钮就在。
-- **HTML 面板**(Console 输入栏上的一个按钮)是你存过的所有小应用的卡片墙 —— 预览、删除、复制路径,点一下就跑。
+- **HTML 面板**(从左下角侧边栏的 **应用** 打开)是你存过的所有小应用的卡片墙 —— 预览、删除、复制路径,点一下就跑。
 - 在 Console 输入栏打 \`/\`,你的小应用排在自定义命令前面。\`/repo-dashboard\` 就在气泡里打开它。这个短名就是 meta 头里的 \`cockpit-name\`。
 
 登记表就是 \`~/.cockpit/html.json\`,只存绝对路径 —— 和 \`skills.json\` 一样的机制。HTML 文件留在你项目里;面板只是个书签夹。

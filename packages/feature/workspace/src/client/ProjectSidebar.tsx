@@ -10,6 +10,7 @@ import { usePinnedSessions } from '@cockpit/feature-agent';
 import { useScheduledTasks } from '@cockpit/feature-agent';
 import { useWebSocket, toast } from '@cockpit/shared-ui';
 import { useLatestVersion } from './useLatestVersion';
+import { AppWindow } from 'lucide-react';
 
 export interface ProjectInfo {
   cwd: string;
@@ -29,6 +30,7 @@ interface ProjectSidebarProps {
   onOpenSettings: () => void;
   onOpenNote: (cwd?: string) => void;
   onOpenSkills: () => void;
+  onOpenApps: () => void;
   onSwitchProject: (cwd: string, sessionId: string) => void;
   onAddProject: (cwd: string) => void;
 }
@@ -52,6 +54,7 @@ export function ProjectSidebar({
   onOpenSettings,
   onOpenNote,
   onOpenSkills,
+  onOpenApps,
   onSwitchProject,
   onAddProject: _onAddProject,
 }: ProjectSidebarProps) {
@@ -290,6 +293,17 @@ export function ProjectSidebar({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
           </svg>
           {!collapsed && <span className="text-sm">{t('workspace.notes')}</span>}
+        </button>
+        {/* Apps */}
+        <button
+          className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
+            collapsed ? 'justify-center' : ''
+          }`}
+          onClick={onOpenApps}
+          title={collapsed ? t('workspace.apps') : undefined}
+        >
+          <AppWindow className="w-5 h-5 flex-shrink-0" />
+          {!collapsed && <span className="text-sm">{t('workspace.apps')}</span>}
         </button>
         {/* Skills */}
         <button

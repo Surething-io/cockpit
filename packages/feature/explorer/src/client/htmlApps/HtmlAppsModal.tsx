@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from '@cockpit/shared-ui';
 import { ExternalLink, Eye, Trash2, Plus, X, Search, Copy } from 'lucide-react';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
@@ -11,9 +12,11 @@ import { loadHtmlApps, addHtmlApp, deleteHtmlApp, type HtmlAppInfo } from './htm
 interface HtmlAppsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenApp?: (path: string) => void;
 }
 
-export function HtmlAppsModal({ isOpen, onClose }: HtmlAppsModalProps) {
+export function HtmlAppsModal({ isOpen, onClose, onOpenApp }: HtmlAppsModalProps) {
+  const { t, i18n } = useTranslation();
   const [apps, setApps] = useState<HtmlAppInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
@@ -64,6 +67,9 @@ export function HtmlAppsModal({ isOpen, onClose }: HtmlAppsModalProps) {
         a.path.toLowerCase().includes(q),
     );
   }, [apps, query]);
+  const docsUrl = i18n.resolvedLanguage?.startsWith('zh')
+    ? 'https://opencockpit.dev/zh/docs/agent/html-apps/'
+    : 'https://opencockpit.dev/en/docs/agent/html-apps/';
 
   const handleAdd = useCallback(async () => {
     const p = addPath.trim();
@@ -99,13 +105,16 @@ export function HtmlAppsModal({ isOpen, onClose }: HtmlAppsModalProps) {
     }
   }, []);
 
-  // Open in a console browser bubble via the shared window event (ConsoleView
-  // creates the bubble, TabManager swipes to console). Close the panel: it is a
-  // fixed overlay that would otherwise cover the console we just switched to.
+  // Open in a console browser bubble. Callers outside the project iframe can
+  // route the event themselves; in-frame callers keep the original window event.
   const openBubble = useCallback((path: string) => {
-    window.dispatchEvent(new CustomEvent('console-open-browser', { detail: { url: path } }));
+    if (onOpenApp) {
+      onOpenApp(path);
+    } else {
+      window.dispatchEvent(new CustomEvent('console-open-browser', { detail: { url: path } }));
+    }
     onClose();
-  }, [onClose]);
+  }, [onClose, onOpenApp]);
 
   const handleCopyPath = useCallback(async (path: string) => {
     try {
@@ -124,7 +133,7 @@ export function HtmlAppsModal({ isOpen, onClose }: HtmlAppsModalProps) {
         <div className="absolute inset-0 bg-black/50" onClick={onClose} />
         <div className="relative bg-card rounded-lg shadow-xl w-full max-w-7xl h-[90vh] mx-4 flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
-            <h2 className="text-sm font-medium text-foreground">HTML Apps</h2>
+            <h2 className="text-sm font-medium text-foreground">{t('htmlApps.title')}</h2>
             <div className="flex items-center gap-3">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-9 pointer-events-none" />
@@ -163,8 +172,35 @@ export function HtmlAppsModal({ isOpen, onClose }: HtmlAppsModalProps) {
             {loading ? (
               <div className="text-center text-muted-foreground py-8 text-sm">Loading...</div>
             ) : filtered.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8 text-sm">
-                {apps.length === 0 ? 'No HTML apps yet. Click "Add" to register one.' : 'No HTML apps match your search.'}
+              <div className="text-center text-muted-foreground py-8 text-sm space-y-2">
+                {apps.length === 0 ? (
+                  <>
+                    <p>{t('htmlApps.emptyNoApps')}</p>
+                    <p>
+                      {t('htmlApps.emptyCreatePrefix')}{' '}
+                      <code className="px-1.5 py-0.5 rounded bg-muted text-foreground font-mono text-xs">/html</code>
+                      {' '}{t('htmlApps.emptyCreateSuffix')}
+                    </p>
+                    <p>
+                      <button
+                        type="button"
+                        onClick={() => setShowAdd(true)}
+                        className="text-brand hover:underline"
+                      >
+                        {t('htmlApps.addExisting')}
+                      </button>
+                      {' · '}
+                      <a
+                        href={docsUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-brand hover:underline"
+                      >
+                        {t('htmlApps.viewDocs')}
+                      </a>
+                    </p>
+                  </>
+                ) : t('htmlApps.emptyNoMatch')}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

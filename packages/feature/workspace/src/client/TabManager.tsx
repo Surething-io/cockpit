@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { ProjectSessionsModal } from '@cockpit/feature-agent';
 import { FileBrowserModal } from '@cockpit/feature-explorer';
 import { GitWorktreeModal } from '@cockpit/feature-explorer';
-import { HtmlAppsModal } from '@cockpit/feature-explorer';
 import { ConsoleView, AliasManager } from '@cockpit/feature-console';
 import { ChatProvider, FileDiffViewer } from '@cockpit/feature-agent';
 import type { ToolCallInfo } from '@cockpit/feature-agent';
@@ -109,7 +108,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
   // Message-level "view all file changes": hosted in the Explorer panel (panel 2)
   // as an overlay above the FileBrowser, instead of a full-screen modal. Null =
   // not showing. Setting it also swipes to Explorer (see handleShowFileDiff).
-  const [fileDiffRequest, setFileDiffRequest] = useState<{ toolCalls: ToolCallInfo[]; cwd?: string } | null>(null);
+  const [fileDiffRequest, setFileDiffRequest] = useState<{ toolCalls: ToolCallInfo[]; cwd?: string; sessionId?: string } | null>(null);
   // Forced chat refresh signal: bumped when a SWITCH_SESSION jump targets a session whose
   // tab already exists. Activating an already-active tab produces no isActive rising edge
   // in Chat, so without this a jump from the scheduled-tasks / recent / pinned panels would
@@ -180,16 +179,6 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     window.addEventListener('console-open-browser', handler);
     return () => window.removeEventListener('console-open-browser', handler);
   }, [handleViewChange]);
-
-  // HTML-apps launcher. Rendered here (inside the project iframe, same frame as
-  // ConsoleView + the console input bar's "HTML" button) — window events don't
-  // cross the iframe/parent boundary, so it can't live in the parent Workspace.
-  const [isHtmlAppsOpen, setIsHtmlAppsOpen] = useState(false);
-  useEffect(() => {
-    const handler = () => setIsHtmlAppsOpen(true);
-    window.addEventListener('cockpit-open-html-apps', handler);
-    return () => window.removeEventListener('cockpit-open-html-apps', handler);
-  }, []);
 
   // Load Git repository info (branch)
   const loadGitInfo = useCallback(async () => {
@@ -330,8 +319,8 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
   // — which re-renders TabManager — doesn't re-render the whole FileBrowser subtree.
   const handleExplorerClose = useCallback(() => handleViewChange('agent'), [handleViewChange]);
 
-  const handleShowFileDiff = useCallback((toolCalls: ToolCallInfo[], cwd?: string) => {
-    setFileDiffRequest({ toolCalls, cwd });
+  const handleShowFileDiff = useCallback((toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string) => {
+    setFileDiffRequest({ toolCalls, cwd, sessionId });
     handleViewChange('explorer');
   }, [handleViewChange]);
 
@@ -485,6 +474,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                       key={fileDiffRequest.toolCalls.map((tc) => tc.id).filter(Boolean).join(',')}
                       toolCalls={fileDiffRequest.toolCalls}
                       cwd={fileDiffRequest.cwd}
+                      sessionId={fileDiffRequest.sessionId}
                       onClose={() => setFileDiffRequest(null)}
                       onContentSearch={handleDiffContentSearch}
                     />
@@ -589,12 +579,6 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
           onSave={() => setIsAliasManagerOpen(false)}
         />
       )}
-
-      {/* HTML apps launcher (opened from the console input bar's leading AppWindow button) */}
-      <HtmlAppsModal
-        isOpen={isHtmlAppsOpen}
-        onClose={() => setIsHtmlAppsOpen(false)}
-      />
 
     </div>
     </SwipeableViewContainer>

@@ -61,10 +61,17 @@
     "current": "当前"
   },
   "htmlApps": {
+    "title": "HTML 小应用",
     "addTooltip": "添加到 HTML 面板",
     "added": "已添加到 HTML 面板",
     "alreadyAdded": "已添加过",
-    "addFailed": "添加失败"
+    "addFailed": "添加失败",
+    "emptyNoApps": "还没有 HTML 应用。",
+    "emptyCreatePrefix": "在聊天里使用",
+    "emptyCreateSuffix": "创建新应用。",
+    "addExisting": "添加已有 HTML 文件",
+    "viewDocs": "查看文档",
+    "emptyNoMatch": "没有匹配的 HTML 应用。"
   },
   "skills": {
     "addTooltip": "添加到 Skills 面板",
@@ -75,8 +82,11 @@
     "searchPlaceholder": "搜索 skills...",
     "clearSearch": "清除",
     "addSkill": "添加 Skill",
-    "emptyNoSkills": "还没有 skill，点击「添加 Skill」添加一个。",
+    "emptyNoSkills": "还没有 skill。",
+    "emptyIntroPrefix": "在聊天里使用",
+    "emptyIntroSuffix": "把可复用经验整理成 SKILL.md。",
     "emptyNoMatch": "没有匹配的 skill。",
+    "viewDocs": "查看文档",
     "pathLabel": "SKILL.md 的绝对路径",
     "pathPlaceholder": "/Users/you/.../skills/foo/SKILL.md",
     "add": "添加",
@@ -167,6 +177,7 @@
     "collapseSidebar": "折叠侧边栏",
     "notes": "笔记",
     "skills": "技能",
+    "apps": "应用",
     "settings": "设置",
     "help": "帮助",
     "updateAvailable": "新版本 v{{version}} 可用",

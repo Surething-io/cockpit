@@ -4,12 +4,18 @@ import { I18nProvider } from './I18nProvider';
 import { ThemeProvider } from '@cockpit/shared-ui';
 import { ToastProvider } from '@cockpit/shared-ui';
 import { TooltipProvider } from '@cockpit/shared-ui';
+import { useSuppressInstalledContextMenu } from './useSuppressInstalledContextMenu';
 
 interface ProvidersProps {
   children: React.ReactNode;
 }
 
 export function Providers({ children }: ProvidersProps) {
+  // In an installed PWA window on macOS, the native right-click menu breaks IME
+  // (CJK) input window-wide; suppress it there. No-op in normal browser tabs.
+  // See useSuppressInstalledContextMenu for the full rationale.
+  useSuppressInstalledContextMenu();
+
   return (
     <I18nProvider>
       <ThemeProvider>

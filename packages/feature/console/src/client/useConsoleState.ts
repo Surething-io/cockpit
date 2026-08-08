@@ -45,7 +45,10 @@ function generateUniqueCommandId(): string {
   return `cmd-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
-const PTY_COMMANDS = new Set(['zsh', 'bash', 'sh', 'fish', 'nu', 'python', 'python3', 'node', 'irb', 'lua', 'vim', 'nvim', 'vi', 'nano', 'emacs', 'top', 'htop', 'less', 'man']);
+export const OPEN_PREFERRED_SHELL_COMMAND = '__cockpit_open_preferred_shell__';
+const OPEN_PREFERRED_SHELL_LABEL = 'shell';
+
+const PTY_COMMANDS = new Set([OPEN_PREFERRED_SHELL_COMMAND, 'zsh', 'bash', 'sh', 'fish', 'nu', 'python', 'python3', 'node', 'irb', 'lua', 'vim', 'nvim', 'vi', 'nano', 'emacs', 'top', 'htop', 'less', 'man']);
 function isPtyCommand(command: string): boolean {
   const firstWord = command.trim().split(/\s+/)[0];
   return PTY_COMMANDS.has(firstWord);
@@ -644,10 +647,15 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     const timestamp = new Date().toISOString();
     const usePty = isPtyCommand(actualCommand);
 
+    const displayCommand =
+      actualCommand === OPEN_PREFERRED_SHELL_COMMAND
+        ? OPEN_PREFERRED_SHELL_LABEL
+        : command;
+
     const newCommand: Command = {
       id: commandId,
-      command,
-      output: actualCommand !== command ? `→ ${actualCommand}\n` : '',
+      command: displayCommand,
+      output: actualCommand !== command && actualCommand !== OPEN_PREFERRED_SHELL_COMMAND ? `→ ${actualCommand}\n` : '',
       isRunning: true,
       timestamp,
       cwd: currentCwd,
@@ -770,8 +778,12 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
 
     const parts = cmd.command.trim().split(/\s+/);
     const firstWord = parts[0];
-    let actualCommand = cmd.command;
-    if (aliases[firstWord]) {
+    const isPreferredShellRerun =
+      cmd.usePty && cmd.command === OPEN_PREFERRED_SHELL_LABEL;
+    let actualCommand = isPreferredShellRerun
+      ? OPEN_PREFERRED_SHELL_COMMAND
+      : cmd.command;
+    if (!isPreferredShellRerun && aliases[firstWord]) {
       actualCommand = aliases[firstWord] + (parts.length > 1 ? ' ' + parts.slice(1).join(' ') : '');
     }
 

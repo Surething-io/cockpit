@@ -7,7 +7,7 @@ import { EnvManager } from './EnvManager';
 import { AliasManager } from './AliasManager';
 import { ConsoleInputBar } from './ConsoleInputBar';
 import { ConsoleScrollButtons } from './ConsoleScrollButtons';
-import { useConsoleState, type ConsoleItem } from './useConsoleState';
+import { OPEN_PREFERRED_SHELL_COMMAND, useConsoleState, type ConsoleItem } from './useConsoleState';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { Effect } from 'effect';
 import {
@@ -29,7 +29,7 @@ const TOOLBAR_HEIGHT = 41;
 // `label` is an i18n key; `triggers` are literal examples shown as code chips.
 const BUBBLE_GUIDE: { key: string; label: string; triggers: string[]; notes?: string[] }[] = [
   { key: 'command', label: 'console.bubbleCommand', triggers: ['ls', 'git status', 'npm run dev'] },
-  { key: 'pty', label: 'console.bubbleInteractive', triggers: ['zsh', 'vim', 'python', 'top'] },
+  { key: 'pty', label: 'console.bubbleInteractive', triggers: ['zsh', 'bash', 'vim', 'python'] },
   { key: 'browser', label: 'console.bubbleBrowser', triggers: ['https://…', '*.html', '*.md', '*.png', '*.pdf', '*.json'], notes: ['console.bubbleBrowserNoteIframe', 'console.bubbleBrowserNoteCookie'] },
   { key: 'database', label: 'console.bubbleDatabase', triggers: ['postgresql://', 'mysql://', 'redis://', 'neo4j://'] },
   { key: 'notebook', label: 'console.bubbleNotebook', triggers: ['*.ipynb'] },
@@ -300,8 +300,8 @@ function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote 
               </ul>
               <button
                 type="button"
-                onClick={() => stateExecuteCommand('zsh')}
-                title={t('console.launchZsh')}
+                onClick={() => stateExecuteCommand(OPEN_PREFERRED_SHELL_COMMAND)}
+                title={t('console.launchShell')}
                 className="self-start flex items-center gap-2 px-4 py-2 rounded-lg border border-input bg-background text-sm text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 transition-all"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -388,7 +388,7 @@ function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote 
         onExecute={stateExecuteCommand}
         onAddPluginItem={addPluginItem}
         onShowEnvManager={() => setShowEnvManager(true)}
-        onOpenZsh={() => stateExecuteCommand('zsh')}
+        onOpenShell={() => stateExecuteCommand(OPEN_PREFERRED_SHELL_COMMAND)}
         onOpenNote={onOpenNote}
       />
 

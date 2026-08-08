@@ -27,7 +27,7 @@ interface ConsoleInputBarProps {
   onExecute: (command: string) => void;
   onAddPluginItem?: (type: string, input: string) => void;
   onShowEnvManager: () => void;
-  onOpenZsh: () => void;
+  onOpenShell: () => void;
   onOpenNote?: () => void;
 }
 
@@ -40,7 +40,7 @@ export function ConsoleInputBar({
   onExecute,
   onAddPluginItem,
   onShowEnvManager,
-  onOpenZsh,
+  onOpenShell,
   onOpenNote,
 }: ConsoleInputBarProps) {
   const { t } = useTranslation();
@@ -368,9 +368,9 @@ export function ConsoleInputBar({
 
         <button
           type="button"
-          onClick={onOpenZsh}
+          onClick={onOpenShell}
           className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
-          title={t('console.launchZsh')}
+          title={t('console.launchShell')}
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <polyline points="4 17 10 11 4 5" />

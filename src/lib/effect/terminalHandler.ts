@@ -7,7 +7,7 @@
  *   - Heartbeat is driven by Schedule.spaced and cancels automatically.
  *   - Spawn / attach / signal / resize semantics match the original handler.
  */
-import { spawn, execSync, type ChildProcess } from "child_process"
+import { spawn, execFileSync, execSync, type ChildProcess } from "child_process"
 import * as nodePty from "node-pty"
 import { Effect, Scope, Schedule, Stream } from "effect"
 import type { WebSocket } from "ws"
@@ -31,6 +31,69 @@ import {
 } from "@cockpit/shared-utils"
 
 const HEARTBEAT = Schedule.spaced("30 seconds")
+const OPEN_PREFERRED_SHELL_COMMAND = "__cockpit_open_preferred_shell__"
+
+type PtySpawnTarget = {
+  file: string
+  args: string[]
+  cwd: string
+}
+
+function commandPath(command: string): string | null {
+  try {
+    const found = execSync(`command -v ${command}`, {
+      encoding: "utf-8",
+      timeout: 3000,
+    })
+      .trim()
+      .split(/\r?\n/)[0]
+    return found || null
+  } catch {
+    return null
+  }
+}
+
+function loginShellArgs(shell: string): string[] {
+  if (shell === "bash") return ["--login"]
+  return ["-l"]
+}
+
+function resolvePreferredPtyShell(cwd: string): PtySpawnTarget {
+  if (isWindows) {
+    try {
+      const wslShell = execFileSync(
+        "wsl.exe",
+        [
+          "sh",
+          "-lc",
+          "command -v zsh >/dev/null 2>&1 && printf zsh || { command -v bash >/dev/null 2>&1 && printf bash; }",
+        ],
+        { encoding: "utf-8", timeout: 3000 }
+      ).trim()
+      if (wslShell === "zsh" || wslShell === "bash") {
+        return {
+          file: "wsl.exe",
+          args: ["--cd", cwd, "--exec", wslShell, ...loginShellArgs(wslShell)],
+          cwd: process.cwd(),
+        }
+      }
+    } catch {
+      /* WSL unavailable or no supported shell installed. */
+    }
+  } else {
+    for (const shell of ["zsh", "bash", "sh"]) {
+      const file = commandPath(shell)
+      if (file) return { file, args: loginShellArgs(shell), cwd }
+    }
+  }
+
+  const fallback = getDefaultShell()
+  return {
+    file: fallback,
+    args: isWindows ? [] : loginShellArgs(fallback.split(/[\\/]/).pop() || fallback),
+    cwd,
+  }
+}
 
 // ─────────────────────────────────────────────────────────
 // helper: descendant pids
@@ -273,14 +336,18 @@ const dispatchMessage = (
           for (const [k, v] of Object.entries(childEnv)) {
             if (v !== undefined) ptyEnv[k] = v
           }
+          const ptyTarget =
+            command === OPEN_PREFERRED_SHELL_COMMAND
+              ? resolvePreferredPtyShell(cwd)
+              : { file: userShell, args: ["--login", "-c", command], cwd }
           const ptyProcess = nodePty.spawn(
-            userShell,
-            ["--login", "-c", command],
+            ptyTarget.file,
+            ptyTarget.args,
             {
               name: "xterm-256color",
               cols: cols || 120,
               rows: rows || 30,
-              cwd,
+              cwd: ptyTarget.cwd,
               env: ptyEnv,
             }
           )

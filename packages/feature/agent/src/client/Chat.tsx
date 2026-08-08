@@ -90,11 +90,12 @@ interface ChatProps {
   onOpenSession?: (sessionId: string, title?: string) => void; // Open a new session (used for Fork)
   onContentSearch?: (query: string) => void; // Selected text → project-wide search
   onShowFileDiff?: (toolCalls: ToolCallInfo[], cwd?: string) => void; // Message file changes → Explorer panel + auto-swipe
+  onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void; // AI reply file link → Explorer
   onOpenSessionBrowser?: () => void; // Host-handled: open the cross-engine session browser
   onOpenSettings?: () => void; // Host-handled: open the app settings modal
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, chatMode: chatModeProp, onChatModeChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, chatMode: chatModeProp, onChatModeChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -725,6 +726,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             isActive={isActive}
             onContentSearch={onContentSearch}
             onShowFileDiff={onShowFileDiff}
+            onOpenFileLink={onOpenFileLink}
             onApprovePlan={handleApprovePlan}
           />
         )}

@@ -13,7 +13,7 @@ import { isMutatingToolName } from '../shared/toolMutation';
 //   - FileContextMenu: chat-adjacent code that hasn't migrated yet.
 //   - MarkdownRenderer: a generic markdown renderer; candidate for shared-ui.
 // Allowed by MODULES.md as transitional reverse imports.
-import { HtmlPreviewModal, isMarkdownFile, isHtmlFile, isImageFile } from '@cockpit/feature-explorer';
+import { HtmlPreviewModal, isMarkdownFile, isHtmlFile, isImageFile, resolveRelativePath } from '@cockpit/feature-explorer';
 import { MarkdownRenderer } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { MdPreviewModal } from './MdPreviewModal';
@@ -110,6 +110,53 @@ interface MessageBubbleProps {
    * has no second panel), the button falls back to a local full-screen modal.
    */
   onShowFileDiff?: (toolCalls: ToolCallInfo[], cwd?: string) => void;
+  /** AI reply Markdown local-file link → Explorer tree + optional line jump. */
+  onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
+}
+
+function parseLocalFileLink(href: string, cwd?: string): { path: string; lineNumber?: number } | null {
+  if (!href || href.startsWith('#')) return null;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith('file:')) return null;
+
+  let decoded = href;
+  try { decoded = decodeURIComponent(href); } catch { /* keep raw */ }
+  if (decoded.startsWith('file://')) decoded = decoded.slice('file://'.length);
+
+  const hashIdx = decoded.indexOf('#');
+  const hash = hashIdx >= 0 ? decoded.slice(hashIdx + 1) : '';
+  let pathPart = hashIdx >= 0 ? decoded.slice(0, hashIdx) : decoded;
+
+  const queryIdx = pathPart.indexOf('?');
+  const query = queryIdx >= 0 ? pathPart.slice(queryIdx + 1) : '';
+  pathPart = queryIdx >= 0 ? pathPart.slice(0, queryIdx) : pathPart;
+
+  let lineNumber: number | undefined;
+  const hashLine = hash.match(/^L?(\d+)(?:-L?\d+)?$/i)?.[1];
+  const queryLine = query.match(/(?:^|[&;])(?:line|L)=(\d+)(?:$|[&;])/i)?.[1];
+  const suffixLineMatch = pathPart.match(/:(\d+)(?::\d+)?$/);
+  const lineText = hashLine || queryLine || suffixLineMatch?.[1];
+  if (lineText) {
+    lineNumber = Number(lineText);
+    if (suffixLineMatch) pathPart = pathPart.slice(0, -suffixLineMatch[0].length);
+  }
+
+  pathPart = pathPart.trim();
+  if (!pathPart) return null;
+  if (cwd && pathPart.startsWith(cwd + '/')) pathPart = pathPart.slice(cwd.length + 1);
+  else if (cwd && pathPart === cwd) return null;
+  else if (pathPart.startsWith('/')) pathPart = pathPart.slice(1);
+
+  const looksLocal =
+    pathPart.startsWith('./') ||
+    pathPart.startsWith('../') ||
+    pathPart.includes('/') ||
+    /\.[A-Za-z0-9][A-Za-z0-9_-]*$/.test(pathPart);
+  if (!looksLocal) return null;
+
+  return {
+    path: resolveRelativePath('', pathPart),
+    ...(lineNumber && lineNumber > 0 ? { lineNumber } : {}),
+  };
 }
 
 // Threshold for collapsing tool calls — any tool call (≥1) renders inside a collapsible header,
@@ -134,15 +181,29 @@ const TextPartRow = memo(function TextPartRow({
   isAside,
   isUser,
   isStreaming,
+  onOpenFileLink,
+  cwd,
 }: {
   text: string;
   isAside: boolean;
   isUser: boolean;
   isStreaming: boolean;
+  onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
+  cwd?: string;
 }) {
+  const handleLinkClick = useMemo(() => {
+    if (isUser || !onOpenFileLink) return undefined;
+    return (href: string) => {
+      const target = parseLocalFileLink(href, cwd);
+      if (!target) return false;
+      onOpenFileLink(target);
+      return true;
+    };
+  }, [cwd, isUser, onOpenFileLink]);
+
   const body = (
     <>
-      <MarkdownRenderer content={text} isUser={isUser} isStreaming={isStreaming} enableMath={false} />
+      <MarkdownRenderer content={text} isUser={isUser} isStreaming={isStreaming} enableMath={false} onLinkClick={handleLinkClick} />
       {isStreaming && <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />}
     </>
   );
@@ -158,7 +219,7 @@ const TextPartRow = memo(function TextPartRow({
 });
 
 // Use memo optimization — only re-render when message or cwd changes
-export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork, forkSupported = true, onApprovePlan, isLoading, onContentSearch, onShowFileDiff }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork, forkSupported = true, onApprovePlan, isLoading, onContentSearch, onShowFileDiff, onOpenFileLink }: MessageBubbleProps) {
   const { t } = useTranslation();
   const [previewImage, setPreviewImage] = useState<MessageImage | null>(null);
   // Single-tool case: default expanded so the content stays visible (we only need the header for special entries).
@@ -543,6 +604,8 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                   isAside={part.isAside}
                   isUser={isUser}
                   isStreaming={!!message.isStreaming && i === textParts.length - 1}
+                  onOpenFileLink={onOpenFileLink}
+                  cwd={cwd}
                 />
               ))}
             </div>

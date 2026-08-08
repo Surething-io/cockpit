@@ -54,9 +54,10 @@ interface ChatPanelProps {
   onOpenSession?: (sessionId: string, title?: string) => void;
   onContentSearch?: (query: string) => void;
   onShowFileDiff?: (toolCalls: ToolCallInfo[], cwd?: string) => void;
+  onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, chatMode, onChatModeChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, chatMode, onChatModeChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -135,6 +136,7 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
       onOpenSession={onOpenSession}
       onContentSearch={onContentSearch}
       onShowFileDiff={onShowFileDiff}
+      onOpenFileLink={onOpenFileLink}
     />
   );
 }

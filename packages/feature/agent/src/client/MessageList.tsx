@@ -42,6 +42,8 @@ interface MessageListProps {
   onContentSearch?: (query: string) => void; // Selected text → project-wide search
   /** Show a message's file changes in the Explorer panel (panel 2) + auto-swipe */
   onShowFileDiff?: (toolCalls: ToolCallInfo[], cwd?: string) => void;
+  /** AI reply Markdown local-file link → Explorer tree + optional line jump. */
+  onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
   /** Plan mode: approve the presented plan → turn off plan mode and resend to execute */
   onApprovePlan?: () => void;
 }
@@ -52,7 +54,7 @@ export interface MessageListHandle {
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
-  { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch, onShowFileDiff, onApprovePlan },
+  { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch, onShowFileDiff, onOpenFileLink, onApprovePlan },
   ref
 ) {
   const { t, i18n } = useTranslation();
@@ -573,6 +575,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                   isLoading={isLoading}
                   onContentSearch={onContentSearch}
                   onShowFileDiff={onShowFileDiff}
+                  onOpenFileLink={onOpenFileLink}
                 />
               </div>
             ))}

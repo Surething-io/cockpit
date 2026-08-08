@@ -78,7 +78,7 @@ import { useSwipeContext } from '@cockpit/shared-ui';
 const TREE_WIDTH_MIN = 320;
 const TREE_WIDTH_MAX = TREE_WIDTH_MIN * 1.5;
 
-function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrigger, initialSearchQuery, searchQueryTrigger }: FileBrowserModalProps) {
+function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrigger, initialSearchQuery, searchQueryTrigger, fileOpenRequest }: FileBrowserModalProps) {
   const { t } = useTranslation();
   const aiBridge = useAIBridge();
   // "Explain this" — tree context menu (file) and LSP hover card (symbol)
@@ -934,6 +934,24 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
     fileTree.setShouldScrollToSelected(true);
     setActiveTab('tree');
   }, [fileTree, handleSelectFileWithSave]);
+
+  const selectFileWithSaveRef = useRef(handleSelectFileWithSave);
+  useEffect(() => {
+    selectFileWithSaveRef.current = handleSelectFileWithSave;
+  }, [handleSelectFileWithSave]);
+  const lastFileOpenNonceRef = useRef<number | null>(null);
+  const { setPreviewMarkdown, setShouldScrollToSelected } = fileTree;
+
+  useEffect(() => {
+    if (!fileOpenRequest) return;
+    if (lastFileOpenNonceRef.current === fileOpenRequest.nonce) return;
+    lastFileOpenNonceRef.current = fileOpenRequest.nonce;
+    setEditorMode('code');
+    setActiveTab('tree');
+    if (fileOpenRequest.lineNumber != null) setPreviewMarkdown(false);
+    selectFileWithSaveRef.current(fileOpenRequest.path, fileOpenRequest.lineNumber);
+    setShouldScrollToSelected(true);
+  }, [fileOpenRequest, setPreviewMarkdown, setShouldScrollToSelected]);
 
   // ========== Code Map header slots (shared by the plain and diff variants) ==========
   // Both map variants take over the whole right panel, so their header is the

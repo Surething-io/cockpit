@@ -414,8 +414,9 @@ export function useCodeViewerLogic({
           // Flash highlight only for navigation jumps (center); not for returning from edit (start)
           if (scrollToLineAlign === 'center') {
             if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-            setFlashLine(targetLine);
-            flashTimerRef.current = setTimeout(() => setFlashLine(null), 500);
+            setFlashLine(null);
+            requestAnimationFrame(() => setFlashLine(targetLine));
+            flashTimerRef.current = setTimeout(() => setFlashLine(null), 1600);
           }
 
           onScrollToLineComplete?.();

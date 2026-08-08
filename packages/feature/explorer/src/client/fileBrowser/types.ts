@@ -128,4 +128,5 @@ export interface FileBrowserModalProps {
   tabSwitchTrigger?: number;
   initialSearchQuery?: string | null;
   searchQueryTrigger?: number;
+  fileOpenRequest?: { path: string; lineNumber?: number; nonce: number } | null;
 }

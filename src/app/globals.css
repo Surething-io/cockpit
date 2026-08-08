@@ -788,9 +788,9 @@ code[class*="language-"] .token {
   text-decoration: underline;
 }
 
-/* ---- LSP jump flash highlight (0.5s fade out) ---- */
+/* ---- Navigation jump flash highlight ---- */
 .flash-line {
-  animation: flash-fade 0.5s ease-out forwards !important;
+  animation: flash-fade 1.6s ease-out forwards !important;
 }
 
 @keyframes flash-fade {

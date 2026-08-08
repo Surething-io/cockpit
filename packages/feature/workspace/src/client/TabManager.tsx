@@ -105,6 +105,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
   const [tabSwitchTrigger, setTabSwitchTrigger] = useState(0);
   const [fileBrowserSearchQuery, setFileBrowserSearchQuery] = useState<string | null>(null);
   const [searchQueryTrigger, setSearchQueryTrigger] = useState(0);
+  const [fileOpenRequest, setFileOpenRequest] = useState<{ path: string; lineNumber?: number; nonce: number } | null>(null);
   // Message-level "view all file changes": hosted in the Explorer panel (panel 2)
   // as an overlay above the FileBrowser, instead of a full-screen modal. Null =
   // not showing. Setting it also swipes to Explorer (see handleShowFileDiff).
@@ -334,6 +335,12 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     handleViewChange('explorer');
   }, [handleViewChange]);
 
+  const handleOpenFileLink = useCallback((target: { path: string; lineNumber?: number }) => {
+    setFileDiffRequest(null);
+    setFileOpenRequest({ ...target, nonce: Date.now() });
+    handleViewChange('explorer');
+  }, [handleViewChange]);
+
   // Any command that drives the FileBrowser (git status, content search, and any
   // future file-oriented entry) dismisses the diff overlay in one place — so we
   // never have to clear it per entry point. Contract: file-oriented entries bump
@@ -439,6 +446,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                           onShowGitStatus={handleShowGitStatus}
                           onContentSearch={handleContentSearch}
                           onShowFileDiff={handleShowFileDiff}
+                          onOpenFileLink={handleOpenFileLink}
                           onOpenNote={handleOpenNote}
                           onCreateScheduledTask={createScheduledTask}
                           onOpenSession={handleOpenSession}
@@ -460,6 +468,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                   tabSwitchTrigger={tabSwitchTrigger}
                   initialSearchQuery={fileBrowserSearchQuery}
                   searchQueryTrigger={searchQueryTrigger}
+                  fileOpenRequest={fileOpenRequest}
                 />
                 {/* Message "view all file changes": overlays the FileBrowser (kept
                     mounted underneath). Close stays on this panel — no swipe back. */}

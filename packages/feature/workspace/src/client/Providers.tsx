@@ -4,17 +4,17 @@ import { I18nProvider } from './I18nProvider';
 import { ThemeProvider } from '@cockpit/shared-ui';
 import { ToastProvider } from '@cockpit/shared-ui';
 import { TooltipProvider } from '@cockpit/shared-ui';
-import { useSuppressInstalledContextMenu } from './useSuppressInstalledContextMenu';
+import { useSuppressNativeContextMenu } from './useSuppressNativeContextMenu';
 
 interface ProvidersProps {
   children: React.ReactNode;
 }
 
 export function Providers({ children }: ProvidersProps) {
-  // In an installed PWA window on macOS, the native right-click menu breaks IME
-  // (CJK) input window-wide; suppress it there. No-op in normal browser tabs.
-  // See useSuppressInstalledContextMenu for the full rationale.
-  useSuppressInstalledContextMenu();
+  // Suppress the native right-click menu across Cockpit; app-owned React context
+  // menus keep working because they preventDefault before this bubble listener.
+  // See useSuppressNativeContextMenu for the full rationale.
+  useSuppressNativeContextMenu();
 
   return (
     <I18nProvider>

@@ -102,7 +102,8 @@ export interface SnapshotService {
   /** Commits whose Cockpit-Tool-Id is in `toolIds`, oldest first. */
   readonly listByToolIds: (
     cwd: string,
-    toolIds: ReadonlyArray<string>
+    toolIds: ReadonlyArray<string>,
+    sessionKey?: string
   ) => Effect.Effect<ReadonlyArray<SnapshotCommit>, AppError>
   /** Full file-level diff of one snapshot commit vs its parent. */
   readonly diff: (

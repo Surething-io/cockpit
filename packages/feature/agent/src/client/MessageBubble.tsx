@@ -109,7 +109,7 @@ interface MessageBubbleProps {
    * auto-swipe there. When omitted (e.g. inside SubagentTranscriptModal, which
    * has no second panel), the button falls back to a local full-screen modal.
    */
-  onShowFileDiff?: (toolCalls: ToolCallInfo[], cwd?: string) => void;
+  onShowFileDiff?: (toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string) => void;
   /** AI reply Markdown local-file link → Explorer tree + optional line jump. */
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
 }
@@ -291,7 +291,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     let timer: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
     const check = () => {
-      BrowserRuntime.runPromiseExit(loadSnapshotsByToolIds(cwd, toolIds)).then((exit) => {
+      BrowserRuntime.runPromiseExit(loadSnapshotsByToolIds(cwd, toolIds, sessionId ?? undefined)).then((exit) => {
         if (cancelled) return;
         const commits = exit._tag === 'Success' ? exit.value : [];
         if (commits.length > 0) {
@@ -311,7 +311,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [hasFileChanges, paramsHaveChanges, cwd, message.toolCalls]);
+  }, [hasFileChanges, paramsHaveChanges, cwd, sessionId, message.toolCalls]);
 
   // Last TodoWrite call
   const lastTodoWrite = useMemo(() => {
@@ -795,7 +795,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                           // with an auto-swipe; fall back to a local modal when no
                           // panel host is available (e.g. subagent transcript).
                           if (onShowFileDiff && message.toolCalls) {
-                            onShowFileDiff(message.toolCalls, cwd);
+                            onShowFileDiff(message.toolCalls, cwd, sessionId ?? undefined);
                           } else {
                             setShowDiffViewer(true);
                           }
@@ -874,7 +874,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
 
       {/* Diff viewer */}
       {showDiffViewer && message.toolCalls && (
-        <DiffViewerModal toolCalls={message.toolCalls} cwd={cwd} onClose={() => setShowDiffViewer(false)} onContentSearch={onContentSearch} />
+        <DiffViewerModal toolCalls={message.toolCalls} cwd={cwd} sessionId={sessionId ?? undefined} onClose={() => setShowDiffViewer(false)} onContentSearch={onContentSearch} />
       )}
 
       {/* AskQuestion viewer */}

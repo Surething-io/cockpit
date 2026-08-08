@@ -61,10 +61,13 @@ const httpJson = <A>(url: string): Effect.Effect<A, AppError> =>
 
 export const loadSnapshotsByToolIds = (
   cwd: string,
-  toolIds: ReadonlyArray<string>
+  toolIds: ReadonlyArray<string>,
+  sessionKey?: string
 ): Effect.Effect<SnapshotCommitDto[], AppError> =>
   httpJson<{ commits: SnapshotCommitDto[] }>(
-    `/api/snapshots?cwd=${encodeURIComponent(cwd)}&toolIds=${encodeURIComponent(toolIds.join(","))}`
+    `/api/snapshots?cwd=${encodeURIComponent(cwd)}&toolIds=${encodeURIComponent(toolIds.join(","))}${
+      sessionKey ? `&sessionKey=${encodeURIComponent(sessionKey)}` : ""
+    }`
   ).pipe(Effect.map((r) => r.commits ?? []))
 
 export const loadSnapshotDiff = (
@@ -78,9 +81,10 @@ export const loadSnapshotDiff = (
 /** List a message's snapshot commits, then materialize each commit's diff. */
 export const loadSnapshotDiffsForToolIds = (
   cwd: string,
-  toolIds: ReadonlyArray<string>
+  toolIds: ReadonlyArray<string>,
+  sessionKey?: string
 ): Effect.Effect<SnapshotDiffDto[], AppError> =>
-  loadSnapshotsByToolIds(cwd, toolIds).pipe(
+  loadSnapshotsByToolIds(cwd, toolIds, sessionKey).pipe(
     Effect.flatMap((commits) =>
       Effect.all(
         commits.map((c) => loadSnapshotDiff(cwd, c.hash)),

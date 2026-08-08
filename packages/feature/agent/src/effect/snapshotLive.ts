@@ -725,7 +725,8 @@ const snapshotOnce = (
 const listByToolIdsImpl = (
   snapshotsRoot: string,
   cwd: string,
-  toolIds: ReadonlyArray<string>
+  toolIds: ReadonlyArray<string>,
+  sessionKey?: string
 ): Effect.Effect<ReadonlyArray<SnapshotCommit>, AppError> =>
   Effect.gen(function* () {
     if (toolIds.length === 0) return []
@@ -749,7 +750,13 @@ const listByToolIdsImpl = (
       .split("\x1e")
       .filter(Boolean)
       .map(commitFromLogRecord)
-      .filter((c): c is SnapshotCommit => !!c && !!c.toolId && wanted.has(c.toolId))
+      .filter(
+        (c): c is SnapshotCommit =>
+          !!c &&
+          !!c.toolId &&
+          wanted.has(c.toolId) &&
+          (!sessionKey || c.sessionKey === sessionKey)
+      )
   }).pipe(Effect.withSpan("snapshot.listByToolIds", { attributes: { cwd } }))
 
 const showFile = (
@@ -1015,8 +1022,8 @@ export const SnapshotServiceLive = Layer.scoped(
         snapshotOnce(snapshotsRoot, maxFileBytes, trigger, "tool"),
       baseline: (cwd: string, sessionKey: string, provider: string) =>
         snapshotOnce(snapshotsRoot, maxFileBytes, { cwd, sessionKey, provider }, "baseline"),
-      listByToolIds: (cwd: string, toolIds: ReadonlyArray<string>) =>
-        listByToolIdsImpl(snapshotsRoot, cwd, toolIds),
+      listByToolIds: (cwd: string, toolIds: ReadonlyArray<string>, sessionKey?: string) =>
+        listByToolIdsImpl(snapshotsRoot, cwd, toolIds, sessionKey),
       diff: (cwd: string, commitHash: string) => diffImpl(snapshotsRoot, cwd, commitHash),
       cleanup,
     })

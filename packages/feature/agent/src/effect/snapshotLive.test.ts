@@ -96,6 +96,38 @@ describe('SnapshotServiceLive', () => {
     expect(b.status).toBe('added');
   });
 
+  it('can scope tool-id lookups to one session', async () => {
+    await writeFile(join(work, 'src', 'a.ts'), 'export const a = 3;\n');
+    const r1 = await svc((s) =>
+      s.record({
+        cwd: work,
+        sessionKey: 'session-1',
+        provider: 'codex',
+        toolId: 'item_0',
+        toolName: 'Bash',
+      })
+    );
+    expect(r1.committed).toBe(true);
+
+    await writeFile(join(work, 'src', 'a.ts'), 'export const a = 4;\n');
+    const r2 = await svc((s) =>
+      s.record({
+        cwd: work,
+        sessionKey: 'session-2',
+        provider: 'codex',
+        toolId: 'item_0',
+        toolName: 'Bash',
+      })
+    );
+    expect(r2.committed).toBe(true);
+
+    const all = await svc((s) => s.listByToolIds(work, ['item_0']));
+    expect(all).toHaveLength(2);
+    const current = await svc((s) => s.listByToolIds(work, ['item_0'], 'session-2'));
+    expect(current).toHaveLength(1);
+    expect(current[0].sessionKey).toBe('session-2');
+  });
+
   it('skips the snapshot when nothing changed', async () => {
     const r = await svc((s) =>
       s.record({

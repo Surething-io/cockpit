@@ -1,5 +1,5 @@
 /**
- * GET /api/snapshots?cwd=<abs path>&toolIds=<id,id,...>
+ * GET /api/snapshots?cwd=<abs path>&toolIds=<id,id,...>[&sessionKey=<id>]
  *
  * Snapshot commits (shadow-git, one per tool call) whose Cockpit-Tool-Id is
  * in `toolIds`, oldest first. The chat UI passes the tool_use ids of one
@@ -21,11 +21,12 @@ export const GET = handler((req) =>
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
+    const sessionKey = searchParams.get('sessionKey') || undefined;
     if (!cwd) {
       return yield* Effect.fail(new ValidationError({ field: 'cwd', reason: 'missing' }));
     }
     const svc = yield* SnapshotService;
-    const commits = yield* svc.listByToolIds(cwd, toolIds);
+    const commits = yield* svc.listByToolIds(cwd, toolIds, sessionKey);
     return ok({ commits });
   })
 );

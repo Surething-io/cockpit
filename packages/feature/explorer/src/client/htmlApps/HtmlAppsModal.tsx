@@ -78,9 +78,9 @@ export function HtmlAppsModal({ isOpen, onClose, onOpenApp }: HtmlAppsModalProps
     const exit = await BrowserRuntime.runPromiseExit(addHtmlApp(p));
     if (exit._tag === 'Success') {
       if (exit.value.alreadyExists) {
-        toast('Already added', 'info');
+        toast(t('htmlApps.alreadyAdded'), 'info');
       } else {
-        toast('HTML app added', 'success');
+        toast(t('htmlApps.added'), 'success');
         notifyHtmlAppsChanged();
       }
       setAddPath('');
@@ -89,11 +89,11 @@ export function HtmlAppsModal({ isOpen, onClose, onOpenApp }: HtmlAppsModalProps
     } else {
       const failure = exit.cause._tag === 'Fail' ? exit.cause.error : null;
       const inner = failure?.cause;
-      const msg = inner instanceof Error ? inner.message : 'Failed to add';
+      const msg = inner instanceof Error ? inner.message : t('htmlApps.addFailed');
       toast(msg, 'error');
     }
     setAdding(false);
-  }, [addPath, reload]);
+  }, [addPath, reload, t]);
 
   const handleDelete = useCallback(async (id: string) => {
     const exit = await BrowserRuntime.runPromiseExit(deleteHtmlApp(id));
@@ -101,9 +101,9 @@ export function HtmlAppsModal({ isOpen, onClose, onOpenApp }: HtmlAppsModalProps
       setApps((prev) => prev.filter((a) => a.id !== id));
       notifyHtmlAppsChanged();
     } else {
-      toast('Failed to delete', 'error');
+      toast(t('common.deleteFailed'), 'error');
     }
-  }, []);
+  }, [t]);
 
   // Open in a console browser bubble. Callers outside the project iframe can
   // route the event themselves; in-frame callers keep the original window event.
@@ -119,11 +119,11 @@ export function HtmlAppsModal({ isOpen, onClose, onOpenApp }: HtmlAppsModalProps
   const handleCopyPath = useCallback(async (path: string) => {
     try {
       await navigator.clipboard.writeText(path);
-      toast('Path copied', 'success');
+      toast(t('common.copiedPath'), 'success');
     } catch {
-      toast('Failed to copy', 'error');
+      toast(t('common.copyFailed'), 'error');
     }
-  }, []);
+  }, [t]);
 
   if (!isOpen) return null;
 
@@ -142,14 +142,14 @@ export function HtmlAppsModal({ isOpen, onClose, onOpenApp }: HtmlAppsModalProps
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search HTML apps..."
+                  placeholder={t('htmlApps.searchPlaceholder')}
                   className="pl-7 pr-6 py-1 text-xs border border-border rounded bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
                 {query && (
                   <button
                     onClick={() => { setQuery(''); searchInputRef.current?.focus(); }}
                     className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-slate-9 hover:text-foreground rounded-sm transition-colors"
-                    title="Clear"
+                    title={t('fileBrowser.clear')}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -158,11 +158,11 @@ export function HtmlAppsModal({ isOpen, onClose, onOpenApp }: HtmlAppsModalProps
               <button
                 onClick={() => setShowAdd(true)}
                 className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title="Add HTML app"
+                title={t('htmlApps.addHtmlApp')}
               >
-                <Plus className="w-4 h-4" /> Add
+                <Plus className="w-4 h-4" /> {t('htmlApps.add')}
               </button>
-              <button onClick={onClose} className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors" title="Close">
+              <button onClick={onClose} className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors" title={t('common.close')}>
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -170,7 +170,7 @@ export function HtmlAppsModal({ isOpen, onClose, onOpenApp }: HtmlAppsModalProps
 
           <div className="flex-1 overflow-y-auto p-4">
             {loading ? (
-              <div className="text-center text-muted-foreground py-8 text-sm">Loading...</div>
+              <div className="text-center text-muted-foreground py-8 text-sm">{t('common.loading')}</div>
             ) : filtered.length === 0 ? (
               <div className="text-center text-muted-foreground py-8 text-sm space-y-2">
                 {apps.length === 0 ? (
@@ -224,8 +224,8 @@ export function HtmlAppsModal({ isOpen, onClose, onOpenApp }: HtmlAppsModalProps
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={() => { if (!adding) { setShowAdd(false); setAddPath(''); } }} />
           <div className="relative bg-card rounded-lg shadow-xl w-full max-w-lg mx-4 p-5">
-            <h3 className="text-sm font-medium text-foreground mb-3">Add HTML app</h3>
-            <label className="block text-xs text-muted-foreground mb-1">Absolute path to the .html file</label>
+            <h3 className="text-sm font-medium text-foreground mb-3">{t('htmlApps.addHtmlApp')}</h3>
+            <label className="block text-xs text-muted-foreground mb-1">{t('htmlApps.pathLabel')}</label>
             <input
               type="text"
               value={addPath}
@@ -241,14 +241,14 @@ export function HtmlAppsModal({ isOpen, onClose, onOpenApp }: HtmlAppsModalProps
                 disabled={adding}
                 className="px-3 py-1.5 text-sm rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleAdd}
                 disabled={adding || !addPath.trim()}
                 className="px-3 py-1.5 text-sm rounded-md bg-brand text-white hover:bg-teal-10 transition-colors disabled:opacity-50"
               >
-                {adding ? 'Adding...' : 'Add'}
+                {adding ? t('htmlApps.adding') : t('htmlApps.add')}
               </button>
             </div>
           </div>
@@ -284,13 +284,13 @@ interface HtmlAppCardProps {
 }
 
 function HtmlAppCard({ app, onOpen, onPreview, onDelete, onCopyPath }: HtmlAppCardProps) {
+  const { t } = useTranslation();
   const [confirmDel, setConfirmDel] = useState(false);
 
   return (
     <div
       className={`group flex flex-col h-full border border-border rounded-lg p-3 bg-secondary hover:border-brand hover:shadow-md transition-all cursor-pointer ${app.valid ? '' : 'opacity-60'}`}
       onClick={() => app.valid && onOpen()}
-      data-tooltip="Open in a console bubble"
     >
       <div className="flex items-center gap-2.5">
         <div className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-md bg-brand/10 text-brand text-lg">
@@ -300,23 +300,23 @@ function HtmlAppCard({ app, onOpen, onPreview, onDelete, onCopyPath }: HtmlAppCa
           <div className="text-sm font-medium text-foreground truncate" data-tooltip={app.title}>{app.title}</div>
           <div className="font-mono text-[11px] text-muted-foreground truncate" data-tooltip={`/${app.name}`}>/{app.name}</div>
         </div>
-        {!app.valid && <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-red-9/15 text-red-11">Invalid</span>}
+        {!app.valid && <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-red-9/15 text-red-11">{t('htmlApps.invalid')}</span>}
         <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={onPreview}
             disabled={!app.valid}
             className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title="Preview"
+            title={t('common.preview')}
           >
             <Eye className="w-4 h-4" />
           </button>
           {confirmDel ? (
             <>
-              <button onClick={() => { setConfirmDel(false); onDelete(); }} className="px-2 py-1 text-xs rounded bg-red-9 text-white hover:bg-red-10">Confirm</button>
-              <button onClick={() => setConfirmDel(false)} className="px-2 py-1 text-xs rounded border border-border text-muted-foreground hover:text-foreground">Cancel</button>
+              <button onClick={() => { setConfirmDel(false); onDelete(); }} className="px-2 py-1 text-xs rounded bg-red-9 text-white hover:bg-red-10">{t('common.confirm')}</button>
+              <button onClick={() => setConfirmDel(false)} className="px-2 py-1 text-xs rounded border border-border text-muted-foreground hover:text-foreground">{t('common.cancel')}</button>
             </>
           ) : (
-            <button onClick={() => setConfirmDel(true)} className="p-1.5 text-muted-foreground hover:text-red-11 hover:bg-red-9/10 rounded transition-colors" title="Delete">
+            <button onClick={() => setConfirmDel(true)} className="p-1.5 text-muted-foreground hover:text-red-11 hover:bg-red-9/10 rounded transition-colors" title={t('common.delete')}>
               <Trash2 className="w-4 h-4" />
             </button>
           )}
@@ -325,13 +325,13 @@ function HtmlAppCard({ app, onOpen, onPreview, onDelete, onCopyPath }: HtmlAppCa
 
       <div className="font-mono text-xs text-muted-foreground mt-2 break-all">
         {app.path}
-        <button onClick={(e) => { e.stopPropagation(); onCopyPath(); }} className="inline-flex align-middle ml-1 p-0.5 hover:text-foreground hover:bg-accent rounded transition-colors" title="Copy path">
+        <button onClick={(e) => { e.stopPropagation(); onCopyPath(); }} className="inline-flex align-middle ml-1 p-0.5 hover:text-foreground hover:bg-accent rounded transition-colors" title={t('common.copyPath')}>
           <Copy className="w-3.5 h-3.5" />
         </button>
       </div>
 
       <p className="text-sm text-muted-foreground mt-2 pt-2 border-t border-border/60 break-words whitespace-pre-wrap">
-        {app.description || <span className="italic opacity-60">No description</span>}
+        {app.description || <span className="italic opacity-60">{t('htmlApps.noDescription')}</span>}
       </p>
     </div>
   );

@@ -14,13 +14,13 @@
 
 export const HTML_PROMPT_ZH = `---
 name: html
-description: "生成可交互的小应用：内置 cockpit bash SDK，执行命令取/改数据"
-argument-hint: "描述你想要的小应用"
+description: "生成可交互的 HTML 应用：内置 cockpit bash SDK，执行命令取/改数据"
+argument-hint: "描述你想要的 HTML 应用"
 ---
 
-# 生成 Cockpit 小应用
+# 生成 Cockpit HTML 应用
 
-一个能取/改数据的小应用：预览时注入了全局 \`window.cockpit\` SDK —— 本质就是 Bash
+一个能取/改数据的 HTML 应用：预览时注入了全局 \`window.cockpit\` SDK —— 本质就是 Bash
 工具暴露给页面，页面按钮能 \`curl\`、读写文件、跑脚本。
 
 **默认用 React 写**（下面的本地零构建栈，productized、AI 最熟，适合有状态 / 多视图 /
@@ -31,7 +31,7 @@ argument-hint: "描述你想要的小应用"
 
 **别一上来就写文件**，分三步：
 
-1. **对齐需求** —— 先复述你对这个小应用的理解（做什么、用 React 还是单文件、数据从哪来、
+1. **对齐需求** —— 先复述你对这个 HTML 应用的理解（做什么、用 React 还是单文件、数据从哪来、
    关键功能与交互）。仅当需求有歧义或存在多种合理解读时才回问；已经清楚就直接给一段简短
    的理解摘要，不必逐条追问。
 2. **告知存放目录** —— 按下面「存放位置」规则定出 \`<目录>/<name>/\`，明确告诉用户准备存哪、

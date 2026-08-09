@@ -43,9 +43,9 @@ top  htop  less  man
 
 上面都不命中的就当一次性命令跑(`ls`、`make build`、`pytest …`)—— 跑一次、显示输出、退出。
 
-## HTML 小应用
+## HTML 应用
 
-左下角侧边栏的 **应用** 打开 **HTML 面板** —— 你收藏过的 HTML 小应用的卡片墙,点一张就在 Console 气泡里跑起来。已登记的小应用也会出现在输入框的 `/` 菜单里,排在自定义命令前面。面板本身(收藏、预览、`~/.cockpit/html.json` 登记表)见 [HTML 小应用](/zh/docs/agent/html-apps/)。
+左下角侧边栏的 **应用** 打开 **HTML 面板** —— 你收藏过的 HTML 应用的卡片墙,点一张就在 Console 气泡里跑起来。已登记的 HTML 应用也会出现在输入框的 `/` 菜单里,排在自定义命令前面。面板本身(收藏、预览、`~/.cockpit/html.json` 登记表)见 [HTML 应用](/zh/docs/agent/html-apps/)。
 
 ## 快捷命令(输入框左侧那排的 ⚡ 按钮)
 

@@ -44,7 +44,7 @@ export const posts: Post[] = [
       'CORS-free HTML fetch',
       'slash command html',
       'AI 生成 HTML 应用',
-      'HTML 小应用',
+      'HTML 应用',
       '网页调用 bash',
       '本地看板',
       'Claude Code GUI',
@@ -121,13 +121,13 @@ Update Cockpit, open a chat, and type \`/html\` with something you'd like to see
 **Try it:** \`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [Try Online](/try)`,
       },
       zh: {
-        title: '一句话生成能跑真 bash 的 HTML 小应用',
+        title: '一句话生成能跑真 bash 的 HTML 应用',
         description:
-          '普通 HTML 预览是静态的 —— 同源沙箱会拦掉它拉真实数据。Cockpit 现在往预览里注入了一个 `window.cockpit` SDK,于是 `/html` 生成的小应用,按钮就能 `curl`、读写文件、跑脚本。把它收藏进 HTML 面板,随时再打开。',
+          '普通 HTML 预览是静态的 —— 同源沙箱会拦掉它拉真实数据。Cockpit 现在往预览里注入了一个 `window.cockpit` SDK,于是 `/html` 生成的 HTML 应用,按钮就能 `curl`、读写文件、跑脚本。把它收藏进 HTML 面板,随时再打开。',
         readingTime: '阅读约 5 分钟',
         body: `你让 agent 做「一个看仓库 star 数的小看板」,它写了一个清清爽爽的 \`.html\`,你打开预览 —— 死的。页面想 \`fetch()\` 一个 API,同源沙箱一个 CORS 错误把它掐了。渲染出来的 HTML 预览一直是隔着玻璃的画:能排版,但什么也*做不了*。
 
-这个版本把玻璃打碎了。Cockpit 现在往预览里注入一个 \`window.cockpit\` SDK —— **本质就是 Bash 工具暴露给页面**。按钮能 \`curl\` 拉数据、读写文件、tail 日志。一份静态文件变成了有后端的真·小应用。
+这个版本把玻璃打碎了。Cockpit 现在往预览里注入一个 \`window.cockpit\` SDK —— **本质就是 Bash 工具暴露给页面**。按钮能 \`curl\` 拉数据、读写文件、tail 日志。一份静态文件变成了有后端的真正 HTML 应用。
 
 ## \`/html\` —— 一句话生成一个
 
@@ -137,9 +137,9 @@ Update Cockpit, open a chat, and type \`/html\` with something you'd like to see
 /html 做一个 Surething-io/cockpit 仓库的看板 —— star、fork、最近提交
 \`\`\`
 
-Cockpit 会挂上一份内置 prompt,教模型做一个**小应用**,并且 —— 关键 —— 通过 \`cockpit.bash('curl ...')\` 取数据,而不是会被 CORS 拦掉的直连 \`fetch()\`。AI 用 \`Write\` 工具产出文件,你打开就能点。
+Cockpit 会挂上一份内置 prompt,教模型做一个 **HTML 应用**,并且 —— 关键 —— 通过 \`cockpit.bash('curl ...')\` 取数据,而不是会被 CORS 拦掉的直连 \`fetch()\`。AI 用 \`Write\` 工具产出文件,你打开就能点。
 
-默认你拿到的是一个 **React** 小应用(零构建 —— React、Babel、主题都由 Cockpit 本地托管,离线可用),自动套用 Cockpit 主题、带亮/暗。极简单的单视图页则退回一份内联 HTML。聊天预览里可在**渲染**和**原文**之间切换 —— 侧边栏会列出入口文件和它牵出的每个同级文件(\`app.jsx\`、\`api.mjs\`、图片…)。
+默认你拿到的是一个 **React** 应用(零构建 —— React、Babel、主题都由 Cockpit 本地托管,离线可用),自动套用 Cockpit 主题、带亮/暗。极简单的单视图页则退回一份内联 HTML。聊天预览里可在**渲染**和**原文**之间切换 —— 侧边栏会列出入口文件和它牵出的每个同级文件(\`app.jsx\`、\`api.mjs\`、图片…)。
 
 ## 页面里能跑 bash
 
@@ -171,8 +171,8 @@ const h = cockpit.bash("tail -f ./build.log", {
 页面只要在 \`<head>\` 里声明几个 meta(\`cockpit-name\`、\`description\`、\`cockpit-icon\`),就能进 **HTML 面板**。之后:
 
 - 从聊天预览、Explorer 文件浏览器**收藏**它,或直接在 Console 浏览器气泡里打开 —— 只要有 \`.html\` 露面,那两个按钮就在。
-- **HTML 面板**(从左下角侧边栏的 **应用** 打开)是你存过的所有小应用的卡片墙 —— 预览、删除、复制路径,点一下就跑。
-- 在 Console 输入栏打 \`/\`,你的小应用排在自定义命令前面。\`/repo-dashboard\` 就在气泡里打开它。这个短名就是 meta 头里的 \`cockpit-name\`。
+- **HTML 面板**(从左下角侧边栏的 **应用** 打开)是你存过的所有 HTML 应用的卡片墙 —— 预览、删除、复制路径,点一下就跑。
+- 在 Console 输入栏打 \`/\`,你的 HTML 应用排在自定义命令前面。\`/repo-dashboard\` 就在气泡里打开它。这个短名就是 meta 头里的 \`cockpit-name\`。
 
 登记表就是 \`~/.cockpit/html.json\`,只存绝对路径 —— 和 \`skills.json\` 一样的机制。HTML 文件留在你项目里;面板只是个书签夹。
 
@@ -182,7 +182,7 @@ const h = cockpit.bash("tail -f ./build.log", {
 
 ## 试一下
 
-更新 Cockpit,打开一个聊天,\`/html\` 后面写点你想看的东西。点开预览,然后收藏它。细节见 [HTML 小应用](/zh/docs/agent/html-apps/)文档。
+更新 Cockpit,打开一个聊天,\`/html\` 后面写点你想看的东西。点开预览,然后收藏它。细节见 [HTML 应用](/zh/docs/agent/html-apps/)文档。
 
 ---
 

@@ -815,7 +815,7 @@ export const messages = {
           snapshots: '工具快照',
           skills: 'Skills',
           workflows: '工作流',
-          htmlApps: 'HTML 小应用',
+          htmlApps: 'HTML 应用',
           engines: 'AI 引擎',
           scheduledTasks: '定时任务',
           notes: '笔记',

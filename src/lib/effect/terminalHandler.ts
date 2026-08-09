@@ -37,6 +37,7 @@ type PtySpawnTarget = {
   file: string
   args: string[]
   cwd: string
+  name: string
 }
 
 function commandPath(command: string): string | null {
@@ -75,6 +76,7 @@ function resolvePreferredPtyShell(cwd: string): PtySpawnTarget {
           file: "wsl.exe",
           args: ["--cd", cwd, "--exec", wslShell, ...loginShellArgs(wslShell)],
           cwd: process.cwd(),
+          name: wslShell,
         }
       }
     } catch {
@@ -83,15 +85,17 @@ function resolvePreferredPtyShell(cwd: string): PtySpawnTarget {
   } else {
     for (const shell of ["zsh", "bash", "sh"]) {
       const file = commandPath(shell)
-      if (file) return { file, args: loginShellArgs(shell), cwd }
+      if (file) return { file, args: loginShellArgs(shell), cwd, name: shell }
     }
   }
 
   const fallback = getDefaultShell()
+  const fallbackName = fallback.split(/[\\/]/).pop() || fallback
   return {
     file: fallback,
-    args: isWindows ? [] : loginShellArgs(fallback.split(/[\\/]/).pop() || fallback),
+    args: isWindows ? [] : loginShellArgs(fallbackName),
     cwd,
+    name: fallbackName,
   }
 }
 
@@ -339,7 +343,7 @@ const dispatchMessage = (
           const ptyTarget =
             command === OPEN_PREFERRED_SHELL_COMMAND
               ? resolvePreferredPtyShell(cwd)
-              : { file: userShell, args: ["--login", "-c", command], cwd }
+              : { file: userShell, args: ["--login", "-c", command], cwd, name: command }
           const ptyProcess = nodePty.spawn(
             ptyTarget.file,
             ptyTarget.args,
@@ -354,7 +358,7 @@ const dispatchMessage = (
           const dummyChild = spawn("true", [], { stdio: "ignore" })
           registerCommand({
             commandId,
-            command,
+            command: ptyTarget.name,
             cwd,
             projectCwd,
             tabId,
@@ -365,7 +369,7 @@ const dispatchMessage = (
             timestamp: new Date().toISOString(),
             sourceId,
           })
-          Effect.runFork(send({ type: "pid", commandId, pid: ptyProcess.pid }))
+          Effect.runFork(send({ type: "pid", commandId, pid: ptyProcess.pid, command: ptyTarget.name }))
           Effect.runFork(
             attachPtyListeners(registry, send, commandId, ptyProcess)
           )
@@ -388,7 +392,7 @@ const dispatchMessage = (
               timestamp: new Date().toISOString(),
               sourceId,
             })
-            Effect.runFork(send({ type: "pid", commandId, pid: child.pid }))
+            Effect.runFork(send({ type: "pid", commandId, pid: child.pid, command }))
             Effect.runFork(
               attachPipeListeners(registry, send, commandId, child)
             )
@@ -423,7 +427,7 @@ const dispatchMessage = (
         )
         return
       }
-      Effect.runFork(send({ type: "pid", commandId, pid: cmd.pid }))
+      Effect.runFork(send({ type: "pid", commandId, pid: cmd.pid, command: cmd.command }))
 
       if (cmd.usePty && cmd.ptyRingBuffer) {
         const snap = cmd.ptyRingBuffer.snapshot()

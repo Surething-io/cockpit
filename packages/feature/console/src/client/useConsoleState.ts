@@ -446,7 +446,9 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
           projectCwd: cwd,
           onData: (type, data) => {
             if (type === 'pid') {
-              // Already has pid, ignore
+              if (typeof data.command === 'string') {
+                setCommands(prev => prev.map(c => c.id === commandId ? { ...c, command: data.command as string } : c));
+              }
             } else if (type === 'stdout' || type === 'stderr') {
               appendOutput(commandId, data.data as string);
             } else if (type === 'exit') {
@@ -488,7 +490,11 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
       projectCwd: cwd,
       onData: (type, data) => {
         if (type === 'pid') {
-          setCommands(prev => prev.map(c => c.id === commandId ? { ...c, pid: data.pid as number } : c));
+          setCommands(prev => prev.map(c => c.id === commandId ? {
+            ...c,
+            pid: data.pid as number,
+            ...(typeof data.command === 'string' ? { command: data.command } : {}),
+          } : c));
         } else if (type === 'stdout' || type === 'stderr') {
           appendOutput(commandId, data.data as string);
         } else if (type === 'exit') {
@@ -712,7 +718,11 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
         onData: (type, data) => {
           if (type === 'pid') {
             setCommands((prev) =>
-              prev.map((cmd) => (cmd.id === commandId ? { ...cmd, pid: data.pid as number } : cmd))
+              prev.map((cmd) => (cmd.id === commandId ? {
+                ...cmd,
+                pid: data.pid as number,
+                ...(typeof data.command === 'string' ? { command: data.command } : {}),
+              } : cmd))
             );
           } else if (type === 'stdout' || type === 'stderr') {
             appendOutput(commandId, data.data as string);
@@ -826,7 +836,11 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
         onData: (type, data) => {
           if (type === 'pid') {
             setCommands((prev) =>
-              prev.map((c) => (c.id === commandId ? { ...c, pid: data.pid as number } : c))
+              prev.map((c) => (c.id === commandId ? {
+                ...c,
+                pid: data.pid as number,
+                ...(typeof data.command === 'string' ? { command: data.command } : {}),
+              } : c))
             );
           } else if (type === 'stdout' || type === 'stderr') {
             appendOutput(commandId, data.data as string);

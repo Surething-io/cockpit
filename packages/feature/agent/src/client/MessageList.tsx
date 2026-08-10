@@ -430,26 +430,22 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     scrollToMessage,
   }), [scrollToMessage]);
 
-  // Track the previous message count to detect new messages
-  const prevMessageCountRef = useRef(0);
   // Flag for whether this is the initial load
   const isInitialLoadRef = useRef(true);
 
-  // Scroll logic on message change (new messages only; initial load handled by a separate useEffect)
+  // Keep following the bottom whenever rendered messages change, as long as the
+  // user has not intentionally scrolled away. This covers streaming deltas and
+  // disk reconcile updates where the message count does not change.
   useEffect(() => {
-    const prevCount = prevMessageCountRef.current;
-    const currentCount = messages.length;
-    prevMessageCountRef.current = currentCount;
+    if (isInitialLoadRef.current) return;
+    if (!shouldAutoScroll) return;
+    if (shouldRestoreScrollRef.current) return;
 
-    // Initial load is handled by a separate useEffect
-    if (isInitialLoadRef.current) {
-      return;
-    }
-
-    // New messages arrived while at the bottom: smooth scroll
-    if (shouldAutoScroll && currentCount > prevCount) {
+    const frame = requestAnimationFrame(() => {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
+    });
+
+    return () => cancelAnimationFrame(frame);
   }, [messages, shouldAutoScroll]);
 
   // Also check scroll on isLoading change (showing/hiding the "thinking" indicator)

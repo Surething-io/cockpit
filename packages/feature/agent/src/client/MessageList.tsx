@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react';
 import { useChatContextOptional } from './ChatContext';
 import type { ChatMessage, ApiRetryInfo, ChatEngine, ToolCallInfo } from './types';
 import { MessageBubble } from './MessageBubble';
@@ -436,27 +436,25 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   // Keep following the bottom whenever rendered messages change, as long as the
   // user has not intentionally scrolled away. This covers streaming deltas and
   // disk reconcile updates where the message count does not change.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (isInitialLoadRef.current) return;
     if (!shouldAutoScroll) return;
     if (shouldRestoreScrollRef.current) return;
 
-    const frame = requestAnimationFrame(() => {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    });
-
-    return () => cancelAnimationFrame(frame);
+    const container = containerRef.current;
+    if (container) container.scrollTop = container.scrollHeight;
   }, [messages, shouldAutoScroll]);
 
   // Also check scroll on isLoading change (showing/hiding the "thinking" indicator)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (shouldAutoScroll && isLoading) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      const container = containerRef.current;
+      if (container) container.scrollTop = container.scrollHeight;
     }
   }, [isLoading, shouldAutoScroll]);
 
   // Restore scroll position after loading more history
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (shouldRestoreScrollRef.current && !isLoadingMore) {
       const container = containerRef.current;
       if (container) {
@@ -472,19 +470,21 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const needsScrollOnActivateRef = useRef(false);
 
   // When the tab activates, compensate for any scroll that was blocked while hidden
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (isActive && needsScrollOnActivateRef.current && messages.length > 0) {
       needsScrollOnActivateRef.current = false;
-      bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+      const container = containerRef.current;
+      if (container) container.scrollTop = container.scrollHeight;
     }
   }, [isActive, messages.length]);
 
   // Initial load logic: if the tab is hidden, mark that scroll is needed on activation
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (isInitialLoadRef.current && messages.length > 0) {
       isInitialLoadRef.current = false;
       if (isActive) {
-        bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+        const container = containerRef.current;
+        if (container) container.scrollTop = container.scrollHeight;
       } else {
         // Tab is hidden — mark that scroll should happen on activation
         needsScrollOnActivateRef.current = true;

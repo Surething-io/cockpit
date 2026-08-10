@@ -33,6 +33,8 @@ import { useTranslation } from 'react-i18next';
 
 // Migrated from src/components/project/Chat.tsx.
 
+const HISTORY_RECONCILE_TURNS = 10;
+
 interface ChatProps {
   tabId?: string; // Tab ID, used to register with ChatContext
   initialCwd?: string;
@@ -347,7 +349,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     onComplete: () => {
       // Turn finished → reconcile from disk (replaces temp `live-…` bubbles with canonical
       // real-uuid messages).
-      if (initialCwd && liveSessionId) loadHistoryByCwdAndSessionId(initialCwd, liveSessionId, true);
+      if (initialCwd && liveSessionId) loadHistoryByCwdAndSessionId(initialCwd, liveSessionId, true, HISTORY_RECONCILE_TURNS);
     },
   });
   // When not viewing live, clear the running flag.
@@ -360,7 +362,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // converges its live bubbles to canonical UUIDs.
   useEffect(() => {
     reconcileFromDiskRef.current = () => {
-      if (initialCwd && liveSessionId) loadHistoryByCwdAndSessionId(initialCwd, liveSessionId, true);
+      if (initialCwd && liveSessionId) loadHistoryByCwdAndSessionId(initialCwd, liveSessionId, true, HISTORY_RECONCILE_TURNS);
     };
   }, [initialCwd, liveSessionId, loadHistoryByCwdAndSessionId]);
 
@@ -371,7 +373,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     // Skip while a live run is in progress — the live stream owns the tail; a lagging
     // disk fetch would momentarily regress it. Reconcile happens on completion instead.
     if (isActive && !prevActiveRef.current && sessionId && initialCwd && !isLoading && !liveRunning) {
-      loadHistoryByCwdAndSessionId(initialCwd, sessionId, true, 10);
+      loadHistoryByCwdAndSessionId(initialCwd, sessionId, true, HISTORY_RECONCILE_TURNS);
     }
     prevActiveRef.current = isActive;
   }, [isActive, sessionId, initialCwd, isLoading, liveRunning, loadHistoryByCwdAndSessionId]);

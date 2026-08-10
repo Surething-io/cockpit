@@ -10,7 +10,8 @@ import { usePinnedSessions } from '@cockpit/feature-agent';
 import { useScheduledTasks } from '@cockpit/feature-agent';
 import { useWebSocket, toast } from '@cockpit/shared-ui';
 import { useLatestVersion } from './useLatestVersion';
-import { AppWindow } from 'lucide-react';
+import { AppWindow, MoreHorizontal } from 'lucide-react';
+import type { HtmlAppPreview } from '@cockpit/feature-explorer';
 
 export interface ProjectInfo {
   cwd: string;
@@ -31,6 +32,9 @@ interface ProjectSidebarProps {
   onOpenNote: (cwd?: string) => void;
   onOpenSkills: () => void;
   onOpenApps: () => void;
+  htmlAppPreviews: HtmlAppPreview[];
+  activeHtmlAppPreviewPath: string | null;
+  onShowHtmlAppPreview: (item: HtmlAppPreview) => void;
   onSwitchProject: (cwd: string, sessionId: string) => void;
   onAddProject: (cwd: string) => void;
 }
@@ -39,6 +43,162 @@ interface ProjectSidebarProps {
 function getProjectName(cwd: string): string {
   const parts = cwd.split('/').filter(Boolean);
   return parts[parts.length - 1] || cwd;
+}
+
+function HtmlAppIcon({ item, active, onClick, className = '' }: {
+  item: HtmlAppPreview;
+  active: boolean;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`h-8 w-8 rounded-md border bg-transparent text-muted-foreground hover:text-brand hover:border-brand/70 active:scale-95 transition-all flex items-center justify-center ${
+        active ? 'border-brand/80 text-brand' : 'border-border/70'
+      } ${className}`}
+      title={`${item.title}\n${item.path}`}
+    >
+      {item.icon ? <span className="text-base leading-none">{item.icon}</span> : <AppWindow className="w-4 h-4" />}
+    </button>
+  );
+}
+
+function HtmlAppPreviewDock({ collapsed, previews, activePath, onOpenApps, onShowPreview }: {
+  collapsed: boolean;
+  previews: HtmlAppPreview[];
+  activePath: string | null;
+  onOpenApps: () => void;
+  onShowPreview: (item: HtmlAppPreview) => void;
+}) {
+  const { t } = useTranslation();
+  const [popoverOpen, setPopoverOpen] = useState<'collapsed' | 'more' | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!popoverOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (!popoverRef.current?.contains(e.target as Node)) {
+        setPopoverOpen(null);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick, true);
+    return () => document.removeEventListener('mousedown', onDocClick, true);
+  }, [popoverOpen]);
+
+  const maxExpandedItems = 5;
+  const maxPreviewIcons = maxExpandedItems - 1;
+  const hasOverflow = previews.length > maxPreviewIcons;
+  const visibleItems = hasOverflow ? previews.slice(0, maxPreviewIcons - 1) : previews.slice(0, maxPreviewIcons);
+  const overflowItems = hasOverflow ? previews.slice(maxPreviewIcons - 1) : [];
+  const openAppsItem = (
+    <button
+      key="html-apps-list"
+      type="button"
+      onClick={() => { onOpenApps(); setPopoverOpen(null); }}
+      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+      title={t('htmlApps.title')}
+    >
+      <span className="h-7 w-7 flex-shrink-0 rounded-md border border-border/70 bg-transparent flex items-center justify-center">
+        <AppWindow className="w-4 h-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-xs font-medium truncate">{t('htmlApps.title')}</span>
+      </span>
+    </button>
+  );
+  const handleShowPreview = (item: HtmlAppPreview) => {
+    onShowPreview(item);
+    setPopoverOpen(null);
+  };
+
+  const renderList = (items: HtmlAppPreview[]) => (
+    <div className="max-h-[19.75rem] overflow-y-auto p-1.5 space-y-1">
+      {openAppsItem}
+      {items.map((item) => (
+        <button
+          key={item.path}
+          type="button"
+          onClick={() => handleShowPreview(item)}
+          className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-accent transition-colors ${
+            activePath === item.path ? 'text-brand' : 'text-muted-foreground hover:text-foreground'
+          }`}
+          title={item.path}
+        >
+          <span className="h-7 w-7 flex-shrink-0 rounded-md border border-border/70 bg-transparent flex items-center justify-center">
+            {item.icon ? <span className="text-base leading-none">{item.icon}</span> : <AppWindow className="w-4 h-4" />}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-xs font-medium truncate">{item.title}</span>
+            <span className="block text-[10px] font-mono text-muted-foreground truncate">{item.path}</span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+
+  if (collapsed) {
+    return (
+      <div ref={popoverRef} className="relative p-2 border-t border-border">
+        <button
+          type="button"
+          onClick={() => setPopoverOpen((open) => (open === 'collapsed' ? null : 'collapsed'))}
+          className={`w-full h-8 rounded-md border bg-transparent text-muted-foreground hover:text-brand hover:border-brand/70 transition-colors flex items-center justify-center ${
+            activePath ? 'border-brand/80 text-brand' : 'border-border/70'
+          }`}
+          title={t('htmlApps.title')}
+        >
+          <AppWindow className="w-4 h-4" />
+        </button>
+        {popoverOpen === 'collapsed' && (
+          <div className="absolute left-full bottom-0 ml-2 w-64 rounded-lg border border-border bg-card shadow-xl z-50">
+            {renderList(previews)}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div ref={popoverRef} className="p-2 border-t border-border">
+      <div className="grid grid-cols-5 gap-1.5">
+        <button
+          type="button"
+          onClick={onOpenApps}
+          className="h-8 w-8 rounded-md border border-border/70 bg-transparent text-muted-foreground hover:text-brand hover:border-brand/70 active:scale-95 transition-all flex items-center justify-center"
+          title={t('htmlApps.title')}
+        >
+          <AppWindow className="w-4 h-4" />
+        </button>
+        {visibleItems.map((item) => (
+          <HtmlAppIcon
+            key={item.path}
+            item={item}
+            active={activePath === item.path}
+            onClick={() => handleShowPreview(item)}
+          />
+        ))}
+        {hasOverflow && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setPopoverOpen((open) => (open === 'more' ? null : 'more'))}
+              className="h-8 w-8 rounded-md border border-border/70 bg-transparent text-muted-foreground hover:text-brand hover:border-brand/70 transition-colors flex items-center justify-center"
+              title={t('common.loadMore')}
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+            {popoverOpen === 'more' && (
+              <div className="absolute left-0 bottom-full mb-2 w-64 rounded-lg border border-border bg-card shadow-xl z-50">
+                {renderList(overflowItems)}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function ProjectSidebar({
@@ -55,6 +215,9 @@ export function ProjectSidebar({
   onOpenNote,
   onOpenSkills,
   onOpenApps,
+  htmlAppPreviews,
+  activeHtmlAppPreviewPath,
+  onShowHtmlAppPreview,
   onSwitchProject,
   onAddProject: _onAddProject,
 }: ProjectSidebarProps) {
@@ -250,6 +413,14 @@ export function ProjectSidebar({
         ))}
       </div>
 
+      <HtmlAppPreviewDock
+        collapsed={collapsed}
+        previews={htmlAppPreviews}
+        activePath={activeHtmlAppPreviewPath}
+        onOpenApps={onOpenApps}
+        onShowPreview={onShowHtmlAppPreview}
+      />
+
       {/* Bottom button area */}
       <div className="p-2 border-t border-border space-y-1">
         {/* Recent sessions */}
@@ -293,17 +464,6 @@ export function ProjectSidebar({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
           </svg>
           {!collapsed && <span className="text-sm">{t('workspace.notes')}</span>}
-        </button>
-        {/* Apps */}
-        <button
-          className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
-            collapsed ? 'justify-center' : ''
-          }`}
-          onClick={onOpenApps}
-          title={collapsed ? t('workspace.apps') : undefined}
-        >
-          <AppWindow className="w-5 h-5 flex-shrink-0" />
-          {!collapsed && <span className="text-sm">{t('workspace.apps')}</span>}
         </button>
         {/* Skills */}
         <button

@@ -54,7 +54,7 @@ Once generated, you have a few entry points:
 
 ### The HTML panel
 
-The **Apps** item in the bottom-left sidebar opens the **HTML Apps** modal. It lists your bookmarked apps, with search at the top, plus an **Add** button for manually registering an existing `.html` file by absolute path. When the list is empty, the modal points you to `/html` or lets you add an existing HTML file.
+The first icon in the sidebar's **Apps** dock opens the **HTML Apps** modal. It lists your bookmarked apps, with search at the top, plus an **Add** button for manually registering an existing `.html` file by absolute path. When the list is empty, the modal points you to `/html` or lets you add an existing HTML file.
 
 Each card's title / description / icon come from the page's `<head>`:
 
@@ -65,7 +65,7 @@ Each card's title / description / icon come from the page's `<head>`:
 <meta name="cockpit-icon" content="⭐">
 ```
 
-Click a card to open it in a Console browser bubble. Hover a card to reveal **Preview** and **Delete**; the copy button next to the path copies the file path. If a file was deleted or moved, the card is dimmed and marked `Invalid`; you can still delete it or copy its path, but you cannot open or preview it.
+Click a card to preview it. Hover a card to reveal **Open in Console bubble** and **Delete**; the copy button next to the path copies the file path. Minimized previews stay in the sidebar Apps dock, where clicking their icon restores the same running preview. If a file was deleted or moved, the card is dimmed and marked `Invalid`; you can still delete it or copy its path, but you cannot open or preview it.
 
 The panel records **absolute paths** only; the registry lives in `~/.cockpit/html.json` (same mechanism as `skills.json`). The HTML files themselves stay in your project — the panel is just a bookmark folder. Manual adds require an absolute path to an existing, readable `.html` or `.htm` file.
 

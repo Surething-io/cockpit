@@ -6,7 +6,7 @@ import { ProjectSidebar, ProjectInfo } from './ProjectSidebar';
 import { EmptyState } from './EmptyState';
 import { SessionBrowser } from './SessionBrowser';
 import { SettingsModal } from './SettingsModal';
-import { HtmlAppsModal } from '@cockpit/feature-explorer';
+import { HtmlAppsModal, type HtmlAppPreview } from '@cockpit/feature-explorer';
 import { TokenStatsModal } from '@cockpit/feature-agent';
 import { NoteModal } from './NoteModal';
 import { SkillsModal } from '@cockpit/feature-skills';
@@ -31,6 +31,8 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   const [noteProjectCwd, setNoteProjectCwd] = useState<string | null>(null);
   const [isSkillsOpen, setIsSkillsOpen] = useState(false);
   const [isHtmlAppsOpen, setIsHtmlAppsOpen] = useState(false);
+  const [htmlAppPreviews, setHtmlAppPreviews] = useState<HtmlAppPreview[]>([]);
+  const [activeHtmlAppPreviewPath, setActiveHtmlAppPreviewPath] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   // Lazy load: only render project iframes that have been activated before (ever-growing set)
   const [loadedCwds, setLoadedCwds] = useState<Set<string>>(new Set());
@@ -117,6 +119,22 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
     event.initCustomEvent('console-open-browser', false, false, { url: path });
     targetWindow.dispatchEvent(event);
   }, [activeIndex, projects]);
+
+  const handleShowHtmlAppPreview = useCallback((item: HtmlAppPreview) => {
+    setHtmlAppPreviews((prev) => (
+      prev.some((preview) => preview.path === item.path) ? prev : [...prev, item]
+    ));
+    setActiveHtmlAppPreviewPath(item.path);
+  }, []);
+
+  const handleMinimizeHtmlAppPreview = useCallback(() => {
+    setActiveHtmlAppPreviewPath(null);
+  }, []);
+
+  const handleCloseHtmlAppPreview = useCallback((path: string) => {
+    setHtmlAppPreviews((prev) => prev.filter((item) => item.path !== path));
+    setActiveHtmlAppPreviewPath((current) => (current === path ? null : current));
+  }, []);
 
   // Utility function to update the browser address bar URL
   const updateUrl = useCallback((cwd: string, sessionId?: string) => {
@@ -477,6 +495,9 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         onOpenNote={(cwd) => { setNoteProjectCwd(cwd ?? null); setIsNoteOpen(true); }}
         onOpenSkills={() => setIsSkillsOpen(true)}
         onOpenApps={() => setIsHtmlAppsOpen(true)}
+        htmlAppPreviews={htmlAppPreviews}
+        activeHtmlAppPreviewPath={activeHtmlAppPreviewPath}
+        onShowHtmlAppPreview={handleShowHtmlAppPreview}
         onSwitchProject={handleSwitchProject}
         onAddProject={(cwd) => {
           const existingIndex = projects.findIndex(p => p.cwd === cwd);
@@ -574,6 +595,11 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
       {/* HTML Apps Modal */}
       <HtmlAppsModal
         isOpen={isHtmlAppsOpen}
+        htmlAppPreviews={htmlAppPreviews}
+        activeHtmlAppPreviewPath={activeHtmlAppPreviewPath}
+        onShowHtmlAppPreview={handleShowHtmlAppPreview}
+        onMinimizeHtmlAppPreview={handleMinimizeHtmlAppPreview}
+        onCloseHtmlAppPreview={handleCloseHtmlAppPreview}
         onClose={() => setIsHtmlAppsOpen(false)}
         onOpenApp={handleOpenHtmlApp}
       />

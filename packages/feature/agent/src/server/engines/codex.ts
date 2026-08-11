@@ -1,4 +1,5 @@
 import type { Input, ThreadOptions } from '@openai/codex-sdk';
+import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
 import { sanitizedSpawnEnv, findCodexSessionPath } from '@cockpit/shared-utils';
 import { randomUUID } from 'crypto';
 import { writeFileSync, unlinkSync, mkdirSync, existsSync, statSync, openSync, readSync, closeSync } from 'fs';
@@ -348,7 +349,9 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
   const { sessionId } = ctx;
   let terminated = false;
   let failure: Error | null = null;
+  let progressOutputTokens = 0;
   const pendingToolCalls = new Map<string, string>(); // item.id -> tool_use_id
+  const progressItems = new Set<string>();
 
   // Map live items to their persistent rollout call_id so snapshots survive a
   // refresh (see createRolloutCallReader). command_execution <-> exec list and
@@ -530,6 +533,15 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
     emitAgentReports(item);
   };
 
+  const emitOutputProgress = (text: string, key?: string): void => {
+    if (key) {
+      if (progressItems.has(key)) return;
+      progressItems.add(key);
+    }
+    progressOutputTokens += estimateOutputUnits(text);
+    ctx.emit({ type: 'usage_update', output_tokens: progressOutputTokens });
+  };
+
   const handle = (event: CodexEvent): void => {
     if (terminated) return;
     switch (event.type) {
@@ -545,12 +557,15 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
         const item = event.item;
         if (!item) break;
         if (item.type === 'agent_message' && item.text) {
+          emitOutputProgress(item.text);
           ctx.emit({ type: 'assistant', message: { content: [{ type: 'text', text: item.text }] } });
         }
         if (item.type === 'error' && (item.message || item.text)) {
+          emitOutputProgress(item.message || item.text || '');
           ctx.emit({ type: 'error', error: item.message || item.text });
         }
         if (item.type === 'reasoning' && item.text) {
+          emitOutputProgress(item.text);
           ctx.emit({
             type: 'assistant',
             message: { content: [{ type: 'text', text: `<details><summary>Reasoning</summary>\n\n${item.text}\n\n</details>` }] },
@@ -559,11 +574,13 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
         if (item.type === 'command_execution') {
           const toolUseId = resolveExecToolUseId(item);
           if (!pendingToolCalls.has(toolUseId)) {
+            emitOutputProgress(item.command || CODEX_TOOL_NAMES.bash, `command-start:${toolUseId}`);
             ctx.emit({
               type: 'assistant',
               message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.bash, input: { command: item.command || '' } }] },
             });
           }
+          emitOutputProgress(item.aggregated_output || `(exit code: ${item.exit_code ?? 'unknown'})`, `command-result:${toolUseId}`);
           ctx.emit({
             type: 'user',
             message: { content: [{ tool_use_id: toolUseId, content: item.aggregated_output || `(exit code: ${item.exit_code ?? 'unknown'})` }] },
@@ -571,17 +588,28 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
           pendingToolCalls.delete(toolUseId);
         }
         if (item.type === 'collab_tool_call') handleCollabItem(item);
-        if (item.type === 'mcp_tool_call') emitMcpCall(item, true);
-        if (item.type === 'web_search') emitWebSearch(item);
-        if (item.type === 'todo_list') emitTodoList(item);
+        if (item.type === 'mcp_tool_call') {
+          emitOutputProgress(`${item.server || 'mcp'} ${item.tool || ''} ${JSON.stringify(item.result ?? item.error ?? '')}`);
+          emitMcpCall(item, true);
+        }
+        if (item.type === 'web_search') {
+          emitOutputProgress(JSON.stringify(item.action || item.query || 'web_search'));
+          emitWebSearch(item);
+        }
+        if (item.type === 'todo_list') {
+          emitOutputProgress(JSON.stringify(item.items || []));
+          emitTodoList(item);
+        }
         if (item.type === 'file_change') {
           const toolUseId = resolvePatchToolUseId(item);
           if (!pendingToolCalls.has(toolUseId)) {
+            emitOutputProgress(patchResultText(item), `patch-start:${toolUseId}`);
             ctx.emit({
               type: 'assistant',
               message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.applyPatch, input: patchInput(item) }] },
             });
           }
+          emitOutputProgress(patchResultText(item), `patch-result:${toolUseId}`);
           ctx.emit({
             type: 'user',
             message: { content: [{ tool_use_id: toolUseId, content: patchResultText(item) }] },
@@ -596,6 +624,7 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
         if (item?.type === 'command_execution' && item.command) {
           const toolUseId = resolveExecToolUseId(item);
           pendingToolCalls.set(toolUseId, toolUseId);
+          emitOutputProgress(item.command, `command-start:${toolUseId}`);
           ctx.emit({
             type: 'assistant',
             message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.bash, input: { command: item.command } }] },
@@ -604,6 +633,7 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
         if (item?.type === 'file_change' && (item.changes?.length ?? 0) > 0) {
           const toolUseId = resolvePatchToolUseId(item);
           pendingToolCalls.set(toolUseId, toolUseId);
+          emitOutputProgress(patchResultText(item), `patch-start:${toolUseId}`);
           ctx.emit({
             type: 'assistant',
             message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.applyPatch, input: patchInput(item) }] },

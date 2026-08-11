@@ -3,7 +3,8 @@
 import type React from 'react';
 import { useRef } from 'react';
 import { useWebSocket } from '@cockpit/shared-ui';
-import type { ChatMessage, ChatEngine } from './types';
+import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
+import type { ChatMessage, ChatEngine, LiveOutputTokens } from './types';
 import { applyStreamEvent, type StreamEvent } from './applyStreamEvent';
 
 // #10 viewer hook: tail /ws/session-stream for `sessionId` and render live through the
@@ -24,10 +25,18 @@ export function useLiveStream(
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
   enabled: boolean,
   engine?: ChatEngine,
-  opts?: { onRunningChange?: (running: boolean) => void; onComplete?: () => void }
+  opts?: {
+    onRunningChange?: (running: boolean) => void;
+    onComplete?: () => void;
+    onLiveOutputTokens?: (tokens: LiveOutputTokens | null) => void;
+    onRunStartedAt?: (startedAt: number | null) => void;
+  }
 ): void {
   const curAssistantId = useRef<string | null>(null);
   const seq = useRef(0);
+  const fallbackOutputTokens = useRef(0);
+  const sawServerUsageUpdate = useRef(false);
+  const sawResult = useRef(false);
   // Whether a turn is actively producing (between system.init and its result). Used to tell a
   // BACKGROUND task's notification (arrives while idle, after a result) from a foreground
   // subagent's (arrives mid-turn, already shown as its tool call).
@@ -41,10 +50,42 @@ export function useLiveStream(
   };
 
   const apply = (ev: StreamEvent) => {
+    const publishOutputProgress = (tokens: number) => {
+      opts?.onLiveOutputTokens?.({
+        outputTokens: Math.max(0, Math.round(tokens)),
+      });
+    };
+    const bumpOutputProgress = (text: unknown) => {
+      if (sawServerUsageUpdate.current || typeof text !== 'string' || !text) return;
+      fallbackOutputTokens.current += estimateOutputUnits(text);
+      publishOutputProgress(fallbackOutputTokens.current);
+    };
+
     if (ev.type === 'system' && ev.subtype === 'init') {
+      const isFollowUpTurn = sawResult.current;
       turnActive.current = true;
+      if (!isFollowUpTurn) {
+        fallbackOutputTokens.current = 0;
+        sawServerUsageUpdate.current = false;
+        opts?.onLiveOutputTokens?.(null);
+        opts?.onRunStartedAt?.(Date.now());
+      }
       newPlaceholder(); // turn-start → new assistant bubble
       return;
+    }
+    if (ev.type === 'usage_update') {
+      if (typeof ev.output_tokens === 'number' && Number.isFinite(ev.output_tokens)) {
+        sawServerUsageUpdate.current = true;
+        fallbackOutputTokens.current = Math.max(fallbackOutputTokens.current, Math.round(ev.output_tokens));
+        publishOutputProgress(fallbackOutputTokens.current);
+      }
+      return;
+    }
+    if (ev.type === 'stream_event') {
+      const raw = ev.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
+      if (raw?.type === 'content_block_delta' && raw.delta?.type === 'text_delta') {
+        bumpOutputProgress(raw.delta.text);
+      }
     }
     // Background task reporting back. When it arrives while idle (after a result, before the next
     // turn) it's a real background completion → render a muted system-event bar live, matching the
@@ -113,7 +154,21 @@ export function useLiveStream(
       return;
     }
     // A result ends the active turn — after it, an incoming task_notification is a background one.
-    if (ev.type === 'result') turnActive.current = false;
+    if (ev.type === 'result') {
+      turnActive.current = false;
+      sawResult.current = true;
+    }
+    if (ev.type === 'assistant' && Array.isArray(ev.message?.content)) {
+      for (const block of ev.message.content as Array<{ text?: string; name?: string; input?: unknown }>) {
+        if (block.text) bumpOutputProgress(block.text);
+        else if (block.name) bumpOutputProgress(`${block.name} ${JSON.stringify(block.input ?? {})}`);
+      }
+    }
+    if (ev.type === 'user' && Array.isArray(ev.message?.content)) {
+      for (const block of ev.message.content as Array<{ content?: unknown }>) {
+        bumpOutputProgress(typeof block.content === 'string' ? block.content : JSON.stringify(block.content ?? ''));
+      }
+    }
     // content events need a current bubble (init normally comes first; be safe)
     const assistantId = curAssistantId.current ?? newPlaceholder();
     setMessages((prev) => applyStreamEvent(prev, ev, { engine, assistantId }));
@@ -128,12 +183,18 @@ export function useLiveStream(
         status?: string;
         startedAt?: number;
         events?: unknown[];
+        outputTokens?: number;
         message?: Record<string, unknown>;
       };
       if (msg.type === 'run-snapshot' && Array.isArray(msg.events)) {
         // Idle run → nothing to stream; the disk history already loaded is authoritative.
         if (msg.status !== 'running') {
           opts?.onRunningChange?.(false);
+          opts?.onLiveOutputTokens?.(null);
+          opts?.onRunStartedAt?.(null);
+          fallbackOutputTokens.current = 0;
+          sawServerUsageUpdate.current = false;
+          sawResult.current = false;
           return;
         }
         // Authoritative replay of the in-flight turn. The snapshot owns this turn, so drop:
@@ -222,14 +283,33 @@ export function useLiveStream(
         });
         curAssistantId.current = null;
         seq.current = 0;
+        fallbackOutputTokens.current = 0;
+        sawServerUsageUpdate.current = false;
+        sawResult.current = false;
         turnActive.current = false;
-        for (const ev of msg.events) apply(ev as StreamEvent);
+        const snapshotOutputTokens = typeof msg.outputTokens === 'number' && Number.isFinite(msg.outputTokens)
+          ? Math.max(0, Math.round(msg.outputTokens))
+          : null;
+        if (snapshotOutputTokens !== null) {
+          fallbackOutputTokens.current = snapshotOutputTokens;
+          sawServerUsageUpdate.current = true;
+          opts?.onLiveOutputTokens?.({ outputTokens: snapshotOutputTokens });
+        }
+        for (const ev of msg.events) {
+          apply(ev as StreamEvent);
+        }
         opts?.onRunningChange?.(true);
+        opts?.onRunStartedAt?.(typeof msg.startedAt === 'number' ? msg.startedAt : Date.now());
       } else if (msg.type === 'run-event' && msg.message) {
         // 'run-ended' is the single definitive end signal — engines may emit several
         // intermediate 'result's (codex = one per turn), so end only on run-ended.
         if (msg.message.type === 'run-ended') {
           opts?.onRunningChange?.(false);
+          opts?.onLiveOutputTokens?.(null);
+          opts?.onRunStartedAt?.(null);
+          fallbackOutputTokens.current = 0;
+          sawServerUsageUpdate.current = false;
+          sawResult.current = false;
           opts?.onComplete?.();
           return;
         }
@@ -237,6 +317,11 @@ export function useLiveStream(
         opts?.onRunningChange?.(true);
       } else if (msg.type === 'run-idle') {
         opts?.onRunningChange?.(false);
+        opts?.onLiveOutputTokens?.(null);
+        opts?.onRunStartedAt?.(null);
+        fallbackOutputTokens.current = 0;
+        sawServerUsageUpdate.current = false;
+        sawResult.current = false;
       }
       // ping: nothing to do
     },

@@ -75,6 +75,11 @@ export interface TokenUsage {
   totalCostUsd: number;
 }
 
+// Transient output token progress shown only while a run is active.
+export interface LiveOutputTokens {
+  outputTokens: number;
+}
+
 // Retry info (from SDK system/api_retry event)
 export interface ApiRetryInfo {
   attempt: number;

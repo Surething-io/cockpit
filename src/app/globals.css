@@ -823,6 +823,28 @@ mark.chat-search-current { background: rgba(217, 119, 6, 0.6); color: inherit; b
 
 /* Review highlight styles are rendered as inline styles in HighlightOverlayLayer.tsx */
 
+/* ---- Agent loading brand mark ---- */
+.cockpit-loading-arc {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: cockpit-loading-arc-draw 1.35s ease-in-out infinite;
+}
+
+@keyframes cockpit-loading-arc-draw {
+  0% {
+    stroke-dashoffset: 100;
+    opacity: 0.45;
+  }
+  72% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
 /* ============================================
    ANSI Terminal Color Classes (ansi_up)
    ============================================ */

@@ -10,7 +10,7 @@ import { useChatStream } from '../useChatStream';
 import { useLiveStream } from '../useLiveStream';
 import { MessageList, type MessageListHandle } from '../MessageList';
 import { MobileChatInput } from './MobileChatInput';
-import type { ChatMessage, ChatEngine, EngineModelId, ChatMode } from '../types';
+import type { ChatMessage, ChatEngine, EngineModelId, ChatMode, LiveOutputTokens } from '../types';
 
 // Per-session engine + model + execution mode, persisted by the desktop tab system in the
 // project's session.json. This is the same source useTabState resumes from —
@@ -88,6 +88,8 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   // #10 (mirrors Chat.tsx): whether the live stream is currently rendering this
   // run, so the initial disk load defers to it instead of double-rendering.
   const [liveRunning, setLiveRunning] = useState(false);
+  const [viewerLiveOutputTokens, setViewerLiveOutputTokens] = useState<LiveOutputTokens | null>(null);
+  const [viewerRunStartedAt, setViewerRunStartedAt] = useState<number | null>(null);
   const liveRunningRef = useRef(false);
   useEffect(() => { liveRunningRef.current = liveRunning; }, [liveRunning]);
 
@@ -125,6 +127,8 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   const reconcileFromDiskRef = useRef<(() => void) | null>(null);
   const {
     isLoading,
+    liveOutputTokens: streamLiveOutputTokens,
+    runningStartedAt: streamRunningStartedAt,
     apiRetryInfo,
     handleSend,
     handleStop,
@@ -156,12 +160,18 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   const liveViewerEnabled = !isLoading && !!liveSessionId;
   useLiveStream(liveSessionId, setMessages, liveViewerEnabled, engine, {
     onRunningChange: (r) => { liveRunningRef.current = r; setLiveRunning(r); },
+    onLiveOutputTokens: setViewerLiveOutputTokens,
+    onRunStartedAt: setViewerRunStartedAt,
     onComplete: () => {
       if (liveSessionId) loadHistoryByCwdAndSessionId(cwd, liveSessionId, true);
     },
   });
   useEffect(() => {
-    if (!liveViewerEnabled) setLiveRunning(false);
+    if (!liveViewerEnabled) {
+      setLiveRunning(false);
+      setViewerLiveOutputTokens(null);
+      setViewerRunStartedAt(null);
+    }
   }, [liveViewerEnabled]);
 
   // Keep the originator's reconcile-on-run-end closure current (same disk reload the
@@ -173,6 +183,8 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   }, [cwd, liveSessionId, loadHistoryByCwdAndSessionId]);
 
   const isRunning = isLoading || liveRunning;
+  const liveOutputTokens = isLoading ? streamLiveOutputTokens : liveRunning ? viewerLiveOutputTokens : null;
+  const runningStartedAt = isLoading ? streamRunningStartedAt : liveRunning ? viewerRunStartedAt : null;
 
   const onSend = useCallback((content: string) => {
     handleSend(content);
@@ -204,6 +216,8 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
           ref={messageListRef}
           messages={messages}
           isLoading={isRunning}
+          liveOutputTokens={liveOutputTokens}
+          runningStartedAt={runningStartedAt}
           cwd={cwd}
           sessionId={sessionId}
           engine={engine}

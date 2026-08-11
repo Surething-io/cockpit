@@ -8,6 +8,7 @@
   "comment": "htmlBashSdk is exported as its own subpath because the barrel pulls in paths.ts, which imports node fs/os/path. Browser-only bundles (public/html-lib/*, built by esbuild) resolve every import in the barrel whether or not it is used, so importing the barrel from shared-ui breaks that build outright. Deep-import this subpath from browser-side code.",
   "exports": {
     ".": "./src/index.ts",
-    "./htmlBashSdk": "./src/htmlBashSdk.ts"
+    "./htmlBashSdk": "./src/htmlBashSdk.ts",
+    "./outputProgress": "./src/outputProgress.ts"
   }
 }

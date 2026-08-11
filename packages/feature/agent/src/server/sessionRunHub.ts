@@ -42,6 +42,7 @@ interface RunState {
    *  run-snapshot so clients can separate the in-flight turn's disk image from real history
    *  without comparing message text (which breaks on repeated prompts like "继续"). */
   startedAt: number;
+  outputTokens?: number;
   updatedAt: number;
   evictTimer?: ReturnType<typeof setTimeout>;
   abort?: () => void; // stop endpoint aborts the detached run via this
@@ -80,6 +81,28 @@ function fanout(state: RunState, ev: RunEvent): void {
     const ls = listeners.get(k);
     if (ls) for (const cb of ls) { try { cb(ev); } catch { /* ignore */ } }
   }
+}
+
+function isTransientRunEvent(message: unknown): boolean {
+  return (
+    typeof message === 'object' &&
+    message !== null &&
+    (message as { type?: unknown }).type === 'usage_update'
+  );
+}
+
+function getUsageUpdateOutputTokens(message: unknown): number | null {
+  if (
+    typeof message !== 'object' ||
+    message === null ||
+    (message as { type?: unknown }).type !== 'usage_update'
+  ) {
+    return null;
+  }
+  const outputTokens = (message as { output_tokens?: unknown }).output_tokens;
+  return typeof outputTokens === 'number' && Number.isFinite(outputTokens)
+    ? Math.max(0, Math.round(outputTokens))
+    : null;
 }
 
 /**
@@ -142,7 +165,13 @@ export function appendRun(key: string, message: unknown): void {
   // registry during the grace window, so the existence check alone is not enough.
   if (r.status !== 'running') return;
   bumpSeq(r);
-  r.events.push(message);
+  const outputTokens = getUsageUpdateOutputTokens(message);
+  if (outputTokens !== null) {
+    r.outputTokens = Math.max(r.outputTokens ?? 0, outputTokens);
+  }
+  if (!isTransientRunEvent(message)) {
+    r.events.push(message);
+  }
   r.updatedAt = Date.now();
   fanout(r, { seq: r.seq, message });
 }
@@ -207,10 +236,10 @@ export function markRunIdle(key: string, status: RunStatus = 'idle'): void {
 /** Snapshot of the current in-flight turn for a freshly connecting client. */
 export function getRunSnapshot(
   key: string
-): { status: RunStatus; seq: number; events: unknown[]; startedAt: number } | null {
+): { status: RunStatus; seq: number; events: unknown[]; startedAt: number; outputTokens?: number } | null {
   const r = registry.get(key);
   if (!r) return null;
-  return { status: r.status, seq: r.seq, events: r.events.slice(), startedAt: r.startedAt };
+  return { status: r.status, seq: r.seq, events: r.events.slice(), startedAt: r.startedAt, outputTokens: r.outputTokens };
 }
 
 /** True while a turn is actively running (used by the 409 concurrent-run guard). */

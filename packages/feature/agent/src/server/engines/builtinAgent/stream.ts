@@ -1,7 +1,17 @@
 import type { TextStreamPart } from 'ai';
+import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
 import { formatProviderError } from '../shared/providerError';
 
 export type SafeEnqueue = (data: string) => void;
+
+function emitUsageUpdate(outputTokens: number, safeEnqueue: SafeEnqueue): void {
+  safeEnqueue(
+    `data: ${JSON.stringify({
+      type: 'usage_update',
+      output_tokens: Math.max(0, Math.round(outputTokens)),
+    })}\n\n`
+  );
+}
 
 /** A failed tool call still owes the transcript a tool_result. Turn whatever the AI SDK
  *  threw (Error, string, structured payload) into readable text for the model and the UI. */
@@ -29,6 +39,7 @@ export async function consumeStream(
   toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }>;
 }> {
   let text = '';
+  let progressOutputTokens = 0;
   const toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }> = [];
 
   const pendingToolCalls = new Map<string, { id: string; name: string; args: string }>();
@@ -37,6 +48,8 @@ export async function consumeStream(
     switch (part.type) {
       case 'text-delta': {
         text += part.text;
+        progressOutputTokens += estimateOutputUnits(part.text);
+        emitUsageUpdate(progressOutputTokens, safeEnqueue);
         safeEnqueue(
           `data: ${JSON.stringify({
             type: 'stream_event',
@@ -49,6 +62,9 @@ export async function consumeStream(
         break;
       }
 
+      case 'finish-step':
+        break;
+
       case 'tool-call': {
         // Flush accumulated text before persisting the tool call (preserves chronological order)
         if (text) {
@@ -56,6 +72,8 @@ export async function consumeStream(
           text = '';
         }
         const input = (part.input || {}) as Record<string, unknown>;
+        progressOutputTokens += estimateOutputUnits(`${part.toolName} ${JSON.stringify(input)}`);
+        emitUsageUpdate(progressOutputTokens, safeEnqueue);
         opts?.onToolCall?.(part.toolCallId, part.toolName, input);
         safeEnqueue(
           `data: ${JSON.stringify({
@@ -75,6 +93,8 @@ export async function consumeStream(
 
       case 'tool-result': {
         const content = String(part.output);
+        progressOutputTokens += estimateOutputUnits(content);
+        emitUsageUpdate(progressOutputTokens, safeEnqueue);
         opts?.onToolResult?.(part.toolCallId, content, false);
         safeEnqueue(
           `data: ${JSON.stringify({
@@ -95,6 +115,8 @@ export async function consumeStream(
       // unusable session. Every tool call must close with a result line, success or not.
       case 'tool-error': {
         const content = formatToolError(part.error);
+        progressOutputTokens += estimateOutputUnits(content);
+        emitUsageUpdate(progressOutputTokens, safeEnqueue);
         opts?.onToolResult?.(part.toolCallId, content, true);
         safeEnqueue(
           `data: ${JSON.stringify({
@@ -117,9 +139,6 @@ export async function consumeStream(
       // the normal failure path (orchestrator → run `error` event → UI).
       case 'error':
         throw new Error(formatProviderError(part.error), { cause: part.error });
-
-      case 'finish':
-        break;
 
       default:
         break;

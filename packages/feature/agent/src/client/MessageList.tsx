@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react';
 import { useChatContextOptional } from './ChatContext';
-import type { ChatMessage, ApiRetryInfo, ChatEngine, ToolCallInfo } from './types';
+import type { ChatMessage, ApiRetryInfo, ChatEngine, ToolCallInfo, LiveOutputTokens } from './types';
 import { MessageBubble } from './MessageBubble';
 // Tech debt: cross-package imports into the main shell.
 //   - useChatSearch / useComments / useAllComments: hooks living in
@@ -34,6 +34,8 @@ interface MessageListProps {
   sessionId?: string | null;
   engine?: ChatEngine;
   apiRetryInfo?: ApiRetryInfo | null;
+  liveOutputTokens?: LiveOutputTokens | null;
+  runningStartedAt?: number | null;
   hasMoreHistory?: boolean;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
@@ -48,13 +50,80 @@ interface MessageListProps {
   onApprovePlan?: () => void;
 }
 
+function AnimatedProgressNumber({ value }: { value: number }) {
+  const [displayValue, setDisplayValue] = useState(value);
+  const displayValueRef = useRef(value);
+  const frameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+
+    const from = displayValueRef.current;
+    const to = value;
+    if (to <= from) {
+      displayValueRef.current = to;
+      setDisplayValue(to);
+      return;
+    }
+
+    const durationMs = 400;
+    const maxFrames = 12;
+    const startedAt = performance.now();
+
+    const tick = (now: number) => {
+      const elapsed = now - startedAt;
+      const progress = Math.min(1, elapsed / durationMs);
+      const frameProgress = Math.min(1, Math.ceil(progress * maxFrames) / maxFrames);
+      const next = Math.round(from + (to - from) * frameProgress);
+      displayValueRef.current = next;
+      setDisplayValue(next);
+      if (frameProgress < 1) {
+        frameRef.current = requestAnimationFrame(tick);
+      } else {
+        frameRef.current = null;
+      }
+    };
+
+    frameRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    };
+  }, [value]);
+
+  return <span className="tabular-nums">{displayValue}</span>;
+}
+
+function BrandActivityIcon() {
+  return (
+    <span className="relative inline-flex w-6 h-6 flex-shrink-0 items-center justify-center" aria-hidden="true">
+      <svg className="w-6 h-6 text-brand [.dark_&]:text-white" viewBox="0 0 24 24" fill="none">
+        <path
+          className="cockpit-loading-arc"
+          d="M5.6 18.4A9 9 0 1 1 18.4 18.4"
+          pathLength={100}
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+      </svg>
+      <span className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center">
+        <span className="w-1 h-1 rounded-full bg-brand [.dark_&]:bg-white animate-pulse" />
+      </span>
+    </span>
+  );
+}
+
 // Methods exposed to parent component
 export interface MessageListHandle {
   scrollToMessage: (messageId: string) => void;
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
-  { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch, onShowFileDiff, onOpenFileLink, onApprovePlan },
+  { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, liveOutputTokens, runningStartedAt, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch, onShowFileDiff, onOpenFileLink, onApprovePlan },
   ref
 ) {
   const { t, i18n } = useTranslation();
@@ -68,11 +137,38 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const [showTopButton, setShowTopButton] = useState(false);
   const [showBottomButton, setShowBottomButton] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   // Sync outerRef to state so we can read it during render without violating ref rules
   useEffect(() => {
     setOuterEl(outerRef.current);
   }, []);
+
+  useEffect(() => {
+    if (!isLoading || !runningStartedAt) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - runningStartedAt) / 1000)));
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [isLoading, runningStartedAt]);
+
+  const runningEngineLabel = useMemo(() =>
+    engine === 'codex' ? 'Codex'
+      : engine === 'kimi' ? 'Kimi'
+        : engine === 'ollama' ? 'Ollama'
+          : engine === 'deepseek' ? 'DeepSeek'
+            : engine === 'glm' ? 'GLM'
+              : 'Claude',
+  [engine]);
+
+  const elapsedLabel = useMemo(() => {
+    const minutes = Math.floor(elapsedSeconds / 60);
+    const seconds = elapsedSeconds % 60;
+    return minutes > 0 ? `${minutes}m${seconds}s` : `${seconds}s`;
+  }, [elapsedSeconds]);
 
   const {
     isSearchVisible,
@@ -575,9 +671,12 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
             {isLoading && (
               <div className="flex justify-start mb-4">
                 <div className="bg-accent rounded-2xl rounded-bl-md px-4 py-3 max-w-[90%]">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <span className="inline-block w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-                    <span className="text-sm">{engine === 'codex' ? 'Codex is thinking...' : engine === 'kimi' ? 'Kimi is thinking...' : engine === 'ollama' ? 'Ollama is thinking...' : engine === 'deepseek' ? 'DeepSeek is thinking...' : engine === 'glm' ? 'GLM is thinking...' : t('chat.claudeThinking')}</span>
+                  <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
+                    <BrandActivityIcon />
+                    <span className="text-sm text-muted-foreground/80">
+                      {runningEngineLabel} running {elapsedLabel} · processing{' '}
+                      <AnimatedProgressNumber value={liveOutputTokens?.outputTokens ?? 0} />
+                    </span>
                   </div>
                   {apiRetryInfo && (
                     <div className="mt-2 flex items-start gap-2 text-xs text-amber-400 border-t border-border/50 pt-2">

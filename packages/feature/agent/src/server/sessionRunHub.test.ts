@@ -37,6 +37,19 @@ describe('sessionRunHub (#10 run registry)', () => {
     expect(getRunSnapshot('S')?.events.length).toBe(2);
   });
 
+  it('usage_update is fanned out but not stored in the snapshot', () => {
+    const evs: Array<{ seq: number; message: unknown }> = [];
+    startRun('PROGRESS', '/cwd');
+    const offProgress = addRunListener('PROGRESS', (ev) => evs.push(ev));
+    appendRun('PROGRESS', { type: 'usage_update', output_tokens: 42 });
+    expect(evs.length).toBe(1);
+    expect((evs[0].message as { type?: string }).type).toBe('usage_update');
+    expect(getRunSnapshot('PROGRESS')?.seq).toBe(1);
+    expect(getRunSnapshot('PROGRESS')?.events.length).toBe(0);
+    expect(getRunSnapshot('PROGRESS')?.outputTokens).toBe(42);
+    offProgress();
+  });
+
   it('rekey ADDS an alias: both keys resolve to the same run (race-safe)', () => {
     rekeyRun('S', 'S2');
     expect(getRunSnapshot('S')?.seq).toBe(2);

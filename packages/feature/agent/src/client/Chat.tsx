@@ -20,7 +20,7 @@ import { useChatHistory } from './useChatHistory';
 import { useChatStream } from './useChatStream';
 import { MessageList, MessageListHandle } from './MessageList';
 import { ChatInput } from './ChatInput';
-import type { ChatMessage, TokenUsage, ImageInfo, ChatEngine, EngineModelId, ChatMode, ToolCallInfo } from './types';
+import type { ChatMessage, TokenUsage, LiveOutputTokens, ImageInfo, ChatEngine, EngineModelId, ChatMode, ToolCallInfo } from './types';
 // In-package siblings (chat-only)
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { OllamaModelPicker } from './OllamaModelPicker';
@@ -164,6 +164,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // that joins mid-run (auto-created tab for a new session) must not also disk-load the
   // in-flight turn, or it renders twice.
   const [liveRunning, setLiveRunning] = useState(false);
+  const [viewerLiveOutputTokens, setViewerLiveOutputTokens] = useState<LiveOutputTokens | null>(null);
+  const [viewerRunStartedAt, setViewerRunStartedAt] = useState<number | null>(null);
   const liveRunningRef = useRef(false);
   useEffect(() => { liveRunningRef.current = liveRunning; }, [liveRunning]);
 
@@ -249,6 +251,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const {
     isLoading,
     tokenUsage: streamTokenUsage,
+    liveOutputTokens: streamLiveOutputTokens,
+    runningStartedAt: streamRunningStartedAt,
     rateLimitInfo,
     apiRetryInfo,
     handleSend,
@@ -346,6 +350,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     // Update the ref synchronously (not just via the effect on liveRunning) so the initial
     // history load, resolving moments later, reliably sees that the live stream owns this run.
     onRunningChange: (r) => { liveRunningRef.current = r; setLiveRunning(r); },
+    onLiveOutputTokens: setViewerLiveOutputTokens,
+    onRunStartedAt: setViewerRunStartedAt,
     onComplete: () => {
       // Turn finished → reconcile from disk (replaces temp `live-…` bubbles with canonical
       // real-uuid messages).
@@ -354,7 +360,11 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   });
   // When not viewing live, clear the running flag.
   useEffect(() => {
-    if (!liveViewerEnabled) setLiveRunning(false);
+    if (!liveViewerEnabled) {
+      setLiveRunning(false);
+      setViewerLiveOutputTokens(null);
+      setViewerRunStartedAt(null);
+    }
   }, [liveViewerEnabled]);
 
   // Keep the originator's reconcile-on-run-end closure current (same disk reload the viewer's
@@ -398,6 +408,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
 
   // Merge token usage: stream takes priority, fallback to history
   const tokenUsage = streamTokenUsage || historyTokenUsage;
+  const liveOutputTokens = isLoading ? streamLiveOutputTokens : liveRunning ? viewerLiveOutputTokens : null;
+  const runningStartedAt = isLoading ? streamRunningStartedAt : liveRunning ? viewerRunStartedAt : null;
 
   // Notify parent when sessionId changes
   useEffect(() => {
@@ -717,6 +729,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             ref={messageListRef}
             messages={messages}
             isLoading={isLoading || liveRunning}
+            liveOutputTokens={liveOutputTokens}
+            runningStartedAt={runningStartedAt}
             cwd={initialCwd}
             sessionId={sessionId}
             engine={engine}

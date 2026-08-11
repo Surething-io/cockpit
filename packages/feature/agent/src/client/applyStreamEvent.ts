@@ -38,6 +38,7 @@ export interface StreamEvent {
   status?: 'completed' | 'failed' | 'stopped';
   summary?: string;
   output_file?: string;
+  output_tokens?: number;
 }
 
 export function applyStreamEvent(

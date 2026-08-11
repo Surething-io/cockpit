@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
+import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
 import { applyStreamEvent, type StreamEvent } from './applyStreamEvent';
 import type {
   ChatMessage,
   ImageInfo,
   MessageImage,
   TokenUsage,
+  LiveOutputTokens,
   RateLimitInfo,
   ApiRetryInfo,
   ChatEngine,
@@ -60,6 +62,8 @@ interface UseChatStreamOptions {
 interface UseChatStreamReturn {
   isLoading: boolean;
   tokenUsage: TokenUsage | null;
+  liveOutputTokens: LiveOutputTokens | null;
+  runningStartedAt: number | null;
   rateLimitInfo: RateLimitInfo | null;
   apiRetryInfo: ApiRetryInfo | null;
   handleSend: (
@@ -82,6 +86,8 @@ export function useChatStream(
 ): UseChatStreamReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
+  const [liveOutputTokens, setLiveOutputTokens] = useState<LiveOutputTokens | null>(null);
+  const [runningStartedAt, setRunningStartedAt] = useState<number | null>(null);
   const [rateLimitInfo, setRateLimitInfo] = useState<RateLimitInfo | null>(null);
   const [apiRetryInfo, setApiRetryInfo] = useState<ApiRetryInfo | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -91,6 +97,7 @@ export function useChatStream(
   const [activeRun, setActiveRun] = useState<{ runKey: string; assistantId: string } | null>(null);
   const activeRunRef = useRef(activeRun);
   activeRunRef.current = activeRun;
+  const sawServerUsageUpdateRef = useRef(false);
 
   // Latest onRunComplete via ref so endRun can fire it without taking it as a dependency
   // (the callback identity changes each render; threading it through endRun's deps would churn
@@ -154,6 +161,8 @@ export function useChatStream(
     }
     flushStreamBuffer();
     setIsLoading(false);
+    setLiveOutputTokens(null);
+    setRunningStartedAt(null);
     const ar = activeRunRef.current;
     const curId = curAsstIdRef.current;
     if (ar) {
@@ -184,18 +193,31 @@ export function useChatStream(
   // SSE event handling
   const handleStreamEvent = useCallback((event: Record<string, unknown>, messageId: string) => {
     const eventType = event.type as string;
+    const bumpOutputProgress = (text: unknown) => {
+      if (sawServerUsageUpdateRef.current || typeof text !== 'string' || !text) return;
+      const delta = estimateOutputUnits(text);
+      setLiveOutputTokens((prev) => ({
+        outputTokens: (prev?.outputTokens || 0) + delta,
+      }));
+    };
 
     // Handle session_id + turn boundary. Each turn (including a follow-up turn the SDK auto-runs
     // after a background task completes) starts with a system.init.
     if (eventType === 'system' && event.subtype === 'init') {
       const newSessionId = event.session_id as string;
+      const isFollowUpTurn = sawResultRef.current;
       onSessionId(newSessionId);
       sessionIdRef.current = newSessionId;
+      if (!isFollowUpTurn) {
+        setRunningStartedAt((prev) => prev ?? Date.now());
+        setLiveOutputTokens(null);
+        sawServerUsageUpdateRef.current = false;
+      }
       setApiRetryInfo(null); // successful init means any prior retry chain resolved
       // #bg: a turn that starts AFTER this run already produced a result is a follow-up (e.g. the
       // auto-run when a background task reports back) → give it its own assistant bubble instead
       // of merging into the launcher's.
-      if (sawResultRef.current) {
+      if (isFollowUpTurn) {
         const autoId = `auto-asst-${++bgSeqRef.current}`;
         curAsstIdRef.current = autoId;
         setMessages((prev) => [
@@ -267,6 +289,18 @@ export function useChatStream(
       return;
     }
 
+    if (eventType === 'usage_update') {
+      const outputTokens = event.output_tokens as number | undefined;
+      if (typeof outputTokens === 'number' && Number.isFinite(outputTokens)) {
+        sawServerUsageUpdateRef.current = true;
+        const nextOutputTokens = Math.max(0, Math.round(outputTokens));
+        setLiveOutputTokens((prev) => ({
+          outputTokens: Math.max(prev?.outputTokens || 0, nextOutputTokens),
+        }));
+      }
+      return;
+    }
+
     // Handle in-stream error events ({type:'error', error}) emitted by the
     // codex/kimi/ollama/deepseek routes. Without this branch they are silently
     // dropped and the turn ends as an empty bubble.
@@ -300,6 +334,7 @@ export function useChatStream(
       const streamEvent = event.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
       if (streamEvent?.type === 'content_block_delta' && streamEvent.delta?.type === 'text_delta') {
         const deltaText = streamEvent.delta.text || '';
+        bumpOutputProgress(deltaText);
 
         // Accumulate to buffer
         if (!streamBufferRef.current || streamBufferRef.current.messageId !== messageId) {
@@ -319,11 +354,24 @@ export function useChatStream(
     // Handle text content (complete message)
     // Complete assistant message (codex/ollama/synthetic text + tool_use blocks)
     if (eventType === 'assistant') {
+      const content = (event.message as { content?: unknown } | undefined)?.content;
+      if (Array.isArray(content)) {
+        for (const block of content as Array<{ text?: string; name?: string; input?: unknown }>) {
+          if (block.text) bumpOutputProgress(block.text);
+          else if (block.name) bumpOutputProgress(`${block.name} ${JSON.stringify(block.input ?? {})}`);
+        }
+      }
       setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
     }
 
     // Tool result (user turn) → merge into the matching toolCall
     if (eventType === 'user') {
+      const content = (event.message as { content?: unknown } | undefined)?.content;
+      if (Array.isArray(content)) {
+        for (const block of content as Array<{ content?: unknown }>) {
+          bumpOutputProgress(typeof block.content === 'string' ? block.content : JSON.stringify(block.content ?? ''));
+        }
+      }
       setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
     }
 
@@ -398,6 +446,7 @@ export function useChatStream(
         type?: string;
         status?: string;
         events?: unknown[];
+        outputTokens?: number;
         message?: Record<string, unknown>;
       };
       if (msg.type === 'run-snapshot' && Array.isArray(msg.events)) {
@@ -419,6 +468,15 @@ export function useChatStream(
         curAsstIdRef.current = ar.assistantId;
         sawResultRef.current = false;
         turnActiveRef.current = false;
+        sawServerUsageUpdateRef.current = false;
+        setLiveOutputTokens(null);
+        const snapshotOutputTokens = typeof msg.outputTokens === 'number' && Number.isFinite(msg.outputTokens)
+          ? Math.max(0, Math.round(msg.outputTokens))
+          : null;
+        if (snapshotOutputTokens !== null) {
+          sawServerUsageUpdateRef.current = true;
+          setLiveOutputTokens({ outputTokens: snapshotOutputTokens });
+        }
         setMessages((prev) =>
           prev
             .filter((m) => !(typeof m.id === 'string' && m.id.startsWith('auto-') && m.runKey === ar.runKey))
@@ -471,6 +529,9 @@ export function useChatStream(
       };
       setMessages((prev) => [...prev, userMessage]);
       setIsLoading(true);
+      setLiveOutputTokens(null);
+      sawServerUsageUpdateRef.current = false;
+      setRunningStartedAt(Date.now());
       // Fresh send: clear stale retry notice from a previous turn
       setApiRetryInfo(null);
 
@@ -583,6 +644,8 @@ export function useChatStream(
   return {
     isLoading,
     tokenUsage,
+    liveOutputTokens,
+    runningStartedAt,
     rateLimitInfo,
     apiRetryInfo,
     handleSend,

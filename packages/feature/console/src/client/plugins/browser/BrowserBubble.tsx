@@ -6,7 +6,7 @@ import { toast } from '@cockpit/shared-ui';
 import { BUBBLE_CONTENT_HEIGHT } from '../../CommandBubble';
 import { useBrowserBridge } from '../../useBrowserBridge';
 import { ShortIdBadge } from '../../ShortIdBadge';
-import { modKey, toLocalAppUrl, isFileViewerPath, toFileViewerUrl } from '@cockpit/shared-utils';
+import { modKey, toLocalAppUrl, isFileViewerPath, toFileViewerUrl, toExternalBrowserAppUrl } from '@cockpit/shared-utils';
 import { unregisterBrowserBridge } from '../../effect/pluginDisconnect';
 
 // ============================================================================
@@ -418,12 +418,13 @@ export function BrowserBubble({
     if (!currentUrl) return;
     // File paths can't open directly in a browser tab — route through /apps/local
     // (md/image/pdf through the file-viewer app, same as the bubble itself)
+    const targetUrl = isHttpUrl(currentUrl)
+      ? currentUrl
+      : isFileViewerPath(currentUrl)
+        ? toFileViewerUrl(currentUrl, projectCwd)
+        : toLocalAppUrl(currentUrl, projectCwd);
     window.open(
-      isHttpUrl(currentUrl)
-        ? currentUrl
-        : isFileViewerPath(currentUrl)
-          ? toFileViewerUrl(currentUrl, projectCwd)
-          : toLocalAppUrl(currentUrl, projectCwd),
+      toExternalBrowserAppUrl(targetUrl, window.location.origin),
       '_blank',
     );
   }, [currentUrl, projectCwd]);

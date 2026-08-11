@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from "vitest"
 import vm from "vm"
-import { injectBashSdk, resolveLocalMediaUrl, fromLocalAppUrl } from "./htmlBashSdk"
+import { injectBashSdk, resolveLocalMediaUrl, fromLocalAppUrl, toExternalBrowserAppUrl } from "./htmlBashSdk"
 
 /** Fake socket: readyState is driven by the test, sends are recorded. */
 class FakeSocket {
@@ -296,6 +296,40 @@ describe("resolveLocalMediaUrl", () => {
   it("handles a windows base", () => {
     expect(resolveLocalMediaUrl("img/a.png", "C:\\Users\\ka\\proj")).toBe(
       "/apps/local/C%3A/Users/ka/proj/img/a.png"
+    )
+  })
+})
+
+describe("toExternalBrowserAppUrl", () => {
+  it("moves localhost app-runtime URLs onto loopback IP to avoid PWA scope capture", () => {
+    expect(
+      toExternalBrowserAppUrl(
+        "/apps/local/Users/ka/Cherry/07-Skills/weather/index.html",
+        "http://localhost:3456"
+      )
+    ).toBe("http://127.0.0.1:3456/apps/local/Users/ka/Cherry/07-Skills/weather/index.html")
+
+    expect(
+      toExternalBrowserAppUrl(
+        "/apps/builtin/file-viewer/index.html?file=%2Ftmp%2Fa.md#top",
+        "http://localhost:3456"
+      )
+    ).toBe("http://127.0.0.1:3456/apps/builtin/file-viewer/index.html?file=%2Ftmp%2Fa.md#top")
+
+    expect(
+      toExternalBrowserAppUrl(
+        "http://localhost:3456/apps/local/tmp/a.html",
+        "http://localhost:3456"
+      )
+    ).toBe("http://127.0.0.1:3456/apps/local/tmp/a.html")
+  })
+
+  it("leaves non-app URLs and non-localhost origins untouched", () => {
+    expect(toExternalBrowserAppUrl("https://example.com", "http://localhost:3456")).toBe(
+      "https://example.com"
+    )
+    expect(toExternalBrowserAppUrl("/apps/local/tmp/a.html", "http://127.0.0.1:3456")).toBe(
+      "http://127.0.0.1:3456/apps/local/tmp/a.html"
     )
   })
 })

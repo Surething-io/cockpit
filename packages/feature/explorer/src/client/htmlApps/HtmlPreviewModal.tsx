@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Portal, toast } from '@cockpit/shared-ui';
-import { ExternalLink, BookmarkPlus } from 'lucide-react';
+import { ExternalLink, BookmarkPlus, SquareTerminal } from 'lucide-react';
+import { toExternalBrowserAppUrl, toLocalAppUrl } from '@cockpit/shared-utils';
 import { HtmlPreview } from '../HtmlPreview';
 import { useAddHtmlApp } from './useAddHtmlApp';
 import { HtmlAppSource } from './HtmlAppSource';
@@ -78,6 +79,16 @@ export function HtmlPreviewModal({ filePath, content, cwd, onClose, onContentSea
               onClose();
             }}
             title={t('common.openInConsole')}
+            className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0"
+          >
+            <SquareTerminal className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => {
+              const appUrl = toLocalAppUrl(filePath, cwd);
+              window.open(toExternalBrowserAppUrl(appUrl, window.location.origin), '_blank');
+            }}
+            title={t('browser.openInNewWindow')}
             className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0"
           >
             <ExternalLink className="w-4 h-4" />

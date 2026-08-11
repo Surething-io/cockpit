@@ -605,6 +605,30 @@ export function toFileViewerUrl(filePath: string, projectRoot?: string): string 
 }
 
 /**
+ * Convert an app-runtime URL for an external browser tab.
+ *
+ * Chrome 139+ navigation capture routes in-scope localhost URLs to an installed
+ * PWA before the page ever loads. `/apps/*` has to remain same-origin inside
+ * Cockpit iframes for SDK and selection access, but an explicit "open in
+ * browser" action should bypass the localhost PWA scope. `127.0.0.1` reaches
+ * the same dev server while being a different origin from `localhost`.
+ */
+export function toExternalBrowserAppUrl(appUrl: string, origin: string): string {
+  try {
+    const url = new URL(appUrl, origin)
+    if (!url.pathname.startsWith(BUILTIN_APP_PREFIX) && !url.pathname.startsWith(LOCAL_APP_PREFIX)) {
+      return appUrl
+    }
+    if (url.hostname === "localhost") {
+      url.hostname = "127.0.0.1"
+    }
+    return url.toString()
+  } catch {
+    return appUrl
+  }
+}
+
+/**
  * Reverse of toLocalAppUrl: `/apps/local/<encoded-abs>` → the absolute file path
  * (with `/` separators; node `path` on the server accepts `/` on Windows too).
  * Returns null on a path-traversal attempt or a NUL byte. The caller still runs

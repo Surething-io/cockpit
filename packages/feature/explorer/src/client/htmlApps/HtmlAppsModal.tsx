@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from '@cockpit/shared-ui';
 import { ExternalLink, Minimize2, SquareTerminal, Trash2, Plus, X, Search, Copy } from 'lucide-react';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { toExternalBrowserAppUrl, toLocalAppUrl } from '@cockpit/shared-utils';
 import { HtmlPreview } from '../HtmlPreview';
 import { notifyHtmlAppsChanged } from './htmlAppsBus';
 import { loadHtmlApps, addHtmlApp, deleteHtmlApp, type HtmlAppInfo } from './htmlAppsClient';
@@ -136,6 +137,20 @@ export function HtmlAppsModal({
     handleClose();
   }, [handleClose, onOpenApp]);
 
+  const openPreviewInConsole = useCallback((path: string) => {
+    if (onOpenApp) {
+      onOpenApp(path);
+    } else {
+      window.dispatchEvent(new CustomEvent('console-open-browser', { detail: { url: path } }));
+    }
+    onMinimizeHtmlAppPreview();
+  }, [onMinimizeHtmlAppPreview, onOpenApp]);
+
+  const openExternal = useCallback((path: string) => {
+    const appUrl = toLocalAppUrl(path);
+    window.open(toExternalBrowserAppUrl(appUrl, window.location.origin), '_blank');
+  }, []);
+
   const handleCopyPath = useCallback(async (path: string) => {
     try {
       await navigator.clipboard.writeText(path);
@@ -228,6 +243,7 @@ export function HtmlAppsModal({
                       key={app.id}
                       app={app}
                       onOpenConsole={() => openBubble(app.path)}
+                      onOpenExternal={() => openExternal(app.path)}
                       onPreview={() => {
                         onShowHtmlAppPreview({ path: app.path, title: app.title, icon: app.icon });
                         handleClose();
@@ -292,6 +308,12 @@ export function HtmlAppsModal({
                 <button onClick={onMinimizeHtmlAppPreview} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0" title={t('common.minimize')}>
                   <Minimize2 className="w-4 h-4" />
                 </button>
+                <button onClick={() => openPreviewInConsole(item.path)} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0" title={t('common.openInConsole')}>
+                  <SquareTerminal className="w-4 h-4" />
+                </button>
+                <button onClick={() => openExternal(item.path)} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0" title={t('browser.openInNewWindow')}>
+                  <ExternalLink className="w-4 h-4" />
+                </button>
                 <button onClick={() => onCloseHtmlAppPreview(item.path)} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0">
                   <X className="w-4 h-4" />
                 </button>
@@ -311,12 +333,13 @@ export function HtmlAppsModal({
 interface HtmlAppCardProps {
   app: HtmlAppInfo;
   onOpenConsole: () => void;
+  onOpenExternal: () => void;
   onPreview: () => void;
   onDelete: () => void;
   onCopyPath: () => void;
 }
 
-function HtmlAppCard({ app, onOpenConsole, onPreview, onDelete, onCopyPath }: HtmlAppCardProps) {
+function HtmlAppCard({ app, onOpenConsole, onOpenExternal, onPreview, onDelete, onCopyPath }: HtmlAppCardProps) {
   const { t } = useTranslation();
   const [confirmDel, setConfirmDel] = useState(false);
 
@@ -342,6 +365,14 @@ function HtmlAppCard({ app, onOpenConsole, onPreview, onDelete, onCopyPath }: Ht
             title={t('common.openInConsole')}
           >
             <SquareTerminal className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onOpenExternal}
+            disabled={!app.valid}
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title={t('browser.openInNewWindow')}
+          >
+            <ExternalLink className="w-4 h-4" />
           </button>
           {confirmDel ? (
             <>

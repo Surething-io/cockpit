@@ -29,7 +29,8 @@ import { GitFileTree, buildGitFileTree, collectFilesUnderNode } from './GitFileT
 import { MenuContainerProvider } from '@cockpit/shared-ui';
 import { CodeViewer } from '@cockpit/feature-explorer';
 import { isMarkdownFile, isHtmlFile, isJsonFile, isSkillFile, formatAsHumanReadable, THEME_JSON_COLORS } from './toolCallUtils';
-import { ExternalLink, BookmarkPlus } from 'lucide-react';
+import { ExternalLink, BookmarkPlus, SquareTerminal } from 'lucide-react';
+import { toExternalBrowserAppUrl, toLocalAppUrl } from '@cockpit/shared-utils';
 import { useAddHtmlApp } from './htmlApps/useAddHtmlApp';
 import { useAddSkill } from './skills/useAddSkill';
 import { buildTreeFromPaths, collectAllDirPaths, mergeFileTree } from './fileBrowser/utils';
@@ -1998,6 +1999,16 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                                   onClick={() => window.dispatchEvent(new CustomEvent('console-open-browser', { detail: { url: abs } }))}
                                   className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent flex items-center"
                                   title={t('common.openInConsole')}
+                                >
+                                  <SquareTerminal className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const appUrl = toLocalAppUrl(abs);
+                                    window.open(toExternalBrowserAppUrl(appUrl, window.location.origin), '_blank');
+                                  }}
+                                  className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent flex items-center"
+                                  title={t('browser.openInNewWindow')}
                                 >
                                   <ExternalLink className="w-3.5 h-3.5" />
                                 </button>

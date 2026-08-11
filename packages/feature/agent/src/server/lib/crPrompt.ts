@@ -47,7 +47,7 @@ description: "完整代码审查:静态 + 动态一遍做完。静态三角校�
 
 subagent prompt 模板:\`读本 skill (cr/SKILL.md),只对 <你那块(Part A 全部 / 某个动态切片)> 应用对应 Part,自行 triage,按统一格式输出 findings\`。
 
-**Synthesis(主会话,只整理不重判)**:汇总各 subagent 的 findings → 去重(同根因标"共犯")→ 影响 × 概率排序 → 一份报告 + 梯度图。**禁止用主会话的开发上下文给任何 finding 洗白 / 降级**——subagent 怎么判就怎么收。要质疑某条,**重新 spawn 一个干净 subagent 复核**,而不是主会话自己拍。
+**Synthesis(主会话,只整理不重判)**:汇总各 subagent 的 findings → 去重(同根因标"共犯")→ 影响 × 概率排序 → 一份报告 + 梯度图。**禁止用主会话的开发上下文给任何 finding 洗白 / 降级**——subagent 怎么判就怎么收。要质疑某条,**重新 spawn 一个干净 subagent 复核**,而不是主会话自己拍。主会话可以把结果整理成短表,但**展开详情必须保留 subagent 的关键证据密度**:动态 finding 的状态图 / 时间线 / 变更轨迹 / 反例路径,静态 finding 的三角校验证据,都要搬到对应编号详情里。允许去重和删掉重复措辞,不允许把 subagent 的详细模型压成一句摘要。
 
 > 取舍:默认 2-subagent 既隔离开发污染、又消掉静态摊薄动态;hard 的 per-slice fan-out 是额外深度(实测把 image/video 挖到 🔴 + 多 subagent 独立收敛提置信度),贵且慢,由用户显式选用(不自动升档)。
 
@@ -137,22 +137,31 @@ correctness 这个"未知点",靠 **意图 / 输入域 / 周遭** 三个独立�
 
 ---
 
-## 产出 findings(直观优先)
+## 产出 findings(简表 + 详情)
 
-严重度 = **影响 × 概率**,直接给乘积结论,别让读者自己换算。两路 findings 合并去重,统一格式:
+严重度 = **影响 × 概率**,直接给乘积结论,别让读者自己换算。两路 findings 合并去重后,先输出一张**短列表格**用于快速扫描,再按编号展开证据。不要把长证据塞进表格 cell,否则聊天窗口会把列挤成难读的窄列。
+
+| # | 严重度 | 位置 | 问题后果 | 处理方向 |
+|---|---|---|---|---|
+| 1 | 🔴/🟡/⚪ | \`file:line\` | 不修会发生什么(一句大白话后果,不带术语) | 一句话说明修复方向 |
+
+然后按表格编号展开:
 
 \`\`\`
-🔴|🟡|⚪ <位置(file:line)> — 不修会发生什么(一句大白话后果,不带术语)
-  影响: 坏到什么程度 + 坏给谁(具体:哪类用户 / 租户 / 调用方,而非泛指"用户")
-  概率: 多大概率发生 + 取决于什么
-  证据: 静态 → 三角校验里哪个参照对不上(意图 / 输入域 / 周遭);动态 → 模型证据(指回状态图 / 时间线哪一处)
-  正解: 应该是什么 / 被破坏的不变量(术语放这里)
+### #1 <一句话后果>
+影响: 坏到什么程度 + 坏给谁(具体:哪类用户 / 租户 / 调用方,而非泛指"用户")
+概率: 多大概率发生 + 取决于什么;若待验证,写明如何升降档
+证据: 静态 → 三角校验里哪个参照对不上(意图 / 输入域 / 周遭);动态 → 保留 subagent 给出的状态图 / 时间线 / 变更轨迹 / 反例路径,不要只摘要成一句
+正解: 应该是什么 / 被破坏的不变量(术语放这里)
 \`\`\`
 
-- 🔴 高概率 × 大影响(卡发布) | 🟡 该修但不流血 | ⚪ 顺手。降序输出。
-- 一句话结论说**后果**,不说技术原因(原因放 \`正解\`)。
-- 概率取决于待验证因子就显式写,并写明如何升降档;别把"待验证"伪装成"已确认"。
-- 多条同根因 → 标 **"共犯"** 合并成一条,别同一问题报两遍(尤其静态/动态对同一行各看一面时)。
+- 🔴 高概率 × 大影响(卡发布) | 🟡 该修但不流血 | ⚪ 顺手。短列表格按严重度降序输出。
+- \`问题后果\` 只写**后果**,不写技术原因(原因放展开详情的 \`证据\` / \`正解\`)。
+- \`位置\` 用可定位的 \`file:line\`;如果是合并后的共犯 finding,表格用最核心位置,在展开详情的 \`证据\` 中补充其它位置。
+- \`处理方向\` 在短表里只写一句,完整 \`正解\` 放展开详情。
+- 展开详情是信息完整面:如果 subagent 已给出动态模型、时间线、路径编号或关键代码位置,最终报告必须保留这些细节;短表可以简,详情不能把证据压没。
+- 多条同根因 → 在 \`问题后果\` 或展开详情的 \`证据\` 标 **"共犯"** 并合并成一条,别同一问题报两遍(尤其静态/动态对同一行各看一面时)。
+- 表格后只展开每条 finding 一次;不要再重复一张 7 列长表。
 - 收尾给一张 **影响 × 概率** 梯度图:
 
 \`\`\`
@@ -194,7 +203,7 @@ Three tiers by scale (**all enter at least one clean subagent**). **You pick bet
 
 Subagent prompt template: \`Read this skill (cr/SKILL.md); apply only the matching Part to <your chunk (all of Part A / one dynamic slice)>, triage it yourself, and output findings in the unified format\`.
 
-**Synthesis (main session, organize only — never re-judge)**: gather each subagent's findings → dedup (mark same-root-cause as "accomplices") → sort by impact × probability → one report + gradient chart. **It is forbidden to use the main session's dev context to whitewash / downgrade any finding** — take what the subagent judged as-is. To dispute one, **spawn a fresh clean subagent to re-check**, not the main session deciding on its own.
+**Synthesis (main session, organize only — never re-judge)**: gather each subagent's findings → dedup (mark same-root-cause as "accomplices") → sort by impact × probability → one report + gradient chart. **It is forbidden to use the main session's dev context to whitewash / downgrade any finding** — take what the subagent judged as-is. To dispute one, **spawn a fresh clean subagent to re-check**, not the main session deciding on its own. The main session may organize the result into a short summary table, but the **expanded details must preserve the subagent's key evidence density**: for dynamic findings, carry over the state diagram / timeline / change trajectory / counterexample path; for static findings, carry over the triangulation evidence. Deduplication and wording cleanup are allowed; compressing a detailed subagent model into a one-line summary is not.
 
 > Trade-off: the default 2-subagent both isolates dev pollution and removes static-dilutes-dynamic; hard's per-slice fan-out is extra depth (in practice it dug image/video up to 🔴, and multiple independently-converging subagents raised confidence), expensive and slow, selected explicitly by the user (never auto-escalated).
 
@@ -284,22 +293,31 @@ These two diagrams are the evidence — many bugs (a 6-second gap, a key created
 
 ---
 
-## Produce findings (intuitive first)
+## Produce findings (summary table + details)
 
-Severity = **impact × probability**; give the product conclusion directly, don't make the reader do the math. Merge and dedup findings from both tracks, unified format:
+Severity = **impact × probability**; give the product conclusion directly, don't make the reader do the math. Merge and dedup findings from both tracks. First output a **short summary table** for scanning, then expand each finding by number. Do not put long evidence into table cells; chat windows squeeze wide Markdown tables into unreadable narrow columns.
+
+| # | Severity | Location | Consequence | Direction |
+|---|---|---|---|---|
+| 1 | 🔴/🟡/⚪ | \`file:line\` | What happens if unfixed (one plain-language consequence, no jargon) | One-sentence repair direction |
+
+Then expand by table number:
 
 \`\`\`
-🔴|🟡|⚪ <location (file:line)> — what happens if unfixed (one plain-language consequence, no jargon)
-  Impact: how bad + to whom (specific: which users / tenants / callers, not a vague "users")
-  Probability: how likely + what it depends on
-  Evidence: static → which reference fails in triangulation (intent / input domain / surroundings); dynamic → model evidence (point back to which spot on the state diagram / timeline)
-  Fix: what it should be / the broken invariant (jargon goes here)
+### #1 <one-line consequence>
+Impact: how bad + to whom (specific: which users / tenants / callers, not a vague "users")
+Probability: how likely + what it depends on; if uncertain, say how to raise/lower the tier
+Evidence: static → which triangulation reference fails (intent / input domain / surroundings); dynamic → preserve the subagent's state diagram / timeline / change trajectory / counterexample path, not a one-line summary
+Fix: what it should be / the broken invariant (jargon goes here)
 \`\`\`
 
-- 🔴 high probability × big impact (blocks release) | 🟡 should fix but not bleeding | ⚪ nice-to-have. Output in descending order.
-- The one-line conclusion states the **consequence**, not the technical cause (cause goes in \`Fix\`).
-- If probability depends on a to-be-verified factor, say so explicitly and write how to raise/lower the tier; don't disguise "to be verified" as "confirmed".
-- Multiple same-root-cause → mark as **"accomplices"** and merge into one; don't report the same problem twice (especially when static/dynamic each see one side of the same line).
+- 🔴 high probability × big impact (blocks release) | 🟡 should fix but not bleeding | ⚪ nice-to-have. Sort summary table rows in descending severity.
+- \`Consequence\` states the **outcome**, not the technical cause (cause goes in the expanded \`Evidence\` / \`Fix\`).
+- \`Location\` must be a precise \`file:line\`; for a merged accomplice finding, use the core location in the table and mention other locations in the expanded \`Evidence\`.
+- Keep \`Direction\` in the summary table to one sentence; put the complete \`Fix\` in the expanded detail.
+- Expanded details are the complete information surface: if a subagent provided a dynamic model, timeline, path labels, or key code locations, the final report must carry those details forward; the summary table may be short, the detail must not erase evidence.
+- Multiple same-root-cause → mark as **"accomplices"** in \`Consequence\` or expanded \`Evidence\` and merge into one finding; don't report the same problem twice (especially when static/dynamic each see one side of the same line).
+- Expand each finding only once after the table; don't also emit a 7-column long table.
 - Close with an **impact × probability** gradient chart:
 
 \`\`\`

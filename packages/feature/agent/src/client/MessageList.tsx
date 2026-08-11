@@ -58,11 +58,8 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   ref
 ) {
   const { t, i18n } = useTranslation();
-  // codex transcripts are owned by its own CLI, under names we cannot construct (see
-  // isForkableStore in server/api/session/sessionStore.ts) — we can read them but not create
-  // a sibling session, so hide the buttons rather than let the request 404. Passed down as a
-  // plain boolean, not `engine`, to keep MessageBubble's memo props stable.
-  const forkSupported = engine !== 'codex';
+  // Passed down as a plain boolean, not `engine`, to keep MessageBubble's memo props stable.
+  const forkSupported = true;
   const bottomRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);

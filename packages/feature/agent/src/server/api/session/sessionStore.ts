@@ -1,5 +1,7 @@
 import * as fs from 'fs';
+import { join } from 'path';
 import {
+  CODEX_SESSIONS_DIR,
   getClaudeSessionPath,
   getDeepseekSessionPath,
   getDeepseekBuiltinSessionPath,
@@ -91,24 +93,16 @@ export function resolveSessionPath(
 /**
  * Engines whose store we may CREATE a session in, not merely read from.
  *
- * Every engine but codex stores Claude-compatible JSONL at a path we can construct from
- * (cwd, sessionId) alone, so a synthesized transcript is indistinguishable from one the
- * engine wrote itself. codex is deliberately excluded: its transcripts are owned by its own
- * CLI and named on terms we do not control (`<date-dirs>/rollout-<timestamp>-<thread_id>.jsonl`),
- * so a file we invent may simply never be found or resumed by it. Readers (history,
- * session-by-path) still support all seven; only the write side is narrowed.
- *
- * Keep this in sync with `canForkEngine` on the client, which greys out the buttons so the
- * limit shows up as a disabled control rather than a request that fails.
+ * Stores we may CREATE a session in, not merely read from. Codex is included: an
+ * isolated CODEX_HOME probe against codex-cli 0.141.0 confirmed that `resume <id>` accepts
+ * a rollout copied to the normal dated path with `session_meta.payload.id` rewritten.
  */
 export function isForkableStore(store: SessionStore): boolean {
-  return store.engine !== 'codex';
+  return !!store.engine;
 }
 
 /**
- * Path for a NEW session placed in the same store as `store`. Returns null for stores we
- * must not write into (see isForkableStore) — callers turn that into a user-facing error
- * instead of dropping a file the owning CLI would never read.
+ * Path for a NEW session placed in the same store as `store`.
  */
 export function newSessionPathInStore(
   store: SessionStore,
@@ -132,6 +126,15 @@ export function newSessionPathInStore(
         : getGlmSessionPath(cwd, newSessionId);
     case 'ollama':
       return getOllamaSessionPath(cwd, newSessionId);
+    case 'codex': {
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const yyyy = String(now.getFullYear());
+      const mm = pad(now.getMonth() + 1);
+      const dd = pad(now.getDate());
+      const stamp = `${yyyy}-${mm}-${dd}T${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+      return join(CODEX_SESSIONS_DIR, yyyy, mm, dd, `rollout-${stamp}-${newSessionId}.jsonl`);
+    }
     default:
       return null;
   }

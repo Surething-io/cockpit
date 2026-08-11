@@ -21,6 +21,7 @@ import {
 } from './sessionStore';
 import { isHumanTurnStart } from '../../../shared/transcriptTurns';
 import { copyReferencedArtifacts } from './sessionArtifacts';
+import { buildCodexForkLines } from './codexFork';
 
 export const runtime = 'nodejs';
 
@@ -132,7 +133,7 @@ export const POST = dynamicHandler<
     const result = yield* Effect.tryPromise({
       try: async () => {
         const newSessionId = randomUUID();
-        const newLines: string[] = [];
+        let newLines: string[] = [];
         // scope='single' needs the whole turn as objects to re-chain, so it buffers the
         // current turn instead of emitting lines as it goes.
         let turn: Record<string, unknown>[] = [];
@@ -142,10 +143,15 @@ export const POST = dynamicHandler<
           crlfDelay: Infinity,
         });
 
+        const codexLines: string[] = [];
         let state: 'collecting' | 'found_target' | 'done' = 'collecting';
         for await (const line of rl) {
           if (state === 'done') break;
           if (!line.trim()) continue;
+          if (store.engine === 'codex') {
+            codexLines.push(line);
+            continue;
+          }
           try {
             const entry = JSON.parse(line);
             if (state === 'found_target') {
@@ -183,7 +189,17 @@ export const POST = dynamicHandler<
           }
         }
 
-        if (scope === 'single') {
+        if (store.engine === 'codex') {
+          const built = buildCodexForkLines(
+            codexLines,
+            originalSessionId,
+            newSessionId,
+            fromMessageUuid,
+            scope
+          );
+          newLines = built.newLines;
+          state = built.targetMissed ? 'collecting' : 'found_target';
+        } else if (scope === 'single') {
           rechainEntries(turn, newSessionId);
           for (const entry of turn) newLines.push(JSON.stringify(entry));
         }

@@ -6,6 +6,7 @@ import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { fetchCurrentBranch } from '@cockpit/feature-explorer';
 import { RecentSessionsModal } from './RecentSessionsModal';
 import { EngineBadge } from './EngineBadge';
+import { SessionNumberBadge } from './SessionNumberBadge';
 
 export interface GlobalSession {
   cwd: string;
@@ -224,19 +225,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
                       </span>
                       {sessionNumbers[`${session.cwd}\n${session.sessionId}`] && (() => {
                         const [projectNumber, sessionNumber] = sessionNumbers[`${session.cwd}\n${session.sessionId}`].split('.');
-                        return (
-                          <span
-                            className="ml-auto inline-flex items-center gap-1 font-mono text-[9px] font-medium leading-none tabular-nums flex-shrink-0"
-                            aria-label={`${projectNumber}.${sessionNumber}`}
-                          >
-                            <span className="flex h-4 w-4 items-center justify-center rounded-[4px] border border-muted-foreground/50 bg-muted/20 text-muted-foreground">
-                              {projectNumber}
-                            </span>
-                            <span className="flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/50 bg-muted/20 text-muted-foreground">
-                              {sessionNumber}
-                            </span>
-                          </span>
-                        );
+                        return <SessionNumberBadge projectNumber={projectNumber} sessionNumber={sessionNumber} className="ml-auto" />;
                       })()}
                     </div>
                     {session.title && (
@@ -313,6 +302,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
         isOpen={searchOpen}
         onClose={() => setSearchOpen(false)}
         onSwitchProject={onSwitchProject}
+        sessionNumbers={sessionNumbers}
       />
     </div>
   );

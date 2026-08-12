@@ -10,7 +10,7 @@ import {
   loadSessionsByProject,
   pickFolder,
 } from './effect/workspaceClient';
-import { EngineBadge } from '@cockpit/feature-agent';
+import { EngineBadge, SessionNumberBadge } from '@cockpit/feature-agent';
 
 interface SessionInfo {
   sessionId?: string;
@@ -41,9 +41,11 @@ interface SessionBrowserProps {
   onClose: () => void;
   onSelectSession?: (cwd: string, sessionId: string) => void;
   onAddProject?: (cwd: string) => void;
+  sessionNumbers?: Record<string, string>;
+  projectNumbers?: Record<string, number>;
 }
 
-export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject }: SessionBrowserProps) {
+export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject, sessionNumbers = {}, projectNumbers = {} }: SessionBrowserProps) {
   const { t } = useTranslation();
   const [isPickingFolder, setIsPickingFolder] = useState(false);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
@@ -285,6 +287,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
             .filter((project) => project.fullPath.toLowerCase().includes(searchKeyword.toLowerCase()))
             .map((project) => {
             const state = projectStates[project.encodedPath] || { isExpanded: false, isLoading: false, sessions: [], error: null };
+            const projectNumber = projectNumbers[project.fullPath];
 
             return (
               <div key={project.encodedPath} className="mb-3">
@@ -309,6 +312,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
                   </svg>
 
                   {/* Project Path */}
+                  {projectNumber && <SessionNumberBadge projectNumber={projectNumber} />}
                   <span className="flex-1 text-xs font-medium text-foreground truncate" data-tooltip={project.fullPath}>
                     {project.fullPath}
                   </span>
@@ -338,7 +342,12 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
 
                     {!state.isLoading && !state.error && (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {state.sessions.map((session) => (
+                        {state.sessions.map((session) => {
+                          const fileName = session.path.split('/').pop() || '';
+                          const sessionId = session.sessionId || fileName.replace('.jsonl', '');
+                          const number = sessionNumbers[`${project.fullPath}\n${sessionId}`];
+                          const [mappedProjectNumber, sessionNumber] = number?.split('.') ?? [];
+                          return (
                           <div
                             key={session.path}
                             onClick={() => handleSessionClick(project.fullPath, session)}
@@ -350,6 +359,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
                               <h4 className="text-xs font-medium text-foreground truncate" data-tooltip={session.title}>
                                 {session.title}
                               </h4>
+                              {number && <SessionNumberBadge projectNumber={mappedProjectNumber} sessionNumber={sessionNumber} className="ml-auto" />}
                             </div>
 
                             {/* Session Time */}
@@ -391,7 +401,8 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
                               ))}
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

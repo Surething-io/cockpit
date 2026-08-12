@@ -120,6 +120,14 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
   // in Chat, so without this a jump from the scheduled-tasks / recent / pinned panels would
   // never re-fetch messages appended externally (e.g. a scheduled-task run).
   const [sessionRefresh, setSessionRefresh] = useState<{ sessionId: string; nonce: number } | null>(null);
+  const [projectNumber, setProjectNumber] = useState<number | undefined>();
+
+  useEffect(() => {
+    // The parent's initial visibility message may precede this frame's listener.
+    // Request the current number explicitly so project badges never depend on mount timing.
+    // eslint-disable-next-line no-restricted-syntax
+    window.parent.postMessage({ type: 'GET_PROJECT_NUMBER', cwd: initialCwd }, '*');
+  }, [initialCwd]);
 
   // Restore activeView from project-settings. Skip when the URL forced a view
   // (initialView): a "jump into a session" open must land on the requested view
@@ -257,6 +265,13 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
   // Listen for messages from the parent window (used by Workspace to switch sessions)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'PROJECT_NUMBER' && typeof event.data?.projectNumber === 'number') {
+        setProjectNumber(event.data.projectNumber);
+        return;
+      }
+      if (event.data?.type === 'IFRAME_VISIBILITY' && typeof event.data?.projectNumber === 'number') {
+        setProjectNumber(event.data.projectNumber);
+      }
       if (event.data?.type === 'GET_SESSION_NUMBERS' && event.data?.requestId && initialCwd) {
         // Cross-iframe request/reply: the parent cannot observe this frame's live
         // tab order through the app-level topic bus.
@@ -602,6 +617,8 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
           onClose={() => setIsProjectSessionsOpen(false)}
           cwd={initialCwd}
           onSelectSession={handleSelectSession}
+          projectNumber={projectNumber}
+          openSessionIds={tabs.map((tab) => tab.sessionId)}
         />
       )}
 

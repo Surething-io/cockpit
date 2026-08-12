@@ -7,6 +7,7 @@ import { Topics } from '@cockpit/effect-services';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { loadSessionsByProject } from './effect/agentClient';
 import { EngineBadge } from './EngineBadge';
+import { SessionNumberBadge } from './SessionNumberBadge';
 
 interface SessionInfo {
   sessionId?: string;
@@ -29,9 +30,11 @@ interface ProjectSessionsModalProps {
    * from session.json + the transcript's store, so this list does not carry them.
    */
   onSelectSession?: (sessionId: string, title?: string) => void;
+  projectNumber?: number;
+  openSessionIds?: Array<string | undefined>;
 }
 
-export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: ProjectSessionsModalProps) {
+export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession, projectNumber, openSessionIds = [] }: ProjectSessionsModalProps) {
   const { t } = useTranslation();
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -209,7 +212,11 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
 
           {!isLoading && !error && filteredSessions.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredSessions.map((session) => (
+              {filteredSessions.map((session) => {
+                const fileName = session.path.split('/').pop() || '';
+                const sessionId = session.sessionId || fileName.replace('.jsonl', '');
+                const sessionIndex = openSessionIds.indexOf(sessionId);
+                return (
                 <div
                   key={session.path}
                   onClick={() => handleSessionClick(session)}
@@ -221,6 +228,9 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
                     <h4 className="text-xs font-medium text-foreground truncate" data-tooltip={session.title}>
                       {session.title}
                     </h4>
+                    {projectNumber && sessionIndex >= 0 && (
+                      <SessionNumberBadge projectNumber={projectNumber} sessionNumber={sessionIndex + 1} className="ml-auto" />
+                    )}
                   </div>
 
                   {/* Session Time */}
@@ -262,7 +272,8 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession }: 
                     ))}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

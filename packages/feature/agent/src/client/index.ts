@@ -27,6 +27,7 @@ export { MobileApp } from './mobile/MobileApp';
 export { PinnedSessionsPanel } from './PinnedSessionsPanel';
 export { ScheduledTasksPanel } from './ScheduledTasksPanel';
 export { GlobalSessionMonitor, type GlobalSession } from './GlobalSessionMonitor';
+export { SessionNumberBadge } from './SessionNumberBadge';
 export { SessionCompleteToastContainer, showSessionCompleteToast } from './SessionCompleteToast';
 
 // Chat ancillary UI

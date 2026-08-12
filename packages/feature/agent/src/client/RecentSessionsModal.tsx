@@ -5,11 +5,13 @@ import { useTranslation } from 'react-i18next';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { loadRecentSessions, type RecentSessionInfo } from './effect/agentClient';
 import { EngineBadge } from './EngineBadge';
+import { SessionNumberBadge } from './SessionNumberBadge';
 
 interface RecentSessionsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSwitchProject: (cwd: string, sessionId: string) => void;
+  sessionNumbers?: Record<string, string>;
 }
 
 /**
@@ -25,7 +27,7 @@ interface RecentSessionsModalProps {
  * Uses a full-viewport `fixed inset-0` overlay so it escapes the three-panel
  * SwipeableViewContainer boundaries (see CLAUDE.md UI layout notes).
  */
-export function RecentSessionsModal({ isOpen, onClose, onSwitchProject }: RecentSessionsModalProps) {
+export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionNumbers = {} }: RecentSessionsModalProps) {
   const { t } = useTranslation();
   const [sessions, setSessions] = useState<RecentSessionInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -209,6 +211,10 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject }: Recent
                     {session.status === 'unread' && (
                       <span className="text-[10px] text-red-500 flex-shrink-0">{t('sessions.done')}</span>
                     )}
+                    {sessionNumbers[`${session.cwd}\n${session.sessionId}`] && (() => {
+                      const [projectNumber, sessionNumber] = sessionNumbers[`${session.cwd}\n${session.sessionId}`].split('.');
+                      return <SessionNumberBadge projectNumber={projectNumber} sessionNumber={sessionNumber} className="ml-auto" />;
+                    })()}
                   </div>
 
                   {/* Session title (ai-title / summary / first user message) */}

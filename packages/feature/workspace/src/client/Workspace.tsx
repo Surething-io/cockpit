@@ -33,6 +33,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   const [isHtmlAppsOpen, setIsHtmlAppsOpen] = useState(false);
   const [htmlAppPreviews, setHtmlAppPreviews] = useState<HtmlAppPreview[]>([]);
   const [activeHtmlAppPreviewPath, setActiveHtmlAppPreviewPath] = useState<string | null>(null);
+  const [sessionNumbers, setSessionNumbers] = useState<Record<string, string>>({});
   const [isLoaded, setIsLoaded] = useState(false);
   // Lazy load: only render project iframes that have been activated before (ever-growing set)
   const [loadedCwds, setLoadedCwds] = useState<Set<string>>(new Set());
@@ -102,7 +103,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
     for (const [cwd, iframe] of iframeRefs.current.entries()) {
       const isActive = projects[activeIndex]?.cwd === cwd;
       iframe.contentWindow?.postMessage(
-        { type: 'IFRAME_VISIBILITY', visible: isActive },
+        { type: 'IFRAME_VISIBILITY', visible: isActive, projectNumber: projects.findIndex((project) => project.cwd === cwd) + 1 },
         '*'
       );
     }
@@ -151,6 +152,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
       const finish = () => {
         window.removeEventListener('message', handleMessage);
         clearTimeout(timeoutId);
+        setSessionNumbers(numbers);
         resolve(numbers);
       };
       const handleMessage = (event: MessageEvent) => {
@@ -171,6 +173,11 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
       frames.forEach((frame) => frame.contentWindow?.postMessage({ type: 'GET_SESSION_NUMBERS', requestId }, '*'));
     });
   }, [projects]);
+  const projectNumbers = Object.fromEntries(projects.map((project, index) => [project.cwd, index + 1]));
+
+  useEffect(() => {
+    if (isSessionBrowserOpen) void resolveSessionNumbers();
+  }, [isSessionBrowserOpen, resolveSessionNumbers]);
 
   // Utility function to update the browser address bar URL
   const updateUrl = useCallback((cwd: string, sessionId?: string) => {
@@ -228,6 +235,17 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   // Listen for messages from iframes
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'GET_PROJECT_NUMBER') {
+        const projectIndex = projects.findIndex((project) => project.cwd === event.data.cwd);
+        if (projectIndex >= 0 && event.source && 'postMessage' in event.source) {
+          // Cross-iframe reply; app topics do not address a specific child frame.
+          (event.source as Window).postMessage({
+            type: 'PROJECT_NUMBER',
+            projectNumber: projectIndex + 1,
+          }, '*');
+        }
+        return;
+      }
       // Session ID change notification (tab switch inside iframe)
       if (event.data?.type === 'SESSION_CHANGE' && event.data?.cwd && event.data?.sessionId) {
         const { cwd, sessionId } = event.data;
@@ -587,6 +605,8 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         isOpen={isSessionBrowserOpen}
         onClose={() => setIsSessionBrowserOpen(false)}
         onSelectSession={handleAddProject}
+        sessionNumbers={sessionNumbers}
+        projectNumbers={projectNumbers}
         onAddProject={(cwd) => {
           const existingIndex = projects.findIndex(p => p.cwd === cwd);
           if (existingIndex >= 0) {

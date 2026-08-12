@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DevKit</title>
+<meta name="cockpit-name" content="devkit">
+<meta name="description" content="Offline developer toolbox: Base64, URL, JSON, hashes, timestamps, UUIDs">
+<meta name="cockpit-icon" content="🧰">
+<!-- Opt into the SDK's theme handling: follows the Cockpit host, falls back to
+     the OS outside it, and mounts the draggable light/dark toggle. -->
+<meta name="cockpit-theme" content="auto">
+<link rel="stylesheet" href="/html-lib/theme.css">
+<style>
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--background); color: var(--foreground);
+    font-family: var(--font-sans); font-size: 13px;
+  }
+  #root { height: 100%; }
+  .app { display: flex; flex-direction: column; height: 100%; }
+
+  /* ---- Tab bar. right: 44px on the last tab is not needed -- the SDK theme
+     toggle floats and is draggable, so we do not reserve space for it. ---- */
+  .tabs {
+    display: flex; gap: 2px; flex-wrap: wrap;
+    padding: 8px 10px 0; border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    padding: 6px 14px; border: none; border-radius: var(--radius) var(--radius) 0 0;
+    background: transparent; color: var(--muted-foreground);
+    font-family: inherit; font-size: 13px; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--foreground); }
+  .tab.active {
+    color: var(--brand); border-bottom-color: var(--brand); font-weight: 600;
+  }
+
+  /* ---- Panel scaffold ---- */
+  .panel {
+    flex: 1; display: flex; flex-direction: column; min-height: 0;
+    padding: 10px 12px 12px; gap: 10px;
+  }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-height: 26px; }
+  .bar-note { color: var(--muted-foreground); font-size: 12px; }
+  .cols {
+    flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-height: 0;
+  }
+  @media (max-width: 720px) { .cols { grid-template-columns: 1fr; } }
+
+  .box {
+    display: flex; flex-direction: column; min-height: 0; min-width: 0;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--card); overflow: hidden;
+  }
+  .box-hd {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 5px 6px 5px 10px; border-bottom: 1px solid var(--border);
+    font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--muted-foreground); flex: none;
+  }
+  .box-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+  textarea.io, pre.io {
+    flex: 1; min-height: 0; margin: 0; padding: 10px;
+    border: none; outline: none; resize: none;
+    background: transparent; color: var(--card-foreground);
+    font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6;
+    white-space: pre-wrap; word-break: break-word; overflow: auto;
+  }
+  textarea.io::placeholder { color: var(--muted-foreground); opacity: .7; }
+  pre.io.error { color: var(--destructive); }
+  pre.io.muted { color: var(--muted-foreground); }
+
+  /* ---- Controls ---- */
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .seg-btn {
+    padding: 4px 12px; border: none; background: transparent;
+    color: var(--muted-foreground); font-family: inherit; font-size: 12px; cursor: pointer;
+  }
+  .seg-btn + .seg-btn { border-left: 1px solid var(--border); }
+  .seg-btn:hover { color: var(--foreground); }
+  /* Text on a brand fill uses --background, not --brand-foreground. The latter
+     is teal-11 — a brand *tint* meant for brand-coloured text on a normal
+     surface — so on a brand fill it lands at ~1.7:1 and is unreadable.
+     --background inverts with the theme exactly opposite to how --brand does
+     (light: near-white on dark teal; dark: near-black on lighter teal), so this
+     one declaration stays legible in both without a .dark override. */
+  .seg-btn.active { background: var(--brand); color: var(--background); }
+
+  .btn {
+    padding: 4px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--card); color: var(--foreground);
+    font-family: inherit; font-size: 12px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--brand); color: var(--brand); }
+  .btn.mini { padding: 2px 8px; font-size: 11px; text-transform: none; letter-spacing: 0; }
+
+  .check { display: inline-flex; align-items: center; gap: 5px; color: var(--muted-foreground); font-size: 12px; cursor: pointer; }
+  .check input { accent-color: var(--brand); margin: 0; }
+
+  .num {
+    width: 58px; padding: 4px 6px; border: 1px solid var(--border);
+    border-radius: var(--radius); background: var(--background); color: var(--foreground);
+    font-family: var(--font-mono); font-size: 12px;
+  }
+  .text-in {
+    flex: 1; min-width: 140px; padding: 6px 9px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--background); color: var(--foreground);
+    font-family: var(--font-mono); font-size: 12.5px; outline: none;
+  }
+  .text-in:focus { border-color: var(--brand); }
+
+  /* ---- Hash rows ---- */
+  .rows { flex: 1; min-height: 0; overflow: auto; padding: 4px; }
+  .row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 6px 7px 10px; border-radius: var(--radius);
+  }
+  .row + .row { border-top: 1px solid var(--border); }
+  .row-label {
+    flex: none; width: 74px; color: var(--muted-foreground);
+    font-size: 11px; letter-spacing: .04em;
+  }
+  .row-value {
+    flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 12.5px;
+    word-break: break-all; color: var(--card-foreground);
+  }
+  .row-value.muted { color: var(--muted-foreground); }
+
+  /* ---- Stacked sections (timestamp, JWT) ---- */
+  .stack { flex: 1; min-height: 0; overflow: auto; }
+  .section { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+  .section + .section { border-top: 1px solid var(--border); }
+  .section-title { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted-foreground); }
+  .section-hd { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .mono-block {
+    margin: 0; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6;
+    white-space: pre-wrap; word-break: break-word; color: var(--card-foreground);
+  }
+  .mono-block.error { color: var(--destructive); }
+  .mono-block.muted { color: var(--muted-foreground); }
+  .kv { display: flex; align-items: baseline; gap: 8px; padding: 2px 0; }
+  .kv-k { flex: none; width: 66px; color: var(--muted-foreground); font-size: 11px; }
+  .kv-v { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 12.5px; word-break: break-all; }
+  .kv-v.error { color: var(--destructive); }
+  .kv-v.muted { color: var(--muted-foreground); }
+
+  /* ---- Toast ---- */
+  .toast {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    padding: 7px 16px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--card); color: var(--foreground); font-size: 12px;
+    box-shadow: 0 4px 16px hsl(var(--slate-12) / .18); z-index: 50;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="./md5.js"></script>
+<script src="/html-lib/react.production.min.js"></script>
+<script src="/html-lib/react-dom.production.min.js"></script>
+<script src="/html-lib/babel.min.js"></script>
+<script>
+  (async () => {
+    const src = await (await fetch('./app.jsx')).text();
+    // Must be the classic runtime: the default (automatic) injects an
+    // `import react/jsx-runtime`, which throws "Cannot use import statement
+    // outside a module" once this is appended as a plain script.
+    const { code } = Babel.transform(src, { presets: [['react', { runtime: 'classic' }]] });
+    const s = document.createElement('script'); s.textContent = code; document.body.appendChild(s);
+  })();
+</script>
+</body>
+</html>

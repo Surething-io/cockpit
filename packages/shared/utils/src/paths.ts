@@ -31,6 +31,13 @@ export const HTML_APPS_FILE = join(COCKPIT_DIR, 'html.json');
 export const REVIEW_DIR = join(COCKPIT_DIR, 'review');
 export const REVIEW_SIGNAL_FILE = join(REVIEW_DIR, '_signal');
 
+// Built-in HTML apps shipped inside the package (/apps), served by
+// /apps/builtin/<name>/. NOT derived from COCKPIT_DIR — this is the install
+// root, so it moves with the installation (npm global dir vs repo checkout)
+// and must never be persisted into user data such as html.json.
+// server.mjs sets COCKPIT_ROOT; cwd is the dev fallback.
+export const APPS_DIR = join(process.env.COCKPIT_ROOT || process.cwd(), 'apps');
+
 /**
  * Write to the signal file to notify ReviewWatcher of a comment change.
  * Synchronous write ensures fs.watch can detect the change.

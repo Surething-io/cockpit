@@ -19,6 +19,7 @@ import {
   errorToStatus,
   type CockpitError,
 } from "@cockpit/effect-core"
+import { isBuiltinId } from "./builtins"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -65,6 +66,13 @@ export async function DELETE(
       if (!id) {
         return yield* Effect.fail(
           new ValidationError({ field: "id", reason: "missing" })
+        )
+      }
+      // Built-in cards are virtual — they live in no file, so there is nothing
+      // to remove. The UI hides their delete button; this guards the endpoint.
+      if (isBuiltinId(id)) {
+        return yield* Effect.fail(
+          new ValidationError({ field: "id", reason: "built-in apps cannot be removed" })
         )
       }
       const removed = yield* Effect.tryPromise({

@@ -55,6 +55,7 @@ import {
   resolveBashCwd,
   fromLocalAppUrl,
   isAbsolutePath,
+  APPS_DIR,
 } from "@cockpit/shared-utils"
 import {
   statWithSymlink,
@@ -67,9 +68,6 @@ export const dynamic = "force-dynamic"
 const PREFIX = "/apps/"
 const BUILTIN = "builtin/"
 const LOCAL = "local/"
-
-/** Package root — server.mjs sets COCKPIT_ROOT; cwd is the fallback in dev. */
-const APPS_DIR = path.join(process.env.COCKPIT_ROOT || process.cwd(), "apps")
 
 /** Text/asset types the shared image/pdf MIME table doesn't cover */
 const EXTRA_MIME: Record<string, string> = {

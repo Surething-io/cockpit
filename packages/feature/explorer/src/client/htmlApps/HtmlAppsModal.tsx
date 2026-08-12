@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@cockpit/shared-ui';
-import { ExternalLink, Minimize2, SquareTerminal, Trash2, Plus, X, Search, Copy } from 'lucide-react';
+import { AppWindow, ExternalLink, Minimize2, SquareTerminal, Trash2, Plus, X, Search, Copy } from 'lucide-react';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { toExternalBrowserAppUrl, toLocalAppUrl } from '@cockpit/shared-utils';
 import { HtmlPreview } from '../HtmlPreview';
@@ -88,6 +88,14 @@ export function HtmlAppsModal({
         a.path.toLowerCase().includes(q),
     );
   }, [apps, query]);
+
+  // Built-in cards ship with Cockpit and are always present, so they must not
+  // count towards "is this panel empty?" — otherwise the first-run guidance
+  // below could never appear again.
+  const userAppCount = useMemo(() => apps.filter((a) => !a.builtin).length, [apps]);
+  const searching = query.trim().length > 0;
+  const showGuidance = !searching && userAppCount === 0;
+
   const docsUrl = i18n.resolvedLanguage?.startsWith('zh')
     ? 'https://opencockpit.dev/zh/docs/agent/html-apps/'
     : 'https://opencockpit.dev/en/docs/agent/html-apps/';
@@ -205,10 +213,42 @@ export function HtmlAppsModal({
             <div className="flex-1 overflow-y-auto p-4">
               {loading ? (
                 <div className="text-center text-muted-foreground py-8 text-sm">{t('common.loading')}</div>
-              ) : filtered.length === 0 ? (
-                <div className="text-center text-muted-foreground py-8 text-sm space-y-2">
-                  {apps.length === 0 ? (
-                    <>
+              ) : (
+                <>
+                  {filtered.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {filtered.map((app) => (
+                        <HtmlAppCard
+                          key={app.id}
+                          app={app}
+                          onOpenConsole={() => openBubble(app.path)}
+                          onOpenExternal={() => openExternal(app.path)}
+                          onPreview={() => {
+                            onShowHtmlAppPreview({ path: app.path, title: app.title, icon: app.icon });
+                            handleClose();
+                          }}
+                          onDelete={() => handleDelete(app.id)}
+                          onCopyPath={() => handleCopyPath(app.path)}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {filtered.length === 0 && searching && (
+                    <div className="text-center text-muted-foreground py-8 text-sm">
+                      {t('htmlApps.emptyNoMatch')}
+                    </div>
+                  )}
+
+                  {/* Guidance is keyed to *user* apps, so it survives the
+                      built-in cards always being present. When cards sit above
+                      it, it becomes a footer rather than a full empty state. */}
+                  {showGuidance && (
+                    <div
+                      className={`text-center text-muted-foreground py-8 text-sm space-y-2${
+                        filtered.length > 0 ? ' mt-4 border-t border-border/60' : ''
+                      }`}
+                    >
                       <p>{t('htmlApps.emptyNoApps')}</p>
                       <p>
                         {t('htmlApps.emptyCreatePrefix')}{' '}
@@ -233,26 +273,9 @@ export function HtmlAppsModal({
                           {t('htmlApps.viewDocs')}
                         </a>
                       </p>
-                    </>
-                  ) : t('htmlApps.emptyNoMatch')}
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {filtered.map((app) => (
-                    <HtmlAppCard
-                      key={app.id}
-                      app={app}
-                      onOpenConsole={() => openBubble(app.path)}
-                      onOpenExternal={() => openExternal(app.path)}
-                      onPreview={() => {
-                        onShowHtmlAppPreview({ path: app.path, title: app.title, icon: app.icon });
-                        handleClose();
-                      }}
-                      onDelete={() => handleDelete(app.id)}
-                      onCopyPath={() => handleCopyPath(app.path)}
-                    />
-                  ))}
-                </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -296,15 +319,33 @@ export function HtmlAppsModal({
 
       {htmlAppPreviews.map((item) => {
         const visible = activeHtmlAppPreviewPath === item.path;
+        // bg-black/50 matches every other dialog backdrop in the app
+        // (SessionBrowser, this file's own panel, HtmlPreviewModal). Clicking
+        // it minimises rather than closes — the preview stays available as a
+        // dock pill, which is the pre-existing behaviour.
         return (
           <div
             key={item.path}
-            className={visible ? 'fixed inset-0 z-[60] flex items-center justify-center p-0 md:p-4' : 'hidden'}
+            className={visible ? 'fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-0 md:p-4' : 'hidden'}
             onClick={onMinimizeHtmlAppPreview}
           >
-            <div className="bg-card shadow-xl w-full h-full md:max-w-[90%] md:h-[90vh] md:rounded-lg flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            {/* The preview iframe paints the app's own background, which can
+                sit flush against the dimmed backdrop and blur the window edge.
+                A brand outline marks it, kept just under full strength so it
+                reads as a boundary rather than a highlighted/selected state.
+
+                A faint brand border over the stock depth shadow is enough —
+                the backdrop already separates the window from the page. */}
+            <div className="bg-card shadow-xl border border-brand/30 w-full h-full md:max-w-[90%] md:h-[90vh] md:rounded-lg flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-border flex-shrink-0">
-                <span className="text-sm text-muted-foreground truncate min-w-0 flex-1" data-tooltip={item.path}>{item.title}</span>
+                {/* Same icon treatment as the minimised dock pill, so an app
+                    looks the same collapsed and expanded. */}
+                <span className="flex items-center gap-2 min-w-0 flex-1">
+                  {item.icon
+                    ? <span className="text-base leading-none flex-shrink-0">{item.icon}</span>
+                    : <AppWindow className="w-4 h-4 flex-shrink-0" />}
+                  <span className="text-sm text-muted-foreground truncate min-w-0" data-tooltip={item.path}>{item.title}</span>
+                </span>
                 <button onClick={onMinimizeHtmlAppPreview} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0" title={t('common.minimize')}>
                   <Minimize2 className="w-4 h-4" />
                 </button>
@@ -357,6 +398,7 @@ function HtmlAppCard({ app, onOpenConsole, onOpenExternal, onPreview, onDelete, 
           <div className="font-mono text-[11px] text-muted-foreground truncate" data-tooltip={`/${app.name}`}>/{app.name}</div>
         </div>
         {!app.valid && <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-red-9/15 text-red-11">{t('htmlApps.invalid')}</span>}
+        {app.builtin && <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{t('htmlApps.builtin')}</span>}
         <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={onOpenConsole}
@@ -374,7 +416,8 @@ function HtmlAppCard({ app, onOpenConsole, onOpenExternal, onPreview, onDelete, 
           >
             <ExternalLink className="w-4 h-4" />
           </button>
-          {confirmDel ? (
+          {/* Built-ins are virtual — there is no html.json entry to remove. */}
+          {app.builtin ? null : confirmDel ? (
             <>
               <button onClick={() => { setConfirmDel(false); onDelete(); }} className="px-2 py-1 text-xs rounded bg-red-9 text-white hover:bg-red-10">{t('common.confirm')}</button>
               <button onClick={() => setConfirmDel(false)} className="px-2 py-1 text-xs rounded border border-border text-muted-foreground hover:text-foreground">{t('common.cancel')}</button>

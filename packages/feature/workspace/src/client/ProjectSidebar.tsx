@@ -45,6 +45,27 @@ function getProjectName(cwd: string): string {
   return parts[parts.length - 1] || cwd;
 }
 
+function AppsDockIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="4" y="4" width="6" height="6" rx="1.5" />
+      <rect x="4" y="14" width="6" height="6" rx="1.5" />
+      <rect x="14" y="14" width="6" height="6" rx="1.5" />
+      <path d="M17 3v8" />
+      <path d="M13 7h8" />
+    </svg>
+  );
+}
+
 function HtmlAppIcon({ item, active, onClick, className = '' }: {
   item: HtmlAppPreview;
   active: boolean;
@@ -101,7 +122,7 @@ function HtmlAppPreviewDock({ collapsed, previews, activePath, onOpenApps, onSho
       title={t('htmlApps.title')}
     >
       <span className="h-7 w-7 flex-shrink-0 rounded-md border border-border/70 bg-transparent flex items-center justify-center">
-        <AppWindow className="w-4 h-4" />
+        <AppsDockIcon className="w-4 h-4" />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-xs font-medium truncate">{t('htmlApps.title')}</span>
@@ -149,7 +170,7 @@ function HtmlAppPreviewDock({ collapsed, previews, activePath, onOpenApps, onSho
           }`}
           title={t('htmlApps.title')}
         >
-          <AppWindow className="w-4 h-4" />
+          <AppsDockIcon className="w-4 h-4" />
         </button>
         {popoverOpen === 'collapsed' && (
           <div className="absolute left-full bottom-0 ml-2 w-64 rounded-lg border border-border bg-card shadow-xl z-50">
@@ -169,7 +190,7 @@ function HtmlAppPreviewDock({ collapsed, previews, activePath, onOpenApps, onSho
           className="h-8 w-8 rounded-md border border-border/70 bg-transparent text-muted-foreground hover:text-brand hover:border-brand/70 active:scale-95 transition-all flex items-center justify-center"
           title={t('htmlApps.title')}
         >
-          <AppWindow className="w-4 h-4" />
+          <AppsDockIcon className="w-4 h-4" />
         </button>
         {visibleItems.map((item) => (
           <HtmlAppIcon

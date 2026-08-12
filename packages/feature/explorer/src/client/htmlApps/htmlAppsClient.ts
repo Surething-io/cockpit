@@ -16,6 +16,11 @@ export interface HtmlAppInfo {
   description: string
   icon?: string
   valid: boolean
+  /**
+   * Shipped under /apps and merged in at read time — not stored in html.json,
+   * so it cannot be deleted. Absent/false for user-registered apps.
+   */
+  builtin?: boolean
 }
 
 const httpJson = <A>(url: string, init?: RequestInit): Effect.Effect<A, AppError> =>

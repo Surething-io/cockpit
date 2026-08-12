@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, KIMI_PROJECTS_DIR, GLM_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath, getBuiltinSessionsRoot, listCodexSessions, normalizeCodexSessionId } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath, getBuiltinSessionRoots, listCodexSessions, normalizeCodexSessionId } from '@cockpit/shared-utils';
 import { handler } from '@cockpit/effect-runtime/server';
 import { AppError } from '@cockpit/effect-core';
 
@@ -141,10 +141,9 @@ function countSessionFiles(dir: string): number {
  * goes through here — they share the dir-per-project layout and the merge rule, and differ
  * only in where a project's real cwd can be recovered from.
  *
- * `selfDescribing`: the store's own transcripts carry the cwd, so its project dir can resolve
- * the path (Claude-format stores written by the CLI / Agent SDK — deepseek/kimi/glm
- * SDK). The Built-in Agent stores (ollama-, deepseek-, kimi- and glm-sessions) write no cwd
- * field, so they fall back to the Claude projects dir and then the global-state lookup.
+ * The Built-in Agent stores (ollama-, deepseek-, kimi- and glm-sessions) write no cwd field
+ * in their transcripts, so a project's real path is recovered from the Claude projects dir
+ * and then the global-state lookup rather than from the store itself.
  *
  * Path resolution runs only for projects not already in the map: an existing entry already
  * has a resolved path, so an unresolvable sibling store must still contribute its count.
@@ -153,7 +152,6 @@ function mergeStoreIntoProjects(
   root: string,
   projectMap: Map<string, { fullPath: string; sessionCount: number }>,
   cwdLookup: Map<string, string>,
-  selfDescribing: boolean,
 ): void {
   if (!fs.existsSync(root)) return;
 
@@ -178,10 +176,11 @@ function mergeStoreIntoProjects(
     }
 
     const claudeDir = path.join(CLAUDE_PROJECTS_DIR, dirName);
-    const pathSource = selfDescribing
-      ? storeDir
-      : (fs.existsSync(claudeDir) ? claudeDir : undefined);
-    const fullPath = resolveProjectPath(dirName, cwdLookup, pathSource);
+    const fullPath = resolveProjectPath(
+      dirName,
+      cwdLookup,
+      fs.existsSync(claudeDir) ? claudeDir : undefined,
+    );
     if (!fullPath) continue;
 
     projectMap.set(dirName, { fullPath, sessionCount: count });
@@ -248,16 +247,12 @@ async function buildProjectsList() {
       }
     }
 
-    // --- Source 1b: DeepSeek/Kimi/GLM SDK-mode projects dirs (written by the Claude Agent SDK) ---
-    mergeStoreIntoProjects(DEEPSEEK_PROJECTS_DIR, projectMap, cwdLookup, true);
-    mergeStoreIntoProjects(KIMI_PROJECTS_DIR, projectMap, cwdLookup, true);
-    mergeStoreIntoProjects(GLM_PROJECTS_DIR, projectMap, cwdLookup, true);
-
-    // --- Source 2: Built-in Agent stores (ollama, deepseek/kimi/glm Built-in Agent mode) ---
-    mergeStoreIntoProjects(getBuiltinSessionsRoot('ollama'), projectMap, cwdLookup, false);
-    mergeStoreIntoProjects(getBuiltinSessionsRoot('deepseek'), projectMap, cwdLookup, false);
-    mergeStoreIntoProjects(getBuiltinSessionsRoot('kimi'), projectMap, cwdLookup, false);
-    mergeStoreIntoProjects(getBuiltinSessionsRoot('glm'), projectMap, cwdLookup, false);
+    // --- Source 2: Built-in Agent stores (ollama, deepseek, kimi, glm) ---
+    // ~/.cockpit/<engine>/projects is deliberately NOT scanned: those are transcripts from
+    // the removed Claude Agent SDK mode, and no loop remains that can resume them.
+    for (const root of getBuiltinSessionRoots()) {
+      mergeStoreIntoProjects(root, projectMap, cwdLookup);
+    }
 
     // --- Source 3: Codex sessions via cockpit session.json + global Codex index ---
     const codexByProject = new Map<string, Set<string>>();

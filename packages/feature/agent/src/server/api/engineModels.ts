@@ -6,11 +6,10 @@
  * release, and their OpenAI-compatible /models is the only listing API either of
  * them exposes.
  *
- * The metadata fields are optional because the two providers report different
- * amounts of it: DeepSeek returns bare ids, Kimi also returns display names,
- * context windows and thinking-effort defaults. The picker persists whatever it
- * gets alongside the chosen model, and engines/kimi.ts turns it into the SDK's
- * context/effort env — see EngineModelSettings.
+ * The metadata fields are optional because the providers report different amounts
+ * of it: DeepSeek and GLM return bare ids, Kimi also returns display names, context
+ * windows and thinking-effort defaults. The picker shows whatever it gets; nothing
+ * beyond the id is persisted.
  */
 import { Effect } from 'effect';
 import { handler, ok } from '@cockpit/effect-runtime/server';
@@ -22,9 +21,9 @@ export interface EngineModelInfo {
   id: string;
   /** Human-readable name when the provider has one, else the picker shows the id. */
   label?: string;
-  /** Context window, fed to CLAUDE_CODE_MAX_CONTEXT_TOKENS in SDK mode. */
+  /** Context window, shown next to the id in the picker when the provider reports one. */
   contextTokens?: number;
-  /** Default thinking effort, fed to CLAUDE_CODE_EFFORT_LEVEL in SDK mode. */
+  /** Default thinking effort, when the provider reports one. */
   effort?: string;
 }
 

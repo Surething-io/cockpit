@@ -1,15 +1,14 @@
 'use client';
 
 /**
- * DeepSeek account balance, shown inline on the execution-mode row.
+ * DeepSeek account balance, shown inline on the API-key row.
  *
  * Deliberately on demand rather than polled: the balance only moves when the
  * account spends, and a background poll on every open DeepSeek tab would hit
  * DeepSeek once per tab per interval for a number nobody is watching.
  *
- * Balance is a property of the API key, not of the execution mode — SDK and
- * Built-in Agent authenticate with the same key — so this is NOT gated on
- * `modeLocked` and stays usable after the session is locked.
+ * Balance is a property of the API key, so it stays usable for the life of the
+ * session — nothing about the chat state gates it.
  *
  * `hasKey` is passed down from Chat (fed by EngineConfigPicker) rather than
  * read here: a locally-cached copy would go stale the moment the user saves a

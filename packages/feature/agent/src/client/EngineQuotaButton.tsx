@@ -15,8 +15,7 @@
  * background poll on every open tab would hit the provider for a number nobody is
  * watching.
  *
- * Quota belongs to the API key, not to the execution mode — SDK and Built-in Agent
- * authenticate with the same key — so this is NOT gated on `modeLocked`.
+ * Quota belongs to the API key, so nothing about the chat state gates this.
  *
  * `hasKey` comes from Chat (fed by EngineConfigPicker) rather than being read here:
  * a locally-cached copy would go stale the moment the user saves a key.

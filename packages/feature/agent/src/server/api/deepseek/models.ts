@@ -1,10 +1,8 @@
 /**
  * /api/deepseek/models — model ids from DeepSeek's OpenAI-compatible /v1/models,
- * used by the Built-in Agent mode picker. SDK mode instead runs the fixed
- * ALLOWED_MODELS pair in engines/deepseek.ts, because the Anthropic-compatible
- * endpoint it talks to has no listing API.
+ * which is the picker's whole list: there is no hardcoded whitelist to fall back on.
  *
- * Behaviour lives in ../engineModels (shared with Kimi).
+ * Behaviour lives in ../engineModels (shared with Kimi and GLM).
  */
 import { deepseekApiKey } from '../../engines/credentials';
 import { makeModelsRoute } from '../engineModels';

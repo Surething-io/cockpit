@@ -1,38 +1,32 @@
 /**
- * Engine shape for providers that expose BOTH protocols behind one API key:
- * an Anthropic-compatible endpoint (driven by the Claude Agent SDK) and an
- * OpenAI-compatible one (driven by our own Built-in Agent loop). DeepSeek and
- * Kimi are both exactly this, so the lifecycle — key preflight, model
- * resolution, spawn env, mode branch — lives here once and each provider
- * contributes only its endpoints and its model rules.
+ * Engine shape for providers reached by one API key over an OpenAI-compatible endpoint
+ * and driven by our own Built-in Agent loop (engines/builtinAgent). DeepSeek, Kimi and
+ * GLM are all exactly this, so the lifecycle — key preflight, model resolution, run —
+ * lives here once and each provider contributes only its endpoint and its defaults.
  *
- * What is deliberately NOT shared: the model *whitelist*. DeepSeek's
- * Anthropic-compatible endpoint has no listing API, so it hardcodes a pair;
- * Kimi and GLM list live models for both protocols. That difference is the whole
- * reason `resolveSdkModel` is a provider hook rather than a config field.
+ * These three used to ALSO offer a Claude Agent SDK mode against an Anthropic-compatible
+ * endpoint. That mode is gone. It cost every session a second dimension: two transcript
+ * stores that could not be switched between mid-session, a per-tab toggle, a second model
+ * key in settings, and a `mode` field threaded from the tab through dispatch down to the
+ * session store. Ollama's single-loop shape is the model now — one endpoint, one store,
+ * nothing to choose. Do not reintroduce a mode flag here; add a separate engine instead.
  */
-import { SETTINGS_FILE, getBuiltinSessionsRoot, readJsonFile, sanitizedSpawnEnv } from '@cockpit/shared-utils';
+import { SETTINGS_FILE, getBuiltinSessionsRoot, readJsonFile } from '@cockpit/shared-utils';
 import { getSessionTitle } from '../state/globalState';
-import { runSdkLoop, type BuildSdkOptions } from './shared/sdkLoop';
 import { runBuiltinAgent, requireTextPrompt, type BuiltinAgentConfig } from './builtinAgent';
 import { createOpenAiCompatModel } from './builtinAgent/model';
 import type { ApiKeyStore } from './credentials';
-import type { DispatchParams, EngineSpec, RunCtx } from './types';
+import type { DispatchParams, EngineSpec } from './types';
 
 /** Per-engine slice of settings.json. The API key is NOT here — see credentials.ts. */
 export interface EngineModelSettings {
-  /** SDK mode. */
-  model?: string;
-  /** Built-in Agent mode. Separate key so a builtin-only model never becomes the SDK default. */
-  builtinModel?: string;
   /**
-   * SDK mode: context window + thinking effort of the selected model, copied from the
-   * provider's live model metadata when the user picked it in the picker. Kept here
-   * rather than re-fetched at run time so starting a chat costs no extra round trip;
-   * the engine falls back to its own defaults when absent.
+   * Chosen model id. Named `builtinModel` rather than `model` because `model` was the
+   * removed SDK mode's key and still sits in existing settings.json files holding ids
+   * from the Anthropic-compatible endpoint's namespace — ids the OpenAI-compatible one
+   * may not serve. Reusing the name would silently adopt those.
    */
-  modelContextTokens?: number;
-  modelEffort?: string;
+  builtinModel?: string;
   /**
    * Chosen region id, for providers served from more than one (see `regions`). Absent
    * means "never chosen" — the UI language picks the default. Sessions are NOT
@@ -48,11 +42,9 @@ interface CockpitSettings {
   [key: string]: unknown;
 }
 
-/** The pair of base URLs one account is served from. */
+/** Where one account is served. */
 export interface EngineEndpoints {
-  /** Anthropic-compatible endpoint (SDK mode). */
-  anthropicBaseUrl: string;
-  /** OpenAI-compatible endpoint (Built-in Agent mode, model list, quota). */
+  /** OpenAI-compatible endpoint — chat, model list and quota all go here. */
   openAiBaseUrl: string;
 }
 
@@ -61,7 +53,7 @@ export interface AnthropicCompatProvider {
   name: string;
   /** Human-readable name, used in the "no API key" preflight error. */
   label: string;
-  /** Endpoints for single-region providers, and the fallback for multi-region ones. */
+  /** Endpoint for single-region providers, and the fallback for multi-region ones. */
   endpoints: EngineEndpoints;
   /**
    * Providers served from more than one region (GLM: open.bigmodel.cn vs api.z.ai).
@@ -73,25 +65,10 @@ export interface AnthropicCompatProvider {
     /** settings.language → region id, for accounts that never chose one explicitly. */
     defaultFor(language: string | undefined): string;
   };
-  /** CLAUDE_CONFIG_DIR for SDK mode — isolates sessions/credentials from the user's real ~/.claude. */
-  configDir: string;
   /** Fallback when a request carries no model and settings hold none. */
   defaultModel: string;
   apiKey: ApiKeyStore;
-  /** SDK mode: turn the requested/saved ids into the id to run. */
-  resolveSdkModel(requested: string | undefined, saved: string | undefined): string;
-  /**
-   * SDK mode: id as it goes on the wire, when it differs from the id the picker shows.
-   * Defaults to identity.
-   */
-  sdkWireModel?(model: string): string;
-  /** Model the SDK uses for small/fast subtasks (title gen, compaction). Defaults to the main model. */
-  smallFastModel?: string;
-  /** Provider-specific spawn env, merged last so it can override the shared defaults. */
-  sdkEnv?(model: string, settings: EngineModelSettings): Record<string, string | undefined>;
-  /** Set DISABLE_PROMPT_CACHING — for providers that run their own server-side prefix cache. */
-  disablePromptCaching?: boolean;
-  /** Built-in Agent mode sampling temperature; `null` omits the field. See BuiltinAgentConfig. */
+  /** Sampling temperature; `null` omits the field. See BuiltinAgentConfig. */
   builtinTemperature?: number | null;
 }
 
@@ -124,10 +101,10 @@ export async function readEngineEndpoints(p: AnthropicCompatProvider): Promise<E
   return resolveEndpoints(p, settings.engines?.[p.name] ?? {}, settings.language);
 }
 
-/** Built-in mode: the live model list is the whitelist and the picker already filtered
- *  against it — take the first non-empty candidate and let the API reject an unknown id
- *  with its own message. */
-function resolveBuiltinModel(
+/** The live model list is the whitelist and the picker already filtered against it — take
+ *  the first non-empty candidate and let the API reject an unknown id with its own
+ *  message. */
+function resolveModel(
   requested: string | undefined,
   saved: string | undefined,
   fallback: string,
@@ -137,7 +114,7 @@ function resolveBuiltinModel(
   return fallback;
 }
 
-function buildBuiltinConfig(
+function buildConfig(
   p: AnthropicCompatProvider,
   apiKey: string,
   endpoints: EngineEndpoints,
@@ -150,53 +127,6 @@ function buildBuiltinConfig(
     ...(p.builtinTemperature !== undefined && { temperature: p.builtinTemperature }),
   };
 }
-
-/** We must REMOVE ANTHROPIC_AUTH_TOKEN (not blank it): some SDK paths check "is defined"
- *  and would emit an empty Bearer header → 401 — hence the `undefined` override, which
- *  sanitizedSpawnEnv deletes rather than blanks.
- *
- *  Exported for tests: every value here fails SILENTLY when wrong (a bad context limit just
- *  compacts early, a bad model alias only 404s mid-turn), so it is worth pinning down. */
-export function buildEnv(opts: {
-  provider: AnthropicCompatProvider;
-  apiKey: string;
-  model: string;
-  settings: EngineModelSettings;
-  endpoints: EngineEndpoints;
-}): Record<string, string | undefined> {
-  const { provider: p, apiKey, model, settings, endpoints } = opts;
-  const wire = p.sdkWireModel ? p.sdkWireModel(model) : model;
-  return sanitizedSpawnEnv({
-    ANTHROPIC_AUTH_TOKEN: undefined,
-    ANTHROPIC_BASE_URL: endpoints.anthropicBaseUrl,
-    ANTHROPIC_API_KEY: apiKey, // both providers accept this as x-api-key
-    ANTHROPIC_MODEL: wire,
-    ANTHROPIC_SMALL_FAST_MODEL: p.smallFastModel ?? wire,
-    CLAUDE_CONFIG_DIR: p.configDir,
-    ...(p.disablePromptCaching && { DISABLE_PROMPT_CACHING: '1' }),
-    CLAUDE_CODE_USE_BEDROCK: '0',
-    CLAUDE_CODE_USE_VERTEX: '0',
-    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-    ...p.sdkEnv?.(model, settings),
-  });
-}
-
-function buildOptions(ctx: RunCtx, env: Record<string, string | undefined>): BuildSdkOptions {
-  return (abort, resume) => ({
-    ...(resume && { resume }),
-    ...(ctx.cwd && { cwd: ctx.cwd }),
-    settingSources: ['user', 'project', 'local'] as Array<'user' | 'project' | 'local'>,
-    permissionMode: 'bypassPermissions' as const,
-    allowDangerouslySkipPermissions: true,
-    includePartialMessages: true,
-    abortController: abort,
-    env,
-  });
-}
-
-/** Execution mode for this run. 'builtin' = Cockpit's own agent loop (engines/builtinAgent),
- *  anything else = Claude Agent SDK, which stays the default for existing sessions. */
-const isBuiltinMode = (params: DispatchParams): boolean => params.mode === 'builtin';
 
 export function makeAnthropicCompatSpec(p: AnthropicCompatProvider): EngineSpec {
   return {
@@ -213,16 +143,15 @@ export function makeAnthropicCompatSpec(p: AnthropicCompatProvider): EngineSpec 
           error: `${p.label} API key is not configured. Open the ${p.label} picker in the chat header to set one.`,
         };
       }
-      const requested = typeof params.model === 'string' ? params.model : undefined;
-      if (isBuiltinMode(params)) {
-        // The built-in loop has no image support — reject images-only messages here rather
-        // than letting the runner receive an undefined prompt.
-        const textCheck = requireTextPrompt(params);
-        if (!textCheck.ok) return textCheck;
-        params.model = resolveBuiltinModel(requested, saved.builtinModel, p.defaultModel);
-        return { ok: true as const };
-      }
-      params.model = p.resolveSdkModel(requested, saved.model);
+      // The built-in loop has no image support — reject images-only messages here rather
+      // than letting the runner receive an undefined prompt.
+      const textCheck = requireTextPrompt(params);
+      if (!textCheck.ok) return textCheck;
+      params.model = resolveModel(
+        typeof params.model === 'string' ? params.model : undefined,
+        saved.builtinModel,
+        p.defaultModel,
+      );
       return { ok: true as const };
     },
     runner: {
@@ -231,13 +160,7 @@ export function makeAnthropicCompatSpec(p: AnthropicCompatProvider): EngineSpec 
         const settings = await readSettings();
         const saved = settings.engines?.[p.name] ?? {};
         const endpoints = resolveEndpoints(p, saved, settings.language);
-        if (isBuiltinMode(ctx.params)) {
-          await runBuiltinAgent(ctx, buildBuiltinConfig(p, apiKey, endpoints));
-          return;
-        }
-        const model = typeof ctx.params.model === 'string' ? ctx.params.model : p.defaultModel;
-        const env = buildEnv({ provider: p, apiKey, model, settings: saved, endpoints });
-        await runSdkLoop(ctx, buildOptions(ctx, env));
+        await runBuiltinAgent(ctx, buildConfig(p, apiKey, endpoints));
       },
       resolveTitle: (cwd, sessionId) => getSessionTitle(cwd, sessionId),
     },

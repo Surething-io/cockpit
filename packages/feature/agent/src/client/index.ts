@@ -67,5 +67,4 @@ export type {
   ClaudeContextWindow,
   CodexModelId,
   CodexReasoningEffort,
-  ChatMode,
 } from './types';

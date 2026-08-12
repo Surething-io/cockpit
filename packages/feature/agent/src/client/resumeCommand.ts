@@ -4,10 +4,9 @@ import type { ChatEngine } from './types';
  * What the "copy resume command" button puts on the clipboard.
  *
  * Only the engines Cockpit drives through an external CLI can produce a runnable
- * command. The rest run in-process — the Agent SDK against an Anthropic-compatible
- * endpoint (kimi / glm / deepseek) or Cockpit's own builtin loop (ollama) — so there
- * is no command to paste; those copy `<engine> <sessionId>`, the two identifiers
- * needed to find the session again.
+ * command. The rest run in-process on Cockpit's own built-in agent loop (ollama,
+ * kimi, glm, deepseek), so there is no command to paste; those copy
+ * `<engine> <sessionId>`, the two identifiers needed to find the session again.
  *
  * Keep Codex's output in the interactive form humans paste into a terminal.
  */

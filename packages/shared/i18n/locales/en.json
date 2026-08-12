@@ -467,6 +467,8 @@
     "jumpToStart": "Jump to start",
     "jumpToLatest": "Jump to latest",
     "copyMessage": "Copy message",
+    "copyImage": "Copy image",
+    "copiedImage": "Image copied",
     "forkSession": "Fork session from here",
     "excerptTurn": "Excerpt this turn to a new session",
     "imageN": "Image {{index}}",

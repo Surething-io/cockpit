@@ -467,6 +467,8 @@
     "jumpToStart": "跳转到开始",
     "jumpToLatest": "跳转到最新",
     "copyMessage": "复制消息",
+    "copyImage": "复制图片",
+    "copiedImage": "已复制图片",
     "forkSession": "从此处分叉会话",
     "excerptTurn": "摘录本轮到新会话",
     "imageN": "图片 {{index}}",

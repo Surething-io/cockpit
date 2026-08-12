@@ -23,9 +23,6 @@ export interface DispatchParams {
   claudeFastMode?: boolean;
   claudeThinking?: boolean;
   codexReasoningEffort?: string;
-  // Execution mode. 'builtin' → the Built-in Agent loop (API-key engines only);
-  // absent/anything else → the vendor SDK loop. Runners that support only one mode ignore this.
-  mode?: string;
   // claude-only (other runners ignore)
   permissionMode?: string;
   // Send ONLY this turn to the model, no prior messages — each user message becomes an
@@ -33,14 +30,13 @@ export interface DispatchParams {
   // stays continuous; this only affects what the model is given.
   //
   // Honored by two different mechanisms:
-  //  - Built-in Agent (ollama, deepseek in mode:'builtin') simply omits the prior messages
+  //  - Built-in Agent (ollama, deepseek, kimi, glm) simply omits the prior messages
   //    when assembling the request (builtinAgent/index.ts).
   //  - claude stashes the transcript for the turn, because its history
   //    IS the provider session and the only lever is whether that file is there
   //    (shared/noHistoryTranscript.ts).
   //  - codex stashes the rollout and leaves a session_meta-only stub for the resumed turn
   //    (shared/noHistoryRollout.ts).
-  // Ignored by kimi and deepseek-SDK, whose context lives with the vendor.
   noHistory?: boolean;
 }
 

@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo, memo } from 'react';
+import type { MouseEvent } from 'react';
 import { Portal, toast } from '@cockpit/shared-ui';
-import { FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed, Scissors } from 'lucide-react';
+import { Copy, FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed, Scissors } from 'lucide-react';
 import { ToolCallModal } from './ToolCallModal';
 import { AskQuestionViewerModal } from './AskQuestionViewerModal';
 import { DiffViewerModal, resolveDiffCalls } from './DiffViewerModal';
@@ -27,27 +28,115 @@ interface ImageModalProps {
   onClose: () => void;
 }
 
+function base64ToBlob(data: string, type: string): Blob {
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type });
+}
+
+function imageSrcToPngBlob(src: string): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Canvas is unavailable'));
+        return;
+      }
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Could not encode image'));
+      }, 'image/png');
+    };
+    img.onerror = () => reject(new Error('Could not load image'));
+    img.src = src;
+  });
+}
+
+function imageMimeTypeFromPath(filePath: string): string {
+  const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.gif') return 'image/gif';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.svg') return 'image/svg+xml';
+  if (ext === '.bmp') return 'image/bmp';
+  if (ext === '.ico') return 'image/x-icon';
+  if (ext === '.avif') return 'image/avif';
+  return 'image/png';
+}
+
+async function writeImageToClipboard(blob: Blob, fallbackSrc: string) {
+  if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+    throw new Error('Clipboard image write is unavailable');
+  }
+
+  try {
+    await navigator.clipboard.write([
+      new ClipboardItem({ [blob.type]: blob }),
+    ]);
+    return;
+  } catch (error) {
+    if (blob.type === 'image/png') throw error;
+  }
+
+  const pngBlob = await imageSrcToPngBlob(fallbackSrc);
+  await navigator.clipboard.write([
+    new ClipboardItem({ 'image/png': pngBlob }),
+  ]);
+}
+
 function ImageModal({ image, onClose }: ImageModalProps) {
   const { t } = useTranslation();
+  const src = `data:${image.media_type};base64,${image.data}`;
+
+  const handleCopyImage = async (e: MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await writeImageToClipboard(base64ToBlob(image.data, image.media_type), src);
+      toast(t('chat.copiedImage'), 'success');
+    } catch {
+      toast(t('common.copyFailed'), 'error');
+    }
+  };
 
   const modalContent = (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
       onClick={onClose}
     >
-      {/* Close button */}
-      <button
-        onClick={onClose}
-        className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center text-white/80 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors"
-      >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
+      <div className="absolute top-4 right-4 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={handleCopyImage}
+          className="w-10 h-10 flex items-center justify-center text-white/80 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors"
+          title={t('chat.copyImage')}
+        >
+          <Copy className="w-5 h-5" />
+        </button>
+        {/* Close button */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-10 h-10 flex items-center justify-center text-white/80 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors"
+          title={t('common.close')}
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
 
       {/* Image */}
       <img
-        src={`data:${image.media_type};base64,${image.data}`}
+        src={src}
         alt={t('chat.imagePreview')}
         className="max-w-[90vw] max-h-[90vh] object-contain"
         onClick={(e) => e.stopPropagation()}
@@ -61,19 +150,50 @@ function ImageModal({ image, onClose }: ImageModalProps) {
 // Image file preview modal — serves raw bytes via <img src> pointing at
 // /api/file?raw=true (absolute path). No content is pulled into the JS heap.
 function ImageFilePreviewModal({ filePath, onClose }: { filePath: string; onClose: () => void }) {
+  const { t } = useTranslation();
+  const src = `/api/file?path=${encodeURIComponent(filePath)}&raw=true`;
+
+  const handleCopyImage = async (e: MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(src);
+      if (!res.ok) throw new Error('Could not read image');
+      const fetchedBlob = await res.blob();
+      const blob = fetchedBlob.type
+        ? fetchedBlob
+        : new Blob([fetchedBlob], { type: imageMimeTypeFromPath(filePath) });
+      await writeImageToClipboard(blob, src);
+      toast(t('chat.copiedImage'), 'success');
+    } catch {
+      toast(t('common.copyFailed'), 'error');
+    }
+  };
+
   return (
     <Portal>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={onClose}>
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center text-white/80 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <div className="absolute top-4 right-4 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleCopyImage}
+            className="w-10 h-10 flex items-center justify-center text-white/80 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors"
+            title={t('chat.copyImage')}
+          >
+            <Copy className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-10 h-10 flex items-center justify-center text-white/80 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors"
+            title={t('common.close')}
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
         <img
-          src={`/api/file?path=${encodeURIComponent(filePath)}&raw=true`}
+          src={src}
           alt={filePath.split('/').pop()}
           className="max-w-[90vw] max-h-[90vh] object-contain"
           onClick={(e) => e.stopPropagation()}

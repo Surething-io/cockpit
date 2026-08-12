@@ -85,7 +85,7 @@ An honest snapshot as of July 2026 — each tool wins somewhere. Spotted an erro
 
 - **Claude** *(default)* — full official Agent SDK; zero setup if `claude` CLI is already configured
 - **Codex** — reuses your `~/.codex` config; same chat, same shell + bubbles
-- **DeepSeek** — Anthropic-compatible endpoint via the Claude SDK; paste a key, pick `v4-pro` or `v4-flash`
+- **DeepSeek** — DeepSeek key + live model picker (`deepseek-v4-pro` by default) and a **balance check**
 - **GLM** *(Zhipu / BigModel)* — BigModel key + live model picker (`glm-5.2` by default) and a Coding Plan **quota check**; one key, two hosts — switch **Region** between `open.bigmodel.cn` and `api.z.ai`
 - **Kimi** *(Moonshot)* — Kimi Code key + live model picker (`kimi-for-coding`, `k3`, …) and a **quota check**; no `kimi` CLI needed
 - **Ollama** — auto-starts the daemon; pick any pulled model from the chat header; fully offline

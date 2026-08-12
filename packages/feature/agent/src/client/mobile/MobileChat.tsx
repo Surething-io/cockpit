@@ -10,7 +10,7 @@ import { useChatStream } from '../useChatStream';
 import { useLiveStream } from '../useLiveStream';
 import { MessageList, type MessageListHandle } from '../MessageList';
 import { MobileChatInput } from './MobileChatInput';
-import type { ChatMessage, ChatEngine, EngineModelId, ChatMode, LiveOutputTokens } from '../types';
+import type { ChatMessage, ChatEngine, EngineModelId, LiveOutputTokens } from '../types';
 
 // Per-session engine + model + execution mode, persisted by the desktop tab system in the
 // project's session.json. This is the same source useTabState resumes from —
@@ -22,7 +22,6 @@ interface ResolvedRun {
   deepseekModel?: EngineModelId;
   kimiModel?: EngineModelId;
   glmModel?: EngineModelId;
-  chatMode?: ChatMode;
 }
 
 // Mobile chat surface for /m. Reuses the proven streaming orchestration from
@@ -31,7 +30,7 @@ interface ResolvedRun {
 //
 // Deliberately omitted vs desktop Chat: header/sidebar, PTY mode + floating
 // window, plan-mode toggle, ollama/deepseek pickers, image paste, and the
-// git/comments/note/scheduled-task buttons. Always SDK mode.
+// git/comments/note/scheduled-task buttons.
 interface MobileChatProps {
   cwd: string;
   initialSessionId: string;
@@ -64,7 +63,6 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
           deepseekModels?: Record<string, string>;
           kimiModels?: Record<string, string>;
           glmModels?: Record<string, string>;
-          chatModes?: Record<string, string>;
         };
       },
       catch: (cause) => new AppError({ message: 'loadProjectState failed', cause }),
@@ -72,14 +70,12 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     BrowserRuntime.runPromiseExit(eff).then((exit) => {
       if (exit._tag === 'Success' && exit.value) {
         const d = exit.value;
-        const rawMode = d.chatModes?.[initialSessionId];
         setResolved({
           engine: d.engines?.[initialSessionId] as ChatEngine | undefined,
           ollamaModel: d.ollamaModels?.[initialSessionId],
           deepseekModel: d.deepseekModels?.[initialSessionId] as EngineModelId | undefined,
           kimiModel: d.kimiModels?.[initialSessionId] as EngineModelId | undefined,
           glmModel: d.glmModels?.[initialSessionId] as EngineModelId | undefined,
-          chatMode: rawMode === 'builtin' ? 'builtin' : 'sdk',
         });
       }
     });
@@ -102,7 +98,6 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     loadHistoryByCwdAndSessionId,
     loadedSessionId,
     loadedEngine,
-    loadedMode,
   } = useChatHistory(messages, setMessages, sessionId, {
     cwd,
     initialSessionId,
@@ -111,14 +106,10 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     liveRunningRef,
   });
 
-  // Send on the session's native engine AND execution mode. Same precedence as Chat.tsx:
-  // what the transcript's store proves outranks the persisted tab value (which is a cache
-  // and can be stale/wrong); the persisted value only fills what the store can't tell.
-  // Mode matters as much as engine — a Built-in Agent session driven through the SDK loop
-  // resumes an id that loop has never written.
+  // Send on the session's native engine. Same precedence as Chat.tsx: what the transcript's
+  // store proves outranks the persisted tab value (which is a cache and can be stale/wrong);
+  // the persisted value only fills what the store can't tell.
   const engine: ChatEngine | undefined = loadedEngine ?? resolved.engine ?? undefined;
-  const rawChatMode = loadedMode ?? resolved.chatMode ?? 'sdk';
-  const chatMode: ChatMode = rawChatMode === 'builtin' ? 'builtin' : 'sdk';
 
   const noop = useCallback(() => {}, []);
   // Reconcile-on-run-end (mirrors Chat.tsx): useChatStream is constructed before
@@ -136,7 +127,6 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     sessionId,
     cwd,
     engine,
-    chatMode,
     planMode: false,
     ollamaModel: resolved.ollamaModel,
     engineModel:

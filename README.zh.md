@@ -85,7 +85,7 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 
 - **Claude** *(默认)* —— 完整官方 Agent SDK；`claude` CLI 已配置即零额外设置
 - **Codex** —— 直接读 `~/.codex` 配置，聊天 / Shell / 气泡都一样
-- **DeepSeek** —— 通过 Claude SDK 走 Anthropic 兼容端点；粘 Key，选 `v4-pro` 或 `v4-flash`
+- **DeepSeek** —— 粘 DeepSeek Key，模型选择器实时列出可用模型（默认 `deepseek-v4-pro`），还能一键**查询余额**
 - **GLM** *(智谱 / BigModel)* —— 粘 BigModel Key，模型选择器实时列出可用模型（默认 `glm-5.2`），还能一键**查询 Coding Plan 额度**；一个 Key 两套接入点，用 **Region** 在 `open.bigmodel.cn` 和 `api.z.ai` 之间切
 - **Kimi** *(Moonshot)* —— 粘 Kimi Code Key，模型选择器实时列出可用模型（`kimi-for-coding`、`k3` …），还能一键**查询额度**；不再需要 `kimi` CLI
 - **Ollama** —— 自动拉起守护进程；从聊天头部下拉任意已 pull 的模型；完全离线

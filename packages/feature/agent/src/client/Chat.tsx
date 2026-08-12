@@ -20,7 +20,7 @@ import { useChatHistory } from './useChatHistory';
 import { useChatStream } from './useChatStream';
 import { MessageList, MessageListHandle } from './MessageList';
 import { ChatInput } from './ChatInput';
-import type { ChatMessage, TokenUsage, LiveOutputTokens, ImageInfo, ChatEngine, EngineModelId, ChatMode, ToolCallInfo, ClaudeModelId, ClaudeEffort, ClaudeContextWindow, CodexModelId, CodexReasoningEffort } from './types';
+import type { ChatMessage, TokenUsage, LiveOutputTokens, ImageInfo, ChatEngine, EngineModelId, ToolCallInfo, ClaudeModelId, ClaudeEffort, ClaudeContextWindow, CodexModelId, CodexReasoningEffort } from './types';
 // In-package siblings (chat-only)
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { OllamaModelPicker } from './OllamaModelPicker';
@@ -78,8 +78,6 @@ interface ChatProps {
   onCodexModelChange?: (model: CodexModelId) => void;
   codexReasoningEffort?: CodexReasoningEffort;
   onCodexReasoningEffortChange?: (effort: CodexReasoningEffort) => void;
-  chatMode?: ChatMode;
-  onChatModeChange?: (chatMode: ChatMode) => void;
   planMode?: boolean;
   onPlanModeChange?: (planMode: boolean) => void;
   noHistory?: boolean;
@@ -121,7 +119,7 @@ interface ChatProps {
   onOpenSettings?: () => void; // Host-handled: open the app settings modal
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeContextWindow, onClaudeContextWindowChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, chatMode: chatModeProp, onChatModeChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeContextWindow, onClaudeContextWindowChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -131,16 +129,9 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const [isCommentsListOpen, setIsCommentsListOpen] = useState(false);
   const [isUserMessagesOpen, setIsUserMessagesOpen] = useState(false);
   const [historyTokenUsage, setHistoryTokenUsage] = useState<TokenUsage | null>(null);
-  // Execution mode (per-tab): controlled by TabInfo.chatMode (persisted); falls back to local state when no prop (standalone use)
-  // Default 'sdk' (Claude Agent SDK) — tabs without an explicit choice run in SDK mode
-  const [localChatMode, setLocalChatMode] = useState<ChatMode>('sdk');
-  const setChatMode = useCallback((m: ChatMode) => {
-    setLocalChatMode(m);
-    onChatModeChange?.(m);
-  }, [onChatModeChange]);
   // Plan mode (per-tab): controlled by TabInfo.planMode (persisted); falls back to
   // local state when no prop (standalone use). Read-only exploration that produces a
-  // plan without editing — only meaningful in SDK mode on a claude engine.
+  // plan without editing — only meaningful on a claude engine.
   const [localPlanMode, setLocalPlanMode] = useState(false);
   const planMode = planModeProp ?? localPlanMode;
   const setPlanMode = useCallback((p: boolean) => {
@@ -204,7 +195,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     loadHistoryByCwdAndSessionId,
     loadedSessionId,
     loadedEngine,
-    loadedMode,
   } = useChatHistory(messages, setMessages, sessionId, {
     cwd: initialCwd,
     initialSessionId,
@@ -214,23 +204,19 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     liveRunningRef,
   });
 
-  // Engine + execution mode of THIS session, most-trusted first:
+  // Engine of THIS session, most-trusted first:
   //   1. what the transcript's own store PROVES (echoed by /api/session-by-path) — a file
-  //      sitting in ~/.cockpit/deepseek-sessions ran as deepseek/builtin, full stop;
+  //      sitting in ~/.cockpit/deepseek-sessions ran as deepseek, full stop;
   //   2. the host's per-tab value (session.json, or handed over by the session list) — the
-  //      only source before any transcript exists, i.e. a brand-new tab;
-  //   3. the local default.
+  //      only source before any transcript exists, i.e. a brand-new tab.
   //
   // The store outranks the persisted value deliberately: session.json is a UI-written cache
-  // that CAN be wrong (reopening a session used to stamp it with the default 'sdk', which is
-  // exactly the bug this ordering fixes), while the store is where the bytes physically are.
-  // Where the store cannot tell, it reports nothing and the persisted value survives untouched.
+  // that CAN be wrong (reopening a session used to stamp it with a default), while the store
+  // is where the bytes physically are.
   //
   // Resolution must happen BEFORE any use: `undefined` means "not known yet", NOT "claude",
   // yet every downstream check (`!engine`, the apiUrl fallback) reads the two identically.
   const engine = loadedEngine ?? engineProp ?? undefined;
-  const rawChatMode = loadedMode ?? chatModeProp ?? localChatMode;
-  const chatMode: ChatMode = rawChatMode === 'builtin' ? 'builtin' : 'sdk';
   const isClaudeEngine = !engine || engine === 'claude';
   const isCodexEngine = engine === 'codex';
   const effectiveClaudeModel = claudeModel ?? DEFAULT_CLAUDE_MODEL;
@@ -239,7 +225,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const effectiveCodexModel = codexModel ?? DEFAULT_CODEX_MODEL;
   const effectiveCodexReasoningEffort = resolveCodexReasoningEffortForModel(effectiveCodexModel, codexReasoningEffort);
   // Engines configured by API key rather than by a local CLI login. They share one UI: a
-  // key+model picker, an SDK ↔ Built-in Agent toggle, and a consumption readout.
+  // key+model picker and a consumption readout, and one loop (the Built-in Agent).
   const apiKeyEngine: ApiKeyEngine | null =
     engine === 'deepseek' || engine === 'kimi' || engine === 'glm' ? engine : null;
   const engineModel =
@@ -250,17 +236,11 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       : apiKeyEngine === 'glm'
         ? onGlmModelChange
         : onDeepseekModelChange;
-  // Their two modes do NOT share a transcript store (SDK → ~/.cockpit/<engine>/projects,
-  // Built-in Agent → ~/.cockpit/<engine>-sessions), so switching mid-session would leave the
-  // model blind to history the UI is still showing. The choice is therefore made while the
-  // session is empty — a fresh tab — and locked afterwards. `initialSessionId` covers a
-  // reopened session whose messages have not finished loading yet.
-  const isBuiltinLoop = apiKeyEngine !== null && chatMode === 'builtin';
-  const modeLocked = Boolean(initialSessionId) || messages.length > 0;
   // Independent task. The Built-in Agent engines get it by construction (they assemble the
   // message array). Claude/Codex get it by stashing their vendor transcript/rollout for
   // the turn — see server/engines/shared/noHistoryTranscript.ts and noHistoryRollout.ts.
-  const supportsNoHistory = engine === 'ollama' || isBuiltinLoop || isClaudeEngine || isCodexEngine;
+  const supportsNoHistory =
+    engine === 'ollama' || apiKeyEngine !== null || isClaudeEngine || isCodexEngine;
 
   // Write what the store proved back into the host's per-tab record — repair, not just
   // fill-in: session.json may hold no entry (a tab reopened from a session list never had
@@ -270,12 +250,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   useEffect(() => {
     if (loadedEngine && engineProp !== loadedEngine) onEngineChange?.(loadedEngine);
   }, [engineProp, loadedEngine, onEngineChange]);
-  useEffect(() => {
-    if (!loadedMode) return;
-    const normalized = loadedMode === 'builtin' ? 'builtin' : 'sdk';
-    if (chatModeProp !== normalized) onChatModeChange?.(normalized);
-  }, [chatModeProp, loadedMode, onChatModeChange]);
-
   // Stream hook
   const {
     isLoading,
@@ -290,7 +264,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     sessionId,
     cwd: initialCwd,
     engine,
-    chatMode,
     planMode,
     noHistory,
     ollamaModel,
@@ -312,12 +285,12 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     const firstLine = content.split('\n')[0];
 
     // /plan [task] — client-side plan-mode control (mirrors Claude Code's /plan).
-    // Consumed locally; never sent to the agent as literal text. Only meaningful in
-    // SDK mode on a claude engine (where the plan checkbox lives).
+    // Consumed locally; never sent to the agent as literal text. Only meaningful on a
+    // claude engine (where the plan checkbox lives).
     //   /plan        → enable plan mode (no send)
     //   /plan off    → disable plan mode (no send; cockpit convenience — Claude Code uses Shift+Tab)
     //   /plan <task> → enable plan mode AND send <task> (runs in plan mode)
-    if (isClaudeEngine && chatMode === 'sdk') {
+    if (isClaudeEngine) {
       const planCmd = /^\/plan(?:\s+([\s\S]*))?$/.exec(content.trim());
       if (planCmd) {
         const rest = (planCmd[1] ?? '').trim();
@@ -360,7 +333,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       return;
     }
     handleSend(content, images);
-  }, [handleSend, initialCwd, t, isClaudeEngine, chatMode, setPlanMode]);
+  }, [handleSend, initialCwd, t, isClaudeEngine, setPlanMode]);
 
   // Plan-card "approve & run": the user's approval for the presented plan. Persistent off —
   // the Plan toggle visibly turns off and stays off for subsequent turns (mirrors native
@@ -662,46 +635,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           />
         )}
 
-        {/* Execution mode (deepseek / kimi): Claude Agent SDK ↔ Built-in Agent (our own loop,
-            engines/builtinAgent). Locked once the session has messages — the two modes keep
-            separate transcript stores, so the choice belongs to a fresh tab. See `modeLocked`. */}
-        {apiKeyEngine && (
-          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card/50">
-            <span className="text-xs text-muted-foreground">{t('chat.executionMode', { defaultValue: 'Execution mode' })}</span>
-            <div className="inline-flex rounded-md border border-border overflow-hidden text-xs" role="group" data-testid={`${apiKeyEngine}-mode-toggle`}>
-              <button
-                type="button"
-                data-testid={`${apiKeyEngine}-mode-sdk`}
-                disabled={modeLocked}
-                onClick={() => setChatMode('sdk')}
-                className={`px-2 py-0.5 ${chatMode !== 'builtin' ? 'bg-brand text-white' : 'bg-transparent text-muted-foreground hover:bg-accent'} ${modeLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
-              >
-                Claude Agent SDK
-              </button>
-              <button
-                type="button"
-                data-testid={`${apiKeyEngine}-mode-builtin`}
-                disabled={modeLocked}
-                onClick={() => setChatMode('builtin')}
-                className={`px-2 py-0.5 ${chatMode === 'builtin' ? 'bg-brand text-white' : 'bg-transparent text-muted-foreground hover:bg-accent'} ${modeLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
-                title={t('chat.builtinModeHint', { defaultValue: "Cockpit's own agent loop, talking to the provider's OpenAI-compatible endpoint" })}
-              >
-                Built-in Agent
-              </button>
-            </div>
-            {modeLocked && (
-              <span className="text-xs text-muted-foreground">
-                {t('chat.modeLockedHint', { defaultValue: 'Locked for this session — open a new tab to switch' })}
-              </span>
-            )}
-            {/* Right-aligned: what the key has left belongs to the key, not to the mode toggle it
-                sits next to. DeepSeek reports a prepaid balance, Kimi a subscription quota. */}
-            {apiKeyEngine === 'deepseek'
-              ? <DeepseekBalanceButton hasKey={engineHasKey} />
-              : <EngineQuotaButton engine={apiKeyEngine} hasKey={engineHasKey} />}
-          </div>
-        )}
-
         {/* Claude / Codex SDK options. CLI execution modes were intentionally removed. */}
         {(isClaudeEngine || isCodexEngine) && (
           <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card/50">
@@ -757,19 +690,29 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           </div>
         )}
 
-        {/* API key + model picker (+ independent task in Built-in Agent mode). The picker's
-            model list and the settings key it persists to both follow the mode — the two
-            endpoints can expose different model ids. */}
-        {apiKeyEngine && onEngineModelChange && (
+        {/* API-key engines (deepseek / kimi / glm): key + model picker, independent task, and
+            what the key has left — one row, mirroring ollama's. There is no execution-mode
+            toggle any more (these run the Built-in Agent loop and nothing else), so the
+            consumption readout moved in here rather than keeping a row to itself.
+            DeepSeek reports a prepaid balance, Kimi and GLM a subscription quota. */}
+        {apiKeyEngine && (
           <div className="flex items-center px-3 py-1.5 border-b border-border bg-card/50">
-            <EngineConfigPicker
-              engine={apiKeyEngine}
-              currentModel={engineModel}
-              onModelChange={onEngineModelChange}
-              builtin={isBuiltinLoop}
-              onHasKeyChange={setEngineHasKey}
-            />
+            {onEngineModelChange && (
+              <EngineConfigPicker
+                engine={apiKeyEngine}
+                currentModel={engineModel}
+                onModelChange={onEngineModelChange}
+                onHasKeyChange={setEngineHasKey}
+              />
+            )}
             {independentTaskToggle}
+            {/* Belongs to the key, not to the turn — pushed right so it reads as status
+                rather than as one more control in the sequence. */}
+            <div className="ml-auto pl-2">
+              {apiKeyEngine === 'deepseek'
+                ? <DeepseekBalanceButton hasKey={engineHasKey} />
+                : <EngineQuotaButton engine={apiKeyEngine} hasKey={engineHasKey} />}
+            </div>
           </div>
         )}
 

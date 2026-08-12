@@ -50,25 +50,22 @@ export function notifyReviewChange(): void {
 }
 export const CLAUDE_DIR = join(HOME_DIR, '.claude');
 export const CLAUDE_PROJECTS_DIR = join(CLAUDE_DIR, 'projects');
-// DeepSeek uses the Claude Agent SDK with CLAUDE_CONFIG_DIR pointed here
-// to keep its credentials/sessions isolated from the user's real ~/.claude
+// DeepSeek, Kimi and GLM each keep only a credential file here. Their transcripts live in
+// the Built-in Agent stores (~/.cockpit/<engine>-sessions) — these directories also used to
+// hold a `projects/` subtree written by the Claude Agent SDK, which no longer runs for these
+// engines. Old subtrees are left on disk untouched rather than deleted; nothing reads them.
+//
+// The API key lives in its own credential file, intentionally NOT in settings.json — so it
+// is never returned by GET /api/settings (which is sent to the browser). Read/written only
+// via /api/<engine>/credentials.
 export const DEEPSEEK_DIR = join(COCKPIT_DIR, 'deepseek');
-export const DEEPSEEK_PROJECTS_DIR = join(DEEPSEEK_DIR, 'projects');
-// DeepSeek API key lives in its own credential file, intentionally NOT in
-// settings.json — so it is never returned by GET /api/settings (which is sent
-// to the browser). Read/written only via /api/deepseek/credentials.
 export const DEEPSEEK_CREDENTIALS_FILE = join(DEEPSEEK_DIR, 'credentials.json');
-// Kimi mirrors DeepSeek exactly: Claude Agent SDK against an Anthropic-compatible
-// endpoint, with CLAUDE_CONFIG_DIR pointed here. Note this is NOT ~/.kimi — that
-// belongs to Moonshot's own CLI, which cockpit no longer drives.
+// Note this is NOT ~/.kimi — that belongs to Moonshot's own CLI, which cockpit never drives.
 export const KIMI_DIR = join(COCKPIT_DIR, 'kimi');
-export const KIMI_PROJECTS_DIR = join(KIMI_DIR, 'projects');
 export const KIMI_CREDENTIALS_FILE = join(KIMI_DIR, 'credentials.json');
-// GLM (Zhipu BigModel) — same shape again. Note the store is region-agnostic on
-// purpose: open.bigmodel.cn and api.z.ai serve the same account, so switching
-// region must not orphan existing sessions.
+// GLM (Zhipu BigModel). The store is region-agnostic on purpose: open.bigmodel.cn and
+// api.z.ai serve the same account, so switching region must not orphan existing sessions.
 export const GLM_DIR = join(COCKPIT_DIR, 'glm');
-export const GLM_PROJECTS_DIR = join(GLM_DIR, 'projects');
 export const GLM_CREDENTIALS_FILE = join(GLM_DIR, 'credentials.json');
 // Ollama connection config (baseUrl + apiKey) lives in its own file, NOT in
 // settings.json — the apiKey must never be returned by GET /api/settings (which
@@ -253,51 +250,6 @@ export function getClaudeSessionPath(cwd: string, sessionId: string): string {
 }
 
 // ============================================
-// DeepSeek Project Paths (~/.cockpit/deepseek/projects/<encoded-cwd>/...)
-// Sessions written by Claude Agent SDK with CLAUDE_CONFIG_DIR=DEEPSEEK_DIR
-// ============================================
-
-/**
- * Get the DeepSeek project directory for a given cwd
- */
-export function getDeepseekProjectDir(cwd: string): string {
-  return join(DEEPSEEK_PROJECTS_DIR, encodePath(cwd));
-}
-
-/**
- * Get the session file path in DeepSeek's projects directory
- */
-export function getDeepseekSessionPath(cwd: string, sessionId: string): string {
-  return join(getDeepseekProjectDir(cwd), `${sessionId}.jsonl`);
-}
-
-// ============================================
-// Kimi Project Paths (~/.cockpit/kimi/projects/<encoded-cwd>/...)
-// Same layout as DeepSeek: written by the Claude Agent SDK with
-// CLAUDE_CONFIG_DIR=KIMI_DIR.
-// ============================================
-
-export function getKimiProjectDir(cwd: string): string {
-  return join(KIMI_PROJECTS_DIR, encodePath(cwd));
-}
-
-export function getKimiSessionPath(cwd: string, sessionId: string): string {
-  return join(getKimiProjectDir(cwd), `${sessionId}.jsonl`);
-}
-
-// ============================================
-// GLM Project Paths (~/.cockpit/glm/projects/<encoded-cwd>/...)
-// ============================================
-
-export function getGlmProjectDir(cwd: string): string {
-  return join(GLM_PROJECTS_DIR, encodePath(cwd));
-}
-
-export function getGlmSessionPath(cwd: string, sessionId: string): string {
-  return join(getGlmProjectDir(cwd), `${sessionId}.jsonl`);
-}
-
-// ============================================
 // Built-in Agent Session Paths (~/.cockpit/<engine>-sessions/<encoded-cwd>/... )
 // Written by engines/builtinAgent — our own agent loop, one store per engine.
 // ============================================
@@ -350,26 +302,17 @@ export function getOllamaSessionPath(cwd: string, sessionId: string): string {
   return getBuiltinSessionPath('ollama', cwd, sessionId);
 }
 
-/**
- * Get the DeepSeek Built-in Agent session file path (mode: 'builtin'). Distinct from
- * getDeepseekSessionPath, which is the Claude Agent SDK store under ~/.cockpit/deepseek/projects.
- */
+/** DeepSeek's transcript store. */
 export function getDeepseekBuiltinSessionPath(cwd: string, sessionId: string): string {
   return getBuiltinSessionPath('deepseek', cwd, sessionId);
 }
 
-/**
- * Get the Kimi Built-in Agent session file path (mode: 'builtin'). Distinct from
- * getKimiSessionPath, which is the Claude Agent SDK store under ~/.cockpit/kimi/projects.
- */
+/** Kimi's transcript store. */
 export function getKimiBuiltinSessionPath(cwd: string, sessionId: string): string {
   return getBuiltinSessionPath('kimi', cwd, sessionId);
 }
 
-/**
- * Get the GLM Built-in Agent session file path (mode: 'builtin'). Distinct from
- * getGlmSessionPath, which is the Claude Agent SDK store under ~/.cockpit/glm/projects.
- */
+/** GLM's transcript store. */
 export function getGlmBuiltinSessionPath(cwd: string, sessionId: string): string {
   return getBuiltinSessionPath('glm', cwd, sessionId);
 }

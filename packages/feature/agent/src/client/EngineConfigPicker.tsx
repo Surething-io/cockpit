@@ -18,17 +18,13 @@ import {
 
 /**
  * API key + model picker for the engines configured by key rather than by a local
- * CLI login (DeepSeek, Kimi, GLM). They have the same shape — one key, an
- * Anthropic-compatible endpoint for SDK mode and an OpenAI-compatible one for
- * Built-in Agent mode — so they share this component and differ only in ENGINES
- * below.
+ * CLI login (DeepSeek, Kimi, GLM). They have the same shape — one key, one
+ * OpenAI-compatible endpoint driven by the Built-in Agent loop — so they share this
+ * component and differ only in ENGINES below.
  *
- * Two real behavioural differences, both expressed as config:
- * - Where SDK-mode model ids come from. DeepSeek's Anthropic-compatible endpoint has
- *   no listing API (hence a fixed pair, mirrored by ALLOWED_MODELS in
- *   engines/deepseek.ts), while Kimi and GLM list live models for both protocols and
- *   gate them by plan — a hardcoded list would offer models the account cannot call.
- * - Whether the provider is served from more than one host (GLM's `regions`).
+ * The model list is always live: all three gate models by plan, so a hardcoded list
+ * would offer models the account cannot call. The one real behavioural difference left
+ * is whether the provider is served from more than one host (GLM's `regions`).
  */
 
 type Accent = 'sky' | 'purple' | 'amber';
@@ -81,11 +77,6 @@ interface EngineUiConfig {
   /** Console page where keys are created — the only place a user can get the value
    *  this menu asks for, so the field links straight to it. */
   apiKeysUrl: string;
-  /** SDK-mode model ids: a fixed list, or 'live' to use the same listing endpoint
-   *  Built-in Agent mode uses. */
-  sdkModels: { id: string; label: string }[] | 'live';
-  /** Shown as the trigger label before the user has chosen anything (fixed lists only). */
-  sdkDefaultModel?: string;
   /** Listing endpoint path, quoted in the empty-state message. */
   modelsEndpoint: string;
   /**
@@ -101,25 +92,18 @@ const ENGINES: Record<ApiKeyEngine, EngineUiConfig> = {
     label: 'DeepSeek',
     accent: 'sky',
     apiKeysUrl: 'https://platform.deepseek.com/api_keys',
-    sdkModels: [
-      { id: 'deepseek-v4-flash', label: 'deepseek-v4-flash' },
-      { id: 'deepseek-v4-pro', label: 'deepseek-v4-pro' },
-    ],
-    sdkDefaultModel: 'deepseek-v4-flash',
     modelsEndpoint: '/v1/models',
   },
   kimi: {
     label: 'Kimi',
     accent: 'purple',
     apiKeysUrl: 'https://www.kimi.com/code/console',
-    sdkModels: 'live',
     modelsEndpoint: '/coding/v1/models',
   },
   glm: {
     label: 'GLM',
     accent: 'amber',
     apiKeysUrl: 'https://bigmodel.cn/apikey/platform',
-    sdkModels: 'live',
     modelsEndpoint: '/coding/paas/v4/models',
     regions: [
       { id: 'cn', label: '中国大陆', hint: 'open.bigmodel.cn' },
@@ -139,9 +123,6 @@ interface EngineConfigPickerProps {
   engine: ApiKeyEngine;
   currentModel?: EngineModelId;
   onModelChange: (model: EngineModelId) => void;
-  /** Built-in Agent mode — different endpoint, so a different model namespace and a
-   *  different settings key. See ChatMode in ./types. */
-  builtin?: boolean;
   /** Fired whenever the persisted-key state changes (mount, save, clear, reopen). This
    *  component is the only live owner of that fact, so siblings that need it (the balance
    *  / quota button) get it from here instead of caching their own copy and going stale. */
@@ -149,10 +130,7 @@ interface EngineConfigPickerProps {
 }
 
 interface EngineSettingsSlice {
-  model?: string;
   builtinModel?: string;
-  modelContextTokens?: number;
-  modelEffort?: string;
   region?: string;
 }
 
@@ -160,13 +138,10 @@ export function EngineConfigPicker({
   engine,
   currentModel,
   onModelChange,
-  builtin = false,
   onHasKeyChange,
 }: EngineConfigPickerProps) {
   const config = ENGINES[engine];
   const accent = ACCENTS[config.accent];
-  // SDK mode uses the live list too when the provider has no fixed set (Kimi).
-  const liveModels = builtin || config.sdkModels === 'live';
 
   const [open, setOpen] = useState(false);
   const [hasKey, setHasKey] = useState(false); // whether a key is persisted
@@ -193,12 +168,10 @@ export function EngineConfigPicker({
   // Ref indirection for the mount-only effect below: it must read these once without the
   // parent's re-render churn (onModelChange gets a fresh identity every render) turning a
   // one-shot load into a loop.
-  const builtinRef = useRef(builtin);
   const currentModelRef = useRef(currentModel);
   const onModelChangeRef = useRef(onModelChange);
   const onHasKeyChangeRef = useRef(onHasKeyChange);
   useEffect(() => {
-    builtinRef.current = builtin;
     currentModelRef.current = currentModel;
     onModelChangeRef.current = onModelChange;
     onHasKeyChangeRef.current = onHasKeyChange;
@@ -230,7 +203,7 @@ export function EngineConfigPicker({
       setHasKey(credExit.value.hasKey);
       setMaskedKey(credExit.value.maskedKey);
       const savedEngine = settingsExit._tag === 'Success' ? settingsExit.value?.engines?.[engine] : undefined;
-      const savedModel = builtinRef.current ? savedEngine?.builtinModel : savedEngine?.model;
+      const savedModel = savedEngine?.builtinModel;
       // Only fill a gap — never overwrite the model this tab was restored with.
       if (!currentModelRef.current && savedModel) onModelChangeRef.current(savedModel);
     })();
@@ -249,16 +222,6 @@ export function EngineConfigPicker({
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
-
-  // Separate default per mode. The id sets can overlap, but the two modes talk to
-  // different endpoints — sharing one key would let a model chosen for one of them
-  // become the other's default, where it may not exist at all.
-  const settingsKey = builtin ? 'builtinModel' : 'model';
-
-  const staticOptions = useMemo(
-    () => (config.sdkModels === 'live' ? [] : config.sdkModels.map((m) => ({ id: m.id, label: m.label }))),
-    [config.sdkModels]
-  );
 
   // Load settings on first open. The API key comes from its own credential
   // endpoint (masked, never raw); only the model lives in /api/settings.
@@ -287,41 +250,35 @@ export function EngineConfigPicker({
 
     const settings = settingsExit._tag === 'Success' ? settingsExit.value : undefined;
     const savedEngine = settings?.engines?.[engine];
-    const savedModel = builtin ? savedEngine?.builtinModel : savedEngine?.model;
+    const savedModel = savedEngine?.builtinModel;
     if (config.regions) {
       setRegion(savedEngine?.region ?? defaultRegionForLanguage(settings?.language));
     }
 
-    if (liveModels) {
-      // Live list — an unreachable endpoint or a bad key surfaces here rather than at the
-      // first chat turn. Without a key there is nothing to authenticate with, so skip.
-      let available: EngineModelInfo[] = [];
-      if (credExit.value.hasKey) {
-        const modelsExit = await BrowserRuntime.runPromiseExit(loadEngineModels(engine));
-        if (modelsExit._tag === 'Success') {
-          available = modelsExit.value.models;
-        } else {
-          setModelsError('Failed to load models — check the API key');
-        }
+    // Live list — an unreachable endpoint or a bad key surfaces here rather than at the
+    // first chat turn. Without a key there is nothing to authenticate with, so skip.
+    let available: EngineModelInfo[] = [];
+    if (credExit.value.hasKey) {
+      const modelsExit = await BrowserRuntime.runPromiseExit(loadEngineModels(engine));
+      if (modelsExit._tag === 'Success') {
+        available = modelsExit.value.models;
+      } else {
+        setModelsError('Failed to load models — check the API key');
       }
-      setFetchedModels(available);
-      // Sync a usable default upward: the saved one if the account still has it, else the
-      // first available. Never leave the tab pointing at a model the endpoint rejects.
-      const ids = available.map((m) => m.id);
-      const fallback = savedModel && ids.includes(savedModel) ? savedModel : ids[0];
-      if (fallback && (!currentModel || !ids.includes(currentModel))) {
-        onModelChange(fallback);
-      }
-    } else if (!currentModel && savedModel && staticOptions.some((m) => m.id === savedModel)) {
-      onModelChange(savedModel);
+    }
+    setFetchedModels(available);
+    // Sync a usable default upward: the saved one if the account still has it, else the
+    // first available. Never leave the tab pointing at a model the endpoint rejects.
+    const ids = available.map((m) => m.id);
+    const fallback = savedModel && ids.includes(savedModel) ? savedModel : ids[0];
+    if (fallback && (!currentModel || !ids.includes(currentModel))) {
+      onModelChange(fallback);
     }
     setLoading(false);
-  }, [engine, builtin, liveModels, currentModel, onModelChange, staticOptions, config.regions]);
+  }, [engine, currentModel, onModelChange, config.regions]);
 
   // Persist the model into /api/settings (shallow merge — send only the engines diff).
-  // SDK mode also stores the model's context window and effort default so the engine can
-  // build the SDK env without a round trip to the provider at chat start.
-  const persistModel = useCallback(async (model: EngineModelId, meta?: EngineModelInfo) => {
+  const persistModel = useCallback(async (model: EngineModelId) => {
     const curExit = await BrowserRuntime.runPromiseExit(
       loadAgentSettings<{ engines?: Record<string, Record<string, unknown>> }>()
     );
@@ -329,16 +286,11 @@ export function EngineConfigPicker({
     const curEngines = cur.engines || {};
     const engines = {
       ...curEngines,
-      [engine]: {
-        ...(curEngines[engine] || {}),
-        [settingsKey]: model,
-        ...(!builtin && meta?.contextTokens ? { modelContextTokens: meta.contextTokens } : {}),
-        ...(!builtin && meta?.effort ? { modelEffort: meta.effort } : {}),
-      },
+      [engine]: { ...(curEngines[engine] || {}), builtinModel: model },
     };
     const saveExit = await BrowserRuntime.runPromiseExit(saveAgentSettings({ engines }));
     if (saveExit._tag === 'Failure') throw new Error('Failed to save settings');
-  }, [engine, settingsKey, builtin]);
+  }, [engine]);
 
   // Region is a routing preference, so it persists like the model and takes effect on the
   // next request — including the model list, which is why this reloads it.
@@ -388,9 +340,9 @@ export function EngineConfigPicker({
       setMaskedKey(exit.value.maskedKey);
       setKeyInput('');
       setEditing(false);
-      // A fresh key usually means a different account, and in live-list mode the model
-      // options are account-scoped — reload them instead of showing the old tier's list.
-      if (liveModels) loadSettings();
+      // A fresh key usually means a different account, and the model options are
+      // account-scoped — reload them instead of showing the old tier's list.
+      loadSettings();
     }
     setSaving(false);
   };
@@ -406,7 +358,7 @@ export function EngineConfigPicker({
       setMaskedKey(exit.value.maskedKey);
       setKeyInput('');
       setEditing(false);
-      if (liveModels) setFetchedModels([]);
+      setFetchedModels([]);
     }
     setSaving(false);
   };
@@ -443,25 +395,21 @@ export function EngineConfigPicker({
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
-  const handleSelectModel = async (model: EngineModelId, meta?: EngineModelInfo) => {
+  const handleSelectModel = async (model: EngineModelId) => {
     onModelChange(model);
     try {
-      await persistModel(model, meta);
+      await persistModel(model);
     } catch {
       // non-fatal — tab state already updated
     }
   };
 
-  const modelOptions: EngineModelInfo[] = liveModels
-    ? fetchedModels
-    : staticOptions.map((m) => ({ id: m.id, label: m.label }));
+  const modelOptions: EngineModelInfo[] = fetchedModels;
 
-  // With a live list there is no meaningful fallback id to show before it arrives.
-  const displayLabel = !hasKey
-    ? 'Set API key'
-    : (currentModel || (liveModels ? 'Select model' : config.sdkDefaultModel ?? 'Select model'));
+  // The list is live, so there is no meaningful fallback id to show before it arrives.
+  const displayLabel = !hasKey ? 'Set API key' : (currentModel || 'Select model');
   const labelTone = !hasKey ? 'text-amber-400' : accent.label;
-  const selectedModel = currentModel || (liveModels ? '' : config.sdkDefaultModel ?? '');
+  const selectedModel = currentModel || '';
 
   const menu = open ? (
     <Portal>
@@ -603,14 +551,11 @@ export function EngineConfigPicker({
 
             {/* Model section */}
             <div className="px-3 py-1.5">
-              <div className="text-[11px] font-medium text-muted-foreground mb-1.5">
-                Model
-                {builtin && <span className="ml-1 font-normal opacity-70">· Built-in Agent</span>}
-              </div>
-              {liveModels && modelsError && (
+              <div className="text-[11px] font-medium text-muted-foreground mb-1.5">Model</div>
+              {modelsError && (
                 <div className="mb-1 text-[11px] text-red-400">{modelsError}</div>
               )}
-              {liveModels && !modelsError && modelOptions.length === 0 && (
+              {!modelsError && modelOptions.length === 0 && (
                 <div className="mb-1 text-[11px] text-muted-foreground">
                   {hasKey ? `No models returned by ${config.modelsEndpoint}` : 'Save an API key to list models'}
                 </div>
@@ -622,7 +567,7 @@ export function EngineConfigPicker({
                   return (
                     <button
                       key={m.id}
-                      onClick={() => handleSelectModel(m.id, m)}
+                      onClick={() => handleSelectModel(m.id)}
                       className={`flex items-center gap-2 px-2 py-1 text-xs rounded transition-colors ${
                         selected ? accent.selectedRow : 'text-foreground hover:bg-accent'
                       }`}

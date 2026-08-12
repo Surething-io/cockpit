@@ -108,9 +108,8 @@ export type ChatEngine = 'claude' | 'codex' | 'kimi' | 'ollama' | 'deepseek' | '
 /**
  * A model id for the API-key engines (deepseek, kimi, glm). Deliberately a plain string, not a
  * union: the pickers fill their lists live from /api/<engine>/models, so any id the account
- * has can appear — including ones shipped after this release. The only server-side whitelist
- * is deepseek's SDK mode (engines/deepseek.ts ALLOWED_MODELS), whose Anthropic-compatible
- * endpoint has no listing API to validate against.
+ * has can appear — including ones shipped after this release. There is no server-side
+ * whitelist; an unknown id is rejected by the provider with its own message.
  */
 export type EngineModelId = string;
 /** @deprecated Use EngineModelId — kept so existing deepseek-named props still read naturally. */
@@ -120,13 +119,8 @@ export type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultrac
 export type ClaudeContextWindow = '200k' | '1m';
 export type CodexModelId = string;
 export type CodexReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
-/**
- * Execution mode — which loop actually drives the turn.
- * - `sdk`: `@anthropic-ai/claude-agent-sdk`'s `query()` (headless). claude (Agent SDK
- *   billing bucket) and deepseek/kimi/glm (their Anthropic-compatible endpoints). The default
- *   everywhere.
- * - `builtin`: Cockpit's own agent loop (server engines/builtinAgent) against the provider's
- *   OpenAI-compatible endpoint. deepseek, kimi and glm. NOT switchable mid-session: it keeps its
- *   own transcript store, so the UI locks the choice once a session has messages.
- */
-export type ChatMode = 'sdk' | 'builtin';
+
+// There is deliberately no execution-mode type here. It used to be
+// `ChatMode = 'sdk' | 'builtin'`, a per-tab choice offered on deepseek/kimi/glm. The loop is
+// now implied by the engine — claude/codex run their vendor SDK, everything else runs the
+// Built-in Agent — so a session has nothing to carry and the UI has nothing to lock.

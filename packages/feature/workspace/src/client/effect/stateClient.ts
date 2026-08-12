@@ -33,7 +33,6 @@ export interface LoadedProjectState {
   claudeThinkings?: Record<string, boolean>
   codexModels?: Record<string, string>
   codexReasoningEfforts?: Record<string, string>
-  chatModes?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>
 }
@@ -69,7 +68,6 @@ export interface ProjectStateSave {
   claudeThinkings?: Record<string, boolean>
   codexModels?: Record<string, string>
   codexReasoningEfforts?: Record<string, string>
-  chatModes?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>
   /** sessions explicitly closed in THIS tab — the server removes them from the shared

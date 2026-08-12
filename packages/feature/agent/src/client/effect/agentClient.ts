@@ -67,14 +67,13 @@ export const saveAgentSettings = (
 
 // ─────────────────────────────────────────────────────────
 // /api/<engine>/credentials + /api/<engine>/models — the API-key engines
-// (deepseek, kimi). Both expose an Anthropic-compatible endpoint for SDK mode and
-// an OpenAI-compatible one for Built-in Agent mode behind a single key, so the
-// browser side of them is identical and parameterised by engine id.
+// (deepseek, kimi, glm). Each is one key against one OpenAI-compatible endpoint, so
+// the browser side of them is identical and parameterised by engine id.
 //
 // credentials GET returns only { hasKey, maskedKey }; the raw key comes back only
 // from the explicit ?reveal=1 form (revealEngineApiKey), used by the picker's Copy
 // button. PUT persists it (empty string clears). models is live rather than
-// hardcoded — both lineups change without a cockpit release — and requires a saved
+// hardcoded — every lineup changes without a cockpit release — and requires a saved
 // API key.
 // ─────────────────────────────────────────────────────────
 
@@ -90,9 +89,9 @@ export interface EngineModelInfo {
   id: string
   /** Provider's display name when it reports one, else the picker shows the id. */
   label?: string
-  /** Context window; persisted with the model and fed to the SDK's context env. */
+  /** Context window, shown next to the id when the provider reports one. */
   contextTokens?: number
-  /** Default thinking effort, likewise persisted and fed to the SDK. */
+  /** Default thinking effort, when the provider reports one. */
   effort?: string
 }
 

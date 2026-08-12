@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { usePageVisible, useWebSocket } from '@cockpit/shared-ui';
-import type { ChatEngine, DeepseekModel, EngineModelId, ChatMode, ClaudeModelId, ClaudeEffort, ClaudeContextWindow, CodexModelId, CodexReasoningEffort } from '@cockpit/feature-agent';
+import type { ChatEngine, DeepseekModel, EngineModelId, ClaudeModelId, ClaudeEffort, ClaudeContextWindow, CodexModelId, CodexReasoningEffort } from '@cockpit/feature-agent';
 import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
 import { Effect } from 'effect';
@@ -36,7 +36,6 @@ export interface TabInfo {
   claudeThinking?: boolean;
   codexModel?: CodexModelId;
   codexReasoningEffort?: CodexReasoningEffort;
-  chatMode?: ChatMode;
   planMode?: boolean;
   /** ollama only: send every user message with no prior history (independent task) */
   noHistory?: boolean;
@@ -47,11 +46,6 @@ const CODEX_THREAD_ID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 function normalizeCodexSessionId(sessionId: string): string {
   const match = sessionId.match(CODEX_THREAD_ID_RE);
   return match?.[1] ?? sessionId;
-}
-
-function normalizeChatMode(mode: string | undefined): ChatMode | undefined {
-  if (!mode) return undefined;
-  return mode === 'builtin' ? 'builtin' : 'sdk';
 }
 
 // ============================================
@@ -163,7 +157,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         const savedClaudeThinkings: Record<string, boolean> = data.claudeThinkings || {};
         const savedCodexModels: Record<string, string> = data.codexModels || {};
         const savedCodexReasoningEfforts: Record<string, string> = data.codexReasoningEfforts || {};
-        const savedChatModes: Record<string, string> = data.chatModes || {};
         const savedPlanModes: Record<string, boolean> = data.planModes || {};
         const savedNoHistories: Record<string, boolean> = data.noHistories || {};
 
@@ -198,7 +191,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
               claudeThinking: savedClaudeThinkings[sessionId] ?? prev?.claudeThinking,
               codexModel: (savedCodexModels[sessionId] as CodexModelId) || prev?.codexModel || undefined,
               codexReasoningEffort: (savedCodexReasoningEfforts[sessionId] as CodexReasoningEffort) || prev?.codexReasoningEffort || undefined,
-              chatMode: normalizeChatMode(savedChatModes[sessionId]) || prev?.chatMode || undefined,
               planMode: savedPlanModes[sessionId] ?? prev?.planMode,
               noHistory: savedNoHistories[sessionId] ?? prev?.noHistory,
             };
@@ -251,7 +243,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     const claudeThinkings: Record<string, boolean> = {};
     const codexModels: Record<string, string> = {};
     const codexReasoningEfforts: Record<string, string> = {};
-    const chatModes: Record<string, string> = {};
     const planModes: Record<string, boolean> = {};
     const noHistories: Record<string, boolean> = {};
     for (const tab of tabs) {
@@ -299,7 +290,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       // it back. So only explicit values are written; Chat backfills the rest from the
       // store, at which point they become explicit and round-trip normally.
       if (tab.sessionId) {
-        if (tab.chatMode !== undefined) chatModes[tab.sessionId] = tab.chatMode;
         if (tab.planMode !== undefined) planModes[tab.sessionId] = tab.planMode;
         if (tab.noHistory !== undefined) noHistories[tab.sessionId] = tab.noHistory;
         if (tab.claudeFastMode !== undefined) claudeFastModes[tab.sessionId] = tab.claudeFastMode;
@@ -332,7 +322,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         claudeThinkings,
         codexModels,
         codexReasoningEfforts,
-        chatModes,
         planModes,
         noHistories,
         ...(closedSessionIds.length ? { closedSessionIds } : {}),
@@ -397,7 +386,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       const claudeThinkings = (data.claudeThinkings || {}) as Record<string, boolean>;
       const codexModels = (data.codexModels || {}) as Record<string, string>;
       const codexReasoningEfforts = (data.codexReasoningEfforts || {}) as Record<string, string>;
-      const chatModes = (data.chatModes || {}) as Record<string, string>;
       const planModes = (data.planModes || {}) as Record<string, boolean>;
       const noHistories = (data.noHistories || {}) as Record<string, boolean>;
 
@@ -429,7 +417,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         claudeThinking: claudeThinkings[sid] ?? undefined,
         codexModel: (codexModels[sid] as CodexModelId) || undefined,
         codexReasoningEffort: (codexReasoningEfforts[sid] as CodexReasoningEffort) || undefined,
-        chatMode: normalizeChatMode(chatModes[sid]),
         planMode: planModes[sid] || undefined,
         noHistory: noHistories[sid] || undefined,
       }));
@@ -482,13 +469,12 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       claudeThinking?: boolean;
       codexModel?: CodexModelId;
       codexReasoningEffort?: CodexReasoningEffort;
-      chatMode?: ChatMode;
       planMode?: boolean;
       noHistory?: boolean;
       appendToEnd?: boolean;
     }
   ) => {
-    const { engine, ollamaModel, deepseekModel, kimiModel, glmModel, claudeModel, claudeEffort, claudeContextWindow, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, chatMode, planMode, noHistory, appendToEnd = false } = opts ?? {};
+    const { engine, ollamaModel, deepseekModel, kimiModel, glmModel, claudeModel, claudeEffort, claudeContextWindow, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, planMode, noHistory, appendToEnd = false } = opts ?? {};
     const newTab: TabInfo = {
       id: `tab-${Date.now()}`,
       cwd,
@@ -506,7 +492,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       claudeThinking,
       codexModel,
       codexReasoningEffort,
-      chatMode,
       planMode,
       noHistory,
     };
@@ -603,7 +588,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       }
       addTab(initialCwd, sid, title, {
         engine: data?.engines?.[sid] as ChatEngine | undefined,
-        chatMode: normalizeChatMode(data?.chatModes?.[sid]),
         ollamaModel: data?.ollamaModels?.[sid],
         deepseekModel: data?.deepseekModels?.[sid] as DeepseekModel | undefined,
         kimiModel: data?.kimiModels?.[sid] as EngineModelId | undefined,
@@ -759,15 +743,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     );
   }, []);
 
-  // Update execution mode (sdk/builtin) for a tab
-  const updateTabChatMode = useCallback((tabId: string, chatMode: ChatMode) => {
-    setTabs((prev) =>
-      prev.map((tab) =>
-        tab.id === tabId && tab.chatMode !== chatMode ? { ...tab, chatMode } : tab
-      )
-    );
-  }, []);
-
   // Update plan mode (read-only planning) for a tab
   const updateTabPlanMode = useCallback((tabId: string, planMode: boolean) => {
     setTabs((prev) =>
@@ -787,7 +762,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   }, []);
 
   // Open new session (for Fork, always creates a new tab). A fork lands in the SAME store as
-  // its source, so the new tab inherits the source tab's engine/model/mode rather than
+  // its source, so the new tab inherits the source tab's engine/model rather than
   // starting as "unknown" (which every downstream check would read as claude).
   const handleOpenSession = useCallback((sid: string, title?: string) => {
     const source = tabsRef.current.find((t) => t.id === activeTabIdRef.current);
@@ -804,7 +779,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       claudeThinking: source?.claudeThinking,
       codexModel: source?.codexModel,
       codexReasoningEffort: source?.codexReasoningEffort,
-      chatMode: source?.chatMode,
     });
   }, [initialCwd, addTab]);
 
@@ -948,7 +922,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     updateTabClaudeThinking,
     updateTabCodexModel,
     updateTabCodexReasoningEffort,
-    updateTabChatMode,
     updateTabPlanMode,
     updateTabNoHistory,
 

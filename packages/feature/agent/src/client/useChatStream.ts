@@ -13,7 +13,6 @@ import type {
   ApiRetryInfo,
   ChatEngine,
   EngineModelId,
-  ChatMode,
   ClaudeModelId,
   ClaudeEffort,
   ClaudeContextWindow,
@@ -43,9 +42,7 @@ interface UseChatStreamOptions {
   sessionId: string | null;
   cwd?: string;
   engine?: ChatEngine;
-  /** Execution mode. Only API-key engines use 'builtin'; Claude/Codex always use SDK. */
-  chatMode?: ChatMode;
-  /** Plan mode (SDK + claude engine only): read-only exploration that produces a plan without editing */
+  /** Plan mode (claude engine only): read-only exploration that produces a plan without editing */
   planMode?: boolean;
   /** Independent-task mode: send each user message with no prior history */
   noHistory?: boolean;
@@ -94,7 +91,7 @@ interface UseChatStreamReturn {
 export function useChatStream(
   messages: ChatMessage[],
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  { sessionId, cwd, engine, chatMode, planMode, noHistory, ollamaModel, engineModel, claudeModel, claudeEffort, claudeContextWindow, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, onSessionId, onFetchTitle, onRunComplete }: UseChatStreamOptions
+  { sessionId, cwd, engine, planMode, noHistory, ollamaModel, engineModel, claudeModel, claudeEffort, claudeContextWindow, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, onSessionId, onFetchTitle, onRunComplete }: UseChatStreamOptions
 ): UseChatStreamReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
@@ -563,14 +560,14 @@ export function useChatStream(
       turnActiveRef.current = false;
 
       const isClaudeEngine = !engine || engine === 'claude';
-      // The engines configured by API key. Both offer Built-in Agent mode — server runs
-      // engines/builtinAgent against their OpenAI-compatible endpoint instead of the Agent SDK.
+      // The engines configured by API key. Each runs the Built-in Agent loop against its
+      // OpenAI-compatible endpoint (server engines/builtinAgent).
       const isApiKeyEngine = engine === 'deepseek' || engine === 'kimi' || engine === 'glm';
-      const useBuiltin = chatMode === 'builtin' && isApiKeyEngine;
-      // Independent task: the Built-in Agent loop honours it directly (ollama,
-      // deepseek/kimi/glm + builtin). Claude and Codex stash their vendor
-      // transcript/rollout for the turn.
-      const canDropHistory = engine === 'ollama' || useBuiltin || isClaudeEngine || engine === 'codex';
+      // Independent task: the Built-in Agent loop honours it directly (ollama, deepseek,
+      // kimi, glm). Claude and Codex stash their vendor transcript/rollout for the turn.
+      // Every engine is on one of those two paths, so this is currently always true — it
+      // stays explicit as the contract for the next engine added.
+      const canDropHistory = engine === 'ollama' || isApiKeyEngine || isClaudeEngine || engine === 'codex';
 
       const runId = genRunId();
 
@@ -602,9 +599,8 @@ export function useChatStream(
             ...(isClaudeEngine && claudeThinking !== undefined && { claudeThinking }),
             ...(engine === 'codex' && codexModel && { model: codexModel }),
             ...(engine === 'codex' && codexReasoningEffort && { codexReasoningEffort }),
-            ...(useBuiltin && { mode: 'builtin' }),
-            // Plan mode: only meaningful in SDK mode on a claude engine (PTY has its own
-            // Shift+Tab plan). When unchecked, omit → server defaults to bypassPermissions.
+            // Plan mode: only meaningful on a claude engine.
+            // When unchecked, omit → server defaults to bypassPermissions.
             ...(usePlanMode && isClaudeEngine && { permissionMode: 'plan' }),
             // Independent task (see canDropHistory). Omitted when off.
             ...(canDropHistory && noHistory && { noHistory: true }),
@@ -657,7 +653,7 @@ export function useChatStream(
         setActiveRun(null);
       }
     },
-    [cwd, engine, chatMode, planMode, noHistory, ollamaModel, engineModel, claudeModel, claudeEffort, claudeContextWindow, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, setMessages, endRun]
+    [cwd, engine, planMode, noHistory, ollamaModel, engineModel, claudeModel, claudeEffort, claudeContextWindow, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, setMessages, endRun]
   );
 
   return {

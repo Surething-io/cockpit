@@ -44,36 +44,30 @@ const task = (sessionId: string) =>
   ({ cwd: CWD, sessionId }) as unknown as import('./scheduledTasks').ScheduledTask;
 
 describe('readSessionNoHistory (scheduled fire honors "independent task")', () => {
-  it('reads the toggle at fire time for a deepseek built-in session', async () => {
-    expect(await readSessionNoHistory(task(SID), 'deepseek', true)).toBe(true);
-  });
-
-  it('reads it for ollama, which always runs the built-in loop', async () => {
-    expect(await readSessionNoHistory(task(SID), 'ollama', false)).toBe(true);
+  it('reads the toggle at fire time for every Built-in Agent engine', async () => {
+    for (const engine of ['ollama', 'deepseek', 'kimi', 'glm']) {
+      expect(await readSessionNoHistory(task(SID), engine)).toBe(true);
+    }
   });
 
   it('is false for a session that never ticked the box', async () => {
-    expect(await readSessionNoHistory(task(PLAIN_SID), 'ollama', false)).toBe(false);
-  });
-
-  it('stays false for deepseek in SDK mode — that loop ignores noHistory', async () => {
-    expect(await readSessionNoHistory(task(SID), 'deepseek', false)).toBe(false);
+    expect(await readSessionNoHistory(task(PLAIN_SID), 'ollama')).toBe(false);
   });
 
   it('reads it for claude, which honors it by stashing the transcript', async () => {
-    expect(await readSessionNoHistory(task(SID), 'claude', false)).toBe(true);
+    expect(await readSessionNoHistory(task(SID), 'claude')).toBe(true);
   });
 
   it('reads it for codex, which honors it by stashing the rollout', async () => {
-    expect(await readSessionNoHistory(task(SID), 'codex', false)).toBe(true);
+    expect(await readSessionNoHistory(task(SID), 'codex')).toBe(true);
   });
 
-  it('stays false for kimi SDK mode, mirroring the client gate', async () => {
-    expect(await readSessionNoHistory(task(SID), 'kimi', false)).toBe(false);
+  it('stays false for an engine on neither path, mirroring the client gate', async () => {
+    expect(await readSessionNoHistory(task(SID), 'nonesuch')).toBe(false);
   });
 
   it('is false when the project has no state file at all', async () => {
     const orphan = { cwd: '/Users/x/never-opened', sessionId: SID } as unknown as import('./scheduledTasks').ScheduledTask;
-    expect(await readSessionNoHistory(orphan, 'ollama', false)).toBe(false);
+    expect(await readSessionNoHistory(orphan, 'ollama')).toBe(false);
   });
 });

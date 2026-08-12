@@ -3,9 +3,8 @@ import {
   SCHEDULED_TASKS_FILE, readJsonFile, writeJsonFile, mutateJsonFile, withFileLock,
   getSessionFilePath,
   getClaudeSessionPath, getOllamaSessionPath,
-  getDeepseekSessionPath, getDeepseekBuiltinSessionPath,
-  getKimiSessionPath, getKimiBuiltinSessionPath,
-  getGlmSessionPath, getGlmBuiltinSessionPath, findCodexSessionPath,
+  getDeepseekBuiltinSessionPath, getKimiBuiltinSessionPath,
+  getGlmBuiltinSessionPath, findCodexSessionPath,
 } from '@cockpit/shared-utils';
 import { updateGlobalState } from './state/globalState';
 import { isRunActive, getRunSnapshot, getRunSessionId, requestStop } from './sessionRunHub';
@@ -178,11 +177,7 @@ const dispatchEngineMessageEff = (
       // loopback, so scheduled tasks need no port and can't mis-target a sibling dev/prod
       // instance. The run registers in sessionRunHub and streams to viewers via
       // /ws/session-stream exactly like an interactive request.
-      // Execution mode is NOT snapshotted on the task — it is derived from where the
-      // session actually lives, so a task made from a Built-in Agent tab keeps running
-      // the built-in loop instead of silently switching backends mid-schedule.
-      const builtinLoop = isBuiltinLoopSession(engine, task);
-      const noHistory = await readSessionNoHistory(task, engine, builtinLoop);
+      const noHistory = await readSessionNoHistory(task, engine);
       const outcome = await dispatchChat(spec, {
         prompt: buildTaskPrompt(task),
         // Omit sessionId to start a brand-new session when the resume target is gone;
@@ -191,7 +186,6 @@ const dispatchEngineMessageEff = (
         cwd: task.cwd,
         engine,
         ...(task.model && { model: task.model }),
-        ...(builtinLoop && { mode: 'builtin' }),
         ...(noHistory && { noHistory: true }),
       });
       if (!outcome.ok) {
@@ -243,33 +237,14 @@ const dispatchEngineMessageEff = (
       }),
   });
 
-/** Built-in Agent transcript path for the engines that have two stores (SDK + built-in). */
+/** Transcript path per Built-in Agent engine, so adding one is a map entry rather than
+ *  another `if (engine === ...)` branch. */
 const BUILTIN_LOOP_PATHS: Record<string, (cwd: string, sessionId: string) => string> = {
+  ollama: getOllamaSessionPath,
   deepseek: getDeepseekBuiltinSessionPath,
   kimi: getKimiBuiltinSessionPath,
   glm: getGlmBuiltinSessionPath,
 };
-
-/** Claude Agent SDK transcript path for those same engines, keyed the same way so a new
- *  two-store engine is two map entries rather than another `if (engine === ...)` branch. */
-const SDK_STORE_PATHS: Record<string, (cwd: string, sessionId: string) => string> = {
-  deepseek: getDeepseekSessionPath,
-  kimi: getKimiSessionPath,
-  glm: getGlmSessionPath,
-};
-
-/**
- * Does this task's session live in its engine's Built-in Agent store?
- *
- * deepseek, kimi and glm each run the same two loops (Claude Agent SDK / our built-in agent)
- * and write a different store per mode, so the store IS the answer — the task never snapshots
- * a mode. ollama is absent on purpose: it only ever runs the built-in loop, so it needs no
- * probe (see readSessionNoHistory, which special-cases it).
- */
-function isBuiltinLoopSession(engine: string, task: ScheduledTask): boolean {
-  const resolve = BUILTIN_LOOP_PATHS[engine];
-  return !!resolve && existsSync(resolve(task.cwd, task.sessionId));
-}
 
 /** Per-session slice of the project state file the chat tabs persist (see /api/project-state). */
 interface ProjectSessionState {
@@ -279,24 +254,22 @@ interface ProjectSessionState {
 /**
  * "Independent task" (the noHistory toggle) for this session, READ AT FIRE TIME.
  *
- * It is a per-session UI preference, not a task field, so it follows the same rule as the
- * execution mode above: derived from where the session lives, never snapshotted onto the
- * task. Flipping the checkbox therefore takes effect on the next fire instead of being
- * frozen at task creation — and a task whose session has it on stops replaying a transcript
- * the user explicitly asked not to send.
+ * It is a per-session UI preference, not a task field, so it is read at fire time rather
+ * than snapshotted onto the task. Flipping the checkbox therefore takes effect on the next
+ * fire instead of being frozen at task creation — and a task whose session has it on stops
+ * replaying a transcript the user explicitly asked not to send.
  *
  * Gated on the engines that actually honor it, mirroring the client's `canDropHistory`:
- * the built-in agent loop reads params.noHistory directly (ollama always runs that loop,
- * deepseek/kimi/glm only in builtin mode), claude honors it in the SDK loop by stashing
- * the transcript for the turn, and codex stashes its rollout. Passing the flag to an engine
- * that ignores it would read as support that isn't there.
+ * the built-in agent loop reads params.noHistory directly (ollama, deepseek, kimi, glm),
+ * claude honors it in the SDK loop by stashing the transcript for the turn, and codex
+ * stashes its rollout. Every engine cockpit ships is on one of those two paths, so this
+ * gate is currently total — it stays as the explicit contract for the next engine added.
  */
 export async function readSessionNoHistory(
   task: ScheduledTask,
   engine: string,
-  builtinLoop: boolean,
 ): Promise<boolean> {
-  if (engine !== 'ollama' && !builtinLoop && engine !== 'claude' && engine !== 'codex') return false;
+  if (!BUILTIN_LOOP_PATHS[engine] && engine !== 'claude' && engine !== 'codex') return false;
   const state = await readJsonFile<ProjectSessionState>(getSessionFilePath(task.cwd), {});
   return state.noHistories?.[task.sessionId] === true;
 }
@@ -307,12 +280,8 @@ export async function readSessionNoHistory(
  * sessionId and returns null when not found.
  */
 function sessionPathFor(engine: string, task: ScheduledTask): string | null {
-  if (engine === 'ollama') return getOllamaSessionPath(task.cwd, task.sessionId);
-  // DeepSeek/Kimi/GLM have one store per execution mode; the built-in one is checked first so
-  // a built-in session isn't reported missing (which would restart it as a fresh SDK run).
-  if (isBuiltinLoopSession(engine, task)) return BUILTIN_LOOP_PATHS[engine](task.cwd, task.sessionId);
-  const sdkStorePath = SDK_STORE_PATHS[engine];
-  if (sdkStorePath) return sdkStorePath(task.cwd, task.sessionId);
+  const builtinPath = BUILTIN_LOOP_PATHS[engine];
+  if (builtinPath) return builtinPath(task.cwd, task.sessionId);
   if (engine === 'codex') return findCodexSessionPath(task.sessionId);
   return getClaudeSessionPath(task.cwd, task.sessionId);
 }

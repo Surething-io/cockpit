@@ -343,7 +343,7 @@ export const POST = handler((req) =>
         new NotFoundError({ resource: 'session', id: sessionId })
       );
     }
-    const { sessionPath, engine, mode } = resolved;
+    const { sessionPath, engine } = resolved;
 
     // Subagent transcript branch: same parser/fingerprint flow on the agent jsonl
     if (toolUseId) {
@@ -448,7 +448,7 @@ export const POST = handler((req) =>
       try: async () => {
         if (engine === 'codex') return parseCodexTranscriptFile(sessionPath);
         // Everything else (claude/ollama/deepseek/kimi/glm) writes Claude-style
-        // transcripts, in both SDK and Built-in Agent mode, so one parser covers them.
+        // transcripts, so one parser covers them.
         // ollama has done so since v1.0.186; the AI SDK ModelMessage legacy fallback
         // (v1.0.184–185 only) was removed.
         return parseTranscriptFile(sessionPath, limit, beforeTurnIndex);
@@ -473,9 +473,6 @@ export const POST = handler((req) =>
       // more reliable than the optional global-state engine field, which is only
       // written for sessions that were open as a tab.
       engine,
-      // Authoritative execution mode where the store proves it (deepseek/kimi/glm
-      // sdk vs builtin); omitted when it doesn't (see resolveSessionPath).
-      mode,
     });
   })
 );

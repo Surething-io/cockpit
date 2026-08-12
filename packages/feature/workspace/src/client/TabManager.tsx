@@ -71,7 +71,6 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     updateTabClaudeThinking,
     updateTabCodexModel,
     updateTabCodexReasoningEffort,
-    updateTabChatMode,
     updateTabPlanMode,
     updateTabNoHistory,
     handleTabDragStart,
@@ -444,8 +443,6 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                           onCodexModelChange={updateTabCodexModel}
                           codexReasoningEffort={tab.codexReasoningEffort}
                           onCodexReasoningEffortChange={updateTabCodexReasoningEffort}
-                          chatMode={tab.chatMode}
-                          onChatModeChange={updateTabChatMode}
                           planMode={tab.planMode}
                           onPlanModeChange={updateTabPlanMode}
                           noHistory={tab.noHistory}
@@ -569,8 +566,6 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                     onCodexModelChange={updateTabCodexModel}
                     codexReasoningEffort={tab.codexReasoningEffort}
                     onCodexReasoningEffortChange={updateTabCodexReasoningEffort}
-                    chatMode={tab.chatMode}
-                    onChatModeChange={updateTabChatMode}
                     planMode={tab.planMode}
                     onPlanModeChange={updateTabPlanMode}
                     noHistory={tab.noHistory}

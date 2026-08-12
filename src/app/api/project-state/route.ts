@@ -30,7 +30,6 @@ interface ProjectState {
   claudeThinkings?: Record<string, boolean>
   codexModels?: Record<string, string>
   codexReasoningEfforts?: Record<string, string>
-  chatModes?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>
 }
@@ -149,7 +148,6 @@ export const POST = handler((req) =>
           const claudeThinkings = carryOver(existing.claudeThinkings, body.claudeThinkings, (v) => !v)
           const codexModels = carryOver(existing.codexModels, body.codexModels)
           const codexReasoningEfforts = carryOver(existing.codexReasoningEfforts, body.codexReasoningEfforts)
-          const chatModes = carryOver(existing.chatModes, body.chatModes, (v) => v === "sdk")
           const planModes = carryOver(existing.planModes, body.planModes, (v) => !v)
           const noHistories = carryOver(existing.noHistories, body.noHistories, (v) => !v)
           const active = normalizeSessionId(body.activeSessionId ?? existing.activeSessionId ?? "")
@@ -168,7 +166,6 @@ export const POST = handler((req) =>
             ...(Object.keys(claudeThinkings).length ? { claudeThinkings } : {}),
             ...(Object.keys(codexModels).length ? { codexModels } : {}),
             ...(Object.keys(codexReasoningEfforts).length ? { codexReasoningEfforts } : {}),
-            ...(Object.keys(chatModes).length ? { chatModes } : {}),
             ...(Object.keys(planModes).length ? { planModes } : {}),
             ...(Object.keys(noHistories).length ? { noHistories } : {}),
           }

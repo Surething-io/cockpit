@@ -3,11 +3,8 @@ import { join } from 'path';
 import {
   CODEX_SESSIONS_DIR,
   getClaudeSessionPath,
-  getDeepseekSessionPath,
   getDeepseekBuiltinSessionPath,
-  getKimiSessionPath,
   getKimiBuiltinSessionPath,
-  getGlmSessionPath,
   getGlmBuiltinSessionPath,
   getOllamaSessionPath,
   findCodexSessionPath,
@@ -24,20 +21,19 @@ export type SessionEngine =
 export interface SessionStore {
   sessionPath: string;
   engine: SessionEngine;
-  mode?: 'sdk' | 'builtin';
 }
 
 /**
  * Where a session lives IS what it ran as — the transcript files carry no engine field, so
- * the store that holds one is the only authority. Engine and execution mode are TWO
- * dimensions and only the store can separate them: deepseek's, kimi's and glm's SDK and
- * Built-in Agent modes write to different roots, so `mode` is authoritative for those and
- * MUST be reported alongside the engine (collapsing them to `engine: 'deepseek'` alone loses
- * the half that decides which loop resumes the session).
+ * the store that holds one is the only authority. One store per engine, so the answer is a
+ * single dimension.
  *
- * `mode` is deliberately absent where the store cannot prove it: claude writes the
- * same directory whether it ran through the SDK or the PTY, so guessing there would
- * replace one wrong answer with another. Absent means "unknown, keep what the tab had".
+ * There used to be a second one: deepseek/kimi/glm each wrote a separate store per
+ * execution mode (Claude Agent SDK vs Built-in Agent) and a `mode` had to be reported
+ * alongside the engine. Those engines now only ever run the built-in loop, and the old SDK
+ * stores under ~/.cockpit/<engine>/projects are deliberately NOT probed — their transcripts
+ * are in the SDK's own shape and no loop remains that can resume them, so surfacing them
+ * would offer sessions that die on the first turn.
  */
 export function resolveSessionPath(
   cwd: string,
@@ -47,37 +43,17 @@ export function resolveSessionPath(
   if (fs.existsSync(sessionPath)) {
     return { sessionPath, engine: 'claude' };
   }
-  const deepseekPath = getDeepseekSessionPath(cwd, sessionId);
+  const deepseekPath = getDeepseekBuiltinSessionPath(cwd, sessionId);
   if (fs.existsSync(deepseekPath)) {
-    return { sessionPath: deepseekPath, engine: 'deepseek', mode: 'sdk' };
+    return { sessionPath: deepseekPath, engine: 'deepseek' };
   }
-  // Same engine, other execution mode: sessions run through the Built-in Agent live in
-  // their own store, so both have to be probed before we conclude "not a deepseek session".
-  const deepseekBuiltinPath = getDeepseekBuiltinSessionPath(cwd, sessionId);
-  if (fs.existsSync(deepseekBuiltinPath)) {
-    return {
-      sessionPath: deepseekBuiltinPath,
-      engine: 'deepseek',
-      mode: 'builtin',
-    };
-  }
-  // Kimi is structurally identical to deepseek: same two stores, same mode split.
-  const kimiPath = getKimiSessionPath(cwd, sessionId);
+  const kimiPath = getKimiBuiltinSessionPath(cwd, sessionId);
   if (fs.existsSync(kimiPath)) {
-    return { sessionPath: kimiPath, engine: 'kimi', mode: 'sdk' };
+    return { sessionPath: kimiPath, engine: 'kimi' };
   }
-  const kimiBuiltinPath = getKimiBuiltinSessionPath(cwd, sessionId);
-  if (fs.existsSync(kimiBuiltinPath)) {
-    return { sessionPath: kimiBuiltinPath, engine: 'kimi', mode: 'builtin' };
-  }
-  // GLM likewise: an SDK store and a Built-in Agent store, split by execution mode.
-  const glmPath = getGlmSessionPath(cwd, sessionId);
+  const glmPath = getGlmBuiltinSessionPath(cwd, sessionId);
   if (fs.existsSync(glmPath)) {
-    return { sessionPath: glmPath, engine: 'glm', mode: 'sdk' };
-  }
-  const glmBuiltinPath = getGlmBuiltinSessionPath(cwd, sessionId);
-  if (fs.existsSync(glmBuiltinPath)) {
-    return { sessionPath: glmBuiltinPath, engine: 'glm', mode: 'builtin' };
+    return { sessionPath: glmPath, engine: 'glm' };
   }
   const codexPath = findCodexSessionPath(sessionId);
   if (codexPath) {
@@ -113,17 +89,11 @@ export function newSessionPathInStore(
     case 'claude':
       return getClaudeSessionPath(cwd, newSessionId);
     case 'deepseek':
-      return store.mode === 'builtin'
-        ? getDeepseekBuiltinSessionPath(cwd, newSessionId)
-        : getDeepseekSessionPath(cwd, newSessionId);
+      return getDeepseekBuiltinSessionPath(cwd, newSessionId);
     case 'kimi':
-      return store.mode === 'builtin'
-        ? getKimiBuiltinSessionPath(cwd, newSessionId)
-        : getKimiSessionPath(cwd, newSessionId);
+      return getKimiBuiltinSessionPath(cwd, newSessionId);
     case 'glm':
-      return store.mode === 'builtin'
-        ? getGlmBuiltinSessionPath(cwd, newSessionId)
-        : getGlmSessionPath(cwd, newSessionId);
+      return getGlmBuiltinSessionPath(cwd, newSessionId);
     case 'ollama':
       return getOllamaSessionPath(cwd, newSessionId);
     case 'codex': {

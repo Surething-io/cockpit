@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, DEEPSEEK_PROJECTS_DIR, KIMI_PROJECTS_DIR, GLM_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, getBuiltinSessionsRoot, findCodexSessionPath, listCodexSessionsByEncodedPath, normalizeCodexSessionId } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, getBuiltinSessionsRoot, findCodexSessionPath, listCodexSessionsByEncodedPath, normalizeCodexSessionId } from '@cockpit/shared-utils';
 import { dynamicHandler } from '@cockpit/effect-runtime/server';
 import { AppError, ValidationError } from '@cockpit/effect-core';
 import { generateTitle } from '../../sessionTitle';
@@ -28,8 +28,7 @@ interface SessionInfo {
   /**
    * Which engine wrote this transcript, derived from the store it lives in. Display only
    * (the badge in the session lists) — reopening a session does NOT restore its engine from
-   * here: `/api/session-by-path` re-derives it, including the sdk-vs-builtin execution mode
-   * this field deliberately does not carry, and Chat writes the answer into session.json.
+   * here: `/api/session-by-path` re-derives it and Chat writes the answer into session.json.
    */
   engine?: 'claude' | 'ollama' | 'codex' | 'kimi' | 'deepseek' | 'glm';
 }
@@ -310,28 +309,17 @@ async function loadSessions(encodedPath: string) {
   const livePaths = new Set<string>();
 
   // Collect session files from all engine directories. Every store here holds
-  // Claude-format transcripts, so one parser covers them all. DeepSeek, Kimi and GLM each
-  // contribute TWO stores because their execution modes don't share one: SDK mode is
-  // written by the Agent SDK under <engine>/projects, Built-in Agent mode by us under
-  // <engine>-sessions.
+  // Claude-format transcripts, so one parser covers them all. One store per engine —
+  // ~/.cockpit/<engine>/projects is deliberately absent: those are transcripts from the
+  // removed Claude Agent SDK mode of deepseek/kimi/glm, and no loop remains that can
+  // resume them, so listing them would offer sessions that die on the first turn.
   const claudeDir = path.join(CLAUDE_PROJECTS_DIR, encodedPath);
-  const ollamaDir = path.join(getBuiltinSessionsRoot('ollama'), encodedPath);
-  const deepseekSdkDir = path.join(DEEPSEEK_PROJECTS_DIR, encodedPath);
-  const deepseekBuiltinDir = path.join(getBuiltinSessionsRoot('deepseek'), encodedPath);
-  const kimiSdkDir = path.join(KIMI_PROJECTS_DIR, encodedPath);
-  const kimiBuiltinDir = path.join(getBuiltinSessionsRoot('kimi'), encodedPath);
-  const glmSdkDir = path.join(GLM_PROJECTS_DIR, encodedPath);
-  const glmBuiltinDir = path.join(getBuiltinSessionsRoot('glm'), encodedPath);
 
   const allSessionFiles = [
     ...collectSessionFiles(claudeDir, 'claude'),
-    ...collectSessionFiles(ollamaDir, 'ollama'),
-    ...collectSessionFiles(deepseekSdkDir, 'deepseek'),
-    ...collectSessionFiles(deepseekBuiltinDir, 'deepseek'),
-    ...collectSessionFiles(kimiSdkDir, 'kimi'),
-    ...collectSessionFiles(kimiBuiltinDir, 'kimi'),
-    ...collectSessionFiles(glmSdkDir, 'glm'),
-    ...collectSessionFiles(glmBuiltinDir, 'glm'),
+    ...(['ollama', 'deepseek', 'kimi', 'glm'] as const).flatMap((engine) =>
+      collectSessionFiles(path.join(getBuiltinSessionsRoot(engine), encodedPath), engine)
+    ),
   ];
 
   // Deduplicate by filename (same sessionId could theoretically appear in both)

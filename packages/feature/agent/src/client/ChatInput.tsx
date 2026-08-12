@@ -2,14 +2,12 @@
 
 import { useState, useEffect, useLayoutEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback, useMemo, memo } from 'react';
 import type { ImageInfo, ChatEngine } from './types';
-import { toast } from '@cockpit/shared-ui';
 import { useTranslation } from 'react-i18next';
 import { ImagePreview } from '@cockpit/shared-ui';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
 import { QuickPromptsPopover } from './QuickPromptsPopover';
 import { onSkillsChanged } from '@cockpit/shared-api';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
-import { stageFiles } from '@cockpit/feature-explorer';
 import { loadSkills as loadSkillsEff, loadSlashCommands } from './effect/agentClient';
 
 // Migrated from src/components/project/ChatInput.tsx.
@@ -410,27 +408,6 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
       )}
 
       <div className="flex gap-2 items-end p-4">
-        {/* Git stage all files button */}
-        <button
-          onClick={async () => {
-            if (!cwd) return;
-            const exit = await BrowserRuntime.runPromiseExit(stageFiles(cwd, ['.']));
-            if (exit._tag === 'Success') {
-              toast(t('toast.stagedAllFiles'), 'success');
-              window.dispatchEvent(new CustomEvent('git-status-changed'));
-            } else {
-              console.error('Error staging files:', exit.cause);
-              toast(t('toast.stageFailed'), 'error');
-            }
-          }}
-          className="p-2 text-green-11 hover:text-green-10 hover:bg-green-9/10 active:bg-green-9/20 active:scale-95 rounded-lg transition-all"
-          title={t('chat.stageAll')}
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
-
         {/* Git view changes button - clickable even during generation */}
         {onShowGitStatus && (
           <button

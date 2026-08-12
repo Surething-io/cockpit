@@ -346,9 +346,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject 
                           >
                             {/* Session Title + Engine Badge */}
                             <div className="flex items-center gap-1.5 mb-1">
-                              {session.engine && session.engine !== 'claude' && (
-                                <EngineBadge engine={session.engine} />
-                              )}
+                              <EngineBadge engine={session.engine} />
                               <h4 className="text-xs font-medium text-foreground truncate" data-tooltip={session.title}>
                                 {session.title}
                               </h4>

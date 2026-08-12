@@ -1,12 +1,21 @@
 import type { Messages } from '@/content/messages';
 
+/**
+ * Engine name (as written in content/messages.ts) → logo file under
+ * public/agent-icons/, which scripts/copy-agent-icons.mjs syncs from the app on
+ * every predev/prebuild. These are the same marks the product shows on its tabs,
+ * session lists and engine picker, so the page and the app agree.
+ *
+ * They were emoji stand-ins (🟣 🔵 🐳 🧠 🌙 🦙) — recognisable only after you had
+ * been told the mapping, and two of them were just colored circles.
+ */
 const ICONS: Record<string, string> = {
-  Claude: '🟣',
-  'Codex': '🔵',
-  DeepSeek: '🐳',
-  GLM: '🧠',
-  Kimi: '🌙',
-  Ollama: '🦙',
+  Claude: 'claude',
+  Codex: 'codex',
+  DeepSeek: 'deepseek',
+  GLM: 'glm',
+  Kimi: 'kimi',
+  Ollama: 'ollama',
 };
 
 export function Engines({ t }: { t: Messages }) {
@@ -36,8 +45,20 @@ export function Engines({ t }: { t: Messages }) {
                   {item.badge}
                 </span>
               ) : null}
-              <div className="inline-flex size-11 items-center justify-center rounded-xl bg-brand/10 text-2xl">
-                {ICONS[item.name] ?? '⚙️'}
+              <div className="inline-flex size-11 items-center justify-center rounded-xl bg-brand/10">
+                {ICONS[item.name] ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- static local SVG; next/image adds a loader and layout wrapper for no gain
+                  <img
+                    src={`/agent-icons/${ICONS[item.name]}.svg`}
+                    alt=""
+                    aria-hidden="true"
+                    width={24}
+                    height={24}
+                    className="size-6"
+                  />
+                ) : (
+                  <span className="text-2xl">⚙️</span>
+                )}
               </div>
               <div className="mt-3 font-semibold">{item.name}</div>
               <div className="mt-0.5 text-xs text-brand/80 font-mono">

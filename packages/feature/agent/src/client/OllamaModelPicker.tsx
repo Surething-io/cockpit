@@ -4,6 +4,13 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
+  ENGINE_ACCENTS,
+  ENGINE_MENU_CLASS,
+  EngineCheck,
+  EngineIcon,
+  EnginePickerTrigger,
+} from './engineAccents';
+import {
   loadOllamaModelsWithAutoStart,
   loadOllamaConfig,
   saveOllamaConfig,
@@ -37,6 +44,7 @@ function sourceHint(source: OllamaConfigInfo['baseUrlSource']): string | null {
 }
 
 export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPickerProps) {
+  const accent = ENGINE_ACCENTS.ollama;
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState<OllamaModel[]>([]);
   const [loading, setLoading] = useState(false);
@@ -208,7 +216,7 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
     <Portal>
     <div
       ref={menuRef}
-      className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-lg py-2 min-w-[300px]"
+      className={`${ENGINE_MENU_CLASS} min-w-[300px]`}
       style={{ top: pos.top, left: pos.left }}
     >
       {/* Server URL section */}
@@ -233,12 +241,12 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
               onKeyDown={(e) => { if (e.key === 'Enter') handleSaveBaseUrl(); }}
               placeholder="http://127.0.0.1:11434"
               spellCheck={false}
-              className="flex-1 min-w-0 text-xs px-2 py-1 rounded bg-secondary text-foreground border border-border focus:border-violet-500 focus:outline-none font-mono"
+              className={`flex-1 min-w-0 text-xs px-2 py-1 rounded bg-secondary text-foreground border border-border focus:outline-none font-mono ${accent.inputFocus}`}
             />
             <button
               onClick={handleSaveBaseUrl}
               disabled={savingConfig}
-              className="text-[11px] px-2 py-1 rounded bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className={`text-[11px] px-2 py-1 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${accent.save}`}
             >
               {savingConfig ? '...' : 'Save'}
             </button>
@@ -284,12 +292,12 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
               onKeyDown={(e) => { if (e.key === 'Enter') handleSaveKey(); }}
               placeholder="optional — for authenticated servers"
               spellCheck={false}
-              className="flex-1 min-w-0 text-xs px-2 py-1 rounded bg-secondary text-foreground border border-border focus:border-violet-500 focus:outline-none font-mono"
+              className={`flex-1 min-w-0 text-xs px-2 py-1 rounded bg-secondary text-foreground border border-border focus:outline-none font-mono ${accent.inputFocus}`}
             />
             <button
               onClick={handleSaveKey}
               disabled={savingConfig || !keyInput.trim()}
-              className="text-[11px] px-2 py-1 rounded bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className={`text-[11px] px-2 py-1 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${accent.save}`}
             >
               {savingConfig ? '...' : 'Save'}
             </button>
@@ -327,20 +335,24 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
             No models found. Run <code className="bg-secondary px-1 rounded">ollama pull &lt;model&gt;</code>
           </div>
         ) : (
-          models.map((m) => (
-            <button
-              key={m.name}
-              onClick={() => selectModel(m.name)}
-              className={`w-full flex items-center justify-between gap-2 px-3 py-1.5 text-xs hover:bg-brand/10 transition-colors ${
-                m.name === currentModel ? 'text-brand' : 'text-foreground'
-              }`}
-            >
-              <span className="truncate">{m.name.replace(/:latest$/, '')}</span>
-              <span className="text-muted-foreground flex-shrink-0">
-                {m.parameter_size || formatSize(m.size)}
-              </span>
-            </button>
-          ))
+          models.map((m) => {
+            const selected = m.name === currentModel;
+            return (
+              <button
+                key={m.name}
+                onClick={() => selectModel(m.name)}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors ${
+                  selected ? accent.selectedRow : 'text-foreground hover:bg-accent'
+                }`}
+              >
+                <EngineCheck selected={selected} accent={accent} />
+                <span className="truncate">{m.name.replace(/:latest$/, '')}</span>
+                <span className="ml-auto pl-2 text-muted-foreground flex-shrink-0">
+                  {m.parameter_size || formatSize(m.size)}
+                </span>
+              </button>
+            );
+          })
         )}
       </div>
     </div>
@@ -349,18 +361,15 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
 
   return (
     <>
-      <button
-        ref={btnRef}
-        onClick={toggle}
-        className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 transition-colors"
+      <EnginePickerTrigger
+        buttonRef={btnRef}
+        accent={accent}
+        label={displayName}
         title="Configure Ollama"
-      >
-        <span className="w-1.5 h-1.5 rounded-full bg-violet-500 flex-shrink-0" />
-        <span className="truncate max-w-[120px]">{displayName}</span>
-        <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
+        onClick={toggle}
+        icon={<EngineIcon engine="ollama" />}
+        testId="ollama-config-picker"
+      />
       {menu}
     </>
   );

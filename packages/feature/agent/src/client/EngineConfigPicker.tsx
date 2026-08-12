@@ -2,6 +2,14 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
+import {
+  ENGINE_ACCENTS,
+  ENGINE_MENU_CLASS,
+  ENGINE_SETUP_TONE,
+  EngineCheck,
+  EngineIcon,
+  EnginePickerTrigger,
+} from './engineAccents';
 import type { EngineModelId } from './types';
 import { defaultRegionForLanguage } from '@cockpit/shared-utils';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
@@ -27,53 +35,9 @@ import {
  * is whether the provider is served from more than one host (GLM's `regions`).
  */
 
-type Accent = 'sky' | 'purple' | 'amber';
-
-/** Tailwind classes must be literal strings — a `bg-${accent}-500` template never
- *  reaches the generated CSS. */
-const ACCENTS: Record<Accent, {
-  dot: string; trigger: string; label: string; chevron: string;
-  inputFocus: string; save: string; selectedRow: string; radio: string; radioDot: string;
-}> = {
-  sky: {
-    dot: 'bg-sky-500',
-    trigger: 'bg-sky-500/15 hover:bg-sky-500/25',
-    label: 'text-sky-400',
-    chevron: 'text-sky-400',
-    inputFocus: 'focus:border-sky-500',
-    save: 'bg-sky-500/20 hover:bg-sky-500/30 text-sky-300',
-    selectedRow: 'bg-sky-500/15 text-sky-300',
-    radio: 'border-sky-400',
-    radioDot: 'bg-sky-400',
-  },
-  purple: {
-    dot: 'bg-purple-500',
-    trigger: 'bg-purple-500/15 hover:bg-purple-500/25',
-    label: 'text-purple-400',
-    chevron: 'text-purple-400',
-    inputFocus: 'focus:border-purple-500',
-    save: 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300',
-    selectedRow: 'bg-purple-500/15 text-purple-300',
-    radio: 'border-purple-400',
-    radioDot: 'bg-purple-400',
-  },
-  amber: {
-    dot: 'bg-amber-500',
-    trigger: 'bg-amber-500/15 hover:bg-amber-500/25',
-    label: 'text-amber-400',
-    chevron: 'text-amber-400',
-    inputFocus: 'focus:border-amber-500',
-    save: 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300',
-    selectedRow: 'bg-amber-500/15 text-amber-300',
-    radio: 'border-amber-400',
-    radioDot: 'bg-amber-400',
-  },
-};
-
 interface EngineUiConfig {
   /** Human-readable provider name, used in every label and tooltip. */
   label: string;
-  accent: Accent;
   /** Console page where keys are created — the only place a user can get the value
    *  this menu asks for, so the field links straight to it. */
   apiKeysUrl: string;
@@ -90,19 +54,16 @@ interface EngineUiConfig {
 const ENGINES: Record<ApiKeyEngine, EngineUiConfig> = {
   deepseek: {
     label: 'DeepSeek',
-    accent: 'sky',
     apiKeysUrl: 'https://platform.deepseek.com/api_keys',
     modelsEndpoint: '/v1/models',
   },
   kimi: {
     label: 'Kimi',
-    accent: 'purple',
     apiKeysUrl: 'https://www.kimi.com/code/console',
     modelsEndpoint: '/coding/v1/models',
   },
   glm: {
     label: 'GLM',
-    accent: 'amber',
     apiKeysUrl: 'https://bigmodel.cn/apikey/platform',
     modelsEndpoint: '/coding/paas/v4/models',
     regions: [
@@ -141,7 +102,7 @@ export function EngineConfigPicker({
   onHasKeyChange,
 }: EngineConfigPickerProps) {
   const config = ENGINES[engine];
-  const accent = ACCENTS[config.accent];
+  const accent = ENGINE_ACCENTS[engine];
 
   const [open, setOpen] = useState(false);
   const [hasKey, setHasKey] = useState(false); // whether a key is persisted
@@ -408,14 +369,14 @@ export function EngineConfigPicker({
 
   // The list is live, so there is no meaningful fallback id to show before it arrives.
   const displayLabel = !hasKey ? 'Set API key' : (currentModel || 'Select model');
-  const labelTone = !hasKey ? 'text-amber-400' : accent.label;
+  const labelTone = !hasKey ? ENGINE_SETUP_TONE : accent.label;
   const selectedModel = currentModel || '';
 
   const menu = open ? (
     <Portal>
       <div
         ref={menuRef}
-        className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-lg py-2 min-w-[280px]"
+        className={`${ENGINE_MENU_CLASS} min-w-[280px]`}
         style={{ top: pos.top, left: pos.left }}
       >
         {loading ? (
@@ -572,11 +533,7 @@ export function EngineConfigPicker({
                         selected ? accent.selectedRow : 'text-foreground hover:bg-accent'
                       }`}
                     >
-                      <span className={`w-3 h-3 rounded-full border-2 flex items-center justify-center ${
-                        selected ? accent.radio : 'border-muted-foreground'
-                      }`}>
-                        {selected && <span className={`w-1.5 h-1.5 rounded-full ${accent.radioDot}`} />}
-                      </span>
+                      <EngineCheck selected={selected} accent={accent} />
                       <span className="truncate">{m.id}</span>
                       {/* The id is what the engine sends and what a bug report needs, so it
                           stays primary; the provider's display name only earns space when it
@@ -600,19 +557,16 @@ export function EngineConfigPicker({
 
   return (
     <>
-      <button
-        ref={btnRef}
-        onClick={toggle}
-        className={`flex items-center gap-1 px-2 py-0.5 text-[11px] rounded transition-colors ${accent.trigger}`}
+      <EnginePickerTrigger
+        buttonRef={btnRef}
+        accent={accent}
+        label={displayLabel}
+        labelClassName={labelTone}
         title={`Configure ${config.label}`}
-        data-testid={`${engine}-config-picker`}
-      >
-        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${accent.dot}`} />
-        <span className={`truncate max-w-[160px] ${labelTone}`}>{displayLabel}</span>
-        <svg className={`w-3 h-3 flex-shrink-0 ${accent.chevron}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
+        onClick={toggle}
+        icon={<EngineIcon engine={engine} />}
+        testId={`${engine}-config-picker`}
+      />
       {menu}
     </>
   );

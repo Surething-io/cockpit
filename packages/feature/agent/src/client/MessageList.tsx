@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react';
 import { useChatContextOptional } from './ChatContext';
+import { ENGINE_LABELS, isEngineAccentId } from './engineAccents';
 import type { ChatMessage, ApiRetryInfo, ChatEngine, ToolCallInfo, LiveOutputTokens } from './types';
 import { MessageBubble } from './MessageBubble';
 // Tech debt: cross-package imports into the main shell.
@@ -155,14 +156,11 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     return () => clearInterval(id);
   }, [isLoading, runningStartedAt]);
 
-  const runningEngineLabel = useMemo(() =>
-    engine === 'codex' ? 'Codex'
-      : engine === 'kimi' ? 'Kimi'
-        : engine === 'ollama' ? 'Ollama'
-          : engine === 'deepseek' ? 'DeepSeek'
-            : engine === 'glm' ? 'GLM'
-              : 'Claude',
-  [engine]);
+  /* Same source as EngineBadge's tooltip — a missing engine is the historical default. */
+  const runningEngineLabel = useMemo(
+    () => (isEngineAccentId(engine) ? ENGINE_LABELS[engine] : ENGINE_LABELS.claude),
+    [engine],
+  );
 
   const elapsedLabel = useMemo(() => {
     const minutes = Math.floor(elapsedSeconds / 60);

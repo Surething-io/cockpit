@@ -7,6 +7,11 @@
 # The build script (scripts/fetch-changelog.mjs) overwrites it from GitHub
 # Releases each time `npm run build` runs.
 
+# Engine logos, copied from ../public/agent-icons by scripts/copy-agent-icons.mjs
+# on predev/prebuild. Not committed: the app's copy is the only original, and a
+# second set under version control is a second set to forget to update.
+/public/agent-icons/
+
 # Environment
 .env
 .env.local

@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 
 import { TabInfo } from './useTabState';
+import { EngineBadge, EngineIcon, ENGINE_IDS, ENGINE_LABELS, type EngineAccentId } from '@cockpit/feature-agent';
 import { Tooltip } from '@cockpit/shared-ui';
 import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
 import { useTranslation } from 'react-i18next';
@@ -79,7 +80,7 @@ function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewGlmTab, onNe
     setOpen(v => !v);
   };
 
-  const pick = (engine: 'claude' | 'codex' | 'kimi' | 'glm' | 'ollama' | 'deepseek') => {
+  const pick = (engine: EngineAccentId) => {
     setOpen(false);
     if (engine === 'codex') onNewCodexTab?.();
     else if (engine === 'kimi') onNewKimiTab?.();
@@ -107,48 +108,19 @@ function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewGlmTab, onNe
           className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-lg py-1 min-w-[140px]"
           style={{ top: pos.top, right: pos.right }}
         >
-          <button
-            onClick={() => pick('claude')}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors whitespace-nowrap"
-          >
-            <span className="w-2 h-2 rounded-full bg-brand flex-shrink-0" />
-            Claude Code
-          </button>
-          <button
-            onClick={() => pick('codex')}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors whitespace-nowrap"
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
-            Codex
-          </button>
-          <button
-            onClick={() => pick('deepseek')}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors whitespace-nowrap"
-          >
-            <span className="w-2 h-2 rounded-full bg-sky-500 flex-shrink-0" />
-            DeepSeek
-          </button>
-          <button
-            onClick={() => pick('glm')}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors whitespace-nowrap"
-          >
-            <span className="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0" />
-            GLM
-          </button>
-          <button
-            onClick={() => pick('kimi')}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors whitespace-nowrap"
-          >
-            <span className="w-2 h-2 rounded-full bg-purple-500 flex-shrink-0" />
-            Kimi
-          </button>
-          <button
-            onClick={() => pick('ollama')}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors whitespace-nowrap"
-          >
-            <span className="w-2 h-2 rounded-full bg-violet-500 flex-shrink-0" />
-            Ollama
-          </button>
+          {/* Driven by ENGINE_IDS rather than six hand-written rows: the labels and the
+              marks now come from the same table the tab chips and the picker pill use,
+              and a new engine appears here without a seventh copy being written. */}
+          {ENGINE_IDS.map((id) => (
+            <button
+              key={id}
+              onClick={() => pick(id)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-brand/10 transition-colors whitespace-nowrap"
+            >
+              <EngineIcon engine={id} className="h-3.5 w-3.5" />
+              {ENGINE_LABELS[id]}
+            </button>
+          ))}
         </div>
       </Portal>}
     </>
@@ -272,25 +244,10 @@ export function TabBar({
                 )}
               </div>
               <span className="flex-1 min-w-0 truncate">{tab.title}</span>
-              {tab.engine === 'codex' && (
-                <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-emerald-500/15 text-emerald-400 font-medium leading-relaxed">CX</span>
-              )}
-              {/* Purple, matching EngineBadge's kimi entry — the same session shows both
-                  chips (tab bar + session list), so they must not disagree on the color. */}
-              {tab.engine === 'kimi' && (
-                <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-purple-500/15 text-purple-400 font-medium leading-relaxed">KM</span>
-              )}
-              {/* Amber, matching EngineBadge's glm entry — same reason as kimi: one session is
-                  chipped in two places and the two must not disagree on the color. */}
-              {tab.engine === 'glm' && (
-                <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-amber-500/15 text-amber-400 font-medium leading-relaxed">GL</span>
-              )}
-              {tab.engine === 'ollama' && (
-                <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-violet-500/15 text-violet-400 font-medium leading-relaxed">OL</span>
-              )}
-              {tab.engine === 'deepseek' && (
-                <span className="flex-shrink-0 text-[9px] px-1 py-0 rounded bg-sky-500/15 text-sky-400 font-medium leading-relaxed">DS</span>
-              )}
+              {/* Same mark as the session lists and the engine picker in the chat top bar.
+                  This used to be five hand-written letter chips with their own color table,
+                  which is how they drifted out of step with EngineBadge. */}
+              <EngineBadge engine={tab.engine} size="sm" />
               <button
                 onClick={(e) => {
                   e.stopPropagation();

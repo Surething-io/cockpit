@@ -13,6 +13,7 @@ export { EngineConfigPicker } from './EngineConfigPicker';
 export { ProjectSessionsModal } from './ProjectSessionsModal';
 export { RecentSessionsModal } from './RecentSessionsModal';
 export { EngineBadge } from './EngineBadge';
+export { EngineIcon, ENGINE_LABELS, ENGINE_IDS, type EngineAccentId } from './engineAccents';
 export { TodoViewerModal } from './TodoViewerModal';
 export { UserMessagesModal } from './UserMessagesModal';
 export { AskQuestionViewerModal } from './AskQuestionViewerModal';

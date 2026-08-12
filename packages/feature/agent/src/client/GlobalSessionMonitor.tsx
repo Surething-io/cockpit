@@ -191,9 +191,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
                   }`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      {session.engine && session.engine !== 'claude' && (
-                        <EngineBadge engine={session.engine} />
-                      )}
+                      <EngineBadge engine={session.engine} />
                       <span className="font-medium text-sm truncate">
                         {getProjectName(session.cwd)}
                       </span>

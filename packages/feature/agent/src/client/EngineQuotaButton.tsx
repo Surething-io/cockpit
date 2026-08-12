@@ -24,6 +24,7 @@
 import React, { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { ENGINE_ACCENTS } from './engineAccents';
 import {
   loadEngineQuota,
   type EngineQuotaInfo,
@@ -41,12 +42,6 @@ interface EngineQuotaButtonProps {
 const CONSOLE_URLS: Record<QuotaEngine, string> = {
   kimi: 'https://www.kimi.com/code/console',
   glm: 'https://bigmodel.cn/coding-plan/personal/usage',
-};
-
-/** Accent per engine, matching the picker and the tab chip. */
-const VALUE_TONE: Record<QuotaEngine, string> = {
-  kimi: 'text-purple-400',
-  glm: 'text-amber-400',
 };
 
 /** '2026-08-12T07:55:59Z' → '8/12 15:55' in the viewer's own timezone. The API reports
@@ -111,7 +106,7 @@ export function EngineQuotaButton({ engine, hasKey }: EngineQuotaButtonProps) {
       {!loading && error && <span className="text-xs text-red-400">{error}</span>}
       {!loading && !error && usage && (
         <span
-          className={`text-xs font-mono ${exhausted ? 'text-red-400' : VALUE_TONE[engine]}`}
+          className={`text-xs font-mono ${exhausted ? 'text-red-400' : ENGINE_ACCENTS[engine].label}`}
           data-tooltip={
             reset
               ? t('chat.quotaResetAt', { defaultValue: 'Resets {{time}}', time: reset })

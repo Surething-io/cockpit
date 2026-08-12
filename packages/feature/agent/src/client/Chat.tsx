@@ -682,7 +682,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
 
         {/* Ollama model picker + independent-task toggle */}
         {engine === 'ollama' && (
-          <div className="flex items-center px-3 py-1.5 border-b border-border bg-card/50">
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card/50">
             {onOllamaModelChange && (
               <OllamaModelPicker currentModel={ollamaModel} onModelChange={onOllamaModelChange} />
             )}
@@ -696,7 +696,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             consumption readout moved in here rather than keeping a row to itself.
             DeepSeek reports a prepaid balance, Kimi and GLM a subscription quota. */}
         {apiKeyEngine && (
-          <div className="flex items-center px-3 py-1.5 border-b border-border bg-card/50">
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card/50">
             {onEngineModelChange && (
               <EngineConfigPicker
                 engine={apiKeyEngine}

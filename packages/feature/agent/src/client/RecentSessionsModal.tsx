@@ -199,9 +199,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject }: Recent
                           ? 'bg-red-500'
                           : 'bg-muted-foreground/30'
                     }`} />
-                    {session.engine && session.engine !== 'claude' && (
-                      <EngineBadge engine={session.engine} />
-                    )}
+                    <EngineBadge engine={session.engine} />
                     <h4 className="text-xs font-medium text-foreground truncate flex-1" data-tooltip={session.cwd}>
                       {getProjectName(session.cwd)}
                     </h4>

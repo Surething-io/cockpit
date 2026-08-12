@@ -72,6 +72,82 @@ describe('session-by-path codex history', () => {
     });
   });
 
+  // gpt-5.6 dropped the per-tool function_calls for one freeform `exec` script tool
+  // whose output is a content-block array — a session recorded this way used to
+  // render with no tool calls at all.
+  it('loads 5.6 exec scripts as Bash and ApplyPatch tool calls', async () => {
+    const sessionId = 'codex-exec-script';
+    writeCodexTranscript(sessionId, [
+      {
+        type: 'response_item',
+        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'swap the icon' }] },
+      },
+      {
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_1',
+          input: 'const r = await tools.exec_command({"cmd":"npm test","workdir":"/repo"}); text(r.output);\n',
+        },
+      },
+      {
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_1',
+          output: [
+            { type: 'input_text', text: 'Script completed\n' },
+            { type: 'input_text', text: 'ok' },
+          ],
+        },
+      },
+      {
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_2',
+          input: 'const patch = "*** Begin Patch\\n*** Update File: /repo/a.ts\\n@@\\n-a\\n+b\\n*** End Patch";\ntext(await tools.apply_patch(patch));',
+        },
+      },
+      {
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_2',
+          output: [{ type: 'input_text', text: '{}' }],
+        },
+      },
+    ]);
+
+    const { POST } = await import('./session-by-path');
+    const response = await POST(
+      new Request('http://test.local/api/session-by-path', {
+        method: 'POST',
+        body: JSON.stringify({ cwd: '/tmp', sessionId }),
+      })
+    );
+    const body = await response.json();
+
+    expect(body.messages[1].toolCalls).toMatchObject([
+      {
+        id: 'call_1',
+        name: 'Bash',
+        input: { command: 'npm test', workdir: '/repo' },
+        result: 'Script completed\nok',
+        isLoading: false,
+      },
+      {
+        id: 'call_2',
+        name: 'ApplyPatch',
+        input: { changes: [{ path: '/repo/a.ts', kind: 'update' }] },
+        result: '{}',
+        isLoading: false,
+      },
+    ]);
+  });
+
   it('loads Codex user images from input_image blocks', async () => {
     const sessionId = 'codex-input-image';
     writeCodexTranscript(sessionId, [

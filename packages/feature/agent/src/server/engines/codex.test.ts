@@ -175,6 +175,26 @@ describe('createRolloutCallReader', () => {
     expect(r.patch.map(c => c.callId)).toEqual(['call_P0', 'call_P1']);
   });
 
+  it('routes 5.6 exec scripts into the exec or patch list by what the script calls', () => {
+    // One freeform `exec` tool now carries both kinds, so the call_id → live item
+    // mapping depends on classifying the script body.
+    const execScript = (callId: string, cmd: string) =>
+      JSON.stringify({ type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: callId, input: `const r = await tools.exec_command(${JSON.stringify({ cmd, workdir: '/repo' })}); text(r.output);` } }) + '\n';
+    const patchScript = (callId: string, file: string) =>
+      JSON.stringify({ type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: callId, input: `const patch = ${JSON.stringify(`*** Begin Patch\n*** Update File: ${file}\n@@\n-a\n+b\n*** End Patch`)};\ntext(await tools.apply_patch(patch));` } }) + '\n';
+    const unknownScript = JSON.stringify({ type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_X', input: 'text("hi");' } }) + '\n';
+
+    const path = tmp();
+    writeFileSync(path, execScript('call_1', 'echo A') + patchScript('call_P0', 'src/x.ts') + unknownScript + execScript('call_2', 'echo B'));
+    const r = createRolloutCallReader()(path);
+    // The unclassifiable script is dropped rather than guessed into either list,
+    // which is what keeps call_2 at index 1 of the exec list.
+    expect(r.exec.map(c => c.callId)).toEqual(['call_1', 'call_2']);
+    expect(r.exec.map(c => c.cmd)).toEqual(['echo A', 'echo B']);
+    expect(r.patch).toEqual([{ callId: 'call_P0', files: ['src/x.ts'] }]);
+    expect(resolveCodexCallId(r.exec, 1, '/bin/zsh -lc "echo B"')).toBe('call_2');
+  });
+
   it('carries a partial trailing line until its newline arrives', () => {
     const path = tmp();
     const line = fnCall('call_1', 'echo hello');

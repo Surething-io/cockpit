@@ -52,6 +52,32 @@ export const CODEX_AGENT_FN_NAMES: ReadonlySet<string> = new Set([
 
 export const CODEX_PLAN_FN_NAME = 'update_plan';
 
+/**
+ * codex's file editor, persisted as a `custom_tool_call` (freeform body, not JSON
+ * arguments).
+ */
+export const CODEX_PATCH_FN_NAME = 'apply_patch';
+
+/**
+ * From gpt-5.6 on, codex stops emitting one `function_call` per tool and routes
+ * every action through a single freeform tool named `exec`, whose body is a small
+ * JS script executed in codex's sandbox:
+ *
+ *   const r = await tools.exec_command({"cmd":"rg -n foo","workdir":"/repo"}); text(r.output);
+ *   const patch = "*** Begin Patch\n…"; text(await tools.apply_patch(patch));
+ *
+ * So the tool identity now lives INSIDE the script, not in `payload.name`, and
+ * both the resume parser and the live call_id reader have to look there — see
+ * parseCodexExecScript.
+ */
+export const CODEX_EXEC_SCRIPT_FN_NAME = 'exec';
+
+/** `custom_tool_call` names that become a bubble (both eras). */
+export const CODEX_CUSTOM_TOOL_NAMES: ReadonlySet<string> = new Set([
+  CODEX_PATCH_FN_NAME,
+  CODEX_EXEC_SCRIPT_FN_NAME,
+]);
+
 export function normalizeCodexToolName(name: string, namespace?: string): string {
   // MCP first: the tool name alone (`js`) is meaningless without its server.
   if (namespace?.startsWith(CODEX_MCP_NAMESPACE_PREFIX)) return `${namespace}__${name}`;
@@ -156,6 +182,126 @@ export function parseCodexPatchInput(input: string): { changes: Array<{ path: st
     changes.push({ path: m[2].trim(), kind: m[1].toLowerCase() });
   }
   return { changes };
+}
+
+// ============================================
+// gpt-5.6 `exec` script tool
+// ============================================
+
+/** String literals in an `exec` script. Template interpolation is not used by codex. */
+const JS_STRING_LITERAL_RE = /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g;
+
+const JS_SIMPLE_ESCAPES: Record<string, string> = {
+  n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', v: '\v', '0': '\0',
+};
+
+function decodeJsStringLiteral(literal: string): string {
+  if (literal.startsWith('"')) {
+    try { return JSON.parse(literal) as string; } catch { /* fall through */ }
+  }
+  return literal.slice(1, -1).replace(
+    /\\(u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[\s\S])/g,
+    (_full, esc: string) => {
+      if (esc.startsWith('u{')) return String.fromCodePoint(parseInt(esc.slice(2, -1), 16));
+      if (esc.startsWith('u') || esc.startsWith('x')) return String.fromCharCode(parseInt(esc.slice(1), 16));
+      return JS_SIMPLE_ESCAPES[esc] ?? esc;
+    }
+  );
+}
+
+/** The apply_patch body is bound to a variable, so it is found by content, not position. */
+function extractPatchLiteral(script: string): string | null {
+  JS_STRING_LITERAL_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = JS_STRING_LITERAL_RE.exec(script))) {
+    const value = decodeJsStringLiteral(m[0]);
+    if (value.includes('*** Begin Patch')) return value;
+  }
+  return null;
+}
+
+/**
+ * Slice the object literal passed to `tools.exec_command(` — brace-matched rather
+ * than regex'd, because the JSON contains braces and quotes of its own.
+ */
+function extractExecArgs(script: string): Record<string, unknown> | null {
+  const call = script.indexOf('tools.exec_command(');
+  if (call === -1) return null;
+  const open = script.indexOf('{', call);
+  if (open === -1) return null;
+
+  let depth = 0;
+  let quote = '';
+  for (let i = open; i < script.length; i++) {
+    const ch = script[i];
+    if (quote) {
+      if (ch === '\\') i++;
+      else if (ch === quote) quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
+    if (ch === '{') depth++;
+    else if (ch === '}' && --depth === 0) {
+      try {
+        const parsed = JSON.parse(script.slice(open, i + 1)) as unknown;
+        return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
+      } catch { return null; }
+    }
+  }
+  return null;
+}
+
+export type CodexExecScript =
+  | { kind: 'exec'; command: string; args: Record<string, unknown> }
+  | { kind: 'patch'; patch: string }
+  /** A script we could not classify — rendered raw so the call is never invisible. */
+  | { kind: 'unknown' };
+
+/** Classify an `exec` script body into the tool it actually invokes. */
+export function parseCodexExecScript(script: string): CodexExecScript {
+  const patch = extractPatchLiteral(script);
+  if (patch) return { kind: 'patch', patch };
+
+  const args = extractExecArgs(script);
+  if (args) {
+    return { kind: 'exec', command: typeof args.cmd === 'string' ? args.cmd : '', args };
+  }
+  return { kind: 'unknown' };
+}
+
+/** `exec` script → the same {name, input} pair the pre-5.6 function_calls produced. */
+export function codexExecScriptCall(script: string): { name: string; input: Record<string, unknown> } {
+  const parsed = parseCodexExecScript(script);
+  if (parsed.kind === 'patch') {
+    return { name: CODEX_TOOL_NAMES.applyPatch, input: parseCodexPatchInput(parsed.patch) };
+  }
+  if (parsed.kind === 'exec') {
+    return {
+      name: CODEX_TOOL_NAMES.bash,
+      input: normalizeCodexToolInput('exec_command', parsed.args),
+    };
+  }
+  // Unclassified: show the script itself in a Bash bubble. Wrong label beats a
+  // silently missing tool call, which is exactly how the 5.6 format first broke.
+  return { name: CODEX_TOOL_NAMES.bash, input: { command: script } };
+}
+
+/**
+ * Tool output text. `function_call_output.output` is a plain string, but the 5.6
+ * `custom_tool_call_output.output` is an array of content blocks
+ * (`[{type:"input_text",text:"…"}, …]`) — stringifying that naively yields
+ * `[object Object]` in the bubble.
+ */
+export function codexToolOutputText(output: unknown): string {
+  if (output === null || output === undefined) return '';
+  if (typeof output === 'string') return output;
+  if (Array.isArray(output)) return output.map(codexToolOutputText).join('');
+  if (typeof output === 'object') {
+    const text = (output as { text?: unknown }).text;
+    if (typeof text === 'string') return text;
+    return JSON.stringify(output);
+  }
+  return String(output);
 }
 
 /** Terminal sub-agent states — anything else means the agent is still working. */

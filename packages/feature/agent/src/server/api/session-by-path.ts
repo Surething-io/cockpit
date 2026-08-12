@@ -13,11 +13,15 @@ import {
 } from '@cockpit/effect-core';
 import {
   CODEX_AGENT_FN_NAMES,
+  CODEX_CUSTOM_TOOL_NAMES,
+  CODEX_EXEC_SCRIPT_FN_NAME,
   CODEX_IMAGE_ONLY_TEXT,
   CODEX_SPAWN_FN_NAME,
   CODEX_WAIT_FN_NAME,
   codexAgentResultText,
+  codexExecScriptCall,
   codexSpawnDescription,
+  codexToolOutputText,
   codexWebSearchCall,
   extractCodexUserContent,
   normalizeCodexToolInput,
@@ -788,9 +792,11 @@ interface CodexPayload {
   /** `mcp__<server>` for MCP calls, `multi_agent_v1` for sub-agent tools. */
   namespace?: string;
   arguments?: string;
-  input?: string; // custom_tool_call (apply_patch) body
+  /** custom_tool_call body: an apply_patch patch, or (5.6+) an `exec` JS script. */
+  input?: string;
   call_id?: string;
-  output?: string;
+  /** String for function_call_output; content blocks for custom_tool_call_output. */
+  output?: string | Array<{ type?: string; text?: string }>;
   content?: Array<{ type?: string; text?: string; image_url?: string }>;
   // web_search_end (an event_msg, not a response_item) — the only persisted web
   // search line carrying both the stable `ws_…` id and the query.
@@ -925,7 +931,7 @@ async function parseCodexTranscriptFile(
       if (payload.type === 'function_call_output' && payload.call_id) {
         const callId = payload.call_id;
         const spawned = spawnByCallId.get(callId);
-        const output = payload.output || '';
+        const output = codexToolOutputText(payload.output);
 
         if (spawned) {
           // `spawn_agent`'s output is bookkeeping (`{agent_id, nickname}`), not a report,
@@ -965,29 +971,28 @@ async function parseCodexTranscriptFile(
         }
       }
 
-      // Custom tool call (apply_patch) — codex's file editor. Surface it as its own
-      // tool call so the edit shows a bubble and its FileDiff resolves (matches the
-      // live engine's file_change handling).
-      if (payload.type === 'custom_tool_call' && payload.name === 'apply_patch') {
+      // Custom tool call — codex's file editor (`apply_patch`) and, from gpt-5.6 on,
+      // the freeform `exec` script that replaced every per-tool function_call. Surface
+      // it as its own tool call so an edit shows a bubble and its FileDiff resolves
+      // (matches the live engine's file_change handling).
+      if (payload.type === 'custom_tool_call' && payload.name && CODEX_CUSTOM_TOOL_NAMES.has(payload.name)) {
         const assistant = ensureAssistant(timestamp);
         assistant.toolCalls = assistant.toolCalls || [];
         const callId = payload.call_id || `tool-${msgCounter++}`;
         assistant.parts = appendToolPart(assistant.parts, callId);
-        assistant.toolCalls.push({
-          id: callId,
-          name: normalizeCodexToolName(payload.name),
-          input: parseCodexPatchInput(payload.input || ''),
-          isLoading: false,
-        });
+        const { name, input } = payload.name === CODEX_EXEC_SCRIPT_FN_NAME
+          ? codexExecScriptCall(payload.input || '')
+          : { name: normalizeCodexToolName(payload.name), input: parseCodexPatchInput(payload.input || '') };
+        assistant.toolCalls.push({ id: callId, name, input, isLoading: false });
         toolSinceText = true;
       }
 
-      // Custom tool call result (apply_patch output)
+      // Custom tool call result (apply_patch / exec output)
       if (payload.type === 'custom_tool_call_output' && payload.call_id) {
         const assistant = ensureAssistant(timestamp);
         const tc = assistant.toolCalls?.find(t => t.id === payload.call_id);
         if (tc) {
-          tc.result = payload.output || '';
+          tc.result = codexToolOutputText(payload.output);
           tc.isLoading = false;
         }
       }

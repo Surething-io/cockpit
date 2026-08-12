@@ -10,7 +10,9 @@ import type { EngineSpec, ImageData, RunCtx } from './types';
 import { mergeStashedCodexRollout, stashCodexRollout } from './shared/noHistoryRollout';
 import {
   CODEX_MCP_NAMESPACE_PREFIX,
+  CODEX_EXEC_SCRIPT_FN_NAME,
   CODEX_IMAGE_ONLY_TEXT,
+  CODEX_PATCH_FN_NAME,
   CODEX_SPAWN_FN_NAME,
   CODEX_TOOL_NAMES,
   codexAgentResultText,
@@ -20,6 +22,7 @@ import {
   codexTodoResultText,
   codexWebSearchCall,
   parseCodexAgentsStates,
+  parseCodexExecScript,
   parseCodexSpawnInput,
   parseCodexSpawnOutput,
 } from '../api/session/codexTools';
@@ -145,8 +148,16 @@ function parseCallLines(
       let cmd = '';
       try { cmd = String((JSON.parse(p.arguments || '{}') as { cmd?: string }).cmd || ''); } catch { /* ignore */ }
       exec.push({ callId: p.call_id, cmd });
-    } else if (p.type === 'custom_tool_call' && p.name === 'apply_patch') {
+    } else if (p.type === 'custom_tool_call' && p.name === CODEX_PATCH_FN_NAME) {
       patch.push({ callId: p.call_id, files: parsePatchFiles(p.input || '') });
+    } else if (p.type === 'custom_tool_call' && p.name === CODEX_EXEC_SCRIPT_FN_NAME) {
+      // 5.6+: one freeform tool for everything, so which list this belongs to is
+      // decided by the script body. An unclassifiable script is deliberately dropped
+      // rather than guessed into a list — a wrong entry would shift every later
+      // index and bind the next live item to the wrong call_id.
+      const script = parseCodexExecScript(p.input || '');
+      if (script.kind === 'exec') exec.push({ callId: p.call_id, cmd: script.command });
+      else if (script.kind === 'patch') patch.push({ callId: p.call_id, files: parsePatchFiles(script.patch) });
     } else if (p.type === 'function_call' && p.name && p.namespace?.startsWith(CODEX_MCP_NAMESPACE_PREFIX)) {
       mcps.push({
         callId: p.call_id,

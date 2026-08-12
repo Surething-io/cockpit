@@ -1,5 +1,6 @@
 import {
   CODEX_AGENT_FN_NAMES,
+  CODEX_CUSTOM_TOOL_NAMES,
   CODEX_SPAWN_FN_NAME,
   CODEX_WAIT_FN_NAME,
   extractCodexUserContent,
@@ -75,8 +76,10 @@ function codexVisibleMessageIds(
       }
     }
 
+    // Must stay in step with the transcript parser's custom_tool_call branch
+    // (apply_patch, plus 5.6's `exec`), or a fork cuts at the wrong message.
     if (
-      (payload.type === 'custom_tool_call' && payload.name === 'apply_patch') ||
+      (payload.type === 'custom_tool_call' && payload.name && CODEX_CUSTOM_TOOL_NAMES.has(payload.name)) ||
       (payload.type === 'custom_tool_call_output' && payload.call_id)
     ) {
       const id = ensureCodexAssistantId(state);

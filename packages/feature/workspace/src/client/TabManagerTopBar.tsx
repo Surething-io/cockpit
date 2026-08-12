@@ -28,6 +28,38 @@ interface TabManagerTopBarProps {
   onBranchSwitched?: () => void;
 }
 
+function VisualStudioCodeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 100 100" aria-hidden="true">
+      <path
+        fill="#0065A9"
+        d="M96.461 10.796 75.857.876a6.23 6.23 0 0 0-7.107 1.207l-67.451 61.5a4.167 4.167 0 0 0 .004 6.162l5.51 5.009a4.167 4.167 0 0 0 5.32.236l81.228-61.62c2.725-2.067 6.639-.124 6.639 3.297v-.24a6.25 6.25 0 0 0-3.539-5.63Z"
+      />
+      <path
+        fill="#007ACC"
+        d="m96.461 89.204-20.604 9.92a6.229 6.229 0 0 1-7.107-1.207l-67.451-61.5a4.167 4.167 0 0 1 .004-6.162l5.51-5.009a4.167 4.167 0 0 1 5.32-.236l81.228 61.62c2.725 2.067 6.639.124 6.639-3.297v.24a6.25 6.25 0 0 0-3.539 5.63Z"
+      />
+      <path
+        fill="#1F9CF0"
+        d="M75.858 99.126a6.232 6.232 0 0 1-7.108-1.21c2.306 2.307 6.25.674 6.25-2.588V4.672c0-3.262-3.944-4.895-6.25-2.589a6.232 6.232 0 0 1 7.108-1.21l20.6 9.908A6.25 6.25 0 0 1 100 16.413v67.174a6.25 6.25 0 0 1-3.541 5.633l-20.601 9.906Z"
+      />
+    </svg>
+  );
+}
+
+function CursorIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 466.73 532.09"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M457.43,125.94L244.42,2.96c-6.84-3.95-15.28-3.95-22.12,0L9.3,125.94c-5.75,3.32-9.3,9.46-9.3,16.11v247.99c0,6.65,3.55,12.79,9.3,16.11l213.01,122.98c6.84,3.95,15.28,3.95,22.12,0l213.01-122.98c5.75-3.32,9.3-9.46,9.3-16.11v-247.99c0-6.65-3.55-12.79-9.3-16.11h-.01ZM444.05,151.99l-205.63,356.16c-1.39,2.4-5.06,1.42-5.06-1.36v-233.21c0-4.66-2.49-8.97-6.53-11.31L24.87,145.67c-2.4-1.39-1.42-5.06,1.36-5.06h411.26c5.84,0,9.49,6.33,6.57,11.39h-.01Z" />
+    </svg>
+  );
+}
+
 // ============================================
 // BranchSwitchDropdown
 // ============================================
@@ -299,9 +331,7 @@ export function TabManagerTopBar({
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
             title={t('tabManagerTopBar.openInVSCode')}
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M17.583 2.213L12 7.393 6.417 2.213 1 6.17v11.66l5.417 3.957L12 16.607l5.583 5.18L23 17.83V6.17l-5.417-3.957zM6.417 17.83L3 15.33V8.67l3.417-2.5v11.66zm11.166 0V6.17L21 8.67v6.66l-3.417 2.5z" />
-            </svg>
+            <VisualStudioCodeIcon className="w-4 h-4" />
           </button>
           {/* Open in Cursor button */}
           <button
@@ -315,9 +345,7 @@ export function TabManagerTopBar({
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
             title={t('tabManagerTopBar.openInCursor')}
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M4.5 2L20.5 12L4.5 22V2Z" />
-            </svg>
+            <CursorIcon className="w-4 h-4" />
           </button>
           {/* Copy resume command button — engine-specific, see buildResumeCommand */}
           {resumeCommand && (

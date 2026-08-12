@@ -16,6 +16,8 @@ export const CODEX_IMAGE_ONLY_TEXT = '[Image]';
 export const CODEX_TOOL_NAMES = {
   bash: 'Bash',
   applyPatch: 'ApplyPatch',
+  /** `view_image` → claude's Read: it opens a file, and Read is in READ_ONLY_TOOLS. */
+  read: 'Read',
   /** `spawn_agent` → claude's Task, so one bubble == one sub-agent. */
   task: 'Task',
   /** `update_plan` / live `todo_list` → the checklist MessageBubble already renders. */
@@ -70,6 +72,9 @@ export const CODEX_AGENT_MESSAGE_TYPE = 'agent_message';
 
 export const CODEX_PLAN_FN_NAME = 'update_plan';
 
+/** Opens an image file for the model. Its result is an image block, not text. */
+export const CODEX_VIEW_IMAGE_FN_NAME = 'view_image';
+
 /**
  * codex's file editor, persisted as a `custom_tool_call` (freeform body, not JSON
  * arguments).
@@ -103,6 +108,13 @@ export function normalizeCodexToolName(name: string, namespace?: string): string
   if (name === 'apply_patch') return CODEX_TOOL_NAMES.applyPatch;
   if (name === CODEX_SPAWN_FN_NAME) return CODEX_TOOL_NAMES.task;
   if (name === CODEX_PLAN_FN_NAME) return CODEX_TOOL_NAMES.todo;
+  if (name === CODEX_VIEW_IMAGE_FN_NAME) return CODEX_TOOL_NAMES.read;
+  // Everything else keeps its codex name on purpose. `wait` (await a background exec
+  // cell) and `write_stdin` (feed a running shell) have no claude counterpart, and
+  // renaming them to Bash would put a command in the header that was never run — a
+  // raw name with a generic icon is uglier but true. NOTE `wait` is NOT the
+  // multi-agent `wait_agent`; adding it to CODEX_AGENT_FN_NAMES would silently drop
+  // a real tool call.
   return name;
 }
 
@@ -305,6 +317,32 @@ export function codexExecScriptCall(script: string): { name: string; input: Reco
 }
 
 /**
+ * An image content block, as `view_image` returns it. Its `image_url` is a `data:`
+ * URL of the whole file — locally these run to 586 KB each, ~6 MB across a few
+ * sessions. It has no `text`, so the generic object branch below would inline that
+ * base64 into the bubble as literal text: into the API response, into React state,
+ * into the DOM. Hence its own branch, above the fallback.
+ */
+function isCodexImageBlock(block: object): boolean {
+  const { type, image_url: url } = block as { type?: unknown; image_url?: unknown };
+  return typeof url === 'string' || type === 'input_image' || type === 'output_image';
+}
+
+/**
+ * Bound for the last-resort `JSON.stringify` below. Only that branch is capped —
+ * a genuinely textual output (a build log) stays whole. This exists because the
+ * unknown-tool fallback (parseCodexUnknownCall) now renders shapes nobody has
+ * inspected: an unbounded blob would reach the bubble before anyone noticed.
+ */
+const CODEX_OUTPUT_STRINGIFY_LIMIT = 4000;
+
+function stringifyBounded(value: unknown): string {
+  const json = JSON.stringify(value) ?? '';
+  if (json.length <= CODEX_OUTPUT_STRINGIFY_LIMIT) return json;
+  return `${json.slice(0, CODEX_OUTPUT_STRINGIFY_LIMIT)}… (${json.length} chars truncated)`;
+}
+
+/**
  * Tool output text. `function_call_output.output` is a plain string, but the 5.6
  * `custom_tool_call_output.output` is an array of content blocks
  * (`[{type:"input_text",text:"…"}, …]`) — stringifying that naively yields
@@ -317,9 +355,141 @@ export function codexToolOutputText(output: unknown): string {
   if (typeof output === 'object') {
     const text = (output as { text?: unknown }).text;
     if (typeof text === 'string') return text;
-    return JSON.stringify(output);
+    if (isCodexImageBlock(output)) return CODEX_IMAGE_ONLY_TEXT;
+    return stringifyBounded(output);
   }
   return String(output);
+}
+
+export interface CodexTokenUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
+/**
+ * Token usage from an `event_msg`/`token_count` line.
+ *
+ * The transcript parser used to read `response_completed.usage` instead — a line
+ * codex does not write and, across 148 local rollouts spanning 0.94 → 0.147, never
+ * has. That branch was dead, so a resumed codex session always reported no usage
+ * at all.
+ *
+ * `last_token_usage` (this request) rather than `total_token_usage` (the session):
+ * every request resends the whole conversation, so its `input_tokens` is the
+ * context size — the same thing claude's per-message `usage` reports, which is what
+ * the client's indicator is built for.
+ */
+export function parseCodexTokenUsage(payload: {
+  type?: string;
+  info?: unknown;
+} | undefined | null): CodexTokenUsage | null {
+  if (!payload || payload.type !== 'token_count') return null;
+  const info = payload.info;
+  if (!info || typeof info !== 'object') return null;
+  const last = (info as { last_token_usage?: unknown }).last_token_usage;
+  if (!last || typeof last !== 'object') return null;
+
+  const raw = last as Record<string, unknown>;
+  const num = (key: string): number | undefined =>
+    typeof raw[key] === 'number' ? (raw[key] as number) : undefined;
+
+  const usage: CodexTokenUsage = {
+    ...(num('input_tokens') !== undefined ? { input_tokens: num('input_tokens') } : {}),
+    ...(num('output_tokens') !== undefined ? { output_tokens: num('output_tokens') } : {}),
+    // codex names the two cache halves differently from claude; the client only
+    // knows claude's spelling.
+    ...(num('cached_input_tokens') !== undefined
+      ? { cache_read_input_tokens: num('cached_input_tokens') } : {}),
+    ...(num('cache_write_input_tokens') !== undefined
+      ? { cache_creation_input_tokens: num('cache_write_input_tokens') } : {}),
+  };
+  return Object.keys(usage).length > 0 ? usage : null;
+}
+
+/**
+ * `response_item` payload types that already have a dedicated branch in the
+ * transcript parser. Anything else there carrying a `call_id` is a tool call
+ * cockpit has not been taught yet — see parseCodexUnknownCall.
+ */
+const CODEX_KNOWN_CALL_TYPES: ReadonlySet<string> = new Set([
+  'function_call',
+  'function_call_output',
+  'custom_tool_call',
+  'custom_tool_call_output',
+]);
+
+export interface CodexUnknownCall {
+  callId: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+/**
+ * Generic fallback for a `response_item` shaped like a tool call whose type has no
+ * branch of its own — `tool_search_call` / `tool_search_output` today, whatever
+ * codex adds next tomorrow. Those two have been written since 0.141 and were
+ * dropped on the floor the whole time, which is the argument for this existing:
+ * a tool bubble under a raw type name is ugly, but a missing one is invisible, and
+ * invisible is how every codex format break so far has been found — late, by a user.
+ *
+ * `call_id` is the discriminator, and the local corpus says it is a clean one:
+ * across 148 rollouts every response_item type either always carries one
+ * (function_call, custom_tool_call, tool_search_call) or never does (message,
+ * reasoning, agent_message) — no type is mixed. The noisy duplicate projections
+ * that also carry a call_id (`patch_apply_end` ×454, `mcp_tool_call_end`) are all
+ * `event_msg` lines, which is why this is deliberately scoped to `response_item`.
+ */
+export function parseCodexUnknownCall(payload: {
+  type?: string;
+  name?: unknown;
+  call_id?: unknown;
+  arguments?: unknown;
+  input?: unknown;
+} | undefined | null): CodexUnknownCall | null {
+  if (!payload || typeof payload.type !== 'string') return null;
+  if (CODEX_KNOWN_CALL_TYPES.has(payload.type)) return null;
+  const callId = typeof payload.call_id === 'string' ? payload.call_id : '';
+  if (!callId) return null;
+  return {
+    callId,
+    name: typeof payload.name === 'string' && payload.name ? payload.name : payload.type,
+    input: unknownCallInput(payload),
+  };
+}
+
+/**
+ * `arguments` is a JSON *string* on a function_call but an already-decoded *object*
+ * on a tool_search_call — an unknown tool may be either, so accept both.
+ */
+function unknownCallInput(payload: { arguments?: unknown; input?: unknown }): Record<string, unknown> {
+  const args = payload.arguments;
+  if (args && typeof args === 'object' && !Array.isArray(args)) {
+    return args as Record<string, unknown>;
+  }
+  if (typeof args === 'string' && args.trim()) {
+    try {
+      const parsed = JSON.parse(args) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch { /* fall through: show the raw arguments rather than nothing */ }
+    return { arguments: args };
+  }
+  if (typeof payload.input === 'string' && payload.input) return { input: payload.input };
+  return {};
+}
+
+/**
+ * Result text for an unknown call's paired output line. Most carry `output`; the
+ * ones that do not (tool_search_output puts its payload in `tools`) get the rest of
+ * the line, minus the plumbing keys that are already the bubble's identity.
+ */
+export function codexUnknownCallResult(payload: Record<string, unknown>): string {
+  if (payload.output !== undefined) return codexToolOutputText(payload.output);
+  const { type: _t, id: _i, call_id: _c, ...rest } = payload;
+  return Object.keys(rest).length > 0 ? stringifyBounded(rest) : '';
 }
 
 /** Terminal sub-agent states — anything else means the agent is still working. */
@@ -579,6 +749,12 @@ export function normalizeCodexToolInput(
 ): Record<string, unknown> {
   if (name === CODEX_SPAWN_FN_NAME) return parseCodexSpawnInput(input);
   if (name === CODEX_PLAN_FN_NAME) return parseCodexPlanInput(input);
+  // codex says `path`, claude's Read says `file_path` — and the header renderer
+  // reads the latter.
+  if (name === CODEX_VIEW_IMAGE_FN_NAME && typeof input.path === 'string') {
+    const { path: _path, ...rest } = input;
+    return { ...rest, file_path: input.path };
+  }
   if (normalizeCodexToolName(name) !== CODEX_TOOL_NAMES.bash) return input;
   if (typeof input.command === 'string') return input;
   if (typeof input.cmd !== 'string') return input;

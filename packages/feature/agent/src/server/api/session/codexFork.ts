@@ -1,9 +1,9 @@
 import {
   CODEX_AGENT_FN_NAMES,
-  CODEX_CUSTOM_TOOL_NAMES,
   CODEX_SPAWN_FN_NAME,
   CODEX_WAIT_FN_NAME,
   extractCodexUserContent,
+  parseCodexUnknownCall,
 } from './codexTools';
 
 export type CodexForkScope = 'prefix' | 'single';
@@ -77,11 +77,20 @@ function codexVisibleMessageIds(
     }
 
     // Must stay in step with the transcript parser's custom_tool_call branch
-    // (apply_patch, plus 5.6's `exec`), or a fork cuts at the wrong message.
+    // (apply_patch, 5.6's `exec`, and any other name — an unrecognized custom tool
+    // still gets a bubble there), or a fork cuts at the wrong message.
     if (
-      (payload.type === 'custom_tool_call' && payload.name && CODEX_CUSTOM_TOOL_NAMES.has(payload.name)) ||
+      (payload.type === 'custom_tool_call' && payload.name) ||
       (payload.type === 'custom_tool_call_output' && payload.call_id)
     ) {
+      const id = ensureCodexAssistantId(state);
+      if (id) ids.push(id);
+    }
+
+    // Same for the parser's unknown-tool fallback: any other response_item with a
+    // call_id becomes a bubble there, so it opens an assistant message here too.
+    // Both the call and its paired output route through one branch on each side.
+    if (parseCodexUnknownCall(payload)) {
       const id = ensureCodexAssistantId(state);
       if (id) ids.push(id);
     }

@@ -615,6 +615,165 @@ describe('session-by-path codex subagents (0.147 protocol)', () => {
   });
 });
 
+describe('session-by-path codex format drift', () => {
+  it('renders an unknown tool call under its raw type instead of dropping it', async () => {
+    const sessionId = 'codex-tool-search';
+    writeCodexTranscript(sessionId, [
+      userLine('查一下有什么工具'),
+      // Real shape: codex has written these since 0.141 and nothing rendered them.
+      // Note `arguments` is an object here, not the JSON string a function_call uses.
+      {
+        type: 'response_item',
+        payload: {
+          type: 'tool_search_call',
+          call_id: 'call_ts1',
+          status: 'completed',
+          execution: 'client',
+          arguments: { query: 'spawn subagent', limit: 5 },
+        },
+      },
+      {
+        type: 'response_item',
+        payload: {
+          type: 'tool_search_output',
+          call_id: 'call_ts1',
+          status: 'completed',
+          tools: [{ type: 'namespace', name: 'multi_agent_v1' }],
+        },
+      },
+    ]);
+
+    const body = await loadSession(sessionId);
+    const toolCalls = body.messages[1].toolCalls;
+
+    // One bubble, not two: the output shares the call's id, so it is its result.
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0]).toMatchObject({
+      id: 'call_ts1',
+      name: 'tool_search_call',
+      input: { query: 'spawn subagent', limit: 5 },
+    });
+    expect(toolCalls[0].result).toContain('multi_agent_v1');
+  });
+
+  it('renders a custom tool call whose name we do not recognize', async () => {
+    const sessionId = 'codex-unknown-custom';
+    writeCodexTranscript(sessionId, [
+      userLine('跑个新工具'),
+      { type: 'response_item', payload: { type: 'custom_tool_call', name: 'brand_new_tool', call_id: 'call_c1', input: 'raw body' } },
+      { type: 'response_item', payload: { type: 'custom_tool_call_output', call_id: 'call_c1', output: 'done' } },
+    ]);
+
+    const body = await loadSession(sessionId);
+    expect(body.messages[1].toolCalls[0]).toMatchObject({
+      id: 'call_c1',
+      name: 'brand_new_tool',
+      input: { input: 'raw body' },
+      result: 'done',
+    });
+  });
+
+  it('keeps a returned image out of the bubble text', async () => {
+    const sessionId = 'codex-view-image';
+    const dataUrl = `data:image/png;base64,${'A'.repeat(20000)}`;
+    writeCodexTranscript(sessionId, [
+      userLine('看图'),
+      { type: 'response_item', payload: { type: 'function_call', name: 'view_image', call_id: 'call_v1', arguments: '{"path":"/tmp/a.png"}' } },
+      {
+        type: 'response_item',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'call_v1',
+          output: [{ type: 'input_image', image_url: dataUrl }],
+        },
+      },
+    ]);
+
+    const body = await loadSession(sessionId);
+    const toolCall = body.messages[1].toolCalls[0];
+
+    // Inlining the data URL put ~586 KB of base64 through the API, React state and
+    // the DOM for a single screenshot.
+    expect(toolCall.result).toBe('[Image]');
+    expect(JSON.stringify(body).length).toBeLessThan(dataUrl.length);
+    // Opening a file is claude's Read: an icon, the path in the header, and
+    // READ_ONLY_TOOLS classification instead of "unknown name → assume mutating".
+    expect(toolCall).toMatchObject({ name: 'Read', input: { file_path: '/tmp/a.png' } });
+  });
+
+  it('reads token usage from token_count, which is the only line that carries it', async () => {
+    const sessionId = 'codex-token-count';
+    writeCodexTranscript(sessionId, [
+      userLine('数一下'),
+      {
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { input_tokens: 175620, output_tokens: 1910 },
+            last_token_usage: {
+              input_tokens: 33051,
+              cached_input_tokens: 30464,
+              cache_write_input_tokens: 128,
+              output_tokens: 1269,
+            },
+          },
+        },
+      },
+    ]);
+
+    const body = await loadSession(sessionId);
+
+    // last_token_usage (this request's context), matching claude's per-message usage.
+    expect(body.usage).toEqual({
+      input_tokens: 33051,
+      output_tokens: 1269,
+      cache_read_input_tokens: 30464,
+      cache_creation_input_tokens: 128,
+    });
+  });
+
+  it('counts unknown tool calls the same way the fork walker does', async () => {
+    // Drift only shows when an unknown call is a turn's ONLY visible content: if the
+    // fork walker skips it, every later message id shifts by one and a fork silently
+    // cuts at the wrong turn.
+    const lines = [
+      { type: 'session_meta', payload: { id: 'codex-walker-sync', cwd: '/tmp' } },
+      { type: 'event_msg', payload: { type: 'task_started' } },
+      userLine('第一轮'),
+      { type: 'response_item', payload: { type: 'tool_search_call', call_id: 'call_ts1', arguments: { query: 'x' } } },
+      { type: 'response_item', payload: { type: 'tool_search_output', call_id: 'call_ts1', tools: [] } },
+      { type: 'event_msg', payload: { type: 'task_complete' } },
+      { type: 'event_msg', payload: { type: 'task_started' } },
+      userLine('第二轮'),
+      {
+        type: 'response_item',
+        payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '第二轮回答' }] },
+      },
+      { type: 'event_msg', payload: { type: 'task_complete' } },
+    ];
+    writeCodexTranscript('codex-walker-sync', lines);
+
+    const body = await loadSession('codex-walker-sync');
+    const secondUserId = body.messages[2].id;
+    expect(secondUserId).toBe('codex-user-2');
+
+    const { buildCodexForkLines } = await import('./session/codexFork');
+    const forked = buildCodexForkLines(
+      lines.map((l) => JSON.stringify(l)),
+      'codex-walker-sync',
+      'forked-id',
+      secondUserId,
+      'single'
+    );
+
+    expect(forked.targetMissed).toBe(false);
+    const text = forked.newLines.join('\n');
+    expect(text).toContain('第二轮');
+    expect(text).not.toContain('第一轮');
+  });
+});
+
 describe('session-by-path codex tool types', () => {
   it('maps update_plan onto TodoWrite so the checklist renders', async () => {
     const sessionId = 'codex-update-plan';

@@ -28,10 +28,13 @@ import {
   extractCodexUserContent,
   normalizeCodexToolInput,
   normalizeCodexToolName,
+  codexUnknownCallResult,
   parseCodexAgentMessage,
   parseCodexPatchInput,
   parseCodexSpawnOutput,
   parseCodexSubAgentActivity,
+  parseCodexTokenUsage,
+  parseCodexUnknownCall,
   parseCodexWaitOutput,
 } from './session/codexTools';
 import { generateTitle } from '../sessionTitle';
@@ -1026,14 +1029,19 @@ async function parseCodexTranscriptFile(
       // the freeform `exec` script that replaced every per-tool function_call. Surface
       // it as its own tool call so an edit shows a bubble and its FileDiff resolves
       // (matches the live engine's file_change handling).
-      if (payload.type === 'custom_tool_call' && payload.name && CODEX_CUSTOM_TOOL_NAMES.has(payload.name)) {
+      if (payload.type === 'custom_tool_call' && payload.name) {
         const assistant = ensureAssistant(timestamp);
         assistant.toolCalls = assistant.toolCalls || [];
         const callId = payload.call_id || `tool-${msgCounter++}`;
         assistant.parts = appendToolPart(assistant.parts, callId);
-        const { name, input } = payload.name === CODEX_EXEC_SCRIPT_FN_NAME
-          ? codexExecScriptCall(payload.input || '')
-          : { name: normalizeCodexToolName(payload.name), input: parseCodexPatchInput(payload.input || '') };
+        // A name outside CODEX_CUSTOM_TOOL_NAMES used to drop the whole call. Show it
+        // under its raw name instead: the body is freeform, so there is nothing to
+        // parse, but the call itself did happen.
+        const { name, input } = !CODEX_CUSTOM_TOOL_NAMES.has(payload.name)
+          ? { name: payload.name, input: { input: payload.input || '' } }
+          : payload.name === CODEX_EXEC_SCRIPT_FN_NAME
+            ? codexExecScriptCall(payload.input || '')
+            : { name: normalizeCodexToolName(payload.name), input: parseCodexPatchInput(payload.input || '') };
         assistant.toolCalls.push({ id: callId, name, input, isLoading: false });
         toolSinceText = true;
       }
@@ -1045,6 +1053,31 @@ async function parseCodexTranscriptFile(
         if (tc) {
           tc.result = codexToolOutputText(payload.output);
           tc.isLoading = false;
+        }
+      }
+
+      // Any other response_item carrying a call_id is a tool call we have no branch
+      // for (see parseCodexUnknownCall). Render it under its raw type rather than
+      // dropping it — that is how `tool_search_call` stayed invisible since 0.141.
+      // A shared call_id means this is the paired output, not a second call.
+      // codexFork's walker mirrors this, or a fork cuts at the wrong message.
+      const unknownCall = parseCodexUnknownCall(payload);
+      if (unknownCall) {
+        const assistant = ensureAssistant(timestamp);
+        const existing = assistant.toolCalls?.find(t => t.id === unknownCall.callId);
+        if (existing) {
+          existing.result = codexUnknownCallResult(payload as unknown as Record<string, unknown>);
+          existing.isLoading = false;
+        } else {
+          assistant.toolCalls = assistant.toolCalls || [];
+          assistant.parts = appendToolPart(assistant.parts, unknownCall.callId);
+          assistant.toolCalls.push({
+            id: unknownCall.callId,
+            name: unknownCall.name,
+            input: unknownCall.input,
+            isLoading: false,
+          });
+          toolSinceText = true;
         }
       }
     }
@@ -1077,7 +1110,16 @@ async function parseCodexTranscriptFile(
       toolSinceText = true;
     }
 
-    // Usage from response_completed or event_msg
+    // Usage. codex reports it per request on an `event_msg`/`token_count` line; the
+    // last one wins, which is the current context size (see parseCodexTokenUsage).
+    if (type === 'event_msg') {
+      const usage = parseCodexTokenUsage(payload);
+      if (usage) lastUsage = usage;
+    }
+
+    // `response_completed` is claude-era plumbing kept for old transcripts only: no
+    // codex version in the local corpus (0.94 → 0.147, 148 rollouts) writes it, so
+    // this is also why usage had to move to token_count above.
     if (type === 'response_completed') {
       const usage = (payload as Record<string, unknown>).usage as TokenUsage | undefined;
       if (usage) lastUsage = usage;

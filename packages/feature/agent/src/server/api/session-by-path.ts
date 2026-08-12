@@ -13,11 +13,13 @@ import {
 } from '@cockpit/effect-core';
 import {
   CODEX_AGENT_FN_NAMES,
+  CODEX_AGENT_MESSAGE_TYPE,
   CODEX_CUSTOM_TOOL_NAMES,
   CODEX_EXEC_SCRIPT_FN_NAME,
   CODEX_IMAGE_ONLY_TEXT,
   CODEX_SPAWN_FN_NAME,
   CODEX_WAIT_FN_NAME,
+  codexAgentPathName,
   codexAgentResultText,
   codexExecScriptCall,
   codexSpawnDescription,
@@ -26,8 +28,10 @@ import {
   extractCodexUserContent,
   normalizeCodexToolInput,
   normalizeCodexToolName,
+  parseCodexAgentMessage,
   parseCodexPatchInput,
   parseCodexSpawnOutput,
+  parseCodexSubAgentActivity,
   parseCodexWaitOutput,
 } from './session/codexTools';
 import { generateTitle } from '../sessionTitle';
@@ -185,10 +189,15 @@ interface WorkflowJournal {
  * Codex counterpart of findSubagentTranscript. Codex has no `subagents/` sidecar: a
  * sub-agent's transcript is an ordinary rollout of its own, in the shared
  * `~/.codex/sessions` tree, keyed by its thread id. The only link back to the
- * spawning call is inside the parent rollout — `spawn_agent`'s function_call_output
- * (`{"agent_id":…,"nickname":…}`) sits under the tool call's `call_id`, which IS the
- * tool_use id the client drilled in with. So: scan the parent for that call_id, then
+ * spawning call is inside the parent rollout, under the tool call's `call_id` — which
+ * IS the tool_use id the client drilled in with. So: scan the parent for that id, then
  * resolve the child rollout by the agent id it names.
+ *
+ * Which line carries that link depends on the codex version (see codexTools):
+ * `spawn_agent`'s function_call_output (`{"agent_id":…}`) on ≤ 0.14x, an
+ * `event_msg`/`sub_agent_activity` (whose `event_id` is the call_id) on 0.147+. Both
+ * are accepted — old rollouts stay drillable, and neither shape is guaranteed to be
+ * the one this session was recorded with.
  */
 async function findCodexSubagentTranscript(
   sessionPath: string,
@@ -210,20 +219,41 @@ async function findCodexSubagentTranscript(
         call_id?: string;
         arguments?: string;
         output?: string;
+        event_id?: string;
+        agent_thread_id?: string;
+        agent_path?: string;
       } | undefined;
       try {
         payload = (JSON.parse(line) as { payload?: typeof payload }).payload;
       } catch { continue; }
-      if (!payload || payload.call_id !== toolUseId) continue;
+      if (!payload) continue;
+
+      // 0.147+: keyed by `event_id`, so this has to be tested before the call_id
+      // filter below would drop the line.
+      const activity = parseCodexSubAgentActivity(payload);
+      if (activity) {
+        if (activity.callId !== toolUseId) continue;
+        agentId = activity.agentThreadId;
+        if (!agentType && activity.agentPath) agentType = codexAgentPathName(activity.agentPath);
+        break;
+      }
+
+      if (payload.call_id !== toolUseId) continue;
 
       if (payload.type === 'function_call' && payload.name === CODEX_SPAWN_FN_NAME) {
         try {
-          const args = JSON.parse(payload.arguments || '{}') as { agent_type?: unknown };
+          const args = JSON.parse(payload.arguments || '{}') as {
+            agent_type?: unknown;
+            task_name?: unknown;
+          };
           if (typeof args.agent_type === 'string') agentType = args.agent_type;
-        } catch { /* keep going: the output line is what actually matters */ }
+          else if (typeof args.task_name === 'string') agentType = codexAgentPathName(args.task_name);
+        } catch { /* keep going: the linking line is what actually matters */ }
       } else if (payload.type === 'function_call_output') {
         const parsed = parseCodexSpawnOutput(payload.output || '');
         if (parsed) { agentId = parsed.agentId; break; }
+        // 0.147+'s `{"task_name":…}` parses to null — the sub_agent_activity line
+        // that follows carries the id, so keep scanning rather than give up here.
       }
     }
   } finally {
@@ -802,6 +832,13 @@ interface CodexPayload {
   // search line carrying both the stable `ws_…` id and the query.
   query?: string;
   action?: { type?: string; query?: string; queries?: string[]; url?: string };
+  // sub_agent_activity (event_msg) — `event_id` is the spawning call_id.
+  event_id?: string;
+  agent_thread_id?: string;
+  agent_path?: string;
+  // agent_message (response_item) — a sub-agent reporting to its parent.
+  author?: string;
+  recipient?: string;
 }
 
 async function parseCodexTranscriptFile(
@@ -825,6 +862,9 @@ async function parseCodexTranscriptFile(
   const spawnByCallId = new Map<string, CodexToolCall>();
   const agentToCall = new Map<string, CodexToolCall>();
   const waitCallIds = new Set<string>();
+  // 0.147+ addresses a sub-agent by its path (`/root/cr_static`), not its thread id,
+  // in the agent_message that carries its report.
+  const agentPathToCall = new Map<string, CodexToolCall>();
 
   const flushAssistant = () => {
     if (currentAssistant) {
@@ -896,6 +936,17 @@ async function parseCodexTranscriptFile(
       // Reasoning
       if (payload.type === 'reasoning') {
         // Skip reasoning for now (could render as collapsed block later)
+      }
+
+      // A sub-agent reporting back (0.147+). Its report is no longer part of
+      // wait_agent's output, so this line is what completes the Task bubble its
+      // spawn_agent created. No bubble of its own: the report belongs to that one.
+      if (payload.type === CODEX_AGENT_MESSAGE_TYPE) {
+        const report = parseCodexAgentMessage(payload);
+        if (report?.final && report.text) {
+          const tc = agentPathToCall.get(report.author);
+          if (tc) tc.result = report.text;
+        }
       }
 
       // Tool call (function_call)
@@ -995,6 +1046,22 @@ async function parseCodexTranscriptFile(
           tc.result = codexToolOutputText(payload.output);
           tc.isLoading = false;
         }
+      }
+    }
+
+    // Sub-agent start (0.147+). The only line binding a spawn's call_id to the thread
+    // it created, which is what both the drill-in and the report routing key off. It
+    // creates no message of its own — codexFork's line walker therefore needs no
+    // matching branch.
+    if (type === 'event_msg') {
+      const activity = parseCodexSubAgentActivity(payload);
+      const spawned = activity ? spawnByCallId.get(activity.callId) : undefined;
+      if (activity && spawned) {
+        agentToCall.set(activity.agentThreadId, spawned);
+        if (activity.agentPath) agentPathToCall.set(activity.agentPath, spawned);
+        // Same key the ≤ 0.14x path sets from spawn_agent's output: the client uses
+        // it to tell a spawned agent from one that never started.
+        spawned.input = { ...spawned.input, agent_id: activity.agentThreadId };
       }
     }
 

@@ -50,6 +50,24 @@ export const CODEX_AGENT_FN_NAMES: ReadonlySet<string> = new Set([
   'resume_agent',
 ]);
 
+/**
+ * codex 0.147 rewrote the multi-agent wire format, and every piece the sub-agent
+ * bubble is built from moved. Both eras have to keep working — a rollout written by
+ * either version is still on disk and still resumable:
+ *
+ *                     | ≤ 0.14x                          | 0.147+
+ *   spawn arguments   | {message, agent_type?}           | {task_name, fork_turns, message}
+ *   …message          | the prompt, in plain text        | a Fernet token (`gAAAAA…`)
+ *   spawn output      | {agent_id, nickname}             | {task_name} — names no thread
+ *   call_id ↔ thread  | that output                      | an `event_msg`/sub_agent_activity
+ *   the report        | wait_agent's per-agent status    | a `response_item`/agent_message
+ *
+ * Losing the call_id ↔ thread id binding is what breaks the drill-in: it IS the link
+ * from the Task bubble (keyed by the spawning call_id) to the sub-agent's own rollout.
+ */
+export const CODEX_SUB_AGENT_ACTIVITY_TYPE = 'sub_agent_activity';
+export const CODEX_AGENT_MESSAGE_TYPE = 'agent_message';
+
 export const CODEX_PLAN_FN_NAME = 'update_plan';
 
 /**
@@ -319,18 +337,143 @@ export interface CodexAgentState {
  * Build the Task bubble input from `spawn_agent`'s arguments. `description` is
  * what `ToolCallModal.getDisplayInfo()` renders as the bubble header, so it gets
  * filled with the agent nickname once known (see `codexSpawnDescription`).
+ *
+ * On 0.147+ the dispatched task is NOT recoverable from disk: the spawn message is a
+ * Fernet token, and the copy the sub-agent received (a NEW_TASK agent_message in its
+ * own rollout) is the very same ciphertext. The key is the model provider's. So the
+ * bubble reports the task as encrypted instead of carrying an empty `prompt`, which
+ * would read as "cockpit lost it" — and an empty string is what every `prompt`
+ * consumer already treats as absent anyway.
  */
 export function parseCodexSpawnInput(
   args: Record<string, unknown>,
   extra?: { nickname?: string; agentId?: string }
 ): Record<string, unknown> {
-  const prompt = typeof args.message === 'string' ? args.message : '';
-  const agentType = typeof args.agent_type === 'string' ? args.agent_type : undefined;
+  const message = typeof args.message === 'string' ? args.message : '';
+  const encrypted = isCodexEncryptedPayload(message);
+  const prompt = encrypted ? '' : message;
+  const agentType = typeof args.agent_type === 'string'
+    ? args.agent_type
+    : typeof args.task_name === 'string'
+      ? codexAgentPathName(args.task_name)
+      : undefined;
   return {
     ...(agentType ? { subagent_type: agentType } : {}),
     description: codexSpawnDescription(extra?.nickname, agentType, prompt),
-    prompt,
+    ...(encrypted ? { message_encrypted: true } : { prompt }),
     ...(extra?.agentId ? { agent_id: extra.agentId } : {}),
+  };
+}
+
+/**
+ * codex's encrypted payloads (0.147+ spawn messages, reasoning blobs): a single
+ * unbroken Fernet token. Matched on shape, not length, so a plain prompt that merely
+ * happens to start with those characters still needs the no-whitespace, base64url-only
+ * body to be misread — which a natural-language prompt never has.
+ */
+const CODEX_FERNET_TOKEN_RE = /^gAAAAA[A-Za-z0-9_-]{32,}={0,2}$/;
+
+export function isCodexEncryptedPayload(text: string): boolean {
+  return CODEX_FERNET_TOKEN_RE.test(text.trim());
+}
+
+/**
+ * A codex agent path (`/root/cr_static`) → the task's own name (`cr_static`). The
+ * path is how 0.147 identifies a sub-agent everywhere except its thread id: in the
+ * spawn arguments (relative), in sub_agent_activity, and as an agent_message author.
+ */
+export function codexAgentPathName(agentPath: string): string {
+  const segments = agentPath.split('/').filter(Boolean);
+  return segments[segments.length - 1] || agentPath;
+}
+
+export interface CodexSubAgentActivity {
+  /** The spawning `spawn_agent` call_id — i.e. the Task bubble's tool_use id. */
+  callId: string;
+  /** The sub-agent's thread id, which names its rollout file. */
+  agentThreadId: string;
+  /** Absolute agent path, e.g. `/root/cr_static`. */
+  agentPath?: string;
+  kind?: string;
+}
+
+/**
+ * 0.147+'s `event_msg`/`sub_agent_activity` line — the only record tying a spawning
+ * call_id to the thread it created, now that `spawn_agent`'s output returns just
+ * `{"task_name":…}`. Note the call_id arrives under `event_id`, not `call_id`.
+ */
+export function parseCodexSubAgentActivity(payload: {
+  type?: string;
+  event_id?: unknown;
+  agent_thread_id?: unknown;
+  agent_path?: unknown;
+  kind?: unknown;
+} | undefined | null): CodexSubAgentActivity | null {
+  if (!payload || payload.type !== CODEX_SUB_AGENT_ACTIVITY_TYPE) return null;
+  const { event_id: callId, agent_thread_id: agentThreadId } = payload;
+  if (typeof callId !== 'string' || !callId) return null;
+  if (typeof agentThreadId !== 'string' || !agentThreadId) return null;
+  return {
+    callId,
+    agentThreadId,
+    ...(typeof payload.agent_path === 'string' ? { agentPath: payload.agent_path } : {}),
+    ...(typeof payload.kind === 'string' ? { kind: payload.kind } : {}),
+  };
+}
+
+export interface CodexAgentMessage {
+  /** Sender agent path, e.g. `/root/cr_static`. */
+  author: string;
+  recipient?: string;
+  /** The report body, envelope stripped. */
+  text: string;
+  /** False for interim chatter between agents; only a final answer completes a bubble. */
+  final: boolean;
+}
+
+/**
+ * A sub-agent's message to its parent (`response_item`/`agent_message`, 0.147+). This
+ * is where the report lives now — `wait_agent` returns only `{"message":"Wait
+ * completed.","timed_out":false}`. The body is wrapped in a fixed envelope:
+ *
+ *   Message Type: FINAL_ANSWER
+ *   Task name: /root
+ *   Sender: /root/cr_static
+ *   Payload:
+ *   <the actual report>
+ *
+ * An unrecognized envelope is passed through whole rather than dropped: a missing
+ * header should cost formatting, not the report.
+ */
+export function parseCodexAgentMessage(payload: {
+  type?: string;
+  author?: unknown;
+  recipient?: unknown;
+  content?: unknown;
+} | undefined | null): CodexAgentMessage | null {
+  if (!payload || payload.type !== CODEX_AGENT_MESSAGE_TYPE) return null;
+  const author = typeof payload.author === 'string' ? payload.author : '';
+  if (!author) return null;
+
+  const raw = Array.isArray(payload.content)
+    ? (payload.content as Array<{ text?: unknown }>)
+        .map((c) => (typeof c?.text === 'string' ? c.text : ''))
+        .join('')
+    : typeof payload.content === 'string' ? payload.content : '';
+
+  const messageType = raw.match(/^Message Type:\s*(\S+)/m)?.[1];
+  const payloadHeader = raw.match(/^Payload:[ \t]*$/m);
+  let body = raw;
+  if (payloadHeader?.index !== undefined) {
+    const nl = raw.indexOf('\n', payloadHeader.index);
+    if (nl !== -1) body = raw.slice(nl + 1);
+  }
+
+  return {
+    author,
+    ...(typeof payload.recipient === 'string' ? { recipient: payload.recipient } : {}),
+    text: body.trim() || raw.trim(),
+    final: !messageType || messageType === 'FINAL_ANSWER',
   };
 }
 
@@ -347,9 +490,13 @@ export function codexSpawnDescription(
 }
 
 /**
- * `spawn_agent`'s result — `{"agent_id":"019f…","nickname":"Turing"}`, stored as a
- * JSON *string* in the rollout. This is the only place the spawning call_id and the
- * sub-agent's own thread id are tied together, which is what the drill-in resolves.
+ * `spawn_agent`'s result on ≤ 0.14x — `{"agent_id":"019f…","nickname":"Turing"}`,
+ * stored as a JSON *string* in the rollout, and back then the only place the spawning
+ * call_id and the sub-agent's thread id were tied together.
+ *
+ * 0.147+ returns `{"task_name":"/root/cr_static"}` instead, naming no thread at all;
+ * there the binding comes from parseCodexSubAgentActivity. Returning null for that
+ * shape is correct, not a parse failure — callers must try both.
  */
 export function parseCodexSpawnOutput(output: string): { agentId: string; nickname?: string } | null {
   try {
@@ -373,6 +520,10 @@ export function parseCodexSpawnOutput(output: string): { agentId: string; nickna
  * parseCodexAgentsStates). Same information, two encodings — codex serializes the
  * tool result and the thread-item event separately. Both are parsed into
  * CodexAgentState so live and resume produce identical bubbles.
+ *
+ * 0.147+ carries no report here at all (`{"message":"Wait completed.","timed_out":
+ * false}`), which yields an empty list — the report moved to an agent_message, see
+ * parseCodexAgentMessage.
  */
 export function parseCodexWaitOutput(output: string): CodexAgentState[] {
   let parsed: { status?: Record<string, unknown> };

@@ -432,6 +432,189 @@ describe('session-by-path codex subagents', () => {
   });
 });
 
+// Real shapes, captured from codex 0.147, which rewired every one of these lines:
+// spawn arguments (task_name + an encrypted message), spawn output (names no thread),
+// the call_id ↔ thread binding (now sub_agent_activity), and the report (now an
+// agent_message). See the table in codexTools.ts.
+const SPAWN_CIPHERTEXT =
+  'gAAAAABqfKIsWwUUPVsP_GowpHVJWqXgTsChVbmfW_oqX090XyS7VjILKODsbTcjP_ZK9SFOHsNlrU7zotH51DsMdYMeZVdVaCuMcKkZ89msK93FgdRBsFPw';
+const spawnCallV147 = (callId: string, taskName: string) => ({
+  type: 'response_item',
+  payload: {
+    type: 'function_call',
+    name: 'spawn_agent',
+    namespace: 'collaboration',
+    arguments: JSON.stringify({ task_name: taskName, fork_turns: 'none', message: SPAWN_CIPHERTEXT }),
+    call_id: callId,
+  },
+});
+const spawnOutputV147 = (callId: string, agentPath: string) => ({
+  type: 'response_item',
+  payload: { type: 'function_call_output', call_id: callId, output: JSON.stringify({ task_name: agentPath }) },
+});
+const subAgentStarted = (callId: string, agentThreadId: string, agentPath: string) => ({
+  type: 'event_msg',
+  payload: {
+    type: 'sub_agent_activity',
+    // The spawning call_id, under a different key than every other line uses.
+    event_id: callId,
+    occurred_at_ms: 1786552868549,
+    agent_thread_id: agentThreadId,
+    agent_path: agentPath,
+    kind: 'started',
+  },
+});
+const waitCallV147 = (callId: string) => ({
+  type: 'response_item',
+  payload: {
+    type: 'function_call',
+    name: 'wait_agent',
+    namespace: 'collaboration',
+    arguments: JSON.stringify({ timeout_ms: 360000 }),
+    call_id: callId,
+  },
+});
+/** No per-agent status any more — the report arrives separately. */
+const waitOutputV147 = (callId: string) => ({
+  type: 'response_item',
+  payload: {
+    type: 'function_call_output',
+    call_id: callId,
+    output: JSON.stringify({ message: 'Wait completed.', timed_out: false }),
+  },
+});
+const agentReport = (author: string, report: string) => ({
+  type: 'response_item',
+  payload: {
+    type: 'agent_message',
+    author,
+    recipient: '/root',
+    content: [{
+      type: 'input_text',
+      text: `Message Type: FINAL_ANSWER\nTask name: /root\nSender: ${author}\nPayload:\n${report}`,
+    }],
+  },
+});
+
+describe('session-by-path codex subagents (0.147 protocol)', () => {
+  it('completes each Task bubble from the agent_message its sub-agent sent back', async () => {
+    const sessionId = 'codex-v147-spawn-wait';
+    writeCodexTranscript(sessionId, [
+      userLine('审查 PR 4226'),
+      spawnCallV147('call_s1', 'cr_static'),
+      spawnOutputV147('call_s1', '/root/cr_static'),
+      subAgentStarted('call_s1', 'agent-static', '/root/cr_static'),
+      spawnCallV147('call_s2', 'cr_dynamic'),
+      spawnOutputV147('call_s2', '/root/cr_dynamic'),
+      subAgentStarted('call_s2', 'agent-dynamic', '/root/cr_dynamic'),
+      waitCallV147('call_w1'),
+      waitOutputV147('call_w1'),
+      // Reversed vs. spawn order: reports are matched by author path, not order.
+      agentReport('/root/cr_dynamic', '动态：无 findings'),
+      agentReport('/root/cr_static', '静态：2 条 findings'),
+    ]);
+
+    const body = await loadSession(sessionId);
+    const toolCalls = body.messages[1].toolCalls;
+
+    expect(toolCalls).toHaveLength(2);
+    expect(toolCalls[0]).toMatchObject({
+      id: 'call_s1',
+      name: 'Task',
+      // The encrypted spawn message must not become the bubble header; the task name does.
+      input: {
+        subagent_type: 'cr_static',
+        description: 'cr_static',
+        // Not an empty `prompt`: the plaintext is unrecoverable, not missing.
+        message_encrypted: true,
+        agent_id: 'agent-static',
+      },
+      result: '静态：2 条 findings',
+    });
+    expect(toolCalls[1]).toMatchObject({ id: 'call_s2', result: '动态：无 findings' });
+  });
+
+  it('drills into a sub-agent transcript via sub_agent_activity', async () => {
+    const sessionId = 'codex-v147-drill-in';
+    writeCodexTranscript(sessionId, [
+      userLine('审查'),
+      spawnCallV147('call_s1', 'cr_static'),
+      // spawn_agent's own output no longer names a thread — this used to 404 the drill-in.
+      spawnOutputV147('call_s1', '/root/cr_static'),
+      subAgentStarted('call_s1', 'agent-static', '/root/cr_static'),
+    ]);
+    const childPath = writeCodexTranscript('agent-static', [
+      userLine('go'),
+      {
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: '看完了：2 条 findings' }],
+        },
+      },
+    ]);
+    // 0.147 publishes a nickname but no role on the child's session_meta.
+    sessionEntries.set('agent-static', { path: childPath, agentNickname: 'Dirac' });
+
+    const body = await loadSession(sessionId, { toolUseId: 'call_s1' });
+
+    expect(body.subagent).toEqual({ agentType: 'cr_static', description: 'Dirac' });
+    expect(body.messages.at(-1)).toMatchObject({ role: 'assistant', content: '看完了：2 条 findings' });
+  });
+
+  it('ignores interim agent chatter so a bubble is only completed by a final answer', async () => {
+    const sessionId = 'codex-v147-interim';
+    writeCodexTranscript(sessionId, [
+      userLine('审查'),
+      spawnCallV147('call_s1', 'cr_static'),
+      subAgentStarted('call_s1', 'agent-static', '/root/cr_static'),
+      {
+        type: 'response_item',
+        payload: {
+          type: 'agent_message',
+          author: '/root/cr_static',
+          recipient: '/root',
+          content: [{ type: 'input_text', text: 'Message Type: STATUS\nSender: /root/cr_static\nPayload:\n还在跑' }],
+        },
+      },
+    ]);
+
+    const body = await loadSession(sessionId);
+    const toolCall = body.messages[1].toolCalls[0];
+
+    // Marking it done would stop SubagentTranscriptModal polling an agent still working.
+    expect(toolCall.result).toBeUndefined();
+    expect(toolCall.input).toMatchObject({ agent_id: 'agent-static' });
+  });
+
+  it('keeps the parent message stream free of sub-agent reports', async () => {
+    const sessionId = 'codex-v147-no-leak';
+    writeCodexTranscript(sessionId, [
+      userLine('审查'),
+      spawnCallV147('call_s1', 'cr_static'),
+      subAgentStarted('call_s1', 'agent-static', '/root/cr_static'),
+      agentReport('/root/cr_static', '静态：2 条 findings'),
+      {
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: '审查完成，共 2 个问题。' }],
+        },
+      },
+    ]);
+
+    const body = await loadSession(sessionId);
+    const assistant = body.messages[1];
+
+    // The report belongs to the Task bubble; repeating it as assistant text would
+    // duplicate the whole review in the transcript.
+    expect(assistant.content).toBe('审查完成，共 2 个问题。');
+    expect(assistant.toolCalls[0].result).toBe('静态：2 条 findings');
+  });
+});
+
 describe('session-by-path codex tool types', () => {
   it('maps update_plan onto TodoWrite so the checklist renders', async () => {
     const sessionId = 'codex-update-plan';

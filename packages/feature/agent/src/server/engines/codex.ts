@@ -25,6 +25,7 @@ import {
   parseCodexExecScript,
   parseCodexSpawnInput,
   parseCodexSpawnOutput,
+  parseCodexSubAgentActivity,
 } from '../api/session/codexTools';
 
 // Codex SDK event adapter. Translates Codex JSON events into the same event shapes the
@@ -111,6 +112,8 @@ export interface RolloutSpawnCall {
   args: Record<string, unknown>;
   agentId?: string;
   nickname?: string;
+  /** 0.147+: the sub-agent's path (`/root/cr_static`); no nickname is published here. */
+  agentPath?: string;
 }
 /** An MCP call. Persisted as an ordinary function_call under an `mcp__<server>` namespace. */
 export interface RolloutMcpCall { callId?: string; server: string; tool: string }
@@ -140,7 +143,11 @@ function parseCallLines(
 ): void {
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
-    let entry: { payload?: { type?: string; name?: string; namespace?: string; call_id?: string; arguments?: string; input?: string; output?: string } };
+    let entry: { payload?: {
+      type?: string; name?: string; namespace?: string; call_id?: string;
+      arguments?: string; input?: string; output?: string;
+      event_id?: string; agent_thread_id?: string; agent_path?: string;
+    } };
     try { entry = JSON.parse(line); } catch { continue; }
     const p = entry.payload;
     if (!p) continue;
@@ -175,6 +182,19 @@ function parseCallLines(
       if (target) {
         const parsed = parseCodexSpawnOutput(p.output || '');
         if (parsed) { target.agentId = parsed.agentId; target.nickname = parsed.nickname; }
+      }
+    } else {
+      // 0.147+ back-fills the same fields from this event line instead: spawn_agent's
+      // output stopped naming the thread it created (see codexTools). Without it every
+      // spawn resolves by turn order alone, so two agents spawned in one turn can bind
+      // to each other's call_id.
+      const activity = parseCodexSubAgentActivity(p);
+      if (activity) {
+        const target = spawns.find((s) => s.callId === activity.callId && !s.agentId);
+        if (target) {
+          target.agentId = activity.agentThreadId;
+          if (activity.agentPath) target.agentPath = activity.agentPath;
+        }
       }
     }
   }

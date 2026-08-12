@@ -475,7 +475,7 @@ export function StatusDiffPane({
 
       {/* Git changes HTML preview modal.
           ⚠ There is no opaque-sandbox tier any more (an earlier version of this
-          comment claimed one): HtmlPreview renders every document same-origin
+          comment claimed one): HtmlAppFrame renders every document same-origin
           with the bash SDK injected, so previewing a changed .html from this
           pane RUNS IT — including a .html an agent just wrote and nobody has
           reviewed. Clicking preview here is the trust decision; treat it as

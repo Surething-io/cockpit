@@ -19,7 +19,7 @@ import {
 } from '@cockpit/feature-comments';
 import i18n from '@cockpit/shared-i18n';
 
-interface HtmlPreviewProps {
+interface HtmlAppFrameProps {
   /** Raw HTML source. Optional: only used by the srcDoc fallback (relative
    *  filePath + no cwd). URL mode (absolute path) serves off disk and ignores it. */
   content?: string;
@@ -32,11 +32,14 @@ interface HtmlPreviewProps {
   /** Hands the selected text to project-wide content search. The search
    *  button is only rendered when this is provided (host convention). */
   onContentSearch?: (query: string) => void;
+  /** Optional caller-controlled nonce for remounting the iframe. */
+  reloadKey?: number;
 }
 
 /**
- * In-place HTML preview in an iframe. Mirrors the markdown in-place preview UX
- * (the host toolbar owns the Preview toggle); only the rendered content differs.
+ * Runtime frame for local HTML documents and registered HTML apps. Some callers
+ * expose it behind a Preview toggle/modal, but this component is the executable
+ * same-origin iframe that actually runs the document.
  *
  * Renders via `src="/apps/local/<abs>"` (a real same-origin URL served off
  * disk), so the page behaves like a static site — relative sibling js/css,
@@ -71,10 +74,10 @@ interface HtmlPreviewProps {
  * list modal. If the previewed page's own JS swallows mouse events or clears
  * the selection, the toolbar simply won't appear on that page (accepted edge).
  */
-export function HtmlPreview({ content, filePath, cwd, onContentSearch }: HtmlPreviewProps) {
+export function HtmlAppFrame({ content, filePath, cwd, onContentSearch, reloadKey = 0 }: HtmlAppFrameProps) {
   const aiBridge = useAIBridge();
-  // Previewing is always a user gesture → always trusted. Selection toolbar just
-  // needs a project cwd to anchor comments against.
+  // Rendering this frame is always behind a user gesture → always trusted.
+  // Selection toolbar just needs a project cwd to anchor comments against.
   const commentsEnabled = !!cwd;
 
   // How to render the page:
@@ -250,7 +253,7 @@ export function HtmlPreview({ content, filePath, cwd, onContentSearch }: HtmlPre
       await clearAllComments(cwd);
       refreshComments();
     } catch (err) {
-      console.error('[HtmlPreview] send to AI failed:', err);
+      console.error('[HtmlAppFrame] send to AI failed:', err);
     }
   }, [aiBridge, cwd, filePath, refreshComments]);
 
@@ -271,7 +274,7 @@ export function HtmlPreview({ content, filePath, cwd, onContentSearch }: HtmlPre
     <div ref={setContainer} className="relative h-full w-full bg-white">
       <iframe
         ref={iframeRef}
-        key={filePath}
+        key={`${filePath}:${reloadKey}`}
         {...(renderSource.mode === 'url'
           ? { src: renderSource.url }
           : { srcDoc: renderSource.html })}
@@ -335,4 +338,4 @@ export function HtmlPreview({ content, filePath, cwd, onContentSearch }: HtmlPre
   );
 }
 
-export default HtmlPreview;
+export default HtmlAppFrame;

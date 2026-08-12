@@ -35,7 +35,7 @@ import { useAddHtmlApp } from './htmlApps/useAddHtmlApp';
 import { useAddSkill } from './skills/useAddSkill';
 import { buildTreeFromPaths, collectAllDirPaths, mergeFileTree } from './fileBrowser/utils';
 import { InteractiveMarkdownPreview } from '@cockpit/feature-explorer';
-import { HtmlPreview } from './HtmlPreview';
+import { HtmlAppFrame } from './HtmlAppFrame';
 import { ShareReviewToggle } from '@cockpit/feature-review';
 import { type FileEditorHandle } from './FileEditorModal';
 import { QuickFileOpen } from './QuickFileOpen';
@@ -2182,7 +2182,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           // In-place HTML preview — only when the user explicitly turned
                           // on the HTML Preview toggle (previewHtml, default off). That
                           // click is the trust gesture, so the preview gets the bash SDK.
-                          <HtmlPreview
+                          <HtmlAppFrame
                             content={fileTree.fileContent.content}
                             filePath={fileTree.selectedPath}
                             cwd={cwd}

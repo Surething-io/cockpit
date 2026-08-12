@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@cockpit/shared-ui';
-import { AppWindow, ExternalLink, Minimize2, SquareTerminal, Trash2, Plus, X, Search, Copy } from 'lucide-react';
+import { AppWindow, ExternalLink, Minimize2, RotateCw, SquareTerminal, Trash2, Plus, X, Search, Copy } from 'lucide-react';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { toExternalBrowserAppUrl, toLocalAppUrl } from '@cockpit/shared-utils';
-import { HtmlPreview } from '../HtmlPreview';
+import { HtmlAppFrame } from '../HtmlAppFrame';
 import { notifyHtmlAppsChanged } from './htmlAppsBus';
 import { loadHtmlApps, addHtmlApp, deleteHtmlApp, type HtmlAppInfo } from './htmlAppsClient';
 
@@ -40,6 +40,7 @@ export function HtmlAppsModal({
   const [showAdd, setShowAdd] = useState(false);
   const [addPath, setAddPath] = useState('');
   const [adding, setAdding] = useState(false);
+  const [previewReloadKeys, setPreviewReloadKeys] = useState<Record<string, number>>({});
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(async () => {
@@ -157,6 +158,10 @@ export function HtmlAppsModal({
   const openExternal = useCallback((path: string) => {
     const appUrl = toLocalAppUrl(path);
     window.open(toExternalBrowserAppUrl(appUrl, window.location.origin), '_blank');
+  }, []);
+
+  const refreshPreview = useCallback((path: string) => {
+    setPreviewReloadKeys((keys) => ({ ...keys, [path]: (keys[path] || 0) + 1 }));
   }, []);
 
   const handleCopyPath = useCallback(async (path: string) => {
@@ -329,7 +334,7 @@ export function HtmlAppsModal({
             className={visible ? 'fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-0 md:p-4' : 'hidden'}
             onClick={onMinimizeHtmlAppPreview}
           >
-            {/* The preview iframe paints the app's own background, which can
+            {/* The app frame paints the app's own background, which can
                 sit flush against the dimmed backdrop and blur the window edge.
                 A brand outline marks it, kept just under full strength so it
                 reads as a boundary rather than a highlighted/selected state.
@@ -355,13 +360,16 @@ export function HtmlAppsModal({
                 <button onClick={() => openExternal(item.path)} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0" title={t('browser.openInNewWindow')}>
                   <ExternalLink className="w-4 h-4" />
                 </button>
+                <button onClick={() => refreshPreview(item.path)} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0" title={t('common.refresh')}>
+                  <RotateCw className="w-4 h-4" />
+                </button>
                 <button onClick={() => onCloseHtmlAppPreview(item.path)} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0">
                   <X className="w-4 h-4" />
                 </button>
               </div>
               <div className="flex-1 overflow-hidden">
                 {/* User opened this app → trusted (gets the bash SDK). */}
-                <HtmlPreview filePath={item.path} />
+                <HtmlAppFrame filePath={item.path} reloadKey={previewReloadKeys[item.path] || 0} />
               </div>
             </div>
           </div>

@@ -240,7 +240,7 @@ export const GET = handler((req) =>
       // wsUrl is left empty: the SDK derives ws://host/ws/bash from
       // window.location (this iframe has a real origin, unlike srcDoc).
       // fullPath is already absolute + normalized, so resolveBashCwd degenerates
-      // to a plain dirname — shared with HtmlPreview to avoid drift.
+      // to a plain dirname — shared with HtmlAppFrame to avoid drift.
       return htmlResponse(
         injectBashSdk(html, { cwd: resolveBashCwd(fullPath) }),
         contentType

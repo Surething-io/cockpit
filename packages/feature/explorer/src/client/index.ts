@@ -25,7 +25,7 @@ export * from './DiffDensityToggle';
 export * from './DiffViewModeToggle';
 export * from './CodeViewer';
 export * from './InteractiveMarkdownPreview';
-export * from './HtmlPreview';
+export * from './HtmlAppFrame';
 export { HtmlAppsModal, type HtmlAppPreview } from './htmlApps/HtmlAppsModal';
 export { HtmlPreviewModal } from './htmlApps/HtmlPreviewModal';
 export { onHtmlAppsChanged, notifyHtmlAppsChanged } from './htmlApps/htmlAppsBus';

@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Portal, toast } from '@cockpit/shared-ui';
 import { ExternalLink, BookmarkPlus, SquareTerminal } from 'lucide-react';
 import { toExternalBrowserAppUrl, toLocalAppUrl } from '@cockpit/shared-utils';
-import { HtmlPreview } from '../HtmlPreview';
+import { HtmlAppFrame } from '../HtmlAppFrame';
 import { useAddHtmlApp } from './useAddHtmlApp';
 import { HtmlAppSource } from './HtmlAppSource';
 
@@ -17,7 +17,7 @@ import { HtmlAppSource } from './HtmlAppSource';
  * affordances.
  *
  * SECURITY: opening this modal is an explicit user gesture, so the preview is
- * trusted (bash SDK enabled) — see the security note in HtmlPreview.
+ * trusted (bash SDK enabled) — see the security note in HtmlAppFrame.
  */
 export function HtmlPreviewModal({ filePath, content, cwd, onClose, onContentSearch }: {
   filePath: string; content: string; cwd?: string;
@@ -97,7 +97,7 @@ export function HtmlPreviewModal({ filePath, content, cwd, onClose, onContentSea
         </div>
         <div className="flex-1 overflow-hidden">
           {mode === 'preview' ? (
-            <HtmlPreview
+            <HtmlAppFrame
               content={content}
               filePath={filePath}
               cwd={cwd}

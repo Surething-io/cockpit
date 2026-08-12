@@ -2,7 +2,7 @@
  * htmlBashSdk — the `window.cockpit` bash SDK injected into previewed HTML.
  *
  * Two injection sites share this single source of truth:
- *   - HtmlPreview (client, srcDoc iframe): explorer file preview + chat preview.
+ *   - HtmlAppFrame (client, srcDoc iframe): explorer file preview + chat preview.
  *     A srcDoc document's URL is `about:srcdoc` (no origin), so the host MUST
  *     bake an absolute `wsUrl`.
  *   - /apps/local (server, real-URL iframe): the console browser bubble loads
@@ -405,7 +405,7 @@ const SDK_SOURCE = `
 // ── Bash cwd derivation (single source of truth) ────────────────────────────
 // Both injection sites derive the previewed file's directory through this same
 // helper, so the "make it absolute" logic can never drift:
-//   - HtmlPreview (client): filePath is project-root-relative (explorer) or
+//   - HtmlAppFrame (client): filePath is project-root-relative (explorer) or
 //     absolute (chat); passes the absolute project root as `projectRoot`.
 //   - the /apps route (server): passes its already-normalized absolute fullPath;
 //     the isAbsolute branch degenerates to a plain dirname.

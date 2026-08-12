@@ -80,7 +80,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
   const [jsonPreview, setJsonPreview] = useState<{ content: string; filePath: string } | null>(null);
   // HTML preview overlay. Historical commit content → always UNTRUSTED (no bash
   // SDK): a registered-app path can't vouch for an arbitrary old revision. Note
-  // the rendered page is served from CURRENT disk (HtmlPreview URL mode), so it
+  // the rendered page is served from CURRENT disk (HtmlAppFrame URL mode), so it
   // may differ from this commit's snapshot — see the module note.
   const [htmlPreview, setHtmlPreview] = useState<{ content: string; filePath: string } | null>(null);
   // 精简/全文 — pane-local, defaults to compact (same as StatusDiffPane).

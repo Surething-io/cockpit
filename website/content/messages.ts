@@ -120,12 +120,12 @@ export const messages = {
         {
           name: 'DeepSeek',
           tagline: 'Long sessions on a budget',
-          desc: 'Anthropic-compatible endpoint via the Claude SDK. Paste a key, pick `v4-pro` or `v4-flash`.',
+          desc: 'Paste a DeepSeek key — live model list (`deepseek-v4-pro` by default) and a balance check.',
         },
         {
           name: 'GLM',
           tagline: 'Zhipu, BYOK',
-          desc: 'Paste a BigModel key per tab — live GLM model list, both execution modes, plus a Coding Plan quota readout.',
+          desc: 'Paste a BigModel key per tab — live GLM model list, a mainland/international region switch, plus a Coding Plan quota readout.',
         },
         {
           name: 'Kimi',
@@ -550,12 +550,12 @@ export const messages = {
         {
           name: 'DeepSeek',
           tagline: '便宜的长会话',
-          desc: '走 Anthropic 兼容端点，复用 Claude SDK。粘 Key，选 `v4-pro` 或 `v4-flash`。',
+          desc: '粘一个 DeepSeek Key —— 模型列表实时拉取（默认 `deepseek-v4-pro`），还能一键查余额。',
         },
         {
           name: 'GLM',
           tagline: '智谱，粘 Key 即用',
-          desc: '每个 tab 粘一个 BigModel 的 Key —— GLM 模型列表实时拉取，两种执行模式任选，还能查 Coding Plan 额度。',
+          desc: '每个 tab 粘一个 BigModel 的 Key —— GLM 模型列表实时拉取，大陆 / 国际站随手切，还能查 Coding Plan 额度。',
         },
         {
           name: 'Kimi',

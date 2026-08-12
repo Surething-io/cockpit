@@ -1,4 +1,4 @@
-import type { Input, ThreadOptions } from '@openai/codex-sdk';
+import type { Input, ModelReasoningEffort, ThreadOptions } from '@openai/codex-sdk';
 import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
 import { sanitizedSpawnEnv, findCodexSessionPath } from '@cockpit/shared-utils';
 import { randomUUID } from 'crypto';
@@ -26,6 +26,7 @@ import {
 
 // Codex SDK event adapter. Translates Codex JSON events into the same event shapes the
 // other engines emit.
+type CodexReasoningEffort = ModelReasoningEffort | 'max' | 'ultra';
 
 const MEDIA_EXT: Record<string, string> = {
   'image/png': '.png',
@@ -693,13 +694,30 @@ function codexSdkInput(prompt: string, imageFiles: string[]): Input {
 }
 
 function codexThreadOptions(ctx: RunCtx): ThreadOptions {
+  const effort = resolveCodexReasoningEffort(ctx.params.codexReasoningEffort);
   return {
     ...(ctx.params.model ? { model: ctx.params.model } : {}),
+    ...(effort ? { modelReasoningEffort: effort as ModelReasoningEffort } : {}),
     ...(ctx.cwd ? { workingDirectory: ctx.cwd } : {}),
     sandboxMode: 'danger-full-access',
     approvalPolicy: 'never',
     skipGitRepoCheck: true,
   };
+}
+
+function resolveCodexReasoningEffort(value: unknown): CodexReasoningEffort | undefined {
+  switch (value) {
+    case 'minimal':
+    case 'low':
+    case 'medium':
+    case 'high':
+    case 'xhigh':
+    case 'max':
+    case 'ultra':
+      return value;
+    default:
+      return undefined;
+  }
 }
 
 async function runCodexSdk(ctx: RunCtx): Promise<void> {

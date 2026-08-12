@@ -62,5 +62,10 @@ export type {
   ChatEngine,
   EngineModelId,
   DeepseekModel,
+  ClaudeModelId,
+  ClaudeEffort,
+  ClaudeContextWindow,
+  CodexModelId,
+  CodexReasoningEffort,
   ChatMode,
 } from './types';

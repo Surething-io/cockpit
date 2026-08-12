@@ -115,6 +115,11 @@ export type ChatEngine = 'claude' | 'codex' | 'kimi' | 'ollama' | 'deepseek' | '
 export type EngineModelId = string;
 /** @deprecated Use EngineModelId — kept so existing deepseek-named props still read naturally. */
 export type DeepseekModel = EngineModelId;
+export type ClaudeModelId = string;
+export type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultracode' | 'ultrathink';
+export type ClaudeContextWindow = '200k' | '1m';
+export type CodexModelId = string;
+export type CodexReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
 /**
  * Execution mode — which loop actually drives the turn.
  * - `sdk`: `@anthropic-ai/claude-agent-sdk`'s `query()` (headless). claude (Agent SDK

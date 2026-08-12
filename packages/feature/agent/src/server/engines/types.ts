@@ -18,6 +18,11 @@ export interface DispatchParams {
   language?: string;
   engine?: string;
   model?: string;
+  claudeEffort?: string;
+  claudeContextWindow?: string;
+  claudeFastMode?: boolean;
+  claudeThinking?: boolean;
+  codexReasoningEffort?: string;
   // Execution mode. 'builtin' → the Built-in Agent loop (API-key engines only);
   // absent/anything else → the vendor SDK loop. Runners that support only one mode ignore this.
   mode?: string;

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { usePageVisible, useWebSocket } from '@cockpit/shared-ui';
-import type { ChatEngine, DeepseekModel, EngineModelId, ChatMode } from '@cockpit/feature-agent';
+import type { ChatEngine, DeepseekModel, EngineModelId, ChatMode, ClaudeModelId, ClaudeEffort, ClaudeContextWindow, CodexModelId, CodexReasoningEffort } from '@cockpit/feature-agent';
 import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
 import { Effect } from 'effect';
@@ -29,6 +29,13 @@ export interface TabInfo {
   deepseekModel?: DeepseekModel;
   kimiModel?: EngineModelId;
   glmModel?: EngineModelId;
+  claudeModel?: ClaudeModelId;
+  claudeEffort?: ClaudeEffort;
+  claudeContextWindow?: ClaudeContextWindow;
+  claudeFastMode?: boolean;
+  claudeThinking?: boolean;
+  codexModel?: CodexModelId;
+  codexReasoningEffort?: CodexReasoningEffort;
   chatMode?: ChatMode;
   planMode?: boolean;
   /** ollama only: send every user message with no prior history (independent task) */
@@ -149,6 +156,13 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         const savedDeepseekModels: Record<string, string> = data.deepseekModels || {};
         const savedKimiModels: Record<string, string> = data.kimiModels || {};
         const savedGlmModels: Record<string, string> = data.glmModels || {};
+        const savedClaudeModels: Record<string, string> = data.claudeModels || {};
+        const savedClaudeEfforts: Record<string, string> = data.claudeEfforts || {};
+        const savedClaudeContextWindows: Record<string, string> = data.claudeContextWindows || {};
+        const savedClaudeFastModes: Record<string, boolean> = data.claudeFastModes || {};
+        const savedClaudeThinkings: Record<string, boolean> = data.claudeThinkings || {};
+        const savedCodexModels: Record<string, string> = data.codexModels || {};
+        const savedCodexReasoningEfforts: Record<string, string> = data.codexReasoningEfforts || {};
         const savedChatModes: Record<string, string> = data.chatModes || {};
         const savedPlanModes: Record<string, boolean> = data.planModes || {};
         const savedNoHistories: Record<string, boolean> = data.noHistories || {};
@@ -177,6 +191,13 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
               deepseekModel: (savedDeepseekModels[sessionId] as DeepseekModel) || prev?.deepseekModel || undefined,
               kimiModel: (savedKimiModels[sessionId] as EngineModelId) || prev?.kimiModel || undefined,
               glmModel: (savedGlmModels[sessionId] as EngineModelId) || prev?.glmModel || undefined,
+              claudeModel: (savedClaudeModels[sessionId] as ClaudeModelId) || prev?.claudeModel || undefined,
+              claudeEffort: (savedClaudeEfforts[sessionId] as ClaudeEffort) || prev?.claudeEffort || undefined,
+              claudeContextWindow: (savedClaudeContextWindows[sessionId] as ClaudeContextWindow) || prev?.claudeContextWindow || undefined,
+              claudeFastMode: savedClaudeFastModes[sessionId] ?? prev?.claudeFastMode,
+              claudeThinking: savedClaudeThinkings[sessionId] ?? prev?.claudeThinking,
+              codexModel: (savedCodexModels[sessionId] as CodexModelId) || prev?.codexModel || undefined,
+              codexReasoningEffort: (savedCodexReasoningEfforts[sessionId] as CodexReasoningEffort) || prev?.codexReasoningEffort || undefined,
               chatMode: normalizeChatMode(savedChatModes[sessionId]) || prev?.chatMode || undefined,
               planMode: savedPlanModes[sessionId] ?? prev?.planMode,
               noHistory: savedNoHistories[sessionId] ?? prev?.noHistory,
@@ -223,6 +244,13 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     const deepseekModels: Record<string, string> = {};
     const kimiModels: Record<string, string> = {};
     const glmModels: Record<string, string> = {};
+    const claudeModels: Record<string, string> = {};
+    const claudeEfforts: Record<string, string> = {};
+    const claudeContextWindows: Record<string, string> = {};
+    const claudeFastModes: Record<string, boolean> = {};
+    const claudeThinkings: Record<string, boolean> = {};
+    const codexModels: Record<string, string> = {};
+    const codexReasoningEfforts: Record<string, string> = {};
     const chatModes: Record<string, string> = {};
     const planModes: Record<string, boolean> = {};
     const noHistories: Record<string, boolean> = {};
@@ -242,6 +270,21 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       if (tab.sessionId && tab.glmModel) {
         glmModels[tab.sessionId] = tab.glmModel;
       }
+      if (tab.sessionId && tab.claudeModel) {
+        claudeModels[tab.sessionId] = tab.claudeModel;
+      }
+      if (tab.sessionId && tab.claudeEffort) {
+        claudeEfforts[tab.sessionId] = tab.claudeEffort;
+      }
+      if (tab.sessionId && tab.claudeContextWindow) {
+        claudeContextWindows[tab.sessionId] = tab.claudeContextWindow;
+      }
+      if (tab.sessionId && tab.codexModel) {
+        codexModels[tab.sessionId] = tab.codexModel;
+      }
+      if (tab.sessionId && tab.codexReasoningEffort) {
+        codexReasoningEfforts[tab.sessionId] = tab.codexReasoningEffort;
+      }
       // Persist the DECIDED value for sessions THIS tab has open, so switching back to the
       // default actually overrides a previously-saved non-default. The server merge is a
       // union — an absent key keeps the old value, which made "off"/"sdk" un-persistable
@@ -259,6 +302,8 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         if (tab.chatMode !== undefined) chatModes[tab.sessionId] = tab.chatMode;
         if (tab.planMode !== undefined) planModes[tab.sessionId] = tab.planMode;
         if (tab.noHistory !== undefined) noHistories[tab.sessionId] = tab.noHistory;
+        if (tab.claudeFastMode !== undefined) claudeFastModes[tab.sessionId] = tab.claudeFastMode;
+        if (tab.claudeThinking !== undefined) claudeThinkings[tab.sessionId] = tab.claudeThinking;
       }
     }
 
@@ -280,6 +325,13 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         deepseekModels,
         kimiModels,
         glmModels,
+        claudeModels,
+        claudeEfforts,
+        claudeContextWindows,
+        claudeFastModes,
+        claudeThinkings,
+        codexModels,
+        codexReasoningEfforts,
         chatModes,
         planModes,
         noHistories,
@@ -338,6 +390,13 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       const deepseekModels = (data.deepseekModels || {}) as Record<string, string>;
       const kimiModels = (data.kimiModels || {}) as Record<string, string>;
       const glmModels = (data.glmModels || {}) as Record<string, string>;
+      const claudeModels = (data.claudeModels || {}) as Record<string, string>;
+      const claudeEfforts = (data.claudeEfforts || {}) as Record<string, string>;
+      const claudeContextWindows = (data.claudeContextWindows || {}) as Record<string, string>;
+      const claudeFastModes = (data.claudeFastModes || {}) as Record<string, boolean>;
+      const claudeThinkings = (data.claudeThinkings || {}) as Record<string, boolean>;
+      const codexModels = (data.codexModels || {}) as Record<string, string>;
+      const codexReasoningEfforts = (data.codexReasoningEfforts || {}) as Record<string, string>;
       const chatModes = (data.chatModes || {}) as Record<string, string>;
       const planModes = (data.planModes || {}) as Record<string, boolean>;
       const noHistories = (data.noHistories || {}) as Record<string, boolean>;
@@ -363,6 +422,13 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         deepseekModel: (deepseekModels[sid] as DeepseekModel) || undefined,
         kimiModel: (kimiModels[sid] as EngineModelId) || undefined,
         glmModel: (glmModels[sid] as EngineModelId) || undefined,
+        claudeModel: (claudeModels[sid] as ClaudeModelId) || undefined,
+        claudeEffort: (claudeEfforts[sid] as ClaudeEffort) || undefined,
+        claudeContextWindow: (claudeContextWindows[sid] as ClaudeContextWindow) || undefined,
+        claudeFastMode: claudeFastModes[sid] ?? undefined,
+        claudeThinking: claudeThinkings[sid] ?? undefined,
+        codexModel: (codexModels[sid] as CodexModelId) || undefined,
+        codexReasoningEffort: (codexReasoningEfforts[sid] as CodexReasoningEffort) || undefined,
         chatMode: normalizeChatMode(chatModes[sid]),
         planMode: planModes[sid] || undefined,
         noHistory: noHistories[sid] || undefined,
@@ -409,13 +475,20 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       deepseekModel?: DeepseekModel;
       kimiModel?: EngineModelId;
       glmModel?: EngineModelId;
+      claudeModel?: ClaudeModelId;
+      claudeEffort?: ClaudeEffort;
+      claudeContextWindow?: ClaudeContextWindow;
+      claudeFastMode?: boolean;
+      claudeThinking?: boolean;
+      codexModel?: CodexModelId;
+      codexReasoningEffort?: CodexReasoningEffort;
       chatMode?: ChatMode;
       planMode?: boolean;
       noHistory?: boolean;
       appendToEnd?: boolean;
     }
   ) => {
-    const { engine, ollamaModel, deepseekModel, kimiModel, glmModel, chatMode, planMode, noHistory, appendToEnd = false } = opts ?? {};
+    const { engine, ollamaModel, deepseekModel, kimiModel, glmModel, claudeModel, claudeEffort, claudeContextWindow, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, chatMode, planMode, noHistory, appendToEnd = false } = opts ?? {};
     const newTab: TabInfo = {
       id: `tab-${Date.now()}`,
       cwd,
@@ -426,6 +499,13 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       deepseekModel,
       kimiModel,
       glmModel,
+      claudeModel,
+      claudeEffort,
+      claudeContextWindow,
+      claudeFastMode,
+      claudeThinking,
+      codexModel,
+      codexReasoningEffort,
       chatMode,
       planMode,
       noHistory,
@@ -528,6 +608,13 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         deepseekModel: data?.deepseekModels?.[sid] as DeepseekModel | undefined,
         kimiModel: data?.kimiModels?.[sid] as EngineModelId | undefined,
         glmModel: data?.glmModels?.[sid] as EngineModelId | undefined,
+        claudeModel: data?.claudeModels?.[sid] as ClaudeModelId | undefined,
+        claudeEffort: data?.claudeEfforts?.[sid] as ClaudeEffort | undefined,
+        claudeContextWindow: data?.claudeContextWindows?.[sid] as ClaudeContextWindow | undefined,
+        claudeFastMode: data?.claudeFastModes?.[sid],
+        claudeThinking: data?.claudeThinkings?.[sid],
+        codexModel: data?.codexModels?.[sid] as CodexModelId | undefined,
+        codexReasoningEffort: data?.codexReasoningEfforts?.[sid] as CodexReasoningEffort | undefined,
         planMode: data?.planModes?.[sid],
         noHistory: data?.noHistories?.[sid],
         appendToEnd: true,
@@ -616,6 +703,62 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     );
   }, []);
 
+  const updateTabClaudeModel = useCallback((tabId: string, model: ClaudeModelId) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, claudeModel: model } : tab
+      )
+    );
+  }, []);
+
+  const updateTabClaudeEffort = useCallback((tabId: string, effort: ClaudeEffort) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, claudeEffort: effort } : tab
+      )
+    );
+  }, []);
+
+  const updateTabClaudeContextWindow = useCallback((tabId: string, claudeContextWindow: ClaudeContextWindow) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, claudeContextWindow } : tab
+      )
+    );
+  }, []);
+
+  const updateTabClaudeFastMode = useCallback((tabId: string, claudeFastMode: boolean) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, claudeFastMode } : tab
+      )
+    );
+  }, []);
+
+  const updateTabClaudeThinking = useCallback((tabId: string, claudeThinking: boolean) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, claudeThinking } : tab
+      )
+    );
+  }, []);
+
+  const updateTabCodexModel = useCallback((tabId: string, model: CodexModelId) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, codexModel: model } : tab
+      )
+    );
+  }, []);
+
+  const updateTabCodexReasoningEffort = useCallback((tabId: string, codexReasoningEffort: CodexReasoningEffort) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, codexReasoningEffort } : tab
+      )
+    );
+  }, []);
+
   // Update execution mode (sdk/builtin) for a tab
   const updateTabChatMode = useCallback((tabId: string, chatMode: ChatMode) => {
     setTabs((prev) =>
@@ -654,6 +797,13 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       deepseekModel: source?.deepseekModel,
       kimiModel: source?.kimiModel,
       glmModel: source?.glmModel,
+      claudeModel: source?.claudeModel,
+      claudeEffort: source?.claudeEffort,
+      claudeContextWindow: source?.claudeContextWindow,
+      claudeFastMode: source?.claudeFastMode,
+      claudeThinking: source?.claudeThinking,
+      codexModel: source?.codexModel,
+      codexReasoningEffort: source?.codexReasoningEffort,
       chatMode: source?.chatMode,
     });
   }, [initialCwd, addTab]);
@@ -791,6 +941,13 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     updateTabDeepseekModel,
     updateTabKimiModel,
     updateTabGlmModel,
+    updateTabClaudeModel,
+    updateTabClaudeEffort,
+    updateTabClaudeContextWindow,
+    updateTabClaudeFastMode,
+    updateTabClaudeThinking,
+    updateTabCodexModel,
+    updateTabCodexReasoningEffort,
     updateTabChatMode,
     updateTabPlanMode,
     updateTabNoHistory,

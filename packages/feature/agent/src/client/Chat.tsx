@@ -20,11 +20,21 @@ import { useChatHistory } from './useChatHistory';
 import { useChatStream } from './useChatStream';
 import { MessageList, MessageListHandle } from './MessageList';
 import { ChatInput } from './ChatInput';
-import type { ChatMessage, TokenUsage, LiveOutputTokens, ImageInfo, ChatEngine, EngineModelId, ChatMode, ToolCallInfo } from './types';
+import type { ChatMessage, TokenUsage, LiveOutputTokens, ImageInfo, ChatEngine, EngineModelId, ChatMode, ToolCallInfo, ClaudeModelId, ClaudeEffort, ClaudeContextWindow, CodexModelId, CodexReasoningEffort } from './types';
 // In-package siblings (chat-only)
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { OllamaModelPicker } from './OllamaModelPicker';
 import { EngineConfigPicker } from './EngineConfigPicker';
+import {
+  AgentModelTraitsPicker,
+  DEFAULT_CLAUDE_CONTEXT_WINDOW,
+  DEFAULT_CLAUDE_EFFORT,
+  DEFAULT_CLAUDE_MODEL,
+  DEFAULT_CODEX_MODEL,
+  resolveClaudeContextWindowForModel,
+  resolveClaudeEffortForModel,
+  resolveCodexReasoningEffortForModel,
+} from './AgentModelTraitsPicker';
 import { DeepseekBalanceButton } from './DeepseekBalanceButton';
 import { EngineQuotaButton } from './EngineQuotaButton';
 import type { ApiKeyEngine } from './effect/agentClient';
@@ -54,6 +64,20 @@ interface ChatProps {
   onKimiModelChange?: (model: EngineModelId) => void;
   glmModel?: EngineModelId;
   onGlmModelChange?: (model: EngineModelId) => void;
+  claudeModel?: ClaudeModelId;
+  onClaudeModelChange?: (model: ClaudeModelId) => void;
+  claudeEffort?: ClaudeEffort;
+  onClaudeEffortChange?: (effort: ClaudeEffort) => void;
+  claudeContextWindow?: ClaudeContextWindow;
+  onClaudeContextWindowChange?: (contextWindow: ClaudeContextWindow) => void;
+  claudeFastMode?: boolean;
+  onClaudeFastModeChange?: (fastMode: boolean) => void;
+  claudeThinking?: boolean;
+  onClaudeThinkingChange?: (thinking: boolean) => void;
+  codexModel?: CodexModelId;
+  onCodexModelChange?: (model: CodexModelId) => void;
+  codexReasoningEffort?: CodexReasoningEffort;
+  onCodexReasoningEffortChange?: (effort: CodexReasoningEffort) => void;
   chatMode?: ChatMode;
   onChatModeChange?: (chatMode: ChatMode) => void;
   planMode?: boolean;
@@ -97,7 +121,7 @@ interface ChatProps {
   onOpenSettings?: () => void; // Host-handled: open the app settings modal
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, chatMode: chatModeProp, onChatModeChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeContextWindow, onClaudeContextWindowChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, chatMode: chatModeProp, onChatModeChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -209,6 +233,11 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const chatMode: ChatMode = rawChatMode === 'builtin' ? 'builtin' : 'sdk';
   const isClaudeEngine = !engine || engine === 'claude';
   const isCodexEngine = engine === 'codex';
+  const effectiveClaudeModel = claudeModel ?? DEFAULT_CLAUDE_MODEL;
+  const effectiveClaudeEffort = resolveClaudeEffortForModel(effectiveClaudeModel, claudeEffort);
+  const effectiveClaudeContextWindow = resolveClaudeContextWindowForModel(effectiveClaudeModel, claudeContextWindow);
+  const effectiveCodexModel = codexModel ?? DEFAULT_CODEX_MODEL;
+  const effectiveCodexReasoningEffort = resolveCodexReasoningEffortForModel(effectiveCodexModel, codexReasoningEffort);
   // Engines configured by API key rather than by a local CLI login. They share one UI: a
   // key+model picker, an SDK ↔ Built-in Agent toggle, and a consumption readout.
   const apiKeyEngine: ApiKeyEngine | null =
@@ -266,6 +295,13 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     noHistory,
     ollamaModel,
     engineModel,
+    claudeModel: effectiveClaudeModel,
+    claudeEffort: effectiveClaudeEffort,
+    claudeContextWindow: effectiveClaudeContextWindow,
+    claudeFastMode,
+    claudeThinking,
+    codexModel: effectiveCodexModel,
+    codexReasoningEffort: effectiveCodexReasoningEffort,
     onSessionId: setSessionId,
     onFetchTitle: fetchSessionTitle,
     onRunComplete: () => reconcileFromDiskRef.current?.(),
@@ -571,9 +607,11 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
         engine,
         ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
         ...(apiKeyEngine && engineModel && { model: engineModel }),
+        ...(isClaudeEngine && { model: effectiveClaudeModel }),
+        ...(isCodexEngine && { model: effectiveCodexModel }),
       });
     };
-  }, [onCreateScheduledTask, initialCwd, tabId, sessionId, engine, ollamaModel, apiKeyEngine, engineModel]);
+  }, [onCreateScheduledTask, initialCwd, tabId, sessionId, engine, ollamaModel, apiKeyEngine, engineModel, isClaudeEngine, effectiveClaudeModel, isCodexEngine, effectiveCodexModel]);
 
   /* Independent task: each message is sent WITHOUT the prior turns. Stays on until unchecked —
      it's a session-level mode, not a one-shot. The transcript keeps recording, so the history
@@ -667,6 +705,23 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
         {/* Claude / Codex SDK options. CLI execution modes were intentionally removed. */}
         {(isClaudeEngine || isCodexEngine) && (
           <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card/50">
+            <AgentModelTraitsPicker
+              engine={isCodexEngine ? 'codex' : 'claude'}
+              claudeModel={effectiveClaudeModel}
+              onClaudeModelChange={onClaudeModelChange}
+              claudeEffort={effectiveClaudeEffort}
+              onClaudeEffortChange={onClaudeEffortChange}
+              claudeContextWindow={effectiveClaudeContextWindow}
+              onClaudeContextWindowChange={onClaudeContextWindowChange}
+              claudeFastMode={claudeFastMode}
+              onClaudeFastModeChange={onClaudeFastModeChange}
+              claudeThinking={claudeThinking}
+              onClaudeThinkingChange={onClaudeThinkingChange}
+              codexModel={effectiveCodexModel}
+              onCodexModelChange={onCodexModelChange}
+              codexReasoningEffort={effectiveCodexReasoningEffort}
+              onCodexReasoningEffortChange={onCodexReasoningEffortChange}
+            />
             {/* Plan mode: read-only exploration → produces a plan without editing.
                 Plan-only — uncheck and resend to actually implement. */}
             {isClaudeEngine && (

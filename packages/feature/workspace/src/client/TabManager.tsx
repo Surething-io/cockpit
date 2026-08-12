@@ -64,6 +64,13 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     updateTabDeepseekModel,
     updateTabKimiModel,
     updateTabGlmModel,
+    updateTabClaudeModel,
+    updateTabClaudeEffort,
+    updateTabClaudeContextWindow,
+    updateTabClaudeFastMode,
+    updateTabClaudeThinking,
+    updateTabCodexModel,
+    updateTabCodexReasoningEffort,
     updateTabChatMode,
     updateTabPlanMode,
     updateTabNoHistory,
@@ -423,6 +430,20 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                           onKimiModelChange={updateTabKimiModel}
                           glmModel={tab.glmModel}
                           onGlmModelChange={updateTabGlmModel}
+                          claudeModel={tab.claudeModel}
+                          onClaudeModelChange={updateTabClaudeModel}
+                          claudeEffort={tab.claudeEffort}
+                          onClaudeEffortChange={updateTabClaudeEffort}
+                          claudeContextWindow={tab.claudeContextWindow}
+                          onClaudeContextWindowChange={updateTabClaudeContextWindow}
+                          claudeFastMode={tab.claudeFastMode}
+                          onClaudeFastModeChange={updateTabClaudeFastMode}
+                          claudeThinking={tab.claudeThinking}
+                          onClaudeThinkingChange={updateTabClaudeThinking}
+                          codexModel={tab.codexModel}
+                          onCodexModelChange={updateTabCodexModel}
+                          codexReasoningEffort={tab.codexReasoningEffort}
+                          onCodexReasoningEffortChange={updateTabCodexReasoningEffort}
                           chatMode={tab.chatMode}
                           onChatModeChange={updateTabChatMode}
                           planMode={tab.planMode}
@@ -534,6 +555,20 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                     onKimiModelChange={updateTabKimiModel}
                     glmModel={tab.glmModel}
                     onGlmModelChange={updateTabGlmModel}
+                    claudeModel={tab.claudeModel}
+                    onClaudeModelChange={updateTabClaudeModel}
+                    claudeEffort={tab.claudeEffort}
+                    onClaudeEffortChange={updateTabClaudeEffort}
+                    claudeContextWindow={tab.claudeContextWindow}
+                    onClaudeContextWindowChange={updateTabClaudeContextWindow}
+                    claudeFastMode={tab.claudeFastMode}
+                    onClaudeFastModeChange={updateTabClaudeFastMode}
+                    claudeThinking={tab.claudeThinking}
+                    onClaudeThinkingChange={updateTabClaudeThinking}
+                    codexModel={tab.codexModel}
+                    onCodexModelChange={updateTabCodexModel}
+                    codexReasoningEffort={tab.codexReasoningEffort}
+                    onCodexReasoningEffortChange={updateTabCodexReasoningEffort}
                     chatMode={tab.chatMode}
                     onChatModeChange={updateTabChatMode}
                     planMode={tab.planMode}

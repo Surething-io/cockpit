@@ -26,6 +26,13 @@ export interface LoadedProjectState {
   deepseekModels?: Record<string, string>
   kimiModels?: Record<string, string>
   glmModels?: Record<string, string>
+  claudeModels?: Record<string, string>
+  claudeEfforts?: Record<string, string>
+  claudeContextWindows?: Record<string, string>
+  claudeFastModes?: Record<string, boolean>
+  claudeThinkings?: Record<string, boolean>
+  codexModels?: Record<string, string>
+  codexReasoningEfforts?: Record<string, string>
   chatModes?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>
@@ -55,6 +62,13 @@ export interface ProjectStateSave {
   deepseekModels?: Record<string, string>
   kimiModels?: Record<string, string>
   glmModels?: Record<string, string>
+  claudeModels?: Record<string, string>
+  claudeEfforts?: Record<string, string>
+  claudeContextWindows?: Record<string, string>
+  claudeFastModes?: Record<string, boolean>
+  claudeThinkings?: Record<string, boolean>
+  codexModels?: Record<string, string>
+  codexReasoningEfforts?: Record<string, string>
   chatModes?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>

@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { Chat } from './Chat';
-import type { ChatEngine, EngineModelId, ChatMode, ToolCallInfo } from './types';
+import type { ChatEngine, EngineModelId, ChatMode, ToolCallInfo, ClaudeModelId, ClaudeEffort, ClaudeContextWindow, CodexModelId, CodexReasoningEffort } from './types';
 
 // Migrated from src/components/project/ChatPanel.tsx.
 
@@ -25,6 +25,20 @@ interface ChatPanelProps {
   onKimiModelChange?: (tabId: string, model: EngineModelId) => void;
   glmModel?: EngineModelId;
   onGlmModelChange?: (tabId: string, model: EngineModelId) => void;
+  claudeModel?: ClaudeModelId;
+  onClaudeModelChange?: (tabId: string, model: ClaudeModelId) => void;
+  claudeEffort?: ClaudeEffort;
+  onClaudeEffortChange?: (tabId: string, effort: ClaudeEffort) => void;
+  claudeContextWindow?: ClaudeContextWindow;
+  onClaudeContextWindowChange?: (tabId: string, contextWindow: ClaudeContextWindow) => void;
+  claudeFastMode?: boolean;
+  onClaudeFastModeChange?: (tabId: string, fastMode: boolean) => void;
+  claudeThinking?: boolean;
+  onClaudeThinkingChange?: (tabId: string, thinking: boolean) => void;
+  codexModel?: CodexModelId;
+  onCodexModelChange?: (tabId: string, model: CodexModelId) => void;
+  codexReasoningEffort?: CodexReasoningEffort;
+  onCodexReasoningEffortChange?: (tabId: string, effort: CodexReasoningEffort) => void;
   chatMode?: ChatMode;
   onChatModeChange?: (tabId: string, chatMode: ChatMode) => void;
   planMode?: boolean;
@@ -57,7 +71,7 @@ interface ChatPanelProps {
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, chatMode, onChatModeChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeContextWindow, onClaudeContextWindowChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, chatMode, onChatModeChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -90,6 +104,34 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
     onGlmModelChange?.(tabId, model);
   }, [tabId, onGlmModelChange]);
 
+  const handleClaudeModelChange = useCallback((model: ClaudeModelId) => {
+    onClaudeModelChange?.(tabId, model);
+  }, [tabId, onClaudeModelChange]);
+
+  const handleClaudeEffortChange = useCallback((effort: ClaudeEffort) => {
+    onClaudeEffortChange?.(tabId, effort);
+  }, [tabId, onClaudeEffortChange]);
+
+  const handleClaudeContextWindowChange = useCallback((contextWindow: ClaudeContextWindow) => {
+    onClaudeContextWindowChange?.(tabId, contextWindow);
+  }, [tabId, onClaudeContextWindowChange]);
+
+  const handleClaudeFastModeChange = useCallback((fastMode: boolean) => {
+    onClaudeFastModeChange?.(tabId, fastMode);
+  }, [tabId, onClaudeFastModeChange]);
+
+  const handleClaudeThinkingChange = useCallback((thinking: boolean) => {
+    onClaudeThinkingChange?.(tabId, thinking);
+  }, [tabId, onClaudeThinkingChange]);
+
+  const handleCodexModelChange = useCallback((model: CodexModelId) => {
+    onCodexModelChange?.(tabId, model);
+  }, [tabId, onCodexModelChange]);
+
+  const handleCodexReasoningEffortChange = useCallback((effort: CodexReasoningEffort) => {
+    onCodexReasoningEffortChange?.(tabId, effort);
+  }, [tabId, onCodexReasoningEffortChange]);
+
   const handleChatModeChange = useCallback((m: ChatMode) => {
     onChatModeChange?.(tabId, m);
   }, [tabId, onChatModeChange]);
@@ -117,6 +159,20 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
       onKimiModelChange={handleKimiModelChange}
       glmModel={glmModel}
       onGlmModelChange={handleGlmModelChange}
+      claudeModel={claudeModel}
+      onClaudeModelChange={handleClaudeModelChange}
+      claudeEffort={claudeEffort}
+      onClaudeEffortChange={handleClaudeEffortChange}
+      claudeContextWindow={claudeContextWindow}
+      onClaudeContextWindowChange={handleClaudeContextWindowChange}
+      claudeFastMode={claudeFastMode}
+      onClaudeFastModeChange={handleClaudeFastModeChange}
+      claudeThinking={claudeThinking}
+      onClaudeThinkingChange={handleClaudeThinkingChange}
+      codexModel={codexModel}
+      onCodexModelChange={handleCodexModelChange}
+      codexReasoningEffort={codexReasoningEffort}
+      onCodexReasoningEffortChange={handleCodexReasoningEffortChange}
       chatMode={chatMode}
       onChatModeChange={handleChatModeChange}
       planMode={planMode}

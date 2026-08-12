@@ -23,6 +23,13 @@ interface ProjectState {
   deepseekModels?: Record<string, string>
   kimiModels?: Record<string, string>
   glmModels?: Record<string, string>
+  claudeModels?: Record<string, string>
+  claudeEfforts?: Record<string, string>
+  claudeContextWindows?: Record<string, string>
+  claudeFastModes?: Record<string, boolean>
+  claudeThinkings?: Record<string, boolean>
+  codexModels?: Record<string, string>
+  codexReasoningEfforts?: Record<string, string>
   chatModes?: Record<string, string>
   planModes?: Record<string, boolean>
   noHistories?: Record<string, boolean>
@@ -135,6 +142,13 @@ export const POST = handler((req) =>
           const deepseekModels = carryOver(existing.deepseekModels, body.deepseekModels)
           const kimiModels = carryOver(existing.kimiModels, body.kimiModels)
           const glmModels = carryOver(existing.glmModels, body.glmModels)
+          const claudeModels = carryOver(existing.claudeModels, body.claudeModels)
+          const claudeEfforts = carryOver(existing.claudeEfforts, body.claudeEfforts)
+          const claudeContextWindows = carryOver(existing.claudeContextWindows, body.claudeContextWindows)
+          const claudeFastModes = carryOver(existing.claudeFastModes, body.claudeFastModes, (v) => !v)
+          const claudeThinkings = carryOver(existing.claudeThinkings, body.claudeThinkings, (v) => !v)
+          const codexModels = carryOver(existing.codexModels, body.codexModels)
+          const codexReasoningEfforts = carryOver(existing.codexReasoningEfforts, body.codexReasoningEfforts)
           const chatModes = carryOver(existing.chatModes, body.chatModes, (v) => v === "sdk")
           const planModes = carryOver(existing.planModes, body.planModes, (v) => !v)
           const noHistories = carryOver(existing.noHistories, body.noHistories, (v) => !v)
@@ -147,6 +161,13 @@ export const POST = handler((req) =>
             ...(Object.keys(deepseekModels).length ? { deepseekModels } : {}),
             ...(Object.keys(kimiModels).length ? { kimiModels } : {}),
             ...(Object.keys(glmModels).length ? { glmModels } : {}),
+            ...(Object.keys(claudeModels).length ? { claudeModels } : {}),
+            ...(Object.keys(claudeEfforts).length ? { claudeEfforts } : {}),
+            ...(Object.keys(claudeContextWindows).length ? { claudeContextWindows } : {}),
+            ...(Object.keys(claudeFastModes).length ? { claudeFastModes } : {}),
+            ...(Object.keys(claudeThinkings).length ? { claudeThinkings } : {}),
+            ...(Object.keys(codexModels).length ? { codexModels } : {}),
+            ...(Object.keys(codexReasoningEfforts).length ? { codexReasoningEfforts } : {}),
             ...(Object.keys(chatModes).length ? { chatModes } : {}),
             ...(Object.keys(planModes).length ? { planModes } : {}),
             ...(Object.keys(noHistories).length ? { noHistories } : {}),

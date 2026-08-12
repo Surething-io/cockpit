@@ -14,6 +14,11 @@ import type {
   ChatEngine,
   EngineModelId,
   ChatMode,
+  ClaudeModelId,
+  ClaudeEffort,
+  ClaudeContextWindow,
+  CodexModelId,
+  CodexReasoningEffort,
 } from './types';
 import i18n from '@cockpit/shared-i18n';
 import { useWebSocket } from '@cockpit/shared-ui';
@@ -47,6 +52,13 @@ interface UseChatStreamOptions {
   ollamaModel?: string;
   /** Model for the API-key engines (deepseek / kimi) — whichever of them is running. */
   engineModel?: EngineModelId;
+  claudeModel?: ClaudeModelId;
+  claudeEffort?: ClaudeEffort;
+  claudeContextWindow?: ClaudeContextWindow;
+  claudeFastMode?: boolean;
+  claudeThinking?: boolean;
+  codexModel?: CodexModelId;
+  codexReasoningEffort?: CodexReasoningEffort;
   onSessionId: (sid: string) => void;
   onFetchTitle: (sid: string) => void;
   /**
@@ -82,7 +94,7 @@ interface UseChatStreamReturn {
 export function useChatStream(
   messages: ChatMessage[],
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  { sessionId, cwd, engine, chatMode, planMode, noHistory, ollamaModel, engineModel, onSessionId, onFetchTitle, onRunComplete }: UseChatStreamOptions
+  { sessionId, cwd, engine, chatMode, planMode, noHistory, ollamaModel, engineModel, claudeModel, claudeEffort, claudeContextWindow, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, onSessionId, onFetchTitle, onRunComplete }: UseChatStreamOptions
 ): UseChatStreamReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
@@ -583,6 +595,13 @@ export function useChatStream(
             language: i18n.language,
             ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
             ...(isApiKeyEngine && engineModel && { model: engineModel }),
+            ...(isClaudeEngine && claudeModel && { model: claudeModel }),
+            ...(isClaudeEngine && claudeEffort && { claudeEffort }),
+            ...(isClaudeEngine && claudeContextWindow && { claudeContextWindow }),
+            ...(isClaudeEngine && claudeFastMode !== undefined && { claudeFastMode }),
+            ...(isClaudeEngine && claudeThinking !== undefined && { claudeThinking }),
+            ...(engine === 'codex' && codexModel && { model: codexModel }),
+            ...(engine === 'codex' && codexReasoningEffort && { codexReasoningEffort }),
             ...(useBuiltin && { mode: 'builtin' }),
             // Plan mode: only meaningful in SDK mode on a claude engine (PTY has its own
             // Shift+Tab plan). When unchecked, omit → server defaults to bypassPermissions.
@@ -638,7 +657,7 @@ export function useChatStream(
         setActiveRun(null);
       }
     },
-    [cwd, engine, chatMode, planMode, noHistory, ollamaModel, engineModel, setMessages, endRun]
+    [cwd, engine, chatMode, planMode, noHistory, ollamaModel, engineModel, claudeModel, claudeEffort, claudeContextWindow, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, setMessages, endRun]
   );
 
   return {

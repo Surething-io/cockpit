@@ -136,6 +136,42 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
     setActiveHtmlAppPreviewPath((current) => (current === path ? null : current));
   }, []);
 
+  // Ask mounted project frames for their live tab order when the recent-session
+  // dropdown opens. Reading session.json here can lag behind a drag reorder;
+  // the in-memory tab arrays are authoritative for the numbers currently shown.
+  const resolveSessionNumbers = useCallback((): Promise<Record<string, string>> => {
+    const requestId = crypto.randomUUID();
+    const projectNumbers = new Map(projects.map((project, index) => [project.cwd, index + 1]));
+    const frames = [...iframeRefs.current.values()];
+    if (frames.length === 0) return Promise.resolve({});
+
+    return new Promise((resolve) => {
+      const numbers: Record<string, string> = {};
+      const pending = new Set(frames.map((frame) => frame.contentWindow).filter(Boolean));
+      const finish = () => {
+        window.removeEventListener('message', handleMessage);
+        clearTimeout(timeoutId);
+        resolve(numbers);
+      };
+      const handleMessage = (event: MessageEvent) => {
+        if (event.data?.type !== 'SESSION_NUMBERS' || event.data?.requestId !== requestId) return;
+        if (!pending.delete(event.source as Window)) return;
+        const projectNumber = projectNumbers.get(event.data.cwd);
+        if (projectNumber && Array.isArray(event.data.sessionIds)) {
+          event.data.sessionIds.forEach((sessionId: unknown, index: number) => {
+            if (typeof sessionId === 'string') {
+              numbers[`${event.data.cwd}\n${sessionId}`] = `${projectNumber}.${index + 1}`;
+            }
+          });
+        }
+        if (pending.size === 0) finish();
+      };
+      window.addEventListener('message', handleMessage);
+      const timeoutId = window.setTimeout(finish, 300);
+      frames.forEach((frame) => frame.contentWindow?.postMessage({ type: 'GET_SESSION_NUMBERS', requestId }, '*'));
+    });
+  }, [projects]);
+
   // Utility function to update the browser address bar URL
   const updateUrl = useCallback((cwd: string, sessionId?: string) => {
     const url = new URL(window.location.href);
@@ -499,6 +535,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         activeHtmlAppPreviewPath={activeHtmlAppPreviewPath}
         onShowHtmlAppPreview={handleShowHtmlAppPreview}
         onSwitchProject={handleSwitchProject}
+        onResolveSessionNumbers={resolveSessionNumbers}
         onAddProject={(cwd) => {
           const existingIndex = projects.findIndex(p => p.cwd === cwd);
           if (existingIndex >= 0) {

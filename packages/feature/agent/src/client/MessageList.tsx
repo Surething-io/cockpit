@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react';
 import { useChatContextOptional } from './ChatContext';
-import { ENGINE_LABELS, isEngineAccentId } from './engineAccents';
+import { ENGINE_LABELS, EngineIcon, isEngineAccentId } from './engineAccents';
 import type { ChatMessage, ApiRetryInfo, ChatEngine, ToolCallInfo, LiveOutputTokens } from './types';
 import { MessageBubble } from './MessageBubble';
 // Tech debt: cross-package imports into the main shell.
@@ -98,26 +98,6 @@ function AnimatedProgressNumber({ value }: { value: number }) {
   return <span className="tabular-nums">{displayValue}</span>;
 }
 
-function BrandActivityIcon() {
-  return (
-    <span className="relative inline-flex w-6 h-6 flex-shrink-0 items-center justify-center" aria-hidden="true">
-      <svg className="w-6 h-6 text-brand [.dark_&]:text-white" viewBox="0 0 24 24" fill="none">
-        <path
-          className="cockpit-loading-arc"
-          d="M5.6 18.4A9 9 0 1 1 18.4 18.4"
-          pathLength={100}
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-        />
-      </svg>
-      <span className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center">
-        <span className="w-1 h-1 rounded-full bg-brand [.dark_&]:bg-white animate-pulse" />
-      </span>
-    </span>
-  );
-}
-
 // Methods exposed to parent component
 export interface MessageListHandle {
   scrollToMessage: (messageId: string) => void;
@@ -161,6 +141,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     () => (isEngineAccentId(engine) ? ENGINE_LABELS[engine] : ENGINE_LABELS.claude),
     [engine],
   );
+  const runningEngine = isEngineAccentId(engine) ? engine : 'claude';
 
   const elapsedLabel = useMemo(() => {
     const minutes = Math.floor(elapsedSeconds / 60);
@@ -668,9 +649,11 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
             ))}
             {isLoading && (
               <div className="flex justify-start mb-4">
-                <div className="bg-accent rounded-2xl rounded-bl-md px-4 py-3 max-w-[90%]">
+                <div className="px-1 py-1 max-w-[90%]">
                   <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
-                    <BrandActivityIcon />
+                    <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center" aria-hidden="true">
+                      <EngineIcon engine={runningEngine} className="h-4 w-4 animate-pulse" />
+                    </span>
                     <span className="text-sm text-muted-foreground/80">
                       {runningEngineLabel} running {elapsedLabel} · processing{' '}
                       <AnimatedProgressNumber value={liveOutputTokens?.outputTokens ?? 0} />

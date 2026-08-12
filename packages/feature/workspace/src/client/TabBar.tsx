@@ -9,31 +9,22 @@ import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
 import { useTranslation } from 'react-i18next';
 
 // ============================================
-// Tab circle-number icon component
+// Session number: circular shape pairs with the project number while keeping
+// the two navigation levels immediately distinguishable.
 // ============================================
 
 function TabNumberIcon({ number, isActive }: { number: number; isActive: boolean }) {
   return (
-    <svg
-      className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-brand' : 'text-muted-foreground'}`}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
+    <span
+      className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border font-mono text-[9px] font-medium leading-none tabular-nums transition-colors ${
+        isActive
+          ? 'border-brand/70 bg-brand/10 text-brand'
+          : 'border-muted-foreground/55 bg-muted/20 text-muted-foreground'
+      }`}
+      aria-hidden="true"
     >
-      <circle cx="12" cy="12" r="9" />
-      <text
-        x="12"
-        y="16"
-        textAnchor="middle"
-        fill="currentColor"
-        stroke="none"
-        fontSize="12"
-        fontWeight="500"
-      >
-        {number}
-      </text>
-    </svg>
+      {number}
+    </span>
   );
 }
 

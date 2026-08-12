@@ -257,6 +257,18 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
   // Listen for messages from the parent window (used by Workspace to switch sessions)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'GET_SESSION_NUMBERS' && event.data?.requestId && initialCwd) {
+        // Cross-iframe request/reply: the parent cannot observe this frame's live
+        // tab order through the app-level topic bus.
+        // eslint-disable-next-line no-restricted-syntax
+        window.parent.postMessage({
+          type: 'SESSION_NUMBERS',
+          requestId: event.data.requestId,
+          cwd: initialCwd,
+          sessionIds: tabs.map((tab) => tab.sessionId ?? null),
+        }, '*');
+        return;
+      }
       if (event.data?.type === 'SWITCH_SESSION') {
         const { sessionId, switchToAgent } = event.data;
         if (sessionId) {

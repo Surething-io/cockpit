@@ -22,15 +22,18 @@ export interface GlobalSession {
 interface GlobalSessionMonitorProps {
   currentCwd?: string;
   onSwitchProject: (cwd: string, sessionId: string) => void;
+  onResolveSessionNumbers: () => Promise<Record<string, string>>;
   collapsed?: boolean;
   sessions: GlobalSession[];
 }
 
-export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, sessions }: GlobalSessionMonitorProps) {
+export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSessionNumbers, collapsed, sessions }: GlobalSessionMonitorProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [now, setNow] = useState(0);
+  const [sessionNumbers, setSessionNumbers] = useState<Record<string, string>>({});
+  const numberRequestRef = useRef(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
   // Rich tooltip: which session is hovered + where to anchor it (fixed positioning
   // escapes the dropdown's overflow-y-auto clipping)
@@ -95,6 +98,21 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
     setTooltip(null);
   }, [onSwitchProject]);
 
+  const handleToggle = useCallback(() => {
+    setNow(Date.now());
+    const nextOpen = !isOpen;
+    setIsOpen(nextOpen);
+    if (nextOpen) {
+      const request = ++numberRequestRef.current;
+      setSessionNumbers({});
+      void onResolveSessionNumbers().then((numbers) => {
+        if (numberRequestRef.current === request) setSessionNumbers(numbers);
+      });
+    } else {
+      numberRequestRef.current += 1;
+    }
+  }, [isOpen, onResolveSessionNumbers]);
+
   const loadingCount = sessions.filter(s => s.status === 'loading').length;
   const unreadCount = sessions.filter(s => s.status === 'unread').length;
 
@@ -115,7 +133,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
   return (
     <div className="relative" ref={dropdownRef}>
       <button
-        onClick={() => { setNow(Date.now()); setIsOpen(!isOpen); }}
+        onClick={handleToggle}
         className={`relative flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
           collapsed ? 'w-full justify-center' : 'w-full'
         }`}
@@ -204,6 +222,22 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, collapsed, s
                       <span className="text-xs text-muted-foreground flex-shrink-0">
                         {formatTime(session.lastActive)}
                       </span>
+                      {sessionNumbers[`${session.cwd}\n${session.sessionId}`] && (() => {
+                        const [projectNumber, sessionNumber] = sessionNumbers[`${session.cwd}\n${session.sessionId}`].split('.');
+                        return (
+                          <span
+                            className="ml-auto inline-flex items-center gap-1 font-mono text-[9px] font-medium leading-none tabular-nums flex-shrink-0"
+                            aria-label={`${projectNumber}.${sessionNumber}`}
+                          >
+                            <span className="flex h-4 w-4 items-center justify-center rounded-[4px] border border-muted-foreground/50 bg-muted/20 text-muted-foreground">
+                              {projectNumber}
+                            </span>
+                            <span className="flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/50 bg-muted/20 text-muted-foreground">
+                              {sessionNumber}
+                            </span>
+                          </span>
+                        );
+                      })()}
                     </div>
                     {session.title && (
                       <div className="text-xs font-medium text-foreground truncate" data-tooltip={session.title}>

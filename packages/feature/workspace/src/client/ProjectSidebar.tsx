@@ -36,6 +36,7 @@ interface ProjectSidebarProps {
   activeHtmlAppPreviewPath: string | null;
   onShowHtmlAppPreview: (item: HtmlAppPreview) => void;
   onSwitchProject: (cwd: string, sessionId: string) => void;
+  onResolveSessionNumbers: () => Promise<Record<string, string>>;
   onAddProject: (cwd: string) => void;
 }
 
@@ -240,6 +241,7 @@ export function ProjectSidebar({
   activeHtmlAppPreviewPath,
   onShowHtmlAppPreview,
   onSwitchProject,
+  onResolveSessionNumbers,
   onAddProject: _onAddProject,
 }: ProjectSidebarProps) {
   const { t, i18n } = useTranslation();
@@ -448,6 +450,7 @@ export function ProjectSidebar({
         <GlobalSessionMonitor
           currentCwd={currentCwd}
           onSwitchProject={onSwitchProject}
+          onResolveSessionNumbers={onResolveSessionNumbers}
           collapsed={collapsed}
           sessions={sessions}
         />

@@ -47,10 +47,11 @@ const BUILTIN_SKILLS_DIR = join(COCKPIT_DIR, 'skills');
 /**
  * Derive the base URL the AI should use in its curl recipes.
  *
- * Always `http://localhost:<COCKPIT_PORT>`. The only consumer of {{BASE_URL}}
- * is /cg's curl recipes, which the agent runs via bash on the *same machine*
- * as the server — so loopback is always reachable, never needs auth, and never
- * leaks a token into the user-visible / on-disk SKILL.md. We deliberately do
+ * Always `http://localhost:<COCKPIT_PORT>`. Consumers of {{BASE_URL}} are
+ * /cg's curl recipes and /html's theme.css fetch, both of which the agent runs
+ * via bash on the *same machine* as the server — so loopback is always
+ * reachable, never needs auth, and never leaks a token into the user-visible /
+ * on-disk SKILL.md. We deliberately do
  * NOT honor X-Forwarded-Host: a public/proxy URL would force the curls through
  * the auth gate (401) and is irrelevant to a co-located executor.
  */

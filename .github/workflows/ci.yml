@@ -18,7 +18,11 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v5
 
@@ -29,6 +33,19 @@ jobs:
 
       - run: npm ci
 
+      # Lint and build are platform-independent and slow — run them once on
+      # Linux. Tests are cheap (~4s) and DO catch platform differences, so they
+      # run everywhere.
+      #
+      # windows-latest is the only automated coverage native Windows has. It
+      # proves the package still installs there (node-pty prebuilds,
+      # @vscode/ripgrep's download step) and that the unit tests pass. PTY /
+      # ConPTY and process-tree behaviour are integration-level and stay
+      # unverified — treat Windows as experimental.
       - run: npm run lint
+        if: matrix.os == 'ubuntu-latest'
+
+      - run: npm test
 
       - run: npm run build
+        if: matrix.os == 'ubuntu-latest'

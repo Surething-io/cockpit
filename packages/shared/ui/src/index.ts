@@ -55,7 +55,7 @@ export { FileIcon, FolderIcon } from './FileIcon';
 export { TocSidebar, extractToc, type TocItem } from './TocSidebar';
 
 // Generic React hooks
-export { useWebSocket } from './useWebSocket';
+export { useWebSocket, onWsReconnect } from './useWebSocket';
 export { useViMode } from './useViMode';
 export { usePageVisible } from './usePageVisible';
 export { useEscToClose, blurActiveElement } from './useEscToClose';

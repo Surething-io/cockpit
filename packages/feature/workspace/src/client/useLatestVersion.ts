@@ -25,9 +25,15 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { loadCockpitVersion } from './effect/workspaceClient';
+
+declare global {
+  interface Window {
+    /** Set from COCKPIT_FORCE_UPDATE_BADGE by app/layout.tsx. */
+    __COCKPIT_FORCE_UPDATE__?: boolean;
+  }
+}
 
 const NPM_REGISTRY_URL =
   'https://registry.npmjs.org/@surething/cockpit/latest';
@@ -102,16 +108,33 @@ export function useLatestVersion(): LatestVersionInfo {
     };
   }, []);
 
+  // PRODUCTION TEST OVERRIDE: COCKPIT_FORCE_UPDATE_BADGE=1 (stamped into the
+  // page by app/layout.tsx) shows the pill even when already up to date, so the
+  // real update path — POST /api/update, the detached updater, the respawn —
+  // can be exercised end to end on an actual install. The dev override below
+  // cannot serve that purpose: /api/update deliberately refuses to run in dev
+  // mode, since `npm i -g` would install the published package over a source
+  // tree.
+  //
+  // Read via state rather than directly during render: the flag does not exist
+  // during SSR, so branching on it inline would produce markup that disagrees
+  // with the client and trip a hydration mismatch.
+  const [forcedByEnv, setForcedByEnv] = useState(false);
+  useEffect(() => {
+    setForcedByEnv(window.__COCKPIT_FORCE_UPDATE__ === true);
+  }, []);
+
   // DEV-ONLY OVERRIDE: in non-production builds always pretend an update
   // is available so the version-pill + popover UI can be eyeballed without
   // waiting for a real npm publish. If `latest` is still being fetched,
   // fall back to a clearly-fake placeholder so the pill renders with a
   // visible string. The first real registry response will replace it.
   const isDevPreview = process.env.NODE_ENV !== 'production';
+  const pretendUpdate = isDevPreview || forcedByEnv;
   const realHasUpdate =
     !!current && !!latest && compareVersions(latest, current) > 0;
-  const hasUpdate = isDevPreview ? true : realHasUpdate;
-  const exposedLatest = isDevPreview ? (latest ?? '999.0.0') : latest;
+  const hasUpdate = pretendUpdate ? true : realHasUpdate;
+  const exposedLatest = pretendUpdate ? (latest ?? '999.0.0') : latest;
 
   return { current, latest: exposedLatest, hasUpdate };
 }

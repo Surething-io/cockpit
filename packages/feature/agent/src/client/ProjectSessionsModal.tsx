@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
+// Deep subpath, not the barrel — the barrel pulls in paths.ts (node fs/os/path).
+import { encodePath } from '@cockpit/shared-utils/encodePath';
 import { loadSessionsByProject } from './effect/agentClient';
 import { EngineBadge } from './EngineBadge';
 import { SessionNumberBadge } from './SessionNumberBadge';
@@ -49,8 +51,9 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession, pr
     setIsLoading(true);
     setError(null);
 
-    // Encode cwd as directory name format
-    const encodedPath = cwd.replace(/[/.]/g, '-');
+    // Encode cwd as directory name format. Must go through the shared helper —
+    // this used to inline its own copy of the rule and drifted from the server.
+    const encodedPath = encodePath(cwd);
     const exit = await BrowserRuntime.runPromiseExit(loadSessionsByProject<SessionInfo>(encodedPath));
     if (exit._tag === 'Success') {
       setSessions(exit.value as SessionInfo[]);

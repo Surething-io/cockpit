@@ -169,6 +169,7 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 
 ## 前置依赖
 
+- **macOS、Linux 或 Windows** —— Windows 支持为实验性（[详见](#windows)）
 - **Node.js ≥ 20** —— [nodejs.org](https://nodejs.org/)
 - **Claude Code** —— [docs.anthropic.com/en/docs/claude-code](https://docs.anthropic.com/en/docs/claude-code)（默认引擎）
 - **Git** —— 用于 Git 相关功能（blame、diff、worktree 等）
@@ -195,6 +196,69 @@ cockpit -h             # 帮助
 ```
 
 > `cockpit`（完整名）和 `cock`（短别名）都随包安装 —— 任选其一。文档与示例统一使用 `cockpit`，老用户的肌肉记忆 `cock` 仍然好使。
+
+### 后台运行
+
+`cockpit` 默认在前台运行，关掉终端服务就停了。想让它常驻：
+
+```bash
+cockpit start          # 后台启动
+cockpit status         # 是否在跑：版本、端口、pid、运行时长
+cockpit restart        # 原地重启
+cockpit stop
+```
+
+`start` 支持与 `cockpit` 相同的参数（`--port`、`--token`）。输出写入
+`~/.cockpit/logs/server.log`。
+
+`restart` 是让运行中的服务自己完成替换，因此启动时用的端口和 token 会被保留 ——
+不需要重新指定一遍。
+
+> 没有集成 launchd/systemd：重启电脑后需要再次执行 `cockpit start`（或把它加进系统的登录启动项）。
+
+### 升级
+
+```bash
+cockpit update
+```
+
+也可以在有新版本时点击侧边栏的版本药丸。
+
+如果 Cockpit **正在运行**，升级会原地完成：服务把工作交接给一个辅助进程，由它在无人
+占用安装目录的情况下安装，然后用相同的端口和 token 重新拉起。安装失败会回滚到原版本
+并照常重启 —— 中断的升级不会让你失去一个可用的 Cockpit。
+
+如果**没有运行**，`cockpit update` 就是单纯地安装。
+
+新服务起来后，此前一直开着的浏览器标签页会出现"刷新"提示 —— 它持有的是旧版本的静态资源。
+
+### Windows
+
+Windows 支持为**实验性** —— CI 会覆盖，但实际使用量远少于 macOS 和 Linux。Cockpit
+以原生方式运行；Console 面板在装有 Git Bash 时使用它，否则回落到 PowerShell，与
+Claude Code 在 Windows 上的优先级一致。
+
+- 安装 [Git for Windows](https://git-scm.com/download/win) 可获得 bash 终端。不装的话
+  Console 面板会运行 PowerShell，且 HTML 应用使用的 `cockpit.bash` 通道不可用。
+- 文件浏览、diff、review、chat 等面板的行为与其他平台一致。
+
+想要 Linux 工具链？把**整个** Cockpit 放进 **WSL2** 运行，那里它就是一个普通的 Linux 安装：
+
+```powershell
+wsl --install          # 管理员 PowerShell 里执行一次，然后重启
+```
+
+```bash
+wsl                                  # 进入 Linux shell
+npm install -g @surething/cockpit    # 先在 WSL 内装好 Node ≥ 20
+cockpit
+```
+
+两种方式都在 Windows 浏览器里打开 `http://localhost:3457` —— WSL2 会自动转发 localhost。
+
+> **选一边，别混用。** 在 Windows 上跑 Cockpit 而项目放在 WSL 里（或者反过来），会让
+> agent 和它的终端拿到两套路径：同一个目录一边是 `C:\Users\me\proj`，另一边是
+> `/mnt/c/Users/me/proj`，互相传递的路径无法解析。让 Cockpit 和你的代码待在同一个世界里。
 
 ### 从源码安装
 

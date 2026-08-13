@@ -7,7 +7,7 @@
  *   - Heartbeat is driven by Schedule.spaced and cancels automatically.
  *   - Spawn / attach / signal / resize semantics match the original handler.
  */
-import { spawn, execFileSync, execSync, type ChildProcess } from "child_process"
+import { spawn, execSync, type ChildProcess } from "child_process"
 import * as nodePty from "node-pty"
 import { Effect, Scope, Schedule, Stream } from "effect"
 import type { WebSocket } from "ws"
@@ -29,6 +29,7 @@ import {
   getDefaultShell,
   getDefaultPath,
 } from "@cockpit/shared-utils"
+import { resolveGitBash, resolveWindowsPowerShell, resolveBashShell } from "../shell"
 
 const HEARTBEAT = Schedule.spaced("30 seconds")
 const OPEN_PREFERRED_SHELL_COMMAND = "__cockpit_open_preferred_shell__"
@@ -61,77 +62,128 @@ function loginShellArgs(shell: string): string[] {
 
 function resolvePreferredPtyShell(cwd: string): PtySpawnTarget {
   if (isWindows) {
-    try {
-      const wslShell = execFileSync(
-        "wsl.exe",
-        [
-          "sh",
-          "-lc",
-          "command -v zsh >/dev/null 2>&1 && printf zsh || { command -v bash >/dev/null 2>&1 && printf bash; }",
-        ],
-        { encoding: "utf-8", timeout: 3000 }
-      ).trim()
-      if (wslShell === "zsh" || wslShell === "bash") {
-        return {
-          file: "wsl.exe",
-          args: ["--cd", cwd, "--exec", wslShell, ...loginShellArgs(wslShell)],
-          cwd: process.cwd(),
-          name: wslShell,
-        }
-      }
-    } catch {
-      /* WSL unavailable or no supported shell installed. */
+    // Git Bash first, then PowerShell — the same order Claude Code applies on
+    // Windows.
+    //
+    // Explicitly NOT wsl.exe, which is what this used to launch. Proxying the
+    // terminal into WSL while the rest of Cockpit runs in the Windows namespace
+    // gives one session two path vocabularies: the agent is told the project is
+    // at `C:\Users\me\proj` while its own terminal sees `/mnt/c/Users/me/proj`,
+    // so paths handed between them do not resolve. It also spawned with
+    // `cwd: process.cwd()` rather than the project directory. Users who want a
+    // Linux namespace should run all of Cockpit inside WSL, where it is an
+    // ordinary Linux install and this branch never runs.
+    const gitBash = resolveGitBash()
+    if (gitBash) {
+      return { file: gitBash, args: ["--login", "-i"], cwd, name: "bash" }
     }
-  } else {
-    for (const shell of ["zsh", "bash", "sh"]) {
-      const file = commandPath(shell)
-      if (file) return { file, args: loginShellArgs(shell), cwd, name: shell }
-    }
+    const pwsh = resolveWindowsPowerShell()
+    const pwshName =
+      pwsh.split(/[\\/]/).pop()?.replace(/\.exe$/i, "") || "powershell"
+    return { file: pwsh, args: ["-NoLogo"], cwd, name: pwshName }
+  }
+
+  for (const shell of ["zsh", "bash", "sh"]) {
+    const file = commandPath(shell)
+    if (file) return { file, args: loginShellArgs(shell), cwd, name: shell }
   }
 
   const fallback = getDefaultShell()
   const fallbackName = fallback.split(/[\\/]/).pop() || fallback
   return {
     file: fallback,
-    args: isWindows ? [] : loginShellArgs(fallbackName),
+    args: loginShellArgs(fallbackName),
     cwd,
     name: fallbackName,
   }
+}
+
+/**
+ * Shell used to run a single command string with `["--login", "-c", cmd]`.
+ *
+ * On Windows this must be a bash — `getDefaultShell()` there resolves to
+ * COMSPEC (cmd.exe), which treats `--login` as the command name and silently
+ * does the wrong thing. Throws when no bash is installed; the caller's catch
+ * turns it into a terminal error message. Call this lazily: opening a plain
+ * shell goes through resolvePreferredPtyShell() and can fall back to
+ * PowerShell, so it must not be blocked by a missing bash.
+ */
+function resolveCommandShell(): string {
+  if (!isWindows) return getDefaultShell()
+  const bash = resolveBashShell()
+  if (bash) return bash
+  throw new Error(
+    "bash not found — install Git Bash or WSL on Windows to run commands"
+  )
 }
 
 // ─────────────────────────────────────────────────────────
 // helper: descendant pids
 // ─────────────────────────────────────────────────────────
 
+/**
+ * Windows: parent pid -> child pids for the whole process table, in one query.
+ *
+ * `wmic` used to serve this, but it is deprecated and no longer installed by
+ * default from Windows 11 24H2 — the old call just threw and was swallowed,
+ * silently reporting that nothing had children. PowerShell's CIM cmdlet is the
+ * supported replacement, but spawning it once per tree level (~300ms each)
+ * would make a deep tree unusable, so fetch the table once and walk it here.
+ */
+function windowsChildPidMap(): Map<number, number[]> {
+  const out = execSync(
+    'powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Csv -NoTypeInformation"',
+    { encoding: "utf-8", timeout: 5000 }
+  )
+  const byParent = new Map<number, number[]>()
+  for (const line of out.split(/\r?\n/).slice(1)) {
+    const m = line.match(/^"?(\d+)"?,"?(\d+)"?/)
+    if (!m) continue
+    const child = Number(m[1])
+    const parent = Number(m[2])
+    const bucket = byParent.get(parent)
+    if (bucket) bucket.push(child)
+    else byParent.set(parent, [child])
+  }
+  return byParent
+}
+
 function getDescendantPids(pid: number): number[] {
   const descendants: number[] = []
+
+  if (isWindows) {
+    let byParent: Map<number, number[]>
+    try {
+      byParent = windowsChildPidMap()
+    } catch {
+      return descendants
+    }
+    // `seen` guards against a cycle: a dead parent's pid can be recycled by a
+    // process that is itself a descendant, which would otherwise recurse until
+    // the stack blows.
+    const seen = new Set<number>([pid])
+    const walk = (parentPid: number) => {
+      for (const child of byParent.get(parentPid) ?? []) {
+        if (seen.has(child)) continue
+        seen.add(child)
+        walk(child)
+        descendants.push(child)
+      }
+    }
+    walk(pid)
+    return descendants
+  }
+
   function collect(parentPid: number) {
     try {
-      let result: string
-      if (isWindows) {
-        result = execSync(
-          `wmic process where (ParentProcessId=${parentPid}) get ProcessId /format:list`,
-          { encoding: "utf-8", timeout: 3000 }
-        ).trim()
-        const childPids = result
-          .split("\n")
-          .map((l) => l.replace(/\r/, "").match(/ProcessId=(\d+)/)?.[1])
-          .filter(Boolean)
-          .map(Number)
-        for (const cp of childPids) {
-          collect(cp)
-          descendants.push(cp)
-        }
-      } else {
-        result = execSync(`pgrep -P ${parentPid}`, {
-          encoding: "utf-8",
-          timeout: 3000,
-        }).trim()
-        const childPids = result.split("\n").filter(Boolean).map(Number)
-        for (const cp of childPids) {
-          collect(cp)
-          descendants.push(cp)
-        }
+      const result = execSync(`pgrep -P ${parentPid}`, {
+        encoding: "utf-8",
+        timeout: 3000,
+      }).trim()
+      const childPids = result.split("\n").filter(Boolean).map(Number)
+      for (const cp of childPids) {
+        collect(cp)
+        descendants.push(cp)
       }
     } catch {
       /* no children */
@@ -333,8 +385,6 @@ const dispatchMessage = (
       }
 
       try {
-        const userShell = getDefaultShell()
-
         if (usePty) {
           const ptyEnv: Record<string, string> = { PATH: getDefaultPath() }
           for (const [k, v] of Object.entries(childEnv)) {
@@ -343,7 +393,7 @@ const dispatchMessage = (
           const ptyTarget =
             command === OPEN_PREFERRED_SHELL_COMMAND
               ? resolvePreferredPtyShell(cwd)
-              : { file: userShell, args: ["--login", "-c", command], cwd, name: command }
+              : { file: resolveCommandShell(), args: ["--login", "-c", command], cwd, name: command }
           const ptyProcess = nodePty.spawn(
             ptyTarget.file,
             ptyTarget.args,
@@ -355,7 +405,6 @@ const dispatchMessage = (
               env: ptyEnv,
             }
           )
-          const dummyChild = spawn("true", [], { stdio: "ignore" })
           registerCommand({
             commandId,
             command: ptyTarget.name,
@@ -363,7 +412,6 @@ const dispatchMessage = (
             projectCwd,
             tabId,
             pid: ptyProcess.pid,
-            process: dummyChild,
             ptyProcess,
             usePty: true,
             timestamp: new Date().toISOString(),
@@ -374,7 +422,7 @@ const dispatchMessage = (
             attachPtyListeners(registry, send, commandId, ptyProcess)
           )
         } else {
-          const child = spawn(userShell, ["--login", "-c", command], {
+          const child = spawn(resolveCommandShell(), ["--login", "-c", command], {
             cwd,
             env: childEnv as NodeJS.ProcessEnv,
             stdio: ["pipe", "pipe", "pipe"],
@@ -449,7 +497,7 @@ const dispatchMessage = (
         Effect.runFork(
           attachPtyListeners(registry, send, commandId, cmd.ptyProcess)
         )
-      } else {
+      } else if (cmd.process) {
         Effect.runFork(
           attachPipeListeners(registry, send, commandId, cmd.process)
         )

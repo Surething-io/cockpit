@@ -78,6 +78,34 @@ export default function RootLayout({
          * so React does not warn that the script won't execute on client render.
          */}
         <script dangerouslySetInnerHTML={{ __html: bootScript }} />
+        {/*
+         * Stamp the build this HTML was served from. After an upgrade the
+         * server restarts with a new BUILD_ID, but an already-open tab keeps
+         * referencing the previous build's content-hashed chunks — which no
+         * longer exist on disk — so the next route change or lazy import 404s.
+         * useServerBuildGuard compares this against /api/health on reconnect.
+         *
+         * COCKPIT_BUILD_ID is set by server.mjs at boot. Absent in dev (no
+         * prebuilt BUILD_ID), where the guard simply stays off.
+         */}
+        {/*
+         * COCKPIT_FORCE_UPDATE_BADGE=1 makes the sidebar show the update pill
+         * even when already on the latest version, so the whole update flow can
+         * be exercised on a real production install. The existing dev-only
+         * override cannot be used for that: /api/update refuses to run in dev
+         * mode (npm would install the published package over a source tree).
+         */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              `window.__COCKPIT_BUILD_ID__=${JSON.stringify(
+                process.env.COCKPIT_BUILD_ID ?? null
+              )};` +
+              `window.__COCKPIT_FORCE_UPDATE__=${JSON.stringify(
+                process.env.COCKPIT_FORCE_UPDATE_BADGE === "1"
+              )}`,
+          }}
+        />
       </head>
       <body
         className={`${inter.variable} ${lora.variable} ${jetbrainsMono.variable} antialiased overflow-hidden`}

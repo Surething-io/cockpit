@@ -2,10 +2,11 @@ import { createServer } from 'http';
 import { createGzip, constants as zlibConstants } from 'zlib';
 import { exec, execSync } from 'child_process';
 import { networkInterfaces, homedir } from 'os';
-import { writeFileSync, mkdirSync, readFileSync, realpathSync } from 'fs';
+import { writeFileSync, mkdirSync, readFileSync, realpathSync, unlinkSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import next from 'next';
+import { rotateIfLarge } from './bin/rotateLog.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 process.env.COCKPIT_ROOT = __dirname;
@@ -26,6 +27,34 @@ const cockpitHome = process.env.COCKPIT_HOME
 // path if it doesn't exist yet.
 const normHome = (p) => { try { return realpathSync(p); } catch { return p; } };
 
+const SERVER_JSON = join(cockpitHome, 'server.json');
+
+// Read once at boot. `version` backs `cockpit status` (process.env
+// npm_package_version is only set when launched through an npm script, so it is
+// null under `node server.mjs` / a service unit). `buildId` identifies the
+// frontend assets this process serves — a browser tab left open across an
+// upgrade still references the previous build's content-hashed chunks, which no
+// longer exist on disk.
+function readBuildInfo() {
+  let version = null;
+  try {
+    version = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8')).version;
+  } catch { /* unreadable package.json — report null rather than fail boot */ }
+  let buildId = null;
+  try {
+    buildId = readFileSync(join(__dirname, '.next-prod', 'BUILD_ID'), 'utf8').trim();
+  } catch { /* dev mode has no prebuilt BUILD_ID */ }
+  return { version, buildId };
+}
+const buildInfo = readBuildInfo();
+// Expose to the app layer. /api/health used to report
+// process.env.npm_package_version, which npm only sets when the process was
+// launched through an npm script — under `node server.mjs`, a service unit, or
+// the global bin it was always null, so the health probe's version field was
+// dead weight.
+if (buildInfo.version) process.env.COCKPIT_VERSION = buildInfo.version;
+if (buildInfo.buildId) process.env.COCKPIT_BUILD_ID = buildInfo.buildId;
+
 // Single-instance-per-data-dir guard. Probe the recorded instance's /api/health: if a live
 // cockpit on THIS data dir answers (app === 'cockpit' && home === this data dir), refuse and
 // point the user at COCKPIT_HOME. Connection refused / timeout / wrong signature → stale → take
@@ -34,7 +63,7 @@ const normHome = (p) => { try { return realpathSync(p); } catch { return p; } };
 async function ensureSingleInstance() {
   if (process.env.COCKPIT_FORCE) return;
   let prev;
-  try { prev = JSON.parse(readFileSync(join(cockpitHome, 'server.json'), 'utf8')); } catch { return; }
+  try { prev = JSON.parse(readFileSync(SERVER_JSON, 'utf8')); } catch { return; }
   if (!prev || !prev.port) return;
   try {
     const ac = new AbortController();
@@ -47,7 +76,7 @@ async function ensureSingleInstance() {
       console.error(`  Data dir: ${cockpitHome}`);
       console.error(`  To run a second instance, isolate it with COCKPIT_HOME, e.g.:`);
       console.error(`    COCKPIT_HOME=~/.cockpit-alt cockpit`);
-      console.error(`  False alarm? Delete ${join(cockpitHome, 'server.json')} or set COCKPIT_FORCE=1.\n`);
+      console.error(`  False alarm? Delete ${SERVER_JSON} or set COCKPIT_FORCE=1.\n`);
       process.exit(1);
     }
   } catch { /* connection refused / timeout / non-cockpit → stale, proceed */ }
@@ -77,23 +106,66 @@ async function ensureSingleInstance() {
 let flushRunningSync = null;
 
 let _cleanupRan = false;
+
+/**
+ * A child that must OUTLIVE us, registered on globalThis by /api/update.
+ *
+ * The updater is spawned by this process and then has to keep running after we
+ * exit — it is what reinstalls the package and starts the replacement server.
+ * `detached: true` is not enough: it moves the child into its own session and
+ * process group but leaves the parent/child relationship intact, so the
+ * `pkill -P <us>` below still matches it. Without this exclusion the server
+ * kills the very process that was supposed to bring it back, and the update
+ * stops dead with the server down.
+ *
+ * Read through globalThis because the route lives in Next's module graph and
+ * cannot import this file.
+ */
+function handedOffPid() {
+  const pid = globalThis.__cockpitHandedOffPid;
+  return typeof pid === 'number' && pid > 0 ? pid : null;
+}
+
 function killChildren() {
   if (_cleanupRan) return;
   _cleanupRan = true;
+  const spare = handedOffPid();
   if (process.platform === 'win32') {
-    // Windows: list child PIDs via wmic, then taskkill /F /T each one —
-    // running /T on ourselves would take this process down too
+    // Windows: list child PIDs, then taskkill /F /T each one — running /T on
+    // ourselves would take this process down too.
+    //
+    // This used to shell out to `wmic`, which is deprecated and absent by
+    // default from Windows 11 24H2; the failure was swallowed by the catch, so
+    // orphaned next-server workers were left running. PowerShell's CIM cmdlet
+    // is the supported replacement.
     try {
-      const out = execSync(`wmic process where (ParentProcessId=${process.pid}) get ProcessId /value`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
-      const pids = (out.match(/ProcessId=(\d+)/g) || []).map(s => s.split('=')[1]).filter(Boolean);
+      const out = execSync(
+        `powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process -Filter 'ParentProcessId=${process.pid}' | Select-Object -ExpandProperty ProcessId"`,
+        { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }
+      );
+      const pids = out.split(/\r?\n/).map(s => s.trim()).filter(s => /^\d+$/.test(s));
       for (const pid of pids) {
+        if (spare && Number(pid) === spare) continue;
         try { execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' }); } catch {}
       }
     } catch {}
     return;
   }
-  // POSIX: pkill -P kills direct children only, no recursion (next-server
-  // and friends are all direct children — enough).
+  // POSIX: direct children only, no recursion (next-server and friends are all
+  // direct children — enough).
+  if (spare) {
+    // Enumerate and signal individually so the handed-off updater can be
+    // skipped; `pkill -P` has no exclusion form.
+    try {
+      const out = execSync(`pgrep -P ${process.pid}`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
+      for (const line of out.split('\n')) {
+        const pid = Number(line.trim());
+        if (!pid || pid === spare) continue;
+        try { process.kill(pid, 'SIGTERM'); } catch {}
+      }
+    } catch { /* pgrep exits 1 when there are no children */ }
+    return;
+  }
   // pkill exits 1 when nothing matches; not treated as an error.
   try { execSync(`pkill -TERM -P ${process.pid}`, { stdio: 'ignore' }); } catch {}
 }
@@ -103,8 +175,21 @@ function killChildren() {
 // through process.exit() → 'exit' fires → this single hook covers every
 // graceful shutdown. Flush live PTY scrollback to disk first, then kill the
 // children (the flush reads this process's own memory — independent of them).
+// Best-effort: drop our server.json on the way out so `cockpit status` says
+// "not running" straight away instead of probing a dead port. Guarded by pid so
+// we never delete a record a newer instance has since written. A hard kill
+// (SIGKILL) skips this entirely — which is why status probes /api/health rather
+// than trusting the file's existence.
+function removeServerJson() {
+  try {
+    const rec = JSON.parse(readFileSync(SERVER_JSON, 'utf8'));
+    if (rec && rec.pid === process.pid) unlinkSync(SERVER_JSON);
+  } catch { /* absent, unreadable, or not ours */ }
+}
+
 process.on('exit', () => {
   try { flushRunningSync?.(); } catch {}
+  removeServerJson();
   killChildren();
 });
 
@@ -173,6 +258,17 @@ const handle = app.getRequestHandler();
 
 app.prepare().then(async () => {
   await ensureSingleInstance();
+
+  // Rotate the app log — AFTER the single-instance check, never before. A
+  // second `cockpit` on the same data dir is rejected above, and if it had
+  // rotated first it would have consumed a generation of a *running*
+  // instance's history just by failing to start.
+  //
+  // Safe to do here because the Effect logger appends per write (fs/promises
+  // appendFile) rather than holding an fd, so nothing has the file open and it
+  // recreates it on the next line. This is also what makes it work on Windows,
+  // where renaming a file that some process holds open fails outright.
+  rotateIfLarge(join(cockpitHome, 'logs', 'cockpit.log'));
   const upgradeHandler = app.getUpgradeHandler();
   // v2 P8: HTTP intercepts (handleTerminalApi / handleBrowserApi) moved to src/lib/httpApi.ts
   const { handleUpgrade, broadcastToGlobalState } = await import(dev ? './src/lib/wsServer.ts' : './dist/wsServer.mjs');
@@ -363,10 +459,30 @@ app.prepare().then(async () => {
     const url = `http://localhost:${port}`;
     console.log(`> Ready on ${url}`);
 
-    // Write server.json so CLI subcommands can read the port
+    // Discoverability: `cockpit start` is the only way to survive closing the
+    // terminal (there is no service integration), but nothing else advertises
+    // it. Only worth saying when we ARE in the foreground — a backgrounded
+    // instance's operator already knows.
+    if ((process.env.COCKPIT_MANAGED || 'foreground') === 'foreground') {
+      console.log('  Tip: `cockpit start` runs it in the background — then this terminal can be closed.');
+    }
+
+    // Write server.json so CLI subcommands can read the port, and so
+    // `cockpit status` / `stop` can find and identify this instance.
     try {
       mkdirSync(cockpitHome, { recursive: true });
-      writeFileSync(join(cockpitHome, 'server.json'), JSON.stringify({ pid: process.pid, port }, null, 2));
+      writeFileSync(SERVER_JSON, JSON.stringify({
+        pid: process.pid,
+        port,
+        version: buildInfo.version,
+        buildId: buildInfo.buildId,
+        startedAt: Date.now(),
+        // How this process is supervised, set by whoever launched it:
+        // 'foreground' (plain `cockpit`), 'bare' (`cockpit start`), or a
+        // service manager later on. `cockpit stop` uses it to decide whether
+        // stopping also means telling a supervisor not to restart us.
+        managed: process.env.COCKPIT_MANAGED || 'foreground',
+      }, null, 2));
     } catch {}
 
     // Auto-open the browser in prod mode (disable with --no-open)

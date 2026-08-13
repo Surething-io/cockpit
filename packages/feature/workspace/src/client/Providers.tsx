@@ -5,6 +5,7 @@ import { ThemeProvider } from '@cockpit/shared-ui';
 import { ToastProvider } from '@cockpit/shared-ui';
 import { TooltipProvider } from '@cockpit/shared-ui';
 import { useSuppressNativeContextMenu } from './useSuppressNativeContextMenu';
+import { ServerRestartedBanner } from './ServerRestartedBanner';
 
 interface ProvidersProps {
   children: React.ReactNode;
@@ -26,6 +27,11 @@ export function Providers({ children }: ProvidersProps) {
               outside any panel so its `position: fixed` stays viewport-
               relative under panel `translateX` transforms. */}
           <TooltipProvider />
+          {/* Outside the panels for the same reason as TooltipProvider: its
+              `position: fixed` must stay viewport-relative under the panel
+              container's translateX. Renders nothing until the server is
+              detected on a different build. */}
+          <ServerRestartedBanner />
         </ToastProvider>
       </ThemeProvider>
     </I18nProvider>

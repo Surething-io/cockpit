@@ -626,7 +626,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {projects.length === 0 ? (
           // Empty state: show all session list
-          <EmptyState onSelectSession={handleAddProject} />
+          <EmptyState onBrowseProjects={() => setIsSessionBrowserOpen(true)} />
         ) : (
           // Project iframe container (lazy load: only render projects that have been activated)
           <div className="flex-1 relative overflow-hidden">

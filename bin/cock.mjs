@@ -17,9 +17,13 @@ if (process.argv[2] === '--help' || process.argv[2] === '-h' || process.argv[2] 
 Usage: cockpit [path] [options]   (alias: cock)
 
 Commands:
-  cockpit                        Start server, open last project
+  cockpit                        Start server in the foreground, open last project
   cockpit .                      Start server, open current directory
   cockpit <path>                 Start server, open specified directory
+  start                          Start in the background (survives closing the terminal)
+  stop                           Stop the background server
+  restart                        Restart it (--force to drop a token gate)
+  status                         Show whether cockpit is running, and where
   browser <id> <action>          Control browser bubbles
   terminal <id> <action>         Control terminal bubbles
   codegraph <subcmd> [...]       Query the project code graph (search/risk/affected/...)
@@ -27,9 +31,9 @@ Commands:
   update                         Update to latest version
 
 Options:
-  --port <port>                  Set server port (default: 3457)
+  --port <port>                  Set server port (default: 3457); works with start too
   --token <token>                Require this token for remote access (local stays open)
-  --no-open                      Don't open browser after start
+  --no-open                      Don't open browser after start (start never opens one)
   -v, --version                  Show version
   -h, --help                     Show this help
 
@@ -124,30 +128,10 @@ if (process.argv[2] === 'connection') {
 }
 
 if (process.argv[2] === 'update') {
-  console.log('Updating @surething/cockpit...');
-  const installArgs = ['install', '-g', '@surething/cockpit@latest', '--include=optional'];
-  let result = spawnSync('npm', installArgs, { stdio: 'inherit' });
-
-  // An in-place `npm i -g` can drop the SDK's platform-specific native binary
-  // (an optional dependency) when the SDK version bumps — see
-  // scripts/claudeBinary.mjs. A clean uninstall + reinstall reliably refetches
-  // it. Guard here so `cockpit update` never leaves chat silently broken.
-  if (result.status === 0 && !hasClaudeBinary()) {
-    console.log('Native Claude binary missing after update — reinstalling to repair...');
-    spawnSync('npm', ['uninstall', '-g', '@surething/cockpit'], { stdio: 'inherit' });
-    result = spawnSync('npm', installArgs, { stdio: 'inherit' });
-  }
-
-  if (result.status === 0) {
-    const { readFileSync } = await import('fs');
-    const pkg = JSON.parse(readFileSync(resolve(PROJECT_ROOT, 'package.json'), 'utf8'));
-    console.log(`\nUpdated to v${pkg.version}`);
-    if (!hasClaudeBinary()) {
-      console.error('\nWarning: the native Claude CLI binary is still missing; chat will not work.');
-      console.error('Fix manually: npm uninstall -g @surething/cockpit && npm install -g @surething/cockpit');
-    }
-  }
-  process.exit(result.status ?? 1);
+  // Two mechanisms, picked by whether a server is live — see cock-service.mjs.
+  const svc = await import('./cock-service.mjs');
+  const code = await svc.update();
+  await flushAndExit(code);
 }
 
 // ============================================
@@ -155,6 +139,30 @@ if (process.argv[2] === 'update') {
 // ============================================
 const { existsSync, mkdirSync } = await import('fs');
 const { homedir } = await import('os');
+
+// Background process management. Must be routed BEFORE the project-directory
+// fallback below, which treats any unrecognised first argument as a path and
+// creates it — `cockpit start` would otherwise mkdir ./start.
+const SERVICE_COMMANDS = new Set(['start', 'stop', 'restart', 'status']);
+if (SERVICE_COMMANDS.has(process.argv[2])) {
+  const sub = process.argv[2];
+  const svc = await import('./cock-service.mjs');
+  // `restart --force` acknowledges dropping a token gate (see cock-service.mjs).
+  const forceIdx = process.argv.indexOf('--force');
+  const svcForce = forceIdx !== -1;
+  if (svcForce) process.argv.splice(forceIdx, 1);
+  // None of these take a project path — the background server is not tied to a
+  // project. Say so rather than silently ignoring the argument, since
+  // `cockpit <path>` (foreground) does accept one and the difference is easy
+  // to trip over.
+  const stray = process.argv[3];
+  if (stray && !stray.startsWith('-')) {
+    console.error(`cockpit ${sub}: ignoring '${stray}' — the background server is not bound to a project.`);
+    console.error(`  Open a project from the UI, or run \`cockpit ${stray}\` to start in the foreground.\n`);
+  }
+  const code = await svc[sub]({ force: svcForce });
+  await flushAndExit(code);
+}
 
 const knownCommands = new Set(['browser', 'terminal', 'update', 'help', 'codegraph', 'connection']);
 const arg = process.argv[2];

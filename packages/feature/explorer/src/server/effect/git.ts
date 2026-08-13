@@ -174,7 +174,13 @@ export const GitServiceLive = Layer.succeed(
   GitService.of({
     status: (cwd) =>
       Effect.gen(function* () {
-        yield* Effect.logInfo("git.status start").pipe(
+        // logDebug, not logInfo: this runs on every file-watcher tick (~every
+        // 90s per open project) and the pair below accounted for 99.5% of
+        // cockpit.log — 153k of 154k lines over 84 days, burying the WARNs that
+        // actually explain failures. The enclosing Effect.withSpan("git.status")
+        // already carries the same name, cwd and duration for tracing, so this
+        // is only useful when deliberately debugging: COCKPIT_LOG_LEVEL=debug.
+        yield* Effect.logDebug("git.status start").pipe(
           Effect.annotateLogs("cwd", cwd)
         )
 
@@ -224,7 +230,7 @@ export const GitServiceLive = Layer.succeed(
           }
         }
 
-        yield* Effect.logInfo("git.status done").pipe(
+        yield* Effect.logDebug("git.status done").pipe(
           Effect.annotateLogs("staged.count", staged.length),
           Effect.annotateLogs("unstaged.count", unstaged.length)
         )

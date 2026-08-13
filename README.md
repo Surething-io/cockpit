@@ -169,6 +169,7 @@ No install, no AI chat (read-only sandbox, 5 min):
 
 ## Prerequisites
 
+- **macOS, Linux, or Windows** — Windows support is experimental ([details](#windows))
 - **Node.js ≥ 20** — [nodejs.org](https://nodejs.org/)
 - **Claude Code** — [docs.anthropic.com/en/docs/claude-code](https://docs.anthropic.com/en/docs/claude-code) (default engine)
 - **Git** — for git features (blame, diff, worktree, etc.)
@@ -193,6 +194,80 @@ cockpit .              # open current dir as a project
 cockpit ~/my-project   # open specified dir
 cockpit -h             # help
 ```
+
+### Running in the background
+
+`cockpit` runs in the foreground, so closing the terminal stops it. To keep it
+running:
+
+```bash
+cockpit start          # start in the background
+cockpit status         # running? which version, port, pid, uptime
+cockpit restart        # restart in place
+cockpit stop
+```
+
+`start` accepts the same flags as `cockpit` (`--port`, `--token`). Output goes
+to `~/.cockpit/logs/server.log`.
+
+`restart` asks the running server to replace itself, so the port and token it
+was started with are preserved — you do not need to repeat them.
+
+> There is no launchd/systemd integration: after a reboot, run `cockpit start`
+> again (or add it to your login items).
+
+### Updating
+
+```bash
+cockpit update
+```
+
+…or click the version pill in the sidebar when an update is available.
+
+If Cockpit is **running**, it updates in place: the server hands off to a
+helper that installs while nothing is holding the install directory, then
+relaunches with the same port and token. A failed install rolls back to the
+previous version and still restarts, so an interrupted update never leaves you
+without a working Cockpit.
+
+If it is **not running**, `cockpit update` simply installs.
+
+Once the new server is up, any browser tab left open from the old version shows
+a "reload" prompt — its cached assets belong to the previous build.
+
+### Windows
+
+Windows support is **experimental** — it is exercised by CI but has far less
+real-world mileage than macOS and Linux. Cockpit runs natively; the Console
+panel uses Git Bash when it is installed and falls back to PowerShell, the same
+order Claude Code applies on Windows.
+
+- Install [Git for Windows](https://git-scm.com/download/win) for a bash
+  terminal. Without it the Console panel runs PowerShell, and the
+  `cockpit.bash` channel used by HTML apps is unavailable.
+- The file browser, diff, review and chat panels behave as they do elsewhere.
+
+Prefer a Linux toolchain? Run *all* of Cockpit inside **WSL2**, where it is an
+ordinary Linux install:
+
+```powershell
+wsl --install          # once, from an admin PowerShell, then reboot
+```
+
+```bash
+wsl                                  # enter your Linux shell
+npm install -g @surething/cockpit    # install Node ≥ 20 inside WSL first
+cockpit
+```
+
+Either way, open `http://localhost:3457` in your Windows browser — WSL2
+forwards localhost automatically.
+
+> **Pick one side and stay there.** Running Cockpit on Windows while your
+> project lives inside WSL (or the reverse) gives the agent one set of paths
+> and its terminal another: the same directory is `C:\Users\me\proj` on one
+> side and `/mnt/c/Users/me/proj` on the other, so paths passed between them
+> do not resolve. Keep Cockpit and your code in the same world.
 
 > Both `cockpit` (full name) and `cock` (short alias) ship with the package — use whichever you prefer. Docs and examples use `cockpit`; existing muscle memory keeps working.
 

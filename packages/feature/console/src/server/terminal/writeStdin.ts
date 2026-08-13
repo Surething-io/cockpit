@@ -67,14 +67,14 @@ export function writeStdinToCommand(
 
   if (data === '\x04') {
     try {
-      cmd.process.stdin?.end();
+      cmd.process?.stdin?.end();
     } catch {
       /* closed */
     }
     return true;
   }
 
-  if (cmd.process.stdin?.writable) {
+  if (cmd.process?.stdin?.writable) {
     cmd.process.stdin.write(data);
     return true;
   }

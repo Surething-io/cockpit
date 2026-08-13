@@ -9,6 +9,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./htmlBashSdk": "./src/htmlBashSdk.ts",
-    "./outputProgress": "./src/outputProgress.ts"
+    "./outputProgress": "./src/outputProgress.ts",
+    "./encodePath": "./src/encodePath.ts"
   }
 }

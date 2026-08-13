@@ -130,7 +130,14 @@ export interface RunningCommand {
   projectCwd: string;
   tabId: string;
   pid: number;
-  process: ChildProcess;
+  /**
+   * Child process — set in pipe mode only. PTY mode drives everything through
+   * `ptyProcess` (output, stdin, kill), so there is no ChildProcess to record.
+   * It used to hold a throwaway `spawn("true")` purely to satisfy this type,
+   * which crashed the server on Windows (no `true.exe`, and the async spawn
+   * error had no listener). Read it only after checking the mode.
+   */
+  process?: ChildProcess;
   /** PTY process instance (set in PTY mode) */
   ptyProcess?: IPty;
   /** Whether PTY mode is enabled */
@@ -242,6 +249,7 @@ export function registerCommand(
   } else {
     // Pipe mode: separate stdout/stderr streams
     const child = cmd.process;
+    if (!child) return;
 
     child.stdout?.on('data', (data: Buffer) => {
       appendCommandOutput(cmd.commandId, data.toString());

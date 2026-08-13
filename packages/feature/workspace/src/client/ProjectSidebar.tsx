@@ -10,6 +10,7 @@ import { usePinnedSessions } from '@cockpit/feature-agent';
 import { useScheduledTasks } from '@cockpit/feature-agent';
 import { useWebSocket, toast } from '@cockpit/shared-ui';
 import { useLatestVersion } from './useLatestVersion';
+import { useSelfUpdate } from './useSelfUpdate';
 import { AppWindow, MoreHorizontal } from 'lucide-react';
 import type { HtmlAppPreview } from '@cockpit/feature-explorer';
 
@@ -287,6 +288,19 @@ export function ProjectSidebar({
     toast(t('workspace.upgradeCommandCopied'));
     setUpdatePopoverOpen(false);
   }, [t]);
+  const { phase: updatePhase, error: updateError, start: startUpdate } = useSelfUpdate();
+  const isUpdating = updatePhase === 'starting' || updatePhase === 'waiting';
+  useEffect(() => {
+    if (updatePhase === 'done') {
+      // Only reports that the server is back. Whether the page itself is now
+      // stale is ServerRestartedBanner's call — it compares build ids, so it
+      // stays silent when the reinstall was a no-op (already latest).
+      toast(t('workspace.updateComplete'));
+      setUpdatePopoverOpen(false);
+    } else if (updatePhase === 'failed') {
+      toast(t('workspace.updateFailed', { reason: updateError ?? '' }), 'error');
+    }
+  }, [updatePhase, updateError, t]);
   const { pinnedSessions, unpinSession, updateTitle, reorder } = usePinnedSessions();
   const { tasks: scheduledTasks, unreadCount: scheduledUnread, reload: reloadScheduled, pauseTask, resumeTask, triggerTask, deleteTask: deleteScheduledTask, updateTask: updateScheduledTask, markRead: markScheduledRead } = useScheduledTasks();
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -405,11 +419,11 @@ export function ProjectSidebar({
           // Collapsed-only: expanded state already renders the same label below.
           title={collapsed ? t('workspace.openProject') : undefined}
         >
+          {/* Same folder mark as the other two entry points to this action
+              (EmptyState's button and SessionBrowser's "open folder"), so the
+              icon reads as "open a project" wherever it appears. */}
           <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3" width="7" height="7" rx="1" />
-            <rect x="14" y="3" width="7" height="7" rx="1" />
-            <rect x="3" y="14" width="7" height="7" rx="1" />
-            <rect x="14" y="14" width="7" height="7" rx="1" />
+            <path d="M12 10v6m3-3H9m-4 7h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
           {!collapsed && <span className="text-sm">{t('workspace.openProject')}</span>}
         </button>
@@ -623,6 +637,38 @@ export function ProjectSidebar({
                   <div className="text-xs text-muted-foreground mb-2 px-1">
                     {t('workspace.updateAvailable', { version: latestVersion })}
                   </div>
+                  {/* Primary action: the server updates itself and comes back.
+                      Copying the command stays below for anyone who would
+                      rather drive it from a terminal. */}
+                  <button
+                    type="button"
+                    onClick={startUpdate}
+                    disabled={isUpdating}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left
+                               hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-default"
+                  >
+                    {isUpdating ? (
+                      <svg className="w-3.5 h-3.5 flex-shrink-0 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={4} />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    )}
+                    <span className="flex-1">
+                      {isUpdating ? t('workspace.updating') : t('workspace.updateNow')}
+                    </span>
+                  </button>
+                  {isUpdating && (
+                    // Say it plainly: a foreground `cockpit` does not stay in
+                    // the foreground across an update — the terminal that owned
+                    // it has already been released by the time we respawn.
+                    <div className="text-[11px] leading-snug text-muted-foreground px-2 pb-1.5">
+                      {t('workspace.updateRestartNote')}
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={copyUpgradeCmd}

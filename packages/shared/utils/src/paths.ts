@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'path';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { closeSync, existsSync, mkdirSync, openSync, readSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, readdirSync, readFileSync } from 'fs';
 import { execSync } from 'child_process';
+import { encodePath } from './encodePath';
 
 // ============================================
 // Directory Constants
@@ -79,15 +80,11 @@ export const OLLAMA_CONFIG_FILE = join(OLLAMA_DIR, 'config.json');
 // Path Encoding
 // ============================================
 
-/**
- * Encode a path to a safe directory name
- * Must match Claude CLI's encoding: replace both / and . with -
- * e.g., /Users/you/Work -> -Users-you-Work
- * e.g., /foo/bar.worktrees/baz -> -foo-bar-worktrees-baz
- */
-export function encodePath(path: string): string {
-  return path.replace(/[/.]/g, '-');
-}
+// Implementation lives in ./encodePath (imported at the top of this file) so
+// browser bundles can use it without dragging in this module's node fs/os/path
+// dependencies. Re-exported here so every existing server-side import site
+// keeps working unchanged.
+export { encodePath };
 
 // ============================================
 // Cockpit Project Paths (~/.cockpit/projects/<encoded-cwd>/...)

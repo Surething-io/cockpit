@@ -26,6 +26,28 @@ interface SharedConnection {
 
 const connections = new Map<string, SharedConnection>();
 
+/* ---------- reconnect notification ---------- */
+
+type ReconnectListener = () => void;
+const reconnectListeners = new Set<ReconnectListener>();
+
+/**
+ * Subscribe to "a shared socket reopened after having dropped".
+ *
+ * The signal a caller usually wants is "the server went away and came back",
+ * which most often means it was restarted — e.g. by an upgrade. Fires only for
+ * genuine reconnects, never for the first connect of a URL.
+ *
+ * Module-level rather than per-hook so a subscriber sees the event regardless
+ * of which URL's socket bounced, and only once per bounce.
+ */
+export function onWsReconnect(fn: ReconnectListener): () => void {
+  reconnectListeners.add(fn);
+  return () => {
+    reconnectListeners.delete(fn);
+  };
+}
+
 function getOrCreateConnection(url: string): SharedConnection {
   const existing = connections.get(url);
   if (existing) return existing;
@@ -42,7 +64,21 @@ function getOrCreateConnection(url: string): SharedConnection {
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
+        // A non-zero retryCount means this open follows at least one close, so
+        // it is a reconnect rather than the initial connect for this URL.
+        const isReconnect = conn.retryCount > 0;
         conn.retryCount = 0;
+        if (isReconnect) {
+          reconnectListeners.forEach((fn) => {
+            try {
+              fn();
+            } catch (err) {
+              // Same isolation rule as the message listeners below: one bad
+              // subscriber must not starve the others.
+              console.error('[useWebSocket] reconnect listener threw', err);
+            }
+          });
+        }
       };
 
       ws.onmessage = (e) => {

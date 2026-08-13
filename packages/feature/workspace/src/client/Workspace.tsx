@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ProjectSidebar, ProjectInfo } from './ProjectSidebar';
 import { EmptyState } from './EmptyState';
@@ -34,6 +34,12 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   const [htmlAppPreviews, setHtmlAppPreviews] = useState<HtmlAppPreview[]>([]);
   const [activeHtmlAppPreviewPath, setActiveHtmlAppPreviewPath] = useState<string | null>(null);
   const [sessionNumbers, setSessionNumbers] = useState<Record<string, string>>({});
+  // Live tab order per project, keyed by cwd. Fed by SESSION_NUMBERS messages —
+  // both the replies to resolveSessionNumbers() and the unsolicited pushes each
+  // TabManager sends whenever its tab array changes (open / close / drag).
+  // A tab with no session yet (blank new tab) keeps its slot as null so the
+  // positions after it stay honest.
+  const [sessionOrders, setSessionOrders] = useState<Record<string, Array<string | null>>>({});
   const [isLoaded, setIsLoaded] = useState(false);
   // Lazy load: only render project iframes that have been activated before (ever-growing set)
   const [loadedCwds, setLoadedCwds] = useState<Set<string>>(new Set());
@@ -140,6 +146,40 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   // Ask mounted project frames for their live tab order when the recent-session
   // dropdown opens. Reading session.json here can lag behind a drag reorder;
   // the in-memory tab arrays are authoritative for the numbers currently shown.
+  // Standing subscription to every frame's tab order. The sidebar's session
+  // badges must renumber the instant a tab is dragged, and state.json cannot
+  // serve that: /api/project-state merges the session list as a union with the
+  // stored order first, so a pure reorder round-trips unchanged.
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type !== 'SESSION_NUMBERS') return;
+      const cwd = event.data.cwd;
+      if (typeof cwd !== 'string' || !Array.isArray(event.data.sessionIds)) return;
+      const ids = (event.data.sessionIds as unknown[]).map((id) => (typeof id === 'string' ? id : null));
+      setSessionOrders((prev) => {
+        const current = prev[cwd];
+        if (current && current.length === ids.length && current.every((id, i) => id === ids[i])) return prev;
+        return { ...prev, [cwd]: ids };
+      });
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  // "project.session" coordinate for every open tab, keyed `${cwd}\n${sessionId}`
+  // — same shape resolveSessionNumbers() returns, but standing and live rather
+  // than requested on dropdown open. Panels that are always mounted (pinned
+  // sessions, scheduled tasks) read this one.
+  const liveSessionNumbers = useMemo(() => {
+    const numbers: Record<string, string> = {};
+    projects.forEach((project, projectIndex) => {
+      (sessionOrders[project.cwd] ?? []).forEach((sessionId, tabIndex) => {
+        if (sessionId) numbers[`${project.cwd}\n${sessionId}`] = `${projectIndex + 1}.${tabIndex + 1}`;
+      });
+    });
+    return numbers;
+  }, [projects, sessionOrders]);
+
   const resolveSessionNumbers = useCallback((): Promise<Record<string, string>> => {
     const requestId = crypto.randomUUID();
     const projectNumbers = new Map(projects.map((project, index) => [project.cwd, index + 1]));
@@ -264,7 +304,18 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         const currentProject = projects[activeIndex];
         if (currentProject?.cwd !== cwd) {
           const projectName = cwd.split('/').pop() || cwd;
-          showSessionCompleteToast({ projectName, message: lastUserMessage, cwd, sessionId });
+          void resolveSessionNumbers().then((numbers) => {
+            const [mappedProjectNumber, sessionNumber] = numbers[`${cwd}\n${sessionId}`]?.split('.') ?? [];
+            const projectIndex = projects.findIndex((project) => project.cwd === cwd);
+            showSessionCompleteToast({
+              projectName,
+              message: lastUserMessage,
+              cwd,
+              sessionId,
+              projectNumber: mappedProjectNumber ?? (projectIndex >= 0 ? projectIndex + 1 : undefined),
+              sessionNumber,
+            });
+          });
         }
       }
       // Open token stats
@@ -339,7 +390,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [projects, activeIndex, collapsed, updateUrl, saveProjects]);
+  }, [projects, activeIndex, collapsed, updateUrl, saveProjects, resolveSessionNumbers]);
 
   // Parent-window keyboard safety net.
   // iframes don't bubble keydown to the parent window, so the per-panel
@@ -554,6 +605,8 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         onShowHtmlAppPreview={handleShowHtmlAppPreview}
         onSwitchProject={handleSwitchProject}
         onResolveSessionNumbers={resolveSessionNumbers}
+        sessionOrders={sessionOrders}
+        sessionNumbers={liveSessionNumbers}
         onAddProject={(cwd) => {
           const existingIndex = projects.findIndex(p => p.cwd === cwd);
           if (existingIndex >= 0) {

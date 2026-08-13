@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
+import { SessionNumberBadge } from './SessionNumberBadge';
 
 // ============================================
 // Types
@@ -14,6 +15,8 @@ export interface SessionToastItem {
   message?: string;  // lastUserMessage preview
   cwd: string;
   sessionId: string;
+  projectNumber?: number | string;
+  sessionNumber?: number | string;
 }
 
 // ============================================
@@ -123,7 +126,7 @@ function SessionToastCard({
 
   return (
     <div
-      className={`pointer-events-auto bg-card border border-border rounded-lg shadow-lg px-3 py-2.5 min-w-[260px] max-w-[340px] cursor-pointer hover:bg-accent transition-all ${
+      className={`pointer-events-auto bg-card border border-border rounded-lg shadow-lg px-3 py-3 min-h-[84px] min-w-[260px] max-w-[340px] cursor-pointer hover:bg-accent transition-all ${
         leaving ? 'opacity-0 -translate-x-4' : 'opacity-100 translate-x-0'
       }`}
       style={{
@@ -133,17 +136,18 @@ function SessionToastCard({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-start gap-2">
         {/* Completion icon */}
         <svg className="w-4 h-4 text-green-9 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
         <span className="text-sm font-medium text-foreground truncate">{item.projectName}</span>
         <span className="text-xs text-green-11 flex-shrink-0">{t('common.done')}</span>
+        <SessionNumberBadge projectNumber={item.projectNumber} sessionNumber={item.sessionNumber} className="ml-auto" />
         {/* Close button */}
         <button
           onClick={(e) => { e.stopPropagation(); dismiss(); }}
-          className="ml-auto p-0.5 text-muted-foreground hover:text-foreground rounded transition-colors"
+          className="p-0.5 text-muted-foreground hover:text-foreground rounded transition-colors"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

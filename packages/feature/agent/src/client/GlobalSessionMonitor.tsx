@@ -223,10 +223,10 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
                       <span className="text-xs text-muted-foreground flex-shrink-0">
                         {formatTime(session.lastActive)}
                       </span>
-                      {sessionNumbers[`${session.cwd}\n${session.sessionId}`] && (() => {
-                        const [projectNumber, sessionNumber] = sessionNumbers[`${session.cwd}\n${session.sessionId}`].split('.');
-                        return <SessionNumberBadge projectNumber={projectNumber} sessionNumber={sessionNumber} className="ml-auto" />;
-                      })()}
+                      <SessionNumberBadge
+                        coordinate={sessionNumbers[`${session.cwd}\n${session.sessionId}`]}
+                        className="ml-auto"
+                      />
                     </div>
                     {session.title && (
                       <div className="text-xs font-medium text-foreground truncate" data-tooltip={session.title}>

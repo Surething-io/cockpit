@@ -45,6 +45,9 @@ export { useJsonSearch, JsonSearchBar } from './useJsonSearch';
 export { Tooltip } from './Tooltip';
 export { TooltipProvider } from './TooltipProvider';
 
+// Session/project number badge colours (tab bar, sidebar, every session list)
+export { sessionNumberClass, type SessionNumberStatus } from './sessionNumberStyles';
+
 // File icon (extension-based mapping)
 export { FileIcon, FolderIcon } from './FileIcon';
 

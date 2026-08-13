@@ -3,10 +3,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PinnedSession } from './usePinnedSessions';
+import { SessionNumberBadge } from './SessionNumberBadge';
 
 interface PinnedSessionsPanelProps {
   collapsed?: boolean;
   pinnedSessions: PinnedSession[];
+  /** Live "project.session" coordinates keyed `${cwd}\n${sessionId}`. A pinned
+   *  session whose project has no open tab for it simply has no coordinate. */
+  sessionNumbers?: Record<string, string>;
   onSwitchProject: (cwd: string, sessionId: string) => void;
   onUnpin: (sessionId: string) => void;
   onUpdateTitle: (sessionId: string, title: string) => void;
@@ -16,6 +20,7 @@ interface PinnedSessionsPanelProps {
 export function PinnedSessionsPanel({
   collapsed,
   pinnedSessions,
+  sessionNumbers,
   onSwitchProject,
   onUnpin,
   onUpdateTitle,
@@ -173,6 +178,10 @@ export function PinnedSessionsPanel({
                       <span className="font-medium text-sm truncate">
                         {getProjectName(session.cwd)}
                       </span>
+                      <SessionNumberBadge
+                        coordinate={sessionNumbers?.[`${session.cwd}\n${session.sessionId}`]}
+                        className="ml-auto"
+                      />
                     </div>
                     {editingId === session.sessionId ? (
                       <input

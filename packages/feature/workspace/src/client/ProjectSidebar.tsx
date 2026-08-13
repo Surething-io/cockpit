@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ProjectItem } from './ProjectItem';
+import { ProjectItem, type ProjectSessionBadge } from './ProjectItem';
 import { GlobalSessionMonitor, GlobalSession } from '@cockpit/feature-agent';
 import { PinnedSessionsPanel } from '@cockpit/feature-agent';
 import { ScheduledTasksPanel } from '@cockpit/feature-agent';
@@ -17,6 +17,11 @@ export interface ProjectInfo {
   cwd: string;
   sessionId?: string;
 }
+
+/** A w-56 row fits three 16px badges next to a truncated project name; beyond
+ *  that they crowd out the name, and the overflow is one click away in the
+ *  project's own session list anyway. Extras are dropped, not counted. */
+const MAX_SESSION_BADGES = 3;
 
 interface ProjectSidebarProps {
   projects: ProjectInfo[];
@@ -37,6 +42,12 @@ interface ProjectSidebarProps {
   onShowHtmlAppPreview: (item: HtmlAppPreview) => void;
   onSwitchProject: (cwd: string, sessionId: string) => void;
   onResolveSessionNumbers: () => Promise<Record<string, string>>;
+  /** Live tab order per project cwd, pushed up by each project iframe (null =
+   *  a tab with no session yet). Absent for projects whose iframe has never
+   *  been mounted (lazy load). */
+  sessionOrders: Record<string, Array<string | null>>;
+  /** Live "project.session" coordinates, keyed `${cwd}\n${sessionId}`. */
+  sessionNumbers: Record<string, string>;
   onAddProject: (cwd: string) => void;
 }
 
@@ -242,6 +253,8 @@ export function ProjectSidebar({
   onShowHtmlAppPreview,
   onSwitchProject,
   onResolveSessionNumbers,
+  sessionOrders,
+  sessionNumbers,
   onAddProject: _onAddProject,
 }: ProjectSidebarProps) {
   const { t, i18n } = useTranslation();
@@ -315,6 +328,35 @@ export function ProjectSidebar({
   const unreadCwds = new Set(
     sessions.filter(s => s.status === 'unread').map(s => s.cwd)
   );
+
+  // Per-project session badges: only sessions that are generating or done-but-
+  // unread earn one, so a quiet project row stays clean. Ordered by the session's
+  // live position in that project's tab bar (the number you can point at), which
+  // means a tab drag renumbers these too. Sessions whose project iframe is not
+  // mounted yet have no known position and sort last with a '·' placeholder.
+  const badgesByCwd = useMemo(() => {
+    const map = new Map<string, ProjectSessionBadge[]>();
+    for (const project of projects) {
+      const order = sessionOrders[project.cwd] ?? [];
+      const items = sessions
+        .filter((s) => s.cwd === project.cwd && (s.status === 'loading' || s.status === 'unread'))
+        .map((s) => ({ session: s, position: order.indexOf(s.sessionId) }))
+        .sort((a, b) => {
+          if (a.position >= 0 && b.position >= 0) return a.position - b.position;
+          if (a.position >= 0) return -1;
+          if (b.position >= 0) return 1;
+          return b.session.lastActive - a.session.lastActive;
+        })
+        .slice(0, MAX_SESSION_BADGES)
+        .map(({ session, position }): ProjectSessionBadge => ({
+          sessionId: session.sessionId,
+          label: position >= 0 ? String(position + 1) : '·',
+          status: session.status === 'loading' ? 'loading' : 'unread',
+        }));
+      if (items.length > 0) map.set(project.cwd, items);
+    }
+    return map;
+  }, [projects, sessions, sessionOrders]);
 
   // Drag start
   const handleDragStart = useCallback((index: number) => {
@@ -428,7 +470,9 @@ export function ProjectSidebar({
               collapsed={collapsed}
               hasUnread={unreadCwds.has(project.cwd)}
               isLoading={loadingCwds.has(project.cwd)}
+              sessionBadges={badgesByCwd.get(project.cwd)}
               onClick={() => onSelectProject(index)}
+              onSelectSession={(sessionId) => onSwitchProject(project.cwd, sessionId)}
               onRemove={() => onRemoveProject(index)}
               onOpenNote={() => onOpenNote(project.cwd)}
             />
@@ -458,6 +502,7 @@ export function ProjectSidebar({
         <PinnedSessionsPanel
           collapsed={collapsed}
           pinnedSessions={pinnedSessions}
+          sessionNumbers={sessionNumbers}
           onSwitchProject={onSwitchProject}
           onUnpin={unpinSession}
           onUpdateTitle={updateTitle}
@@ -468,6 +513,7 @@ export function ProjectSidebar({
           collapsed={collapsed}
           tasks={scheduledTasks}
           unreadCount={scheduledUnread}
+          sessionNumbers={sessionNumbers}
           onSwitchProject={onSwitchProject}
           onPause={pauseTask}
           onResume={resumeTask}

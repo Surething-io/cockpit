@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 
 import { TabInfo } from './useTabState';
+import { sessionNumberClass, type SessionNumberStatus } from '@cockpit/shared-ui';
 import { EngineBadge, EngineIcon, ENGINE_IDS, ENGINE_LABELS, type EngineAccentId } from '@cockpit/feature-agent';
 import { Tooltip } from '@cockpit/shared-ui';
 import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
@@ -10,17 +11,14 @@ import { useTranslation } from 'react-i18next';
 
 // ============================================
 // Session number: circular shape pairs with the project number while keeping
-// the two navigation levels immediately distinguishable.
+// the two navigation levels immediately distinguishable. The badge also carries
+// the session status (see sessionNumberStyles) — there is no separate status dot.
 // ============================================
 
-function TabNumberIcon({ number, isActive }: { number: number; isActive: boolean }) {
+function TabNumberIcon({ number, status, isActive }: { number: number; status: SessionNumberStatus; isActive: boolean }) {
   return (
     <span
-      className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border font-mono text-[9px] font-medium leading-none tabular-nums transition-colors ${
-        isActive
-          ? 'border-brand/70 bg-brand/10 text-brand'
-          : 'border-muted-foreground/55 bg-muted/20 text-muted-foreground'
-      }`}
+      className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border font-mono text-[9px] font-medium leading-none tabular-nums transition-colors ${sessionNumberClass(status, isActive)}`}
       aria-hidden="true"
     >
       {number}
@@ -175,7 +173,14 @@ export function TabBar({
   return (
     <div className="border-b border-border bg-card shrink-0">
       <div className="flex items-center px-2 gap-1 overflow-x-auto">
-        {tabs.map((tab, index) => (
+        {tabs.map((tab, index) => {
+          const isActive = tab.id === activeTabId;
+          const status: SessionNumberStatus = tab.isLoading
+            ? 'loading'
+            : unreadTabs.has(tab.id) && !isActive
+              ? 'unread'
+              : 'normal';
+          return (
           <Tooltip key={tab.id} content={tab.title} delay={200} className="flex-1 min-w-16 max-w-[260px]">
             <div
               draggable
@@ -184,7 +189,7 @@ export function TabBar({
               onDrop={() => onDrop(index)}
               onDragEnd={onDragEnd}
               className={`group flex items-center gap-1 px-3 py-1.5 text-sm cursor-pointer rounded-t-lg border-t-[1.5px] transition-colors ${
-                tab.id === activeTabId
+                isActive
                   ? 'border-brand bg-slate-4 text-foreground font-medium'
                   : 'border-transparent text-muted-foreground hover:bg-secondary/50'
               } ${dragTabIndex === index ? 'opacity-50' : ''} ${
@@ -192,19 +197,14 @@ export function TabBar({
               }`}
               onClick={() => onSwitchTab(tab.id)}
             >
-              {/* Circle number + status badge (top-right) */}
+              {/* Circle number — its colour IS the status (orange pulsing =
+                  generating, red = done but unread, brand/muted = seen). The
+                  status dots that used to sit on its corner are gone, which is
+                  also why the pin badge no longer has to yield the same spot. */}
               <div className="relative flex-shrink-0">
-                <TabNumberIcon number={index + 1} isActive={tab.id === activeTabId} />
-                {/* Loading pulse dot - top-right */}
-                {tab.isLoading && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-orange-9 animate-pulse" />
-                )}
-                {/* Unread red dot badge - top-right (hidden while loading to avoid overlap) */}
-                {!tab.isLoading && unreadTabs.has(tab.id) && tab.id !== activeTabId && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500" />
-                )}
-                {/* Pin badge - top-right (shown when not overlapping loading/unread) */}
-                {onTogglePin && isPinned?.(tab.id) && !tab.isLoading && !(unreadTabs.has(tab.id) && tab.id !== activeTabId) && (
+                <TabNumberIcon number={index + 1} status={status} isActive={isActive} />
+                {/* Pin badge - top-right */}
+                {onTogglePin && isPinned?.(tab.id) && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -219,7 +219,7 @@ export function TabBar({
                   </button>
                 )}
                 {/* Show pin icon on hover when not pinned - top-right */}
-                {onTogglePin && !isPinned?.(tab.id) && !tab.isLoading && !(unreadTabs.has(tab.id) && tab.id !== activeTabId) && (
+                {onTogglePin && !isPinned?.(tab.id) && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -253,7 +253,8 @@ export function TabBar({
               </button>
             </div>
           </Tooltip>
-        ))}
+          );
+        })}
         {/* New tab button with engine picker */}
         <NewTabButton onNewTab={onNewTab} onNewCodexTab={onNewCodexTab} onNewKimiTab={onNewKimiTab} onNewGlmTab={onNewGlmTab} onNewOllamaTab={onNewOllamaTab} onNewDeepseekTab={onNewDeepseekTab} />
         {/* Close-all button — one click closes every tab (resets to a single

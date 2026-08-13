@@ -8,12 +8,16 @@ import type { ScheduledTask } from './useScheduledTasks';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
 import { MdPreviewModal } from './MdPreviewModal';
 import { EngineBadge } from './EngineBadge';
+import { SessionNumberBadge } from './SessionNumberBadge';
 import { readFileForPreview } from './effect/agentClient';
 
 interface ScheduledTasksPanelProps {
   collapsed?: boolean;
   tasks: ScheduledTask[];
   unreadCount: number;
+  /** Live "project.session" coordinates keyed `${cwd}\n${sessionId}`. A task
+   *  whose target session has no open tab simply has no coordinate. */
+  sessionNumbers?: Record<string, string>;
   onSwitchProject: (cwd: string, sessionId: string) => void;
   onPause: (id: string) => void;
   onResume: (id: string) => void;
@@ -108,6 +112,7 @@ export function ScheduledTasksPanel({
   collapsed,
   tasks,
   unreadCount,
+  sessionNumbers,
   onSwitchProject,
   onPause,
   onResume,
@@ -366,6 +371,7 @@ export function ScheduledTasksPanel({
                             <h4 className="text-xs font-medium text-foreground truncate flex-1" data-tooltip={task.cwd}>
                               {getProjectName(task.cwd)}
                             </h4>
+                            <SessionNumberBadge coordinate={sessionNumbers?.[`${task.cwd}\n${task.sessionId}`]} />
                             <span className="text-[10px] text-muted-foreground flex-shrink-0 group-hover:hidden">
                               {getStatusText(task, t)}
                             </span>
@@ -420,6 +426,7 @@ export function ScheduledTasksPanel({
                               <h4 className="text-xs font-medium text-foreground truncate flex-1" data-tooltip={task.cwd}>
                                 {getProjectName(task.cwd)}
                               </h4>
+                              <SessionNumberBadge coordinate={sessionNumbers?.[`${task.cwd}\n${task.sessionId}`]} />
                               {renderActions(task)}
                             </div>
                             <div className="text-xs text-foreground line-clamp-3 mb-1 whitespace-pre-wrap break-words" data-tooltip={getTaskSummary(task)}>

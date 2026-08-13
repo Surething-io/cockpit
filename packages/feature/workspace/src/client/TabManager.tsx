@@ -262,6 +262,21 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Push this frame's tab order up on every change (open / close / drag reorder).
+  // The parent's sidebar numbers its session badges from this; polling on demand
+  // would leave them stale for as long as a drag goes unnoticed, and state.json
+  // cannot substitute (its session list is merged as a union, stored order first,
+  // so a pure reorder round-trips unchanged).
+  useEffect(() => {
+    if (!initialCwd || window.parent === window) return;
+    // eslint-disable-next-line no-restricted-syntax
+    window.parent.postMessage({
+      type: 'SESSION_NUMBERS',
+      cwd: initialCwd,
+      sessionIds: tabs.map((tab) => tab.sessionId ?? null),
+    }, '*');
+  }, [initialCwd, tabs]);
+
   // Listen for messages from the parent window (used by Workspace to switch sessions)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {

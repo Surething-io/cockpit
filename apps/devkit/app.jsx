@@ -6,6 +6,9 @@
  * buy a ~50ms process spawn per keystroke and a "is that binary installed?"
  * failure mode. MD5 comes from ./md5.js, SHA from the browser's crypto.subtle.
  */
+// React/ReactDOM come from the /html-lib script tags in index.html; `md5` is
+// the global exported by the sibling ./md5.js script tag.
+/* global React, ReactDOM, md5 */
 const { useState, useEffect, useMemo, useCallback, useRef, useContext, createContext } = React;
 
 /* ------------------------------------------------------------------ utils */
@@ -243,14 +246,14 @@ function TextCodecPanel({ state, patch, kind }) {
   }, [debounced, state.mode, kind]);
 
   const controls = (
-    <React.Fragment>
+    <>
       <Segmented value={state.mode} onChange={(mode) => patch({ mode })}
                  options={[{ value: 'encode', label: 'Encode' }, { value: 'decode', label: 'Decode' }]} />
       <button className="btn" onClick={() => patch({ text: '' })}>Clear</button>
       <span className="bar-note">
         {kind === 'base64' ? 'UTF-8 safe — handles non-ASCII text.' : 'encodeURIComponent / decodeURIComponent.'}
       </span>
-    </React.Fragment>
+    </>
   );
 
   return (
@@ -281,12 +284,12 @@ function JsonPanel({ state, patch }) {
   }, [debounced, state.mode]);
 
   const controls = (
-    <React.Fragment>
+    <>
       <Segmented value={state.mode} onChange={(mode) => patch({ mode })}
                  options={[{ value: 'pretty', label: 'Pretty' }, { value: 'minify', label: 'Minify' }]} />
       <button className="btn" onClick={() => patch({ text: '' })}>Clear</button>
       <span className="bar-note">Parses as you type — the error message doubles as validation.</span>
-    </React.Fragment>
+    </>
   );
 
   return (
@@ -339,14 +342,14 @@ function HashPanel({ state, patch }) {
   }, [debounced]);
 
   const controls = (
-    <React.Fragment>
+    <>
       <button className="btn" onClick={() => patch({ text: '' })}>Clear</button>
       <span className="bar-note">
         {SUBTLE
           ? 'MD5 computed locally; SHA via the browser\'s WebCrypto.'
           : 'SHA needs a secure context — open DevKit over localhost to enable it.'}
       </span>
-    </React.Fragment>
+    </>
   );
 
   return (
@@ -450,7 +453,7 @@ function JwtPanel({ state, patch }) {
             )}
 
             {decoded && decoded.header && (
-              <React.Fragment>
+              <>
                 <div className="section">
                   <div className="section-hd">
                     <span className="section-title">Header</span>
@@ -458,7 +461,7 @@ function JwtPanel({ state, patch }) {
                   </div>
                   <pre className="mono-block">{headerJson}</pre>
                   {algNone && (
-                    <span className="kv-v error">alg is "none" — this token is unsigned.</span>
+                    <span className="kv-v error">alg is &quot;none&quot; — this token is unsigned.</span>
                   )}
                 </div>
 
@@ -488,7 +491,7 @@ function JwtPanel({ state, patch }) {
                   <span className="section-title">Signature</span>
                   <pre className="mono-block muted">{decoded.signature || '(empty)'}</pre>
                 </div>
-              </React.Fragment>
+              </>
             )}
           </div>
         </div>
@@ -546,12 +549,12 @@ function TimestampPanel({ state, patch }) {
               <div className="kv"><span className="kv-v error">{fromEpoch.error}</span></div>
             )}
             {fromEpoch && fromEpoch.date && (
-              <React.Fragment>
+              <>
                 <div className="kv"><span className="kv-k">Detected</span><span className="kv-v muted">{fromEpoch.unit}</span></div>
                 <div className="kv"><span className="kv-k">Local</span><span className="kv-v">{formatLocal(fromEpoch.date)}</span></div>
                 <div className="kv"><span className="kv-k">UTC</span><span className="kv-v">{formatUTC(fromEpoch.date)}</span></div>
                 <div className="kv"><span className="kv-k">ISO</span><span className="kv-v">{fromEpoch.date.toISOString()}</span></div>
-              </React.Fragment>
+              </>
             )}
           </div>
         </div>
@@ -570,7 +573,7 @@ function TimestampPanel({ state, patch }) {
               <div className="kv"><span className="kv-v error">{fromDate.error}</span></div>
             )}
             {fromDate && fromDate.date && (
-              <React.Fragment>
+              <>
                 <div className="kv">
                   <span className="kv-k">Seconds</span>
                   <span className="kv-v">{Math.floor(fromDate.date.getTime() / 1000)}</span>
@@ -582,7 +585,7 @@ function TimestampPanel({ state, patch }) {
                   <CopyButton text={String(fromDate.date.getTime())} label="Milliseconds" />
                 </div>
                 <div className="kv"><span className="kv-k">ISO</span><span className="kv-v">{fromDate.date.toISOString()}</span></div>
-              </React.Fragment>
+              </>
             )}
           </div>
         </div>
@@ -603,7 +606,6 @@ function UuidPanel({ state, patch }) {
   listRef.current = state.list;
   useEffect(() => {
     if (listRef.current.length === 0) generate(state.count);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const shown = useMemo(() => state.list.map((u) => {
@@ -680,13 +682,13 @@ function App() {
   const [state, setState] = useState(INITIAL);
   const [toastMsg, setToastMsg] = useState(null);
 
-  const toastTimer = useRef(null);
+  const toastTimerRef = useRef(null);
   const toast = useCallback((message) => {
     setToastMsg(message);
-    clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToastMsg(null), 1600);
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastMsg(null), 1600);
   }, []);
-  useEffect(() => () => clearTimeout(toastTimer.current), []);
+  useEffect(() => () => clearTimeout(toastTimerRef.current), []);
 
   const patchers = useMemo(() => {
     const out = {};

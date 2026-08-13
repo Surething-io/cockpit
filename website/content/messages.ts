@@ -9,7 +9,7 @@ export const messages = {
       github: 'GitHub',
     },
     hero: {
-      headline: 'The open Claude Code GUI · Bring any agent',
+      headline: 'OpenCockpit',
       subheadline: 'One seat. One AI. Everything under control.',
       // Short, punchy lead shown in the Hero. `description` below stays long for
       // JSON-LD / structured data — don't merge them.
@@ -27,20 +27,41 @@ export const messages = {
       videoNotice: 'Watch the 24-second tour',
       badge: 'Claude · Codex · DeepSeek · GLM · Kimi · Ollama',
     },
+    home: {
+      headline: 'Your coding agents. One cockpit.',
+      lead: 'Run Claude, Codex, DeepSeek, GLM, Kimi, and Ollama with your code, terminal, browser, and databases close at hand.',
+      installNote: 'Runs on your machine. Opens in your browser.',
+      tryLink: 'Try the online demo',
+      heroImageAlt: 'OpenCockpit workspace with multiple coding agents, project navigation, and slash commands',
+      work: {
+        headline: 'Everything your agents need to work',
+        desc: 'Move between projects while Cockpit keeps every conversation and tool in place.',
+        points: ['Multiple projects in parallel', 'Files, terminals, browsers, and databases'],
+      },
+      local: {
+        headline: 'Install Cockpit as an app',
+        desc: 'Cockpit is a PWA. Install it from your browser for a standalone window, dock icon, and an app-like experience.',
+        steps: [
+          'Start Cockpit and open it in your browser.',
+          'Choose Install OpenCockpit in your browser menu or address bar.',
+          'Launch it from your dock, desktop, or home screen.',
+        ],
+      },
+    },
     valueProp: {
-      headline: 'Why Cockpit beats raw Claude Code',
+      headline: 'Spend less time driving the tools',
       points: [
         {
-          title: 'Multi-project parallel sessions',
-          desc: 'Run 5+ agent sessions across projects at once. Get notified when each finishes — no terminal juggling.',
+          title: 'See every task at a glance',
+          desc: 'Run work across projects at once and know when each task is ready for you.',
         },
         {
-          title: 'Local-first, BYOK for the rest',
-          desc: '`claude` CLI works out of the box. For Codex, DeepSeek, GLM, Kimi or Ollama, paste a key (or none for Ollama). Everything runs locally.',
+          title: 'Keep context together',
+          desc: 'Conversation, code, commands, and previews stay in the same workspace.',
         },
         {
-          title: 'Beyond chat: terminal, browser, DBs',
-          desc: 'A real xterm.js terminal, Chrome automation, PostgreSQL / MySQL / Redis — all inside one window your agent can drive.',
+          title: 'Review with confidence',
+          desc: 'Understand what changed and keep feedback connected to the work that produced it.',
         },
       ],
     },
@@ -440,7 +461,7 @@ export const messages = {
       github: 'GitHub',
     },
     hero: {
-      headline: '开源 Claude Code GUI · 接入任意 Agent',
+      headline: 'OpenCockpit',
       subheadline: 'One seat. One AI. Everything under control.',
       // 页面展示用的精简 lead；下方 description 保持长文本供 JSON-LD 使用，勿合并。
       lead:
@@ -457,20 +478,41 @@ export const messages = {
       githubStar: '去 GitHub 点 Star',
       videoNotice: '观看 24 秒演示',
     },
+    home: {
+      headline: '你的编程 Agent，都在一个驾驶舱',
+      lead: '在一个界面中运行 Claude、Codex、DeepSeek、GLM、Kimi 和 Ollama，代码、终端、浏览器与数据库触手可及。',
+      installNote: '运行在你的电脑上，通过浏览器打开。',
+      tryLink: '先体验在线 Demo',
+      heroImageAlt: 'OpenCockpit 工作台中的多个编程 Agent、项目导航和斜杠命令',
+      work: {
+        headline: 'Agent 工作需要的一切',
+        desc: '在不同项目之间切换，每段对话和用到的工具都留在原位。',
+        points: ['多个项目并行推进', '文件、终端、浏览器与数据库'],
+      },
+      local: {
+        headline: '把 Cockpit 安装成应用',
+        desc: 'Cockpit 支持 PWA。通过浏览器安装后，它会拥有独立窗口和应用图标，用起来更像桌面客户端。',
+        steps: [
+          '启动 Cockpit，并在浏览器中打开。',
+          '从地址栏或浏览器菜单选择“安装 OpenCockpit”。',
+          '之后可从 Dock、桌面或主屏幕直接启动。',
+        ],
+      },
+    },
     valueProp: {
-      headline: '为什么 Cockpit 比裸用 Claude Code 更顺手',
+      headline: '少花时间驾驭工具',
       points: [
         {
-          title: '多项目并发会话',
-          desc: '同时跑 5+ 个 Agent 会话，跨项目互不打扰。完成自动通知，不再切终端。',
+          title: '任务进度一眼看清',
+          desc: '让多个项目同时推进，哪个任务完成了，随时都能知道。',
         },
         {
-          title: '本地优先，其他引擎 BYOK',
-          desc: '`claude` CLI 已配好即开箱即用。Codex / DeepSeek / GLM / Kimi / Ollama 各自粘 Key（Ollama 无需）。一切都在本地完成。',
+          title: '上下文始终连贯',
+          desc: '对话、代码、命令和预览都留在同一个工作台里。',
         },
         {
-          title: '不止聊天：终端、浏览器、数据库',
-          desc: '真实 xterm.js 终端、Chrome 自动化、PostgreSQL / MySQL / Redis —— 全在一个窗口里供 Agent 调度。',
+          title: '交付之前心里有数',
+          desc: '看懂每一步改动，让反馈始终跟产生它的工作保持关联。',
         },
       ],
     },

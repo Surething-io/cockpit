@@ -3,17 +3,7 @@ import { notFound } from 'next/navigation';
 import { isLocale, type Locale } from '@/lib/i18n';
 import { getMessages } from '@/content/messages';
 import { Hero } from '@/components/sections/Hero';
-import { ValueProp } from '@/components/sections/ValueProp';
-import { PanelSection } from '@/components/sections/PanelSection';
-import { Bubbles } from '@/components/sections/Bubbles';
-import { Engines } from '@/components/sections/Engines';
-import { CodeMap } from '@/components/sections/CodeMap';
-import { CodeGraph } from '@/components/sections/CodeGraph';
-import { Modes } from '@/components/sections/Modes';
-import { Extras } from '@/components/sections/Extras';
-import { BuiltOn } from '@/components/sections/BuiltOn';
-import { Compare } from '@/components/sections/Compare';
-import { FinalCTA } from '@/components/sections/FinalCTA';
+import { SimpleStory } from '@/components/sections/SimpleStory';
 import { Reveal } from '@/components/Reveal';
 
 const SITE_URL = 'https://opencockpit.dev';
@@ -162,75 +152,7 @@ export default async function HomePage({
       />
       <Hero locale={locale as Locale} t={t} />
       <Reveal>
-        <ValueProp t={t} />
-      </Reveal>
-      <Reveal>
-        <PanelSection
-          tag={t.panels.agent.tag}
-          name={t.panels.agent.name}
-          title={t.panels.agent.title}
-          bullets={t.panels.agent.bullets}
-          screenshot="/screenshots/agent.webp"
-          align="left"
-        />
-      </Reveal>
-      <Reveal>
-        <PanelSection
-          tag={t.panels.explorer.tag}
-          name={t.panels.explorer.name}
-          title={t.panels.explorer.title}
-          bullets={t.panels.explorer.bullets}
-          screenshot="/screenshots/explorer.webp"
-          align="right"
-          tint
-        />
-      </Reveal>
-      <Reveal>
-        <PanelSection
-          tag={t.panels.console.tag}
-          name={t.panels.console.name}
-          title={t.panels.console.title}
-          bullets={t.panels.console.bullets}
-          screenshot="/screenshots/console.webp"
-          align="left"
-        />
-      </Reveal>
-      <Reveal>
-        <Bubbles t={t} />
-      </Reveal>
-      <Reveal>
-        <Engines t={t} />
-      </Reveal>
-      <Reveal>
-        <CodeMap t={t} />
-      </Reveal>
-      <Reveal>
-        <CodeGraph t={t} />
-      </Reveal>
-      <Reveal>
-        <Modes locale={locale as Locale} t={t} />
-      </Reveal>
-      <Reveal>
-        <PanelSection
-          tag={t.panels.review.tag}
-          name={t.panels.review.name}
-          title={t.panels.review.title}
-          bullets={t.panels.review.bullets}
-          screenshot="/screenshots/review.webp"
-          align="right"
-        />
-      </Reveal>
-      <Reveal>
-        <Extras t={t} />
-      </Reveal>
-      <Reveal>
-        <Compare t={t} />
-      </Reveal>
-      <Reveal>
-        <BuiltOn t={t} />
-      </Reveal>
-      <Reveal>
-        <FinalCTA locale={locale as Locale} t={t} />
+        <SimpleStory t={t} />
       </Reveal>
     </>
   );

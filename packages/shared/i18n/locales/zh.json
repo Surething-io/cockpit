@@ -225,6 +225,7 @@
     "projectSessions": "项目会话",
     "browseAllSessions": "浏览所有会话",
     "sessionList": "会话列表",
+    "search": "搜索",
     "searchSessions": "搜索会话...",
     "searchRecentSessions": "搜索最近会话",
     "loadSessionsFailed": "加载会话失败",
@@ -967,7 +968,9 @@
   },
   "imagePreview": {
     "previewImage": "预览图片",
-    "deleteImage": "删除图片"
+    "deleteImage": "删除图片",
+    "copyImage": "复制图片",
+    "copiedImage": "已复制图片"
   },
   "tokenStats": {
     "title": "Claude Code Token 统计",

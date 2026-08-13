@@ -607,19 +607,6 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         onResolveSessionNumbers={resolveSessionNumbers}
         sessionOrders={sessionOrders}
         sessionNumbers={liveSessionNumbers}
-        onAddProject={(cwd) => {
-          const existingIndex = projects.findIndex(p => p.cwd === cwd);
-          if (existingIndex >= 0) {
-            setActiveIndex(existingIndex);
-            saveProjects(projects, existingIndex, collapsed);
-          } else {
-            const newProjects = [...projects, { cwd }];
-            const newActiveIndex = newProjects.length - 1;
-            setProjects(newProjects);
-            setActiveIndex(newActiveIndex);
-            saveProjects(newProjects, newActiveIndex, collapsed);
-          }
-        }}
       />
 
       {/* Right content area */}

@@ -49,7 +49,6 @@ interface ProjectSidebarProps {
   sessionOrders: Record<string, Array<string | null>>;
   /** Live "project.session" coordinates, keyed `${cwd}\n${sessionId}`. */
   sessionNumbers: Record<string, string>;
-  onAddProject: (cwd: string) => void;
 }
 
 // Extract project name from cwd
@@ -256,7 +255,6 @@ export function ProjectSidebar({
   onResolveSessionNumbers,
   sessionOrders,
   sessionNumbers,
-  onAddProject: _onAddProject,
 }: ProjectSidebarProps) {
   const { t, i18n } = useTranslation();
   const { latest: latestVersion, hasUpdate } = useLatestVersion();

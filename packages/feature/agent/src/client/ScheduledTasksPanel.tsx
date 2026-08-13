@@ -56,12 +56,15 @@ function formatType(task: ScheduledTask, t: (key: string, opts?: Record<string, 
   return task.type;
 }
 
+// Design-system `-11` steps, not raw Tailwind `red-500` / `yellow-500` /
+// `green-500`: the `-11` steps track the theme, so these dots stay readable on
+// the light card as well as the dark one.
 function getStatusColor(task: ScheduledTask): string {
-  if (task.unread) return 'bg-red-500';
+  if (task.unread) return 'bg-red-11';
   if (task.completed) return 'bg-muted-foreground/30';
-  if (task.paused) return 'bg-yellow-500';
-  if (task.lastResult === 'error') return 'bg-red-500';
-  return 'bg-green-500';
+  if (task.paused) return 'bg-amber-11';
+  if (task.lastResult === 'error') return 'bg-red-11';
+  return 'bg-green-11';
 }
 
 /**
@@ -250,7 +253,7 @@ export function ScheduledTasksPanel({
       {task.completed ? null : task.paused ? (
         <button
           onClick={(e) => { e.stopPropagation(); onResume(task.id); }}
-          className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-green-500"
+          className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-green-11"
           title={t('scheduledTasks.resume')}
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -260,7 +263,7 @@ export function ScheduledTasksPanel({
       ) : (
         <button
           onClick={(e) => { e.stopPropagation(); onPause(task.id); }}
-          className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-yellow-500"
+          className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-amber-11"
           title={t('scheduledTasks.pause')}
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -298,7 +301,7 @@ export function ScheduledTasksPanel({
         {!collapsed && <span className="text-sm flex-1 text-left">{t('scheduledTasks.title')}</span>}
         {/* Red dot / count badge */}
         {unreadCount > 0 ? (
-          <span className={`min-w-[18px] h-[18px] px-1 text-white text-xs font-medium rounded-full flex items-center justify-center bg-red-500 ${
+          <span className={`min-w-[18px] h-[18px] px-1 text-foreground text-xs font-medium rounded-full flex items-center justify-center bg-red-9/55 ${
             collapsed ? 'absolute -top-1 -right-1' : ''
           }`}>
             {unreadCount}

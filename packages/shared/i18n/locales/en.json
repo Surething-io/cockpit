@@ -225,6 +225,7 @@
     "projectSessions": "Project Sessions",
     "browseAllSessions": "Browse all sessions",
     "sessionList": "Session List",
+    "search": "Search",
     "searchSessions": "Search sessions...",
     "searchRecentSessions": "Search recent sessions",
     "loadSessionsFailed": "Failed to load sessions",
@@ -967,7 +968,9 @@
   },
   "imagePreview": {
     "previewImage": "Preview image",
-    "deleteImage": "Delete image"
+    "deleteImage": "Delete image",
+    "copyImage": "Copy image",
+    "copiedImage": "Image copied"
   },
   "tokenStats": {
     "title": "Claude Code Token Stats",

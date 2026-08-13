@@ -145,16 +145,18 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
         {!collapsed && <span className="text-sm flex-1 text-left">{t('sessions.recentSessions')}</span>}
-        {/* Badge: loading orange pulse + unread red static, displayed independently */}
+        {/* Badge: loading orange pulse + unread red static, displayed independently.
+            A tinted pill with a coloured numeral rather than white-on-saturated-fill:
+            same family as the session number badges, still loud enough to catch. */}
         {loadingCount > 0 && (
-          <span className={`min-w-[18px] h-[18px] px-1 text-white text-xs font-medium rounded-full flex items-center justify-center bg-orange-9 animate-pulse ${
+          <span className={`min-w-[18px] h-[18px] px-1 text-foreground text-xs font-medium rounded-full flex items-center justify-center bg-orange-11/20 animate-pulse ${
             collapsed ? 'absolute -top-1 -right-1' : ''
           }`}>
             {loadingCount}
           </span>
         )}
         {unreadCount > 0 && (
-          <span className={`min-w-[18px] h-[18px] px-1 text-white text-xs font-medium rounded-full flex items-center justify-center bg-red-500 ${
+          <span className={`min-w-[18px] h-[18px] px-1 text-foreground text-xs font-medium rounded-full flex items-center justify-center bg-red-9/55 ${
             collapsed && !loadingCount ? 'absolute -top-1 -right-1' : ''
           }`}>
             {unreadCount}
@@ -164,24 +166,25 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
 
       {/* Dropdown list - pops up to the upper right */}
       {isOpen && (
-        <div className="absolute left-full bottom-0 ml-2 w-80 h-[450px] bg-popover border border-border rounded-lg shadow-lg z-50 flex flex-col">
+        <div className="absolute left-full bottom-0 ml-2 w-80 h-[600px] bg-popover border border-border rounded-lg shadow-lg z-50 flex flex-col">
           <div className="px-3 py-2 border-b border-border bg-muted/50 flex-shrink-0 rounded-t-lg flex items-center">
             <span className="text-sm font-medium">{t('sessions.recentSessions')}</span>
             {loadingCount > 0 && (
               <span className="ml-2 text-xs text-orange-11">({t('sessions.runningCount', { count: loadingCount })})</span>
             )}
             {unreadCount > 0 && (
-              <span className="ml-2 text-xs text-red-500">({t('sessions.unreadCount', { count: unreadCount })})</span>
+              <span className="ml-2 text-xs text-red-11">({t('sessions.unreadCount', { count: unreadCount })})</span>
             )}
             {/* Expand into the full searchable recent-sessions panel (up to 100) */}
             <button
               onClick={() => { setNow(Date.now()); setIsOpen(false); setTooltip(null); setSearchOpen(true); }}
-              className="ml-auto p-1 -mr-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+              className="ml-auto flex items-center gap-1 p-1 -mr-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
               title={t('sessions.searchRecentSessions')}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-4.35-4.35m2.35-5.4a7.75 7.75 0 1 1-15.5 0 7.75 7.75 0 0 1 15.5 0Z" />
               </svg>
+              <span className="text-xs">{t('sessions.search')}</span>
             </button>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto">
@@ -200,12 +203,14 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
                     index !== sessions.length - 1 ? 'border-b border-border/50' : ''
                   } ${currentCwd === session.cwd ? 'bg-accent/50' : ''}`}
                 >
-                  {/* Status indicator: loading blinking orange dot / unread red static dot / normal gray dot */}
+                  {/* Status indicator: loading blinking orange dot / unread red static dot / normal gray dot.
+                      Solid at the `-11` step, not washed like the pills — an 8px dot has no
+                      room to carry a 20% tint. */}
                   <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${
                     session.status === 'loading'
-                      ? 'bg-orange-9 animate-pulse'
+                      ? 'bg-orange-11 animate-pulse'
                       : session.status === 'unread'
-                        ? 'bg-red-500'
+                        ? 'bg-red-11'
                         : 'bg-muted-foreground/30'
                   }`} />
                   <div className="flex-1 min-w-0">
@@ -218,7 +223,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
                         <span className="text-xs text-orange-11 flex-shrink-0">{t('sessions.running')}</span>
                       )}
                       {session.status === 'unread' && (
-                        <span className="text-xs text-red-500 flex-shrink-0">{t('sessions.done')}</span>
+                        <span className="text-xs text-red-11 flex-shrink-0">{t('sessions.done')}</span>
                       )}
                       <span className="text-xs text-muted-foreground flex-shrink-0">
                         {formatTime(session.lastActive)}

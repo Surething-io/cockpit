@@ -144,6 +144,11 @@ VERSION_BODY=$(curl -fsS "http://localhost:$SMOKE_PORT/api/version") || FAIL=1
 echo "$VERSION_BODY" | grep -q "1\.0\." || { echo "version body unexpected: $VERSION_BODY"; FAIL=1; }
 curl -fsS "http://localhost:$SMOKE_PORT/api/commands?cwd=$PWD"                                                >/dev/null || FAIL=1
 curl -fsS "http://localhost:$SMOKE_PORT/api/projectGraph/file-functions?cwd=$PWD&path=packages/feature/explorer/src/server/codeMap/types.ts" >/dev/null || FAIL=1
+# First-run path. $SMOKE_HOME is a fresh dir, so this instance has no projects —
+# exactly the state a new user installs into, and the only state in which the
+# empty screen renders. It backs the project browser, which is now the sole way
+# in from a clean install.
+curl -fsS "http://localhost:$SMOKE_PORT/api/sessions/projects"                                                >/dev/null || FAIL=1
 
 kill $COCK_PID 2>/dev/null
 wait $COCK_PID 2>/dev/null
@@ -155,14 +160,28 @@ if [ "$FAIL" = "1" ]; then
 fi
 ```
 
-The three probes exercise three different code paths:
+The probes exercise four different code paths:
 - `/api/version` — minimal handler, confirms boot + Next.js routing works
 - `/api/commands` — exercises `@cockpit/feature-agent` (slash-command discovery)
 - `/api/projectGraph/file-functions` — exercises `@cockpit/feature-explorer` (code-map, tree-sitter, the heaviest workspace package)
+- `/api/sessions/projects` — backs the project browser, i.e. the first-run path
 
 If any returns a non-2xx, the published tarball is broken — typically because a workspace package's source isn't being inlined into `dist/` or `.next-prod/` and the runtime hits an unresolved `@cockpit/*` import.
 
 If your release introduces a new feature, **manually exercise it** in the running prod cockpit too. The probes above only cover the existing known paths.
+
+**Also open `http://localhost:$SMOKE_PORT` in a browser and confirm the empty
+screen offers a way in** — a folder icon, "select a project", and an **Open
+Project** button that opens the browser modal.
+
+This one cannot be curl'd: the workspace tree is client-rendered, so the
+server-side HTML contains none of it. It is worth the ten seconds anyway,
+because `$SMOKE_HOME` is the *only* time this screen is ever seen — it renders
+solely when no project is open, so a developer's own cockpit never shows it and
+no amount of daily use will surface a regression here. Two shipped bugs lived
+in exactly that blind spot: the screen had no way to open a folder at all (a
+fresh install was a dead end, reachable only by knowing the `cockpit <path>`
+CLI form), and its project list grew past the viewport with no scroll.
 
 #### 2b-bis. HTML app runtime probes
 

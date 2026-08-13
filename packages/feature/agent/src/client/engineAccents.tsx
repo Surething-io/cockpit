@@ -13,14 +13,16 @@ import type { ChatEngine } from './types';
  * hand-copied duplicate of the DeepSeek trigger, which is how its violet drifted out
  * of step with the blue in EngineBadge. Everything now goes through this module.
  *
- * Where brand fidelity lives: the ICON is the real logo in the vendor's own colors
- * (public/agent-icons/*.svg). The TINT is deliberately NOT always the brand hue —
- * DeepSeek (#4D6BFE), Kimi (#1783FF) and GLM (#3859FF) are all essentially the same
- * blue, so tinting by brand would make three engines indistinguishable and would
- * contradict the sky/purple/amber chips those same sessions already carry in TabBar
- * and EngineBadge. So: brand color on the logo, established per-engine hue on the
- * tint. Claude and Codex had no tint and no neighbour to collide with, so they get
- * their actual brand hues.
+ * Where the engine's color lives now: the ICON, which is the real logo in the vendor's
+ * own colors (public/agent-icons/*.svg), plus the live figures in ENGINE_TEXT_TONES.
+ * Everything else — pill, popover, selected row, ✓, Save — is neutral and identical
+ * across engines. Tinting those was tried and pulled: four trait pills in brand orange
+ * made a settings strip the loudest thing on screen, and an orange-on-orange selected
+ * row read as a warning rather than as the current value.
+ *
+ * So the rule for anything added here: color marks something that CHANGES or needs
+ * acting on, never something that merely says which engine you are on — the logo
+ * already does that, once, in the right place.
  */
 
 /**
@@ -62,84 +64,48 @@ export const ENGINE_IDS: EngineAccentId[] = (Object.keys(ENGINE_ORDER) as Engine
   (a, b) => ENGINE_ORDER[a] - ENGINE_ORDER[b],
 );
 
-/** Tailwind classes must be literal strings — a `bg-${accent}-500` template never
- *  reaches the generated CSS. */
-export interface EngineAccent {
-  /** Pill background, idle + hover. */
-  trigger: string;
-  /** Pill text. */
-  label: string;
-  /** Pill chevron. */
-  chevron: string;
-  /** Focus ring for text inputs inside this engine's popover. */
-  inputFocus: string;
-  /** Primary (Save) button inside the popover. */
-  save: string;
-  /** Selected row in the popover's list. */
-  selectedRow: string;
-  /** The ✓ marking the selected row. */
-  check: string;
-}
-
-export const ENGINE_ACCENTS: Record<EngineAccentId, EngineAccent> = {
+/**
+ * Per-engine text tone, for FIGURES ONLY — the quota countdown and the DeepSeek
+ * balance. Those change on their own and belong to one engine, so a hue that says
+ * which engine is worth it there.
+ *
+ * Nothing else is tinted any more. The pickers used to carry this hue through the
+ * pill, the popover's selected row, its ✓, its Save button and its focus ring, which
+ * meant picking a model repainted half the panel in brand orange.
+ *
+ * The hues are deliberately NOT all brand colors — DeepSeek (#4D6BFE), Kimi (#1783FF)
+ * and GLM (#3859FF) are essentially the same blue, so tinting by brand would make
+ * three engines indistinguishable and contradict the sky/purple/amber chips those
+ * same sessions carry in TabBar and EngineBadge. Brand fidelity lives on the logo.
+ *
+ * Tailwind classes must be literal strings — a `text-${engine}-400` template never
+ * reaches the generated CSS.
+ */
+export const ENGINE_TEXT_TONES: Record<EngineAccentId, string> = {
   // Anthropic's brand orange. Not a Tailwind palette entry — amber is GLM's and
   // orange-500 is a good deal louder than the logo.
-  claude: {
-    trigger: 'bg-[#D97757]/15 hover:bg-[#D97757]/25',
-    label: 'text-[#D97757]',
-    chevron: 'text-[#D97757]',
-    inputFocus: 'focus:border-[#D97757]',
-    save: 'bg-[#D97757]/20 hover:bg-[#D97757]/30 text-[#D97757]',
-    selectedRow: 'bg-[#D97757]/15 text-[#D97757]',
-    check: 'text-[#D97757]',
-  },
+  claude: 'text-[#D97757]',
   // OpenAI green (#10A37F) rounded to emerald, matching the CX chip in TabBar.
-  codex: {
-    trigger: 'bg-emerald-500/15 hover:bg-emerald-500/25',
-    label: 'text-emerald-400',
-    chevron: 'text-emerald-400',
-    inputFocus: 'focus:border-emerald-500',
-    save: 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300',
-    selectedRow: 'bg-emerald-500/15 text-emerald-300',
-    check: 'text-emerald-400',
-  },
-  deepseek: {
-    trigger: 'bg-sky-500/15 hover:bg-sky-500/25',
-    label: 'text-sky-400',
-    chevron: 'text-sky-400',
-    inputFocus: 'focus:border-sky-500',
-    save: 'bg-sky-500/20 hover:bg-sky-500/30 text-sky-300',
-    selectedRow: 'bg-sky-500/15 text-sky-300',
-    check: 'text-sky-400',
-  },
-  kimi: {
-    trigger: 'bg-purple-500/15 hover:bg-purple-500/25',
-    label: 'text-purple-400',
-    chevron: 'text-purple-400',
-    inputFocus: 'focus:border-purple-500',
-    save: 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300',
-    selectedRow: 'bg-purple-500/15 text-purple-300',
-    check: 'text-purple-400',
-  },
-  glm: {
-    trigger: 'bg-amber-500/15 hover:bg-amber-500/25',
-    label: 'text-amber-400',
-    chevron: 'text-amber-400',
-    inputFocus: 'focus:border-amber-500',
-    save: 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300',
-    selectedRow: 'bg-amber-500/15 text-amber-300',
-    check: 'text-amber-400',
-  },
-  ollama: {
-    trigger: 'bg-violet-500/15 hover:bg-violet-500/25',
-    label: 'text-violet-400',
-    chevron: 'text-violet-400',
-    inputFocus: 'focus:border-violet-500',
-    save: 'bg-violet-500/20 hover:bg-violet-500/30 text-violet-300',
-    selectedRow: 'bg-violet-500/15 text-violet-300',
-    check: 'text-violet-400',
-  },
+  codex: 'text-emerald-400',
+  deepseek: 'text-sky-400',
+  kimi: 'text-purple-400',
+  glm: 'text-amber-400',
+  ollama: 'text-violet-400',
 };
+
+/**
+ * The popover's own chrome — identical for every engine, on purpose.
+ *
+ * These were six tinted variants keyed off the engine. Selecting "Claude Opus 5" lit
+ * the row up in brand orange on an orange wash, which reads as a warning state rather
+ * than "this is the current value". Neutral surfaces plus the project's `brand` token
+ * for the one real action (Save) put the emphasis back on the text.
+ */
+// font-medium, not just the wash: hover is bg-accent/60 on the same surface, so
+// without a weight change "selected" and "the row under the cursor" look alike.
+export const ENGINE_MENU_ROW_SELECTED = 'bg-accent font-medium text-foreground';
+export const ENGINE_MENU_INPUT_FOCUS = 'focus:border-brand';
+export const ENGINE_MENU_SAVE = 'bg-brand text-white hover:bg-brand/90';
 
 /**
  * Label tone for "this engine cannot run yet" (no API key saved).
@@ -184,32 +150,38 @@ export function EngineIcon({
  * Fixed-width ✓ slot for list rows. Always occupies its space so labels do not
  * shift by 14px when the selection moves.
  */
-export function EngineCheck({ selected, accent }: { selected: boolean; accent: EngineAccent }) {
+export function EngineCheck({ selected }: { selected: boolean }) {
   return (
-    <span className={`flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center ${accent.check}`}>
+    <span className="flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center text-foreground">
       {selected && <Check className="h-3.5 w-3.5" />}
     </span>
   );
 }
 
 interface EnginePickerTriggerProps {
-  accent: EngineAccent;
   label: string;
   title: string;
   onClick: () => void;
   buttonRef?: React.Ref<HTMLButtonElement>;
   /** Logo — only the pill that names the engine carries one; trait pills do not. */
   icon?: React.ReactNode;
-  /** Overrides accent.label, for states that outrank the accent (e.g. "Set API key"). */
+  /** For states that outrank the neutral default (e.g. "Set API key" in ENGINE_SETUP_TONE). */
   labelClassName?: string;
   labelMaxWidth?: string;
   testId?: string;
 }
 
-/** The pill itself. One implementation, so a style change cannot reach five engines
- *  and miss the sixth. */
+/**
+ * The pill itself. One implementation, so a style change cannot reach five engines
+ * and miss the sixth.
+ *
+ * Neutral by design and NOT engine-tinted: a Claude session shows four of these in a
+ * row (model, reasoning, context, fast mode), and filling all four with the brand hue
+ * made a settings strip shout louder than the conversation under it. Color here is
+ * reserved for the exceptions — the vendor logo, and labelClassName for a state the
+ * user must act on. The chevron inherits from the button so it follows the hover.
+ */
 export function EnginePickerTrigger({
-  accent,
   label,
   title,
   onClick,
@@ -224,13 +196,13 @@ export function EnginePickerTrigger({
       ref={buttonRef}
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-1 rounded px-2 py-0.5 text-[11px] transition-colors ${accent.trigger}`}
+      className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       title={title}
       data-testid={testId}
     >
       {icon}
-      <span className={`truncate ${labelMaxWidth} ${labelClassName ?? accent.label}`}>{label}</span>
-      <ChevronDown className={`h-3 w-3 flex-shrink-0 ${accent.chevron}`} />
+      <span className={`truncate ${labelMaxWidth} ${labelClassName ?? ''}`}>{label}</span>
+      <ChevronDown className="h-3 w-3 flex-shrink-0" />
     </button>
   );
 }

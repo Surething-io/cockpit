@@ -18,7 +18,7 @@
 import React, { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
-import { ENGINE_ACCENTS } from './engineAccents';
+import { ENGINE_TEXT_TONES } from './engineAccents';
 import { loadDeepseekBalance, type DeepseekBalanceInfo } from './effect/agentClient';
 
 interface DeepseekBalanceButtonProps {
@@ -70,7 +70,7 @@ export function DeepseekBalanceButton({ hasKey }: DeepseekBalanceButtonProps) {
       {!loading && error && <span className="text-xs text-red-400">{error}</span>}
       {!loading && !error && balance && (
         <span
-          className={`text-xs font-mono ${unavailable ? 'text-red-400' : ENGINE_ACCENTS.deepseek.label}`}
+          className={`text-xs font-mono ${unavailable ? 'text-red-400' : ENGINE_TEXT_TONES.deepseek}`}
           data-tooltip={
             unavailable
               ? t('chat.balanceUnavailable', { defaultValue: 'Account is not available for requests' })

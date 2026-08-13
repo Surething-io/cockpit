@@ -3,12 +3,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
 import {
-  ENGINE_ACCENTS,
   ENGINE_MENU_CLASS,
+  ENGINE_MENU_ROW_SELECTED,
   EngineCheck,
   EngineIcon,
   EnginePickerTrigger,
-  type EngineAccent,
 } from './engineAccents';
 import type {
   ChatEngine,
@@ -238,14 +237,12 @@ function MenuRow<T extends string>({
   selected,
   label,
   defaultValue,
-  accent,
   onSelect,
 }: {
   value: T;
   selected: boolean;
   label: string;
   defaultValue?: boolean;
-  accent: EngineAccent;
   onSelect: (value: T) => void;
 }) {
   return (
@@ -253,11 +250,13 @@ function MenuRow<T extends string>({
       type="button"
       onClick={() => onSelect(value)}
       className={`flex w-full items-start gap-2 px-3 py-2 text-left text-xs transition-colors ${
-        selected ? accent.selectedRow : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
+        selected
+          ? ENGINE_MENU_ROW_SELECTED
+          : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
       }`}
     >
       <span className="mt-0.5">
-        <EngineCheck selected={selected} accent={accent} />
+        <EngineCheck selected={selected} />
       </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       <span className="shrink-0">
@@ -277,7 +276,6 @@ function TraitSelect<T extends string>({
   value,
   items,
   onSelect,
-  accent,
   icon,
   testId,
 }: {
@@ -286,7 +284,6 @@ function TraitSelect<T extends string>({
   value: string;
   items: ReadonlyArray<{ id: T; label: string; defaultValue?: boolean }>;
   onSelect: (value: T) => void;
-  accent: EngineAccent;
   icon?: React.ReactNode;
   testId?: string;
 }) {
@@ -332,7 +329,6 @@ function TraitSelect<T extends string>({
     <div className="relative">
       <EnginePickerTrigger
         buttonRef={btnRef}
-        accent={accent}
         label={value}
         labelMaxWidth="max-w-[180px]"
         title={`${title}: ${value}`}
@@ -356,7 +352,6 @@ function TraitSelect<T extends string>({
                   selected={selected === item.id}
                   label={item.label}
                   defaultValue={item.defaultValue}
-                  accent={accent}
                   onSelect={(next) => {
                     onSelect(next);
                     setOpen(false);
@@ -404,8 +399,6 @@ export function AgentModelTraitsPicker(props: AgentModelTraitsPickerProps) {
     props.onCodexReasoningEffortChange?.(defaultCodexReasoningEffort(model));
   };
 
-  const accent = ENGINE_ACCENTS[isClaude ? 'claude' : 'codex'];
-
   if (!isClaude) {
     return (
       <div className="flex min-w-0 items-center gap-1" data-agent-model-traits>
@@ -419,7 +412,6 @@ export function AgentModelTraitsPicker(props: AgentModelTraitsPickerProps) {
             defaultValue: model.id === DEFAULT_CODEX_MODEL,
           }))}
           onSelect={handleCodexModel}
-          accent={accent}
           icon={<EngineIcon engine="codex" />}
           testId="codex-model-picker"
         />
@@ -432,7 +424,6 @@ export function AgentModelTraitsPicker(props: AgentModelTraitsPickerProps) {
             defaultValue: effort.id === codexDefaultReasoningEffort,
           }))}
           onSelect={(value) => props.onCodexReasoningEffortChange?.(value)}
-          accent={accent}
           testId="codex-reasoning-picker"
         />
       </div>
@@ -451,7 +442,6 @@ export function AgentModelTraitsPicker(props: AgentModelTraitsPickerProps) {
           defaultValue: model.id === DEFAULT_CLAUDE_MODEL,
         }))}
         onSelect={handleClaudeModel}
-        accent={accent}
         icon={<EngineIcon engine="claude" />}
         testId="claude-model-picker"
       />
@@ -465,7 +455,6 @@ export function AgentModelTraitsPicker(props: AgentModelTraitsPickerProps) {
             defaultValue: effort.id === claudeDefaultEffort,
           }))}
           onSelect={(value) => props.onClaudeEffortChange?.(value)}
-          accent={accent}
           testId="claude-reasoning-picker"
         />
       )}
@@ -480,7 +469,6 @@ export function AgentModelTraitsPicker(props: AgentModelTraitsPickerProps) {
             defaultValue: contextWindow === claudeDefaultContextWindow,
           }))}
           onSelect={(value) => props.onClaudeContextWindowChange?.(value)}
-          accent={accent}
           testId="claude-context-picker"
         />
       )}
@@ -494,7 +482,6 @@ export function AgentModelTraitsPicker(props: AgentModelTraitsPickerProps) {
             { id: 'off', label: 'Off', defaultValue: true },
           ]}
           onSelect={(value) => props.onClaudeFastModeChange?.(value === 'on')}
-          accent={accent}
           testId="claude-fast-mode-picker"
         />
       )}
@@ -508,7 +495,6 @@ export function AgentModelTraitsPicker(props: AgentModelTraitsPickerProps) {
             { id: 'off', label: 'Off', defaultValue: true },
           ]}
           onSelect={(value) => props.onClaudeThinkingChange?.(value === 'on')}
-          accent={accent}
           testId="claude-thinking-picker"
         />
       )}

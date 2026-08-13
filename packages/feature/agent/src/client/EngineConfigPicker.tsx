@@ -3,8 +3,10 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
 import {
-  ENGINE_ACCENTS,
   ENGINE_MENU_CLASS,
+  ENGINE_MENU_INPUT_FOCUS,
+  ENGINE_MENU_ROW_SELECTED,
+  ENGINE_MENU_SAVE,
   ENGINE_SETUP_TONE,
   EngineCheck,
   EngineIcon,
@@ -102,7 +104,6 @@ export function EngineConfigPicker({
   onHasKeyChange,
 }: EngineConfigPickerProps) {
   const config = ENGINES[engine];
-  const accent = ENGINE_ACCENTS[engine];
 
   const [open, setOpen] = useState(false);
   const [hasKey, setHasKey] = useState(false); // whether a key is persisted
@@ -369,7 +370,9 @@ export function EngineConfigPicker({
 
   // The list is live, so there is no meaningful fallback id to show before it arrives.
   const displayLabel = !hasKey ? 'Set API key' : (currentModel || 'Select model');
-  const labelTone = !hasKey ? ENGINE_SETUP_TONE : accent.label;
+  // Only the "no key yet" state overrides the pill's neutral text; a configured
+  // engine reads as plain text, with the logo carrying the identity.
+  const labelTone = !hasKey ? ENGINE_SETUP_TONE : undefined;
   const selectedModel = currentModel || '';
 
   const menu = open ? (
@@ -457,13 +460,13 @@ export function EngineConfigPicker({
                       if (e.key === 'Enter') handleSaveKey();
                     }}
                     placeholder="sk-..."
-                    className={`flex-1 min-w-0 text-xs px-2 py-1 rounded bg-secondary text-foreground border border-border focus:outline-none font-mono ${accent.inputFocus}`}
+                    className={`flex-1 min-w-0 text-xs px-2 py-1 rounded bg-secondary text-foreground border border-border focus:outline-none font-mono ${ENGINE_MENU_INPUT_FOCUS}`}
                     autoFocus
                   />
                   <button
                     onClick={handleSaveKey}
                     disabled={saving || !keyInput.trim()}
-                    className={`text-[11px] px-2 py-1 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${accent.save}`}
+                    className={`text-[11px] px-2 py-1 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${ENGINE_MENU_SAVE}`}
                   >
                     {saving ? 'Saving...' : 'Save'}
                   </button>
@@ -530,10 +533,10 @@ export function EngineConfigPicker({
                       key={m.id}
                       onClick={() => handleSelectModel(m.id)}
                       className={`flex items-center gap-2 px-2 py-1 text-xs rounded transition-colors ${
-                        selected ? accent.selectedRow : 'text-foreground hover:bg-accent'
+                        selected ? ENGINE_MENU_ROW_SELECTED : 'text-foreground hover:bg-accent'
                       }`}
                     >
-                      <EngineCheck selected={selected} accent={accent} />
+                      <EngineCheck selected={selected} />
                       <span className="truncate">{m.id}</span>
                       {/* The id is what the engine sends and what a bug report needs, so it
                           stays primary; the provider's display name only earns space when it
@@ -559,7 +562,6 @@ export function EngineConfigPicker({
     <>
       <EnginePickerTrigger
         buttonRef={btnRef}
-        accent={accent}
         label={displayLabel}
         labelClassName={labelTone}
         title={`Configure ${config.label}`}

@@ -24,7 +24,7 @@
 import React, { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
-import { ENGINE_ACCENTS } from './engineAccents';
+import { ENGINE_TEXT_TONES } from './engineAccents';
 import {
   loadEngineQuota,
   type EngineQuotaInfo,
@@ -106,7 +106,7 @@ export function EngineQuotaButton({ engine, hasKey }: EngineQuotaButtonProps) {
       {!loading && error && <span className="text-xs text-red-400">{error}</span>}
       {!loading && !error && usage && (
         <span
-          className={`text-xs font-mono ${exhausted ? 'text-red-400' : ENGINE_ACCENTS[engine].label}`}
+          className={`text-xs font-mono ${exhausted ? 'text-red-400' : ENGINE_TEXT_TONES[engine]}`}
           data-tooltip={
             reset
               ? t('chat.quotaResetAt', { defaultValue: 'Resets {{time}}', time: reset })

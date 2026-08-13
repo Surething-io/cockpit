@@ -4,8 +4,10 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Portal, usePanelPortalTarget } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
-  ENGINE_ACCENTS,
   ENGINE_MENU_CLASS,
+  ENGINE_MENU_INPUT_FOCUS,
+  ENGINE_MENU_ROW_SELECTED,
+  ENGINE_MENU_SAVE,
   EngineCheck,
   EngineIcon,
   EnginePickerTrigger,
@@ -44,7 +46,6 @@ function sourceHint(source: OllamaConfigInfo['baseUrlSource']): string | null {
 }
 
 export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPickerProps) {
-  const accent = ENGINE_ACCENTS.ollama;
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState<OllamaModel[]>([]);
   const [loading, setLoading] = useState(false);
@@ -241,12 +242,12 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
               onKeyDown={(e) => { if (e.key === 'Enter') handleSaveBaseUrl(); }}
               placeholder="http://127.0.0.1:11434"
               spellCheck={false}
-              className={`flex-1 min-w-0 text-xs px-2 py-1 rounded bg-secondary text-foreground border border-border focus:outline-none font-mono ${accent.inputFocus}`}
+              className={`flex-1 min-w-0 text-xs px-2 py-1 rounded bg-secondary text-foreground border border-border focus:outline-none font-mono ${ENGINE_MENU_INPUT_FOCUS}`}
             />
             <button
               onClick={handleSaveBaseUrl}
               disabled={savingConfig}
-              className={`text-[11px] px-2 py-1 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${accent.save}`}
+              className={`text-[11px] px-2 py-1 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${ENGINE_MENU_SAVE}`}
             >
               {savingConfig ? '...' : 'Save'}
             </button>
@@ -292,12 +293,12 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
               onKeyDown={(e) => { if (e.key === 'Enter') handleSaveKey(); }}
               placeholder="optional — for authenticated servers"
               spellCheck={false}
-              className={`flex-1 min-w-0 text-xs px-2 py-1 rounded bg-secondary text-foreground border border-border focus:outline-none font-mono ${accent.inputFocus}`}
+              className={`flex-1 min-w-0 text-xs px-2 py-1 rounded bg-secondary text-foreground border border-border focus:outline-none font-mono ${ENGINE_MENU_INPUT_FOCUS}`}
             />
             <button
               onClick={handleSaveKey}
               disabled={savingConfig || !keyInput.trim()}
-              className={`text-[11px] px-2 py-1 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${accent.save}`}
+              className={`text-[11px] px-2 py-1 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${ENGINE_MENU_SAVE}`}
             >
               {savingConfig ? '...' : 'Save'}
             </button>
@@ -342,10 +343,10 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
                 key={m.name}
                 onClick={() => selectModel(m.name)}
                 className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors ${
-                  selected ? accent.selectedRow : 'text-foreground hover:bg-accent'
+                  selected ? ENGINE_MENU_ROW_SELECTED : 'text-foreground hover:bg-accent'
                 }`}
               >
-                <EngineCheck selected={selected} accent={accent} />
+                <EngineCheck selected={selected} />
                 <span className="truncate">{m.name.replace(/:latest$/, '')}</span>
                 <span className="ml-auto pl-2 text-muted-foreground flex-shrink-0">
                   {m.parameter_size || formatSize(m.size)}
@@ -363,7 +364,6 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
     <>
       <EnginePickerTrigger
         buttonRef={btnRef}
-        accent={accent}
         label={displayName}
         title="Configure Ollama"
         onClick={toggle}

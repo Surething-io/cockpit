@@ -322,7 +322,39 @@ id=$(gh run list --repo Surething-io/cockpit --workflow "Deploy Website" --limit
 gh run watch "$id" --repo Surething-io/cockpit --exit-status
 ```
 
-### Step 8 — Verify everything is live
+### Step 8 — Rebuild the `/try` demo sandbox template
+
+The "Try Online" demo at `opencockpit.dev/try` boots an E2B sandbox whose image
+pins `@surething/cockpit@latest` **at image build time**. `latest` is resolved
+once and frozen, so publishing to npm does nothing to the demo — it keeps
+serving whatever version was current when the template was last built.
+
+Nothing reports this. The sandbox boots, the demo works, it is just an old
+release. It is only caught by someone noticing the version pill.
+
+```bash
+cd e2b
+set -a && . ./.env && set +a          # or: export E2B_API_KEY=$(node -e "console.log(require('$HOME/.e2b/config.json').teamApiKey)")
+npm install                            # first time only
+npm run build-template 2>&1 | tee /tmp/e2b-build.log    # ~2m30s
+grep INSTALLED /tmp/e2b-build.log      # must show the version you just published
+cd ..
+```
+
+The install layer echoes the version it resolved, so the log says it outright:
+
+```
+[builder 4/8] [stdout]: INSTALLED @surething/cockpit@1.0.263
+```
+
+A successful build showing the version you just published is enough. If it shows
+the previous one, npm's registry hadn't caught up — wait a minute and rebuild.
+
+`try.ts` refers to the template by **name** (`cockpit-demo`), not by template or
+build id, so no code change and no website redeploy are needed — the next
+`POST /sandboxes` picks up the rebuilt image.
+
+### Step 9 — Verify everything is live
 
 ```bash
 # 1. npm
@@ -349,6 +381,7 @@ Expected: new tag at top of changelog (en + zh), no `compare/v1.0.x-1...v1.0.x` 
 - **Never** `npm publish` manually unless the CI workflow has demonstrably failed and the human has explicitly asked.
 - **Never** `git tag -d` or `git reset` after Step 3 (push) without explicit human instruction — the tag is now visible to npm and Cloudflare and others.
 - **Never** skip Step 6 (hand-authored notes). The publish workflow creates the release with an empty body specifically so this step is unavoidable; if you find yourself looking at an empty release page on opencockpit.dev/changelog, you forgot.
+- **Never** skip Step 8 after a publish. The demo image pins `latest` at build time, so without a rebuild `opencockpit.dev/try` silently serves the old release — nothing anywhere reports the drift.
 
 ## Failure recovery cheats (only on instruction)
 
@@ -373,4 +406,5 @@ Expected: new tag at top of changelog (en + zh), no `compare/v1.0.x-1...v1.0.x` 
 - Full release docs: `.github/RELEASING.md`
 - npm publish workflow: `.github/workflows/publish.yml`
 - Website deploy workflow: `.github/workflows/website-deploy.yml`
+- `/try` demo sandbox template: `e2b/README.md`
 - Sister skill: `skills/cockpit-changelog/SKILL.md` (release notes voice + structure)

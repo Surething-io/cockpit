@@ -28,7 +28,33 @@ The script in `template.mjs`:
 
 A successful build prints the new template id and build id; the live
 demo automatically picks up the latest published template the next time
-the Pages Function calls `POST /sandboxes`.
+the Pages Function calls `POST /sandboxes`. `try.ts` refers to the
+template by **name** (`cockpit-demo`), not by template or build id, so a
+rebuild under the same name needs no code change and no website redeploy.
+
+## Rebuild after every npm release
+
+Step 2 of the build pins `@surething/cockpit@latest` **at image build
+time**. `latest` is resolved once, then frozen into the image. Publishing
+a new version to npm therefore does *nothing* to the demo — it keeps
+serving whatever version was current when the template was last built.
+
+Nothing reports this. The sandbox boots, the demo works, it is just the
+wrong version. Rebuild as part of the release (see
+`skills/cockpit-release/SKILL.md`).
+
+## Check the version in the build log
+
+The install layer echoes the version it resolved, so the log says it
+outright:
+
+```
+[builder 4/8] [stdout]: INSTALLED @surething/cockpit@1.0.263
+```
+
+A successful build showing the version you just published is enough. If
+it shows the previous one, npm's registry hadn't caught up yet — wait a
+minute and rebuild.
 
 ## What used to live here
 

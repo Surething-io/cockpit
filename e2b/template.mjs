@@ -8,7 +8,11 @@ RUN apt-get update && apt-get install -y \\
   git bash curl procps build-essential python3 \\
   && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @surething/cockpit@latest
+# RUN-layer stdout lands in the build log, so the echo makes each build report
+# which version 'latest' resolved to. Otherwise the log says only "added N
+# packages" and every build looks alike.
+RUN npm install -g @surething/cockpit@latest \\
+  && echo "INSTALLED @surething/cockpit@$(cock --version)"
 
 RUN git clone --depth 1 https://github.com/Surething-io/cockpit.git /home/user/demo-project
 

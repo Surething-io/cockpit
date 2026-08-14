@@ -91,5 +91,5 @@ Run through these against your draft. If any fails, fix it, don't ship it:
 
 ## Reference
 
-- Sister skill: `skills/cockpit-release/SKILL.md` (full release pipeline; this skill is invoked by it at Step 5)
+- Sister skill: `skills/cockpit-release/SKILL.md` (full release pipeline; this skill is invoked by it at Step 6)
 - Style samples (live): `gh release view v1.0.195 --repo Surething-io/cockpit`, `v1.0.193`, `v1.0.196`

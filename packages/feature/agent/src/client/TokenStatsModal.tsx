@@ -410,12 +410,14 @@ function HourHeatmap({ hourCounts }: { hourCounts: Record<string, number> }) {
                 className="w-full rounded-sm transition-all"
                 style={{
                   height: `${Math.max(2, ratio * 48)}px`,
-                  // hsl(...) wrapper on the empty-hour bar is required: --muted
-                  // stores a bare HSL triple, so `var(--muted)` alone is an
-                  // invalid declaration and those bars rendered transparent.
+                  // Bare var() is correct here — --muted is a fill token and
+                  // holds a complete rgba(). (It briefly needed an hsl()
+                  // wrapper, back when fills were solid HSL triples; before
+                  // that it had no wrapper at all and these bars were
+                  // invisible. Surface tokens still need the wrapper.)
                   backgroundColor: ratio > 0
                     ? `rgba(${activity.messagesRgb}, ${0.2 + ratio * 0.8})`
-                    : 'hsl(var(--muted))',
+                    : 'var(--muted)',
                 }}
               />
               {h % 3 === 0 && (

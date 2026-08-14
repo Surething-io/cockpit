@@ -75,7 +75,7 @@ html, body {
    * encode that rather than being a mechanical light/dark mirror:
    *
    *   dark  — the base is near-black and every surface above it gets LIGHTER
-   *           (slate-1 -> card -> secondary -> accent). Fill deltas do the work;
+   *           (background -> card -> popover). The solid ladder does the work;
    *           box-shadow is nearly invisible on a dark ground.
    *   light — the base is white and there is nowhere lighter to go, so surfaces
    *           stay white and depth is carried by BORDER + SHADOW instead. That
@@ -84,12 +84,38 @@ html, body {
    *           also made the three panels disagree about what "the base" is
    *           (Chat used bg-card, Console used bg-background).
    *
-   * The fills below are therefore a real ladder, not three names for one color
-   * (--secondary/--muted/--accent all pointed at slate-3 before):
-   *   --muted     quietest fill  — chips, badges, table headers
-   *   --accent    interactive tint — hover / selected  (also still used as a
-   *               fill on ~50 bubbles; those migrate to --secondary later)
-   *   --secondary chrome surface — toolbars, gutters, sub-headers
+   * SURFACES vs FILLS are two separate scales, and conflating them was the
+   * bug this split fixes. Five roles (background / card / popover / muted /
+   * secondary / accent) were all drawing from slate-1..4, so they crowded each
+   * other out: in dark, --card and --secondary both landed on rgb(31,31,3x) —
+   * contrast 1.00, a toolbar invisible on the card it sat on — and --popover
+   * was identical to --card, so a menu never lifted off the panel below it.
+   *
+   * Surfaces are SOLID and form an elevation ladder. A surface is a thing you
+   * put content on: the app ground, a panel/card/bubble, a floating overlay.
+   *
+   * Fills are ALPHA and carry no elevation. A fill is a tinted REGION on top
+   * of whatever surface it happens to land on — a chip, a toolbar strip, a
+   * selected row. Making them alpha is what stops them competing for slate
+   * steps at all: one value is now correct on every surface instead of being
+   * tuned against one and wrong on the rest. It also means a fill inside a
+   * dialog reads the same as the identical fill on the page behind it.
+   *
+   *   --muted     quietest — chips, badges, table headers
+   *   --accent    tinted region — selected row, message bubble
+   *   --secondary chrome — toolbars, gutters, sub-headers
+   *
+   * Tint and alpha are solved together so each fill composites onto the exact
+   * slate step it used to be, making this a structural change rather than a
+   * restyle. The tint is a deep navy rather than a near-black: the slate ramp
+   * is hue 240 and visibly cool, and at a 4% wash a near-black
+   * tint carries almost no blue — it flattened --muted from rgb(246,246,249)
+   * to a neutral rgb(246,246,246) and drained the palette's character. Dark
+   * needs the mirror of that argument, so its tint is a blue-white rather than
+   * plain white.
+   *
+   * Both themes now order the three the same way; dark previously had accent
+   * and secondary swapped relative to light.
    */
   --background: 0 0% 100%;
   --foreground: var(--slate-12);
@@ -99,11 +125,11 @@ html, body {
   --popover-foreground: var(--slate-12);
   --primary: var(--slate-12);
   --primary-foreground: 0 0% 100%;
-  --secondary: var(--slate-4);
+  --secondary: rgba(0, 0, 60, 0.090);
   --secondary-foreground: var(--slate-12);
-  --muted: var(--slate-2);
+  --muted: rgba(0, 0, 60, 0.035);
   --muted-foreground: var(--slate-11);
-  --accent: var(--slate-3);
+  --accent: rgba(0, 0, 60, 0.063);
   --accent-foreground: var(--slate-12);
   --destructive: var(--red-9);
   --destructive-foreground: 0 0% 100%;
@@ -143,14 +169,18 @@ html, body {
   --line-4: rgba(0, 0, 0, 0.22);
 
   /* ---- Interactive tints (alpha) ----
-   * Tinted with slate-12's bluish-black rather than neutral black, so a hover
-   * never reads as a gray smudge over the cool neutral palette. Alpha (not a
-   * solid slate-3) so the same token works inside a card, over an image, or on
-   * an already-tinted row.
+   * Same tint as the fills above, and for the same reason: at these washes the
+   * near-black this used to carry left the result neutral, so hovering a card
+   * shifted its hue toward gray while everything around it stayed cool — the
+   * element read as flashing white rather than lifting. Sharing the fill's
+   * tint keeps hover in the palette's family.
+   *
+   * Alpha (not a solid slate step) so one token works inside a card, over an
+   * image, and on a row that already carries a fill.
    */
-  --tint-hover: rgba(28, 33, 38, 0.06);
-  --tint-hover-strong: rgba(28, 33, 38, 0.10);
-  --tint-active: rgba(28, 33, 38, 0.14);
+  --tint-hover: rgba(0, 0, 60, 0.06);
+  --tint-hover-strong: rgba(0, 0, 60, 0.10);
+  --tint-active: rgba(0, 0, 60, 0.14);
 
   /* ---- Elevation ----
    * Light mode's primary depth cue (see the note above). Deliberately much
@@ -260,33 +290,45 @@ html, body {
   --blue-10: 209 100% 60%;
   --blue-11: 210 100% 72%;
 
-  /* Semantic colors, dark.
-   * The fill ladder already worked here (accent was distinct from
-   * secondary/muted), so only --muted moves — down one step, so chips read as
-   * quieter than the chrome around them instead of identical to it. */
+  /* Semantic colors, dark — see the surface/fill split documented above.
+   *
+   * Dark is where the two scales actually have room to differ, and where the
+   * collisions were: this is the theme in which --card and --secondary were
+   * the same colour and --popover was the same as --card. With fills moved to
+   * alpha, the three solid steps below are free to be an elevation ladder and
+   * nothing else, so a menu can finally sit above a card. */
   --background: var(--slate-1);
   --foreground: var(--slate-12);
-  /* Was `0 0% 12%` — the one hue-neutral surface in an otherwise bluish
-   * palette, AND it landed on rgb(31,31,31) against --secondary's
-   * rgb(31,31,35): contrast 1.00, i.e. a toolbar sitting on a card was
-   * literally the same colour. Now bluish and one step below --secondary, so
-   * the dark ladder is monotonic:
-   *   background 7% < muted 10% < card 11% < secondary 13% < accent 16%
-   * card/secondary are still adjacent (~1.09) because they are adjacent roles
-   * and dark has only slate-1..4 to spread five of them — separating "surface
-   * elevation" from "fill role" into two scales is the real fix, and is a
-   * bigger change than this one. */
+  /* Elevation ladder — three solid steps, nothing else competing for them:
+   *   background  7%  the app ground
+   *   card       11%  panels, bubbles, cards
+   *   popover    13%  menus, dialogs, anything floating above a panel
+   *
+   * --popover used to be `0 0% 12%`, identical to --card, so a dropdown opened
+   * on a panel and dissolved into it. It now differs — but only just, and that
+   * is deliberate. Across the whole plausible range (12.5% to 15%) the contrast
+   * against --card only moves from 1.03 to 1.11, so lightness was never what
+   * was going to make a menu read as floating; its border and shadow do that.
+   * Pushing this to 15% to force the point just made every dropdown look washed
+   * out against the near-black app ground. 13% keeps the R/G of the old value
+   * and adds the blue the rest of the palette carries, so the step is real
+   * without the panel being any brighter than it used to be.
+   *
+   * Fills layer on top of any of these as alpha and read the same on all three. */
   --card: 240 5% 11%;
   --card-foreground: var(--slate-12);
-  --popover: 240 5% 11%;
+  --popover: 240 5% 13%;
   --popover-foreground: var(--slate-12);
   --primary: var(--slate-12);
   --primary-foreground: var(--slate-1);
-  --secondary: var(--slate-3);
+  /* Alpha white, ordered to match light (before this, dark had accent and
+   * secondary the other way round). Solved so each lands roughly where its old
+   * solid slate step rendered on the base surface. */
+  --secondary: rgba(220, 220, 255, 0.108);
   --secondary-foreground: var(--slate-12);
-  --muted: var(--slate-2);
+  --muted: rgba(220, 220, 255, 0.035);
   --muted-foreground: var(--slate-11);
-  --accent: var(--slate-4);
+  --accent: rgba(220, 220, 255, 0.069);
   --accent-foreground: var(--slate-12);
   --destructive: var(--red-9);
   --destructive-foreground: 0 0% 100%;
@@ -309,9 +351,9 @@ html, body {
 
   /* Interactive tints, dark — white alpha; a bluish-black tint would simply
    * disappear into a near-black ground. */
-  --tint-hover: rgba(255, 255, 255, 0.08);
-  --tint-hover-strong: rgba(255, 255, 255, 0.12);
-  --tint-active: rgba(255, 255, 255, 0.18);
+  --tint-hover: rgba(220, 220, 255, 0.08);
+  --tint-hover-strong: rgba(220, 220, 255, 0.12);
+  --tint-active: rgba(220, 220, 255, 0.18);
 
   /* Elevation, dark — a drop shadow barely registers against a near-black
    * base, so lv3 adds a light hairline ring to define the edge and the blurs
@@ -353,11 +395,16 @@ html, body {
   --color-popover-foreground: hsl(var(--popover-foreground));
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
-  --color-secondary: hsl(var(--secondary));
+  /* Fills resolve without an hsl() wrapper — they hold complete rgba() values,
+   * not the bare triples the surface tokens use. Opacity modifiers still work
+   * (`bg-secondary/50` color-mixes down from the token's own alpha), they just
+   * compound, which is the intended reading of "half of an already-subtle
+   * fill". */
+  --color-secondary: var(--secondary);
   --color-secondary-foreground: hsl(var(--secondary-foreground));
-  --color-muted: hsl(var(--muted));
+  --color-muted: var(--muted);
   --color-muted-foreground: hsl(var(--muted-foreground));
-  --color-accent: hsl(var(--accent));
+  --color-accent: var(--accent);
   --color-accent-foreground: hsl(var(--accent-foreground));
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
@@ -587,7 +634,9 @@ body {
  * draws the eye to the destination so the jump doesn't feel abrupt.
  */
 @keyframes block-flash {
-  0%, 100% { background-color: hsl(var(--secondary) / 0.4); }
+  /* --secondary is a complete rgba() now, so it cannot take the `/ <alpha>`
+     slash syntax; the resting colour is simply the fill itself. */
+  0%, 100% { background-color: var(--secondary); }
   20%, 60% { background-color: hsl(var(--amber-9) / 0.45); }
 }
 .block-flash {
@@ -865,7 +914,7 @@ code[class*="language-"] .token {
 }
 
 .tiptap-editor th {
-  background: hsl(var(--muted));
+  background: var(--muted);
   font-weight: 600;
   font-size: 0.875rem;
 }

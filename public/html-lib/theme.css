@@ -33,23 +33,33 @@
   --violet-9: 252 56% 57%; --violet-10: 251 48% 53%; --violet-11: 250 43% 48%;
 
   /* ---- Semantic tokens (ready-to-use colors) ----
-   * Light and dark carry depth differently: dark stacks LIGHTER fills above a
-   * near-black base, while light has nowhere lighter to go than its white base
-   * and leans on border + shadow instead. Hence --background and --card are
-   * both white here, and --secondary/--muted/--accent are a real ladder
-   * (quiet fill / interactive tint / chrome surface) rather than three names
-   * for one gray. */
+   * SURFACES are solid and form an elevation ladder (background / card /
+   * popover): things you put content on. FILLS are alpha and carry no
+   * elevation (muted / accent / secondary): tinted regions that land on top of
+   * whichever surface they happen to sit on. Keeping them apart is what lets
+   * one fill value be correct on every surface — and, in dark, frees the three
+   * solid steps to actually differ from each other.
+   *
+   * Light and dark still express depth in opposite directions: dark stacks
+   * lighter surfaces above a near-black base, while light has nowhere lighter
+   * to go than white and leans on border + shadow, which is why --background,
+   * --card and --popover are all white here. */
   --background: hsl(0 0% 100%);
   --foreground: hsl(var(--slate-12));
   --card: hsl(0 0% 100%);
   --card-foreground: hsl(var(--slate-12));
   --primary: hsl(var(--slate-12));
   --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(var(--slate-4));
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(var(--slate-12));
+  /* Fills — alpha, so they compose on any surface. Deep-navy tint, not a
+     near-black one: at these washes a near-black carries no blue and the cool
+     slate character flattens to neutral gray. */
+  --secondary: rgba(0, 0, 60, 0.090);
   --secondary-foreground: hsl(var(--slate-12));
-  --muted: hsl(var(--slate-2));
+  --muted: rgba(0, 0, 60, 0.035);
   --muted-foreground: hsl(var(--slate-11));
-  --accent: hsl(var(--slate-3));
+  --accent: rgba(0, 0, 60, 0.063);
   --accent-foreground: hsl(var(--slate-12));
   --ring: hsl(var(--teal-9));
   --brand: hsl(var(--teal-9));
@@ -74,11 +84,11 @@
   --input: var(--line-3);
 
   /* ---- Interactive tints ----
-   * Tinted with slate-12's bluish-black, not neutral black, so hover never
-   * reads as a gray smudge over the cool palette. */
-  --tint-hover: rgba(28, 33, 38, 0.06);
-  --tint-hover-strong: rgba(28, 33, 38, 0.10);
-  --tint-active: rgba(28, 33, 38, 0.14);
+   * Same tint as the fills: a near-black tint washes out to neutral at these
+   * alphas, so hover drifted gray against a cool palette. */
+  --tint-hover: rgba(0, 0, 60, 0.06);
+  --tint-hover-strong: rgba(0, 0, 60, 0.10);
+  --tint-active: rgba(0, 0, 60, 0.14);
 
   /* ---- Elevation — light mode's primary depth cue ---- */
   --shadow-lv1: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
@@ -126,13 +136,18 @@
 
   /* Semantic overrides that differ from light (the rest auto-adapt via the scales) */
   --background: hsl(var(--slate-1));
-  /* Bluish and one step below --secondary; the old `0 0% 12%` was the palette's
-     only hue-neutral surface and collided with --secondary at contrast 1.00. */
+  /* Elevation ladder: 7% ground / 11% panel / 13% floating. --popover used to
+     equal --card, so a menu dissolved into the panel it opened on. The step is
+     small on purpose — a menu reads as floating because of its border and
+     shadow, not its lightness (the whole usable range is 1.03-1.11 against
+     --card), and forcing it brighter only washed dropdowns out. */
   --card: hsl(240 5% 11%);
+  --popover: hsl(240 5% 13%);
   --primary-foreground: hsl(var(--slate-1));
-  --secondary: hsl(var(--slate-3));
-  --muted: hsl(var(--slate-2));
-  --accent: hsl(var(--slate-4));
+  /* Fills — blue-white tint, same ordering as light (see the light note). */
+  --secondary: rgba(220, 220, 255, 0.108);
+  --muted: rgba(220, 220, 255, 0.035);
+  --accent: rgba(220, 220, 255, 0.069);
 
   /* Lines — alpha WHITE. --line-2 is 0.16 rather than light's 0.12 because it
      is solved against THIS theme's base: 0.16 over slate-1 lands where the
@@ -143,9 +158,9 @@
   --line-4: rgba(255, 255, 255, 0.26);
 
   /* White alpha: a bluish-black tint would vanish into a near-black ground. */
-  --tint-hover: rgba(255, 255, 255, 0.08);
-  --tint-hover-strong: rgba(255, 255, 255, 0.12);
-  --tint-active: rgba(255, 255, 255, 0.18);
+  --tint-hover: rgba(220, 220, 255, 0.08);
+  --tint-hover-strong: rgba(220, 220, 255, 0.12);
+  --tint-active: rgba(220, 220, 255, 0.18);
 
   /* A drop shadow barely registers on a near-black base, so lv3 adds a light
      hairline ring to define the edge and the blurs go deeper. */

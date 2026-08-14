@@ -450,12 +450,13 @@ export const CommandBubble = memo(function CommandBubble({
   return (
     <div className="flex flex-col items-start">
         <div
-          /* bg-accent here is the surface an embedded PTY paints itself with:
-             xterm cannot be transparent (see XtermRenderer's SURFACE_TOKEN
-             note), so it reads --accent and fills with it. Changing this fill
-             class means changing SURFACE_TOKEN to match, or the terminal keeps
-             the old colour and shows a seam against its own bubble. */
-          className={`w-full bg-accent text-foreground dark:text-slate-11 relative overflow-hidden border transition-colors cursor-pointer ${
+          /* bg-card, a SURFACE token, not one of the alpha fills: a bubble is
+             a panel you put content on, and this one hosts a PTY. xterm cannot
+             render transparently (see XtermRenderer's SURFACE_TOKEN note), so
+             it reads this token and fills with it — which only works while the
+             token is opaque. Changing this class means changing SURFACE_TOKEN
+             to match, or the terminal shows a seam against its own bubble. */
+          className={`w-full bg-card text-foreground dark:text-slate-11 relative overflow-hidden border transition-colors cursor-pointer ${
             maximized ? 'rounded-none border-0' : 'rounded-2xl rounded-bl-md rounded-br-md'
           } ${
             maximized ? '' : selected ? 'border-brand' : 'border-brand/30'

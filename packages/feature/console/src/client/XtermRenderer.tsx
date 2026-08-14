@@ -50,7 +50,7 @@ const XTERM_THEME_DARK: ITheme = {
 };
 
 const XTERM_THEME_LIGHT: ITheme = {
-  foreground: '#1d2126', // slate-12 — 14.1:1 on the bg-accent bubble
+  foreground: '#1d2126', // slate-12 — 16.2:1 on the bubble's white surface
   cursor: '#1d2126',
   cursorAccent: '#ffffff',
   selectionBackground: '#3b82f640',
@@ -101,14 +101,18 @@ const XTERM_THEME_LIGHT: ITheme = {
  * sitting in a light bubble. Custom properties do not participate in
  * transitions, so the token flips instantly and reads clean.
  *
- * SURFACE_TOKEN must name whatever fill CommandBubble puts on the terminal's
- * bubble body (`bg-accent` as of writing — see the matching note there).
+ * SURFACE_TOKEN must name whatever CommandBubble puts on the terminal's bubble
+ * body (`bg-card` as of writing — see the matching note there), and it must be
+ * a SURFACE token rather than one of the alpha fills. Fills hold rgba(), and
+ * xterm forces any background with an alpha channel opaque, so pointing this
+ * at a fill would resolve a 6%-black tint to near-solid black — the same
+ * failure that `background: 'transparent'` produced.
  */
-const SURFACE_TOKEN = '--accent';
+const SURFACE_TOKEN = '--card';
 
 /** Fallbacks used only if the token is missing (e.g. mounted outside the app
  *  shell); they are the resolved light/dark values of SURFACE_TOKEN. */
-const SURFACE_FALLBACK = { light: '#efeff3', dark: '#27272a' } as const;
+const SURFACE_FALLBACK = { light: '#ffffff', dark: '#1b1b1d' } as const;
 
 /**
  * Read a semantic token and return it as `#rrggbb`.

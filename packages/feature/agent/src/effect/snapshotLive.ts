@@ -25,7 +25,7 @@
 import { execFile } from "node:child_process"
 import { createHash } from "node:crypto"
 import { mkdir, readFile, writeFile, readdir, rm, stat, rename } from "node:fs/promises"
-import { basename, join, isAbsolute, relative } from "node:path"
+import { basename, join, isAbsolute, relative, sep } from "node:path"
 import { Effect, Layer, Schedule } from "effect"
 import { AppError, ValidationError, NotFoundError, CockpitConfig } from "@cockpit/effect-core"
 import {
@@ -114,10 +114,17 @@ const localDay = (d: Date): string => {
   return `${y}-${m}-${day}`
 }
 
+/**
+ * Absolute path → repo-relative, with POSIX separators.
+ *
+ * The result is compared against git's own diff paths (always "/"-separated),
+ * so on Windows `relative()`'s backslashes must be normalized or every
+ * declared file looks foreign to the diff viewer's attribution check.
+ */
 const toRelative = (cwd: string, p: string): string => {
   if (!isAbsolute(p)) return p
   const rel = relative(cwd, p)
-  return rel && !rel.startsWith("..") ? rel : p
+  return rel && !rel.startsWith("..") ? rel.split(sep).join("/") : p
 }
 
 interface Meta {

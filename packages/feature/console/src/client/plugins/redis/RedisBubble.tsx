@@ -86,13 +86,18 @@ function formatResult(result: unknown, indent: number = 0): string {
 // Type Badge
 // ============================================================================
 
+// Six mutually distinguishable hues, so these stay on the Tailwind palette
+// rather than moving to the Radix scale (which has no teal/purple/pink text
+// steps and would collapse several of these into one another). Only the
+// lightness is themed: a bare -500 label measures ~2:1 on a light bubble for
+// emerald and ~2.9:1 for orange, and the /10 wash all but vanished there.
 const TYPE_CONFIG: Record<string, { label: string; color: string }> = {
-  string:  { label: 'S',   color: 'text-emerald-500 bg-emerald-500/10' },
-  hash:    { label: 'H',   color: 'text-blue-500 bg-blue-500/10' },
-  list:    { label: 'L',   color: 'text-orange-500 bg-orange-500/10' },
-  set:     { label: 'SET', color: 'text-teal-500 bg-teal-500/10' },
-  zset:    { label: 'Z',   color: 'text-purple-500 bg-purple-500/10' },
-  stream:  { label: 'STR', color: 'text-pink-500 bg-pink-500/10' },
+  string:  { label: 'S',   color: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/15' },
+  hash:    { label: 'H',   color: 'text-blue-600 dark:text-blue-400 bg-blue-500/15' },
+  list:    { label: 'L',   color: 'text-orange-600 dark:text-orange-400 bg-orange-500/15' },
+  set:     { label: 'SET', color: 'text-teal-600 dark:text-teal-400 bg-teal-500/15' },
+  zset:    { label: 'Z',   color: 'text-purple-600 dark:text-purple-400 bg-purple-500/15' },
+  stream:  { label: 'STR', color: 'text-pink-600 dark:text-pink-400 bg-pink-500/15' },
 };
 
 function TypeBadge({ type }: { type: string }) {
@@ -145,7 +150,7 @@ function CellTooltip({ text }: { text: string }) {
       {text}
       {show && <Portal>
         <div
-          className="fixed z-[9999] max-w-[500px] max-h-[200px] overflow-y-auto px-2 py-1.5 text-xs font-mono bg-popover text-popover-foreground border border-border rounded shadow-lg whitespace-pre-wrap break-all select-text"
+          className="fixed z-[9999] max-w-[500px] max-h-[200px] overflow-y-auto px-2 py-1.5 text-xs font-mono bg-popover text-popover-foreground border border-border rounded shadow-lv2 whitespace-pre-wrap break-all select-text"
           style={{ left: pos.x, top: pos.y, transform: pos.above ? 'translateY(-100%)' : undefined }}
         >
           {text}
@@ -390,7 +395,7 @@ export function RedisBubble({
             <span className="text-[10px] text-destructive flex-shrink-0">{t('common.connectionFailed')}</span>
           )}
           {status === 'connected' && serverInfo && (
-            <span className="text-[10px] text-red-500 flex-shrink-0">
+            <span className="text-[10px] text-red-11 flex-shrink-0">
               v{serverInfo.version} · {serverInfo.dbSize} keys · {serverInfo.memory}
             </span>
           )}
@@ -459,7 +464,7 @@ export function RedisBubble({
                   />
                   <button
                     onClick={handleSearch}
-                    className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent active:bg-accent/50 transition-colors"
+                    className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-hover active:bg-active transition-colors"
                     title={t('redis.scanSearch')}
                   >
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -468,7 +473,7 @@ export function RedisBubble({
                   </button>
                   <button
                     onClick={() => loadKeys(keyPattern, '0', false)}
-                    className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent active:bg-accent/50 transition-colors"
+                    className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-hover active:bg-active transition-colors"
                     title={t('common.refresh')}
                   >
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -485,7 +490,7 @@ export function RedisBubble({
                       key={k.key}
                       onClick={() => selectKey(k.key)}
                       className={`flex items-center gap-1.5 px-2 py-1 cursor-pointer transition-colors ${
-                        selectedKey === k.key ? 'bg-brand/10 text-brand' : 'hover:bg-accent text-foreground'
+                        selectedKey === k.key ? 'bg-brand/10 text-brand' : 'hover:bg-hover text-foreground'
                       }`}
                     >
                       <TypeBadge type={k.type} />
@@ -706,7 +711,7 @@ function DataTabContent({
             </thead>
             <tbody>
               {entries.map(([field, val]) => (
-                <tr key={field} className="hover:bg-accent/50">
+                <tr key={field} className="hover:bg-hover">
                   <td
                     className="px-2 py-0.5 border-b border-border/50 font-mono truncate max-w-[150px]"
                     onContextMenu={(e) => { e.preventDefault(); onCellCopy(field); }}
@@ -750,7 +755,7 @@ function DataTabContent({
             </thead>
             <tbody>
               {items.map((item, i) => (
-                <tr key={i} className="hover:bg-accent/50">
+                <tr key={i} className="hover:bg-hover">
                   <td className="px-2 py-0.5 border-b border-border/50 text-muted-foreground">{i}</td>
                   <td
                     className="px-2 py-0.5 border-b border-border/50 font-mono truncate max-w-[300px]"
@@ -788,7 +793,7 @@ function DataTabContent({
             </thead>
             <tbody>
               {items.map((item, i) => (
-                <tr key={i} className="hover:bg-accent/50">
+                <tr key={i} className="hover:bg-hover">
                   <td
                     className="px-2 py-0.5 border-b border-border/50 font-mono truncate max-w-[400px]"
                     onContextMenu={(e) => { e.preventDefault(); onCellCopy(item); }}
@@ -826,7 +831,7 @@ function DataTabContent({
             </thead>
             <tbody>
               {items.map((item, i) => (
-                <tr key={i} className="hover:bg-accent/50">
+                <tr key={i} className="hover:bg-hover">
                   <td
                     className="px-2 py-0.5 border-b border-border/50 font-mono truncate max-w-[300px]"
                     onContextMenu={(e) => { e.preventDefault(); onCellCopy(item.member); }}
@@ -873,7 +878,7 @@ function DataTabContent({
                   pairs.push(`${fields[i]}: ${fields[i + 1]}`);
                 }
                 return (
-                  <tr key={entryId} className="hover:bg-accent/50">
+                  <tr key={entryId} className="hover:bg-hover">
                     <td className="px-2 py-0.5 border-b border-border/50 font-mono text-muted-foreground">{entryId}</td>
                     <td className="px-2 py-0.5 border-b border-border/50 font-mono truncate max-w-[300px]">
                       <CellTooltip text={pairs.join(', ')} />
@@ -940,7 +945,7 @@ function InfoTabContent({ infoText, onRefresh }: { infoText: string; onRefresh: 
           <div className="text-[10px] text-muted-foreground uppercase tracking-wide px-1 mb-1 font-medium">{section.title}</div>
           <div className="space-y-0">
             {section.items.map(({ key, value }) => (
-              <div key={key} className="flex items-start gap-2 px-1.5 py-0.5 text-xs hover:bg-accent/50 rounded">
+              <div key={key} className="flex items-start gap-2 px-1.5 py-0.5 text-xs hover:bg-hover rounded">
                 <span className="text-muted-foreground font-mono flex-shrink-0 w-48 truncate">{key}</span>
                 <span className="font-mono text-foreground break-all">{value}</span>
               </div>

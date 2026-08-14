@@ -38,23 +38,19 @@ export interface JsonColors {
 }
 
 /**
- * Default palette — hardcoded github-dark hex. Used by the tool-call previews
- * (which render on a fixed dark surface), so leaving this as the default keeps
- * those views pixel-identical.
- */
-export const DARK_JSON_COLORS: JsonColors = {
-  key: '#79c0ff',
-  str: '#a5d6ff',
-  num: '#79c0ff',
-  bool: '#ff7b72',
-  punct: '#8b949e',
-  fold: '#6e7681',
-};
-
-/**
  * Theme-aware palette — Radix `*-11` accent tokens (accessible text on the app
  * background) that flip automatically between light and dark via CSS variables.
- * Used by the file-browser JSON preview so it follows the app theme.
+ *
+ * This is the DEFAULT, and the only palette. It replaced a hardcoded
+ * github-dark set whose doc comment claimed every consumer "renders on a fixed
+ * dark surface" — which was false: PreviewModal renders this JSON straight onto
+ * a `text-foreground` white pane, where the dark palette's `#79c0ff` keys came
+ * out at roughly 1.8:1. Three other call sites only looked right because they
+ * were wrapped in a hardcoded `bg-[#0d1117]` box, which is itself gone now.
+ *
+ * If a genuinely fixed-dark surface ever needs a fixed palette again, pass one
+ * explicitly rather than reintroducing a dark default — a default that assumes
+ * the background is the failure mode this replaced.
  */
 export const THEME_JSON_COLORS: JsonColors = {
   key: 'hsl(var(--blue-11))',
@@ -67,7 +63,7 @@ export const THEME_JSON_COLORS: JsonColors = {
 
 export function formatAsHumanReadable(
   content: string,
-  colors: JsonColors = DARK_JSON_COLORS,
+  colors: JsonColors = THEME_JSON_COLORS,
 ): React.ReactNode {
   try {
     const parsed = JSON.parse(content);

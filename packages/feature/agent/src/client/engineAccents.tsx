@@ -84,13 +84,26 @@ export const ENGINE_IDS: EngineAccentId[] = (Object.keys(ENGINE_ORDER) as Engine
 export const ENGINE_TEXT_TONES: Record<EngineAccentId, string> = {
   // Anthropic's brand orange. Not a Tailwind palette entry — amber is GLM's and
   // orange-500 is a good deal louder than the logo.
-  claude: 'text-[#D97757]',
+  // Anthropic's orange is hsl(14.8 63.1% 59.6%), which measures 3.12:1 on a
+  // white card — the brand value survives in dark (5.6:1 on the base) and the
+  // light variant is the same hue and saturation dropped to L=48%, the point
+  // where it reaches 4.49:1. Darkening rather than substituting keeps it
+  // recognisably the logo colour, and lands it at the top of the range the
+  // other five engines' -600 shades already occupy (amber-600 is 3.3:1,
+  // emerald-600 3.9:1), so no engine label is now the weak one.
+  claude: 'text-[#c6532d] dark:text-[#D97757]',
+  // The -600/-400 pairing (rather than one Radix *-11 token) is deliberate: a
+  // bare -400 is a dark-mode shade that measures under 2:1 on a white card, but
+  // mapping these onto the Radix scale would collapse kimi (purple) and ollama
+  // (violet) into the same violet-11 and make two engines indistinguishable.
+  // Keeping the Tailwind hue families preserves the six-way distinction; only
+  // the lightness moves per theme.
   // OpenAI green (#10A37F) rounded to emerald, matching the CX chip in TabBar.
-  codex: 'text-emerald-400',
-  deepseek: 'text-sky-400',
-  kimi: 'text-purple-400',
-  glm: 'text-amber-400',
-  ollama: 'text-violet-400',
+  codex: 'text-emerald-600 dark:text-emerald-400',
+  deepseek: 'text-sky-600 dark:text-sky-400',
+  kimi: 'text-purple-600 dark:text-purple-400',
+  glm: 'text-amber-600 dark:text-amber-400',
+  ollama: 'text-violet-600 dark:text-violet-400',
 };
 
 /**
@@ -118,7 +131,7 @@ export const ENGINE_MENU_SAVE = 'bg-brand text-white hover:bg-brand/90';
  * Rose rather than the red used for request errors below it: nothing has failed, the
  * setup simply has not happened yet.
  */
-export const ENGINE_SETUP_TONE = 'text-rose-400';
+export const ENGINE_SETUP_TONE = 'text-rose-600 dark:text-rose-400';
 
 /**
  * Popover shell shared by every engine picker. Width is content-driven, so callers
@@ -126,7 +139,7 @@ export const ENGINE_SETUP_TONE = 'text-rose-400';
  * fixed here — the pickers used to disagree on z-index (1000 vs 9999) and shadow.
  */
 export const ENGINE_MENU_CLASS =
-  'fixed z-[9999] max-h-[70vh] overflow-y-auto rounded-lg border border-border bg-popover py-2 shadow-lg';
+  'fixed z-[9999] max-h-[70vh] overflow-y-auto rounded-lg border border-border bg-popover py-2 shadow-lv2';
 
 /** The vendor logo, in the vendor's colors. Every engine has one under /agent-icons. */
 export function EngineIcon({

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { readThemeColor, useThemeSafe } from '@cockpit/shared-ui';
 import { BUBBLE_CONTENT_HEIGHT } from '../../CommandBubble';
 import { modKey } from '@cockpit/shared-utils';
 import { pluginApiPost as apiPost } from '../../effect/pluginDisconnect';
@@ -139,6 +140,8 @@ function GraphCanvas({ nodes, rels, allLabels }: {
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Drives the graph repaint on a theme flip (see the colour reads below).
+  const resolvedTheme = useThemeSafe()?.resolvedTheme ?? 'dark';
   const nodesRef = useRef<GraphNode[]>([]);
   const animRef = useRef<number>(0);
   const dragRef = useRef<{ nodeId: string | number; offsetX: number; offsetY: number } | null>(null);
@@ -191,6 +194,20 @@ function GraphCanvas({ nodes, rels, allLabels }: {
     const nodeMap = nodeMapRef.current;
     const R = 20;
 
+    // Graph chrome was drawn in fixed #666 / #999 / rgba(255,255,255,.3),
+    // which silently assumed a dark canvas — on a light bubble the edge labels
+    // measured ~2.8:1 and the node rings vanished outright. Resolved ONCE per
+    // effect run rather than inside simulate(): that body is a rAF loop, and a
+    // getComputedStyle call per frame would be a layout read every 16ms. The
+    // effect re-runs on resolvedTheme, which is what repaints on a theme flip.
+    const canvasEl = canvasRef.current;
+    const edgeColor = readThemeColor(canvasEl, '--foreground-faint', '#666');
+    const edgeLabelColor = readThemeColor(canvasEl, '--foreground-subtle', '#999');
+    // The ring separates a node from the canvas behind it, so it IS the canvas
+    // colour; hover swaps to the text colour for maximum contrast either way.
+    const nodeRingColor = readThemeColor(canvasEl, '--accent', '#27272a');
+    const nodeRingHoverColor = readThemeColor(canvasEl, '--foreground', '#fff');
+
     function simulate() {
       const { w, h } = sizeRef.current;
       if (w === 0 || h === 0) { animRef.current = requestAnimationFrame(simulate); return; }
@@ -229,24 +246,29 @@ function GraphCanvas({ nodes, rels, allLabels }: {
       rels.forEach(rel => {
         const s = nodeMap.get(rel.startId), t = nodeMap.get(rel.endId);
         if (!s || !t) return;
-        ctx.strokeStyle = '#666'; ctx.beginPath(); ctx.moveTo(s.x!, s.y!); ctx.lineTo(t.x!, t.y!); ctx.stroke();
+        ctx.strokeStyle = edgeColor; ctx.beginPath(); ctx.moveTo(s.x!, s.y!); ctx.lineTo(t.x!, t.y!); ctx.stroke();
         const angle = Math.atan2(t.y! - s.y!, t.x! - s.x!);
         const ax = t.x! - Math.cos(angle) * (R + 4), ay = t.y! - Math.sin(angle) * (R + 4);
-        ctx.fillStyle = '#666'; ctx.beginPath();
+        ctx.fillStyle = edgeColor; ctx.beginPath();
         ctx.moveTo(ax, ay);
         ctx.lineTo(ax - 8 * Math.cos(angle - 0.3), ay - 8 * Math.sin(angle - 0.3));
         ctx.lineTo(ax - 8 * Math.cos(angle + 0.3), ay - 8 * Math.sin(angle + 0.3));
         ctx.closePath(); ctx.fill();
-        ctx.font = '9px system-ui'; ctx.fillStyle = '#999'; ctx.textAlign = 'center';
+        ctx.font = '9px system-ui'; ctx.fillStyle = edgeLabelColor; ctx.textAlign = 'center';
         ctx.fillText(rel.type, (s.x! + t.x!) / 2, (s.y! + t.y!) / 2 - 4);
       });
       // Nodes
       ns.forEach(n => {
-        const label = n.labels[0] || '', color = label ? getLabelColor(label, allLabels) : '#888';
+        // Node fills stay on the fixed NODE_COLORS palette and the label stays
+        // white: the text sits ON the saturated fill, not on the canvas, so it
+        // is the fill that has to carry it and that reads the same either way.
+        // The unlabelled fallback moved off #888 (white text ~2.9:1) to a
+        // gray-500 that clears 4.5:1, still theme-independent for that reason.
+        const label = n.labels[0] || '', color = label ? getLabelColor(label, allLabels) : '#6b7280';
         ctx.beginPath(); ctx.arc(n.x!, n.y!, R, 0, 2 * Math.PI);
         ctx.fillStyle = color; ctx.fill();
         const isHovered = hoveredNodeRef.current?.id === n.id;
-        ctx.strokeStyle = isHovered ? '#fff' : 'rgba(255,255,255,0.3)';
+        ctx.strokeStyle = isHovered ? nodeRingHoverColor : nodeRingColor;
         ctx.lineWidth = isHovered ? 2.5 : 1; ctx.stroke();
         ctx.font = '10px system-ui'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         const txt = String(n.properties.name || n.properties.title || n.properties.id || label || n.id);
@@ -256,7 +278,7 @@ function GraphCanvas({ nodes, rels, allLabels }: {
     }
     animRef.current = requestAnimationFrame(simulate);
     return () => cancelAnimationFrame(animRef.current);
-  }, [nodes, rels, allLabels]);
+  }, [nodes, rels, allLabels, resolvedTheme]);
 
   const findNode = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -410,7 +432,7 @@ export function Neo4jBubble({
             <span className="inline-block w-3 h-3 border border-brand border-t-transparent rounded-full animate-spin flex-shrink-0" />
           )}
           {status === 'connected' && (
-            <span className="text-[10px] text-emerald-500 flex-shrink-0">Connected</span>
+            <span className="text-[10px] text-green-11 flex-shrink-0">Connected</span>
           )}
           {status === 'error' && (
             <span className="text-[10px] text-destructive flex-shrink-0">Error</span>
@@ -519,7 +541,7 @@ export function Neo4jBubble({
                             key={s.key}
                             onClick={() => setSchemaSection(s.key)}
                             className={`flex items-center gap-1.5 px-2 py-1.5 cursor-pointer truncate transition-colors ${
-                              schemaSection === s.key ? 'bg-brand/10 text-brand' : 'hover:bg-white/10 text-foreground'
+                              schemaSection === s.key ? 'bg-brand/10 text-brand' : 'hover:bg-hover text-foreground'
                             }`}
                           >
                             <span className="truncate min-w-0 flex-1">{s.label}</span>
@@ -618,7 +640,7 @@ export function Neo4jBubble({
                               </thead>
                               <tbody>
                                 {queryResult.records.map((record, i) => (
-                                  <tr key={i} className="hover:bg-accent/50">
+                                  <tr key={i} className="hover:bg-hover">
                                     {queryResult.keys.map(k => (
                                       <td key={k} className="px-1.5 py-0.5 border-b border-border/50 font-mono whitespace-nowrap max-w-[200px] truncate">
                                         {record[k] === null

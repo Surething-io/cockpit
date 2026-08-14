@@ -245,7 +245,7 @@ export function StatusDiffPane({
                       navigator.clipboard.writeText(`${cwd}/${focalFile}`);
                       toast(t('common.copiedPath'));
                     }}
-                    className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
+                    className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors flex-shrink-0"
                   >
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -258,7 +258,7 @@ export function StatusDiffPane({
                       e.stopPropagation();
                       locateInTree(focalFile);
                     }}
-                    className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
+                    className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors flex-shrink-0"
                   >
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <circle cx="12" cy="12" r="10" strokeWidth={2} />
@@ -301,7 +301,7 @@ export function StatusDiffPane({
                     className={`px-2 py-0.5 text-[11px] transition-colors ${
                       diffViewerMode === mode
                         ? 'bg-brand text-white'
-                        : 'text-muted-foreground hover:bg-accent'
+                        : 'text-muted-foreground hover:bg-hover'
                     }`}
                   >
                     {t(mode === 'file' ? 'common.file' : 'common.codeMap')}
@@ -329,7 +329,7 @@ export function StatusDiffPane({
                   navigator.clipboard.writeText(`${cwd}/${filePath}`);
                   toast(t('common.copiedPath'));
                 }}
-                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
+                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors flex-shrink-0"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -342,7 +342,7 @@ export function StatusDiffPane({
                   e.stopPropagation();
                   locateInTree(filePath);
                 }}
-                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
+                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors flex-shrink-0"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <circle cx="12" cy="12" r="10" strokeWidth={2} />
@@ -384,7 +384,7 @@ export function StatusDiffPane({
                     className={`px-2 py-0.5 text-xs transition-colors ${
                       diffViewerMode === mode
                         ? 'bg-brand text-white'
-                        : 'text-muted-foreground hover:bg-accent'
+                        : 'text-muted-foreground hover:bg-hover'
                     }`}
                   >
                     {t(mode === 'file' ? 'common.file' : 'common.codeMap')}
@@ -456,11 +456,11 @@ export function StatusDiffPane({
           comments + send to AI). */}
       {showMarkdownPreview && (
         <div
-          className="absolute inset-0 z-50 flex items-center justify-center bg-black/50"
+          className="absolute inset-0 z-50 flex items-center justify-center bg-scrim"
           onClick={() => setShowMarkdownPreview(false)}
         >
           <div
-            className="bg-card rounded-lg shadow-xl w-full max-w-[90%] h-full flex flex-col"
+            className="bg-card rounded-lg shadow-lv3 w-full max-w-[90%] h-full flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <InteractiveMarkdownPreview
@@ -497,11 +497,11 @@ export function StatusDiffPane({
           historical reasons (see file header). */}
       {jsonPreview && (
         <div
-          className="absolute inset-0 z-50 flex items-center justify-center bg-black/50"
+          className="absolute inset-0 z-50 flex items-center justify-center bg-scrim"
           onClick={() => setJsonPreview(null)}
         >
           <div
-            className="bg-card rounded-lg shadow-xl w-full max-w-[90%] h-[90%] flex flex-col"
+            className="bg-card rounded-lg shadow-lv3 w-full max-w-[90%] h-[90%] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 py-2 border-b border-border flex-shrink-0">
@@ -510,7 +510,7 @@ export function StatusDiffPane({
               </span>
               <button
                 onClick={() => setJsonPreview(null)}
-                className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -518,10 +518,10 @@ export function StatusDiffPane({
               </button>
             </div>
             <JsonSearchBar search={jsonPreviewSearch} />
-            <div className="flex-1 overflow-auto px-6 py-4 bg-[#0d1117]">
+            <div className="flex-1 overflow-auto px-6 py-4 bg-secondary">
               <pre
                 ref={jsonPreviewPreRef}
-                className="whitespace-pre-wrap break-words font-mono"
+                className="whitespace-pre-wrap break-words font-mono text-foreground"
                 style={{ fontSize: '0.8125rem', lineHeight: '1.5' }}
               >
                 {formatAsHumanReadable(jsonPreview.content)}

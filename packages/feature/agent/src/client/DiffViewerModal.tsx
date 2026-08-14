@@ -434,7 +434,7 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
     <MenuContainerProvider container={menuContainer}>
     <div
       ref={menuContainerRef}
-      className="relative bg-card shadow-xl w-full h-full flex flex-col rounded-lg"
+      className="relative bg-card shadow-lv3 w-full h-full flex flex-col rounded-lg"
       onClick={(e) => e.stopPropagation()}
     >
         {/* Header */}
@@ -444,7 +444,7 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
               onClick={() => setShowLeft((s) => !s)}
               aria-label={t('diffViewer.toggleFileTree')}
               className={`p-1 rounded transition-colors ${
-                showLeft ? 'text-foreground bg-accent' : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                showLeft ? 'text-foreground bg-accent' : 'text-muted-foreground hover:text-foreground hover:bg-hover'
               }`}
             >
               <PanelLeft className="w-4 h-4" />
@@ -455,7 +455,7 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+            className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -470,7 +470,7 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                 <div
                   key={call.key}
                   onClick={() => selectCall(call)}
-                  className={`px-3 py-2 border-b border-border cursor-pointer hover:bg-accent ${
+                  className={`px-3 py-2 border-b border-border cursor-pointer hover:bg-hover ${
                     selectedCallKey === call.key ? 'bg-brand/10' : ''
                   }`}
                 >
@@ -479,7 +479,7 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                       <span className="font-mono text-xs text-brand">{call.shortHash}</span>
                     )}
                     {call.timestamp !== undefined && (
-                      <span className="text-xs text-slate-9">{formatCallTime(call.timestamp)}</span>
+                      <span className="text-xs text-foreground-subtle">{formatCallTime(call.timestamp)}</span>
                     )}
                     {call.changeClass && (
                       <span className="ml-auto">
@@ -530,7 +530,7 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                     {callSubject(displayCall)}
                   </span>
                   {displayCall.truncated && (
-                    <span className="text-amber-500">{t('diffViewer.truncated')}</span>
+                    <span className="text-amber-11">{t('diffViewer.truncated')}</span>
                   )}
                   {displayCall.legacy && (
                     <span
@@ -677,11 +677,11 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
             content (read-only intent), same pattern as StatusDiffPane. */}
         {showMarkdownPreview && selectedFile && (
           <div
-            className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 p-2 md:p-4"
+            className="absolute inset-0 z-50 flex items-center justify-center bg-scrim p-2 md:p-4"
             onClick={() => setShowMarkdownPreview(false)}
           >
             <div
-              className="bg-card rounded-lg shadow-xl w-full max-w-[95%] h-full flex flex-col"
+              className="bg-card rounded-lg shadow-lv3 w-full max-w-[95%] h-full flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
               <InteractiveMarkdownPreview
@@ -709,24 +709,24 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
         {/* JSON readable preview overlay. */}
         {jsonPreview && (
           <div
-            className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 p-2 md:p-4"
+            className="absolute inset-0 z-50 flex items-center justify-center bg-scrim p-2 md:p-4"
             onClick={() => setJsonPreview(null)}
           >
             <div
-              className="bg-card rounded-lg shadow-xl w-full max-w-[95%] h-full flex flex-col"
+              className="bg-card rounded-lg shadow-lv3 w-full max-w-[95%] h-full flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between px-4 py-2 border-b border-border flex-shrink-0">
                 <span className="text-sm text-muted-foreground font-mono truncate">{jsonPreview.filePath}</span>
                 <button
                   onClick={() => setJsonPreview(null)}
-                  className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                  className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="flex-1 overflow-auto px-6 py-4 bg-[#0d1117]">
-                <pre className="whitespace-pre-wrap break-words font-mono" style={{ fontSize: '0.8125rem', lineHeight: '1.5' }}>
+              <div className="flex-1 overflow-auto px-6 py-4 bg-secondary">
+                <pre className="whitespace-pre-wrap break-words font-mono text-foreground" style={{ fontSize: '0.8125rem', lineHeight: '1.5' }}>
                   {formatAsHumanReadable(jsonPreview.content)}
                 </pre>
               </div>
@@ -745,7 +745,7 @@ export function DiffViewerModal({ toolCalls, cwd, sessionId, onClose, onContentS
   return (
     <Portal>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-scrim"
         onClick={onClose}
       >
         <FileDiffViewer

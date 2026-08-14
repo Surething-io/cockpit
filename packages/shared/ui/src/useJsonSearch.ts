@@ -13,7 +13,12 @@ function ensureHighlightStyle() {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = `::highlight(json-search){background:rgba(217,119,6,.3)}::highlight(json-search-current){background:rgba(217,119,6,.5)}`;
+  // Reads the same --highlight tokens the code-search (.hl-*) and chat-search
+  // (mark.chat-search-*) rules use, so all three search surfaces stay one
+  // colour and pick up the per-theme alpha. The rule text still has to be
+  // injected here rather than living in globals.css: Turbopack/PostCSS does
+  // not recognize ::highlight and drops the block.
+  style.textContent = `::highlight(json-search){background:var(--highlight)}::highlight(json-search-current){background:var(--highlight-current)}`;
   document.head.appendChild(style);
 }
 

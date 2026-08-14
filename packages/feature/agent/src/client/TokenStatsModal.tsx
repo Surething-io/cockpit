@@ -59,7 +59,16 @@ const MODEL_PALETTE = {
 };
 
 // Activity-trend series (chart + legend share these).
-const ACTIVITY_COLORS = { messages: '#3b82f6', toolCalls: '#22c55e' };
+//
+// Split per theme like MODEL_PALETTE above, and drawn from the same validated
+// hues rather than raw blue-500/green-500: those two were one fixed pair for
+// both themes, so the series that reads as a clean blue on the dark chart came
+// out noticeably hot against a white one. `rgb` is kept as a triple because
+// the hour heatmap below washes the messages hue across an alpha ramp.
+const ACTIVITY_COLORS = {
+  light: { messages: '#2a78d6', toolCalls: '#1baf7a', messagesRgb: '42, 120, 214' },
+  dark: { messages: '#3987e5', toolCalls: '#199e70', messagesRgb: '57, 135, 229' },
+};
 
 // Hues are handed out in palette order, never hashed into arbitrary slots: the
 // palette is only validated for *adjacent* slots, so slots 1..N are guaranteed
@@ -253,7 +262,12 @@ function BarChart({ data, height = 200, formatValue = fmtTokens }: { data: BarCh
       const y = paddingTop + chartH - (val / niceMax) * chartH;
       ctx.fillText(formatValue(val), paddingLeft - 6, y);
       // grid line
-      ctx.strokeStyle = getCssVar(canvas, '--border') || '#333';
+      // --line-2, not --border: the semantic border token stores a bare HSL
+      // triple ("240 12% 89.5%") for `hsl(var(--x))` composition, which is not
+      // a valid strokeStyle — assigning it is a silent no-op, so these grid
+      // lines used to paint in the default black in both themes. The --line-*
+      // tokens are complete rgba() colors and can be handed to canvas as-is.
+      ctx.strokeStyle = getCssVar(canvas, '--line-2') || '#333';
       ctx.lineWidth = 0.5;
       ctx.beginPath();
       ctx.moveTo(paddingLeft, y);
@@ -334,7 +348,7 @@ function BarChart({ data, height = 200, formatValue = fmtTokens }: { data: BarCh
       />
       {tooltip && (
         <div
-          className="absolute pointer-events-none bg-popover text-popover-foreground text-[10px] px-2 py-1 rounded shadow-lg border border-border whitespace-nowrap z-10"
+          className="absolute pointer-events-none bg-popover text-popover-foreground text-[10px] px-2 py-1 rounded shadow-lv2 border border-border whitespace-nowrap z-10"
           style={{ left: tooltip.x, top: tooltip.y, transform: 'translate(-50%, -100%)' }}
         >
           {tooltip.content}
@@ -378,6 +392,8 @@ function getCssVar(el: HTMLElement, name: string): string {
 
 function HourHeatmap({ hourCounts }: { hourCounts: Record<string, number> }) {
   const { t } = useTranslation();
+  const { resolvedTheme } = useTheme();
+  const activity = ACTIVITY_COLORS[resolvedTheme];
   const max = Math.max(1, ...Object.values(hourCounts));
   const hours = Array.from({ length: 24 }, (_, i) => i);
 
@@ -394,7 +410,12 @@ function HourHeatmap({ hourCounts }: { hourCounts: Record<string, number> }) {
                 className="w-full rounded-sm transition-all"
                 style={{
                   height: `${Math.max(2, ratio * 48)}px`,
-                  backgroundColor: ratio > 0 ? `rgba(59, 130, 246, ${0.2 + ratio * 0.8})` : 'var(--muted)',
+                  // hsl(...) wrapper on the empty-hour bar is required: --muted
+                  // stores a bare HSL triple, so `var(--muted)` alone is an
+                  // invalid declaration and those bars rendered transparent.
+                  backgroundColor: ratio > 0
+                    ? `rgba(${activity.messagesRgb}, ${0.2 + ratio * 0.8})`
+                    : 'hsl(var(--muted))',
                 }}
               />
               {h % 3 === 0 && (
@@ -494,8 +515,8 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
       const activityChart: BarChartData = {
         labels,
         datasets: [
-          { label: t('tokenStats.messages'), data: slicedActivity.map(d => d.messageCount), color: ACTIVITY_COLORS.messages },
-          { label: t('tokenStats.toolCalls'), data: slicedActivity.map(d => d.toolCallCount), color: ACTIVITY_COLORS.toolCalls },
+          { label: t('tokenStats.messages'), data: slicedActivity.map(d => d.messageCount), color: ACTIVITY_COLORS[resolvedTheme].messages },
+          { label: t('tokenStats.toolCalls'), data: slicedActivity.map(d => d.toolCallCount), color: ACTIVITY_COLORS[resolvedTheme].toolCalls },
         ],
       };
 
@@ -532,8 +553,8 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
       const activityChart: BarChartData = {
         labels,
         datasets: [
-          { label: t('tokenStats.messages'), data: weeks.map(w => w.messages), color: ACTIVITY_COLORS.messages },
-          { label: t('tokenStats.toolCalls'), data: weeks.map(w => w.tools), color: ACTIVITY_COLORS.toolCalls },
+          { label: t('tokenStats.messages'), data: weeks.map(w => w.messages), color: ACTIVITY_COLORS[resolvedTheme].messages },
+          { label: t('tokenStats.toolCalls'), data: weeks.map(w => w.tools), color: ACTIVITY_COLORS[resolvedTheme].toolCalls },
         ],
       };
 
@@ -567,8 +588,8 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
     const activityChart: BarChartData = {
       labels,
       datasets: [
-        { label: t('tokenStats.messages'), data: months.map(m => m.messages), color: ACTIVITY_COLORS.messages },
-        { label: t('tokenStats.toolCalls'), data: months.map(m => m.tools), color: ACTIVITY_COLORS.toolCalls },
+        { label: t('tokenStats.messages'), data: months.map(m => m.messages), color: ACTIVITY_COLORS[resolvedTheme].messages },
+        { label: t('tokenStats.toolCalls'), data: months.map(m => m.tools), color: ACTIVITY_COLORS[resolvedTheme].toolCalls },
       ],
     };
 
@@ -619,8 +640,8 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-card rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="absolute inset-0 bg-scrim" onClick={onClose} />
+      <div className="relative bg-card rounded-xl shadow-lv3 w-full max-w-4xl mx-4 max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-3">
@@ -632,7 +653,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
                   key={b.key}
                   className={`px-2.5 py-0.5 text-[11px] rounded transition-colors ${
                     timeRange === b.key
-                      ? 'bg-background text-foreground shadow-sm'
+                      ? 'bg-background text-foreground shadow-lv1'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                   onClick={() => setTimeRange(b.key)}
@@ -642,7 +663,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
               ))}
             </div>
           </div>
-          <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors">
+          <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -678,11 +699,11 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
                   <h3 className="text-xs font-medium text-muted-foreground">{t('tokenStats.activityTrend')}</h3>
                   <div className="flex items-center gap-3 text-[10px]">
                     <span className="flex items-center gap-1">
-                      <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: ACTIVITY_COLORS.messages }} />
+                      <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: ACTIVITY_COLORS[resolvedTheme].messages }} />
                       {t('tokenStats.messages')}
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: ACTIVITY_COLORS.toolCalls }} />
+                      <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: ACTIVITY_COLORS[resolvedTheme].toolCalls }} />
                       {t('tokenStats.toolCalls')}
                     </span>
                   </div>
@@ -701,7 +722,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
                       <button
                         className={`px-2.5 py-0.5 text-[11px] rounded transition-colors ${
                           tokenChartMode === 'tokens'
-                            ? 'bg-background text-foreground shadow-sm'
+                            ? 'bg-background text-foreground shadow-lv1'
                             : 'text-muted-foreground hover:text-foreground'
                         }`}
                         onClick={() => setTokenChartMode('tokens')}
@@ -709,7 +730,7 @@ export function TokenStatsModal({ isOpen, onClose }: TokenStatsModalProps) {
                       <button
                         className={`px-2.5 py-0.5 text-[11px] rounded transition-colors ${
                           tokenChartMode === 'cost'
-                            ? 'bg-background text-foreground shadow-sm'
+                            ? 'bg-background text-foreground shadow-lv1'
                             : 'text-muted-foreground hover:text-foreground'
                         }`}
                         onClick={() => setTokenChartMode('cost')}

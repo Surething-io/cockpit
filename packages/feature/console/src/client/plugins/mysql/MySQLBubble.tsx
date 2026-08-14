@@ -244,7 +244,7 @@ function CellTooltip({ text }: { text: string }) {
       {text}
       {show && <Portal>
         <div
-          className="fixed z-[9999] overflow-y-auto px-2 py-1.5 text-xs font-mono bg-popover text-popover-foreground border border-border rounded shadow-lg whitespace-pre-wrap break-all select-text cursor-text"
+          className="fixed z-[9999] overflow-y-auto px-2 py-1.5 text-xs font-mono bg-popover text-popover-foreground border border-border rounded shadow-lv2 whitespace-pre-wrap break-all select-text cursor-text"
           style={{ left: pos.x, top: pos.y, maxWidth: pos.maxW, maxHeight: pos.maxH, transform: pos.above ? 'translateY(-100%)' : undefined }}
           onMouseEnter={handleTipEnter}
           onMouseLeave={handleTipLeave}
@@ -666,7 +666,7 @@ export function MySQLBubble({
             <span className="text-[10px] text-destructive flex-shrink-0">{t('mysql.connectionFailed')}</span>
           )}
           {status === 'connected' && (
-            <span className="text-[10px] text-emerald-500 flex-shrink-0">{t('mysql.connected')}</span>
+            <span className="text-[10px] text-green-11 flex-shrink-0">{t('mysql.connected')}</span>
           )}
           <span className="flex-1" />
           {timestamp && (
@@ -736,7 +736,7 @@ export function MySQLBubble({
                   )}
                   <button
                     onClick={loadTables}
-                    className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent active:bg-accent/50 transition-colors"
+                    className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-hover active:bg-active transition-colors"
                     title={t('mysql.refreshTableList')}
                   >
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -768,7 +768,7 @@ export function MySQLBubble({
                       key={t.name}
                       onClick={() => selectTable(t.name)}
                       className={`flex items-center gap-1.5 px-2 py-1 cursor-pointer truncate transition-colors ${
-                        selectedTable === t.name ? 'bg-brand/10 text-brand' : 'hover:bg-accent text-foreground'
+                        selectedTable === t.name ? 'bg-brand/10 text-brand' : 'hover:bg-hover text-foreground'
                       }`}
                     >
                       <span className="flex-shrink-0 text-[10px] text-muted-foreground">{t.type === 'view' ? 'V' : 'T'}</span>
@@ -973,9 +973,9 @@ function StructureView({ columns, primaryKeys: _primaryKeys, foreignKeys, indexe
           </thead>
           <tbody>
             {columns.map(col => (
-              <tr key={col.name} className="border-b border-border/50 hover:bg-accent/50">
+              <tr key={col.name} className="border-b border-border/50 hover:bg-hover">
                 <td className="px-1.5 py-1 font-mono">
-                  {col.isPrimaryKey && <span className="text-amber-500 mr-1" title={t('mysql.primaryKey')}>&#x1F511;</span>}
+                  {col.isPrimaryKey && <span className="text-amber-11 mr-1" title={t('mysql.primaryKey')}>&#x1F511;</span>}
                   {col.name}
                 </td>
                 <td className="px-1.5 py-1 text-muted-foreground font-mono">
@@ -1076,7 +1076,7 @@ function FilterDropdown({ filter, onApply, onClear, onToggle, onClose, colName, 
     <Portal>
     <div
       ref={panelRef}
-      className="fixed z-[9998] w-[220px] bg-popover border border-border rounded-md shadow-lg p-2 space-y-2"
+      className="fixed z-[9998] w-[220px] bg-popover border border-border rounded-md shadow-lv2 p-2 space-y-2"
       style={{ left, top }}
       onClick={(e) => e.stopPropagation()}
     >
@@ -1307,7 +1307,7 @@ function DataView({
               <tr className="bg-emerald-500/5">
                 <td className="px-1 py-0.5 border-b border-border text-center">
                   <div className="flex gap-0.5 justify-center">
-                    <button onClick={onSaveNewRow} className="text-[10px] text-emerald-500 hover:text-emerald-400" title={t('common.save')}>&#x2713;</button>
+                    <button onClick={onSaveNewRow} className="text-[10px] text-green-11 hover:text-green-9" title={t('common.save')}>&#x2713;</button>
                     <button onClick={onCancelAdd} className="text-[10px] text-muted-foreground hover:text-foreground" title={t('common.cancel')}>&#x2715;</button>
                   </div>
                 </td>
@@ -1327,12 +1327,12 @@ function DataView({
             {rows.map((row, idx) => (
               <tr
                 key={idx}
-                className={`hover:bg-accent/50 ${selectedRows.has(idx) ? 'bg-brand/5' : ''} ${editingRowIdx === idx ? 'bg-blue-500/5' : ''}`}
+                className={`hover:bg-hover ${selectedRows.has(idx) ? 'bg-brand/5' : ''} ${editingRowIdx === idx ? 'bg-blue-500/5' : ''}`}
               >
                 <td className="px-1 py-0.5 border-b border-border/50 text-center">
                   {editingRowIdx === idx ? (
                     <div className="flex gap-0.5 justify-center">
-                      <button onClick={onSaveEdit} className="text-[10px] text-emerald-500 hover:text-emerald-400" title={t('common.save')}>&#x2713;</button>
+                      <button onClick={onSaveEdit} className="text-[10px] text-green-11 hover:text-green-9" title={t('common.save')}>&#x2713;</button>
                       <button onClick={onCancelEdit} className="text-[10px] text-muted-foreground hover:text-foreground" title={t('common.cancel')}>&#x2715;</button>
                     </div>
                   ) : (
@@ -1380,7 +1380,7 @@ function DataView({
           <button
             onClick={onStartAdd}
             disabled={isAddingRow}
-            className="px-1.5 py-0.5 text-[10px] text-emerald-500 hover:text-emerald-400 disabled:opacity-30"
+            className="px-1.5 py-0.5 text-[10px] text-green-11 hover:text-green-9 disabled:opacity-30"
           >
             {t('mysql.addRow')}
           </button>
@@ -1482,7 +1482,7 @@ function SqlView({
             </thead>
             <tbody>
               {result.rows.map((row, idx) => (
-                <tr key={idx} className="hover:bg-accent/50">
+                <tr key={idx} className="hover:bg-hover">
                   {result.fields.map(f => (
                     <td
                       key={f.name}

@@ -450,6 +450,11 @@ export const CommandBubble = memo(function CommandBubble({
   return (
     <div className="flex flex-col items-start">
         <div
+          /* bg-accent here is the surface an embedded PTY paints itself with:
+             xterm cannot be transparent (see XtermRenderer's SURFACE_TOKEN
+             note), so it reads --accent and fills with it. Changing this fill
+             class means changing SURFACE_TOKEN to match, or the terminal keeps
+             the old colour and shows a seam against its own bubble. */
           className={`w-full bg-accent text-foreground dark:text-slate-11 relative overflow-hidden border transition-colors cursor-pointer ${
             maximized ? 'rounded-none border-0' : 'rounded-2xl rounded-bl-md rounded-br-md'
           } ${
@@ -476,14 +481,14 @@ export const CommandBubble = memo(function CommandBubble({
               {isRunning && onInterrupt && (
                 <button
                   onClick={onInterrupt}
-                  className="text-xs px-3 py-1 rounded-md font-medium bg-destructive text-destructive-foreground transition-all duration-150 hover:bg-destructive/80 hover:shadow-md active:scale-95 active:bg-destructive/70 cursor-pointer select-none"
+                  className="text-xs px-3 py-1 rounded-md font-medium bg-destructive text-destructive-foreground transition-all duration-150 hover:bg-destructive/80 hover:shadow-lv2 active:scale-95 active:bg-destructive/70 cursor-pointer select-none"
                 >
                   Ctrl+C
                 </button>
               )}
               <button
                 onClick={() => onToggleMaximize?.()}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
                 title={t('console.restoreTooltip', { modKey: modKey() })}
               >
                 <X className="w-4 h-4" />
@@ -613,14 +618,14 @@ export const CommandBubble = memo(function CommandBubble({
               <div className="flex items-center gap-0.5">
                 <button
                   onClick={() => doSearchPrev(searchQuery)}
-                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
                   title={t('console.prevShiftEnter')}
                 >
                   <ChevronUp className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => doSearchNext(searchQuery)}
-                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
                   title={t('console.nextEnter')}
                 >
                   <ChevronDown className="w-3.5 h-3.5" />
@@ -628,7 +633,7 @@ export const CommandBubble = memo(function CommandBubble({
               </div>
               <button
                 onClick={closeSearch}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -642,14 +647,25 @@ export const CommandBubble = memo(function CommandBubble({
                 <XtermRenderer ref={xtermSearchRef} output={output} isRunning={isRunning} onInput={onStdin} onResize={onPtyResize} maximized={maximized} height={contentHeight} directWrite={!!subscribePtyOutput} />
               </Suspense>
               {!isRunning && (
-                <div className="absolute inset-0 bg-black/30 pointer-events-none" />
+                /* bg-background, not bg-black: this veil marks the command as
+                   finished by fading its output toward the page, and "toward
+                   the page" is white in light and near-black in dark. A fixed
+                   black/30 only reads as fading in dark; over a light bubble it
+                   just dropped a dirty gray sheet on the terminal. */
+                <div className="absolute inset-0 bg-background/50 pointer-events-none" />
               )}
               {!isRunning && onRerun && (
                 <div
                   className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                   onClick={(e) => { e.stopPropagation(); onRerun(); }}
                 >
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-neutral-800 text-white text-xs">
+                  {/* The inverted-overlay token, not the repo's one stray
+                      bg-neutral-800: this pill floats over terminal output, and
+                      an overlay reads as "above" by contrasting with what it
+                      covers. In light that still resolves to a dark chip (same
+                      look as before); in dark it lifts to a surface above the
+                      near-black bubble instead of vanishing into it. */}
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-tooltip text-tooltip-foreground text-xs">
                     <RotateCw className="w-3.5 h-3.5" />
                     {t('console.rerun')}
                   </div>

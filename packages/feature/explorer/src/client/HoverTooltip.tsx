@@ -42,12 +42,12 @@ function highlightTypeSignature(code: string): React.ReactNode[] {
     }
     const text = match[0];
     if (/^["']/.test(text)) {
-      parts.push(<span key={key++} className="text-green-400">{text}</span>);
+      parts.push(<span key={key++} className="text-green-11">{text}</span>);
     } else if (/^\d+$/.test(text)) {
-      parts.push(<span key={key++} className="text-orange-300">{text}</span>);
+      parts.push(<span key={key++} className="text-orange-11">{text}</span>);
     } else if (KEYWORDS.test(text)) {
       KEYWORDS.lastIndex = 0;
-      parts.push(<span key={key++} className="text-pink-400">{text}</span>);
+      parts.push(<span key={key++} className="text-violet-11">{text}</span>);
     } else {
       parts.push(<span key={key++} className="text-foreground">{text}</span>);
     }
@@ -116,7 +116,7 @@ export const HoverTooltip = forwardRef<HTMLDivElement, HoverTooltipProps>(functi
   return (
     <div
       ref={ref}
-      className="absolute z-[200] max-w-lg bg-card border border-border rounded-lg shadow-xl px-3 py-2 pointer-events-none"
+      className="absolute z-[200] max-w-lg bg-card border border-border rounded-lg shadow-lv3 px-3 py-2 pointer-events-none"
       style={{ left: relX, top: relY }}
     >
       <pre className="font-mono text-xs whitespace-pre-wrap break-all leading-relaxed">

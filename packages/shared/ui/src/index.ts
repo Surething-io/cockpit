@@ -12,6 +12,7 @@ export { ToastProvider, useToast, toast, confirm } from './Toast';
 
 // Theme
 export * from './ThemeProvider';
+export * from './themeColor';
 
 // Markdown
 export * from './MarkdownRenderer';

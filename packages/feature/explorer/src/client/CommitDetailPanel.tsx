@@ -238,25 +238,25 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
         )}
         <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-1">
-            <span className="text-slate-9">{t('commitDetail.hash')}</span>
+            <span className="text-foreground-subtle">{t('commitDetail.hash')}</span>
             <span className="font-mono bg-accent px-1.5 py-0.5 rounded">
               {commit.hash}
             </span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-slate-9">{t('commitDetail.author')}</span>
+            <span className="text-foreground-subtle">{t('commitDetail.author')}</span>
             <span>{commit.author}</span>
-            <span className="text-slate-9">&lt;{commit.authorEmail}&gt;</span>
+            <span className="text-foreground-subtle">&lt;{commit.authorEmail}&gt;</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-slate-9">{t('commitDetail.date')}</span>
+            <span className="text-foreground-subtle">{t('commitDetail.date')}</span>
             <span>{displayDate}</span>
             {commit.relativeDate && (
-              <span className="text-slate-9">({commit.relativeDate})</span>
+              <span className="text-foreground-subtle">({commit.relativeDate})</span>
             )}
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-slate-9">{t('commitDetail.files')}</span>
+            <span className="text-foreground-subtle">{t('commitDetail.files')}</span>
             <span>{t('commitDetail.nChanges', { count: files.length })}</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
@@ -348,16 +348,16 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
   );
 
   const jsonPreviewModal = jsonPreview && (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setJsonPreview(null)}>
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-scrim" onClick={() => setJsonPreview(null)}>
       <div
-        className="bg-card rounded-lg shadow-xl w-full max-w-[90%] h-[90%] flex flex-col"
+        className="bg-card rounded-lg shadow-lv3 w-full max-w-[90%] h-[90%] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-2 border-b border-border flex-shrink-0">
           <span className="text-sm text-muted-foreground font-mono truncate">{jsonPreview.filePath}</span>
           <button
             onClick={() => setJsonPreview(null)}
-            className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+            className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -365,8 +365,8 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
           </button>
         </div>
         <JsonSearchBar search={commitJsonSearch} />
-        <div className="flex-1 overflow-auto px-6 py-4 bg-[#0d1117]">
-          <pre ref={commitPreRef} className="whitespace-pre-wrap break-words font-mono" style={{ fontSize: '0.8125rem', lineHeight: '1.5' }}>
+        <div className="flex-1 overflow-auto px-6 py-4 bg-secondary">
+          <pre ref={commitPreRef} className="whitespace-pre-wrap break-words font-mono text-foreground" style={{ fontSize: '0.8125rem', lineHeight: '1.5' }}>
             {formatAsHumanReadable(jsonPreview.content)}
           </pre>
         </div>
@@ -390,7 +390,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
       <div className="bg-card w-full h-full flex flex-col relative">
         <button
           onClick={onClose}
-          className="absolute top-2 right-2 z-10 p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"
+          className="absolute top-2 right-2 z-10 p-1 text-foreground-subtle hover:text-foreground hover:bg-hover rounded transition-colors"
           title={t('common.close')}
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -406,7 +406,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
 
   // Modal mode
   return (
-    <div className="fixed inset-0 z-[60] bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] bg-scrim" onClick={onClose}>
       <div
         className="bg-card w-full h-full flex flex-col"
         onClick={e => e.stopPropagation()}
@@ -416,7 +416,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
           <h3 className="text-sm font-medium text-foreground">{t('commitDetail.title')}</h3>
           <button
             onClick={onClose}
-            className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"
+            className="p-1 text-foreground-subtle hover:text-foreground hover:bg-hover rounded transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

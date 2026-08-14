@@ -402,7 +402,7 @@ export function EngineConfigPicker({
                   data-testid={`${engine}-api-keys-link`}
                   title={`Open ${config.label} API keys page`}
                   aria-label={`Open ${config.label} API keys page`}
-                  className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -421,7 +421,7 @@ export function EngineConfigPicker({
                     data-testid={`${engine}-copy-api-key`}
                     title={copied ? 'Copied' : 'Copy API key'}
                     aria-label="Copy API key"
-                    className={`p-1 rounded transition-colors ${copied ? 'text-emerald-400' : 'text-muted-foreground hover:text-foreground hover:bg-accent'}`}
+                    className={`p-1 rounded transition-colors ${copied ? 'text-green-11' : 'text-muted-foreground hover:text-foreground hover:bg-hover'}`}
                     disabled={saving}
                   >
                     {copied ? (
@@ -436,14 +436,14 @@ export function EngineConfigPicker({
                   </button>
                   <button
                     onClick={beginEdit}
-                    className="text-[11px] px-2 py-1 rounded bg-secondary hover:bg-accent text-foreground transition-colors"
+                    className="text-[11px] px-2 py-1 rounded bg-secondary hover:bg-hover text-foreground transition-colors"
                     disabled={saving}
                   >
                     Edit
                   </button>
                   <button
                     onClick={handleClearKey}
-                    className="text-[11px] px-2 py-1 rounded text-red-400 hover:bg-red-500/10 transition-colors"
+                    className="text-[11px] px-2 py-1 rounded text-red-11 hover:bg-red-500/10 transition-colors"
                     disabled={saving}
                   >
                     Clear
@@ -481,7 +481,7 @@ export function EngineConfigPicker({
                 </div>
               )}
               {error && (
-                <div className="mt-1 text-[11px] text-red-400">{error}</div>
+                <div className="mt-1 text-[11px] text-red-11">{error}</div>
               )}
             </div>
 
@@ -502,7 +502,7 @@ export function EngineConfigPicker({
                         data-testid={`${engine}-region-${r.id}`}
                         onClick={() => handleSelectRegion(r.id)}
                         title={r.hint}
-                        className={`px-2 py-0.5 ${region === r.id ? 'bg-brand text-white' : 'bg-transparent text-muted-foreground hover:bg-accent'}`}
+                        className={`px-2 py-0.5 ${region === r.id ? 'bg-brand text-white' : 'bg-transparent text-muted-foreground hover:bg-hover'}`}
                       >
                         {r.label}
                       </button>
@@ -517,7 +517,7 @@ export function EngineConfigPicker({
             <div className="px-3 py-1.5">
               <div className="text-[11px] font-medium text-muted-foreground mb-1.5">Model</div>
               {modelsError && (
-                <div className="mb-1 text-[11px] text-red-400">{modelsError}</div>
+                <div className="mb-1 text-[11px] text-red-11">{modelsError}</div>
               )}
               {!modelsError && modelOptions.length === 0 && (
                 <div className="mb-1 text-[11px] text-muted-foreground">
@@ -533,7 +533,7 @@ export function EngineConfigPicker({
                       key={m.id}
                       onClick={() => handleSelectModel(m.id)}
                       className={`flex items-center gap-2 px-2 py-1 text-xs rounded transition-colors ${
-                        selected ? ENGINE_MENU_ROW_SELECTED : 'text-foreground hover:bg-accent'
+                        selected ? ENGINE_MENU_ROW_SELECTED : 'text-foreground hover:bg-hover'
                       }`}
                     >
                       <EngineCheck selected={selected} />

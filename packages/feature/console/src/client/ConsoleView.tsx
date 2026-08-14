@@ -134,7 +134,10 @@ function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote 
     const titleBar = (e.currentTarget as HTMLElement).querySelector('[data-drag-handle]') as HTMLElement | null;
     if (titleBar) {
       const ghost = titleBar.cloneNode(true) as HTMLElement;
-      ghost.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:' + titleBar.offsetWidth + 'px;background:var(--card);border-radius:8px;padding:4px 12px;opacity:0.9;';
+      // hsl(...) wrapper is required: --card stores a bare HSL triple
+      // ("0 0% 100%") for composition, so `background:var(--card)` is an
+      // invalid declaration and the drag ghost rendered transparent.
+      ghost.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:' + titleBar.offsetWidth + 'px;background:hsl(var(--card));color:hsl(var(--foreground));box-shadow:var(--elevation-2);border-radius:8px;padding:4px 12px;opacity:0.9;';
       document.body.appendChild(ghost);
       e.dataTransfer.setDragImage(ghost, 20, 16);
       requestAnimationFrame(() => document.body.removeChild(ghost));
@@ -302,7 +305,7 @@ function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote 
                 type="button"
                 onClick={() => stateExecuteCommand(OPEN_PREFERRED_SHELL_COMMAND)}
                 title={t('console.launchShell')}
-                className="self-start flex items-center gap-2 px-4 py-2 rounded-lg border border-input bg-background text-sm text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 transition-all"
+                className="self-start flex items-center gap-2 px-4 py-2 rounded-lg border border-input bg-background text-sm text-muted-foreground hover:text-foreground hover:bg-hover active:bg-muted active:scale-95 transition-all"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="4 17 10 11 4 5" />
@@ -320,7 +323,7 @@ function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote 
                 <button
                   onClick={() => loadHistory(currentPage + 1)}
                   disabled={isLoadingHistory}
-                  className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors disabled:opacity-50"
+                  className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-hover rounded-lg transition-colors disabled:opacity-50"
                 >
                   {isLoadingHistory ? t('console.loadingMore') : t('console.loadMoreHistory')}
                 </button>

@@ -642,13 +642,13 @@ export function BrowserBubble({
           ) : url ? (
             loadError ? (
               <div className="flex flex-col items-center justify-center text-muted-foreground p-6 h-full">
-                <svg className="w-10 h-10 mb-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-10 h-10 mb-3 text-red-11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
                 <p className="text-xs">{loadError}</p>
                 <button
                   onClick={(e) => { e.stopPropagation(); doRefresh(); }}
-                  className="mt-2 px-3 py-1 text-xs bg-secondary text-foreground rounded hover:bg-accent transition-colors"
+                  className="mt-2 px-3 py-1 text-xs bg-secondary text-foreground rounded hover:bg-hover transition-colors"
                 >
                   {t('common.retry')}
                 </button>
@@ -656,7 +656,7 @@ export function BrowserBubble({
             ) : (
               <div className="relative overflow-hidden h-full" style={{ contain: 'strict' }}>
                 {isLoading && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 z-10">
+                  <div className="absolute inset-0 flex items-center justify-center bg-card/80 z-10">
                     <span className="inline-block w-6 h-6 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                   </div>
                 )}
@@ -687,7 +687,12 @@ export function BrowserBubble({
             )
           ) : (
             <div className="flex flex-col items-center justify-center text-muted-foreground h-full">
-              <svg className="w-10 h-10 mb-2 text-slate-300 dark:text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* --foreground-faint, not a slate-300/slate-700 pair: that pair was
+                  inverted (the light shade landed in light mode and the dark shade
+                  in dark), so this glyph was near-invisible in BOTH themes. The
+                  faint token is the decorative-only step of the text ramp — right
+                  for a 40px empty-state mark, and never for readable copy. */}
+              <svg className="w-10 h-10 mb-2 text-foreground-faint" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
               </svg>
               <p className="text-xs">{t('browser.blankPage')}</p>

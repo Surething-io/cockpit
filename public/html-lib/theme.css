@@ -32,26 +32,68 @@
   --blue-9: 206 100% 50%; --blue-10: 207 96% 43%;  --blue-11: 208 88% 43%;
   --violet-9: 252 56% 57%; --violet-10: 251 48% 53%; --violet-11: 250 43% 48%;
 
-  /* ---- Semantic tokens (ready-to-use colors) ---- */
-  --background: hsl(0 0% 98%);
+  /* ---- Semantic tokens (ready-to-use colors) ----
+   * Light and dark carry depth differently: dark stacks LIGHTER fills above a
+   * near-black base, while light has nowhere lighter to go than its white base
+   * and leans on border + shadow instead. Hence --background and --card are
+   * both white here, and --secondary/--muted/--accent are a real ladder
+   * (quiet fill / interactive tint / chrome surface) rather than three names
+   * for one gray. */
+  --background: hsl(0 0% 100%);
   --foreground: hsl(var(--slate-12));
   --card: hsl(0 0% 100%);
   --card-foreground: hsl(var(--slate-12));
   --primary: hsl(var(--slate-12));
   --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(var(--slate-3));
+  --secondary: hsl(var(--slate-4));
   --secondary-foreground: hsl(var(--slate-12));
-  --muted: hsl(var(--slate-3));
+  --muted: hsl(var(--slate-2));
   --muted-foreground: hsl(var(--slate-11));
   --accent: hsl(var(--slate-3));
   --accent-foreground: hsl(var(--slate-12));
-  --border: hsl(var(--slate-5));
-  --input: hsl(var(--slate-5));
   --ring: hsl(var(--teal-9));
   --brand: hsl(var(--teal-9));
   --brand-foreground: hsl(var(--teal-11));
   --destructive: hsl(var(--red-9));
   --destructive-foreground: hsl(0 0% 100%);
+
+  /* ---- Text ramp ---- */
+  --foreground-subtle: hsl(var(--slate-10));  /* tertiary / metadata */
+  --foreground-faint: hsl(var(--slate-9));    /* NON-TEXT only — fails AA */
+
+  /* ---- Lines (alpha, 4 steps) ----
+   * Alpha rather than a solid gray so one token darkens whatever it sits on by
+   * the same amount, on white and on tinted surfaces alike. --border and
+   * --input alias into this ladder; --input sits one step stronger so a field
+   * reads as a field on a white card. */
+  --line-1: rgba(0, 0, 0, 0.05);
+  --line-2: rgba(0, 0, 0, 0.12);
+  --line-3: rgba(0, 0, 0, 0.16);
+  --line-4: rgba(0, 0, 0, 0.22);
+  --border: var(--line-2);
+  --input: var(--line-3);
+
+  /* ---- Interactive tints ----
+   * Tinted with slate-12's bluish-black, not neutral black, so hover never
+   * reads as a gray smudge over the cool palette. */
+  --tint-hover: rgba(28, 33, 38, 0.06);
+  --tint-hover-strong: rgba(28, 33, 38, 0.10);
+  --tint-active: rgba(28, 33, 38, 0.14);
+
+  /* ---- Elevation — light mode's primary depth cue ---- */
+  --shadow-lv1: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-lv2: 0 4px 12px 0 rgba(0, 0, 0, 0.03), 0 2px 6px 0 rgba(0, 0, 0, 0.05);
+  --shadow-lv3: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 24px 0 rgba(0, 0, 0, 0.08),
+    0 2px 6px 0 rgba(0, 0, 0, 0.04);
+
+  /* ---- Overlay surfaces ----
+   * Tooltips/toasts stay DARK in light mode: an overlay reads as "above" the
+   * page by contrasting with it, not by being another white box. The scrim is
+   * theme-specific — a backdrop needs far less black over white than over a
+   * dark ground. */
+  --scrim: rgba(0, 0, 0, 0.24);
+  --tooltip: hsl(var(--slate-12));
+  --tooltip-foreground: hsl(0 0% 100%);
 
   /* Friendly status aliases (auto-adapt in dark via the scale overrides) */
   --success: hsl(var(--green-9));
@@ -84,11 +126,38 @@
 
   /* Semantic overrides that differ from light (the rest auto-adapt via the scales) */
   --background: hsl(var(--slate-1));
-  --card: hsl(0 0% 12%);
+  /* Bluish and one step below --secondary; the old `0 0% 12%` was the palette's
+     only hue-neutral surface and collided with --secondary at contrast 1.00. */
+  --card: hsl(240 5% 11%);
   --primary-foreground: hsl(var(--slate-1));
+  --secondary: hsl(var(--slate-3));
+  --muted: hsl(var(--slate-2));
   --accent: hsl(var(--slate-4));
-  --border: hsl(var(--slate-6));
-  --input: hsl(var(--slate-6));
+
+  /* Lines — alpha WHITE. --line-2 is 0.16 rather than light's 0.12 because it
+     is solved against THIS theme's base: 0.16 over slate-1 lands where the
+     old solid slate-6 border painted, so dark keeps its border weight. */
+  --line-1: rgba(255, 255, 255, 0.06);
+  --line-2: rgba(255, 255, 255, 0.16);
+  --line-3: rgba(255, 255, 255, 0.20);
+  --line-4: rgba(255, 255, 255, 0.26);
+
+  /* White alpha: a bluish-black tint would vanish into a near-black ground. */
+  --tint-hover: rgba(255, 255, 255, 0.08);
+  --tint-hover-strong: rgba(255, 255, 255, 0.12);
+  --tint-active: rgba(255, 255, 255, 0.18);
+
+  /* A drop shadow barely registers on a near-black base, so lv3 adds a light
+     hairline ring to define the edge and the blurs go deeper. */
+  --shadow-lv1: 0 1px 2px 0 rgba(0, 0, 0, 0.40);
+  --shadow-lv2: 0 4px 12px 0 rgba(0, 0, 0, 0.45);
+  --shadow-lv3: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 32px 0 rgba(0, 0, 0, 0.60),
+    0 2px 8px 0 rgba(0, 0, 0, 0.40);
+
+  /* Tooltip inverts upward to a surface LIGHTER than the base. */
+  --scrim: rgba(0, 0, 0, 0.55);
+  --tooltip: hsl(var(--slate-6));
+  --tooltip-foreground: hsl(var(--slate-12));
 }
 
 /* Minimal base so linking the theme makes a page look native immediately. */

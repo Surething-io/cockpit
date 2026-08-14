@@ -69,8 +69,29 @@ html, body {
   --blue-10: 207 96% 43%;
   --blue-11: 208 88% 43%;
 
-  /* ---- Semantic colors (shadcn style) ---- */
-  --background: 0 0% 98%;
+  /* ---- Semantic colors (shadcn style) ----
+   *
+   * Light and dark express depth in OPPOSITE ways, and the token values below
+   * encode that rather than being a mechanical light/dark mirror:
+   *
+   *   dark  — the base is near-black and every surface above it gets LIGHTER
+   *           (slate-1 -> card -> secondary -> accent). Fill deltas do the work;
+   *           box-shadow is nearly invisible on a dark ground.
+   *   light — the base is white and there is nowhere lighter to go, so surfaces
+   *           stay white and depth is carried by BORDER + SHADOW instead. That
+   *           is why --background and --card are both pure white here: the old
+   *           98%/100% split was a 2% delta that read as one flat sheet, and it
+   *           also made the three panels disagree about what "the base" is
+   *           (Chat used bg-card, Console used bg-background).
+   *
+   * The fills below are therefore a real ladder, not three names for one color
+   * (--secondary/--muted/--accent all pointed at slate-3 before):
+   *   --muted     quietest fill  — chips, badges, table headers
+   *   --accent    interactive tint — hover / selected  (also still used as a
+   *               fill on ~50 bubbles; those migrate to --secondary later)
+   *   --secondary chrome surface — toolbars, gutters, sub-headers
+   */
+  --background: 0 0% 100%;
   --foreground: var(--slate-12);
   --card: 0 0% 100%;
   --card-foreground: var(--slate-12);
@@ -78,19 +99,101 @@ html, body {
   --popover-foreground: var(--slate-12);
   --primary: var(--slate-12);
   --primary-foreground: 0 0% 100%;
-  --secondary: var(--slate-3);
+  --secondary: var(--slate-4);
   --secondary-foreground: var(--slate-12);
-  --muted: var(--slate-3);
+  --muted: var(--slate-2);
   --muted-foreground: var(--slate-11);
   --accent: var(--slate-3);
   --accent-foreground: var(--slate-12);
   --destructive: var(--red-9);
   --destructive-foreground: 0 0% 100%;
-  --border: var(--slate-5);
-  --input: var(--slate-5);
   --ring: var(--teal-9);
   --brand: var(--teal-9);
   --brand-foreground: var(--teal-11);
+
+  /* ---- Text ramp (4 levels) ----
+   * --foreground        slate-12  primary body text
+   * --muted-foreground  slate-11  secondary text        (~8.5:1 on white)
+   * --foreground-subtle slate-10  tertiary / metadata   (~6.3:1 on white)
+   * --foreground-faint  slate-9   NON-TEXT only         (~3.6:1 — fails AA)
+   *
+   * --foreground-faint exists so decorative glyphs, empty-state art and
+   * disabled marks have a named token; it must never carry readable copy.
+   *
+   * The 56 sites that used `text-slate-9` as body text now sit on
+   * --foreground-subtle, one step up rather than all the way to
+   * --muted-foreground: slate-9 measured 3.6:1 on white (failing AA) while
+   * slate-10 clears it at 6.3:1, and jumping straight to slate-11's 8.5:1
+   * would have made every dim metadata label read as primary copy.
+   */
+  --foreground-subtle: var(--slate-10);
+  --foreground-faint: var(--slate-9);
+
+  /* ---- Lines (alpha, 4 steps) ----
+   * Borders are alpha rather than a solid gray so one token darkens whatever
+   * it sits on by the same amount. A solid slate-5 border is correct on white
+   * and wrong on every tinted surface it also gets used on; these compose.
+   * Tuned to match the CURRENT rendered darkness of --border on each theme's
+   * base, so the 444 existing `border-border` sites keep their weight and only
+   * gain the hue/compositing fix.
+   */
+  --line-1: rgba(0, 0, 0, 0.05);
+  --line-2: rgba(0, 0, 0, 0.12);
+  --line-3: rgba(0, 0, 0, 0.16);
+  --line-4: rgba(0, 0, 0, 0.22);
+
+  /* ---- Interactive tints (alpha) ----
+   * Tinted with slate-12's bluish-black rather than neutral black, so a hover
+   * never reads as a gray smudge over the cool neutral palette. Alpha (not a
+   * solid slate-3) so the same token works inside a card, over an image, or on
+   * an already-tinted row.
+   */
+  --tint-hover: rgba(28, 33, 38, 0.06);
+  --tint-hover-strong: rgba(28, 33, 38, 0.10);
+  --tint-active: rgba(28, 33, 38, 0.14);
+
+  /* ---- Elevation ----
+   * Light mode's primary depth cue (see the note above). Deliberately much
+   * lighter than Tailwind's stock shadow-lg/xl, which are built on 0.1 alpha
+   * black and read as a dirty gray halo on a white ground.
+   * lv1 resting card · lv2 floating panel / input · lv3 menu, popover, modal
+   */
+  --elevation-1: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --elevation-2: 0 4px 12px 0 rgba(0, 0, 0, 0.03), 0 2px 6px 0 rgba(0, 0, 0, 0.05);
+  --elevation-3: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 24px 0 rgba(0, 0, 0, 0.08),
+    0 2px 6px 0 rgba(0, 0, 0, 0.04);
+
+  /* ---- Inverted / overlay surfaces ----
+   * Tooltips and toasts stay DARK in light mode — an overlay reads as "above"
+   * the page by contrasting with it, not by being another white box. In dark
+   * mode they invert the other way, to a surface lighter than the base.
+   * --scrim is theme-specific on purpose: a modal backdrop needs far less
+   * black over a white page than over a dark one. It replaced 42 hardcoded
+   * `bg-black/50`/`/30` dialog backdrops that dimmed both themes identically.
+   *
+   * 18 `bg-black/*` sites deliberately survive: image lightboxes and the small
+   * controls floating on top of them. Those sit over MEDIA, not over the app
+   * surface, so black is correct in both themes and a themed scrim would wash
+   * the photo out in light mode.
+   *
+   * --tooltip currently dresses floating chips over content (the console's
+   * rerun pill). The Tooltip component itself still renders on --popover —
+   * moving it needs a component change, not a class swap.
+   */
+  --scrim: rgba(0, 0, 0, 0.24);
+  --tooltip: var(--slate-12);
+  --tooltip-foreground: 0 0% 100%;
+
+  /* ---- Search-match highlight ----
+   * Amber wash behind a search hit, shared by the code-search (.hl-*) and
+   * chat-search (mark.chat-search-*) classes. Both keep `color: inherit` so a
+   * highlighted token stays syntax-coloured, which means the WASH has to do
+   * the adapting: the same alpha cannot work against near-black text on white
+   * and light text on near-black. Light therefore runs hotter (the text on top
+   * is dark and can take it); dark runs lighter so the pale text stays legible.
+   * Previously one fixed rgba(217,119,6,…) pair served both. */
+  --highlight: hsl(var(--amber-9) / 0.4);
+  --highlight-current: hsl(var(--amber-9) / 0.7);
 
   /* ---- Border radius ---- */
   --radius: 0.5rem;
@@ -157,28 +260,76 @@ html, body {
   --blue-10: 209 100% 60%;
   --blue-11: 210 100% 72%;
 
-  /* Semantic colors, dark */
+  /* Semantic colors, dark.
+   * The fill ladder already worked here (accent was distinct from
+   * secondary/muted), so only --muted moves — down one step, so chips read as
+   * quieter than the chrome around them instead of identical to it. */
   --background: var(--slate-1);
   --foreground: var(--slate-12);
-  --card: 0 0% 12%;
+  /* Was `0 0% 12%` — the one hue-neutral surface in an otherwise bluish
+   * palette, AND it landed on rgb(31,31,31) against --secondary's
+   * rgb(31,31,35): contrast 1.00, i.e. a toolbar sitting on a card was
+   * literally the same colour. Now bluish and one step below --secondary, so
+   * the dark ladder is monotonic:
+   *   background 7% < muted 10% < card 11% < secondary 13% < accent 16%
+   * card/secondary are still adjacent (~1.09) because they are adjacent roles
+   * and dark has only slate-1..4 to spread five of them — separating "surface
+   * elevation" from "fill role" into two scales is the real fix, and is a
+   * bigger change than this one. */
+  --card: 240 5% 11%;
   --card-foreground: var(--slate-12);
-  --popover: 0 0% 12%;
+  --popover: 240 5% 11%;
   --popover-foreground: var(--slate-12);
   --primary: var(--slate-12);
   --primary-foreground: var(--slate-1);
   --secondary: var(--slate-3);
   --secondary-foreground: var(--slate-12);
-  --muted: var(--slate-3);
+  --muted: var(--slate-2);
   --muted-foreground: var(--slate-11);
   --accent: var(--slate-4);
   --accent-foreground: var(--slate-12);
   --destructive: var(--red-9);
   --destructive-foreground: 0 0% 100%;
-  --border: var(--slate-6);
-  --input: var(--slate-6);
   --ring: var(--teal-9);
   --brand: var(--teal-9);
   --brand-foreground: var(--teal-11);
+
+  /* Text ramp, dark */
+  --foreground-subtle: var(--slate-10);
+  --foreground-faint: var(--slate-9);
+
+  /* Lines, dark — alpha WHITE. --line-2 is 0.16 rather than the light side's
+   * 0.12 because it is solved against this theme's base: 0.16 over slate-1
+   * lands on the same value the old solid slate-6 border painted, so dark
+   * keeps its current border weight exactly. */
+  --line-1: rgba(255, 255, 255, 0.06);
+  --line-2: rgba(255, 255, 255, 0.16);
+  --line-3: rgba(255, 255, 255, 0.20);
+  --line-4: rgba(255, 255, 255, 0.26);
+
+  /* Interactive tints, dark — white alpha; a bluish-black tint would simply
+   * disappear into a near-black ground. */
+  --tint-hover: rgba(255, 255, 255, 0.08);
+  --tint-hover-strong: rgba(255, 255, 255, 0.12);
+  --tint-active: rgba(255, 255, 255, 0.18);
+
+  /* Elevation, dark — a drop shadow barely registers against a near-black
+   * base, so lv3 adds a light hairline ring to define the edge and the blurs
+   * go deeper/blacker to seat the surface. */
+  --elevation-1: 0 1px 2px 0 rgba(0, 0, 0, 0.40);
+  --elevation-2: 0 4px 12px 0 rgba(0, 0, 0, 0.45);
+  --elevation-3: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 32px 0 rgba(0, 0, 0, 0.60),
+    0 2px 8px 0 rgba(0, 0, 0, 0.40);
+
+  /* Inverted / overlay surfaces, dark — tooltip inverts upward to a surface
+   * LIGHTER than the base; the scrim goes heavier than light mode's 0.24. */
+  --scrim: rgba(0, 0, 0, 0.55);
+  --tooltip: var(--slate-6);
+  --tooltip-foreground: var(--slate-12);
+
+  /* Lighter wash than light mode: the text riding on top here is pale. */
+  --highlight: hsl(var(--amber-9) / 0.28);
+  --highlight-current: hsl(var(--amber-9) / 0.5);
 }
 
 /* ---- Tailwind v4 theme registration ---- */
@@ -210,11 +361,42 @@ html, body {
   --color-accent-foreground: hsl(var(--accent-foreground));
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
+  /* border/input resolve to the alpha line tokens — `border-border` and
+   * `border-input` keep working unchanged at every one of their ~470 call
+   * sites and just gain correct compositing. `border-input` is one step
+   * stronger than `border-border` so a field reads as a field on a white
+   * card, which the old shared slate-5 could not do. */
+  --color-border: var(--line-2);
+  --color-input: var(--line-3);
+  --color-line-1: var(--line-1);
+  --color-line-2: var(--line-2);
+  --color-line-3: var(--line-3);
+  --color-line-4: var(--line-4);
   --color-ring: hsl(var(--ring));
   --color-brand: hsl(var(--brand));
   --color-brand-foreground: hsl(var(--brand-foreground));
+
+  /* Text ramp */
+  --color-foreground-subtle: hsl(var(--foreground-subtle));
+  --color-foreground-faint: hsl(var(--foreground-faint));
+
+  /* Interactive tints — `hover:bg-hover`, `bg-active`, … */
+  --color-hover: var(--tint-hover);
+  --color-hover-strong: var(--tint-hover-strong);
+  --color-active: var(--tint-active);
+
+  /* Overlay surfaces — `bg-scrim`, `bg-tooltip text-tooltip-foreground` */
+  --color-scrim: var(--scrim);
+  --color-tooltip: hsl(var(--tooltip));
+  --color-tooltip-foreground: hsl(var(--tooltip-foreground));
+
+  /* Elevation — `shadow-lv1` / `shadow-lv2` / `shadow-lv3`.
+   * The raw vars are named --elevation-* rather than --shadow-*: Tailwind's
+   * shadow namespace IS `--shadow-*`, so a same-named raw var would make these
+   * entries self-referential and resolve to nothing. */
+  --shadow-lv1: var(--elevation-1);
+  --shadow-lv2: var(--elevation-2);
+  --shadow-lv3: var(--elevation-3);
 
   /* Teal scale */
   --color-teal-1: hsl(var(--teal-1));
@@ -455,15 +637,14 @@ body {
   margin-right: 1em;
   padding-right: 0.5em;
   text-align: right;
-  color: #6b7280;
-  border-right: 1px solid #e5e7eb;
+  /* Was a hardcoded gray-500/gray-200 pair with a gray-400/gray-700 `.dark`
+     override — the one place in the file that reimplemented the text ramp by
+     hand. --foreground-subtle is the same step CodeViewer's own gutter numbers
+     now use, so both gutters agree. */
+  color: hsl(var(--foreground-subtle));
+  border-right: 1px solid var(--line-2);
   user-select: none;
   font-variant-numeric: tabular-nums;
-}
-
-.dark .shiki-wrapper .line-number {
-  color: #9ca3af;
-  border-right-color: #374151;
 }
 
 /* ---- Prism (react-syntax-highlighter) token isolation ----
@@ -612,7 +793,7 @@ code[class*="language-"] .token {
 }
 
 .tiptap-editor blockquote {
-  border-left: 3px solid hsl(var(--border));
+  border-left: 3px solid var(--line-2);
   padding-left: 1rem;
   margin-left: 0;
   margin-bottom: 0.5rem;
@@ -644,7 +825,7 @@ code[class*="language-"] .token {
 
 .tiptap-editor hr {
   border: none;
-  border-top: 1px solid hsl(var(--border));
+  border-top: 1px solid var(--line-2);
   margin: 1rem 0;
 }
 
@@ -675,7 +856,7 @@ code[class*="language-"] .token {
 
 .tiptap-editor th,
 .tiptap-editor td {
-  border: 1px solid hsl(var(--border));
+  border: 1px solid var(--line-2);
   padding: 0.4rem 0.6rem;
   text-align: left;
   vertical-align: top;
@@ -775,10 +956,10 @@ code[class*="language-"] .token {
 }
 
 /* ---- Code search highlight classes (short names to reduce HTML size) ---- */
-.hl-cur { background: rgba(217, 119, 6, 0.5); }   /* current match */
-.hl-m { background: rgba(217, 119, 6, 0.3); }     /* other matches */
+.hl-cur { background: var(--highlight-current); } /* current match */
+.hl-m { background: var(--highlight); }           /* other matches */
 
-.hl-kw { background: rgba(217, 119, 6, 0.4); border-radius: 2px; padding: 0 2px; } /* keyword */
+.hl-kw { background: var(--highlight); border-radius: 2px; padding: 0 2px; } /* keyword */
 
 /* ---- LSP Cmd+Click visual feedback ---- */
 .cmd-held-container {
@@ -818,8 +999,8 @@ code[class*="language-"] .token {
 }
 
 /* ---- Chat search highlight ---- */
-mark.chat-search-match { background: rgba(217, 119, 6, 0.3); color: inherit; border-radius: 2px; }
-mark.chat-search-current { background: rgba(217, 119, 6, 0.6); color: inherit; border-radius: 2px; }
+mark.chat-search-match { background: var(--highlight); color: inherit; border-radius: 2px; }
+mark.chat-search-current { background: var(--highlight-current); color: inherit; border-radius: 2px; }
 
 /* Review highlight styles are rendered as inline styles in HighlightOverlayLayer.tsx */
 
@@ -856,51 +1037,110 @@ mark.chat-search-current { background: rgba(217, 119, 6, 0.6); color: inherit; b
 .ansi-underline { text-decoration: underline; }
 .ansi-strikethrough { text-decoration: line-through; }
 
+/* The base rules below are the LIGHT palette; `.dark` overrides follow.
+ *
+ * This used to be inverted — a single One-Dark palette with four "light
+ * overrides" written as `:root .ansi-*`. That selector never worked as a light
+ * override: ThemeProvider puts `.dark` on document.documentElement, i.e. on
+ * :root ITSELF, so `:root .ansi-*` matched as a DESCENDANT selector in both
+ * themes and, at specificity (0,2,0) vs (0,1,0), always won. The four rules
+ * were unconditional, and the other 28 colors had no light handling at all —
+ * `.ansi-bright-white-fg` painted #ffffff on a light bubble.
+ *
+ * Light is driven by the Radix scale rather than hardcoded hex because the
+ * `*-11` step is defined as "accessible text on this theme's background", which
+ * is exactly the requirement here; dense mono output is the worst place to be
+ * a few tenths off AA. Two remappings are forced by the light ground:
+ *   - "bright" cannot mean lighter (it would vanish), so it means MORE VIVID:
+ *     normal -> *-11 (readable), bright -> *-9 (the saturated solid).
+ *   - yellow is the problem child: amber-9/10 land near 2:1 on white, so
+ *     normal yellow takes orange-11 and bright yellow takes amber-11.
+ * black and bright-white both resolve to slate-12 — on a light ground the two
+ * "maximum contrast" ends genuinely converge.
+ *
+ * Dark keeps its One-Dark hex verbatim, moved under `.dark` unchanged, so the
+ * dark terminal is pixel-identical to before. */
+
 /* Standard foreground colors */
-.ansi-black-fg { color: #3c3c3c; }
-.ansi-red-fg { color: #e55561; }
-.ansi-green-fg { color: #8cc265; }
-.ansi-yellow-fg { color: #d18f52; }
-.ansi-blue-fg { color: #4aa5f0; }
-.ansi-magenta-fg { color: #c162de; }
-.ansi-cyan-fg { color: #42b3c2; }
-.ansi-white-fg { color: #d0d0d0; }
+.ansi-black-fg { color: hsl(var(--slate-12)); }
+.ansi-red-fg { color: hsl(var(--red-11)); }
+.ansi-green-fg { color: hsl(var(--green-11)); }
+.ansi-yellow-fg { color: hsl(var(--orange-11)); }
+.ansi-blue-fg { color: hsl(var(--blue-11)); }
+.ansi-magenta-fg { color: hsl(var(--violet-11)); }
+.ansi-cyan-fg { color: hsl(var(--teal-11)); }
+.ansi-white-fg { color: hsl(var(--slate-11)); }
 
 /* Bright foreground colors */
-.ansi-bright-black-fg { color: #666666; }
-.ansi-bright-red-fg { color: #ef8080; }
-.ansi-bright-green-fg { color: #a5e075; }
-.ansi-bright-yellow-fg { color: #e5c07b; }
-.ansi-bright-blue-fg { color: #61afef; }
-.ansi-bright-magenta-fg { color: #d68fd6; }
-.ansi-bright-cyan-fg { color: #56d4dd; }
-.ansi-bright-white-fg { color: #ffffff; }
+.ansi-bright-black-fg { color: hsl(var(--slate-10)); }
+.ansi-bright-red-fg { color: hsl(var(--red-9)); }
+/* green/blue take -10 rather than -9: the -9 solids measure 2.7:1 and 2.8:1 on
+   a light bubble, and bright-green in particular carries most CLI success
+   output. -10 lifts them to 3.0:1 / 3.9:1 while staying visibly brighter than
+   the -11 normal tier. */
+.ansi-bright-green-fg { color: hsl(var(--green-10)); }
+.ansi-bright-yellow-fg { color: hsl(var(--amber-11)); }
+.ansi-bright-blue-fg { color: hsl(var(--blue-10)); }
+.ansi-bright-magenta-fg { color: hsl(var(--violet-9)); }
+.ansi-bright-cyan-fg { color: hsl(var(--teal-9)); }
+.ansi-bright-white-fg { color: hsl(var(--slate-12)); }
 
-/* Standard background colors */
-.ansi-black-bg { background-color: #1e1e1e; }
-.ansi-red-bg { background-color: #e55561; }
-.ansi-green-bg { background-color: #8cc265; }
-.ansi-yellow-bg { background-color: #d18f52; }
-.ansi-blue-bg { background-color: #4aa5f0; }
-.ansi-magenta-bg { background-color: #c162de; }
-.ansi-cyan-bg { background-color: #42b3c2; }
-.ansi-white-bg { background-color: #d0d0d0; }
+/* Standard background colors — Radix `*-9` is the designated solid-fill step */
+.ansi-black-bg { background-color: hsl(var(--slate-12)); }
+.ansi-red-bg { background-color: hsl(var(--red-9)); }
+.ansi-green-bg { background-color: hsl(var(--green-9)); }
+.ansi-yellow-bg { background-color: hsl(var(--amber-9)); }
+.ansi-blue-bg { background-color: hsl(var(--blue-9)); }
+.ansi-magenta-bg { background-color: hsl(var(--violet-9)); }
+.ansi-cyan-bg { background-color: hsl(var(--teal-9)); }
+.ansi-white-bg { background-color: hsl(var(--slate-4)); }
 
 /* Bright background colors */
-.ansi-bright-black-bg { background-color: #666666; }
-.ansi-bright-red-bg { background-color: #ef8080; }
-.ansi-bright-green-bg { background-color: #a5e075; }
-.ansi-bright-yellow-bg { background-color: #e5c07b; }
-.ansi-bright-blue-bg { background-color: #61afef; }
-.ansi-bright-magenta-bg { background-color: #d68fd6; }
-.ansi-bright-cyan-bg { background-color: #56d4dd; }
-.ansi-bright-white-bg { background-color: #ffffff; }
+.ansi-bright-black-bg { background-color: hsl(var(--slate-9)); }
+.ansi-bright-red-bg { background-color: hsl(var(--red-10)); }
+.ansi-bright-green-bg { background-color: hsl(var(--green-10)); }
+.ansi-bright-yellow-bg { background-color: hsl(var(--amber-10)); }
+.ansi-bright-blue-bg { background-color: hsl(var(--blue-10)); }
+.ansi-bright-magenta-bg { background-color: hsl(var(--violet-10)); }
+.ansi-bright-cyan-bg { background-color: hsl(var(--teal-10)); }
+.ansi-bright-white-bg { background-color: hsl(var(--slate-2)); }
 
-/* Light theme overrides */
-:root .ansi-black-fg { color: #1e1e1e; }
-:root .ansi-white-fg { color: #6b7280; }
-:root .ansi-bright-black-fg { color: #4b5563; }
-:root .ansi-bright-white-fg { color: #374151; }
+/* ---- Dark: One-Dark, carried over verbatim ---- */
+.dark .ansi-black-fg { color: #3c3c3c; }
+.dark .ansi-red-fg { color: #e55561; }
+.dark .ansi-green-fg { color: #8cc265; }
+.dark .ansi-yellow-fg { color: #d18f52; }
+.dark .ansi-blue-fg { color: #4aa5f0; }
+.dark .ansi-magenta-fg { color: #c162de; }
+.dark .ansi-cyan-fg { color: #42b3c2; }
+.dark .ansi-white-fg { color: #d0d0d0; }
+
+.dark .ansi-bright-black-fg { color: #666666; }
+.dark .ansi-bright-red-fg { color: #ef8080; }
+.dark .ansi-bright-green-fg { color: #a5e075; }
+.dark .ansi-bright-yellow-fg { color: #e5c07b; }
+.dark .ansi-bright-blue-fg { color: #61afef; }
+.dark .ansi-bright-magenta-fg { color: #d68fd6; }
+.dark .ansi-bright-cyan-fg { color: #56d4dd; }
+.dark .ansi-bright-white-fg { color: #ffffff; }
+
+.dark .ansi-black-bg { background-color: #1e1e1e; }
+.dark .ansi-red-bg { background-color: #e55561; }
+.dark .ansi-green-bg { background-color: #8cc265; }
+.dark .ansi-yellow-bg { background-color: #d18f52; }
+.dark .ansi-blue-bg { background-color: #4aa5f0; }
+.dark .ansi-magenta-bg { background-color: #c162de; }
+.dark .ansi-cyan-bg { background-color: #42b3c2; }
+.dark .ansi-white-bg { background-color: #d0d0d0; }
+
+.dark .ansi-bright-black-bg { background-color: #666666; }
+.dark .ansi-bright-red-bg { background-color: #ef8080; }
+.dark .ansi-bright-green-bg { background-color: #a5e075; }
+.dark .ansi-bright-yellow-bg { background-color: #e5c07b; }
+.dark .ansi-bright-blue-bg { background-color: #61afef; }
+.dark .ansi-bright-magenta-bg { background-color: #d68fd6; }
+.dark .ansi-bright-cyan-bg { background-color: #56d4dd; }
+.dark .ansi-bright-white-bg { background-color: #ffffff; }
 
 /* xterm.js embedded-bubble styles */
 .xterm-renderer .xterm {

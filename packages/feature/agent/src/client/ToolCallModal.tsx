@@ -160,7 +160,13 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
   };
 
   return (
-    <div className="my-1 border border-border rounded-lg overflow-hidden bg-secondary">
+    // A list item, not a card: no fill, no rounding, and a hairline instead of
+    // a full border. These rows are peers in a list — they do not each need to
+    // be their own surface, and when they were, four alpha fills (bubble ->
+    // group -> row -> code block) compounded into a visibly heavy stack. The
+    // click affordance moves entirely onto hover, which is why the header
+    // below keeps hover:bg-hover.
+    <div className="border-b border-line-1 last:border-b-0">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full px-3 py-1.5 flex items-center gap-2 text-left hover:bg-hover transition-colors"
@@ -270,22 +276,22 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
       </button>
 
       {expanded && (
-        <div className="border-t border-border">
+        <div className="border-t border-line-1">
           <div className="px-3 py-2">
             <div className="mb-1">
               <span className="text-xs text-muted-foreground">{t('toolCall.inputParams')}:</span>
             </div>
-            <pre className="text-xs bg-secondary p-2 rounded overflow-x-auto max-h-24 overflow-y-auto text-foreground">
+            <pre className="text-xs bg-accent p-2 rounded overflow-x-auto max-h-24 overflow-y-auto text-foreground">
               {JSON.stringify(toolCall.input, null, 2)}
             </pre>
           </div>
 
           {toolCall.result && (
-            <div className="px-3 py-2 border-t border-border">
+            <div className="px-3 py-2 border-t border-line-1">
               <div className="mb-1">
                 <span className="text-xs text-muted-foreground">{t('toolCall.resultLabel')}:</span>
               </div>
-              <pre className="text-xs bg-secondary p-2 rounded overflow-x-auto max-h-24 overflow-y-auto text-foreground">
+              <pre className="text-xs bg-accent p-2 rounded overflow-x-auto max-h-24 overflow-y-auto text-foreground">
                 {typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2)}
               </pre>
             </div>
@@ -293,13 +299,13 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
 
           {/* Skill body loaded by this call — folded here instead of shown as a user bubble */}
           {toolCall.skillContent && (
-            <div className="px-3 py-2 border-t border-border">
+            <div className="px-3 py-2 border-t border-line-1">
               <div className="mb-1">
                 <span className="text-xs text-muted-foreground">
                   {t('toolCall.skillContent', { defaultValue: 'Skill content' })}:
                 </span>
               </div>
-              <pre className="text-xs bg-secondary p-2 rounded overflow-x-auto max-h-60 overflow-y-auto text-foreground whitespace-pre-wrap">
+              <pre className="text-xs bg-accent p-2 rounded overflow-x-auto max-h-60 overflow-y-auto text-foreground whitespace-pre-wrap">
                 {toolCall.skillContent}
               </pre>
             </div>

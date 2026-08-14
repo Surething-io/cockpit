@@ -686,12 +686,40 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             )}
           </div>
         )}
+        {/* One skin for both sides: --muted, the QUIETEST step of the fill
+         * ladder, and no border. Enough to seat a turn as its own shape
+         * without becoming a surface that everything inside has to climb out
+         * of. Side is carried by alignment and the flipped corner alone — the
+         * user bubble used to add a brand-coloured border on top of a louder
+         * fill, which read as a highlighted/selected state rather than as
+         * "this one is mine".
+         *
+         * That choice is what sets the fills nested inside it. The tool-call
+         * group and its rows carry no fill at all, and the code blocks inside
+         * an expanded row take --accent — one step up, so they still read as a
+         * distinct kind of content against a --muted turn rather than
+         * disappearing into it. Two layers total, one step apart.
+         *
+         * The loud skin is what had to go, not the box. An assistant turn carries
+         * markdown, code blocks and a tool-call list, and each of those wants a
+         * surface of its own; a fill on the turn itself made every one of them
+         * a NESTED fill. Because the fills are alpha they compound, and with
+         * --accent on the turn plus --secondary on the group, the row and the
+         * code block, a code block inside an expanded tool row bottomed out at
+         * rgb(179,179,198) on a white page — 2.06:1 against the page it was
+         * meant to sit quietly on. Unfilling the group and the rows and
+         * dropping the turn to --muted lands the same code block on
+         * rgb(231,231,236), 1.23:1.
+         *
+         * max-w-[80%] is the width mechanism on purpose: a fixed reading
+         * column (52rem, centered) was tried here and reverted, and the two do
+         * not compose — a percentage inside a fixed column just multiplies
+         * down to a narrower measure than either was aiming for.
+         */}
         <div
-          className={`max-w-[80%] ${
-            isUser
-              ? 'bg-accent text-foreground border border-brand rounded-2xl rounded-br-md'
-              : 'bg-accent text-foreground dark:text-slate-11 rounded-2xl rounded-bl-md'
-          } px-4 py-2`}
+          className={`max-w-[80%] px-4 py-2 rounded-2xl bg-muted text-foreground ${
+            isUser ? 'rounded-br-md' : 'rounded-bl-md'
+          }`}
         >
           {/* Image content */}
           {hasImages && (
@@ -741,7 +769,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
               <div
                 className={`${message.content || hasImages ? 'mt-2' : ''}`}
               >
-                <div className="border border-border rounded-lg overflow-hidden bg-secondary/50 px-3 py-2 space-y-1">
+                <div className="border border-border rounded-lg overflow-hidden px-3 py-2 space-y-1">
                   {/* Progress header */}
                   <div className="flex items-center gap-2 mb-1.5">
                     <div className="flex-1 h-1 bg-secondary rounded-full overflow-hidden">
@@ -783,7 +811,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
               uncheck Plan mode and resend to implement. */}
           {planCard && (
             <div className={`${message.content || hasImages || lastTodoWrite ? 'mt-2' : ''}`}>
-              <div className="border border-brand/40 rounded-lg overflow-hidden bg-secondary/50">
+              <div className="border border-brand/40 rounded-lg overflow-hidden">
                 <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-border bg-brand/10">
                   <span className="text-sm">📋</span>
                   <span className="text-xs font-medium text-foreground">
@@ -818,7 +846,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
           {/* Previewable doc list (md / html) */}
           {docFiles.length > 0 && (
             <div className={`${message.content || hasImages || lastTodoWrite ? 'mt-2' : ''}`}>
-              <div className="border border-border rounded-lg overflow-hidden bg-secondary/50 px-3 py-2 space-y-0.5">
+              <div className="border border-border rounded-lg overflow-hidden px-3 py-2 space-y-0.5">
                 {docFiles.map((fp) => (
                   <button
                     key={fp}
@@ -855,7 +883,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
           {/* Thoughts — extracted from tool call inputs, displayed as table */}
           {thoughts.length > 0 && (
             <div className={`${message.content || hasImages || lastTodoWrite || docFiles.length > 0 ? 'mt-2' : ''}`}>
-              <div className="border border-border rounded-lg overflow-hidden bg-secondary/50">
+              <div className="border border-border rounded-lg overflow-hidden">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-border text-muted-foreground">
@@ -882,10 +910,21 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
 
           {/* Tool calls */}
           {displayToolCalls.length > 0 && (
-            <div className={`${message.content || hasImages ? 'mt-2' : ''}`}>
+            <div className={`${message.content || hasImages ? 'mt-3' : ''}`}>
               {shouldCollapseToolCalls ? (
                 // Collapsed mode: show summary and expand button
-                <div className="border border-border rounded-lg overflow-hidden bg-secondary">
+                // A frame, but still no fill. Unboxed entirely, this list ran
+                // straight into the prose above it with nothing but a wrench
+                // emoji marking the boundary. A border re-establishes that
+                // boundary without re-introducing a nested surface — lines do
+                // not compound the way alpha fills do, which is the whole
+                // reason the fill did not come back with it.
+                //
+                // border-border here against border-line-1 between the rows:
+                // the frame is the stronger edge because it separates the
+                // group from everything around it, while the row dividers only
+                // separate peers inside it.
+                <div className="border border-border rounded-lg overflow-hidden">
                   <div className="flex items-center">
                     <button
                       onClick={() => setToolCallsExpanded(!toolCallsExpanded)}
@@ -902,7 +941,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                     {askQuestionCalls.length > 0 && (
                       <button
                         onClick={() => setShowAskQuestionViewer(true)}
-                        className="px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-hover transition-colors border-l border-border"
+                        className="px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-hover transition-colors border-l border-line-1"
                         title={t('chat.viewQuestions')}
                       >
                         <MessageCircleQuestion className="w-4 h-4" />
@@ -920,7 +959,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                             setShowDiffViewer(true);
                           }
                         }}
-                        className="px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-hover transition-colors border-l border-border"
+                        className="px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-hover transition-colors border-l border-line-1"
                         title={t('chat.viewAllFileChanges')}
                       >
                         <FileDiff className="w-4 h-4" />
@@ -928,7 +967,10 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                     )}
                   </div>
                   {toolCallsExpanded && (
-                    <div className="border-t border-border p-2 space-y-1">
+                    // No space-y: rows are divider-separated list items now, so
+                    // the gap belongs to their own padding. The old space-y-1
+                    // also doubled up with a my-1 on each row.
+                    <div className="border-t border-line-1">
                       {displayToolCalls.map((toolCall, index) => (
                         <ToolCallModal key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} sessionId={sessionId} />
                       ))}

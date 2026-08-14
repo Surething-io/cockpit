@@ -49,6 +49,19 @@ export { useChatSearch } from './useChatSearch';
 export { usePinnedSessions } from './usePinnedSessions';
 export { useScheduledTasks } from './useScheduledTasks';
 
+// Wire contracts — shared with the server handlers, so any other package
+// calling these endpoints is held to the same field names.
+export type {
+  PatchAction,
+  TaskScopedAction,
+  GlobalAction,
+  ScheduledTaskPatchRequest,
+  TaskScopedPatchRequest,
+  MarkReadBySessionIdRequest,
+  MarkAllReadRequest,
+  ReorderRequest,
+} from '../contract/scheduledTasks';
+
 // Types
 export type {
   MessageRole,

@@ -7,6 +7,7 @@ import { QuickCommandsPopover, useQuickCommands } from './QuickCommandsPopover';
 import { matchInput } from './useConsoleState';
 import type { CustomCommand } from '@/app/api/services/config/route';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { loadHtmlApps } from '@cockpit/shared-api';
 import { fetchAutocomplete } from './effect/consoleClient';
 
 interface TaggedCommand extends CustomCommand {
@@ -67,23 +68,20 @@ export function ConsoleInputBar({
     inputRef.current?.focus();
   }, []);
 
-  // Registered HTML apps (name → path) for the `/name` autocomplete. Plain fetch
-  // (no cross-package import); refreshed when the registry changes via the shared
-  // BroadcastChannel (mirrors htmlAppsBus's channel name).
+  // Registered HTML apps (name → path) for the `/name` autocomplete. Refreshed
+  // when the registry changes via the shared BroadcastChannel (mirrors
+  // htmlAppsBus's channel name).
   useEffect(() => {
     let cancelled = false;
     const load = () => {
-      fetch('/api/html-apps')
-        .then(r => (r.ok ? r.json() : []))
-        .then((list: Array<{ name?: string; path?: string; valid?: boolean }>) => {
-          if (cancelled) return;
-          setHtmlApps(
-            (Array.isArray(list) ? list : [])
-              .filter(a => a.valid !== false && a.name && a.path)
-              .map(a => ({ name: a.name as string, path: a.path as string })),
-          );
-        })
-        .catch(() => { /* registry optional */ });
+      BrowserRuntime.runPromiseExit(loadHtmlApps()).then(exit => {
+        if (cancelled || exit._tag !== 'Success') return; // registry optional
+        setHtmlApps(
+          exit.value
+            .filter(a => a.valid !== false && a.name && a.path)
+            .map(a => ({ name: a.name, path: a.path })),
+        );
+      });
     };
     load();
     let ch: BroadcastChannel | null = null;

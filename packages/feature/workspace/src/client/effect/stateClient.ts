@@ -13,6 +13,7 @@
  */
 import { Effect } from "effect"
 import { AppError } from "@cockpit/effect-core"
+import type { MarkReadBySessionIdRequest } from "@cockpit/feature-agent"
 
 // ─────────────────────────────────────────────────────────
 // project-state
@@ -128,7 +129,7 @@ export const markScheduledTasksReadBySession = (
         body: JSON.stringify({
           action: "markReadBySessionId",
           fields: { sessionId },
-        }),
+        } satisfies MarkReadBySessionIdRequest),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
     },

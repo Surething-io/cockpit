@@ -4,7 +4,7 @@ import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
-import { addHtmlApp } from './htmlAppsClient';
+import { addHtmlApp } from '@cockpit/shared-api';
 import { notifyHtmlAppsChanged } from './htmlAppsBus';
 
 /**

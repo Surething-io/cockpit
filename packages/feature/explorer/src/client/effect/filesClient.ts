@@ -17,6 +17,10 @@ import { AppError } from "@cockpit/effect-core"
 // Imported (not just re-exported) because fetchFileTextRaw below uses
 // TextResponse as its generic default, which needs the name in local scope.
 import { fetchFileText, type TextResponse } from "@cockpit/shared-api"
+import type {
+  ClipboardReadResponse,
+  ClipboardWriteRequest,
+} from "../../contract/files"
 
 // ─────────────────────────────────────────────────────────
 // HTTP primitives
@@ -311,20 +315,13 @@ export const saveFile = (
 // /api/files/clipboard (GET + POST)
 // ─────────────────────────────────────────────────────────
 
-export interface ClipboardResponse {
-  cwd?: string
-  paths?: ReadonlyArray<string>
-  op?: "copy" | "cut"
-  [key: string]: unknown
-}
-
 export const loadFileClipboard = (): Effect.Effect<
-  ClipboardResponse,
+  ClipboardReadResponse,
   AppError
 > => httpGet("/api/files/clipboard")
 
 export const saveFileClipboard = (
-  body: { cwd: string; paths: ReadonlyArray<string>; op: "copy" | "cut" }
+  body: ClipboardWriteRequest
 ): Effect.Effect<void, AppError> =>
   Effect.tryPromise({
     try: async () => {

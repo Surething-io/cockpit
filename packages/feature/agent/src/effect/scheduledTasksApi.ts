@@ -10,13 +10,14 @@
  * a separate pass and involves HMR / dual-instance / reentrancy pitfalls.
  */
 import { Effect } from "effect"
-import { AppError, NotFoundError } from "@cockpit/effect-core"
+import { AppError, NotFoundError, ValidationError } from "@cockpit/effect-core"
 import {
   scheduledTaskManager,
   getNextCronTime,
   buildTaskPrompt,
   type ScheduledTask,
 } from "../server/scheduledTasks"
+import type { RawPatchRequest } from "../contract/scheduledTasks"
 
 // ─────────────────────────────────────────────────────────
 // Read
@@ -146,19 +147,37 @@ export const resumeTaskEff = (
     )
   )
 
-export const triggerTaskEff = (id: string): Effect.Effect<void, AppError> =>
+/** Fails NotFoundError for an unknown id, matching pause / resume / update. */
+export const triggerTaskEff = (
+  id: string
+): Effect.Effect<void, AppError | NotFoundError> =>
   Effect.tryPromise({
     try: () => scheduledTaskManager.triggerTask(id),
     catch: (cause) =>
       new AppError({ message: "scheduler.triggerTask failed", cause }),
-  })
+  }).pipe(
+    Effect.flatMap((found) =>
+      found
+        ? Effect.void
+        : Effect.fail(new NotFoundError({ resource: "task", id }))
+    )
+  )
 
-export const markReadEff = (id: string): Effect.Effect<void, AppError> =>
+/** Fails NotFoundError for an unknown id, matching pause / resume / update. */
+export const markReadEff = (
+  id: string
+): Effect.Effect<void, AppError | NotFoundError> =>
   Effect.tryPromise({
     try: () => scheduledTaskManager.markRead(id),
     catch: (cause) =>
       new AppError({ message: "scheduler.markRead failed", cause }),
-  })
+  }).pipe(
+    Effect.flatMap((found) =>
+      found
+        ? Effect.void
+        : Effect.fail(new NotFoundError({ resource: "task", id }))
+    )
+  )
 
 export const markReadBySessionIdEff = (
   sessionId: string
@@ -188,31 +207,54 @@ export const reorderTasksEff = (
 // PATCH action dispatcher: collapses the ~80-line if/else chain from the route handler
 // ─────────────────────────────────────────────────────────
 
-export type PatchAction =
-  | "pause"
-  | "resume"
-  | "trigger"
-  | "markRead"
-  | "markReadBySessionId"
-  | "markAllRead"
-  | "reorder"
-  | "update"
+/** Re-exported from the wire contract so both sides share one list. */
+export type { PatchAction } from "../contract/scheduledTasks"
+
+/** Actions that name a single task and therefore require `id`. */
+const TASK_SCOPED = new Set([
+  "pause",
+  "resume",
+  "trigger",
+  "markRead",
+  "update",
+])
 
 /**
- * PATCH dispatcher:
- * - pause / resume -> returns the updated task
- * - trigger / markRead / markReadBySessionId / markAllRead / reorder -> simpleSuccess
- * - update -> recomputes nextFireTime (once/interval/cron) then calls updateTask
- * - When no recognised action is provided, fields are passed straight through to updateTask
+ * PATCH dispatcher.
+ *
+ * Validation lives HERE rather than in the route, because whether `id` is
+ * required depends on the action. The route used to gate on `id` up front,
+ * which forced id-less actions to invent a placeholder and made a missing id
+ * indistinguishable from an action that never wanted one.
+ *
+ * Every exit is now explicit: an unrecognised action, or a recognised one whose
+ * arguments are the wrong shape, fails as ValidationError (400). Nothing falls
+ * through to `updateTask` any more — that fallthrough reported bad arguments as
+ * "task not found", and silently merged arbitrary fields into a task whenever
+ * the caller happened to pass a real id.
  */
 export const dispatchPatchEff = (
-  id: string,
-  action: PatchAction | string | undefined,
-  fields?: Record<string, unknown>
+  body: RawPatchRequest
 ): Effect.Effect<
   { task: ScheduledTask | null; simpleSuccess: boolean },
-  AppError | NotFoundError
+  AppError | NotFoundError | ValidationError
 > => {
+  const { action, fields } = body
+
+  if (typeof action !== "string" || !action) {
+    return Effect.fail(new ValidationError({ field: "action", reason: "missing" }))
+  }
+
+  // `id` is required for exactly the task-scoped actions, and meaningless for
+  // the rest — so it is checked here, not before the dispatch.
+  let id = ""
+  if (TASK_SCOPED.has(action)) {
+    if (typeof body.id !== "string" || !body.id) {
+      return Effect.fail(new ValidationError({ field: "id", reason: "missing" }))
+    }
+    id = body.id
+  }
+
   if (action === "pause") {
     return pauseTaskEff(id).pipe(
       Effect.map((task) => ({ task, simpleSuccess: false }))
@@ -233,10 +275,15 @@ export const dispatchPatchEff = (
       Effect.as({ task: null, simpleSuccess: true })
     )
   }
-  if (
-    action === "markReadBySessionId" &&
-    typeof fields?.sessionId === "string"
-  ) {
+  if (action === "markReadBySessionId") {
+    if (typeof fields?.sessionId !== "string" || !fields.sessionId) {
+      return Effect.fail(
+        new ValidationError({
+          field: "fields.sessionId",
+          reason: "missing or not a string",
+        })
+      )
+    }
     return markReadBySessionIdEff(fields.sessionId).pipe(
       Effect.as({ task: null, simpleSuccess: true })
     )
@@ -246,15 +293,25 @@ export const dispatchPatchEff = (
       Effect.as({ task: null, simpleSuccess: true })
     )
   }
-  if (
-    action === "reorder" &&
-    Array.isArray(fields?.orderedIds)
-  ) {
+  if (action === "reorder") {
+    if (!Array.isArray(fields?.orderedIds)) {
+      return Effect.fail(
+        new ValidationError({
+          field: "fields.orderedIds",
+          reason: "missing or not an array",
+        })
+      )
+    }
     return reorderTasksEff(fields.orderedIds as string[]).pipe(
       Effect.as({ task: null, simpleSuccess: true })
     )
   }
-  if (action === "update" && fields) {
+  if (action === "update") {
+    if (!fields) {
+      return Effect.fail(
+        new ValidationError({ field: "fields", reason: "missing" })
+      )
+    }
     const now = Date.now()
     const updatedFields: Record<string, unknown> = { ...fields }
     // message and taskFile are mutually exclusive. updateTask merges fields onto the
@@ -287,10 +344,11 @@ export const dispatchPatchEff = (
       Effect.map((task) => ({ task, simpleSuccess: false }))
     )
   }
-  if (fields) {
-    return updateTaskEff(id, fields).pipe(
-      Effect.map((task) => ({ task, simpleSuccess: false }))
-    )
-  }
-  return Effect.succeed({ task: null, simpleSuccess: false })
+  // Unrecognised action. This used to fall through to `updateTask(id, fields)`
+  // (arbitrary fields merged into whatever task `id` named) when fields were
+  // present, and to a 200 `{task: null}` "success" when they weren't — so a
+  // typo'd action silently did nothing while telling the caller it worked.
+  return Effect.fail(
+    new ValidationError({ field: "action", reason: `unrecognised: ${action}` })
+  )
 }

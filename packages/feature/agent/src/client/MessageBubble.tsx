@@ -156,6 +156,11 @@ function ImageFilePreviewModal({ filePath, onClose }: { filePath: string; onClos
   const handleCopyImage = async (e: MouseEvent) => {
     e.stopPropagation();
     try {
+      // Binary read, not a JSON endpoint: this pulls the raw image bytes for
+      // the clipboard. There is no request/response field contract for a client
+      // wrapper to enforce, and routing a Blob through the Effect JSON helpers
+      // would only obscure it.
+      // eslint-disable-next-line no-restricted-syntax
       const res = await fetch(src);
       if (!res.ok) throw new Error('Could not read image');
       const fetchedBlob = await res.blob();

@@ -22,6 +22,10 @@ import {
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { FSError, ValidationError } from "@cockpit/effect-core"
 import { broadcastConsoleDelta } from "../../terminal/consoleBroadcast"
+import type {
+  BubbleOrderPatchRequest,
+  BubbleOrderResponse,
+} from "../../../contract/terminal"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -86,20 +90,13 @@ export const GET = handler((req) =>
     })
     const file = normalise(raw)
     // Back-compat for older clients that only know about `order`.
-    return ok({ order: file.order, titles: file.titles })
+    return ok<BubbleOrderResponse>({ order: file.order, titles: file.titles })
   })
 )
 
 export const POST = handler((req) =>
   Effect.gen(function* () {
-    const body = (yield* parseJsonRaw(req)) as {
-      cwd?: string
-      tabId?: string
-      order?: string[]
-      /** Partial patch: existing entries kept; entries set to "" are deleted. */
-      titles?: Record<string, string>
-      sourceId?: string
-    }
+    const body = (yield* parseJsonRaw(req)) as Partial<BubbleOrderPatchRequest>
     if (!body.cwd || !body.tabId) {
       return yield* Effect.fail(
         new ValidationError({

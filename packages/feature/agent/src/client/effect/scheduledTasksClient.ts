@@ -10,6 +10,10 @@
  */
 import { Effect } from "effect"
 import { AppError } from "@cockpit/effect-core"
+import type {
+  PatchAction,
+  ScheduledTaskPatchRequest,
+} from "../../contract/scheduledTasks"
 
 const httpGet = <A>(url: string): Effect.Effect<A, AppError> =>
   Effect.tryPromise({
@@ -63,14 +67,13 @@ export interface CreateScheduledTaskParams {
   cron?: string
 }
 
-export type ScheduledTaskAction =
-  | "pause"
-  | "resume"
-  | "trigger"
-  | "update"
-  | "markRead"
-  | "markAllRead"
-  | "reorder"
+/**
+ * Every PATCH action the route dispatches, sourced from the wire contract so
+ * this list cannot drift from the server's. (The hand-maintained version this
+ * replaces was missing `markReadBySessionId`, because that one action was
+ * reached through a second, separately-written client.)
+ */
+export type ScheduledTaskAction = PatchAction
 
 // ─────────────────────────────────────────────────────────
 // API client functions
@@ -93,17 +96,18 @@ export const createScheduledTask = <T>(
   httpJson<{ task?: T }>("/api/scheduled-tasks", "POST", params)
 
 /**
- * Unified PATCH entry: pause / resume / trigger / update / markRead / markAllRead / reorder.
- * Body shape matches the original implementation exactly.
+ * Unified PATCH entry.
+ *
+ * Takes the whole request object rather than positional (id, action, fields):
+ * the contract is a discriminated union on `action`, so the three collection-
+ * level actions have no `id` to pass and the compiler enforces the split. The
+ * old signature forced every caller to supply an id, which is why the id-less
+ * ones invented a `"_"` placeholder.
  */
 export const patchScheduledTask = (
-  id: string,
-  action: ScheduledTaskAction,
-  fields?: Record<string, unknown>
+  body: ScheduledTaskPatchRequest
 ): Effect.Effect<void, AppError> =>
-  httpJson<unknown>("/api/scheduled-tasks", "PATCH", { id, action, fields }).pipe(
-    Effect.asVoid
-  )
+  httpJson<unknown>("/api/scheduled-tasks", "PATCH", body).pipe(Effect.asVoid)
 
 /**
  * Delete a scheduled task.

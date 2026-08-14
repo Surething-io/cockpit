@@ -9,6 +9,10 @@
 import { Effect } from "effect"
 import { AppError } from "@cockpit/effect-core"
 import type { CustomCommand } from "@/app/api/services/config/route"
+import type {
+  BubbleOrderPatchRequest,
+  BubbleOrderResponse,
+} from "../../contract/terminal"
 
 const httpGet = <A>(url: string): Effect.Effect<A, AppError> =>
   Effect.tryPromise({
@@ -108,13 +112,28 @@ export const loadAliases = (): Effect.Effect<
 // terminal/bubble-order
 // ─────────────────────────────────────────────────────────
 
+const bubbleOrderUrl = (cwd: string, tabId: string): string =>
+  `/api/terminal/bubble-order?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}`
+
 export const loadBubbleOrder = (
   cwd: string,
   tabId: string
 ): Effect.Effect<string[], AppError> =>
-  httpGet<{ order?: string[] }>(
-    `/api/terminal/bubble-order?cwd=${encodeURIComponent(cwd)}&tabId=${encodeURIComponent(tabId)}`
-  ).pipe(Effect.map((data) => data.order || []))
+  httpGet<BubbleOrderResponse>(bubbleOrderUrl(cwd, tabId)).pipe(
+    Effect.map((data) => data.order || [])
+  )
+
+/**
+ * The `titles` half of the same document. Separate from `loadBubbleOrder`
+ * because the badge needs only this half and the console only the other.
+ */
+export const loadBubbleTitles = (
+  cwd: string,
+  tabId: string
+): Effect.Effect<Record<string, string>, AppError> =>
+  httpGet<BubbleOrderResponse>(bubbleOrderUrl(cwd, tabId)).pipe(
+    Effect.map((data) => data.titles || {})
+  )
 
 export const saveBubbleOrder = (
   cwd: string,
@@ -122,7 +141,28 @@ export const saveBubbleOrder = (
   order: string[],
   sourceId?: string
 ): Effect.Effect<void, AppError> =>
-  httpPostJson("/api/terminal/bubble-order", { cwd, tabId, order, sourceId })
+  httpPostJson("/api/terminal/bubble-order", {
+    cwd,
+    tabId,
+    order,
+    sourceId,
+  } satisfies BubbleOrderPatchRequest)
+
+/**
+ * Partial patch of a single bubble's title. An empty string deletes the entry
+ * server-side (see `mergeTitles`), which is how the badge clears a title.
+ */
+export const saveBubbleTitle = (
+  cwd: string,
+  tabId: string,
+  fullId: string,
+  title: string
+): Effect.Effect<void, AppError> =>
+  httpPostJson("/api/terminal/bubble-order", {
+    cwd,
+    tabId,
+    titles: { [fullId]: title },
+  } satisfies BubbleOrderPatchRequest)
 
 // ─────────────────────────────────────────────────────────
 // terminal/history

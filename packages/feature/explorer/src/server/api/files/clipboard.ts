@@ -15,6 +15,10 @@ import {
   PermissionError,
   ValidationError,
 } from "@cockpit/effect-core"
+import type {
+  ClipboardReadResponse,
+  ClipboardWriteRequest,
+} from "../../../contract/files"
 
 const execFileAsync = promisify(execFile)
 
@@ -93,10 +97,7 @@ async function readClipboardPath(): Promise<string | null> {
 
 export const POST = handler((req) =>
   Effect.gen(function* () {
-    const body = (yield* parseJsonRaw(req)) as {
-      cwd?: string
-      path?: string
-    }
+    const body = (yield* parseJsonRaw(req)) as Partial<ClipboardWriteRequest>
     if (!body.cwd || !body.path) {
       return yield* Effect.fail(
         new ValidationError({
@@ -146,8 +147,8 @@ export const GET = handler(() =>
         Effect.map(() => true),
         Effect.orElseSucceed(() => false)
       )
-      if (valid) return ok({ path: clipPath })
+      if (valid) return ok<ClipboardReadResponse>({ path: clipPath })
     }
-    return ok({ path: null })
+    return ok<ClipboardReadResponse>({ path: null })
   })
 )

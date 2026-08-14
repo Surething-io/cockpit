@@ -3,9 +3,9 @@
 //
 // Admission rule: a client belongs here only once a second feature needs it.
 // A client used by exactly one feature stays inside that feature
-// (agentClient, gitClient, lspClient, htmlAppsClient, reviewClient, … all
-// correctly live in their own package) — moving those here would just relocate
-// private code into shared space and make each feature harder to read alone.
+// (agentClient, gitClient, lspClient, reviewClient, … all correctly live in
+// their own package) — moving those here would just relocate private code into
+// shared space and make each feature harder to read alone.
 //
 // Why this package exists at all: features are only allowed to depend on each
 // other acyclically, and both of the endpoints below are needed by a feature on
@@ -17,6 +17,10 @@
 //   - /api/skills      — feature-skills owns the registry, but feature-explorer
 //     writes to it from the SKILL.md "add" buttons, and feature-skills already
 //     imports feature-explorer for its markdown renderers.
+//   - /api/html-apps   — feature-explorer owns the registry UI, but
+//     feature-console reads the list for ConsoleInputBar's `/name`
+//     autocomplete. That second consumer had been hand-rolling a `fetch` to
+//     dodge the cross-package import.
 // See MODULES.md "Current feature dependency graph".
 //
 // skillsBus is here rather than in shared-ui because it is the invalidation
@@ -24,6 +28,14 @@
 // Splitting the two across packages would hide that pairing.
 
 export { fetchFileText, type TextResponse } from './filesTextClient';
+
+export {
+  loadHtmlApps,
+  addHtmlApp,
+  deleteHtmlApp,
+  type HtmlAppInfo,
+  type AddHtmlAppResult,
+} from './htmlAppsClient';
 
 export { notifySkillsChanged, onSkillsChanged } from './skillsBus';
 export {

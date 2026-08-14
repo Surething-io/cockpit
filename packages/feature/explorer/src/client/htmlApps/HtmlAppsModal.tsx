@@ -8,7 +8,7 @@ import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { toExternalBrowserAppUrl, toLocalAppUrl } from '@cockpit/shared-utils';
 import { HtmlAppFrame } from '../HtmlAppFrame';
 import { notifyHtmlAppsChanged } from './htmlAppsBus';
-import { loadHtmlApps, addHtmlApp, deleteHtmlApp, type HtmlAppInfo } from './htmlAppsClient';
+import { loadHtmlApps, addHtmlApp, deleteHtmlApp, type HtmlAppInfo } from '@cockpit/shared-api';
 
 export type HtmlAppPreview = { path: string; title: string; icon?: string };
 

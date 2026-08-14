@@ -10,6 +10,7 @@ import {
   patchScheduledTask,
   deleteScheduledTask,
 } from './effect/scheduledTasksClient';
+import type { ScheduledTaskPatchRequest } from '../contract/scheduledTasks';
 
 export interface ScheduledTask {
   id: string;
@@ -133,11 +134,9 @@ export function useScheduledTasks() {
 
   // All PATCH-style operations funnel through this helper: silent fallback + reload + notifyChanged
   const runPatch = useCallback(
-    async (id: string, action: Parameters<typeof patchScheduledTask>[1], fields?: Record<string, unknown>) => {
+    async (body: ScheduledTaskPatchRequest) => {
       await BrowserRuntime.runPromise(
-        patchScheduledTask(id, action, fields).pipe(
-          Effect.orElse(() => Effect.void)
-        )
+        patchScheduledTask(body).pipe(Effect.orElse(() => Effect.void))
       );
       reload();
       notifyChanged();
@@ -145,9 +144,9 @@ export function useScheduledTasks() {
     [reload],
   );
 
-  const pauseTask = useCallback((id: string) => runPatch(id, 'pause'), [runPatch]);
+  const pauseTask = useCallback((id: string) => runPatch({ id, action: 'pause' }), [runPatch]);
 
-  const resumeTask = useCallback((id: string) => runPatch(id, 'resume'), [runPatch]);
+  const resumeTask = useCallback((id: string) => runPatch({ id, action: 'resume' }), [runPatch]);
 
   const deleteTask = useCallback(async (id: string) => {
     await BrowserRuntime.runPromise(
@@ -168,18 +167,22 @@ export function useScheduledTasks() {
       >,
       // Editing re-stamps the language, so a task written before the user switched
       // locales follows them over on the next edit instead of being frozen forever.
-    ) => runPatch(id, 'update', { ...fields, language: i18n.language } as Record<string, unknown>),
+    ) => runPatch({
+      id,
+      action: 'update',
+      fields: { ...fields, language: i18n.language } as Record<string, unknown>,
+    }),
     [runPatch],
   );
 
-  const triggerTask = useCallback((id: string) => runPatch(id, 'trigger'), [runPatch]);
+  const triggerTask = useCallback((id: string) => runPatch({ id, action: 'trigger' }), [runPatch]);
 
-  const markRead = useCallback((id: string) => runPatch(id, 'markRead'), [runPatch]);
+  const markRead = useCallback((id: string) => runPatch({ id, action: 'markRead' }), [runPatch]);
 
-  const markAllRead = useCallback(() => runPatch('_', 'markAllRead'), [runPatch]);
+  const markAllRead = useCallback(() => runPatch({ action: 'markAllRead' }), [runPatch]);
 
   const reorderTasks = useCallback(
-    (orderedIds: string[]) => runPatch('_', 'reorder', { orderedIds }),
+    (orderedIds: string[]) => runPatch({ action: 'reorder', fields: { orderedIds } }),
     [runPatch],
   );
 

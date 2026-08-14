@@ -131,6 +131,32 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // ============================================================
+  // No hand-rolled HTTP clients in components
+  // ============================================================
+  // Scoped to .tsx (components) rather than all client code, deliberately.
+  // The .ts hooks that call fetch — useChatHistory, usePinnedSessions,
+  // usePushSubscription, … — already wrap it in `Effect.tryPromise` and ARE
+  // the IO layer; they're just not filed under effect/. Components are the
+  // ones with no business doing IO, and that is precisely where the bug came
+  // from: ShortIdBadge hand-rolled a fetch for /api/terminal/bubble-order and
+  // read `j.data.titles` off a response that has no `data` envelope, silently
+  // losing every saved bubble title across reloads. `.json()` returns `any`,
+  // so no amount of shared contract typing can catch that — only keeping the
+  // call out of the component can. See CLAUDE.md line 52.
+  {
+    files: ["packages/feature/*/src/client/**/*.tsx"],
+    rules: {
+      "no-restricted-syntax": [
+        "warn",
+        {
+          selector: "CallExpression[callee.name='fetch']",
+          message:
+            "Do not call fetch directly in a component — use (or add) a wrapper in the feature's client/effect/ module so the body and response are typed against the endpoint's contract.",
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

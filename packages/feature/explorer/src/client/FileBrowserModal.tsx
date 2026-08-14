@@ -591,7 +591,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
   const handleCopyFile = useCallback(async (path: string) => {
     const fileName = path.split('/').pop() || path;
     const exit = await BrowserRuntime.runPromiseExit(
-      saveFileClipboard({ cwd, paths: [path], op: 'copy' })
+      saveFileClipboard({ cwd, path })
     );
     if (exit._tag === 'Success') {
       toast(t('toast.copiedName', { name: fileName }), 'success');

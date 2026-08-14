@@ -3,6 +3,14 @@
  *   - GET    /api/html-apps        — list (enriched with <title>/<meta>)
  *   - POST   /api/html-apps        — add by absolute path
  *   - DELETE /api/html-apps/:id    — remove
+ *
+ * Lives in shared-api for the same reason as skillsRegistryClient: two features
+ * need the endpoint. feature-explorer owns the registry UI (HtmlAppsModal, the
+ * "add" button), and feature-console reads the list for the `/name` autocomplete
+ * in ConsoleInputBar. The console side used to hand-roll its own `fetch` to
+ * avoid a cross-package import — exactly the "second client, written from
+ * scratch" pattern that produced the /api/files/clipboard and
+ * /api/scheduled-tasks field mismatches.
  */
 import { Effect } from "effect"
 import { AppError } from "@cockpit/effect-core"

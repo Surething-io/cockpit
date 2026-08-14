@@ -3,7 +3,9 @@
 import { useState, useCallback, useEffect, useRef, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast, useWebSocket } from '@cockpit/shared-ui';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { TitleEditDialog } from './TitleEditDialog';
+import { loadBubbleTitles, saveBubbleTitle } from './effect/consoleClient';
 
 /** Use `cockpit-dev` on the dev port; `cockpit` (the recommended long-name
  *  entry) everywhere else. Prod port is auto-detected from ~/.cockpit/server.json. */
@@ -48,22 +50,18 @@ export const ShortIdBadge = memo(function ShortIdBadge({
   // attached to whichever is mounted is enough.
   const editAnchorRef = useRef<HTMLButtonElement>(null);
 
-  // Fetch existing title once per (fullId, projectCwd, tabId) tuple. The
-  // bubble-order GET returns { order, titles } where titles is keyed by fullId
-  // (commandId for terminal, fullId for browser).
+  // Fetch existing title once per (fullId, projectCwd, tabId) tuple. `titles` is
+  // keyed by fullId (commandId for terminal, fullId for browser).
   useEffect(() => {
     if (!fullId || !projectCwd || !tabId) return;
     let cancelled = false;
-    const params = new URLSearchParams({ cwd: projectCwd, tabId });
-    fetch(`/api/terminal/bubble-order?${params.toString()}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => {
-        if (cancelled) return;
-        const titles = (j?.data?.titles ?? {}) as Record<string, string>;
-        const v = titles[fullId];
+    BrowserRuntime.runPromiseExit(loadBubbleTitles(projectCwd, tabId)).then(
+      (exit) => {
+        if (cancelled || exit._tag !== 'Success') return;
+        const v = exit.value[fullId];
         if (typeof v === 'string') setTitle(v);
-      })
-      .catch(() => { /* ignore */ });
+      }
+    );
     return () => { cancelled = true; };
   }, [fullId, projectCwd, tabId]);
 
@@ -112,24 +110,14 @@ export const ShortIdBadge = memo(function ShortIdBadge({
 
   const saveTitle = useCallback(async (newTitle: string) => {
     if (!fullId || !projectCwd || !tabId) return;
-    try {
-      await fetch('/api/terminal/bubble-order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cwd: projectCwd,
-          tabId,
-          // Empty string deletes the entry server-side (see mergeTitles).
-          titles: { [fullId]: newTitle },
-        }),
-      });
-      setTitle(newTitle);
-      setEditing(false);
-    } catch {
-      // Swallow — title save failure shouldn't break the bubble UX. Could
-      // surface a toast in a future iteration.
-      setEditing(false);
-    }
+    // Empty string deletes the entry server-side (see mergeTitles).
+    const exit = await BrowserRuntime.runPromiseExit(
+      saveBubbleTitle(projectCwd, tabId, fullId, newTitle)
+    );
+    // Failure is swallowed — a title save failing shouldn't break the bubble
+    // UX. Could surface a toast in a future iteration.
+    if (exit._tag === 'Success') setTitle(newTitle);
+    setEditing(false);
   }, [fullId, projectCwd, tabId]);
 
   return (

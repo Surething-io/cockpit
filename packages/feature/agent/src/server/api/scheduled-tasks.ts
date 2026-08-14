@@ -11,6 +11,7 @@ import { Effect } from "effect"
 import { getNextCronTime, type ScheduledTask } from "../scheduledTasks"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { ValidationError } from "@cockpit/effect-core"
+import type { RawPatchRequest } from "../../contract/scheduledTasks"
 import {
   getTasksAndUnreadEff,
   addTaskEff,
@@ -186,18 +187,10 @@ export const POST = handler((req) =>
 
 export const PATCH = handler((req) =>
   Effect.gen(function* () {
-    const body = (yield* parseJsonRaw(req)) as {
-      id?: string
-      action?: string
-      fields?: Record<string, unknown>
-    }
-    const { id, action, fields } = body
-    if (!id) {
-      return yield* Effect.fail(
-        new ValidationError({ field: "id", reason: "missing" })
-      )
-    }
-    const result = yield* dispatchPatchEff(id, action, fields)
+    // No `id` gate here: whether `id` is required depends on the action, so
+    // dispatchPatchEff validates it per-branch.
+    const body = (yield* parseJsonRaw(req)) as RawPatchRequest
+    const result = yield* dispatchPatchEff(body)
     if (result.simpleSuccess) return ok({ success: true })
     return ok({ task: result.task })
   })

@@ -549,11 +549,16 @@ class ScheduledTaskManager {
    * Manually trigger a task (runs in the background; returns immediately; does not affect the existing schedule).
    * Skips paused / activeRange checks and sends the message directly.
    */
-  async triggerTask(id: string): Promise<void> {
+  /**
+   * @returns false when no task has this id. True means the task exists and the
+   * run has been queued — NOT that it succeeded, since fireTaskManual is
+   * deliberately not awaited (see below).
+   */
+  async triggerTask(id: string): Promise<boolean> {
     await this.ensureInit();
     const allTasks = await readJsonFile<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
     const task = allTasks.find(t => t.id === id);
-    if (!task) return;
+    if (!task) return false;
 
     // Sync to in-memory state
     const memIdx = this.tasks.findIndex(t => t.id === id);
@@ -567,6 +572,7 @@ class ScheduledTaskManager {
     this.fireTaskManual(id).catch(err => {
       console.error(`[ScheduledTask] Manual trigger failed for ${id}:`, err);
     });
+    return true;
   }
 
   /** Internal implementation for manual trigger; skips paused / activeRange checks. */
@@ -608,9 +614,13 @@ class ScheduledTaskManager {
 
   /**
    * Mark a task as read.
+   *
+   * @returns false when no task has this id. The return value used to be
+   * discarded, which is why markRead answered 200 for a task that does not
+   * exist while pause/resume/update answered 404.
    */
-  async markRead(id: string): Promise<void> {
-    await this.updateTask(id, { unread: false });
+  async markRead(id: string): Promise<boolean> {
+    return (await this.updateTask(id, { unread: false })) !== null;
   }
 
   /**

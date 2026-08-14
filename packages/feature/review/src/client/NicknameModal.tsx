@@ -27,8 +27,8 @@ export function NicknameModal({ currentName, onConfirm, onSkip }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-card border border-border rounded-xl shadow-2xl w-80 p-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim">
+      <div className="bg-card border border-border rounded-xl shadow-lv3 w-80 p-5">
         <h2 className="text-base font-semibold mb-1">{t('review.setNickname')}</h2>
         <p className="text-xs text-muted-foreground mb-4">
           {t('review.nicknameHint')}
@@ -52,7 +52,7 @@ export function NicknameModal({ currentName, onConfirm, onSkip }: Props) {
         <div className="flex items-center justify-end gap-2 mt-4">
           <button
             onClick={onSkip}
-            className="px-3 py-1.5 text-xs rounded-lg hover:bg-accent transition-colors text-muted-foreground"
+            className="px-3 py-1.5 text-xs rounded-lg hover:bg-hover transition-colors text-muted-foreground"
           >
             {t('review.skipForNow')}
           </button>

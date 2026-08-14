@@ -112,11 +112,11 @@ export function SubagentTranscriptModal({ cwd, sessionId, toolCall, workflowRef,
   return (
     <Portal>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
         onClick={onClose}
       >
         <div
-          className="bg-card rounded-lg shadow-xl w-full max-w-[90%] h-[90vh] flex flex-col"
+          className="bg-card rounded-lg shadow-lv3 w-full max-w-[90%] h-[90vh] flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -136,7 +136,7 @@ export function SubagentTranscriptModal({ cwd, sessionId, toolCall, workflowRef,
               )}
               <button
                 onClick={onClose}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
                 title={t('common.close')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

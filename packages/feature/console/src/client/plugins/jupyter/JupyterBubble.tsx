@@ -459,7 +459,7 @@ export function JupyterBubble({
         <span className="text-sm flex-shrink-0">📓</span>
         <span className="text-xs text-foreground truncate font-mono font-medium">{displayName}</span>
         {kernelStatusIcon}
-        {dirty && <span className="text-[10px] text-amber-500 flex-shrink-0">unsaved</span>}
+        {dirty && <span className="text-[10px] text-amber-11 flex-shrink-0">unsaved</span>}
         <span className="flex-1" />
         {timestamp && (
           <span className="text-[10px] text-muted-foreground flex-shrink-0">{formatTime(timestamp)}</span>
@@ -494,43 +494,43 @@ export function JupyterBubble({
       <div className="flex items-center gap-1 px-3 py-1 border-b border-border/50 bg-surface-secondary/50 text-[11px]">
         <button
           onClick={(e) => { e.stopPropagation(); runAllCells(); }}
-          className="px-1.5 py-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+          className="px-1.5 py-0.5 rounded hover:bg-hover text-muted-foreground hover:text-foreground transition-colors"
           title="Run All"
         >▶ All</button>
         <button
           onClick={(e) => { e.stopPropagation(); interruptKernel(); }}
-          className="px-1.5 py-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+          className="px-1.5 py-0.5 rounded hover:bg-hover text-muted-foreground hover:text-foreground transition-colors"
           title="Interrupt"
           disabled={kernelStatus !== 'busy'}
         >⬛ Stop</button>
         <div className="w-px h-3 bg-border/50 mx-1" />
         <button
           onClick={(e) => { e.stopPropagation(); addCell('code', activeCellIndex ?? cells.length - 1); }}
-          className="px-1.5 py-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+          className="px-1.5 py-0.5 rounded hover:bg-hover text-muted-foreground hover:text-foreground transition-colors"
           title="Add code cell"
         >+ Code</button>
         <button
           onClick={(e) => { e.stopPropagation(); addCell('markdown', activeCellIndex ?? cells.length - 1); }}
-          className="px-1.5 py-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+          className="px-1.5 py-0.5 rounded hover:bg-hover text-muted-foreground hover:text-foreground transition-colors"
           title="Add markdown cell"
         >+ Md</button>
         <div className="w-px h-3 bg-border/50 mx-1" />
         <button
           onClick={(e) => { e.stopPropagation(); saveNotebook(); }}
-          className={`px-1.5 py-0.5 rounded hover:bg-accent transition-colors ${dirty ? 'text-brand' : 'text-muted-foreground hover:text-foreground'}`}
+          className={`px-1.5 py-0.5 rounded hover:bg-hover transition-colors ${dirty ? 'text-brand' : 'text-muted-foreground hover:text-foreground'}`}
           title={`Save (${modKey()}+S)`}
           disabled={saving}
         >{saving ? 'Saving...' : 'Save'}</button>
         <span className="flex-1" />
         {kernelError && (
-          <span className="text-[10px] text-red-400 truncate max-w-[50%]" data-tooltip={kernelError}>
+          <span className="text-[10px] text-red-11 truncate max-w-[50%]" data-tooltip={kernelError}>
             {kernelError}
           </span>
         )}
         {kernelStatus === 'dead' && (
           <button
             onClick={(e) => { e.stopPropagation(); connectKernel(); }}
-            className="px-1.5 py-0.5 rounded text-brand hover:bg-accent transition-colors"
+            className="px-1.5 py-0.5 rounded text-brand hover:bg-hover transition-colors"
           >Restart</button>
         )}
       </div>
@@ -547,7 +547,7 @@ export function JupyterBubble({
           </div>
         ) : loadError ? (
           <div className="flex flex-col items-center justify-center h-32 gap-2">
-            <span className="text-red-400 text-sm">{loadError}</span>
+            <span className="text-red-11 text-sm">{loadError}</span>
             <button onClick={loadNotebook} className="text-xs text-brand hover:underline">Retry</button>
           </div>
         ) : cells.length === 0 ? (

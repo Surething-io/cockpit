@@ -238,7 +238,7 @@ export function FilePdfPreview({ cwd, path, refreshKey }: FilePdfPreviewProps) {
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-secondary text-muted-foreground text-xs select-none">
         <button
           onClick={toggleThumbs}
-          className={`px-1.5 py-0.5 rounded hover:bg-accent transition-colors ${
+          className={`px-1.5 py-0.5 rounded hover:bg-hover transition-colors ${
             showThumbs ? 'text-foreground' : ''
           }`}
           title={showThumbs ? 'Hide thumbnails' : 'Show thumbnails'}
@@ -257,7 +257,7 @@ export function FilePdfPreview({ cwd, path, refreshKey }: FilePdfPreviewProps) {
         <div className="ml-auto flex items-center gap-1">
           <button
             onClick={zoomOut}
-            className="px-1.5 py-0.5 rounded hover:bg-accent transition-colors"
+            className="px-1.5 py-0.5 rounded hover:bg-hover transition-colors"
             title="Zoom out"
             aria-label="Zoom out"
           >
@@ -265,7 +265,7 @@ export function FilePdfPreview({ cwd, path, refreshKey }: FilePdfPreviewProps) {
           </button>
           <button
             onClick={zoomReset}
-            className={`px-1.5 py-0.5 rounded hover:bg-accent transition-colors tabular-nums min-w-[3.5rem] ${
+            className={`px-1.5 py-0.5 rounded hover:bg-hover transition-colors tabular-nums min-w-[3.5rem] ${
               zoomMode.kind === 'auto' ? '' : 'text-foreground'
             }`}
             title="Reset to automatic zoom"
@@ -274,7 +274,7 @@ export function FilePdfPreview({ cwd, path, refreshKey }: FilePdfPreviewProps) {
           </button>
           <button
             onClick={zoomIn}
-            className="px-1.5 py-0.5 rounded hover:bg-accent transition-colors"
+            className="px-1.5 py-0.5 rounded hover:bg-hover transition-colors"
             title="Zoom in"
             aria-label="Zoom in"
           >
@@ -527,7 +527,7 @@ function PdfPage({
   }, [doc, pageNumber, scale]);
 
   return (
-    <div className="bg-white shadow-md" style={{ width, height }}>
+    <div className="bg-white shadow-lv2" style={{ width, height }}>
       <canvas ref={canvasRef} className="block" />
     </div>
   );

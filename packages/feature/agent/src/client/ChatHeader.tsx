@@ -73,7 +73,7 @@ export function ChatHeader({
           {cwd && (
             <button
               onClick={onOpenProjectSessions}
-              className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+              className="p-2 text-muted-foreground hover:text-foreground hover:bg-hover rounded-lg transition-colors"
               title={t('sessions.projectSessions')}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -84,7 +84,7 @@ export function ChatHeader({
           {/* Global Session Browser button */}
           <button
             onClick={onOpenSessionBrowser}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-hover rounded-lg transition-colors"
             title={t('sessions.browseAllSessions')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -102,8 +102,8 @@ export function ChatHeader({
               }}
               className={`p-2 rounded-lg transition-colors ${
                 copiedCommand
-                  ? 'text-green-500 bg-green-500/10'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                  ? 'text-green-11 bg-green-500/10'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-hover'
               }`}
               title={copiedCommand ? t('chat.copiedCommandTooltip') : t('chat.copyCommandTooltip', { command: resumeCommand })}
             >
@@ -121,7 +121,7 @@ export function ChatHeader({
           {/* Settings button */}
           <button
             onClick={onOpenSettings}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-hover rounded-lg transition-colors"
             title={t('settings.title')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

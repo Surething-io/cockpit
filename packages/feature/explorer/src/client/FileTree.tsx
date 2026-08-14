@@ -143,7 +143,7 @@ const VirtualTreeRow = React.memo(function VirtualTreeRow({
 
   return (
     <div
-      className={`flex items-center gap-1.5 py-0.5 px-2 cursor-pointer hover:bg-accent ${
+      className={`flex items-center gap-1.5 py-0.5 px-2 cursor-pointer hover:bg-hover ${
         isSelected ? 'bg-brand/10' : ''
       }`}
       style={{ paddingLeft: `${level * 12 + 8}px` }}

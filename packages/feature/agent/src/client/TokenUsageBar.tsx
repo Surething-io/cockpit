@@ -31,9 +31,9 @@ export function TokenUsageBar({ tokenUsage, rateLimitInfo }: TokenUsageBarProps)
 
   // Rate limit status styling
   const rateLimitColor = rateLimitInfo?.status === 'rejected'
-    ? 'text-red-500'
+    ? 'text-red-11'
     : rateLimitInfo?.status === 'allowed_warning'
-      ? 'text-yellow-500'
+      ? 'text-amber-11'
       : 'text-muted-foreground';
 
   const rateLimitLabel = rateLimitInfo?.status === 'rejected'

@@ -91,7 +91,7 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
             aria-label={isSubscribed
               ? t('mobile.disableNotifications', { defaultValue: 'Disable notifications' })
               : t('mobile.enableNotifications', { defaultValue: 'Enable notifications' })}
-            className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg active:bg-accent disabled:opacity-40 ${
+            className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg active:bg-active disabled:opacity-40 ${
               isSubscribed ? 'text-brand' : 'text-muted-foreground'
             }`}
           >
@@ -102,14 +102,14 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
           type="button"
           onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
           aria-label={t('mobile.toggleTheme', { defaultValue: 'Toggle theme' })}
-          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground active:bg-accent"
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground active:bg-active"
         >
           {resolvedTheme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
         <button
           type="button"
           onClick={onUseDesktop}
-          className="flex-shrink-0 rounded-lg px-2 py-1 text-xs text-muted-foreground active:bg-accent"
+          className="flex-shrink-0 rounded-lg px-2 py-1 text-xs text-muted-foreground active:bg-active"
         >
           {t('mobile.useDesktop')}
         </button>
@@ -132,7 +132,7 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
               <button
                 key={`${session.cwd}-${session.sessionId}`}
                 onClick={() => onOpen({ cwd: session.cwd, sessionId: session.sessionId, title: session.title })}
-                className="flex w-full items-start gap-3 border-b border-border/50 px-4 py-3.5 text-left active:bg-accent"
+                className="flex w-full items-start gap-3 border-b border-border/50 px-4 py-3.5 text-left active:bg-active"
               >
                 {/* The dot is the ONLY status mark here — /m has no session-number
                     badge to hand it to, so unlike the desktop lists it keeps its
@@ -171,7 +171,7 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
             <button
               key={`${p.cwd}-${p.sessionId}`}
               onClick={() => onOpen({ cwd: p.cwd, sessionId: p.sessionId, title: p.customTitle })}
-              className="flex w-full items-start gap-3 border-b border-border/50 px-4 py-3.5 text-left active:bg-accent"
+              className="flex w-full items-start gap-3 border-b border-border/50 px-4 py-3.5 text-left active:bg-active"
             >
               <Pin className="mt-0.5 h-4 w-4 flex-shrink-0 text-brand" />
               <div className="min-w-0 flex-1">

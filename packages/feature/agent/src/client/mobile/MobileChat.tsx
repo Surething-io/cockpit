@@ -188,7 +188,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
           type="button"
           onClick={onBack}
           aria-label="Back"
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground active:bg-accent"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground active:bg-active"
         >
           <ChevronLeft className="h-6 w-6" />
         </button>

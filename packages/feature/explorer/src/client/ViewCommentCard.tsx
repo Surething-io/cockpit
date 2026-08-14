@@ -76,7 +76,7 @@ export function ViewCommentCard({
   return (
     <div
       ref={cardRef}
-      className="absolute z-[200] w-96 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+      className="absolute z-[200] w-96 bg-card border border-border rounded-lg shadow-lv2 overflow-hidden"
       style={{ left: position.x, top: position.y }}
     >
       <div className="p-3">
@@ -124,7 +124,7 @@ export function ViewCommentCard({
               <div className="flex gap-1">
                 <button
                   onClick={() => setIsEditing(true)}
-                  className="p-1 rounded hover:bg-accent text-muted-foreground"
+                  className="p-1 rounded hover:bg-hover text-muted-foreground"
                   title={t('common.edit')}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -133,7 +133,7 @@ export function ViewCommentCard({
                 </button>
                 <button
                   onClick={handleDelete}
-                  className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-red-9"
+                  className="p-1 rounded hover:bg-hover text-muted-foreground hover:text-red-9"
                   title={t('common.delete')}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

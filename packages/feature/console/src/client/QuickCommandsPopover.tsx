@@ -110,7 +110,7 @@ function CommandSection({
             <button
               type="button"
               onClick={() => onExecute(cmd.command)}
-              className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 text-left text-sm rounded hover:bg-accent transition-colors"
+              className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 text-left text-sm rounded hover:bg-hover transition-colors"
             >
               <Play className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
               <span className="truncate">{cmd.name}</span>
@@ -210,7 +210,7 @@ export function QuickCommandsPopover({ cwd, show, onClose, onExecute, onAddPlugi
   if (!show) return null;
 
   return (
-    <div ref={ref} className="absolute bottom-full left-0 mb-2 w-72 bg-popover border border-border rounded-lg shadow-lg z-50 max-h-[70vh] overflow-y-auto">
+    <div ref={ref} className="absolute bottom-full left-0 mb-2 w-72 bg-popover border border-border rounded-lg shadow-lv2 z-50 max-h-[70vh] overflow-y-auto">
       <CommandSection
         label={t('console.globalCommands')}
         commands={globalCommands}

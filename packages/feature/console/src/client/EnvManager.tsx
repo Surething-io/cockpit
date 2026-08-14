@@ -76,8 +76,8 @@ export function EnvManager({ cwd, tabId, onClose, onSave }: EnvManagerProps) {
   };
 
   return (
-    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-background border border-border rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col m-4">
+    <div className="absolute inset-0 bg-scrim flex items-center justify-center z-50">
+      <div className="bg-background border border-border rounded-lg shadow-lv3 w-full max-w-2xl max-h-[80vh] flex flex-col m-4">
         {/* Title bar */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div>
@@ -88,7 +88,7 @@ export function EnvManager({ cwd, tabId, onClose, onSave }: EnvManagerProps) {
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded hover:bg-accent transition-colors"
+            className="p-1 rounded hover:bg-hover transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -177,7 +177,7 @@ export function EnvManager({ cwd, tabId, onClose, onSave }: EnvManagerProps) {
         <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm hover:bg-accent transition-colors"
+            className="px-4 py-2 rounded-lg text-sm hover:bg-hover transition-colors"
           >
             {t('common.cancel')}
           </button>

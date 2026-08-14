@@ -972,7 +972,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
             navigator.clipboard.writeText(`${cwd}/${focalFile}`);
             toast(t('common.copiedPath'));
           }}
-          className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
+          className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors flex-shrink-0"
           title={t('common.copyAbsPath')}
         >
           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -984,7 +984,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
             e.stopPropagation();
             locateInTree(focalFile);
           }}
-          className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
+          className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors flex-shrink-0"
           title={t('fileBrowser.locateInTree')}
         >
           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1015,7 +1015,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
         <button
           onClick={treeDiff.toggleDiff}
           className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
-            treeDiff.showDiff ? 'bg-brand text-white' : 'text-muted-foreground hover:bg-accent'
+            treeDiff.showDiff ? 'bg-brand text-white' : 'text-muted-foreground hover:bg-hover'
           }`}
           title={treeDiff.showDiff ? t('fileBrowser.exitDiff') : t('fileBrowser.viewDiff')}
         >
@@ -1123,7 +1123,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                         fileTree.setSearchQuery('');
                         fileTree.searchInputRef.current?.focus();
                       }}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-9 hover:text-foreground rounded-sm transition-colors"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-foreground-subtle hover:text-foreground rounded-sm transition-colors"
                       title={t('fileBrowser.clear')}
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1138,7 +1138,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                   className={`px-1 py-0.5 rounded transition-colors text-xs font-mono font-bold border ${
                     fileTree.searchExactMatch
                       ? 'border-brand text-brand bg-brand/10'
-                      : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-accent'
+                      : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-hover'
                   }`}
                   title={fileTree.searchExactMatch ? t('fileBrowser.exactMatchOn') : t('fileBrowser.exactMatchOff')}
                 >
@@ -1149,7 +1149,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                   {/* Refresh */}
                   <button
                     onClick={() => fileTree.loadFiles()}
-                    className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                    className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
                     title={t('fileBrowser.refreshTree')}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1159,7 +1159,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                   {/* Collapse all */}
                   <button
                     onClick={() => fileTree.searchTreeExpandedPaths ? fileTree.setSearchTreeExpandedPaths(new Set()) : fileTree.setExpandedPaths(new Set())}
-                    className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                    className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
                     title={t('fileBrowser.collapseAll')}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1193,7 +1193,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           contentSearch.setContentSearchQuery('');
                           contentSearch.contentSearchInputRef.current?.focus();
                         }}
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-9 hover:text-foreground rounded-sm transition-colors"
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-foreground-subtle hover:text-foreground rounded-sm transition-colors"
                         title={t('fileBrowser.clear')}
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1302,7 +1302,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                     </div>
                     <button
                       onClick={() => gitHistory.toggleCompareMode(true)}
-                      className="flex-shrink-0 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors text-muted-foreground hover:text-foreground hover:bg-accent border border-border"
+                      className="flex-shrink-0 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors text-muted-foreground hover:text-foreground hover:bg-hover border border-border"
                       title={t('fileBrowser.compareModeOn')}
                     >
                       {t('fileBrowser.compareMode')}
@@ -1480,7 +1480,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           </span>
                           <button
                             onClick={() => gitStatus.fetchStatus()}
-                            className="p-0.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                            className="p-0.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
                             title={t('fileBrowser.refreshChanges')}
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1655,7 +1655,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                 {gitHistory.historyError ? (
                   <div className="flex-1 flex items-center justify-center">
                     <div className="text-center">
-                      <svg className="w-16 h-16 mx-auto text-slate-7 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-16 h-16 mx-auto text-foreground-faint mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                       </svg>
                       <p className="text-muted-foreground">{gitHistory.historyError}</p>
@@ -1709,13 +1709,13 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           <div
                             key={commit.hash}
                             onClick={() => gitHistory.handleSelectCommit(commit)}
-                            className={`px-3 py-2 border-b border-border cursor-pointer hover:bg-accent ${
+                            className={`px-3 py-2 border-b border-border cursor-pointer hover:bg-hover ${
                               gitHistory.selectedCommit?.hash === commit.hash ? 'bg-brand/10' : ''
                             }`}
                           >
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-xs text-brand">{commit.shortHash}</span>
-                              <span className="text-xs text-slate-9" data-tooltip={commit.date}>
+                              <span className="text-xs text-foreground-subtle" data-tooltip={commit.date}>
                                 {commit.relativeDate} · {formatDateTime(commit.date)}
                               </span>
                             </div>
@@ -1729,7 +1729,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           </div>
                         )}
                         {!gitHistory.hasMoreCommits && gitHistory.commits.length > 0 && (
-                          <div className="p-3 text-center text-xs text-slate-9">
+                          <div className="p-3 text-center text-xs text-foreground-subtle">
                             {t('fileBrowser.allLoaded', { count: gitHistory.commits.length })}
                           </div>
                         )}
@@ -1833,7 +1833,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           navigator.clipboard.writeText(`${cwd}/${fileTree.selectedPath}`);
                           toast(t('common.copiedPath'));
                         }}
-                        className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
+                        className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors flex-shrink-0"
                         title={t('common.copyAbsPath')}
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1846,7 +1846,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           e.stopPropagation();
                           locateInTree(fileTree.selectedPath!);
                         }}
-                        className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
+                        className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors flex-shrink-0"
                         title={t('fileBrowser.locateInTree')}
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1880,7 +1880,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           </button>
                           <button
                             onClick={() => editorHandleRef.current?.close()}
-                            className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
+                            className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-hover"
                             title={t('fileBrowser.closeEdit')}
                           >
                             {t('fileBrowser.closeBtn')}
@@ -1901,7 +1901,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           {!isMarkdownFile(fileTree.selectedPath) && !isHtmlFile(fileTree.selectedPath) && !isJsonFile(fileTree.selectedPath) && (
                             <button
                               onClick={() => setEditorMode('map')}
-                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
+                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-hover"
                               title={t('blockViewer.viewerToggle.toBlock')}
                             >
                               {t('common.codeMap')}
@@ -1924,7 +1924,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           {activeTab === 'tree' && treeDiff.canDiff && (
                             <button
                               onClick={treeDiff.toggleDiff}
-                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
+                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-hover"
                               title={t('fileBrowser.viewDiff')}
                             >
                               {t('common.diff')}
@@ -1955,7 +1955,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                               <button
                                 onClick={toggle}
                                 className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
-                                  on ? 'bg-brand text-white' : 'text-muted-foreground hover:bg-accent'
+                                  on ? 'bg-brand text-white' : 'text-muted-foreground hover:bg-hover'
                                 }`}
                               >
                                 {on ? t('fileBrowser.exitPreview') : t('common.preview')}
@@ -1972,7 +1972,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                             return (
                               <button
                                 onClick={() => addSkill(abs)}
-                                className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent flex items-center"
+                                className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-hover flex items-center"
                                 title={t('skills.addTooltip')}
                               >
                                 <BookmarkPlus className="w-3.5 h-3.5" />
@@ -1990,14 +1990,14 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                               <>
                                 <button
                                   onClick={() => addHtmlApp(abs)}
-                                  className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent flex items-center"
+                                  className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-hover flex items-center"
                                   title={t('htmlApps.addTooltip')}
                                 >
                                   <BookmarkPlus className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                   onClick={() => window.dispatchEvent(new CustomEvent('console-open-browser', { detail: { url: abs } }))}
-                                  className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent flex items-center"
+                                  className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-hover flex items-center"
                                   title={t('common.openInConsole')}
                                 >
                                   <SquareTerminal className="w-3.5 h-3.5" />
@@ -2007,7 +2007,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                                     const appUrl = toLocalAppUrl(abs);
                                     window.open(toExternalBrowserAppUrl(appUrl, window.location.origin), '_blank');
                                   }}
-                                  className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent flex items-center"
+                                  className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-hover flex items-center"
                                   title={t('browser.openInNewWindow')}
                                 >
                                   <ExternalLink className="w-3.5 h-3.5" />
@@ -2022,7 +2022,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                               className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
                                 fileTree.showBlame
                                   ? 'bg-brand text-white'
-                                  : 'text-muted-foreground hover:bg-accent'
+                                  : 'text-muted-foreground hover:bg-hover'
                               } disabled:opacity-50`}
                               title={t('fileBrowser.viewBlame')}
                             >
@@ -2038,7 +2038,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           {fileTree.fileContent?.type === 'text' && !((fileTree.previewMarkdown && (isMarkdownFile(fileTree.selectedPath) || isJsonFile(fileTree.selectedPath))) || (fileTree.previewHtml && isHtmlFile(fileTree.selectedPath))) && (
                             <button
                               onClick={() => fileTree.setShowEditor(true)}
-                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
+                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-hover"
                               title={t('fileBrowser.editFile')}
                             >
                               {t('common.edit')}
@@ -2051,7 +2051,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                                 navigator.clipboard.writeText(fileTree.fileContent!.content!);
                                 toast(t('toast.copiedFileContent'));
                               }}
-                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
+                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-hover"
                               title={t('fileBrowser.copyFileContent')}
                             >
                               {t('common.copy')}
@@ -2069,7 +2069,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           {fileTree.fileContent?.type === 'text' && !isMarkdownFile(fileTree.selectedPath) && !isHtmlFile(fileTree.selectedPath) && !isJsonFile(fileTree.selectedPath) && (
                             <button
                               onClick={() => setEditorMode('map')}
-                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-accent"
+                              className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-hover"
                               title={t('blockViewer.viewerToggle.toBlock')}
                             >
                               {t('common.codeMap')}
@@ -2265,7 +2265,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                       ) : (
                         <div className="h-full flex items-center justify-center text-muted-foreground">
                           <div className="text-center">
-                            <svg className="w-16 h-16 mx-auto text-slate-7 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-16 h-16 mx-auto text-foreground-faint mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
                             <p>{fileTree.fileContent.message || t('fileBrowser.cannotPreview')}</p>
@@ -2282,7 +2282,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
               ) : (
                 <div className="flex-1 flex items-center justify-center text-muted-foreground">
                   <div className="text-center">
-                    <svg className="w-16 h-16 mx-auto text-slate-7 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-16 h-16 mx-auto text-foreground-faint mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                     </svg>
                     <p>{t('fileBrowser.selectFileToPreview')}</p>
@@ -2321,7 +2321,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                   onTokenHoverCancel={lspHover.clearHover}
                 />
               ) : (
-                <div className="flex-1 flex items-center justify-center text-slate-9">
+                <div className="flex-1 flex items-center justify-center text-foreground-subtle">
                   <span>{t('fileBrowser.selectFileToViewDiff')}</span>
                 </div>
               )
@@ -2388,7 +2388,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                     </div>
                   </div>
                 ) : (
-                  <div className="flex-1 flex items-center justify-center text-slate-9">
+                  <div className="flex-1 flex items-center justify-center text-foreground-subtle">
                     <span>{gitHistory.compareFiles.length > 0 ? t('fileBrowser.selectFileToViewDiff') : t('fileBrowser.clickCompareToLoad')}</span>
                   </div>
                 )
@@ -2406,7 +2406,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                   }}
                 />
               ) : (
-                <div className="flex-1 flex items-center justify-center text-slate-9">
+                <div className="flex-1 flex items-center justify-center text-foreground-subtle">
                   <span>{t('fileBrowser.selectCommitToView')}</span>
                 </div>
               )
@@ -2473,8 +2473,8 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
           the app-root <TooltipProvider /> — no per-modal rendering needed. */}
       {/* Delete confirmation dialog */}
       {deleteConfirm && <Portal>
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50" onClick={() => setDeleteConfirm(null)}>
-          <div className="bg-card border border-border rounded-lg shadow-xl p-4 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim" onClick={() => setDeleteConfirm(null)}>
+          <div className="bg-card border border-border rounded-lg shadow-lv3 p-4 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-sm font-medium text-foreground mb-2">{t('fileBrowser.confirmDelete')}</h3>
             <p className="text-sm text-muted-foreground mb-4">
               {t('fileBrowser.confirmDeleteMessage', { name: deleteConfirm.name }).split(/<\/?file>/g).map((part, i) =>
@@ -2484,7 +2484,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setDeleteConfirm(null)}
-                className="px-3 py-1.5 text-sm rounded border border-border hover:bg-accent transition-colors"
+                className="px-3 py-1.5 text-sm rounded border border-border hover:bg-hover transition-colors"
               >
                 {t('common.cancel')}
               </button>

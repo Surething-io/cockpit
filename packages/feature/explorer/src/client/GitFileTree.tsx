@@ -92,12 +92,12 @@ const GitFileTreeItem = React.memo(function GitFileTreeItem({
     return (
       <div>
         <div
-          className="flex items-center gap-1 py-0.5 px-2 pr-3 hover:bg-accent cursor-pointer whitespace-nowrap group"
+          className="flex items-center gap-1 py-0.5 px-2 pr-3 hover:bg-hover cursor-pointer whitespace-nowrap group"
           style={{ paddingLeft: `${level * 12 + 8}px` }}
           onClick={handleClick}
           onContextMenu={handleContextMenu}
         >
-          <span className="text-slate-9 text-xs">
+          <span className="text-foreground-subtle text-xs">
             {isExpanded ? '▼' : '▶'}
           </span>
           <span className="text-sm text-foreground flex-1 truncate" data-tooltip={node.path}>{node.name}</span>
@@ -124,7 +124,7 @@ const GitFileTreeItem = React.memo(function GitFileTreeItem({
   return (
     <div
       className={`flex items-center gap-1.5 py-0.5 px-2 pr-3 cursor-pointer whitespace-nowrap group ${
-        isSelected ? 'bg-brand/10' : 'hover:bg-accent'
+        isSelected ? 'bg-brand/10' : 'hover:bg-hover'
       }`}
       style={{ paddingLeft: `${level * 12 + 8}px` }}
       onClick={handleClick}
@@ -188,7 +188,7 @@ export function GitFileTree({
 
   if (files.length === 0) {
     return (
-      <div className="px-3 py-2 text-xs text-slate-9">
+      <div className="px-3 py-2 text-xs text-foreground-subtle">
         {resolvedEmptyMessage}
       </div>
     );

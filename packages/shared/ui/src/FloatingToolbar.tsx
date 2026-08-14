@@ -82,7 +82,7 @@ function QuickReplyPanel({
     // panel mounted as a sibling would wipe the selection it acts on.
     <div
       ref={panelRef}
-      className={`absolute ${placeAbove ? 'bottom-full mb-1' : 'top-full mt-1'} left-0 z-[201] flex flex-col gap-1 bg-card border border-border rounded-lg shadow-xl p-1.5`}
+      className={`absolute ${placeAbove ? 'bottom-full mb-1' : 'top-full mt-1'} left-0 z-[201] flex flex-col gap-1 bg-card border border-border rounded-lg shadow-lv3 p-1.5`}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
@@ -120,7 +120,7 @@ function QuickReplyPanel({
               // Custom phrase sets can legitimately repeat a phrase across
               // rows, so the phrase alone is not a stable key.
               key={`${rowIndex}:${i}:${phrase}`}
-              className="px-2 py-1 text-xs whitespace-nowrap border border-border text-foreground rounded hover:border-brand hover:bg-accent transition-colors"
+              className="px-2 py-1 text-xs whitespace-nowrap border border-border text-foreground rounded hover:border-brand hover:bg-hover transition-colors"
               onClick={() => onPick(phrase)}
             >
               {phrase}
@@ -262,7 +262,7 @@ export function FloatingToolbar({ x, y, visible, container, onAddComment, onSend
   return (
     <div
       ref={toolbarRef}
-      className="floating-toolbar absolute z-[200] flex items-center gap-1.5 bg-card border border-border rounded-lg shadow-xl p-1.5"
+      className="floating-toolbar absolute z-[200] flex items-center gap-1.5 bg-card border border-border rounded-lg shadow-lv3 p-1.5"
       style={{
         left: toolbarLeft,
         top: toolbarTop,

@@ -109,10 +109,10 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative w-full max-w-7xl h-[90vh] mx-4 bg-card rounded-lg shadow-xl flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-7xl h-[90vh] mx-4 bg-card rounded-lg shadow-lv3 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex-1 min-w-0">
@@ -136,7 +136,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
                     setSearchKeyword('');
                     searchInputRef.current?.focus();
                   }}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-slate-9 hover:text-foreground rounded-sm transition-colors"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-foreground-subtle hover:text-foreground rounded-sm transition-colors"
                   title={t('fileBrowser.clear')}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -147,7 +147,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
             </div>
             <button
               onClick={onClose}
-              className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"
+              className="p-1 text-foreground-subtle hover:text-foreground hover:bg-hover rounded transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -190,7 +190,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
                 <div
                   key={`${session.cwd}-${session.sessionId}`}
                   onClick={() => handleSessionClick(session)}
-                  className="p-3 bg-secondary rounded border border-border hover:border-brand hover:shadow-md cursor-pointer transition-all"
+                  className="p-3 bg-secondary rounded border border-border hover:border-brand hover:shadow-lv2 cursor-pointer transition-all"
                 >
                   {/* Project name + status dot + engine badge */}
                   <div className="flex items-center gap-1.5 mb-1">
@@ -234,23 +234,23 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
                     <div className="space-y-0.5 text-xs">
                       {session.firstMessages?.map((msg, idx) => (
                         <div key={`first-${idx}`} className="text-foreground truncate" data-tooltip={msg}>
-                          <span className="text-slate-9 mr-1">•</span>
+                          <span className="text-foreground-subtle mr-1">•</span>
                           {msg}
                         </div>
                       ))}
                       {(session.lastMessages?.length ?? 0) > 0 && (
-                        <div className="text-slate-9 text-center py-0.5">···</div>
+                        <div className="text-foreground-subtle text-center py-0.5">···</div>
                       )}
                       {session.lastMessages?.map((msg, idx) => (
                         <div key={`last-${idx}`} className="text-foreground truncate" data-tooltip={msg}>
-                          <span className="text-slate-9 mr-1">•</span>
+                          <span className="text-foreground-subtle mr-1">•</span>
                           {msg}
                         </div>
                       ))}
                     </div>
                   ) : session.lastUserMessage ? (
                     <div className="text-xs text-foreground truncate" data-tooltip={session.lastUserMessage}>
-                      <span className="text-slate-9 mr-1">•</span>
+                      <span className="text-foreground-subtle mr-1">•</span>
                       {session.lastUserMessage}
                     </div>
                   ) : null}

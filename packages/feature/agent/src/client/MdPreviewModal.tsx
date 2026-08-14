@@ -37,12 +37,12 @@ export function MdPreviewModal({ filePath, content, cwd, onClose, zClassName = '
   return (
     <Portal>
       <div
-        className={`fixed inset-0 ${zClassName} flex items-center justify-center bg-black/50 p-0 md:p-4`}
+        className={`fixed inset-0 ${zClassName} flex items-center justify-center bg-scrim p-0 md:p-4`}
         onClick={onClose}
       >
         <div
           ref={setContainer}
-          className="bg-card shadow-xl w-full h-full rounded-none md:max-w-[90%] md:h-[90vh] md:rounded-lg flex flex-col relative"
+          className="bg-card shadow-lv3 w-full h-full rounded-none md:max-w-[90%] md:h-[90vh] md:rounded-lg flex flex-col relative"
           onClick={(e) => e.stopPropagation()}
         >
           <MenuContainerProvider container={container}>

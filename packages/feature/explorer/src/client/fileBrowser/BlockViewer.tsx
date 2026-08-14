@@ -790,7 +790,7 @@ function SearchPalette({ cwd, onSelect, onClose }: SearchPaletteProps) {
       onClick={onClose}
     >
       <div
-        className="w-[480px] max-w-[80%] bg-card border border-border rounded shadow-2xl overflow-hidden"
+        className="w-[480px] max-w-[80%] bg-card border border-border rounded shadow-lv3 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 px-3 py-2 border-b border-border">

@@ -73,13 +73,13 @@ export function BranchSelector({
             <span className="text-xs text-green-11">({t('git.currentBranch')})</span>
           )}
         </span>
-        <svg className={`w-4 h-4 text-slate-9 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className={`w-4 h-4 text-foreground-subtle transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 mt-1 w-full bg-card border border-border rounded-lg shadow-lg max-h-80 flex flex-col">
+        <div className="absolute z-50 mt-1 w-full bg-card border border-border rounded-lg shadow-lv2 max-h-80 flex flex-col">
           <div className="p-2 border-b border-border">
             <input
               ref={inputRef}
@@ -98,7 +98,7 @@ export function BranchSelector({
                 className={`px-3 py-1.5 text-sm cursor-pointer flex items-center gap-2 ${
                   branch === selectedBranch
                     ? 'bg-brand/10 text-brand'
-                    : 'hover:bg-accent text-foreground'
+                    : 'hover:bg-hover text-foreground'
                 }`}
               >
                 <span className="truncate flex-1">{branch}</span>
@@ -124,7 +124,7 @@ export function BranchSelector({
                     className={`px-3 py-1.5 text-sm cursor-pointer flex items-center gap-2 ${
                       branch === selectedBranch
                         ? 'bg-brand/10 text-brand'
-                        : 'hover:bg-accent text-foreground'
+                        : 'hover:bg-hover text-foreground'
                     }`}
                   >
                     <span className="truncate flex-1">{branch}</span>
@@ -152,7 +152,7 @@ export function BranchSelector({
                     className={`px-3 py-1.5 text-sm cursor-pointer flex items-center gap-2 ${
                       branch === selectedBranch
                         ? 'bg-brand/10 text-brand'
-                        : 'hover:bg-accent text-foreground'
+                        : 'hover:bg-hover text-foreground'
                     }`}
                   >
                     <span className="truncate flex-1">{branch}</span>

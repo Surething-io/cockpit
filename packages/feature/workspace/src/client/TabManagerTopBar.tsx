@@ -159,7 +159,7 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={open ? handleClose : handleOpen}
-        className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+        className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
         title={t('git.switchBranch')}
       >
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -168,7 +168,7 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-64 bg-popover border border-border rounded-lg shadow-lg z-50 overflow-hidden">
+        <div className="absolute top-full left-0 mt-1 w-64 bg-popover border border-border rounded-lg shadow-lv2 z-50 overflow-hidden">
           {/* Search box */}
           <div className="p-2 border-b border-border">
             <input
@@ -198,7 +198,7 @@ function BranchSwitchDropdown({ cwd, currentBranch, onSwitched }: {
                   key={branch}
                   onClick={() => handleCheckout(branch)}
                   disabled={switching}
-                  className="w-full text-left px-2.5 py-1.5 text-sm rounded hover:bg-accent transition-colors truncate disabled:opacity-50"
+                  className="w-full text-left px-2.5 py-1.5 text-sm rounded hover:bg-hover transition-colors truncate disabled:opacity-50"
                 >
                   <span className={branch.startsWith('origin/') ? 'text-muted-foreground' : 'text-foreground'}>
                     {branch}
@@ -264,7 +264,7 @@ export function TabManagerTopBar({
                     navigator.clipboard.writeText(initialCwd);
                     toast(t('toast.copiedDirPath'));
                   }}
-                  className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                  className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
                   title={t('tabManagerTopBar.copyDirPath')}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -283,7 +283,7 @@ export function TabManagerTopBar({
             <div className="flex items-center gap-1">
               <button
                 onClick={onOpenWorktree}
-                className="flex items-center gap-1.5 px-2 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+                className="flex items-center gap-1.5 px-2 py-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded-lg transition-colors"
                 title="Git Worktrees"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -312,7 +312,7 @@ export function TabManagerTopBar({
           {/* Reload current project */}
           <button
             onClick={() => window.location.reload()}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-hover rounded-lg transition-colors"
             title={t('tabManagerTopBar.refreshProject')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -328,7 +328,7 @@ export function TabManagerTopBar({
                 );
               }
             }}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-hover rounded-lg transition-colors"
             title={t('tabManagerTopBar.openInVSCode')}
           >
             <VisualStudioCodeIcon className="w-4 h-4" />
@@ -342,7 +342,7 @@ export function TabManagerTopBar({
                 );
               }
             }}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-hover rounded-lg transition-colors"
             title={t('tabManagerTopBar.openInCursor')}
           >
             <CursorIcon className="w-4 h-4" />
@@ -355,7 +355,7 @@ export function TabManagerTopBar({
                   toast(t('toast.copiedCommand', { command: resumeCommand }), 'success');
                 });
               }}
-              className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+              className="p-2 text-muted-foreground hover:text-foreground hover:bg-hover rounded-lg transition-colors"
               title={t('chat.copyCommandTooltip', { command: resumeCommand })}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -366,7 +366,7 @@ export function TabManagerTopBar({
           {/* Global command aliases */}
           <button
             onClick={onOpenAliasManager}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-hover rounded-lg transition-colors"
             title={t('tabManagerTopBar.aliasesGlobal')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -376,7 +376,7 @@ export function TabManagerTopBar({
           {/* Token stats */}
           <button
             onClick={() => publishTopic(Topics.OpenTokenStats, {})}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-hover rounded-lg transition-colors"
             title={t('tabManagerTopBar.tokenStats')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -386,7 +386,7 @@ export function TabManagerTopBar({
           {/* Surething website */}
           <button
             onClick={() => window.open('https://surething.io?from=cockpit', '_blank')}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-hover rounded-lg transition-colors"
             title={t('tabManagerTopBar.openSurething')}
           >
             <img src="https://surething.io/logo.png?from=cockpit" alt="Surething" className="w-5 h-5 rounded-sm" />

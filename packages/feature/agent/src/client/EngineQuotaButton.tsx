@@ -103,10 +103,10 @@ export function EngineQuotaButton({ engine, hasKey }: EngineQuotaButtonProps) {
       {loading && (
         <span className="w-3 h-3 border border-brand border-t-transparent rounded-full animate-spin" />
       )}
-      {!loading && error && <span className="text-xs text-red-400">{error}</span>}
+      {!loading && error && <span className="text-xs text-red-11">{error}</span>}
       {!loading && !error && usage && (
         <span
-          className={`text-xs font-mono ${exhausted ? 'text-red-400' : ENGINE_TEXT_TONES[engine]}`}
+          className={`text-xs font-mono ${exhausted ? 'text-red-11' : ENGINE_TEXT_TONES[engine]}`}
           data-tooltip={
             reset
               ? t('chat.quotaResetAt', { defaultValue: 'Resets {{time}}', time: reset })
@@ -127,7 +127,7 @@ export function EngineQuotaButton({ engine, hasKey }: EngineQuotaButtonProps) {
             ? undefined
             : t('chat.quotaNeedsKey', { defaultValue: 'Set an API key first' })
         }
-        className="px-2 py-0.5 text-xs rounded border border-border text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        className="px-2 py-0.5 text-xs rounded border border-border text-muted-foreground hover:bg-hover hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
       >
         {t('chat.checkQuota', { defaultValue: 'Check quota' })}
       </button>
@@ -141,7 +141,7 @@ export function EngineQuotaButton({ engine, hasKey }: EngineQuotaButtonProps) {
         data-testid={`${engine}-console-link`}
         title={t('chat.openProviderConsole', { defaultValue: 'Open the provider console' })}
         aria-label={t('chat.openProviderConsole', { defaultValue: 'Open the provider console' })}
-        className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+        className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
       >
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />

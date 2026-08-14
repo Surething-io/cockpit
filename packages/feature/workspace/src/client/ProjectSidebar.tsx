@@ -130,7 +130,7 @@ function HtmlAppPreviewDock({ collapsed, previews, activePath, onOpenApps, onSho
       key="html-apps-list"
       type="button"
       onClick={() => { onOpenApps(); setPopoverOpen(null); }}
-      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
       title={t('htmlApps.title')}
     >
       <span className="h-7 w-7 flex-shrink-0 rounded-md border border-border/70 bg-transparent flex items-center justify-center">
@@ -154,7 +154,7 @@ function HtmlAppPreviewDock({ collapsed, previews, activePath, onOpenApps, onSho
           key={item.path}
           type="button"
           onClick={() => handleShowPreview(item)}
-          className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-accent transition-colors ${
+          className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-hover transition-colors ${
             activePath === item.path ? 'text-brand' : 'text-muted-foreground hover:text-foreground'
           }`}
           title={item.path}
@@ -185,7 +185,7 @@ function HtmlAppPreviewDock({ collapsed, previews, activePath, onOpenApps, onSho
           <AppsDockIcon className="w-4 h-4" />
         </button>
         {popoverOpen === 'collapsed' && (
-          <div className="absolute left-full bottom-0 ml-2 w-64 rounded-lg border border-border bg-card shadow-xl z-50">
+          <div className="absolute left-full bottom-0 ml-2 w-64 rounded-lg border border-border bg-card shadow-lv3 z-50">
             {renderList(previews)}
           </div>
         )}
@@ -223,7 +223,7 @@ function HtmlAppPreviewDock({ collapsed, previews, activePath, onOpenApps, onSho
               <MoreHorizontal className="w-4 h-4" />
             </button>
             {popoverOpen === 'more' && (
-              <div className="absolute left-0 bottom-full mb-2 w-64 rounded-lg border border-border bg-card shadow-xl z-50">
+              <div className="absolute left-0 bottom-full mb-2 w-64 rounded-lg border border-border bg-card shadow-lv3 z-50">
                 {renderList(overflowItems)}
               </div>
             )}
@@ -410,7 +410,7 @@ export function ProjectSidebar({
       {/* Open project button + collapse button */}
       <div className="group p-2 border-b border-border relative">
         <button
-          className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
+          className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-hover transition-colors ${
             collapsed ? 'justify-center' : ''
           }`}
           onClick={onOpenSessionBrowser}
@@ -536,7 +536,7 @@ export function ProjectSidebar({
         />
         {/* Notes */}
         <button
-          className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
+          className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-hover transition-colors ${
             collapsed ? 'justify-center' : ''
           }`}
           onClick={() => onOpenNote()}
@@ -549,7 +549,7 @@ export function ProjectSidebar({
         </button>
         {/* Skills */}
         <button
-          className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
+          className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-hover transition-colors ${
             collapsed ? 'justify-center' : ''
           }`}
           onClick={onOpenSkills}
@@ -576,7 +576,7 @@ export function ProjectSidebar({
             The href computes zh/en from the live i18n language. Switching
             language in-app re-renders this component and updates the link. */}
         <div
-          className={`relative flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
+          className={`relative flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer text-muted-foreground hover:text-foreground hover:bg-hover transition-colors ${
             collapsed ? 'justify-center' : ''
           }`}
           onClick={onOpenSettings}
@@ -629,7 +629,7 @@ export function ProjectSidebar({
                      the popover's left edge at the pill's right edge;
                      `bottom-full` puts its bottom at the pill's top; the
                      small ml/mb gaps keep it visually detached. */
-                  className="absolute left-full bottom-full ml-2 mb-1 w-56 rounded-lg border border-border bg-popover shadow-lg p-2 z-50"
+                  className="absolute left-full bottom-full ml-2 mb-1 w-56 rounded-lg border border-border bg-popover shadow-lv2 p-2 z-50"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="text-xs text-muted-foreground mb-2 px-1">
@@ -643,7 +643,7 @@ export function ProjectSidebar({
                     onClick={startUpdate}
                     disabled={isUpdating}
                     className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left
-                               hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-default"
+                               hover:bg-hover transition-colors disabled:opacity-60 disabled:cursor-default"
                   >
                     {isUpdating ? (
                       <svg className="w-3.5 h-3.5 flex-shrink-0 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -670,7 +670,7 @@ export function ProjectSidebar({
                   <button
                     type="button"
                     onClick={copyUpgradeCmd}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left hover:bg-accent transition-colors"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left hover:bg-hover transition-colors"
                   >
                     <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <rect x="9" y="9" width="13" height="13" rx="2" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
@@ -687,7 +687,7 @@ export function ProjectSidebar({
                     target="_blank"
                     rel="noopener"
                     onClick={() => setUpdatePopoverOpen(false)}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm hover:bg-accent transition-colors"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm hover:bg-hover transition-colors"
                   >
                     <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -706,7 +706,7 @@ export function ProjectSidebar({
               href={`https://opencockpit.dev/${i18n.language?.startsWith('zh') ? 'zh' : 'en'}/docs/get-started/quickstart/`}
               target="_blank"
               rel="noopener"
-              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
               onClick={(e) => e.stopPropagation()}
               title={t('workspace.help')}
               aria-label={t('workspace.help')}

@@ -266,11 +266,11 @@ export function GitWorktreeModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim"
       onClick={onClose}
     >
       <div
-        className="bg-card rounded-lg shadow-xl w-[480px] max-h-[80vh] flex flex-col"
+        className="bg-card rounded-lg shadow-lv3 w-[480px] max-h-[80vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -280,7 +280,7 @@ export function GitWorktreeModal({
           </span>
           <button
             onClick={onClose}
-            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
             title={t('common.close')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -305,7 +305,7 @@ export function GitWorktreeModal({
                     className={`group p-3 rounded-lg border transition-colors ${
                       isCurrent
                         ? 'border-brand bg-brand/5'
-                        : 'border-border hover:bg-accent cursor-pointer'
+                        : 'border-border hover:bg-hover cursor-pointer'
                     }`}
                     onClick={() => handleClickWorktree(worktree)}
                   >
@@ -428,7 +428,7 @@ export function GitWorktreeModal({
                     <button
                       key={branch}
                       onClick={() => handleCreateFromBranch(branch)}
-                      className="w-full text-left px-2.5 py-1.5 text-sm rounded hover:bg-accent transition-colors truncate"
+                      className="w-full text-left px-2.5 py-1.5 text-sm rounded hover:bg-hover transition-colors truncate"
                     >
                       <span className={`${branch.startsWith('origin/') ? 'text-muted-foreground' : 'text-foreground'}`}>
                         {branch}
@@ -452,7 +452,7 @@ export function GitWorktreeModal({
               disabled={!nextPath || isCreating}
               className={`px-3 py-1.5 text-sm rounded transition-colors ${
                 nextPath && !isCreating
-                  ? 'bg-secondary text-foreground hover:bg-accent'
+                  ? 'bg-secondary text-foreground hover:bg-hover'
                   : 'bg-secondary text-muted-foreground cursor-not-allowed'
               }`}
             >
@@ -479,11 +479,11 @@ export function GitWorktreeModal({
         {/* Delete confirmation dialog */}
         {deleteTarget && (
           <div
-            className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 rounded-lg"
+            className="absolute inset-0 z-10 flex items-center justify-center bg-scrim rounded-lg"
             onClick={() => setDeleteTarget(null)}
           >
             <div
-              className="bg-card rounded-lg shadow-xl w-[360px] p-4"
+              className="bg-card rounded-lg shadow-lv3 w-[360px] p-4"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="text-sm font-medium text-foreground mb-3">{t('git.worktree.confirmDelete')}</div>

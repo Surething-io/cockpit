@@ -288,7 +288,7 @@ export function ScheduledTasksPanel({
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className={`relative flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
+        className={`relative flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-hover transition-colors ${
           collapsed ? 'w-full justify-center' : 'w-full'
         }`}
         title={collapsed ? t('scheduledTasks.title') : undefined}
@@ -317,10 +317,10 @@ export function ScheduledTasksPanel({
       {isOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center">
           {/* Backdrop */}
-          <div className="absolute inset-0 bg-black/50" onClick={() => setIsOpen(false)} />
+          <div className="absolute inset-0 bg-scrim" onClick={() => setIsOpen(false)} />
 
           {/* Modal */}
-          <div className="relative w-full max-w-7xl h-[90vh] mx-4 bg-card rounded-lg shadow-xl flex flex-col overflow-hidden">
+          <div className="relative w-full max-w-7xl h-[90vh] mx-4 bg-card rounded-lg shadow-lv3 flex flex-col overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <div className="flex items-center gap-3 min-w-0">
@@ -336,7 +336,7 @@ export function ScheduledTasksPanel({
               </div>
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"
+                className="p-1 text-foreground-subtle hover:text-foreground hover:bg-hover rounded transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -363,7 +363,7 @@ export function ScheduledTasksPanel({
                             if (task.unread) onMarkRead(task.id);
                             setIsOpen(false);
                           }}
-                          className={`group p-3 bg-secondary rounded border hover:border-brand hover:shadow-md cursor-pointer transition-all ${
+                          className={`group p-3 bg-secondary rounded border hover:border-brand hover:shadow-lv2 cursor-pointer transition-all ${
                             task.unread ? 'border-brand/40 bg-brand/5' : 'border-border'
                           }`}
                         >
@@ -421,7 +421,7 @@ export function ScheduledTasksPanel({
                               onSwitchProject(task.cwd, task.sessionId);
                               setIsOpen(false);
                             }}
-                            className="group p-3 bg-secondary rounded border border-border opacity-60 hover:opacity-100 hover:border-brand hover:shadow-md cursor-pointer transition-all"
+                            className="group p-3 bg-secondary rounded border border-border opacity-60 hover:opacity-100 hover:border-brand hover:shadow-lv2 cursor-pointer transition-all"
                           >
                             <div className="flex items-center gap-1.5 mb-1">
                               <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getStatusColor(task)}`} />
@@ -467,7 +467,7 @@ export function ScheduledTasksPanel({
       {/* Edit modal */}
       {editingTask && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setEditingTask(null)} />
+          <div className="absolute inset-0 bg-scrim" onClick={() => setEditingTask(null)} />
           <div className="relative">
             <ScheduleTaskPopover
               onClose={() => setEditingTask(null)}

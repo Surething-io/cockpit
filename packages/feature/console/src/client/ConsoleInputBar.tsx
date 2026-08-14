@@ -319,7 +319,7 @@ export function ConsoleInputBar({
             className={`p-2 rounded-lg transition-all ${
               showQuickCommands
                 ? 'text-brand bg-brand/10'
-                : 'text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95'
+                : 'text-muted-foreground hover:text-foreground hover:bg-hover active:bg-muted active:scale-95'
             }`}
             title={t('console.quickCommands')}
           >
@@ -340,7 +340,7 @@ export function ConsoleInputBar({
           <button
             type="button"
             onClick={onOpenNote}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-hover active:bg-muted active:scale-95 rounded-lg transition-all"
             title={t('chat.projectNotes')}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -352,7 +352,7 @@ export function ConsoleInputBar({
         <button
           type="button"
           onClick={() => onGridLayoutChange(!gridLayout)}
-          className={`p-2 rounded-lg transition-all ${gridLayout ? 'text-brand bg-brand/10' : 'text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95'}`}
+          className={`p-2 rounded-lg transition-all ${gridLayout ? 'text-brand bg-brand/10' : 'text-muted-foreground hover:text-foreground hover:bg-hover active:bg-muted active:scale-95'}`}
           title={gridLayout ? t('console.singleColumn') : t('console.dualColumn')}
         >
           {gridLayout ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
@@ -360,7 +360,7 @@ export function ConsoleInputBar({
         <button
           type="button"
           onClick={onShowEnvManager}
-          className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
+          className="p-2 text-muted-foreground hover:text-foreground hover:bg-hover active:bg-muted active:scale-95 rounded-lg transition-all"
           title={t('console.envVars')}
         >
           <Variable className="w-4 h-4" />
@@ -369,7 +369,7 @@ export function ConsoleInputBar({
         <button
           type="button"
           onClick={onOpenShell}
-          className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent active:bg-muted active:scale-95 rounded-lg transition-all"
+          className="p-2 text-muted-foreground hover:text-foreground hover:bg-hover active:bg-muted active:scale-95 rounded-lg transition-all"
           title={t('console.launchShell')}
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -401,14 +401,14 @@ export function ConsoleInputBar({
         {showSlashCommands && slashItems.length > 0 && (
           <div
             ref={slashListRef}
-            className="absolute bottom-full left-0 right-0 mb-1 max-h-64 overflow-y-auto bg-popover border border-border rounded-lg shadow-lg z-50"
+            className="absolute bottom-full left-0 right-0 mb-1 max-h-64 overflow-y-auto bg-popover border border-border rounded-lg shadow-lv2 z-50"
           >
             {slashItems.map((item, index) => (
               <div
                 key={item.kind === 'html' ? `html-${item.name}` : `cmd-${item.cmd.scope}-${item.cmd.name}`}
                 onClick={() => handleSlashSelect(item)}
                 className={`flex items-center gap-3 px-3 py-1.5 cursor-pointer text-sm ${
-                  index === slashSelectedIndex ? 'bg-brand/10' : 'hover:bg-accent'
+                  index === slashSelectedIndex ? 'bg-brand/10' : 'hover:bg-hover'
                 }`}
               >
                 {item.kind === 'html' ? (
@@ -430,14 +430,14 @@ export function ConsoleInputBar({
         )}
 
         {showAutocomplete && autocompleteSuggestions.length > 1 && (
-          <div className="absolute bottom-full left-0 mb-1 bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto z-50">
+          <div className="absolute bottom-full left-0 mb-1 bg-popover border border-border rounded-lg shadow-lv2 max-h-48 overflow-y-auto z-50">
             <div className="py-1">
               {autocompleteSuggestions.map((suggestion, index) => (
                 <button
                   key={index}
                   type="button"
                   onClick={() => applyAutocompleteSuggestion(suggestion)}
-                  className={`w-full px-3 py-1.5 text-left text-sm font-mono hover:bg-accent transition-colors ${
+                  className={`w-full px-3 py-1.5 text-left text-sm font-mono hover:bg-hover transition-colors ${
                     index === autocompleteIndex ? 'bg-accent' : ''
                   }`}
                 >

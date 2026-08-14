@@ -89,7 +89,7 @@ export function BlockCommentBubbles({
           >
             <button
               onClick={(e) => onCommentClick(first, e)}
-              className="pointer-events-auto absolute right-1 w-4 h-4 rounded-full bg-amber-9/70 hover:bg-amber-11 text-white flex items-center justify-center shadow-sm transition-colors"
+              className="pointer-events-auto absolute right-1 w-4 h-4 rounded-full bg-amber-9/70 hover:bg-amber-11 text-white flex items-center justify-center shadow-lv1 transition-colors"
               style={{ top: `${centeredTop}px` }}
             >
               <MessageSquare className="w-2.5 h-2.5" />

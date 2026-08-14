@@ -152,13 +152,13 @@ export function FileContextMenu({
   const menuElement = (
     <div
       ref={menuRef}
-      className="absolute z-[200] bg-card border border-border rounded-lg shadow-lg py-1 w-fit whitespace-nowrap"
+      className="absolute z-[200] bg-card border border-border rounded-lg shadow-lv2 py-1 w-fit whitespace-nowrap"
       style={{ left: position.x, top: position.y }}
     >
       {/* Agent actions */}
       {showExplain && (
         <button
-          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           disabled={explainDisabled}
           title={explainDisabled ? t('comments.aiResponding') : undefined}
           onClick={() => { onClose(); onExplain!(path); }}
@@ -171,7 +171,7 @@ export function FileContextMenu({
       {/* File operations */}
       {onCreateFile && (
         <button
-          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
+          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-hover transition-colors"
           onClick={() => { onClose(); onCreateFile(targetDir); }}
         >
           {t('fileContextMenu.createFile')}
@@ -179,7 +179,7 @@ export function FileContextMenu({
       )}
       {onCopyFile && (
         <button
-          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
+          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-hover transition-colors"
           onClick={() => { onClose(); onCopyFile(path); }}
         >
           {isDirectory ? t('fileContextMenu.copyFolder') : t('fileContextMenu.copyFile')}
@@ -187,7 +187,7 @@ export function FileContextMenu({
       )}
       {onPaste && (
         <button
-          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
+          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-hover transition-colors"
           onClick={() => { onClose(); onPaste(targetDir); }}
         >
           {t('fileContextMenu.pasteHere')}
@@ -195,7 +195,7 @@ export function FileContextMenu({
       )}
       {onDelete && (
         <button
-          className="block w-full px-3 py-1.5 text-left text-sm text-destructive hover:bg-accent transition-colors"
+          className="block w-full px-3 py-1.5 text-left text-sm text-destructive hover:bg-hover transition-colors"
           onClick={() => { onClose(); onDelete(path, isDirectory, fileName); }}
         >
           {isDirectory ? t('fileContextMenu.deleteFolder') : t('fileContextMenu.deleteFile')}
@@ -208,7 +208,7 @@ export function FileContextMenu({
       {copyMenuItems.map((item, index) => (
         <button
           key={index}
-          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent transition-colors"
+          className="block w-full px-3 py-1.5 text-left text-sm text-foreground hover:bg-hover transition-colors"
           onClick={() => copyToClipboard(item.value, item.label)}
         >
           {item.label}

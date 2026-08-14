@@ -141,7 +141,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={handleToggle}
-        className={`relative flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
+        className={`relative flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-hover transition-colors ${
           collapsed ? 'w-full justify-center' : 'w-full'
         }`}
         title={collapsed ? t('sessions.recentSessions') : undefined}
@@ -172,7 +172,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
 
       {/* Dropdown list - pops up to the upper right */}
       {isOpen && (
-        <div className="absolute left-full bottom-0 ml-2 w-80 h-[600px] bg-popover border border-border rounded-lg shadow-lg z-50 flex flex-col">
+        <div className="absolute left-full bottom-0 ml-2 w-80 h-[600px] bg-popover border border-border rounded-lg shadow-lv2 z-50 flex flex-col">
           <div className="px-3 py-2 border-b border-border bg-muted/50 flex-shrink-0 rounded-t-lg flex items-center">
             <span className="text-sm font-medium">{t('sessions.recentSessions')}</span>
             {loadingCount > 0 && (
@@ -184,7 +184,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
             {/* Expand into the full searchable recent-sessions panel (up to 100) */}
             <button
               onClick={() => { setNow(Date.now()); setIsOpen(false); setTooltip(null); setSearchOpen(true); }}
-              className="ml-auto flex items-center gap-1 p-1 -mr-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+              className="ml-auto flex items-center gap-1 p-1 -mr-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
               title={t('sessions.searchRecentSessions')}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -205,7 +205,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
                   onClick={() => handleSessionClick(session)}
                   onMouseEnter={(e) => showTooltip(session, e)}
                   onMouseLeave={hideTooltip}
-                  className={`w-full px-3 py-2 text-left hover:bg-accent transition-colors flex items-start gap-2 ${
+                  className={`w-full px-3 py-2 text-left hover:bg-hover transition-colors flex items-start gap-2 ${
                     index !== sessions.length - 1 ? 'border-b border-border/50' : ''
                   } ${currentCwd === session.cwd ? 'bg-accent/50' : ''}`}
                 >
@@ -261,7 +261,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
       {/* Rich hover tooltip: cwd path + first/last user-message preview (mirrors ProjectSessionsModal cards) */}
       {tooltip && (
         <div
-          className="fixed z-[60] w-72 max-h-[260px] overflow-y-auto bg-popover border border-border rounded-lg shadow-lg p-3 pointer-events-none"
+          className="fixed z-[60] w-72 max-h-[260px] overflow-y-auto bg-popover border border-border rounded-lg shadow-lv2 p-3 pointer-events-none"
           style={{ top: tooltip.top, left: tooltip.left }}
         >
           <div className="text-xs font-medium text-foreground truncate">{getProjectName(tooltip.session.cwd)}</div>
@@ -286,16 +286,16 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
             <div className="space-y-0.5 text-xs border-t border-border/50 mt-2 pt-2">
               {tooltip.session.firstMessages?.map((msg, idx) => (
                 <div key={`f-${idx}`} className="text-foreground/90 truncate">
-                  <span className="text-slate-9 mr-1">•</span>
+                  <span className="text-foreground-subtle mr-1">•</span>
                   {msg}
                 </div>
               ))}
               {(tooltip.session.lastMessages?.length ?? 0) > 0 && (
-                <div className="text-slate-9 text-center py-0.5">···</div>
+                <div className="text-foreground-subtle text-center py-0.5">···</div>
               )}
               {tooltip.session.lastMessages?.map((msg, idx) => (
                 <div key={`l-${idx}`} className="text-foreground/90 truncate">
-                  <span className="text-slate-9 mr-1">•</span>
+                  <span className="text-foreground-subtle mr-1">•</span>
                   {msg}
                 </div>
               ))}

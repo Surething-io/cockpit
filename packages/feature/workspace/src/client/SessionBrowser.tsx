@@ -198,12 +198,12 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50"
+        className="absolute inset-0 bg-scrim"
         onClick={onClose}
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-7xl h-[90vh] mx-4 bg-card rounded-lg shadow-xl flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-7xl h-[90vh] mx-4 bg-card rounded-lg shadow-lv3 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h2 className="text-sm font-medium text-foreground">
@@ -225,7 +225,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
                     setSearchKeyword('');
                     searchInputRef.current?.focus();
                   }}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-slate-9 hover:text-foreground rounded-sm transition-colors"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-foreground-subtle hover:text-foreground rounded-sm transition-colors"
                   title={t('fileBrowser.clear')}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -238,7 +238,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
               <button
                 onClick={handlePickFolder}
                 disabled={isPickingFolder}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-hover transition-colors disabled:opacity-50"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m3-3H9m-4 7h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -248,7 +248,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
             )}
             <button
               onClick={onClose}
-              className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"
+              className="p-1 text-foreground-subtle hover:text-foreground hover:bg-hover rounded transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -294,7 +294,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
                 {/* Project Header (Clickable) */}
                 <button
                   onClick={() => toggleProject(project.encodedPath)}
-                  className="w-full flex items-center gap-2 p-2 rounded hover:bg-accent transition-colors text-left"
+                  className="w-full flex items-center gap-2 p-2 rounded hover:bg-hover transition-colors text-left"
                 >
                   {/* Expand/Collapse Icon */}
                   <svg
@@ -351,7 +351,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
                           <div
                             key={session.path}
                             onClick={() => handleSessionClick(project.fullPath, session)}
-                            className="p-3 bg-secondary rounded border border-border hover:border-brand hover:shadow-md cursor-pointer transition-all"
+                            className="p-3 bg-secondary rounded border border-border hover:border-brand hover:shadow-lv2 cursor-pointer transition-all"
                           >
                             {/* Session Title + Engine Badge */}
                             <div className="flex items-center gap-1.5 mb-1">
@@ -376,14 +376,14 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
                                   className="text-foreground truncate"
                                   data-tooltip={msg}
                                 >
-                                  <span className="text-slate-9 mr-1">•</span>
+                                  <span className="text-foreground-subtle mr-1">•</span>
                                   {msg}
                                 </div>
                               ))}
 
                               {/* Separator if there are last messages */}
                               {session.lastMessages.length > 0 && (
-                                <div className="text-slate-9 text-center py-0.5">
+                                <div className="text-foreground-subtle text-center py-0.5">
                                   ···
                                 </div>
                               )}
@@ -395,7 +395,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
                                   className="text-foreground truncate"
                                   data-tooltip={msg}
                                 >
-                                  <span className="text-slate-9 mr-1">•</span>
+                                  <span className="text-foreground-subtle mr-1">•</span>
                                   {msg}
                                 </div>
                               ))}

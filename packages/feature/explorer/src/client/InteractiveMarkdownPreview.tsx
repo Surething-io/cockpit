@@ -425,7 +425,7 @@ export function InteractiveMarkdownPreview({
                     ? filePath
                     : `${cwd.replace(/\/$/, '')}/${filePath}`
                 )}
-                className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
                 title={t('skills.addTooltip')}
               >
                 <BookmarkPlus className="w-4 h-4" />
@@ -433,7 +433,7 @@ export function InteractiveMarkdownPreview({
             )}
             <button
               onClick={onClose}
-              className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+              className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
               title={t('common.close')}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -474,7 +474,7 @@ export function InteractiveMarkdownPreview({
                 });
               }}
             >
-              <div className="w-5 h-5 rounded-full bg-amber-500/80 text-white text-xs flex items-center justify-center shadow-sm hover:bg-amber-500 transition-colors">
+              <div className="w-5 h-5 rounded-full bg-amber-500/80 text-white text-xs flex items-center justify-center shadow-lv1 hover:bg-amber-500 transition-colors">
                 {lineComments.length}
               </div>
             </div>

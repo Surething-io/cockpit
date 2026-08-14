@@ -30,8 +30,8 @@ export function HtmlPreviewModal({ filePath, content, cwd, onClose, onContentSea
   const [mode, setMode] = useState<'preview' | 'source'>('preview');
   return (
     <Portal>
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-0 md:p-4" onClick={onClose}>
-      <div className="bg-card shadow-xl w-full h-full rounded-none md:max-w-[90%] md:h-[90vh] md:rounded-lg flex flex-col relative overflow-hidden" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-0 md:p-4" onClick={onClose}>
+      <div className="bg-card shadow-lv3 w-full h-full rounded-none md:max-w-[90%] md:h-[90vh] md:rounded-lg flex flex-col relative overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-border flex-shrink-0">
           {/* Full absolute path. `direction: rtl` keeps the tail (file name)
               visible when the path is too long — the leading LRM mark pins
@@ -53,7 +53,7 @@ export function HtmlPreviewModal({ filePath, content, cwd, onClose, onContentSea
           <button
             onClick={() => setMode(m => (m === 'preview' ? 'source' : 'preview'))}
             className={`px-1.5 py-0.5 text-xs rounded transition-colors flex-shrink-0 ${
-              mode === 'preview' ? 'bg-brand text-white' : 'text-muted-foreground hover:bg-accent'
+              mode === 'preview' ? 'bg-brand text-white' : 'text-muted-foreground hover:bg-hover'
             }`}
           >
             {mode === 'preview' ? t('fileBrowser.exitPreview') : t('common.preview')}
@@ -64,7 +64,7 @@ export function HtmlPreviewModal({ filePath, content, cwd, onClose, onContentSea
           <button
             onClick={() => addHtmlApp(filePath)}
             title={t('htmlApps.addTooltip')}
-            className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0"
+            className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-hover transition-colors flex-shrink-0"
           >
             <BookmarkPlus className="w-4 h-4" />
           </button>
@@ -79,7 +79,7 @@ export function HtmlPreviewModal({ filePath, content, cwd, onClose, onContentSea
               onClose();
             }}
             title={t('common.openInConsole')}
-            className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0"
+            className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-hover transition-colors flex-shrink-0"
           >
             <SquareTerminal className="w-4 h-4" />
           </button>
@@ -89,11 +89,11 @@ export function HtmlPreviewModal({ filePath, content, cwd, onClose, onContentSea
               window.open(toExternalBrowserAppUrl(appUrl, window.location.origin), '_blank');
             }}
             title={t('browser.openInNewWindow')}
-            className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0"
+            className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-hover transition-colors flex-shrink-0"
           >
             <ExternalLink className="w-4 h-4" />
           </button>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0">✕</button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-hover transition-colors flex-shrink-0">✕</button>
         </div>
         <div className="flex-1 overflow-hidden">
           {mode === 'preview' ? (

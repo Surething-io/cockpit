@@ -654,7 +654,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
                       }}
                       className={`flex ${line.type === 'removed' ? 'bg-red-9/15 dark:bg-red-9/25' : ''}`}
                     >
-                      <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
+                      <span className="w-10 flex-shrink-0 text-right pr-2 text-foreground-subtle select-none border-r border-border">
                         {line.lineNum || ''}
                       </span>
                       <span
@@ -727,7 +727,7 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
                         // 2-3 px onto adjacent diff rows after a
                         // click) with an inset 1 px brand ring that
                         // stays inside the row's box.
-                        className="flex items-center justify-center text-[11px] text-foreground/50 hover:bg-accent hover:text-brand active:bg-brand/15 transition-colors duration-100 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-brand/60"
+                        className="flex items-center justify-center text-[11px] text-foreground/50 hover:bg-hover hover:text-brand active:bg-brand/15 transition-colors duration-100 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-brand/60"
                         title={t(
                           row.direction === 'up'
                             ? 'diffViewer.gap.expandUp'
@@ -822,14 +822,14 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
                         line?.type === 'added' ? 'bg-green-9/15 dark:bg-green-9/25' : ''
                       }`}
                     >
-                      <span className={`flex-shrink-0 flex items-center gap-0.5 pr-1 text-slate-9 select-none border-r border-border ${
+                      <span className={`flex-shrink-0 flex items-center gap-0.5 pr-1 text-foreground-subtle select-none border-r border-border ${
                         isInRange ? 'bg-blue-9/30' : ''
                       }`} style={{ width: commentsEnabled ? '52px' : '40px' }}>
                         {/* Comment bubble */}
                         {commentsEnabled && lineNum > 0 && hasComments && firstComment && (
                           <button
                             onClick={(e) => handleCommentBubbleClick(firstComment, e)}
-                            className="w-4 h-4 flex items-center justify-center rounded hover:bg-accent text-amber-9"
+                            className="w-4 h-4 flex items-center justify-center rounded hover:bg-hover text-amber-9"
                             title={t('codeViewer.nComments', { count: lineComments?.length })}
                           >
                             <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -1056,7 +1056,7 @@ export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableC
                     key={virtualItem.key}
                     style={style}
                     onClick={() => setExpandedGaps((prev) => new Set(prev).add(row.id))}
-                    className="flex items-center cursor-pointer bg-slate-2 hover:bg-accent border-y border-border text-xs text-slate-9 select-none"
+                    className="flex items-center cursor-pointer bg-slate-2 hover:bg-hover border-y border-border text-xs text-foreground-subtle select-none"
                     data-tooltip={label}
                   >
                     <span className="w-full text-center">{label}</span>
@@ -1094,7 +1094,7 @@ export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableC
                       {lineNum > 0 && hasComments && firstComment && (
                         <button
                           onClick={(e) => handleCommentBubbleClick(firstComment, e)}
-                          className="w-4 h-4 flex items-center justify-center rounded hover:bg-accent text-amber-9"
+                          className="w-4 h-4 flex items-center justify-center rounded hover:bg-hover text-amber-9"
                           title={t('codeViewer.nComments', { count: lineComments?.length })}
                         >
                           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -1105,10 +1105,10 @@ export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableC
                     </span>
                   )}
                   {/* Line numbers */}
-                  <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
+                  <span className="w-10 flex-shrink-0 text-right pr-2 text-foreground-subtle select-none border-r border-border">
                     {line.type !== 'added' ? line.oldLineNum : ''}
                   </span>
-                  <span className="w-10 flex-shrink-0 text-right pr-2 text-slate-9 select-none border-r border-border">
+                  <span className="w-10 flex-shrink-0 text-right pr-2 text-foreground-subtle select-none border-r border-border">
                     {line.type !== 'removed' ? line.newLineNum : ''}
                   </span>
                   {/* Symbol */}
@@ -1118,7 +1118,7 @@ export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableC
                         ? 'text-red-11'
                         : line.type === 'added'
                         ? 'text-green-11'
-                        : 'text-slate-9'
+                        : 'text-foreground-subtle'
                     }`}
                   >
                     {line.type === 'removed' ? '-' : line.type === 'added' ? '+' : ' '}

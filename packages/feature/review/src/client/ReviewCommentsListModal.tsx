@@ -137,11 +137,11 @@ export function ReviewCommentsListModal({
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl max-h-[80vh] bg-card border border-border rounded-lg shadow-xl flex flex-col overflow-hidden"
+        className="w-full max-w-2xl max-h-[80vh] bg-card border border-border rounded-lg shadow-lv3 flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -156,7 +156,7 @@ export function ReviewCommentsListModal({
               <button
                 onClick={handleCopyAll}
                 disabled={copyingAll}
-                className="p-1 rounded hover:bg-accent text-muted-foreground disabled:opacity-50"
+                className="p-1 rounded hover:bg-hover text-muted-foreground disabled:opacity-50"
                 title={t('review.copyAllComments')}
               >
                 {copyingAll ? (
@@ -171,7 +171,7 @@ export function ReviewCommentsListModal({
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded hover:bg-accent text-muted-foreground"
+            className="p-1 rounded hover:bg-hover text-muted-foreground"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -313,7 +313,7 @@ function CommentRow({
             onCopy(comment);
           }}
           disabled={copyingId === comment.id}
-          className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-accent text-muted-foreground transition-opacity disabled:opacity-50 flex-shrink-0 mt-0.5"
+          className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-hover text-muted-foreground transition-opacity disabled:opacity-50 flex-shrink-0 mt-0.5"
           title={i18n.t('review.copyComment')}
         >
           {copyingId === comment.id ? (

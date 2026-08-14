@@ -270,14 +270,14 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
             </code>
             <button
               onClick={beginEditKey}
-              className="text-[11px] px-2 py-1 rounded bg-secondary hover:bg-accent text-foreground transition-colors"
+              className="text-[11px] px-2 py-1 rounded bg-secondary hover:bg-hover text-foreground transition-colors"
               disabled={savingConfig}
             >
               Edit
             </button>
             <button
               onClick={handleClearKey}
-              className="text-[11px] px-2 py-1 rounded text-red-400 hover:bg-red-500/10 transition-colors"
+              className="text-[11px] px-2 py-1 rounded text-red-11 hover:bg-red-500/10 transition-colors"
               disabled={savingConfig}
             >
               Clear
@@ -313,7 +313,7 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
           </div>
         )}
         {configError && (
-          <div className="mt-1 text-[11px] text-red-400">{configError}</div>
+          <div className="mt-1 text-[11px] text-red-11">{configError}</div>
         )}
       </div>
 
@@ -330,7 +330,7 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
             {starting ? 'Starting Ollama...' : 'Loading models...'}
           </div>
         ) : error ? (
-          <div className="px-3 py-2 text-xs text-red-400">{error}</div>
+          <div className="px-3 py-2 text-xs text-red-11">{error}</div>
         ) : models.length === 0 ? (
           <div className="px-3 py-2 text-xs text-muted-foreground">
             No models found. Run <code className="bg-secondary px-1 rounded">ollama pull &lt;model&gt;</code>
@@ -343,7 +343,7 @@ export function OllamaModelPicker({ currentModel, onModelChange }: OllamaModelPi
                 key={m.name}
                 onClick={() => selectModel(m.name)}
                 className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors ${
-                  selected ? ENGINE_MENU_ROW_SELECTED : 'text-foreground hover:bg-accent'
+                  selected ? ENGINE_MENU_ROW_SELECTED : 'text-foreground hover:bg-hover'
                 }`}
               >
                 <EngineCheck selected={selected} />

@@ -31,7 +31,7 @@ export function DiffDensityToggle({ value, onChange, className }: DiffDensityTog
           className={`px-2 py-0.5 text-xs transition-colors ${
             value === density
               ? 'bg-brand text-white'
-              : 'text-muted-foreground hover:bg-accent'
+              : 'text-muted-foreground hover:bg-hover'
           }`}
         >
           {t(density === 'compact' ? 'diffViewer.compact' : 'diffViewer.full')}

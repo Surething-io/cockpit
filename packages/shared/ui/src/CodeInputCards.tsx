@@ -111,7 +111,7 @@ export function AddCommentInput({ x, y, range, filePath, lineSnapshot, container
   return (
     <div
       ref={cardRef}
-      className="absolute z-[200] w-[640px] bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+      className="absolute z-[200] w-[640px] bg-card border border-border rounded-lg shadow-lv2 overflow-hidden"
       style={{ left: position.x, top: position.y }}
     >
       <div className="px-3 py-2 bg-amber-9/10 border-b border-border">
@@ -264,7 +264,7 @@ export function SendToAIInput({
   return (
     <div
       ref={cardRef}
-      className="absolute z-[200] w-[640px] bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+      className="absolute z-[200] w-[640px] bg-card border border-border rounded-lg shadow-lv2 overflow-hidden"
       style={{ left: position.x, top: position.y }}
     >
       <div className="px-3 py-2 bg-brand/10 border-b border-border">

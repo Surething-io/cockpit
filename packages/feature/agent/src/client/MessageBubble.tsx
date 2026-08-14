@@ -596,11 +596,11 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
         {showEventDetail && (
           <Portal>
             <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+              className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
               onClick={() => setShowEventDetail(false)}
             >
               <div
-                className="bg-card shadow-xl w-full max-w-4xl max-h-[80vh] rounded-lg flex flex-col overflow-hidden"
+                className="bg-card shadow-lv3 w-full max-w-4xl max-h-[80vh] rounded-lg flex flex-col overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between px-4 py-2 border-b border-border flex-shrink-0">
@@ -612,7 +612,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                   </span>
                   <button
                     onClick={() => setShowEventDetail(false)}
-                    className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors"
+                    className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-hover transition-colors"
                   >
                     ✕
                   </button>
@@ -651,7 +651,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             {message.content && (
               <button
                 onClick={handleCopy}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover"
                 title={t('chat.copyMessage')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -662,7 +662,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             {canFork && (
               <button
                 onClick={handleFork}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover"
                 title={t('chat.forkSession')}
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -678,7 +678,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             {canFork && (
               <button
                 onClick={handleExcerpt}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover"
                 title={t('chat.excerptTurn')}
               >
                 <Scissors className="w-4 h-4" />
@@ -761,7 +761,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                       }`}
                     >
                       {todo.status === 'completed' ? (
-                        <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0" />
+                        <CheckCircle2 className="w-3 h-3 text-green-11 flex-shrink-0" />
                       ) : todo.status === 'in_progress' ? (
                         <Loader className="w-3 h-3 text-brand flex-shrink-0 animate-spin" />
                       ) : (
@@ -823,7 +823,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                   <button
                     key={fp}
                     onClick={() => setPreviewFile(fp)}
-                    className="flex items-center gap-1.5 w-full text-left hover:bg-accent rounded px-1 py-0.5 transition-colors group/md"
+                    className="flex items-center gap-1.5 w-full text-left hover:bg-hover rounded px-1 py-0.5 transition-colors group/md"
                   >
                     {isImageFile(fp) ? (
                       // Image — picture glyph
@@ -889,7 +889,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                   <div className="flex items-center">
                     <button
                       onClick={() => setToolCallsExpanded(!toolCallsExpanded)}
-                      className="flex-1 px-3 py-1.5 flex items-center gap-2 text-left hover:bg-accent transition-colors active:bg-muted"
+                      className="flex-1 px-3 py-1.5 flex items-center gap-2 text-left hover:bg-hover transition-colors active:bg-muted"
                     >
                       <span className="text-sm">🔧</span>
                       <span className="font-medium text-foreground">
@@ -902,7 +902,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                     {askQuestionCalls.length > 0 && (
                       <button
                         onClick={() => setShowAskQuestionViewer(true)}
-                        className="px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border-l border-border"
+                        className="px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-hover transition-colors border-l border-border"
                         title={t('chat.viewQuestions')}
                       >
                         <MessageCircleQuestion className="w-4 h-4" />
@@ -920,7 +920,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                             setShowDiffViewer(true);
                           }
                         }}
-                        className="px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border-l border-border"
+                        className="px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-hover transition-colors border-l border-border"
                         title={t('chat.viewAllFileChanges')}
                       >
                         <FileDiff className="w-4 h-4" />
@@ -950,7 +950,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             {message.content && (
               <button
                 onClick={handleCopy}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover"
                 title={t('chat.copyMessage')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -961,7 +961,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             {canFork && (
               <button
                 onClick={handleFork}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover"
                 title={t('chat.forkSession')}
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -976,7 +976,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             {canFork && (
               <button
                 onClick={handleExcerpt}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover"
                 title={t('chat.excerptTurn')}
               >
                 <Scissors className="w-4 h-4" />

@@ -130,7 +130,7 @@ export function TitleEditDialog({ open, anchorRef, initialValue, onCancel, onSav
         width: POPOVER_WIDTH,
         visibility: pos ? 'visible' : 'hidden',
       }}
-      className="fixed z-[100] rounded-lg border border-border bg-card p-3 shadow-xl"
+      className="fixed z-[100] rounded-lg border border-border bg-card p-3 shadow-lv3"
     >
       <div className="mb-2 text-sm font-medium text-foreground">
         {t('shortIdBadge.dialogTitle')}
@@ -157,7 +157,7 @@ export function TitleEditDialog({ open, anchorRef, initialValue, onCancel, onSav
       <div className="mt-3 flex justify-end gap-2 text-sm">
         <button
           onClick={onCancel}
-          className="rounded px-3 py-1 text-muted-foreground hover:bg-accent"
+          className="rounded px-3 py-1 text-muted-foreground hover:bg-hover"
           disabled={saving}
         >
           {t('common.cancel')}

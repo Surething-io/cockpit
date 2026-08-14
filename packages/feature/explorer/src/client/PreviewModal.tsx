@@ -224,11 +224,11 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-0 md:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-0 md:p-4"
       onClick={onClose}
     >
       <div
-        className={`bg-card shadow-xl w-full ${modalWidth} h-full md:h-[90vh] rounded-none md:rounded-lg flex flex-col transition-all`}
+        className={`bg-card shadow-lv3 w-full ${modalWidth} h-full md:h-[90vh] rounded-none md:rounded-lg flex flex-col transition-all`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -241,7 +241,7 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
                   navigator.clipboard.writeText(filePath);
                   toast(t('common.copiedPath'));
                 }}
-                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
                 title={t('common.copyAbsPath')}
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -260,7 +260,7 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
                       onClick={() => setViewMode('diff-split')}
                       className={`px-2 py-1 text-xs rounded transition-colors ${
                         viewMode === 'diff-split'
-                          ? 'bg-card text-foreground shadow-sm'
+                          ? 'bg-card text-foreground shadow-lv1'
                           : 'text-muted-foreground hover:text-foreground'
                       }`}
                       title={t('diffViewer.sideBySide')}
@@ -271,7 +271,7 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
                       onClick={() => setViewMode('diff-unified')}
                       className={`px-2 py-1 text-xs rounded transition-colors ${
                         viewMode === 'diff-unified'
-                          ? 'bg-card text-foreground shadow-sm'
+                          ? 'bg-card text-foreground shadow-lv1'
                           : 'text-muted-foreground hover:text-foreground'
                       }`}
                       title={t('diffViewer.unified')}
@@ -285,7 +285,7 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
                     onClick={() => setViewMode('file')}
                     className={`px-2 py-1 text-xs rounded transition-colors ${
                       viewMode === 'file'
-                        ? 'bg-card text-foreground shadow-sm'
+                        ? 'bg-card text-foreground shadow-lv1'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                     title={t('diffViewer.previewFile')}
@@ -297,7 +297,7 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
                   onClick={() => setViewMode('readable')}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     viewMode === 'readable'
-                      ? 'bg-card text-foreground shadow-sm'
+                      ? 'bg-card text-foreground shadow-lv1'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
@@ -307,7 +307,7 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
                   onClick={() => setViewMode('json')}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     viewMode === 'json'
-                      ? 'bg-card text-foreground shadow-sm'
+                      ? 'bg-card text-foreground shadow-lv1'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
@@ -317,7 +317,7 @@ export function PreviewModal({ title, content, toolName, onClose }: PreviewModal
             )}
             <button
               onClick={onClose}
-              className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"
+              className="p-1 text-foreground-subtle hover:text-foreground hover:bg-hover rounded transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

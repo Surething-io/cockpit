@@ -50,7 +50,7 @@ function LinkInput({
 
   return (
     <div
-      className={`${position ? 'fixed' : 'absolute top-full left-0 mt-1'} z-[60] bg-popover border border-border rounded-lg shadow-lg p-2 flex items-center gap-2`}
+      className={`${position ? 'fixed' : 'absolute top-full left-0 mt-1'} z-[60] bg-popover border border-border rounded-lg shadow-lv2 p-2 flex items-center gap-2`}
       style={style}
     >
       <input
@@ -80,7 +80,7 @@ function LinkInput({
       {editor.isActive('link') && (
         <button
           onClick={handleRemove}
-          className="p-1 rounded text-sm font-medium text-red-500 hover:bg-red-500/10 transition-colors"
+          className="p-1 rounded text-sm font-medium text-red-11 hover:bg-red-500/10 transition-colors"
           title={t('editor.removeLink')}
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
@@ -125,7 +125,7 @@ export function NoteToolbar({ editor }: { editor: Editor | null }) {
     `p-1.5 rounded text-xs font-medium transition-colors ${
       active
         ? 'bg-brand/15 text-brand'
-        : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+        : 'text-muted-foreground hover:text-foreground hover:bg-hover'
     }`;
 
   const sepClass = 'w-px h-5 bg-border mx-0.5';
@@ -241,21 +241,21 @@ export function NoteToolbar({ editor }: { editor: Editor | null }) {
           <div className={sepClass} />
 
           <button
-            className="p-1.5 rounded text-xs font-medium transition-colors text-orange-500 hover:bg-orange-500/10"
+            className="p-1.5 rounded text-xs font-medium transition-colors text-orange-11 hover:bg-orange-500/10"
             onClick={() => editor.chain().focus().deleteRow().run()}
             title={t('editor.deleteRow')}
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-2 .9-2 2v2h20V6c0-1.1-.9-2-2-2zm0 6H2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V10zm-8 8H4v-2h8v2z"/><path d="M15 13l-1.41 1.41L15.17 16l-1.58 1.59L15 19l1.59-1.59L18.17 19l1.42-1.41L18 16l1.59-1.59L18.17 13 16.59 14.41z" fill="currentColor"/></svg>
           </button>
           <button
-            className="p-1.5 rounded text-xs font-medium transition-colors text-orange-500 hover:bg-orange-500/10"
+            className="p-1.5 rounded text-xs font-medium transition-colors text-orange-11 hover:bg-orange-500/10"
             onClick={() => editor.chain().focus().deleteColumn().run()}
             title={t('editor.deleteColumn')}
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h2V4H6zm4 0v20h10c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H10zm7 7H10V9h7v2z"/><path d="M13 16l-1.41 1.41L13.17 19l-1.58 1.59L13 22l1.59-1.59L16.17 22l1.42-1.41L16 19l1.59-1.59L16.17 16l-1.58 1.41z" fill="currentColor"/></svg>
           </button>
           <button
-            className="p-1.5 rounded text-xs font-medium transition-colors text-red-500 hover:bg-red-500/10"
+            className="p-1.5 rounded text-xs font-medium transition-colors text-red-11 hover:bg-red-500/10"
             onClick={() => editor.chain().focus().deleteTable().run()}
             title={t('editor.deleteTable')}
           >
@@ -269,7 +269,7 @@ export function NoteToolbar({ editor }: { editor: Editor | null }) {
         <>
           <div className={sepClass} />
           <button
-            className="p-1.5 rounded text-xs font-medium transition-colors text-red-500 hover:bg-red-500/10"
+            className="p-1.5 rounded text-xs font-medium transition-colors text-red-11 hover:bg-red-500/10"
             onClick={() => editor.chain().focus().toggleCodeBlock().run()}
             title={t('editor.deleteCodeBlock')}
           >

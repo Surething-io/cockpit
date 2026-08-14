@@ -142,9 +142,9 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center">
-        <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+        <div className="absolute inset-0 bg-scrim" onClick={onClose} />
 
-        <div className="relative bg-card rounded-lg shadow-xl w-full max-w-7xl h-[90vh] mx-4 flex flex-col overflow-hidden">
+        <div className="relative bg-card rounded-lg shadow-lv3 w-full max-w-7xl h-[90vh] mx-4 flex flex-col overflow-hidden">
           {/* Header — title + inline search/add/close (matches SessionBrowser) */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
             <h2 className="text-sm font-medium text-foreground">{t('skills.title')}</h2>
@@ -164,7 +164,7 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
                       setQuery('');
                       searchInputRef.current?.focus();
                     }}
-                    className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-slate-9 hover:text-foreground rounded-sm transition-colors"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-foreground-subtle hover:text-foreground rounded-sm transition-colors"
                     title={t('skills.clearSearch')}
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -175,7 +175,7 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
               </div>
               <button
                 onClick={() => setShowAdd(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -184,7 +184,7 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
               </button>
               <button
                 onClick={onClose}
-                className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors"
+                className="p-1 text-foreground-subtle hover:text-foreground hover:bg-hover rounded transition-colors"
                 title={t('common.close')}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -250,7 +250,7 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
       {showAdd && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div
-            className="absolute inset-0 bg-black/50"
+            className="absolute inset-0 bg-scrim"
             onClick={() => {
               if (!adding) {
                 setShowAdd(false);
@@ -258,7 +258,7 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
               }
             }}
           />
-          <div className="relative bg-card rounded-lg shadow-xl w-full max-w-lg mx-4 p-5">
+          <div className="relative bg-card rounded-lg shadow-lv3 w-full max-w-lg mx-4 p-5">
             <h3 className="text-sm font-medium text-foreground mb-3">{t('skills.addSkill')}</h3>
             <label className="block text-xs text-muted-foreground mb-1">
               {t('skills.pathLabel')}
@@ -281,7 +281,7 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
                   setAddPath('');
                 }}
                 disabled={adding}
-                className="px-3 py-1.5 text-sm rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                className="px-3 py-1.5 text-sm rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-hover transition-colors disabled:opacity-50"
               >
                 {t('common.cancel')}
               </button>
@@ -325,7 +325,7 @@ function SkillCard({ skill, onPreview, onDelete, onCopyPath }: SkillCardProps) {
 
   return (
     <div
-      className={`group flex flex-col h-full border border-border rounded-lg p-3 bg-secondary hover:border-brand hover:shadow-md transition-all ${
+      className={`group flex flex-col h-full border border-border rounded-lg p-3 bg-secondary hover:border-brand hover:shadow-lv2 transition-all ${
         skill.valid ? '' : 'opacity-60'
       }`}
     >
@@ -358,7 +358,7 @@ function SkillCard({ skill, onPreview, onDelete, onCopyPath }: SkillCardProps) {
           <button
             onClick={onPreview}
             disabled={!skill.valid}
-            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             title={t('common.preview')}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -403,7 +403,7 @@ function SkillCard({ skill, onPreview, onDelete, onCopyPath }: SkillCardProps) {
         {skill.path}
         <button
           onClick={onCopyPath}
-          className="inline-flex align-middle ml-1 p-0.5 hover:text-foreground hover:bg-accent rounded transition-colors"
+          className="inline-flex align-middle ml-1 p-0.5 hover:text-foreground hover:bg-hover rounded transition-colors"
           title={t('skills.copyPath')}
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

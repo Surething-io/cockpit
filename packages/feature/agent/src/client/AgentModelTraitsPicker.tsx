@@ -252,7 +252,7 @@ function MenuRow<T extends string>({
       className={`flex w-full items-start gap-2 px-3 py-2 text-left text-xs transition-colors ${
         selected
           ? ENGINE_MENU_ROW_SELECTED
-          : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
+          : 'text-muted-foreground hover:bg-hover hover:text-foreground'
       }`}
     >
       <span className="mt-0.5">

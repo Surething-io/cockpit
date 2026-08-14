@@ -45,7 +45,7 @@ export function ReviewIdentitySettings({ identity }: Props) {
     <div className="relative" ref={popoverRef}>
       <button
         onClick={() => { if (!open) setEditName(identity.name); setOpen(!open); }}
-        className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors flex items-center gap-1"
+        className="px-2 py-1 text-xs rounded hover:bg-hover transition-colors flex items-center gap-1"
         title={t('review.identitySettings')}
       >
         <span className="w-5 h-5 rounded-full bg-brand/20 text-brand flex items-center justify-center text-[10px] font-bold">
@@ -55,7 +55,7 @@ export function ReviewIdentitySettings({ identity }: Props) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-56 bg-card border border-border rounded-lg shadow-lg p-3 z-50">
+        <div className="absolute right-0 top-full mt-1 w-56 bg-card border border-border rounded-lg shadow-lv2 p-3 z-50">
           <div className="text-xs text-muted-foreground mb-2">{t('review.reviewNickname')}</div>
           <input
             type="text"
@@ -71,14 +71,14 @@ export function ReviewIdentitySettings({ identity }: Props) {
                 identity.randomize();
                 setOpen(false);
               }}
-              className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
+              className="px-2 py-1 text-xs rounded hover:bg-hover transition-colors text-muted-foreground"
             >
               {t('review.random')}
             </button>
             <div className="flex-1" />
             <button
               onClick={() => setOpen(false)}
-              className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
+              className="px-2 py-1 text-xs rounded hover:bg-hover transition-colors text-muted-foreground"
             >
               {t('common.cancel')}
             </button>

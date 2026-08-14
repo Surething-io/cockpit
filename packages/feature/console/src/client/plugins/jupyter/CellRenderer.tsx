@@ -76,7 +76,7 @@ const OutputRenderer = memo(function OutputRenderer({ output }: { output: CellOu
     const html = ansiUpInstance.ansi_to_html(text);
     return (
       <pre
-        className={`text-xs leading-relaxed whitespace-pre-wrap break-all px-3 py-1 ${output.name === 'stderr' ? 'text-amber-500' : 'text-foreground'}`}
+        className={`text-xs leading-relaxed whitespace-pre-wrap break-all px-3 py-1 ${output.name === 'stderr' ? 'text-amber-11' : 'text-foreground'}`}
         dangerouslySetInnerHTML={{ __html: html }}
       />
     );
@@ -87,7 +87,7 @@ const OutputRenderer = memo(function OutputRenderer({ output }: { output: CellOu
     const html = ansiUpInstance.ansi_to_html(tb);
     return (
       <pre
-        className="text-xs leading-relaxed whitespace-pre-wrap break-all px-3 py-1 text-red-400 bg-red-500/5 rounded"
+        className="text-xs leading-relaxed whitespace-pre-wrap break-all px-3 py-1 text-red-11 bg-red-500/5 rounded"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     );
@@ -286,7 +286,7 @@ export const CellRenderer = memo(function CellRenderer({
         {!isLast && (
           <button onClick={onMoveDown} className="px-1 hover:text-brand" title="Move down">↓</button>
         )}
-        <button onClick={onDelete} className="px-1 hover:text-red-400" title="Delete">×</button>
+        <button onClick={onDelete} className="px-1 hover:text-red-11" title="Delete">×</button>
       </div>
 
       {/* Cell content */}

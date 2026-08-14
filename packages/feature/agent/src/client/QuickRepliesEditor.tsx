@@ -60,18 +60,18 @@ export function QuickRepliesEditor({
   return (
     <Portal>
       <div
-        className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-4"
+        className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim p-4"
         onClick={onClose}
       >
         <div
-          className="bg-card border border-border rounded-lg shadow-xl w-full max-w-md flex flex-col"
+          className="bg-card border border-border rounded-lg shadow-lv3 w-full max-w-md flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <h2 className="text-sm font-medium text-foreground">{t('quickReply.editTitle')}</h2>
             <button
               onClick={onClose}
-              className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+              className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
               aria-label={t('quickReply.cancel')}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -109,7 +109,7 @@ export function QuickRepliesEditor({
             <div className="flex items-center gap-2">
               <button
                 onClick={onClose}
-                className="px-3 py-1.5 text-xs border border-border text-foreground rounded-md hover:bg-accent transition-colors"
+                className="px-3 py-1.5 text-xs border border-border text-foreground rounded-md hover:bg-hover transition-colors"
               >
                 {t('quickReply.cancel')}
               </button>

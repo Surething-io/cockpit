@@ -250,7 +250,7 @@ export function QuickFileOpen({ files, fileIndex, recentFiles, onSelectFile, onC
     <Portal>
     <div className="fixed inset-0 z-[300] flex items-start justify-center pt-[15vh]" onClick={onClose}>
       <div
-        className="w-[680px] max-h-[60vh] bg-card border border-border rounded-lg shadow-2xl overflow-hidden flex flex-col"
+        className="w-[680px] max-h-[60vh] bg-card border border-border rounded-lg shadow-lv3 overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input */}
@@ -285,7 +285,7 @@ export function QuickFileOpen({ files, fileIndex, recentFiles, onSelectFile, onC
                 className={`px-3 py-1.5 flex items-center gap-2 cursor-pointer transition-colors ${
                   index === selectedIndex
                     ? 'bg-brand/15 text-foreground'
-                    : 'hover:bg-accent text-foreground'
+                    : 'hover:bg-hover text-foreground'
                 }`}
                 data-tooltip={result.path}
                 onClick={() => handleSelect(result.path)}

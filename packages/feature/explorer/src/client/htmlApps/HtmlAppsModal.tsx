@@ -177,13 +177,13 @@ export function HtmlAppsModal({
     <>
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={handleClose} />
-          <div className="relative bg-card rounded-lg shadow-xl w-full max-w-7xl h-[90vh] mx-4 flex flex-col overflow-hidden">
+          <div className="absolute inset-0 bg-scrim" onClick={handleClose} />
+          <div className="relative bg-card rounded-lg shadow-lv3 w-full max-w-7xl h-[90vh] mx-4 flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
               <h2 className="text-sm font-medium text-foreground">{t('htmlApps.title')}</h2>
               <div className="flex items-center gap-3">
                 <div className="relative">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-9 pointer-events-none" />
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-foreground-subtle pointer-events-none" />
                   <input
                     ref={searchInputRef}
                     type="text"
@@ -195,7 +195,7 @@ export function HtmlAppsModal({
                   {query && (
                     <button
                       onClick={() => { setQuery(''); searchInputRef.current?.focus(); }}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-slate-9 hover:text-foreground rounded-sm transition-colors"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-foreground-subtle hover:text-foreground rounded-sm transition-colors"
                       title={t('fileBrowser.clear')}
                     >
                       <X className="w-3.5 h-3.5" />
@@ -204,12 +204,12 @@ export function HtmlAppsModal({
                 </div>
                 <button
                   onClick={() => setShowAdd(true)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
                   title={t('htmlApps.addHtmlApp')}
                 >
                   <Plus className="w-4 h-4" /> {t('htmlApps.add')}
                 </button>
-                <button onClick={handleClose} className="p-1 text-slate-9 hover:text-foreground hover:bg-accent rounded transition-colors" title={t('common.close')}>
+                <button onClick={handleClose} className="p-1 text-foreground-subtle hover:text-foreground hover:bg-hover rounded transition-colors" title={t('common.close')}>
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -289,8 +289,8 @@ export function HtmlAppsModal({
 
       {isOpen && showAdd && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!adding) { setShowAdd(false); setAddPath(''); } }} />
-          <div className="relative bg-card rounded-lg shadow-xl w-full max-w-lg mx-4 p-5">
+          <div className="absolute inset-0 bg-scrim" onClick={() => { if (!adding) { setShowAdd(false); setAddPath(''); } }} />
+          <div className="relative bg-card rounded-lg shadow-lv3 w-full max-w-lg mx-4 p-5">
             <h3 className="text-sm font-medium text-foreground mb-3">{t('htmlApps.addHtmlApp')}</h3>
             <label className="block text-xs text-muted-foreground mb-1">{t('htmlApps.pathLabel')}</label>
             <input
@@ -306,7 +306,7 @@ export function HtmlAppsModal({
               <button
                 onClick={() => { setShowAdd(false); setAddPath(''); }}
                 disabled={adding}
-                className="px-3 py-1.5 text-sm rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                className="px-3 py-1.5 text-sm rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-hover transition-colors disabled:opacity-50"
               >
                 {t('common.cancel')}
               </button>
@@ -324,14 +324,14 @@ export function HtmlAppsModal({
 
       {htmlAppPreviews.map((item) => {
         const visible = activeHtmlAppPreviewPath === item.path;
-        // bg-black/50 matches every other dialog backdrop in the app
+        // bg-scrim matches every other dialog backdrop in the app
         // (SessionBrowser, this file's own panel, HtmlPreviewModal). Clicking
         // it minimises rather than closes — the preview stays available as a
         // dock pill, which is the pre-existing behaviour.
         return (
           <div
             key={item.path}
-            className={visible ? 'fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-0 md:p-4' : 'hidden'}
+            className={visible ? 'fixed inset-0 z-[60] flex items-center justify-center bg-scrim p-0 md:p-4' : 'hidden'}
             onClick={onMinimizeHtmlAppPreview}
           >
             {/* The app frame paints the app's own background, which can
@@ -341,7 +341,7 @@ export function HtmlAppsModal({
 
                 A faint brand border over the stock depth shadow is enough —
                 the backdrop already separates the window from the page. */}
-            <div className="bg-card shadow-xl border border-brand/30 w-full h-full md:max-w-[90%] md:h-[90vh] md:rounded-lg flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-card shadow-lv3 border border-brand/30 w-full h-full md:max-w-[90%] md:h-[90vh] md:rounded-lg flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-border flex-shrink-0">
                 {/* Same icon treatment as the minimised dock pill, so an app
                     looks the same collapsed and expanded. */}
@@ -351,19 +351,19 @@ export function HtmlAppsModal({
                     : <AppWindow className="w-4 h-4 flex-shrink-0" />}
                   <span className="text-sm text-muted-foreground truncate min-w-0" data-tooltip={item.path}>{item.title}</span>
                 </span>
-                <button onClick={onMinimizeHtmlAppPreview} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0" title={t('common.minimize')}>
+                <button onClick={onMinimizeHtmlAppPreview} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-hover transition-colors flex-shrink-0" title={t('common.minimize')}>
                   <Minimize2 className="w-4 h-4" />
                 </button>
-                <button onClick={() => openPreviewInConsole(item.path)} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0" title={t('common.openInConsole')}>
+                <button onClick={() => openPreviewInConsole(item.path)} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-hover transition-colors flex-shrink-0" title={t('common.openInConsole')}>
                   <SquareTerminal className="w-4 h-4" />
                 </button>
-                <button onClick={() => openExternal(item.path)} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0" title={t('browser.openInNewWindow')}>
+                <button onClick={() => openExternal(item.path)} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-hover transition-colors flex-shrink-0" title={t('browser.openInNewWindow')}>
                   <ExternalLink className="w-4 h-4" />
                 </button>
-                <button onClick={() => refreshPreview(item.path)} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0" title={t('common.refresh')}>
+                <button onClick={() => refreshPreview(item.path)} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-hover transition-colors flex-shrink-0" title={t('common.refresh')}>
                   <RotateCw className="w-4 h-4" />
                 </button>
-                <button onClick={() => onCloseHtmlAppPreview(item.path)} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors flex-shrink-0">
+                <button onClick={() => onCloseHtmlAppPreview(item.path)} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-hover transition-colors flex-shrink-0">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -394,7 +394,7 @@ function HtmlAppCard({ app, onOpenConsole, onOpenExternal, onPreview, onDelete, 
 
   return (
     <div
-      className={`group flex flex-col h-full border border-border rounded-lg p-3 bg-secondary hover:border-brand hover:shadow-md transition-all cursor-pointer ${app.valid ? '' : 'opacity-60'}`}
+      className={`group flex flex-col h-full border border-border rounded-lg p-3 bg-secondary hover:border-brand hover:shadow-lv2 transition-all cursor-pointer ${app.valid ? '' : 'opacity-60'}`}
       onClick={() => app.valid && onPreview()}
     >
       <div className="flex items-center gap-2.5">
@@ -411,7 +411,7 @@ function HtmlAppCard({ app, onOpenConsole, onOpenExternal, onPreview, onDelete, 
           <button
             onClick={onOpenConsole}
             disabled={!app.valid}
-            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             title={t('common.openInConsole')}
           >
             <SquareTerminal className="w-4 h-4" />
@@ -419,7 +419,7 @@ function HtmlAppCard({ app, onOpenConsole, onOpenExternal, onPreview, onDelete, 
           <button
             onClick={onOpenExternal}
             disabled={!app.valid}
-            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             title={t('browser.openInNewWindow')}
           >
             <ExternalLink className="w-4 h-4" />
@@ -440,7 +440,7 @@ function HtmlAppCard({ app, onOpenConsole, onOpenExternal, onPreview, onDelete, 
 
       <div className="font-mono text-xs text-muted-foreground mt-2 break-all">
         {app.path}
-        <button onClick={(e) => { e.stopPropagation(); onCopyPath(); }} className="inline-flex align-middle ml-1 p-0.5 hover:text-foreground hover:bg-accent rounded transition-colors" title={t('common.copyPath')}>
+        <button onClick={(e) => { e.stopPropagation(); onCopyPath(); }} className="inline-flex align-middle ml-1 p-0.5 hover:text-foreground hover:bg-hover rounded transition-colors" title={t('common.copyPath')}>
           <Copy className="w-3.5 h-3.5" />
         </button>
       </div>

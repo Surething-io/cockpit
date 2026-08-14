@@ -162,7 +162,7 @@ export function ProjectItem({
               {/* Note button */}
               {onOpenNote && (
                 <button
-                  className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                  className="p-1 rounded hover:bg-hover text-muted-foreground hover:text-foreground transition-colors"
                   onClick={(e) => {
                     e.stopPropagation();
                     onOpenNote();
@@ -176,7 +176,7 @@ export function ProjectItem({
               )}
               {/* Close button */}
               <button
-                className="p-1 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-500 transition-colors"
+                className="p-1 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-11 transition-colors"
                 onClick={(e) => {
                   e.stopPropagation();
                   onRemove();

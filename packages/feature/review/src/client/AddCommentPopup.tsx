@@ -55,7 +55,7 @@ export function AddCommentPopup({ selectedText, position, onSubmit, onCancel }: 
   return (
     <div
       ref={popupRef}
-      className="absolute z-50 w-96 bg-card border border-border rounded-lg shadow-lg"
+      className="absolute z-50 w-96 bg-card border border-border rounded-lg shadow-lv2"
       style={{
         top: position.top,
         left: Math.max(8, position.left - 192), // center horizontally, clamp to left edge
@@ -93,7 +93,7 @@ export function AddCommentPopup({ selectedText, position, onSubmit, onCancel }: 
         <div className="flex gap-1">
           <button
             onClick={onCancel}
-            className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
+            className="px-2 py-1 text-xs rounded hover:bg-hover transition-colors text-muted-foreground"
           >
             {t('common.cancel')}
           </button>

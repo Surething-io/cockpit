@@ -84,7 +84,7 @@ function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewGlmTab, onNe
       <button
         ref={btnRef}
         onClick={toggle}
-        className="flex-shrink-0 p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+        className="flex-shrink-0 p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
         title="New tab"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -94,7 +94,7 @@ function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewGlmTab, onNe
       {open && <Portal>
         <div
           ref={menuRef}
-          className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-lg py-1 min-w-[140px]"
+          className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-lv2 py-1 min-w-[140px]"
           style={{ top: pos.top, right: pos.right }}
         >
           {/* Driven by ENGINE_IDS rather than six hand-written rows: the labels and the
@@ -210,7 +210,7 @@ export function TabBar({
                       e.stopPropagation();
                       onTogglePin(tab.id);
                     }}
-                    className="absolute -top-1 -right-1 w-3.5 h-3.5 flex items-center justify-center rounded-full bg-card text-amber-500 hover:text-destructive transition-colors"
+                    className="absolute -top-1 -right-1 w-3.5 h-3.5 flex items-center justify-center rounded-full bg-card text-amber-11 hover:text-destructive transition-colors"
                     title={t('tabBar.unpin')}
                   >
                     <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor">
@@ -262,7 +262,7 @@ export function TabBar({
         {onCloseAllTabs && tabs.length > 1 && (
           <button
             onClick={onCloseAllTabs}
-            className="flex-shrink-0 p-1.5 text-muted-foreground hover:text-destructive hover:bg-accent rounded transition-colors"
+            className="flex-shrink-0 p-1.5 text-muted-foreground hover:text-destructive hover:bg-hover rounded transition-colors"
             title={t('tabBar.closeAll')}
             aria-label={t('tabBar.closeAll')}
           >
@@ -277,7 +277,7 @@ export function TabBar({
         {onOpenProjectSessions && (
           <button
             onClick={onOpenProjectSessions}
-            className="flex-shrink-0 p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+            className="flex-shrink-0 p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
             title={t('sessions.projectSessions')}
             aria-label={t('sessions.projectSessions')}
           >

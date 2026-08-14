@@ -69,14 +69,14 @@ export function SlashCommandMenu({ editor, query, position, onClose }: SlashComm
   return (
     <div
       ref={menuRef}
-      className="slash-command-menu fixed z-[60] bg-popover border border-border rounded-lg shadow-lg py-1 w-56 max-h-64 overflow-y-auto"
+      className="slash-command-menu fixed z-[60] bg-popover border border-border rounded-lg shadow-lv2 py-1 w-56 max-h-64 overflow-y-auto"
       style={{ top: position.top, left: position.left }}
     >
       {filtered.map((cmd, index) => (
         <button
           key={cmd.label}
           className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-            index === selectedIndex ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+            index === selectedIndex ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-hover hover:text-foreground'
           }`}
           onClick={() => executeCommand(cmd)}
           onMouseEnter={() => setSelectedIndex(index)}

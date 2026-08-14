@@ -93,7 +93,7 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
 
   return (
     <div
-      className={`${bgColor} text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 min-w-[200px] animate-slide-in`}
+      className={`${bgColor} text-white px-4 py-3 rounded-lg shadow-lv2 flex items-center gap-3 min-w-[200px] animate-slide-in`}
       style={{
         animation: 'slideIn 0.3s ease-out',
       }}
@@ -166,12 +166,12 @@ export function confirm(message: string, options?: {
       : 'bg-brand hover:bg-brand/90 text-white';
 
     overlay.innerHTML = `
-      <div class="fixed inset-0 bg-black/50"></div>
-      <div class="relative bg-card border border-border rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4" style="animation: confirmScaleIn 0.15s ease-out">
+      <div class="fixed inset-0 bg-scrim"></div>
+      <div class="relative bg-card border border-border rounded-xl shadow-lv3 p-6 max-w-sm w-full mx-4" style="animation: confirmScaleIn 0.15s ease-out">
         <div class="text-base font-medium text-foreground mb-2">${title}</div>
         <div class="text-sm text-muted-foreground mb-6">${message}</div>
         <div class="flex justify-end gap-3">
-          <button data-action="cancel" class="px-4 py-2 text-sm rounded-lg border border-border text-foreground hover:bg-accent transition-colors">${cancelText}</button>
+          <button data-action="cancel" class="px-4 py-2 text-sm rounded-lg border border-border text-foreground hover:bg-hover transition-colors">${cancelText}</button>
           <button data-action="confirm" class="px-4 py-2 text-sm rounded-lg ${confirmBtnClass} transition-colors">${confirmText}</button>
         </div>
       </div>
@@ -213,7 +213,7 @@ export function toast(message: string, type: Toast['type'] = 'success') {
   const toastEl = document.createElement('div');
   toastEl.className = `${
     type === 'success' ? 'bg-green-9' : type === 'error' ? 'bg-red-9' : 'bg-brand'
-  } text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 min-w-[200px]`;
+  } text-white px-4 py-3 rounded-lg shadow-lv2 flex items-center gap-3 min-w-[200px]`;
   toastEl.style.animation = 'slideIn 0.3s ease-out';
 
   const iconSvg = type === 'success'

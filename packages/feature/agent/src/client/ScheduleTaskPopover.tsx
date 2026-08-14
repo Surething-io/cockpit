@@ -253,7 +253,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
   return (
     <div
       ref={popoverRef}
-      className={`w-[28rem] max-w-[calc(100vw-1.5rem)] bg-popover border border-border rounded-lg shadow-lg z-50 ${isEdit ? '' : 'absolute bottom-full left-0 mb-2'}`}
+      className={`w-[28rem] max-w-[calc(100vw-1.5rem)] bg-popover border border-border rounded-lg shadow-lv2 z-50 ${isEdit ? '' : 'absolute bottom-full left-0 mb-2'}`}
       onKeyDown={handleKeyDown}
     >
       <div className="px-3 py-2 border-b border-border bg-muted/50 rounded-t-lg">

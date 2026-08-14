@@ -920,12 +920,12 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
       {/* Conflict warning bar (edit mode) */}
       {editable && conflictState.show && (
         <div className="px-4 py-2 bg-amber-500/15 border-b border-amber-500/30 flex items-center gap-3 flex-shrink-0">
-          <svg className="w-5 h-5 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 text-amber-11 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
           </svg>
           <span className="text-sm text-foreground flex-1">{t('codeViewer.fileModifiedExternally')}</span>
           <div className="flex items-center gap-2">
-            <button onClick={handleRevertToDisk} className="px-3 py-1 text-sm rounded border border-border hover:bg-accent transition-colors">
+            <button onClick={handleRevertToDisk} className="px-3 py-1 text-sm rounded border border-border hover:bg-hover transition-colors">
               {t('codeViewer.useDiskVersion')}
             </button>
             <button onClick={handleForceOverwrite} className="px-3 py-1 text-sm rounded bg-amber-500 text-white hover:bg-amber-600 transition-colors">
@@ -952,7 +952,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
             className={`px-2 py-1 text-xs font-mono rounded border transition-colors ${
               caseSensitive
                 ? 'bg-brand text-white border-brand'
-                : 'border-border text-muted-foreground hover:bg-accent'
+                : 'border-border text-muted-foreground hover:bg-hover'
             }`}
             title={t('codeViewer.caseSensitive')}
           >
@@ -963,7 +963,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
             className={`px-2 py-1 text-xs font-mono rounded border transition-colors ${
               wholeWord
                 ? 'bg-brand text-white border-brand'
-                : 'border-border text-muted-foreground hover:bg-accent'
+                : 'border-border text-muted-foreground hover:bg-hover'
             }`}
             title={t('codeViewer.wholeWordMatch')}
           >
@@ -972,17 +972,17 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
           <span className="text-xs text-muted-foreground">
             {matches.length > 0 ? `${currentMatchIndex + 1}/${matches.length}` : t('common.noMatch')}
           </span>
-          <button onClick={goToPrevMatch} disabled={matches.length === 0} className="p-1 rounded hover:bg-accent disabled:opacity-50" title={t('common.previous')}>
+          <button onClick={goToPrevMatch} disabled={matches.length === 0} className="p-1 rounded hover:bg-hover disabled:opacity-50" title={t('common.previous')}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
             </svg>
           </button>
-          <button onClick={goToNextMatch} disabled={matches.length === 0} className="p-1 rounded hover:bg-accent disabled:opacity-50" title={t('common.next')}>
+          <button onClick={goToNextMatch} disabled={matches.length === 0} className="p-1 rounded hover:bg-hover disabled:opacity-50" title={t('common.next')}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
-          <button onClick={() => { setIsSearchVisible(false); setSearchQuery(''); }} className="p-1 rounded hover:bg-accent" title={t('common.close')}>
+          <button onClick={() => { setIsSearchVisible(false); setSearchQuery(''); }} className="p-1 rounded hover:bg-hover" title={t('common.close')}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -1240,7 +1240,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
           {/* Blame Tooltip */}
           {blameTooltip && (
             <div
-              className="fixed z-50 bg-card border border-border rounded-lg shadow-lg p-3 max-w-lg"
+              className="fixed z-50 bg-card border border-border rounded-lg shadow-lv2 p-3 max-w-lg"
               style={{
                 left: Math.min(blameTooltip.x, window.innerWidth - 450),
                 top: Math.max(8, Math.min(blameTooltip.y, window.innerHeight - 200)),
@@ -1299,7 +1299,7 @@ export function SimpleCodeBlock({ content, filePath, className = '' }: SimpleCod
     <pre className={`overflow-auto text-sm font-mono bg-secondary p-2 ${className}`}>
       {lines.map((line, i) => (
         <div key={i} className="flex">
-          <span className="text-slate-9 select-none pr-4 text-right" style={{ minWidth: `${lnChars + 2}ch` }}>
+          <span className="text-foreground-subtle select-none pr-4 text-right" style={{ minWidth: `${lnChars + 2}ch` }}>
             {i + 1}
           </span>
           <span

@@ -22,7 +22,7 @@ interface TodoViewerModalProps {
 function StatusIcon({ status }: { status: TodoItem['status'] }) {
   switch (status) {
     case 'completed':
-      return <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />;
+      return <CheckCircle2 className="w-4 h-4 text-green-11 flex-shrink-0" />;
     case 'in_progress':
       return <Loader className="w-4 h-4 text-brand flex-shrink-0 animate-spin" />;
     default:
@@ -42,11 +42,11 @@ export function TodoViewerModal({ toolCall, onClose }: TodoViewerModalProps) {
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
       onClick={onClose}
     >
       <div
-        className="bg-card rounded-lg shadow-xl w-full max-w-6xl flex flex-col transition-all"
+        className="bg-card rounded-lg shadow-lv3 w-full max-w-6xl flex flex-col transition-all"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -59,7 +59,7 @@ export function TodoViewerModal({ toolCall, onClose }: TodoViewerModalProps) {
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+            className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
           >
             <X className="w-5 h-5" />
           </button>

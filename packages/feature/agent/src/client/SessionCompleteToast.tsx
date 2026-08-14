@@ -126,7 +126,7 @@ function SessionToastCard({
 
   return (
     <div
-      className={`pointer-events-auto bg-card border border-border rounded-lg shadow-lg px-3 py-3 min-h-[84px] min-w-[260px] max-w-[340px] cursor-pointer hover:bg-accent transition-all ${
+      className={`pointer-events-auto bg-card border border-border rounded-lg shadow-lv2 px-3 py-3 min-h-[84px] min-w-[260px] max-w-[340px] cursor-pointer hover:bg-hover transition-all ${
         leaving ? 'opacity-0 -translate-x-4' : 'opacity-100 translate-x-0'
       }`}
       style={{

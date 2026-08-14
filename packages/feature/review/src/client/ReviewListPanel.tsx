@@ -151,7 +151,7 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
       <div className="h-full flex flex-col items-center bg-secondary/50 w-9 flex-shrink-0 border-r border-border">
         <button
           onClick={() => setCollapsed(false)}
-          className="p-1.5 mt-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+          className="p-1.5 mt-2 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
           title={t('review.expandList')}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -174,7 +174,7 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
         </div>
         <button
           onClick={() => setCollapsed(true)}
-          className="p-0.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+          className="p-0.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
           title={t('review.collapseList')}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -204,7 +204,7 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
             } ${
               r.id === currentReviewId
                 ? 'bg-accent/60'
-                : 'hover:bg-accent/30'
+                : 'hover:bg-hover'
             }`}
           >
             <div className="flex items-center gap-1.5 min-w-0">
@@ -251,7 +251,7 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
                   {/* Delete button */}
                   <button
                     onClick={(e) => handleDelete(e, r.id)}
-                    className={`flex-shrink-0 p-0.5 rounded text-muted-foreground/0 group-hover:text-muted-foreground/60 hover:!text-red-500 hover:!bg-red-500/10 transition-colors ${
+                    className={`flex-shrink-0 p-0.5 rounded text-muted-foreground/0 group-hover:text-muted-foreground/60 hover:!text-red-11 hover:!bg-red-500/10 transition-colors ${
                       deleting === r.id ? 'opacity-50 pointer-events-none' : ''
                     }`}
                     title={t('review.deleteReview')}
@@ -280,7 +280,7 @@ export function ReviewListPanel({ currentReviewId, onSelect, readOnly, refreshTr
       {/* Fixed tooltip */}
       {tooltip && (
         <div
-          className="fixed z-50 px-2 py-1 text-xs bg-popover text-popover-foreground border border-border rounded shadow-md whitespace-nowrap pointer-events-none"
+          className="fixed z-50 px-2 py-1 text-xs bg-popover text-popover-foreground border border-border rounded shadow-lv2 whitespace-nowrap pointer-events-none"
           style={{ top: tooltip.top, left: tooltip.left + 8, transform: 'translateY(-50%)' }}
         >
           {tooltip.text}

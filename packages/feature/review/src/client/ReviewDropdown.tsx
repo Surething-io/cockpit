@@ -221,7 +221,7 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
         className={`relative p-2 rounded-lg transition-colors ${
           open
             ? 'text-foreground bg-accent'
-            : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+            : 'text-muted-foreground hover:text-foreground hover:bg-hover'
         }`}
         title={t('review.reviewManagement')}
       >
@@ -235,7 +235,7 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-64 bg-popover border border-border rounded-lg shadow-xl z-50 overflow-hidden">
+        <div className="absolute right-0 top-full mt-1 w-64 bg-popover border border-border rounded-lg shadow-lv3 z-50 overflow-hidden">
           {/* Header */}
           <div className="px-3 py-2 border-b border-border flex items-center justify-between">
             <div>
@@ -280,7 +280,7 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
                       dropTarget === r.id
                         ? 'border-b-brand border-t border-t-transparent'
                         : 'border-b-border/50'
-                    } hover:bg-accent/30`}
+                    } hover:bg-hover`}
                   >
                     <div className="flex items-center gap-1.5 min-w-0">
                       {/* Status dot: red when there are unread comments, green otherwise */}
@@ -318,7 +318,7 @@ export function ReviewDropdown({ cwd }: { cwd?: string }) {
       {/* Tooltip */}
       {tooltip && open && (
         <div
-          className="fixed z-[60] px-2 py-1 text-xs bg-popover text-popover-foreground border border-border rounded shadow-md whitespace-nowrap pointer-events-none"
+          className="fixed z-[60] px-2 py-1 text-xs bg-popover text-popover-foreground border border-border rounded shadow-lv2 whitespace-nowrap pointer-events-none"
           style={{ top: tooltip.top, left: tooltip.left - 8, transform: 'translate(-100%, -50%)' }}
         >
           {tooltip.text}

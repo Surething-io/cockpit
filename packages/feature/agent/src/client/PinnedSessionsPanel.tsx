@@ -120,7 +120,7 @@ export function PinnedSessionsPanel({
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`relative flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
+        className={`relative flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-hover transition-colors ${
           collapsed ? 'w-full justify-center' : 'w-full'
         }`}
         title={collapsed ? t('sessions.pinnedSessions') : undefined}
@@ -140,7 +140,7 @@ export function PinnedSessionsPanel({
 
       {/* Dropdown panel */}
       {isOpen && (
-        <div className="absolute left-full bottom-0 ml-2 w-80 max-h-[450px] bg-popover border border-border rounded-lg shadow-lg z-50 flex flex-col">
+        <div className="absolute left-full bottom-0 ml-2 w-80 max-h-[450px] bg-popover border border-border rounded-lg shadow-lv2 z-50 flex flex-col">
           <div className="px-3 py-2 border-b border-border bg-muted/50 flex-shrink-0 rounded-t-lg">
             <span className="text-sm font-medium">{t('sessions.pinnedSessions')}</span>
           </div>
@@ -159,7 +159,7 @@ export function PinnedSessionsPanel({
                   onDrop={() => handleDrop(index)}
                   onDragEnd={handleDragEnd}
                   onClick={() => handleSessionClick(session)}
-                  className={`group w-full px-3 py-2 text-left hover:bg-accent transition-colors flex items-start gap-2 cursor-pointer ${
+                  className={`group w-full px-3 py-2 text-left hover:bg-hover transition-colors flex items-start gap-2 cursor-pointer ${
                     index !== pinnedSessions.length - 1 ? 'border-b border-border/50' : ''
                   } ${dragIndex === index ? 'opacity-50' : ''} ${
                     dragOverIndex === index ? 'border-t-2 border-brand' : ''

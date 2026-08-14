@@ -30,7 +30,7 @@ export function DiffViewModeToggle({ value, onChange, className }: DiffViewModeT
           className={`px-2 py-0.5 text-xs transition-colors ${
             value === mode
               ? 'bg-brand text-white'
-              : 'text-muted-foreground hover:bg-accent'
+              : 'text-muted-foreground hover:bg-hover'
           }`}
         >
           {t(mode === 'split' ? 'diffViewer.viewSplit' : 'diffViewer.viewUnified')}

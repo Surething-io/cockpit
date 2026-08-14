@@ -72,9 +72,9 @@ export function SkillPreviewModal({ skillId, onClose }: SkillPreviewModalProps) 
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={onClose} />
 
-      <div className="relative bg-card rounded-lg shadow-xl w-full max-w-[70%] h-[90vh] mx-4 flex flex-col overflow-hidden">
+      <div className="relative bg-card rounded-lg shadow-lv3 w-full max-w-[70%] h-[90vh] mx-4 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border flex-shrink-0">
           <div className="flex-1 min-w-0">
@@ -84,7 +84,7 @@ export function SkillPreviewModal({ skillId, onClose }: SkillPreviewModalProps) 
               </h2>
               <button
                 onClick={handleCopyPath}
-                className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
                 title={t('skills.copyPath')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -107,7 +107,7 @@ export function SkillPreviewModal({ skillId, onClose }: SkillPreviewModalProps) 
               className={`px-3 py-1 transition-colors ${
                 mode === 'preview'
                   ? 'bg-brand text-white'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-hover'
               }`}
             >
               {t('common.preview')}
@@ -117,7 +117,7 @@ export function SkillPreviewModal({ skillId, onClose }: SkillPreviewModalProps) 
               className={`px-3 py-1 transition-colors ${
                 mode === 'source'
                   ? 'bg-brand text-white'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-hover'
               }`}
             >
               {t('skills.source')}
@@ -126,7 +126,7 @@ export function SkillPreviewModal({ skillId, onClose }: SkillPreviewModalProps) 
 
           <button
             onClick={onClose}
-            className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors flex-shrink-0"
+            className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors flex-shrink-0"
             title={t('common.close')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

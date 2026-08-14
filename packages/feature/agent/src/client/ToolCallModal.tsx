@@ -163,7 +163,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
     <div className="my-1 border border-border rounded-lg overflow-hidden bg-secondary">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full px-3 py-1.5 flex items-center gap-2 text-left hover:bg-accent transition-colors"
+        className="w-full px-3 py-1.5 flex items-center gap-2 text-left hover:bg-hover transition-colors"
       >
         <span className="text-sm">{toolIcon}</span>
         <span className="font-medium text-sm text-foreground flex-shrink-0">
@@ -197,7 +197,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
                     }
                   }
                 }}
-                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0 cursor-pointer"
+                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors flex-shrink-0 cursor-pointer"
                 title={t('common.copyAbsPath')}
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -262,7 +262,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
           {toolCall.isLoading ? (
             <span className="inline-block w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin" />
           ) : (
-            <span className="text-slate-9 text-xs">
+            <span className="text-foreground-subtle text-xs">
               {expanded ? '▲' : '▼'}
             </span>
           )}

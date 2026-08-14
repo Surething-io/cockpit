@@ -114,7 +114,7 @@ export function TocSidebar({ content, containerRef, width = 'w-80' }: TocSidebar
         {!collapsed && <span className="text-xs font-medium text-muted-foreground">{t('editor.toc')}</span>}
         <button
           onClick={() => setCollapsed(v => !v)}
-          className="p-0.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+          className="p-0.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
           title={collapsed ? t('editor.expandToc') : t('editor.collapseToc')}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -133,7 +133,7 @@ export function TocSidebar({ content, containerRef, width = 'w-80' }: TocSidebar
             <Tooltip key={i} content={item.text} delay={400}>
               <button
                 onClick={() => handleTocClick(item.sourceLine)}
-                className={`block w-full text-left text-sm py-1 px-2 truncate transition-colors hover:bg-accent ${
+                className={`block w-full text-left text-sm py-1 px-2 truncate transition-colors hover:bg-hover ${
                   activeHeadingLine === item.sourceLine
                     ? 'text-brand font-medium bg-brand/5'
                     : 'text-muted-foreground'

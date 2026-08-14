@@ -188,7 +188,7 @@ function PromptSection({
               <button
                 type="button"
                 onClick={() => onSelect(prompt)}
-                className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 text-left text-sm rounded hover:bg-accent transition-colors"
+                className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 text-left text-sm rounded hover:bg-hover transition-colors"
               >
                 <Send className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
                 <span className="truncate">{prompt}</span>
@@ -280,7 +280,7 @@ export function QuickPromptsPopover({ cwd, anchorRef, onClose, onSelect }: Quick
 
   return (
     <div
-      className="absolute bottom-full left-0 mb-2 w-80 max-w-[calc(100vw-1.5rem)] bg-popover border border-border rounded-lg shadow-lg z-50 max-h-[70vh] overflow-y-auto"
+      className="absolute bottom-full left-0 mb-2 w-80 max-w-[calc(100vw-1.5rem)] bg-popover border border-border rounded-lg shadow-lv2 z-50 max-h-[70vh] overflow-y-auto"
     >
       <PromptSection
         label={t('chat.globalPrompts')}

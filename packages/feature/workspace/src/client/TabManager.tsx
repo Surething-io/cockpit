@@ -523,7 +523,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                     mounted underneath). Close stays on this panel — no swipe back. */}
                 {fileDiffRequest && (
                   <div
-                    className="absolute inset-0 z-20 flex bg-black/50 p-[4vmin]"
+                    className="absolute inset-0 z-20 flex bg-scrim p-[4vmin]"
                     onClick={() => setFileDiffRequest(null)}
                   >
                     <FileDiffViewer

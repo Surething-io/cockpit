@@ -137,11 +137,11 @@ export function WorkflowRunModal({ cwd, sessionId, runId, isRunning, onClose }: 
   return (
     <Portal>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
         onClick={onClose}
       >
         <div
-          className="bg-card rounded-lg shadow-xl w-full max-w-[90%] h-[90vh] flex flex-col"
+          className="bg-card rounded-lg shadow-lv3 w-full max-w-[90%] h-[90vh] flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -161,7 +161,7 @@ export function WorkflowRunModal({ cwd, sessionId, runId, isRunning, onClose }: 
               )}
               <button
                 onClick={onClose}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
                 title={t('common.close')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -241,7 +241,7 @@ function WorkflowAgentRow({
       <div className="flex items-center gap-2 px-2 py-1.5">
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="text-slate-9 text-xs flex-shrink-0"
+          className="text-foreground-subtle text-xs flex-shrink-0"
           title={expanded ? t('chat.collapse') : t('chat.expand')}
         >
           {expanded ? '▲' : '▼'}

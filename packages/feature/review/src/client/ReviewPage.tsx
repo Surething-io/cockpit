@@ -392,7 +392,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
           {/* View all comments */}
           <button
             onClick={() => setShowCommentsListModal(true)}
-            className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors text-muted-foreground flex items-center gap-1"
+            className="px-2 py-1 text-xs rounded hover:bg-hover transition-colors text-muted-foreground flex items-center gap-1"
             title={t('review.viewAllComments')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -404,7 +404,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
           {/* Copy link */}
           <button
             onClick={handleCopyLink}
-            className="px-2 py-1 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
+            className="px-2 py-1 text-xs rounded hover:bg-hover transition-colors text-muted-foreground"
           >
             {t('review.copyLink')}
           </button>
@@ -412,7 +412,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
           {/* Theme toggle */}
           <button
             onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-            className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+            className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
             title={resolvedTheme === 'dark' ? t('settings.switchLight') : t('settings.switchDark')}
           >
             {resolvedTheme === 'dark' ? (

@@ -159,11 +159,11 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
       onClick={onClose}
     >
       <div
-        className="bg-card rounded-lg shadow-xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden"
+        className="bg-card rounded-lg shadow-lv3 w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -178,21 +178,21 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
           <div className="flex items-center gap-2">
             <button
               onClick={handleSendToAI}
-              className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+              className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
               title={checkedCount > 0 ? t('askQuestion.sendChecked', { count: checkedCount }) : t('askQuestion.sendAll')}
             >
               <Send className="w-4 h-4" />
             </button>
             <button
               onClick={handleCopy}
-              className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+              className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
               title={checkedCount > 0 ? t('askQuestion.copyChecked', { count: checkedCount }) : t('askQuestion.copyAll')}
             >
               <Copy className="w-4 h-4" />
             </button>
             <button
               onClick={onClose}
-              className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+              className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -215,7 +215,7 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
                   <div className="flex items-start gap-2">
                     <button
                       onClick={() => handleToggleCheck(key)}
-                      className="mt-0.5 flex-shrink-0 p-0.5 rounded hover:bg-accent transition-colors"
+                      className="mt-0.5 flex-shrink-0 p-0.5 rounded hover:bg-hover transition-colors"
                       title={t('askQuestion.checkToCopy')}
                     >
                       {isChecked
@@ -239,7 +239,7 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
                         <button
                           key={j}
                           onClick={() => handleSelectOption(key, opt.label)}
-                          className={`flex items-start gap-2 px-2.5 py-1.5 rounded-md transition-colors w-full text-left cursor-pointer hover:bg-accent/50 ${
+                          className={`flex items-start gap-2 px-2.5 py-1.5 rounded-md transition-colors w-full text-left cursor-pointer hover:bg-hover ${
                             isSelected ? 'bg-brand/10 hover:bg-brand/15' : ''
                           }`}
                         >
@@ -264,7 +264,7 @@ export function AskQuestionViewerModal({ toolCalls, onClose }: AskQuestionViewer
                     {/* Custom input toggle */}
                     <button
                       onClick={() => handleToggleCustom(key)}
-                      className={`flex items-start gap-2 px-2.5 py-1.5 rounded-md transition-colors w-full text-left cursor-pointer hover:bg-accent/50 ${
+                      className={`flex items-start gap-2 px-2.5 py-1.5 rounded-md transition-colors w-full text-left cursor-pointer hover:bg-hover ${
                         isCustomOpen ? 'bg-brand/10 hover:bg-brand/15' : ''
                       }`}
                     >

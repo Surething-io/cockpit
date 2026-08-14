@@ -93,7 +93,7 @@ export function ReferencesPanel({ references, loading, onSelect, onClose }: Refe
         </span>
         <button
           onClick={onClose}
-          className="p-0.5 rounded hover:bg-accent text-muted-foreground"
+          className="p-0.5 rounded hover:bg-hover text-muted-foreground"
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -115,7 +115,7 @@ export function ReferencesPanel({ references, loading, onSelect, onClose }: Refe
                 <button
                   key={`${ref.line}-${ref.column}-${idx}`}
                   onClick={() => onSelect(ref)}
-                  className="w-full text-left px-3 py-0.5 hover:bg-accent/50 flex items-baseline gap-2 group"
+                  className="w-full text-left px-3 py-0.5 hover:bg-hover flex items-baseline gap-2 group"
                 >
                   <span className="text-sm text-muted-foreground font-mono font-variant-tabular flex-shrink-0 w-10 text-right">
                     {ref.line}

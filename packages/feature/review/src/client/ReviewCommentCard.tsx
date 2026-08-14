@@ -126,7 +126,7 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
         {(isOwnComment && canInteract || isAdmin) && (
           <button
             onClick={e => { e.stopPropagation(); onDelete(); }}
-            className="text-[10px] text-muted-foreground hover:text-red-500 transition-colors flex-shrink-0"
+            className="text-[10px] text-muted-foreground hover:text-red-11 transition-colors flex-shrink-0"
             title={t('review.deleteComment')}
           >
             {t('common.delete')}
@@ -141,7 +141,7 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
       ref={ref}
       className={`rounded-lg border transition-all cursor-pointer ${
         isActive
-          ? 'border-brand bg-brand/5 shadow-sm'
+          ? 'border-brand bg-brand/5 shadow-lv1'
           : 'border-border bg-card hover:border-muted-foreground/30'
       }`}
       onClick={onClick}
@@ -183,7 +183,7 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
             {(isOwnComment && canInteract || isAdmin) && (
               <button
                 onClick={e => { e.stopPropagation(); onDelete(); }}
-                className="text-[10px] text-muted-foreground hover:text-red-500 transition-colors"
+                className="text-[10px] text-muted-foreground hover:text-red-11 transition-colors"
                 title={t('review.deleteComment')}
               >
                 {t('common.delete')}
@@ -214,7 +214,7 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
             <div className="flex items-center justify-end gap-1 mt-1">
               <button
                 onClick={() => setEditingComment(false)}
-                className="px-2 py-0.5 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
+                className="px-2 py-0.5 text-xs rounded hover:bg-hover transition-colors text-muted-foreground"
               >
                 {t('common.cancel')}
               </button>
@@ -260,7 +260,7 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
                     )}
                     <button
                       onClick={e => { e.stopPropagation(); onDeleteReply(reply.id); }}
-                      className="text-[10px] text-muted-foreground hover:text-red-500 transition-colors"
+                      className="text-[10px] text-muted-foreground hover:text-red-11 transition-colors"
                       title={t('review.deleteReply')}
                     >
                       {t('common.delete')}
@@ -287,7 +287,7 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
                   <div className="flex items-center justify-end gap-1 mt-1">
                     <button
                       onClick={() => setEditingReplyId(null)}
-                      className="px-2 py-0.5 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
+                      className="px-2 py-0.5 text-xs rounded hover:bg-hover transition-colors text-muted-foreground"
                     >
                       {t('common.cancel')}
                     </button>
@@ -342,7 +342,7 @@ export const ReviewCommentCard = forwardRef<HTMLDivElement, Props>(function Revi
             <div className="flex items-center justify-end gap-1 mt-1">
               <button
                 onClick={() => setShowReplyInput(false)}
-                className="px-2 py-0.5 text-xs rounded hover:bg-accent transition-colors text-muted-foreground"
+                className="px-2 py-0.5 text-xs rounded hover:bg-hover transition-colors text-muted-foreground"
               >
                 {t('common.cancel')}
               </button>

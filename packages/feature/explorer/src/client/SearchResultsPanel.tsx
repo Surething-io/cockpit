@@ -87,13 +87,13 @@ export function SearchResultsPanel({ results, loading, totalMatches, onSelect, o
           <div className="flex items-center rounded border border-border overflow-hidden text-xs flex-shrink-0">
             <button
               onClick={() => onScopeChange('selected')}
-              className={`px-2 py-0.5 ${scope === 'selected' ? 'bg-brand/15 text-brand' : 'text-muted-foreground hover:bg-accent'}`}
+              className={`px-2 py-0.5 ${scope === 'selected' ? 'bg-brand/15 text-brand' : 'text-muted-foreground hover:bg-hover'}`}
             >
               {t('searchResults.scopeSelected')}
             </button>
             <button
               onClick={() => onScopeChange('all')}
-              className={`px-2 py-0.5 border-l border-border ${scope === 'all' ? 'bg-brand/15 text-brand' : 'text-muted-foreground hover:bg-accent'}`}
+              className={`px-2 py-0.5 border-l border-border ${scope === 'all' ? 'bg-brand/15 text-brand' : 'text-muted-foreground hover:bg-hover'}`}
             >
               {t('searchResults.scopeAll')}
             </button>
@@ -101,7 +101,7 @@ export function SearchResultsPanel({ results, loading, totalMatches, onSelect, o
         </div>
         <button
           onClick={onClose}
-          className="p-0.5 rounded hover:bg-accent text-muted-foreground flex-shrink-0"
+          className="p-0.5 rounded hover:bg-hover text-muted-foreground flex-shrink-0"
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -126,7 +126,7 @@ export function SearchResultsPanel({ results, loading, totalMatches, onSelect, o
                   <button
                     key={`${match.lineNumber}-${i}`}
                     onClick={() => onSelect(result.path, match.lineNumber)}
-                    className="w-full text-left px-3 py-0.5 hover:bg-accent/50 flex items-baseline gap-2 group"
+                    className="w-full text-left px-3 py-0.5 hover:bg-hover flex items-baseline gap-2 group"
                   >
                     <span className="text-sm text-muted-foreground font-mono font-variant-tabular flex-shrink-0 w-10 text-right">
                       {match.lineNumber}

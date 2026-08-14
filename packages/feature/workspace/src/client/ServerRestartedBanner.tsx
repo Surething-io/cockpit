@@ -27,7 +27,7 @@ export function ServerRestartedBanner() {
       // informational and must never block a dialog the user is mid-way through.
       className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-3
                  rounded-lg border border-border bg-background/95 px-4 py-2.5
-                 shadow-lg backdrop-blur"
+                 shadow-lv2 backdrop-blur"
       role="status"
     >
       <span className="text-sm text-foreground">{t('workspace.serverRestarted')}</span>
@@ -41,7 +41,7 @@ export function ServerRestartedBanner() {
       <button
         onClick={() => setDismissed(true)}
         aria-label={t('common.close')}
-        className="rounded p-1 text-muted-foreground transition-colors hover:bg-accent"
+        className="rounded p-1 text-muted-foreground transition-colors hover:bg-hover"
       >
         <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

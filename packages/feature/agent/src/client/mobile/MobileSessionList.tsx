@@ -134,7 +134,12 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
                 onClick={() => onOpen({ cwd: session.cwd, sessionId: session.sessionId, title: session.title })}
                 className="flex w-full items-start gap-3 border-b border-border/50 px-4 py-3.5 text-left active:bg-accent"
               >
+                {/* The dot is the ONLY status mark here — /m has no session-number
+                    badge to hand it to, so unlike the desktop lists it keeps its
+                    pulse, and it keeps the label as aria text now that the words
+                    next to the project name are gone. */}
                 <span
+                  aria-label={session.status === 'loading' ? t('sessions.running') : session.status === 'unread' ? t('sessions.done') : undefined}
                   className={`mt-1.5 h-2.5 w-2.5 flex-shrink-0 rounded-full ${
                     session.status === 'loading'
                       ? 'animate-pulse bg-orange-9'
@@ -146,12 +151,6 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium">{projectName(session.cwd)}</span>
-                    {session.status === 'loading' && (
-                      <span className="flex-shrink-0 text-xs text-orange-11">{t('sessions.running')}</span>
-                    )}
-                    {session.status === 'unread' && (
-                      <span className="flex-shrink-0 text-xs text-red-500">{t('sessions.done')}</span>
-                    )}
                     <span className="ml-auto flex-shrink-0 text-xs text-muted-foreground">
                       {formatTime(session.lastActive)}
                     </span>

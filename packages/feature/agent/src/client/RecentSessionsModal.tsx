@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { loadRecentSessions, type RecentSessionInfo } from './effect/agentClient';
 import { EngineBadge } from './EngineBadge';
-import { SessionNumberBadge } from './SessionNumberBadge';
+import { SessionNumberBadge, badgeStatus } from './SessionNumberBadge';
 
 interface RecentSessionsModalProps {
   isOpen: boolean;
@@ -194,9 +194,11 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
                 >
                   {/* Project name + status dot + engine badge */}
                   <div className="flex items-center gap-1.5 mb-1">
+                    {/* Static dot (the round number chip is the pulsing one), and it is
+                        also the only status mark on cards whose numbers never resolved. */}
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                       session.status === 'loading'
-                        ? 'bg-orange-9 animate-pulse'
+                        ? 'bg-orange-9'
                         : session.status === 'unread'
                           ? 'bg-red-500'
                           : 'bg-muted-foreground/30'
@@ -205,16 +207,14 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
                     <h4 className="text-xs font-medium text-foreground truncate flex-1" data-tooltip={session.cwd}>
                       {getProjectName(session.cwd)}
                     </h4>
-                    {session.status === 'loading' && (
-                      <span className="text-[10px] text-orange-11 flex-shrink-0">{t('sessions.running')}</span>
-                    )}
-                    {session.status === 'unread' && (
-                      <span className="text-[10px] text-red-500 flex-shrink-0">{t('sessions.done')}</span>
-                    )}
-                    {sessionNumbers[`${session.cwd}\n${session.sessionId}`] && (() => {
-                      const [projectNumber, sessionNumber] = sessionNumbers[`${session.cwd}\n${session.sessionId}`].split('.');
-                      return <SessionNumberBadge projectNumber={projectNumber} sessionNumber={sessionNumber} className="ml-auto" />;
-                    })()}
+                    {/* Running/done as a chip tint rather than a word — same rule as the
+                        sidebar dropdown, so the two lists keep reading alike. */}
+                    <SessionNumberBadge
+                      coordinate={sessionNumbers[`${session.cwd}\n${session.sessionId}`]}
+                      status={badgeStatus(session.status)}
+                      statusLabel={session.status === 'loading' ? t('sessions.running') : session.status === 'unread' ? t('sessions.done') : undefined}
+                      className="ml-auto"
+                    />
                   </div>
 
                   {/* Session title (ai-title / summary / first user message) */}

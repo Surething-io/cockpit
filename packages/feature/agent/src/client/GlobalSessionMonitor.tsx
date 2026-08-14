@@ -6,7 +6,7 @@ import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { fetchCurrentBranch } from '@cockpit/feature-explorer';
 import { RecentSessionsModal } from './RecentSessionsModal';
 import { EngineBadge } from './EngineBadge';
-import { SessionNumberBadge } from './SessionNumberBadge';
+import { SessionNumberBadge, badgeStatus } from './SessionNumberBadge';
 
 export interface GlobalSession {
   cwd: string;
@@ -131,6 +131,12 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
   // Get project name
   const getProjectName = (cwd: string) => cwd.split('/').pop() || cwd;
 
+  // Translated state name — no longer printed as a row label, so it rides along
+  // as the chip's tooltip / aria text.
+  const statusLabel = useCallback((status: string) => (
+    status === 'loading' ? t('sessions.running') : status === 'unread' ? t('sessions.done') : undefined
+  ), [t]);
+
   return (
     <div className="relative" ref={dropdownRef}>
       <button
@@ -203,12 +209,14 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
                     index !== sessions.length - 1 ? 'border-b border-border/50' : ''
                   } ${currentCwd === session.cwd ? 'bg-accent/50' : ''}`}
                 >
-                  {/* Status indicator: loading blinking orange dot / unread red static dot / normal gray dot.
+                  {/* Status indicator: orange (running) / red (unread) / gray dot.
                       Solid at the `-11` step, not washed like the pills — an 8px dot has no
-                      room to carry a 20% tint. */}
+                      room to carry a 20% tint. It does NOT pulse: the round session-number
+                      chip on the right is the one blinking thing per row, and this dot is
+                      what still reports the state before the numbers finish resolving. */}
                   <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${
                     session.status === 'loading'
-                      ? 'bg-orange-11 animate-pulse'
+                      ? 'bg-orange-11'
                       : session.status === 'unread'
                         ? 'bg-red-11'
                         : 'bg-muted-foreground/30'
@@ -219,17 +227,16 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
                       <span className="font-medium text-sm truncate">
                         {getProjectName(session.cwd)}
                       </span>
-                      {session.status === 'loading' && (
-                        <span className="text-xs text-orange-11 flex-shrink-0">{t('sessions.running')}</span>
-                      )}
-                      {session.status === 'unread' && (
-                        <span className="text-xs text-red-11 flex-shrink-0">{t('sessions.done')}</span>
-                      )}
                       <span className="text-xs text-muted-foreground flex-shrink-0">
                         {formatTime(session.lastActive)}
                       </span>
+                      {/* Running/done is carried by the round session chip (pulsing wash /
+                          solid red) instead of a word — the label repeated what the dot
+                          already said and cost the project name its truncation budget. */}
                       <SessionNumberBadge
                         coordinate={sessionNumbers[`${session.cwd}\n${session.sessionId}`]}
+                        status={badgeStatus(session.status)}
+                        statusLabel={statusLabel(session.status)}
                         className="ml-auto"
                       />
                     </div>

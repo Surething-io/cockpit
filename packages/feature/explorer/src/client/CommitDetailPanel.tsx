@@ -227,7 +227,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
   const content = (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Commit info header */}
-      <div className="px-4 py-3 border-b border-border bg-secondary flex-shrink-0">
+      <div className="px-4 py-3 border-b border-border flex-shrink-0">
         <div className="text-sm font-medium text-foreground mb-2">
           {commit.subject}
         </div>

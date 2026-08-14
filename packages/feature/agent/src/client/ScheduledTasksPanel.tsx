@@ -307,7 +307,7 @@ export function ScheduledTasksPanel({
             {unreadCount}
           </span>
         ) : collapsed && tasks.length > 0 ? (
-          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 text-muted-foreground text-xs font-medium rounded-full flex items-center justify-center bg-accent">
+          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 text-muted-foreground text-xs font-medium rounded-full flex items-center justify-center bg-popover border border-border">
             {tasks.length}
           </span>
         ) : null}
@@ -363,7 +363,7 @@ export function ScheduledTasksPanel({
                             if (task.unread) onMarkRead(task.id);
                             setIsOpen(false);
                           }}
-                          className={`group p-3 bg-secondary rounded border hover:border-brand hover:shadow-lv2 cursor-pointer transition-all ${
+                          className={`group p-3 rounded border hover:border-brand hover:shadow-lv2 cursor-pointer transition-all ${
                             task.unread ? 'border-brand/40 bg-brand/5' : 'border-border'
                           }`}
                         >
@@ -421,7 +421,7 @@ export function ScheduledTasksPanel({
                               onSwitchProject(task.cwd, task.sessionId);
                               setIsOpen(false);
                             }}
-                            className="group p-3 bg-secondary rounded border border-border opacity-60 hover:opacity-100 hover:border-brand hover:shadow-lv2 cursor-pointer transition-all"
+                            className="group p-3 rounded border border-border opacity-60 hover:opacity-100 hover:border-brand hover:shadow-lv2 cursor-pointer transition-all"
                           >
                             <div className="flex items-center gap-1.5 mb-1">
                               <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getStatusColor(task)}`} />

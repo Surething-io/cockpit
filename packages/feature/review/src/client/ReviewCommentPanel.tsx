@@ -62,7 +62,7 @@ export function ReviewCommentPanel({
 
   return (
     <div ref={containerRef} className="h-full flex flex-col bg-card">
-      <div className="px-4 py-2 bg-secondary border-b border-border flex-shrink-0 flex items-center">
+      <div className="px-4 py-2 border-b border-border flex-shrink-0 flex items-center">
         <span className="text-xs text-muted-foreground">
           {comments.length === 0
             ? t('review.selectTextToComment')

@@ -145,7 +145,7 @@ export function ReviewCommentsListModal({
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border ">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-semibold text-foreground">{t('review.allCommentsTitle')}</h2>
             <span className="text-xs text-muted-foreground">

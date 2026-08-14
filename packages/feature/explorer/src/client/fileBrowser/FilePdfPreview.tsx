@@ -235,7 +235,7 @@ export function FilePdfPreview({ cwd, path, refreshKey }: FilePdfPreviewProps) {
 
   const toolbar = useMemo(
     () => (
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-secondary text-muted-foreground text-xs select-none">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border text-muted-foreground text-xs select-none">
         <button
           onClick={toggleThumbs}
           className={`px-1.5 py-0.5 rounded hover:bg-hover transition-colors ${
@@ -417,7 +417,7 @@ function ThumbnailSidebar({
   return (
     <div
       ref={listRef}
-      className="shrink-0 overflow-auto border-r border-border bg-secondary py-2"
+      className="shrink-0 overflow-auto border-r border-border py-2"
       style={{ width: SIDEBAR_W }}
     >
       <div style={{ height: virtualizer.getTotalSize(), width: '100%', position: 'relative' }}>

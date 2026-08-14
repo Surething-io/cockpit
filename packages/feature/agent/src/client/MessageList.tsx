@@ -568,7 +568,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     <div ref={outerRef} className="relative flex-1 min-h-0 overflow-hidden flex flex-col outline-none" tabIndex={-1} onMouseUp={handleSelectionMouseUp} onMouseDown={handleSelectionMouseDown}>
       {/* Search bar */}
       {isSearchVisible && (
-        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-secondary border-b border-border">
+        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b border-border">
           <input
             ref={searchInputRef}
             type="text"

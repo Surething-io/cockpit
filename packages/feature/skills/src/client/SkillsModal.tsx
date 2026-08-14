@@ -325,7 +325,7 @@ function SkillCard({ skill, onPreview, onDelete, onCopyPath }: SkillCardProps) {
 
   return (
     <div
-      className={`group flex flex-col h-full border border-border rounded-lg p-3 bg-secondary hover:border-brand hover:shadow-lv2 transition-all ${
+      className={`group flex flex-col h-full border border-border rounded-lg p-3 hover:border-brand hover:shadow-lv2 transition-all ${
         skill.valid ? '' : 'opacity-60'
       }`}
     >

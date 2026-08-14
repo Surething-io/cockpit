@@ -370,7 +370,7 @@ export function ReviewPage({ reviewId: initialReviewId }: ReviewPageProps) {
 
       {/* Top Bar */}
       {review && (
-        <div className="py-2 bg-secondary border-b border-border flex-shrink-0 flex justify-center">
+        <div className="py-2 border-b border-border flex-shrink-0 flex justify-center">
         <div className="w-full max-w-[1800px] px-4 flex items-center gap-3">
           <h1 className="text-sm font-semibold truncate">{review.title}</h1>
           <span className="text-[11px] text-muted-foreground flex-shrink-0">

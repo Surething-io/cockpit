@@ -394,7 +394,7 @@ function HtmlAppCard({ app, onOpenConsole, onOpenExternal, onPreview, onDelete, 
 
   return (
     <div
-      className={`group flex flex-col h-full border border-border rounded-lg p-3 bg-secondary hover:border-brand hover:shadow-lv2 transition-all cursor-pointer ${app.valid ? '' : 'opacity-60'}`}
+      className={`group flex flex-col h-full border border-border rounded-lg p-3 hover:border-brand hover:shadow-lv2 transition-all cursor-pointer ${app.valid ? '' : 'opacity-60'}`}
       onClick={() => app.valid && onPreview()}
     >
       <div className="flex items-center gap-2.5">

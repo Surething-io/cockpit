@@ -429,7 +429,7 @@ export function ProjectSidebar({
         {collapsed ? (
           // Collapsed state: overlay the entire button area
           <button
-            className="absolute inset-0 m-2 flex items-center justify-center px-2 py-2 rounded-lg bg-accent text-foreground transition z-10 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+            className="absolute inset-0 m-2 flex items-center justify-center px-2 py-2 rounded-lg bg-popover shadow-lv1 text-foreground transition z-10 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
             onClick={onToggleCollapse}
             title={t('workspace.expandSidebar')}
           >
@@ -444,7 +444,7 @@ export function ProjectSidebar({
           </button>
         ) : (
           <button
-            className="absolute top-1/2 -translate-y-1/2 right-2 p-2 rounded-lg bg-accent text-foreground transition z-10 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+            className="absolute top-1/2 -translate-y-1/2 right-2 p-2 rounded-lg bg-popover shadow-lv1 text-foreground transition z-10 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
             onClick={onToggleCollapse}
             title={t('workspace.collapseSidebar')}
           >

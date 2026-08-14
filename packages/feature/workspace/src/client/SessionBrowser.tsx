@@ -351,7 +351,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
                           <div
                             key={session.path}
                             onClick={() => handleSessionClick(project.fullPath, session)}
-                            className="p-3 bg-secondary rounded border border-border hover:border-brand hover:shadow-lv2 cursor-pointer transition-all"
+                            className="p-3 rounded border border-border hover:border-brand hover:shadow-lv2 cursor-pointer transition-all"
                           >
                             {/* Session Title + Engine Badge */}
                             <div className="flex items-center gap-1.5 mb-1">

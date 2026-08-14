@@ -227,7 +227,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border ">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold text-foreground">{t('comments.allComments')}</h2>
             {comments.length > 0 && (
@@ -275,7 +275,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
               {Object.entries(commentsByFile).map(([filePath, fileComments]) => (
                 <div key={filePath} className="border border-border rounded-lg overflow-hidden">
                   {/* File header */}
-                  <div className="px-3 py-2 bg-secondary border-b border-border">
+                  <div className="px-3 py-2 border-b border-border">
                     <span className="text-sm font-medium text-foreground font-mono">
                       {filePath === CHAT_COMMENT_FILE ? t('comments.aiReply') : filePath}
                     </span>
@@ -358,7 +358,7 @@ export function CommentsListModal({ isOpen, onClose, cwd, onNavigateToComment }:
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t border-border bg-secondary flex items-center justify-between">
+        <div className="px-4 py-3 border-t border-border flex items-center justify-between">
           <span className="text-sm text-muted-foreground">
             {t('comments.totalComments', { count: comments.length })}
           </span>

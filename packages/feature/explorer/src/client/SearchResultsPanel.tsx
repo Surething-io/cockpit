@@ -76,7 +76,7 @@ export function SearchResultsPanel({ results, loading, totalMatches, onSelect, o
   const visibleMatches = visibleResults.reduce((sum, r) => sum + r.matches.length, 0);
 
   return (
-    <div className="border-t border-border bg-secondary flex flex-col" style={{ height: '300px' }}>
+    <div className="border-t border-border bg-card flex flex-col" style={{ height: '300px' }}>
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-card/50 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">

@@ -318,7 +318,7 @@ export function StatusDiffPane({
         // block toggle stays here so the user can flip back to chip
         // view.
         <>
-          <div className="px-4 py-2 bg-secondary border-b border-border flex items-center gap-2">
+          <div className="px-4 py-2 border-b border-border flex items-center gap-2">
             <span className="text-xs font-mono text-muted-foreground">
               {filePath}
             </span>

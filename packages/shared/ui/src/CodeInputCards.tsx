@@ -125,7 +125,7 @@ export function AddCommentInput({ x, y, range, filePath, lineSnapshot, container
       </div>
       {/* Code preview */}
       {lineSnapshot && (
-        <div className="px-3 py-2 bg-secondary/50 border-b border-border max-h-24 overflow-hidden">
+        <div className="px-3 py-2 border-b border-border max-h-24 overflow-hidden">
           <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all">
             {displayCode}
             {hasMoreLines && <span className="text-muted-foreground/50">...</span>}
@@ -278,7 +278,7 @@ export function SendToAIInput({
       </div>
       {/* Code preview */}
       {lineSnapshot && (
-        <div className="px-3 py-2 bg-secondary/50 border-b border-border max-h-24 overflow-hidden">
+        <div className="px-3 py-2 border-b border-border max-h-24 overflow-hidden">
           <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all">
             {displayCode}
             {hasMoreLines && <span className="text-muted-foreground/50">...</span>}

@@ -937,7 +937,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
 
       {/* Search bar (read-only mode) */}
       {!editable && showSearch && isSearchVisible && (
-        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-secondary border-b border-border">
+        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b border-border">
           <input
             ref={searchInputRef}
             type="text"
@@ -992,11 +992,11 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
 
       {/* ========== Edit mode: contentEditable ========== */}
       {editable ? (
-        <div ref={editScrollRef} className="flex-1 overflow-auto bg-secondary">
+        <div ref={editScrollRef} className="flex-1 overflow-auto bg-card">
           <div className="flex" style={{ minHeight: '100%' }}>
             {/* Line number column (sticky: pinned to left on horizontal scroll) */}
             <div
-              className="flex-shrink-0 font-mono text-sm select-none sticky left-0 z-[2] bg-secondary"
+              className="flex-shrink-0 font-mono text-sm select-none sticky left-0 z-[2] bg-card"
               style={{ width: lineNumberWidth }}
             >
               {Array.from({ length: editLineCount }, (_, i) => (
@@ -1031,7 +1031,7 @@ export const CodeViewer = forwardRef<FileEditorHandle, CodeViewerProps>(function
         /* ========== Read-only mode: virtual scroll ========== */
         <div
           ref={parentRef}
-          className={`flex-1 overflow-auto font-mono text-sm bg-secondary${cmdHeld ? ' cmd-held-container' : ''}`}
+          className={`flex-1 overflow-auto font-mono text-sm bg-card${cmdHeld ? ' cmd-held-container' : ''}`}
         >
           <div
             style={{
@@ -1296,7 +1296,7 @@ export function SimpleCodeBlock({ content, filePath, className = '' }: SimpleCod
   const lnChars = Math.max(4, String(lines.length).length);
 
   return (
-    <pre className={`overflow-auto text-sm font-mono bg-secondary p-2 ${className}`}>
+    <pre className={`overflow-auto text-sm font-mono bg-muted p-2 ${className}`}>
       {lines.map((line, i) => (
         <div key={i} className="flex">
           <span className="text-foreground-subtle select-none pr-4 text-right" style={{ minWidth: `${lnChars + 2}ch` }}>

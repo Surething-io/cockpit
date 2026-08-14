@@ -132,7 +132,7 @@ export function PinnedSessionsPanel({
         {!collapsed && <span className="text-sm flex-1 text-left">{t('sessions.pinnedSessions')}</span>}
         {/* Show count badge in collapsed state */}
         {collapsed && pinnedSessions.length > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 text-muted-foreground text-xs font-medium rounded-full flex items-center justify-center bg-accent">
+          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 text-muted-foreground text-xs font-medium rounded-full flex items-center justify-center bg-popover border border-border">
             {pinnedSessions.length}
           </span>
         )}

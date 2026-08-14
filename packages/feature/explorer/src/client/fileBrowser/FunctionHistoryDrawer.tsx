@@ -103,7 +103,7 @@ export function FunctionHistoryDrawer({
             >
               <button
                 onClick={() => onSelect(entry)}
-                className="w-full text-left px-2 py-1.5 border-b border-border/50 hover:bg-secondary/60 transition-colors group flex items-start gap-1.5"
+                className="w-full text-left px-2 py-1.5 border-b border-border/50 hover:transition-colors group flex items-start gap-1.5"
               >
                 <SymbolIcon
                   kind={entry.kind ?? 'unknown'}

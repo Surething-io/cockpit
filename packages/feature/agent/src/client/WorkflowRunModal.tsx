@@ -237,7 +237,7 @@ function WorkflowAgentRow({
   const preview = agent.resultPreview || agent.promptPreview || '';
 
   return (
-    <div className="border border-border rounded-md mb-1 bg-secondary/50">
+    <div className="border border-border rounded-md mb-1">
       <div className="flex items-center gap-2 px-2 py-1.5">
         <button
           onClick={() => setExpanded((v) => !v)}

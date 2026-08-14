@@ -190,7 +190,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
                 <div
                   key={`${session.cwd}-${session.sessionId}`}
                   onClick={() => handleSessionClick(session)}
-                  className="p-3 bg-secondary rounded border border-border hover:border-brand hover:shadow-lv2 cursor-pointer transition-all"
+                  className="p-3 rounded border border-border hover:border-brand hover:shadow-lv2 cursor-pointer transition-all"
                 >
                   {/* Project name + status dot + engine badge */}
                   <div className="flex items-center gap-1.5 mb-1">

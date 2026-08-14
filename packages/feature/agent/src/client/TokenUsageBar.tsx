@@ -63,7 +63,7 @@ export function TokenUsageBar({ tokenUsage, rateLimitInfo }: TokenUsageBarProps)
   };
 
   return (
-    <div className="px-4 py-1.5 border-t border-border bg-secondary">
+    <div className="px-4 py-1.5 border-t border-border ">
       <div className="flex items-center justify-end gap-4 text-xs text-muted-foreground">
         {/* Rate limit warning/rejected indicator */}
         {rateLimitInfo && rateLimitLabel && (

@@ -394,7 +394,7 @@ export const CodeLine = memo(function CodeLine({
     >
       {/* ---- Sticky: Blame + line number (pinned to left on horizontal scroll) ---- */}
       <div
-        className="flex shrink-0 sticky left-0 z-[2] bg-secondary"
+        className="flex shrink-0 sticky left-0 z-[2] bg-card"
         style={{ backgroundColor: isBlameHovered && blameAuthorColor ? blameAuthorColor.bg : undefined }}
       >
         {/* ---- Blame column ---- */}

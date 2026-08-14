@@ -114,7 +114,7 @@ export function BranchSelector({
             ))}
             {filteredLocal.length > 0 && (
               <div>
-                <div className="px-3 py-1 text-xs font-medium text-muted-foreground bg-secondary sticky top-0">
+                <div className="px-3 py-1 text-xs font-medium text-muted-foreground bg-popover sticky top-0">
                   {t('git.localBranches')}
                 </div>
                 {filteredLocal.map(branch => (
@@ -142,7 +142,7 @@ export function BranchSelector({
             )}
             {filteredRemote.length > 0 && (
               <div>
-                <div className="px-3 py-1 text-xs font-medium text-muted-foreground bg-secondary sticky top-0">
+                <div className="px-3 py-1 text-xs font-medium text-muted-foreground bg-popover sticky top-0">
                   {t('git.remoteBranches')}
                 </div>
                 {filteredRemote.map(branch => (

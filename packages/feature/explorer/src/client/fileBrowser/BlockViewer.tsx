@@ -213,7 +213,7 @@ function CodeBlock({
        */}
       <div
         data-block-header
-        className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border bg-secondary/40 text-xs"
+        className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border text-xs"
       >
         <SymbolIcon
           kind={symbol.kind}
@@ -2250,7 +2250,7 @@ function Header({
     downstreamCount: downstreamCount ?? 0,
   };
   return (
-    <div className="flex-shrink-0 px-3 py-2 border-b border-border flex items-center justify-between bg-secondary/30 gap-2">
+    <div className="flex-shrink-0 px-3 py-2 border-b border-border flex items-center justify-between gap-2">
       <div className="flex items-center gap-2 min-w-0 text-xs text-muted-foreground font-mono">
         <span className="truncate min-w-0">
           {focalFile ? (

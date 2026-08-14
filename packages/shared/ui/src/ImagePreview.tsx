@@ -105,7 +105,7 @@ export function ImagePreview({ images, onRemove, disabled: _disabled }: ImagePre
 
   return (
     <>
-      <div className="flex flex-wrap gap-2 p-2 bg-secondary border-b border-border">
+      <div className="flex flex-wrap gap-2 p-2 border-b border-border">
         {images.map((image) => (
           <div
             key={image.id}

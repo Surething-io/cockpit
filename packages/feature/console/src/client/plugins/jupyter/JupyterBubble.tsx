@@ -491,7 +491,7 @@ export function JupyterBubble({
       </div>
 
       {/* ---- Toolbar ---- */}
-      <div className="flex items-center gap-1 px-3 py-1 border-b border-border/50 bg-surface-secondary/50 text-[11px]">
+      <div className="flex items-center gap-1 px-3 py-1 border-b border-border/50 bg-muted text-[11px]">
         <button
           onClick={(e) => { e.stopPropagation(); runAllCells(); }}
           className="px-1.5 py-0.5 rounded hover:bg-hover text-muted-foreground hover:text-foreground transition-colors"

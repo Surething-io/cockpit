@@ -116,7 +116,7 @@ export function SearchResultsPanel({ results, loading, totalMatches, onSelect, o
         ) : (
           visibleResults.map((result) => (
             <div key={result.path}>
-              <div className="px-3 py-1 text-xs text-muted-foreground font-medium bg-card/30 sticky top-0">
+              <div className="px-3 py-1 text-xs text-muted-foreground font-medium bg-card sticky top-0">
                 {result.path}
               </div>
               {result.matches.map((match, i) => {

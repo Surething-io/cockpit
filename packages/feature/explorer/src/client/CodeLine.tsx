@@ -395,7 +395,16 @@ export const CodeLine = memo(function CodeLine({
       {/* ---- Sticky: Blame + line number (pinned to left on horizontal scroll) ---- */}
       <div
         className="flex shrink-0 sticky left-0 z-[2] bg-card"
-        style={{ backgroundColor: isBlameHovered && blameAuthorColor ? blameAuthorColor.bg : undefined }}
+        style={{
+          // Author tint goes on background-IMAGE, not background-color: the
+          // palette entries are 15% rgba, and as a background-color they would
+          // replace `bg-card` — the very layer that hides the code text sliding
+          // under this pinned column on horizontal scroll. As a gradient it
+          // composites on top of the opaque card instead.
+          backgroundImage: isBlameHovered && blameAuthorColor
+            ? `linear-gradient(${blameAuthorColor.bg}, ${blameAuthorColor.bg})`
+            : undefined,
+        }}
       >
         {/* ---- Blame column ---- */}
         {blameLine && blameAuthorColor && (

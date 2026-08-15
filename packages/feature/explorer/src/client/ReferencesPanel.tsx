@@ -108,7 +108,7 @@ export function ReferencesPanel({ references, loading, onSelect, onClose }: Refe
         ) : (
           grouped.map(({ file, items }) => (
             <div key={file}>
-              <div className="px-3 py-1 text-xs text-muted-foreground font-medium bg-card/30 sticky top-0">
+              <div className="px-3 py-1 text-xs text-muted-foreground font-medium bg-card sticky top-0">
                 {file}
               </div>
               {items.map(({ ref, idx }) => (

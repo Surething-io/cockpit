@@ -126,7 +126,7 @@ function SessionToastCard({
 
   return (
     <div
-      className={`pointer-events-auto bg-card border border-border rounded-lg shadow-lv2 px-3 py-3 min-h-[84px] min-w-[260px] max-w-[340px] cursor-pointer hover:bg-hover transition-all ${
+      className={`group pointer-events-auto relative bg-popover border border-border rounded-lg shadow-lv3 px-3 py-3 min-h-[84px] min-w-[260px] max-w-[340px] cursor-pointer transition-all ${
         leaving ? 'opacity-0 -translate-x-4' : 'opacity-100 translate-x-0'
       }`}
       style={{
@@ -136,7 +136,14 @@ function SessionToastCard({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      <div className="flex items-start gap-2">
+      {/*
+        Hover tint as an overlay, not as `hover:bg-hover` on the card itself:
+        `--tint-hover` is a translucent rgba, so applying it as background-color
+        REPLACES the opaque `bg-popover` and makes the whole toast see-through
+        (the sidebar menu underneath bleeds right through it).
+      */}
+      <div className="pointer-events-none absolute inset-0 rounded-lg bg-hover opacity-0 group-hover:opacity-100 transition-opacity" />
+      <div className="relative flex items-start gap-2">
         {/* Completion icon */}
         <svg className="w-4 h-4 text-green-9 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -155,7 +162,7 @@ function SessionToastCard({
         </button>
       </div>
       {item.message && (
-        <div className="text-xs text-muted-foreground truncate mt-1 ml-6">
+        <div className="relative text-xs text-muted-foreground truncate mt-1 ml-6">
           {item.message}
         </div>
       )}

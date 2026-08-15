@@ -22,6 +22,7 @@
 import { copyFileSync, mkdirSync } from "fs"
 import { join } from "path"
 import { spawn } from "child_process"
+import { createServer } from "net"
 import { COCKPIT_DIR, sanitizedSpawnEnv } from "@cockpit/shared-utils"
 
 export interface HandoffOptions {
@@ -31,6 +32,34 @@ export interface HandoffOptions {
   readonly fromVersion: string
   /** Skip the npm install step and only relaunch. */
   readonly restartOnly: boolean
+  /**
+   * Loopback port the updater should publish live progress on while we are
+   * gone. Omit to run without a progress channel.
+   */
+  readonly statusPort?: number
+}
+
+/**
+ * Reserve a free loopback port by binding :0 and immediately releasing it.
+ *
+ * There is a microscopic window between our close() and the updater's listen()
+ * in which something else could take the port. That is acceptable: the updater
+ * treats a bind failure as "no progress channel" and the UI falls back to a
+ * local timer, so losing the race costs a progress bar, never an update.
+ *
+ * Why not let the updater pick its own port: the browser has to be told the
+ * number, and this response is the last thing we can say to it before we exit.
+ */
+export function pickFreePort(): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    const probe = createServer()
+    probe.once("error", () => resolve(undefined))
+    probe.listen(0, "127.0.0.1", () => {
+      const addr = probe.address()
+      const port = typeof addr === "object" && addr !== null ? addr.port : undefined
+      probe.close(() => resolve(port))
+    })
+  })
 }
 
 /**
@@ -38,7 +67,7 @@ export interface HandoffOptions {
  * Returns its pid. Throws if the script cannot be staged.
  */
 export function spawnHandoff(opts: HandoffOptions): number | undefined {
-  const { installRoot, fromVersion, restartOnly } = opts
+  const { installRoot, fromVersion, restartOnly, statusPort } = opts
 
   // Copy out of the install directory before running: `npm i -g` replaces that
   // directory wholesale and would delete the script mid-run. Harmless for a
@@ -56,6 +85,7 @@ export function spawnHandoff(opts: HandoffOptions): number | undefined {
     "--from", fromVersion,
   ]
   if (restartOnly) args.push("--restart-only")
+  if (statusPort) args.push("--status-port", String(statusPort))
 
   const child = spawn(process.execPath, args, {
     // Never the install dir: on Windows a process's cwd blocks that directory

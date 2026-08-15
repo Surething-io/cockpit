@@ -6,17 +6,20 @@
  * spawn a detached updater outside the install directory, shut ourselves down,
  * and let it install and respawn us.
  *
- * The client does not need a progress channel: after the socket drops it polls
- * /api/health until the server answers again, and useServerBuildGuard notices
- * the changed buildId and offers a reload. If it never comes back, the reason
- * is in <cockpitHome>/logs/updater.log and <cockpitHome>/update-state.json.
+ * Progress channel: we reserve a free loopback port here and hand it to the
+ * updater, which serves its live state on it while we are gone. The number
+ * comes back in this response because this is the last thing we can tell the
+ * browser before exiting. It is best-effort — no port, or a failed bind, just
+ * means the UI falls back to a local timer and the existing /api/health pid
+ * poll. The authoritative record is still <cockpitHome>/update-state.json and
+ * <cockpitHome>/logs/updater.log.
  */
 import { Effect } from "effect"
 import { join } from "path"
 import { handler, ok } from "@cockpit/effect-runtime/server"
 import { PermissionError, ValidationError } from "@cockpit/effect-core"
 import { COCKPIT_DIR } from "@cockpit/shared-utils"
-import { spawnHandoff } from "@/lib/processHandoff"
+import { pickFreePort, spawnHandoff } from "@/lib/processHandoff"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -51,8 +54,13 @@ export const POST = handler((req) =>
 
     const fromVersion = process.env.COCKPIT_VERSION ?? "unknown"
 
+    // Deliberately not in the failure channel: pickFreePort resolves undefined
+    // instead of rejecting, because an update with no progress bar is fine and
+    // an update refused because a port probe failed is not.
+    const statusPort = yield* Effect.promise(() => pickFreePort())
+
     yield* Effect.try({
-      try: () => spawnHandoff({ installRoot, fromVersion, restartOnly: false }),
+      try: () => spawnHandoff({ installRoot, fromVersion, restartOnly: false, statusPort }),
       catch: (e) =>
         new ValidationError({
           field: "handoff",
@@ -76,6 +84,7 @@ export const POST = handler((req) =>
     return ok({
       ok: true,
       from: fromVersion,
+      statusPort: statusPort ?? null,
       logPath: join(COCKPIT_DIR, "logs", "updater.log"),
       statePath: join(COCKPIT_DIR, "update-state.json"),
     })

@@ -18,12 +18,18 @@
 // losing the token would silently turn a tunnel-exposed instance into an open
 // one, so it must never be re-derived from defaults.
 import { spawn, spawnSync } from 'child_process';
-import { appendFileSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { appendFileSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'fs';
+import { createServer } from 'http';
+import { createRequire } from 'module';
+import { dirname, join } from 'path';
 
 const PKG = '@surething/cockpit';
 const EXIT_WAIT_MS = 30_000;
 const POLL_MS = 250;
+// Hold the status port briefly after the terminal state is written so a client
+// polling at ~1s can still read it. The replacement server binds the MAIN port,
+// never this one, so lingering here races nothing.
+const TERMINAL_LINGER_MS = 3_000;
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(`--${name}`);
@@ -35,6 +41,10 @@ const installRoot = arg('root');
 const cockpitHome = arg('home');
 const fromVersion = arg('from', 'unknown');
 const target = arg('to', 'latest');
+// Allocated by /api/update (bind :0, close, hand the number over) and echoed to
+// the browser in the same response. Absent => no live channel, and the UI falls
+// back to a local timer; nothing here treats that as an error.
+const statusPort = Number(arg('status-port', '0')) || 0;
 
 // --restart-only reuses everything here except the install step. A restart has
 // the same hard requirement as an update — the replacement must be launched by
@@ -60,13 +70,73 @@ function log(line) {
   } catch { /* logging must never abort an update */ }
 }
 
-function writeState(patch) {
+// The previous run's timings, read BEFORE we overwrite the file. `installMs` is
+// the only anchor the UI has for "how long will this take" — carry it forward
+// even through a failed run, or one bad update erases the baseline for good.
+function readPrevState() {
   try {
-    writeFileSync(
-      statePath,
-      JSON.stringify({ from: fromVersion, target, pid: process.pid, ...patch }, null, 2)
-    );
+    return JSON.parse(readFileSync(statePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+const prevState = readPrevState();
+const prevInstallMs = Number(prevState?.installMs) || Number(prevState?.prevInstallMs) || null;
+
+// Mirrored in memory so the status server can answer without touching the disk.
+let currentState = {};
+
+function writeState(patch) {
+  currentState = { from: fromVersion, target, pid: process.pid, prevInstallMs, ...patch };
+  try {
+    writeFileSync(statePath, JSON.stringify(currentState, null, 2));
   } catch { /* best effort */ }
+}
+
+/**
+ * Serve the live update state to the browser while the server is down.
+ *
+ * MUST bind 127.0.0.1 explicitly. Omitting the host makes Node listen on
+ * `::`/0.0.0.0, which is the one thing that trips the macOS/Windows firewall
+ * prompt — and it would publish update state to the LAN. Loopback-only
+ * listeners are not filtered by either OS firewall.
+ *
+ * Every failure here is silent by design: this is a progress nicety, and an
+ * update must never fail because a port could not be bound.
+ */
+let statusServer = null;
+
+function startStatusServer() {
+  if (!statusPort) return;
+  try {
+    const srv = createServer((req, res) => {
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        // The page is served from localhost:<main port>; this is a different
+        // origin. Loopback-bound and read-only, so * is not a widening.
+        'access-control-allow-origin': '*',
+        'cache-control': 'no-store',
+      });
+      res.end(JSON.stringify(currentState));
+    });
+    srv.on('error', (e) => log(`status server unavailable: ${e.message}`));
+    srv.listen(statusPort, '127.0.0.1', () => log(`status server on 127.0.0.1:${statusPort}`));
+    statusServer = srv;
+  } catch (e) {
+    log(`status server failed to start: ${e.message}`);
+  }
+}
+
+/** Linger, release the port, exit. Every exit path goes through here. */
+async function finish(code) {
+  if (statusServer) {
+    await sleep(TERMINAL_LINGER_MS);
+    try {
+      statusServer.closeAllConnections?.();
+      statusServer.close();
+    } catch { /* exiting anyway */ }
+  }
+  process.exit(code);
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -81,6 +151,36 @@ function pidAlive(pid) {
   }
 }
 
+/**
+ * Whether the Claude SDK's platform-specific native binary resolves.
+ *
+ * DUPLICATED from scripts/claudeBinary.mjs — change both together. This file
+ * cannot import it: it runs from <cockpitHome>/updater/ precisely because
+ * `npm i -g` deletes the install directory mid-run (see the header).
+ *
+ * Resolution is anchored at installRoot rather than import.meta.url. This
+ * script lives OUTSIDE the install tree, so resolving from its own location
+ * would search <cockpitHome>/updater/node_modules and report "missing" every
+ * single time — which, given what the caller does about it, would mean
+ * uninstalling and reinstalling cockpit on every update.
+ */
+function hasClaudeBinary() {
+  try {
+    const req = createRequire(join(installRoot, 'package.json'));
+    const base = `${process.platform}-${process.arch}`;
+    // linux ships glibc and musl variants under distinct package names.
+    const variants = process.platform === 'linux' ? [base, `${base}-musl`] : [base];
+    for (const variant of variants) {
+      try {
+        const pkgJson = req.resolve(`@anthropic-ai/claude-agent-sdk-${variant}/package.json`);
+        const bin = join(dirname(pkgJson), 'claude');
+        if (existsSync(bin) || existsSync(`${bin}.exe`)) return true;
+      } catch { /* this variant's sub-package isn't installed */ }
+    }
+  } catch { /* install tree unreadable — same answer as missing */ }
+  return false;
+}
+
 function readInstalledVersion() {
   try {
     return JSON.parse(readFileSync(join(installRoot, 'package.json'), 'utf8')).version;
@@ -89,22 +189,57 @@ function readInstalledVersion() {
   }
 }
 
+/**
+ * Run npm and resolve with the outcome.
+ *
+ * Deliberately async (was spawnSync): spawnSync blocks this process's event
+ * loop for the entire install, which is exactly the window the status server
+ * has to answer in. With spawnSync the socket would accept connections into the
+ * kernel backlog and reply to none of them.
+ *
+ * Output is drained as it arrives rather than after exit — an undrained pipe
+ * fills its buffer and deadlocks npm.
+ */
 function runNpm(args) {
   log(`npm ${args.join(' ')}`);
-  const r = spawnSync('npm', args, {
-    encoding: 'utf-8',
-    // Windows npm is npm.cmd; Node >=18.20/20.12 refuses to spawn .cmd without
-    // a shell (CVE-2024-27980).
-    shell: process.platform === 'win32',
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    let child;
+    try {
+      child = spawn('npm', args, {
+        // Windows npm is npm.cmd; Node >=18.20/20.12 refuses to spawn .cmd
+        // without a shell (CVE-2024-27980).
+        shell: process.platform === 'win32',
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (e) {
+      log(`npm failed to launch: ${e.message}`);
+      done({ ok: false, reason: `could not run npm: ${e.message}` });
+      return;
+    }
+
+    let out = '';
+    child.stdout?.setEncoding('utf-8');
+    child.stderr?.setEncoding('utf-8');
+    child.stdout?.on('data', (d) => { out += d; });
+    child.stderr?.on('data', (d) => { out += d; });
+
+    child.on('error', (e) => {
+      log(`npm failed to launch: ${e.message}`);
+      done({ ok: false, reason: `could not run npm: ${e.message}` });
+    });
+    child.on('close', (code) => {
+      if (out.trim()) log(out.trim());
+      done(code === 0 ? { ok: true } : { ok: false, reason: `npm exited ${code}` });
+    });
   });
-  if (r.error) {
-    log(`npm failed to launch: ${r.error.message}`);
-    return { ok: false, reason: `could not run npm: ${r.error.message}` };
-  }
-  if (r.stdout) log(r.stdout.trim());
-  if (r.stderr) log(r.stderr.trim());
-  if (r.status !== 0) return { ok: false, reason: `npm exited ${r.status}` };
-  return { ok: true };
 }
 
 /**
@@ -143,6 +278,56 @@ function startServer() {
   }
 }
 
+/** What the user has to run by hand if we cannot repair it ourselves. */
+const MANUAL_FIX = `npm uninstall -g ${PKG} && npm install -g ${PKG}`;
+
+/**
+ * Make sure the SDK's platform-specific native binary survived the install.
+ *
+ * It ships as an OPTIONAL dependency, and npm skips it often enough during an
+ * in-place `npm i -g` that cock-service.mjs guards the offline path the same
+ * way. Nothing else notices: the install exits 0, the server comes back, and
+ * chat dies at the first message with "Native CLI binary not found". This path
+ * — the UI button — had no guard at all, so it reported "update complete" and
+ * handed back a Cockpit that could not chat.
+ *
+ * Escalates deliberately. The clean uninstall is the only thing that reliably
+ * makes npm refetch a skipped optional dep, but it DELETES a working install,
+ * so it runs only after --force has failed. If the reinstall then fails we are
+ * left with nothing, which is why the previous version is put back as a last
+ * resort — and why the status port matters here: with no server, that card is
+ * the only channel left to tell the user what to run.
+ */
+async function repairClaudeBinary() {
+  if (hasClaudeBinary()) return { ok: true };
+
+  log('native claude binary missing after install — repairing');
+  writeState({ ...currentState, phase: 'repairing' });
+
+  // Non-destructive first: --force re-reifies the tree without removing it.
+  await runNpm(['install', '-g', `${PKG}@${target}`, '--include=optional', '--force']);
+  if (hasClaudeBinary()) {
+    log('repaired with --force');
+    return { ok: true };
+  }
+
+  log('still missing — clean uninstall + reinstall');
+  await runNpm(['uninstall', '-g', PKG]);
+  const reinstall = await runNpm(['install', '-g', `${PKG}@${target}`, '--include=optional']);
+  if (!reinstall.ok) {
+    log(`reinstall after uninstall FAILED (${reinstall.reason}) — restoring ${fromVersion}`);
+    if (fromVersion !== 'unknown') {
+      await runNpm(['install', '-g', `${PKG}@${fromVersion}`, '--include=optional']);
+    }
+    return { ok: false, reason: `reinstall failed: ${reinstall.reason}` };
+  }
+  if (hasClaudeBinary()) {
+    log('repaired with uninstall + reinstall');
+    return { ok: true };
+  }
+  return { ok: false, reason: 'the native Claude binary is still missing; chat will not work' };
+}
+
 async function main() {
   mkdirSync(join(cockpitHome, 'logs'), { recursive: true });
   const mode = restartOnly ? 'restart' : 'update';
@@ -152,6 +337,9 @@ async function main() {
       : `--- update start: ${fromVersion} -> ${target} (server pid ${serverPid}) ---`
   );
   writeState({ mode, phase: 'waiting-for-exit', startedAt: Date.now() });
+  // Up before the wait loop: the old server is still holding the main port for
+  // ~300ms, so the browser can hand over to this channel without a visible gap.
+  startStatusServer();
 
   // 1. Wait for the server to release the install directory.
   const deadline = Date.now() + EXIT_WAIT_MS;
@@ -177,55 +365,79 @@ async function main() {
     const ok = startServer();
     writeState({ mode, phase: ok ? 'done' : 'failed', restarted: ok, finishedAt: Date.now() });
     log(`--- restart ${ok ? 'complete' : 'FAILED'} ---`);
-    process.exit(ok ? 0 : 1);
+    await finish(ok ? 0 : 1);
+    return;
   }
 
-  writeState({ mode, phase: 'installing', startedAt: Date.now() });
-  const install = runNpm(['install', '-g', `${PKG}@${target}`, '--include=optional']);
+  const installStartedAt = Date.now();
+  writeState({ mode, phase: 'installing', startedAt: installStartedAt });
+  const install = await runNpm(['install', '-g', `${PKG}@${target}`, '--include=optional']);
+  // Measured on the success path only — a failed install stops early and would
+  // poison the baseline with a number the next run cannot be compared against.
+  const installMs = install.ok ? Date.now() - installStartedAt : null;
 
   if (!install.ok) {
     // 3a. Roll back to the version we came from. npm may have already removed
     //     the old tree, so leaving it as-is can mean no cockpit at all.
     log(`install failed (${install.reason}) — rolling back to ${fromVersion}`);
-    writeState({ phase: 'rolling-back', error: install.reason });
+    // Published before the rollback npm run, not after: rolling back is a
+    // second full install, so without this the UI would sit on "installing" for
+    // twice the expected time with no idea anything had gone wrong.
+    writeState({ mode, phase: 'rolling-back', startedAt: installStartedAt, error: install.reason });
     const rollback =
       fromVersion !== 'unknown'
-        ? runNpm(['install', '-g', `${PKG}@${fromVersion}`, '--include=optional'])
+        ? await runNpm(['install', '-g', `${PKG}@${fromVersion}`, '--include=optional'])
         : { ok: false, reason: 'unknown previous version' };
     const restarted = startServer();
     writeState({
+      mode,
       phase: 'failed',
+      startedAt: installStartedAt,
       error: install.reason,
       rolledBack: rollback.ok,
       restarted,
       finishedAt: Date.now(),
     });
     log(`--- update failed; rollback ${rollback.ok ? 'ok' : 'FAILED'} ---`);
-    process.exit(1);
+    await finish(1);
+    return;
   }
 
-  // 3b. Success.
+  // 3b. Installed — but not necessarily complete. See repairClaudeBinary.
+  const repair = await repairClaudeBinary();
+
   const installed = readInstalledVersion();
-  log(`installed version now: ${installed}`);
-  writeState({ phase: 'restarting', installed });
+  log(`installed version now: ${installed} (install took ${installMs}ms)`);
+  writeState({ mode, phase: 'restarting', startedAt: installStartedAt, installed, installMs });
 
   const restarted = startServer();
+  const succeeded = restarted && repair.ok;
   writeState({
-    phase: restarted ? 'done' : 'failed',
+    mode,
+    phase: succeeded ? 'done' : 'failed',
+    startedAt: installStartedAt,
     installed,
+    installMs,
     restarted,
+    claudeBinary: repair.ok,
     // Same version means npm had nothing newer to give — not an error.
     unchanged: installed === fromVersion,
+    ...(succeeded
+      ? {}
+      : {
+          error: repair.ok ? 'the server did not come back up' : repair.reason,
+          fixCommand: repair.ok ? undefined : MANUAL_FIX,
+        }),
     finishedAt: Date.now(),
   });
-  log(`--- update ${restarted ? 'complete' : 'installed but respawn FAILED'} ---`);
-  process.exit(restarted ? 0 : 1);
+  log(`--- update ${succeeded ? 'complete' : 'FAILED'} ---`);
+  await finish(succeeded ? 0 : 1);
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   log(`updater crashed: ${e && e.stack ? e.stack : e}`);
   // Never leave the user without a server because the updater itself broke.
   const restarted = startServer();
   writeState({ phase: 'failed', error: String(e), restarted, finishedAt: Date.now() });
-  process.exit(1);
+  await finish(1);
 });

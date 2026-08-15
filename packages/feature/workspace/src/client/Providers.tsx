@@ -5,7 +5,7 @@ import { ThemeProvider } from '@cockpit/shared-ui';
 import { ToastProvider } from '@cockpit/shared-ui';
 import { TooltipProvider } from '@cockpit/shared-ui';
 import { useSuppressNativeContextMenu } from './useSuppressNativeContextMenu';
-import { ServerRestartedBanner } from './ServerRestartedBanner';
+import { UpdateProgressCard } from './UpdateProgressCard';
 
 interface ProvidersProps {
   children: React.ReactNode;
@@ -29,9 +29,16 @@ export function Providers({ children }: ProvidersProps) {
           <TooltipProvider />
           {/* Outside the panels for the same reason as TooltipProvider: its
               `position: fixed` must stay viewport-relative under the panel
-              container's translateX. Renders nothing until the server is
-              detected on a different build. */}
-          <ServerRestartedBanner />
+              container's translateX. Plus one of its own — a self-update
+              outlives the sidebar popover that triggers it, and the server it
+              is waiting on is gone for most of that time, so the card has to
+              survive panel switches, sidebar collapse and reloads.
+
+              This is also the ONLY surface that offers a reload. The bottom
+              ServerRestartedBanner used to be a second one, which meant two
+              cards with two "Reload" buttons whenever an update finished; its
+              build-id case is folded into this card instead. */}
+          <UpdateProgressCard />
         </ToastProvider>
       </ThemeProvider>
     </I18nProvider>

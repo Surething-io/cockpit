@@ -286,19 +286,17 @@ export function ProjectSidebar({
     toast(t('workspace.upgradeCommandCopied'));
     setUpdatePopoverOpen(false);
   }, [t]);
-  const { phase: updatePhase, error: updateError, start: startUpdate } = useSelfUpdate();
-  const isUpdating = updatePhase === 'starting' || updatePhase === 'waiting';
-  useEffect(() => {
-    if (updatePhase === 'done') {
-      // Only reports that the server is back. Whether the page itself is now
-      // stale is ServerRestartedBanner's call — it compares build ids, so it
-      // stays silent when the reinstall was a no-op (already latest).
-      toast(t('workspace.updateComplete'));
-      setUpdatePopoverOpen(false);
-    } else if (updatePhase === 'failed') {
-      toast(t('workspace.updateFailed', { reason: updateError ?? '' }), 'error');
-    }
-  }, [updatePhase, updateError, t]);
+  const { isUpdating, start: beginUpdate } = useSelfUpdate();
+  // Close the popover and hand the whole flow to UpdateProgressCard. Progress
+  // does not belong in a popover anchored to a button: it is 224px wide, it
+  // unmounts the moment the user clicks anywhere else, and the update runs for
+  // minutes with the server absent for most of them. Outcome reporting moved
+  // there too — a 3s toast is the wrong lifetime for a failure the user has to
+  // act on.
+  const startUpdate = useCallback(() => {
+    setUpdatePopoverOpen(false);
+    beginUpdate();
+  }, [beginUpdate]);
   const { pinnedSessions, unpinSession, updateTitle, reorder } = usePinnedSessions();
   const { tasks: scheduledTasks, unreadCount: scheduledUnread, reload: reloadScheduled, pauseTask, resumeTask, triggerTask, deleteTask: deleteScheduledTask, updateTask: updateScheduledTask, markRead: markScheduledRead } = useScheduledTasks();
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -659,14 +657,9 @@ export function ProjectSidebar({
                       {isUpdating ? t('workspace.updating') : t('workspace.updateNow')}
                     </span>
                   </button>
-                  {isUpdating && (
-                    // Say it plainly: a foreground `cockpit` does not stay in
-                    // the foreground across an update — the terminal that owned
-                    // it has already been released by the time we respawn.
-                    <div className="text-[11px] leading-snug text-muted-foreground px-2 pb-1.5">
-                      {t('workspace.updateRestartNote')}
-                    </div>
-                  )}
+                  {/* The restart note and every progress detail now live in
+                      UpdateProgressCard; duplicating them here would be a
+                      second, shorter-lived copy of the same truth. */}
                   <button
                     type="button"
                     onClick={copyUpgradeCmd}

@@ -258,8 +258,9 @@ export function TabBar({
         {/* New tab button with engine picker */}
         <NewTabButton onNewTab={onNewTab} onNewCodexTab={onNewCodexTab} onNewKimiTab={onNewKimiTab} onNewGlmTab={onNewGlmTab} onNewOllamaTab={onNewOllamaTab} onNewDeepseekTab={onNewDeepseekTab} />
         {/* Close-all button — one click closes every tab (resets to a single
-            blank tab). Only shown when more than one tab exists. */}
-        {onCloseAllTabs && tabs.length > 1 && (
+            blank tab). Always shown, including with a single tab, where it
+            acts as "reset this tab to a blank chat". */}
+        {onCloseAllTabs && (
           <button
             onClick={onCloseAllTabs}
             className="flex-shrink-0 p-1.5 text-muted-foreground hover:text-destructive hover:bg-hover rounded transition-colors"

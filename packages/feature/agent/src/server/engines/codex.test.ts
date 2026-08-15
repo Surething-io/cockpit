@@ -545,6 +545,94 @@ describe('codex sub-agents (collab_tool_call)', () => {
     stream.close();
     await p;
   });
+
+  // Captured from codex 0.147 (`exec --experimental-json`, a turn that spawned and
+  // waited on one sub-agent): spawn_agent produces NO thread item whatsoever, and the
+  // single collab_tool_call that does arrive is the wait — with receiver_thread_ids
+  // and agents_states both EMPTY. Every field the ≤ 0.14x path reads is gone, so the
+  // rollout is the only remaining source. This is what left a running multi-agent turn
+  // showing just its Bash calls.
+  const wait0147 = (type: string) => ({
+    type,
+    item: {
+      id: 'item_0', type: 'collab_tool_call', tool: 'wait', sender_thread_id: 't',
+      receiver_thread_ids: [], prompt: null, agents_states: {},
+      status: type === 'item.started' ? 'in_progress' : 'completed',
+    },
+  });
+  const line = (payload: unknown, type = 'response_item') => JSON.stringify({ type, payload }) + '\n';
+
+  it('builds the Task bubble from the rollout when 0.147 emits no spawn item', async () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'codex-spawn-0147-')), 'r.jsonl');
+    writeFileSync(path, '');
+    mocks.rolloutPath = path;
+
+    const p = run();
+    await feed({ type: 'thread.started', thread_id: 'thread-1' });
+
+    // What codex persists for a spawn: the call, then the activity line binding it to
+    // the thread it created. Nothing is streamed for either.
+    appendFileSync(path,
+      line({ type: 'function_call', name: 'spawn_agent', call_id: 'call_s1', arguments: JSON.stringify({ task_name: 'cr_static', fork_turns: 'none', message: 'gAAAAABqgC5UxYN4TAQyXJF9r5jkyzSKoF8O_5i6SLmkmSdMlfMk4aB7dpw' }) })
+      + line({ type: 'sub_agent_activity', event_id: 'call_s1', agent_thread_id: 'agent-1', agent_path: '/root/cr_static', kind: 'started' }, 'event_msg'));
+
+    await feed(wait0147('item.started'));
+
+    // Keyed by the spawning call_id and carrying agent_id, exactly as the resume parser
+    // reconstructs it — otherwise the turn changes shape on refresh. The task prompt is
+    // a Fernet token on 0.147, hence message_encrypted rather than a bogus prompt.
+    expect(toolUses()).toEqual([{
+      type: 'tool_use',
+      id: 'call_s1',
+      name: 'Task',
+      input: {
+        subagent_type: 'cr_static',
+        description: 'cr_static',
+        message_encrypted: true,
+        agent_id: 'agent-1',
+      },
+    }]);
+    expect(toolResults()).toHaveLength(0);
+
+    // The report is no longer in wait_agent's output — it arrives as an agent_message
+    // authored by the sub-agent's path.
+    appendFileSync(path, line({
+      type: 'agent_message', author: '/root/cr_static', recipient: '/root',
+      content: [{ type: 'input_text', text: 'Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/cr_static\nPayload:\nfound 3 issues' }],
+    }));
+    await feed(wait0147('item.completed'));
+
+    expect(toolUses()).toHaveLength(1); // still one bubble, not a second
+    expect(toolResults()).toEqual([{ tool_use_id: 'call_s1', content: 'found 3 issues' }]);
+
+    stream.close();
+    await p;
+  });
+
+  it('does not replay a previous turn\'s sub-agents when resuming', async () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'codex-spawn-resume-')), 'r.jsonl');
+    writeFileSync(path,
+      line({ type: 'function_call', name: 'spawn_agent', call_id: 'call_old', arguments: JSON.stringify({ task_name: 'old' }) })
+      + line({ type: 'sub_agent_activity', event_id: 'call_old', agent_thread_id: 'agent-old', agent_path: '/root/old', kind: 'started' }, 'event_msg')
+      + line({ type: 'agent_message', author: '/root/old', recipient: '/root', content: [{ type: 'input_text', text: 'Message Type: FINAL_ANSWER\nPayload:\nold report' }] }));
+    mocks.rolloutPath = path;
+
+    const p = codexSpec.runner.run({
+      prompt: 'carry on', images: undefined, cwd: '/repo', sessionId: 'thread-1',
+      params: {} as never, signal: new AbortController().signal,
+      emit, rekey: vi.fn(), currentKey: () => 'k',
+    } as never);
+    await feed({ type: 'thread.started', thread_id: 'thread-1' });
+    await feed(wait0147('item.started'));
+
+    // The whole history is in the rollout the reader walks; only what this turn appends
+    // may become a bubble.
+    expect(toolUses()).toHaveLength(0);
+    expect(toolResults()).toHaveLength(0);
+
+    stream.close();
+    await p;
+  });
 });
 
 describe('codex mcp / web_search / todo_list items', () => {

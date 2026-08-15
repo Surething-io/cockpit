@@ -50,6 +50,11 @@ export const CODEX_AGENT_FN_NAMES: ReadonlySet<string> = new Set([
   'close_agent',
   'send_input',
   'resume_agent',
+  // Roster bookkeeping the model polls while waiting; its output is a status list,
+  // never a result. The live stream has no event for it either, so leaving it out
+  // of this set is what made a resumed turn grow a bare `list_agents` bubble that
+  // was never there live.
+  'list_agents',
 ]);
 
 /**

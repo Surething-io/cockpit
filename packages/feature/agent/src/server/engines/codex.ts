@@ -9,6 +9,7 @@ import { tmpdir } from 'os';
 import type { EngineSpec, ImageData, RunCtx } from './types';
 import { mergeStashedCodexRollout, stashCodexRollout } from './shared/noHistoryRollout';
 import {
+  CODEX_AGENT_MESSAGE_TYPE,
   CODEX_MCP_NAMESPACE_PREFIX,
   CODEX_EXEC_SCRIPT_FN_NAME,
   CODEX_IMAGE_ONLY_TEXT,
@@ -21,6 +22,7 @@ import {
   codexTodoInput,
   codexTodoResultText,
   codexWebSearchCall,
+  parseCodexAgentMessage,
   parseCodexAgentsStates,
   parseCodexExecScript,
   parseCodexSpawnInput,
@@ -117,11 +119,18 @@ export interface RolloutSpawnCall {
 }
 /** An MCP call. Persisted as an ordinary function_call under an `mcp__<server>` namespace. */
 export interface RolloutMcpCall { callId?: string; server: string; tool: string }
+/**
+ * A sub-agent's final report (0.147+ `response_item`/agent_message). Keyed by the
+ * author's agent path, which is what sub_agent_activity also stamps onto the spawn
+ * that created it — the two together route a report to its Task bubble.
+ */
+export interface RolloutAgentReport { author: string; text: string }
 export interface RolloutCalls {
   exec: ReadonlyArray<RolloutExecCall>;
   patch: ReadonlyArray<RolloutPatchCall>;
   spawn: ReadonlyArray<RolloutSpawnCall>;
   mcp: ReadonlyArray<RolloutMcpCall>;
+  reports: ReadonlyArray<RolloutAgentReport>;
 }
 
 /** Extract the target file paths from an apply_patch body (`*** Update File: <path>`). */
@@ -133,13 +142,14 @@ export function parsePatchFiles(input: string): string[] {
   return files;
 }
 
-/** Parse exec_command, apply_patch, spawn_agent and MCP calls out of complete JSONL lines. */
+/** Parse exec_command, apply_patch, spawn_agent, MCP calls and sub-agent reports out of complete JSONL lines. */
 function parseCallLines(
   text: string,
   exec: RolloutExecCall[],
   patch: RolloutPatchCall[],
   spawns: RolloutSpawnCall[],
   mcps: RolloutMcpCall[],
+  reports: RolloutAgentReport[],
 ): void {
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
@@ -147,6 +157,7 @@ function parseCallLines(
       type?: string; name?: string; namespace?: string; call_id?: string;
       arguments?: string; input?: string; output?: string;
       event_id?: string; agent_thread_id?: string; agent_path?: string;
+      author?: string; recipient?: string; content?: unknown;
     } };
     try { entry = JSON.parse(line); } catch { continue; }
     const p = entry.payload;
@@ -175,6 +186,12 @@ function parseCallLines(
       let args: Record<string, unknown> = {};
       try { args = JSON.parse(p.arguments || '{}') as Record<string, unknown>; } catch { /* ignore */ }
       spawns.push({ callId: p.call_id, args });
+    } else if (p.type === CODEX_AGENT_MESSAGE_TYPE) {
+      // 0.147+: the sub-agent's report. wait_agent's output no longer carries it, and
+      // the live stream never mentions it, so this line is the only thing that can
+      // close a Task bubble mid-turn.
+      const report = parseCodexAgentMessage(p);
+      if (report?.final && report.text) reports.push({ author: report.author, text: report.text });
     } else if (p.type === 'function_call_output' && p.call_id) {
       // Back-fill the sub-agent's thread id onto its spawn call. The output lands on a
       // later line (and often a later read) than the call, so this cannot be done above.
@@ -210,8 +227,9 @@ function parseCallLines(
  * Codex writes the call (with its call_id) to the rollout before executing, so by
  * the time we see the live item the entry already exists. This factory returns a
  * reader that maps the growing rollout to its ordered exec list (shell commands,
- * live `command_execution`), patch list (apply_patch edits, live `file_change`) and
- * spawn list (sub-agents, live `collab_tool_call`)
+ * live `command_execution`), patch list (apply_patch edits, live `file_change`),
+ * spawn list and sub-agent reports (see syncSubAgents — on 0.147 these have NO live
+ * event at all, so here the rollout is not an id oracle but the only source)
  * — reading only the bytes appended since the last call (JSONL is append-only),
  * so a long session costs O(total bytes) across a turn, not O(bytes × calls). A
  * StringDecoder keeps multibyte chars intact across the byte boundary; a partial
@@ -226,18 +244,21 @@ export function createRolloutCallReader(): (rolloutPath: string) => RolloutCalls
   const patch: RolloutPatchCall[] = [];
   const spawns: RolloutSpawnCall[] = [];
   const mcps: RolloutMcpCall[] = [];
+  const reports: RolloutAgentReport[] = [];
+
+  const snapshot = (): RolloutCalls => ({ exec, patch, spawn: spawns, mcp: mcps, reports });
 
   const reset = (p: string) => {
     boundPath = p; offset = 0; carry = ''; decoder = new StringDecoder('utf8');
-    exec.length = 0; patch.length = 0; spawns.length = 0; mcps.length = 0;
+    exec.length = 0; patch.length = 0; spawns.length = 0; mcps.length = 0; reports.length = 0;
   };
 
   return (rolloutPath: string): RolloutCalls => {
     if (rolloutPath !== boundPath) reset(rolloutPath);
     let size = 0;
-    try { size = statSync(rolloutPath).size; } catch { return { exec, patch, spawn: spawns, mcp: mcps }; }
+    try { size = statSync(rolloutPath).size; } catch { return snapshot(); }
     if (size < offset) reset(rolloutPath); // file truncated/rewritten → re-scan
-    if (size === offset) return { exec, patch, spawn: spawns, mcp: mcps }; // nothing appended
+    if (size === offset) return snapshot(); // nothing appended
 
     let chunk = '';
     try {
@@ -249,14 +270,14 @@ export function createRolloutCallReader(): (rolloutPath: string) => RolloutCalls
         chunk = decoder.write(buf.subarray(0, n));
         offset += n;
       } finally { closeSync(fd); }
-    } catch { return { exec, patch, spawn: spawns, mcp: mcps }; }
+    } catch { return snapshot(); }
 
     const data = carry + chunk;
     const lastNl = data.lastIndexOf('\n');
-    if (lastNl === -1) { carry = data; return { exec, patch, spawn: spawns, mcp: mcps }; } // no complete line yet
+    if (lastNl === -1) { carry = data; return snapshot(); } // no complete line yet
     carry = data.slice(lastNl + 1);
-    parseCallLines(data.slice(0, lastNl), exec, patch, spawns, mcps);
-    return { exec, patch, spawn: spawns, mcp: mcps };
+    parseCallLines(data.slice(0, lastNl), exec, patch, spawns, mcps, reports);
+    return snapshot();
   };
 }
 
@@ -399,6 +420,7 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
   let spawnSeen = 0; // # of distinct spawn_agent items seen this turn
   let mcpBase = 0;   // # of MCP calls in the rollout before this turn
   let mcpSeen = 0;   // # of distinct mcp_tool_call items seen this turn
+  let reportBase = 0; // # of sub-agent reports in the rollout before this turn
   const agentToolUseIds = new Map<string, string>();
   let codexThreadId: string | null = sessionId || null;
   let rolloutLookups = 0;
@@ -406,14 +428,27 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
   const resolvedToolUseIds = new Map<string, string>();
   const readRollout = createRolloutCallReader();
 
+  /**
+   * Everything on disk when the turn opens belongs to an earlier turn and already has
+   * bubbles; the *Base counters skip it. This may ONLY be called before the model can
+   * have run — codex appends each call to the rollout before executing it, so sampling
+   * any later would count the very call being resolved as history and shift every
+   * index by one. A fresh session needs no sample: its rollout starts empty.
+   */
+  let basesReady = false;
+  const initBases = () => {
+    if (basesReady || !rolloutPath) return;
+    basesReady = true;
+    const c = readRollout(rolloutPath);
+    execBase = c.exec.length; patchBase = c.patch.length;
+    spawnBase = c.spawn.length; mcpBase = c.mcp.length; reportBase = c.reports.length;
+  };
+
   if (sessionId) {
     try {
       rolloutPath = findCodexSessionPath(sessionId);
-      if (rolloutPath) {
-        const c = readRollout(rolloutPath);
-        execBase = c.exec.length; patchBase = c.patch.length; spawnBase = c.spawn.length; mcpBase = c.mcp.length;
-      }
-    } catch { rolloutPath = null; execBase = 0; patchBase = 0; spawnBase = 0; mcpBase = 0; }
+      initBases();
+    } catch { rolloutPath = null; }
   }
 
   const ensureRolloutPath = (): string | null => {
@@ -465,6 +500,25 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
     return cs.map((c) => `${c.kind || 'update'} ${c.path || ''}`.trim()).join('\n');
   };
 
+  /** Task bubbles already emitted this turn, keyed by the spawning call_id. */
+  const spawnEmitted = new Set<string>();
+  /** Sub-agent path (`/root/cr_static`) → its Task bubble, for routing the report. */
+  const agentPathToolUseIds = new Map<string, string>();
+
+  const emitSpawnBubble = (
+    toolUseId: string,
+    input: Record<string, unknown>,
+    agentPath?: string,
+  ) => {
+    spawnEmitted.add(toolUseId);
+    if (agentPath) agentPathToolUseIds.set(agentPath, toolUseId);
+    pendingToolCalls.set(toolUseId, toolUseId);
+    ctx.emit({
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.task, input }] },
+    });
+  };
+
   const emitSpawn = (item: CodexItem) => {
     const agentIds = item.receiver_thread_ids ?? [];
     const path = ensureRolloutPath();
@@ -474,6 +528,7 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
     spawnSeen += 1;
 
     const toolUseId = entry?.callId || codexToolUseId(item);
+    if (spawnEmitted.has(toolUseId)) return; // syncSubAgents got there first
     const args = entry?.args && Object.keys(entry.args).length > 0
       ? entry.args
       : { message: item.prompt || '' };
@@ -482,11 +537,49 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
       agentId: agentIds[0] || entry?.agentId,
     });
     for (const id of agentIds) agentToolUseIds.set(id, toolUseId);
-    pendingToolCalls.set(toolUseId, toolUseId);
-    ctx.emit({
-      type: 'assistant',
-      message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.task, input }] },
-    });
+    emitSpawnBubble(toolUseId, input, entry?.agentPath);
+  };
+
+  /**
+   * Drive the sub-agent bubbles off the rollout, because on 0.147 nothing else can:
+   * `spawn_agent` produces no thread item at all, and the one `collab_tool_call` that
+   * does arrive (`tool: "wait"`) carries an empty `agents_states`/`receiver_thread_ids`.
+   * ≤ 0.14x still comes through handleCollabItem; the two dedupe on the spawning
+   * call_id, which both resolve to.
+   *
+   * Emission waits for the spawn's `agentId` (0.147 stamps it from sub_agent_activity,
+   * ≤ 0.14x from spawn_agent's output) so the bubble is emitted once, complete — a
+   * streamed tool_use cannot be amended the way the resume path mutates its input.
+   * flushPending() is the backstop for a spawn that never got one.
+   */
+  const syncSubAgents = (flushPending = false) => {
+    const path = ensureRolloutPath();
+    if (!path) return;
+    const { spawn, reports } = readRollout(path);
+
+    for (let i = spawnBase; i < spawn.length; i += 1) {
+      const s = spawn[i];
+      if (!s.callId || spawnEmitted.has(s.callId)) continue;
+      if (!s.agentId && !flushPending) continue;
+      emitSpawnBubble(
+        s.callId,
+        parseCodexSpawnInput(s.args, { nickname: s.nickname, agentId: s.agentId }),
+        s.agentPath,
+      );
+      if (s.agentId) agentToolUseIds.set(s.agentId, s.callId);
+    }
+
+    // Both loops re-scan from the base rather than advancing a cursor: a report can
+    // land before its spawn is emittable (no agentId yet), and must still be picked up
+    // on a later pass. Re-emission is what spawnEmitted / pendingToolCalls prevent.
+    for (let i = reportBase; i < reports.length; i += 1) {
+      const { author, text } = reports[i];
+      const toolUseId = agentPathToolUseIds.get(author);
+      // Not pending → an earlier turn's agent, or the ≤ 0.14x wait already reported it.
+      if (!toolUseId || !pendingToolCalls.has(toolUseId)) continue;
+      ctx.emit({ type: 'user', message: { content: [{ tool_use_id: toolUseId, content: text }] } });
+      pendingToolCalls.delete(toolUseId);
+    }
   };
 
   const emitAgentReports = (item: CodexItem) => {
@@ -576,6 +669,11 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
 
   const handle = (event: CodexEvent): void => {
     if (terminated) return;
+    // 0.147 announces sub-agents nowhere in this stream, so every event doubles as a
+    // tick to pick them up off the rollout (see syncSubAgents). Cheap — the reader
+    // returns immediately unless the file grew. Skipped on thread.started, which is
+    // what establishes the thread id the rollout path is looked up by.
+    if (event.type !== 'thread.started') syncSubAgents();
     switch (event.type) {
       case 'thread.started': {
         const threadId = event.thread_id || `codex-${randomUUID()}`;
@@ -583,6 +681,11 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
         ctx.rekey(threadId);
         ctx.emit({ type: 'system', subtype: 'init', session_id: threadId });
         ensureRolloutPath();
+        // Recovery only, and only for a resume: if the constructor could not find the
+        // rollout, this is the last point at which a baseline can still be sampled
+        // before the model runs. Without it syncSubAgents would read the session's
+        // whole spawn history as new and re-emit every Task bubble.
+        if (sessionId) initBases();
         break;
       }
       case 'item.completed': {
@@ -674,6 +777,9 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
         break;
       }
       case 'turn.completed': {
+        // Last chance: emit any spawn whose sub_agent_activity never landed, so a
+        // failed or un-bound sub-agent still leaves a bubble rather than vanishing.
+        syncSubAgents(true);
         const usage = event.usage || {};
         ctx.emit({
           type: 'result',

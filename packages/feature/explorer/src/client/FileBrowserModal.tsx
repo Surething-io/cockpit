@@ -49,7 +49,8 @@ import type { RecentFileEntry } from '@/app/api/files/recent/route';
 import { BlockViewer, type BlockViewerHeaderState } from './fileBrowser/BlockViewer';
 import { BlockDiffViewer } from './fileBrowser/BlockDiffViewer';
 import { StatusDiffPane } from './fileBrowser/StatusDiffPane';
-import { getTargetDirPath, formatDateTime, NOOP, COMMITS_PER_PAGE } from './fileBrowser/utils';
+import { getTargetDirPath, formatDateTime, isImageFile, NOOP, COMMITS_PER_PAGE } from './fileBrowser/utils';
+import { GitImageDiffView } from './fileBrowser/GitImageDiffView';
 
 import { BranchSelector } from './fileBrowser/BranchSelector';
 import { FileImagePreview } from './fileBrowser/FileImagePreview';
@@ -2337,12 +2338,29 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                   </div>
                 ) : gitHistory.compareFileDiff ? (
                   <div className="flex-1 flex flex-col overflow-hidden">
-                    <div className="flex items-center justify-end gap-2 px-3 py-1.5 border-b border-border flex-shrink-0">
-                      <DiffDensityToggle value={compareDensity} onChange={setCompareDensity} />
-                      <DiffViewModeToggle value={compareViewMode} onChange={setCompareViewMode} />
-                    </div>
+                    {/* Images render as before/after previews, so the diff
+                        toggles have nothing to act on — hide them. */}
+                    {!isImageFile(gitHistory.compareFileDiff.filePath) && (
+                      <div className="flex items-center justify-end gap-2 px-3 py-1.5 border-b border-border flex-shrink-0">
+                        <DiffDensityToggle value={compareDensity} onChange={setCompareDensity} />
+                        <DiffViewModeToggle value={compareViewMode} onChange={setCompareViewMode} />
+                      </div>
+                    )}
                     <div className="flex-1 overflow-hidden">
-                      {compareViewMode === 'unified' ? (
+                      {isImageFile(gitHistory.compareFileDiff.filePath) ? (
+                        <GitImageDiffView
+                          cwd={cwd}
+                          filePath={gitHistory.compareFileDiff.filePath}
+                          oldRev={
+                            gitHistory.compareFileDiff.oldRev ??
+                            (gitHistory.compareFileDiff.isNew ? null : gitHistory.compareBaseBranch)
+                          }
+                          newRev={
+                            gitHistory.compareFileDiff.newRev ??
+                            (gitHistory.compareFileDiff.isDeleted ? null : 'HEAD')
+                          }
+                        />
+                      ) : compareViewMode === 'unified' ? (
                         <DiffUnifiedView
                           oldContent={gitHistory.compareFileDiff.oldContent}
                           newContent={gitHistory.compareFileDiff.newContent}

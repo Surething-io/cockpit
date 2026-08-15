@@ -8,6 +8,7 @@ import { promisify } from "util"
 import { Effect } from "effect"
 import { handler, ok } from "@cockpit/effect-runtime/server"
 import { AppError, ValidationError } from "@cockpit/effect-core"
+import { isImagePath } from "@cockpit/feature-explorer/server/files/shared"
 
 const execAsync = promisify(exec)
 
@@ -39,6 +40,17 @@ const runGit = (
 
 const runGitOrEmpty = (cmd: string, cwd: string): Effect.Effect<string> =>
   runGit(cmd, cwd).pipe(Effect.orElseSucceed(() => ""))
+
+/** Does `<rev>:<file>` resolve to a blob? Costs no content transfer. */
+const blobExists = (
+  cwd: string,
+  rev: string,
+  file: string
+): Effect.Effect<boolean> =>
+  runGit(`git cat-file -e ${rev}:"${file}"`, cwd).pipe(
+    Effect.as(true),
+    Effect.orElseSucceed(() => false)
+  )
 
 const getBranchChangedFiles = (cwd: string, base: string) =>
   Effect.gen(function* () {
@@ -122,6 +134,25 @@ const getBranchChangedFiles = (cwd: string, base: string) =>
 
 const getBranchFileDiff = (cwd: string, base: string, file: string) =>
   Effect.gen(function* () {
+    // Same rule as commit-diff: image bytes are never decoded into a string.
+    // The client renders each side as an <img> against /api/git/blob.
+    if (isImagePath(file)) {
+      const [inOld, inNew] = yield* Effect.all(
+        [blobExists(cwd, base, file), blobExists(cwd, "HEAD", file)],
+        { concurrency: "unbounded" }
+      )
+      return ok({
+        oldContent: "",
+        newContent: "",
+        filePath: file,
+        isNew: !inOld && inNew,
+        isDeleted: inOld && !inNew,
+        isImage: true,
+        oldRev: inOld ? base : null,
+        newRev: inNew ? "HEAD" : null,
+      })
+    }
+
     const oldContent = yield* runGitOrEmpty(`git show ${base}:"${file}"`, cwd)
     const newContent = yield* runGitOrEmpty(`git show HEAD:"${file}"`, cwd)
 

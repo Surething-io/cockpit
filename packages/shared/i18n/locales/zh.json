@@ -1064,7 +1064,13 @@
     "externalChange": "同期其他会话/外部进程的变更",
     "reconstructed": "参数重建",
     "reconstructedHint": "由工具调用参数重建，非磁盘快照",
-    "truncated": "文件过多，仅显示部分"
+    "truncated": "文件过多，仅显示部分",
+    "imageBefore": "变更前",
+    "imageAfter": "变更后",
+    "imageAdded": "新增",
+    "imageDeleted": "已删除",
+    "imageLoadFailed": "图片加载失败",
+    "imageUnavailable": "该版本无此图片"
   },
   "commitDetail": {
     "title": "提交详情",

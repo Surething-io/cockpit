@@ -57,6 +57,16 @@ export function getMimeType(ext: string): string {
   return MIME_TABLE[ext.toLowerCase()] || 'application/octet-stream';
 }
 
+/**
+ * Extension-only image test, usable where there is no file on disk to `stat`
+ * (e.g. a git blob at some revision). `classify()` stays the entry point when
+ * a size is available — this is the same extension table without the size
+ * dimension.
+ */
+export function isImagePath(filePath: string): boolean {
+  return IMAGE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
 // -------- Path safety --------
 
 /**

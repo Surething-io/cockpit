@@ -6,6 +6,8 @@ import { DiffView, DiffUnifiedView, HtmlPreviewModal } from '@cockpit/feature-ex
 import { DiffDensityToggle } from './DiffDensityToggle';
 import { DiffViewModeToggle } from './DiffViewModeToggle';
 import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, type GitFileNode } from './GitFileTree';
+import { GitImageDiffView } from './fileBrowser/GitImageDiffView';
+import { isImageFile } from './fileBrowser/utils';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { fetchCommitDiff } from './effect/gitClient';
 import { formatAsHumanReadable, isHtmlFile } from './toolCallUtils';
@@ -38,6 +40,10 @@ interface FileDiff {
   filePath: string;
   isNew: boolean;
   isDeleted: boolean;
+  /** Image paths carry no content — see fileBrowser/types.ts FileDiff. */
+  isImage?: boolean;
+  oldRev?: string | null;
+  newRev?: string | null;
 }
 
 // Format date time for display (e.g., "01-15 14:30" or "2024-01-15 14:30")
@@ -223,6 +229,11 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
 
   if (!isOpen || !commit) return null;
 
+  // Images get the preview treatment the status pane gives them instead of a
+  // text diff — `git show` on a PNG is mojibake, not a document. The extension
+  // check is a fallback for a server that predates the `isImage` flag.
+  const isImageDiff = !!fileDiff && (fileDiff.isImage === true || isImageFile(fileDiff.filePath));
+
   // Content section (shared between embedded and modal modes)
   const content = (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -259,10 +270,14 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
             <span className="text-foreground-subtle">{t('commitDetail.files')}</span>
             <span>{t('commitDetail.nChanges', { count: files.length })}</span>
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            <DiffDensityToggle value={density} onChange={setDensity} />
-            <DiffViewModeToggle value={viewMode} onChange={setViewMode} />
-          </div>
+          {/* Density / split toggles say nothing about an image — hidden for
+              image files, same as the status pane's toolbar. */}
+          {!isImageDiff && (
+            <div className="ml-auto flex items-center gap-2">
+              <DiffDensityToggle value={density} onChange={setDensity} />
+              <DiffViewModeToggle value={viewMode} onChange={setViewMode} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -294,7 +309,16 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
           {isLoadingDiff ? (
             <div className="h-full flex items-center justify-center text-muted-foreground text-sm">{t('commitDetail.loadingDiff')}</div>
           ) : fileDiff ? (
-            viewMode === 'unified' ? (
+            isImageDiff ? (
+              <GitImageDiffView
+                cwd={cwd}
+                filePath={fileDiff.filePath}
+                // Fall back to the commit itself when the server didn't name
+                // the revisions: the image at least renders on its "after" side.
+                oldRev={fileDiff.oldRev ?? (fileDiff.isNew ? null : `${commit.hash}^1`)}
+                newRev={fileDiff.newRev ?? (fileDiff.isDeleted ? null : commit.hash)}
+              />
+            ) : viewMode === 'unified' ? (
               <DiffUnifiedView
                 oldContent={fileDiff.oldContent}
                 newContent={fileDiff.newContent}

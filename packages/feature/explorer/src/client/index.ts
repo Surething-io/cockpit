@@ -83,6 +83,7 @@ export * from './fileBrowser/BlockCommentBubbles';
 export * from './fileBrowser/BlockDiffMinimap';
 export * from './fileBrowser/BlockDiffViewer';
 export * from './fileBrowser/FileImagePreview';
+export * from './fileBrowser/GitImageDiffView';
 export * from './fileBrowser/FileTOCSection';
 export * from './fileBrowser/FunctionHistoryDrawer';
 export * from './fileBrowser/StatusDiffPane';

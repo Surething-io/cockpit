@@ -12,6 +12,7 @@ import { promisify } from "util"
 import { Effect } from "effect"
 import { handler, ok } from "@cockpit/effect-runtime/server"
 import { AppError, ValidationError } from "@cockpit/effect-core"
+import { isImagePath } from "@cockpit/feature-explorer/server/files/shared"
 
 const execAsync = promisify(exec)
 
@@ -45,6 +46,17 @@ const runGitOrEmpty = (
   cwd: string
 ): Effect.Effect<string> =>
   runGit(cmd, cwd).pipe(Effect.orElseSucceed(() => ""))
+
+/** Does `<rev>:<file>` resolve to a blob? Costs no content transfer. */
+const blobExists = (
+  cwd: string,
+  rev: string,
+  file: string
+): Effect.Effect<boolean> =>
+  runGit(`git cat-file -e ${rev}:"${file}"`, cwd).pipe(
+    Effect.as(true),
+    Effect.orElseSucceed(() => false)
+  )
 
 const getChangedFiles = (cwd: string, hash: string) =>
   Effect.gen(function* () {
@@ -142,6 +154,31 @@ const getFileDiff = (cwd: string, hash: string, file: string) =>
       `git rev-parse ${hash}^1`,
       cwd
     )).trim()
+
+    // Images never travel as content. `git show` on a PNG through execAsync's
+    // utf-8 default yields mojibake, which the text differ then happily renders
+    // line by line — that garbage is exactly what the history panel used to
+    // show. All the client needs is which revisions hold the blob; it renders
+    // an <img> against /api/git/blob for each side.
+    if (isImagePath(file)) {
+      const [inOld, inNew] = yield* Effect.all(
+        [
+          parentHash ? blobExists(cwd, parentHash, file) : Effect.succeed(false),
+          blobExists(cwd, hash, file),
+        ],
+        { concurrency: "unbounded" }
+      )
+      return ok({
+        oldContent: "",
+        newContent: "",
+        filePath: file,
+        isNew: !inOld && inNew,
+        isDeleted: inOld && !inNew,
+        isImage: true,
+        oldRev: inOld ? parentHash : null,
+        newRev: inNew ? hash : null,
+      })
+    }
 
     const oldContent = parentHash
       ? yield* runGitOrEmpty(`git show ${parentHash}:${file}`, cwd)

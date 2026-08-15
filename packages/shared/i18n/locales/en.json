@@ -1064,7 +1064,13 @@
     "externalChange": "Concurrent change from another session/process",
     "reconstructed": "reconstructed",
     "reconstructedHint": "Rebuilt from tool-call parameters — not a disk snapshot",
-    "truncated": "Too many files — list truncated"
+    "truncated": "Too many files — list truncated",
+    "imageBefore": "Before",
+    "imageAfter": "After",
+    "imageAdded": "Added",
+    "imageDeleted": "Deleted",
+    "imageLoadFailed": "Failed to load image",
+    "imageUnavailable": "Image not present in either revision"
   },
   "commitDetail": {
     "title": "Commit Details",

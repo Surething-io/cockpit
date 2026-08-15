@@ -85,6 +85,14 @@ export interface FileDiff {
   filePath: string;
   isNew: boolean;
   isDeleted: boolean;
+  /**
+   * Image paths short-circuit on the server: content is empty (bytes are never
+   * decoded into a string) and the two revisions holding the blob are named
+   * instead, for <GitImageDiffView/> to load via /api/git/blob.
+   */
+  isImage?: boolean;
+  oldRev?: string | null;
+  newRev?: string | null;
 }
 
 // Tab type

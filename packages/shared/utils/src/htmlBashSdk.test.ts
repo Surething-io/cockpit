@@ -36,6 +36,97 @@ class FakeSocket {
   }
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+/**
+ * Minimal DOM for the injected script. Only what the SDK actually touches — the
+ * call-log panel is built with createElement/appendChild/textContent and read
+ * back through `domText`, which is enough to pin what the user ends up seeing.
+ */
+function fakeEl(tag: string) {
+  const style: any = {
+    setProperty(k: string, v: string) {
+      style[k] = v
+    },
+  }
+  const node: any = {
+    tagName: tag,
+    style,
+    children: [] as any[],
+    attrs: {} as Record<string, string>,
+    text: "",
+    classList: { contains: () => false, toggle() {} },
+    listeners: {} as Record<string, Array<(ev: any) => void>>,
+    captured: null as number | null,
+    setAttribute(k: string, v: string) {
+      node.attrs[k] = v
+    },
+    getAttribute(k: string) {
+      return node.attrs[k] ?? null
+    },
+    addEventListener(type: string, fn: (ev: any) => void) {
+      ;(node.listeners[type] ||= []).push(fn)
+    },
+    setPointerCapture(id: number) {
+      node.captured = id
+    },
+    hasPointerCapture(id: number) {
+      return node.captured === id
+    },
+    releasePointerCapture() {
+      node.captured = null
+    },
+    getBoundingClientRect: () => ({ top: 0, left: 0, width: 36, height: 36 }),
+    appendChild(c: any) {
+      node.children.push(c)
+      return c
+    },
+    removeChild(c: any) {
+      const i = node.children.indexOf(c)
+      if (i >= 0) node.children.splice(i, 1)
+      return c
+    },
+    get firstChild() {
+      return node.children[0] ?? null
+    },
+  }
+  // Assigning textContent drops existing children, as the real thing does — the
+  // panel relies on that nowhere, but a fake that forgets it hides stale rows.
+  Object.defineProperty(node, "textContent", {
+    get: () => node.text,
+    set: (v: string) => {
+      node.text = v
+      node.children = []
+    },
+  })
+  return node
+}
+
+/** Flattened visible text of a fake subtree. */
+function domText(node: any): string {
+  if (!node) return ""
+  return [node.text, ...node.children.map(domText)].filter(Boolean).join(" ")
+}
+
+/** Depth-first search for a node matching `pred`. */
+function findEl(node: any, pred: (n: any) => boolean): any {
+  if (!node) return null
+  if (pred(node)) return node
+  for (const c of node.children) {
+    const hit = findEl(c, pred)
+    if (hit) return hit
+  }
+  return null
+}
+
+const byLabel = (root: any, label: string) =>
+  findEl(root, (n) => n.attrs["aria-label"] === label)
+
+/** Dispatch to a node's own listeners (no bubbling — handlers under test are
+ *  all registered on the dock itself, which is where real events bubble to). */
+const fire = (node: any, type: string, ev: any = {}) =>
+  (node.listeners[type] || []).forEach((fn: (e: any) => void) => fn(ev))
+
 function bootSdk() {
   const sockets: FakeSocket[] = []
   const html = injectBashSdk("<html><head></head><body></body></html>", {
@@ -65,20 +156,13 @@ function bootSdk() {
     location: { protocol: "http:", host: "localhost:3456" },
     document: {
       readyState: "complete",
-      documentElement: {
-        lang: "",
-        classList: { toggle() {} },
-        attrs: {} as Record<string, string>,
-        setAttribute(k: string, v: string) {
-          this.attrs[k] = v
-        },
-        getAttribute(k: string) {
-          return this.attrs[k] ?? null
-        },
-      },
+      documentElement: fakeEl("html"),
+      // No <meta name="cockpit-theme"> — the theme toggle stays opted out, so
+      // the dock here holds the call-log button alone.
       querySelector: () => null,
+      createElement: (tag: string) => fakeEl(tag),
       addEventListener() {},
-      body: null,
+      body: fakeEl("body"),
     },
     localStorage: { getItem: () => null, setItem() {} },
     matchMedia: () => ({ matches: false }),
@@ -100,8 +184,9 @@ function bootSdk() {
   /** Deliver a postMessage to the SDK's own listeners. */
   const postMessage = (data: unknown) =>
     messageHandlers.forEach((fn) => fn({ data }))
+  const body = (ctx as { document: { body: any } }).document.body
   // `raw` for tests that assert on promise settlement; `cockpit` for the rest.
-  return { cockpit, raw, sockets, ctx, postMessage }
+  return { cockpit, raw, sockets, ctx, postMessage, body }
 }
 
 describe("injected SDK — WebSocket lifecycle", () => {
@@ -196,6 +281,168 @@ describe("injected SDK — WebSocket lifecycle", () => {
     const id2 = JSON.parse(sockets[1].sent[0]).id
     sockets[1].onmessage!({ data: JSON.stringify({ type: "exit", id: id2, code: 7 }) })
     await expect(second).resolves.toMatchObject({ exitCode: 7 })
+  })
+})
+
+/**
+ * The dock carries every host button, so a mistake here takes out the theme
+ * toggle and the call log at once — which is exactly what happened when the
+ * drag was first hoisted off the button and onto the container.
+ */
+describe("injected SDK — dock", () => {
+  /** The dock is the only thing the SDK mounts before a panel is opened. */
+  const dockOf = (body: any) => body.children[0]
+
+  const press = (dock: any, btn: any) =>
+    fire(dock, "pointerdown", { button: 0, pointerId: 1, clientX: 20, clientY: 20, target: btn })
+
+  const clickEv = (btn: any) => {
+    const ev: any = {
+      target: btn,
+      stopped: false,
+      stopPropagation() { ev.stopped = true },
+      preventDefault() {},
+    }
+    return ev
+  }
+
+  it("captures the pointer on the pressed button, not on the dock", () => {
+    const { body, cockpit } = bootSdk()
+    cockpit.bash("echo hi")
+    const btn = byLabel(body, "Bash call log")
+
+    press(dockOf(body), btn)
+    // Per Pointer Events a click is dispatched to the CAPTURE target, so
+    // capturing on the container makes every button inside it dead on click.
+    expect(btn.captured).toBe(1)
+    expect(dockOf(body).captured).toBe(null)
+  })
+
+  it("swallows the click that trails a drag, but never a plain press", () => {
+    const { body, cockpit } = bootSdk()
+    cockpit.bash("echo hi")
+    const dock = dockOf(body)
+    const btn = byLabel(body, "Bash call log")
+
+    press(dock, btn)
+    fire(dock, "pointerup", { pointerId: 1, target: btn })
+    const plain = clickEv(btn)
+    fire(dock, "click", plain)
+    expect(plain.stopped).toBe(false)
+
+    press(dock, btn)
+    fire(dock, "pointermove", {
+      pointerId: 1, clientX: 200, clientY: 300, target: btn, preventDefault() {},
+    })
+    fire(dock, "pointerup", { pointerId: 1, target: btn })
+    const afterDrag = clickEv(btn)
+    fire(dock, "click", afterDrag)
+    expect(afterDrag.stopped).toBe(true)
+
+    // And the next press starts clean — a swallowed click must not leak.
+    press(dock, btn)
+    fire(dock, "pointerup", { pointerId: 1, target: btn })
+    const next = clickEv(btn)
+    fire(dock, "click", next)
+    expect(next.stopped).toBe(false)
+  })
+})
+
+/**
+ * The call log is what tells a user that a previewed page — which runs with full
+ * shell access the moment it is opened — actually ran something. Its value is
+ * entirely in being unavoidable and accurate, so these pin both: the button
+ * cannot be suppressed by the page, and no command can end up missing or stuck
+ * mid-flight in the panel.
+ */
+describe("injected SDK — bash call log", () => {
+  /** Open the log panel and return the whole document's flattened text. */
+  const openLog = (body: any) => {
+    byLabel(body, "Bash call log").onclick()
+    return domText(body)
+  }
+
+  it("stays invisible until the page actually calls bash", () => {
+    const { body, cockpit } = bootSdk()
+    // A page that never shells out gets no chrome at all — not even a container.
+    expect(body.children).toHaveLength(0)
+
+    cockpit.bash("echo hi")
+    expect(byLabel(body, "Bash call log")).toBeTruthy()
+  })
+
+  it("records a call and its outcome", () => {
+    const { body, raw, sockets } = bootSdk()
+    raw.bash("rm -rf /important").catch(() => {})
+    sockets[0].open()
+    const id = JSON.parse(sockets[0].sent[0]).id
+
+    // Opened mid-flight: the command is there before it has an outcome.
+    const midFlight = openLog(body)
+    expect(midFlight).toContain("rm -rf /important")
+    expect(midFlight).toContain("running")
+
+    sockets[0].onmessage!({ data: JSON.stringify({ type: "exit", id, code: 3 }) })
+    const after = domText(body)
+    expect(after).toContain("exit 3")
+    expect(after).not.toContain("running")
+    expect(after).toContain("Bash calls (1)")
+  })
+
+  it("settles a call the connection killed, rather than leaving it running", () => {
+    const { body, cockpit, sockets } = bootSdk()
+    cockpit.bash("sleep 100")
+    sockets[0].open()
+    openLog(body)
+
+    sockets[0].readyState = 3
+    sockets[0].onclose!()
+    expect(domText(body)).toContain("error: connection closed")
+  })
+
+  it("marks a killed background job as killed", () => {
+    const { raw, body, sockets } = bootSdk()
+    const job = (raw as unknown as {
+      bash: (c: string, o: unknown) => { kill: () => void }
+    }).bash("tail -f log", { background: true })
+    sockets[0].open()
+    job.kill()
+    const shown = openLog(body)
+    expect(shown).toContain("killed")
+    expect(shown).toContain("background")
+  })
+
+  it("follows the host theme on a page that never opted into theming", () => {
+    const { body, cockpit, postMessage } = bootSdk()
+    cockpit.bash("echo hi")
+    openLog(body)
+    const panel = findEl(body, (n: any) => !!n.style["--cpk-bg"])
+
+    // No <meta name="cockpit-theme"> here, so there is no .dark class to read —
+    // the panel has to take the host's push, or it sits dark on a light page.
+    expect(panel.style["--cpk-fg"]).toBe("#1c1c1e")
+    postMessage({ type: "THEME_CHANGE", theme: "dark" })
+    expect(panel.style["--cpk-fg"]).toBe("#e8e8ea")
+    postMessage({ type: "THEME_CHANGE", theme: "light" })
+    expect(panel.style["--cpk-fg"]).toBe("#1c1c1e")
+  })
+
+  it("clears settled calls on demand but keeps the ones still running", () => {
+    const { body, raw, sockets } = bootSdk()
+    raw.bash("done-one").catch(() => {})
+    raw.bash("still-going").catch(() => {})
+    sockets[0].open()
+    const doneId = JSON.parse(sockets[0].sent[0]).id
+    sockets[0].onmessage!({ data: JSON.stringify({ type: "exit", id: doneId, code: 0 }) })
+    openLog(body)
+
+    findEl(body, (n: any) => n.textContent === "Clear").onclick()
+    const after = domText(body)
+    // Dropping a row for a command that is at this moment executing would make
+    // it look like it never happened.
+    expect(after).not.toContain("done-one")
+    expect(after).toContain("still-going")
+    expect(after).toContain("Bash calls (1)")
   })
 })
 

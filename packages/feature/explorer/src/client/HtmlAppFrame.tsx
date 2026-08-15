@@ -132,8 +132,23 @@ export function HtmlAppFrame({ content, filePath, cwd, onContentSearch, reloadKe
   // load (srcDoc change / file switch replaces the document; listeners on
   // the old document die with it).
   const handleIframeLoad = useCallback(() => {
-    if (!commentsEnabled) return;
     const iframe = iframeRef.current;
+    // Push the host's current (resolved) theme and language to the just-loaded
+    // document, exactly as the console browser bubble does. Both are ONE-SHOT
+    // pushes the injected SDK parks as state; later changes arrive via the
+    // global THEME_CHANGE / cockpit:language-change broadcasts (ThemeProvider /
+    // I18nProvider). Without this the SDK's own chrome — the theme toggle, the
+    // bash call log — had no idea what Cockpit's theme was in THIS surface and
+    // fell back to the OS preference, so the same app looked right in the
+    // console bubble and wrong in the Explorer preview.
+    const win = iframe?.contentWindow;
+    if (win) {
+      const dark = document.documentElement.classList.contains('dark');
+      win.postMessage({ type: 'THEME_CHANGE', theme: dark ? 'dark' : 'light' }, '*');
+      win.postMessage({ type: 'cockpit:language-change', lang: i18n.language }, '*');
+    }
+
+    if (!commentsEnabled) return;
     const doc = iframe?.contentDocument;
     if (!iframe || !doc) return;
 

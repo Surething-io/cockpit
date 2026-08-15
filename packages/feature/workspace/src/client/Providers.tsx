@@ -11,6 +11,19 @@ interface ProvidersProps {
   children: React.ReactNode;
 }
 
+/**
+ * NOTE for anything added below with viewport-relative `position: fixed`:
+ * this tree is mounted MORE THAN ONCE per window. Every project pane is an
+ * <iframe> loading Cockpit itself (Workspace.tsx), so the parent plus every
+ * open project each mount their own Providers, each in its own JS context with
+ * its own module-level state. An iframe pane's right edge is the window's right
+ * edge and its top edge is near the window's, so a "top-right" overlay in a
+ * frame lands almost exactly on the parent's copy.
+ *
+ * A singleton overlay must therefore gate on `window.self === window.top` —
+ * see UpdateProgressCard. Per-frame surfaces (toasts, which belong to whatever
+ * acted) are fine as they are.
+ */
 export function Providers({ children }: ProvidersProps) {
   // Suppress the native right-click menu across Cockpit; app-owned React context
   // menus keep working because they preventDefault before this bubble listener.

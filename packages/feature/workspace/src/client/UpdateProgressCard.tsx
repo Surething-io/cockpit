@@ -64,12 +64,36 @@ export function UpdateProgressCard() {
   const { stale } = useServerBuildGuard();
   const [staleDismissed, setStaleDismissed] = useState(false);
 
-  // Recover a failed (or still-running) update the reload threw away.
+  /**
+   * Top-level window only.
+   *
+   * Every project pane is an <iframe> loading Cockpit itself (Workspace.tsx),
+   * so this component — and its whole Providers tree — is mounted once per open
+   * project as well as in the parent. Each frame is a separate JS context with
+   * its OWN module-level store, and each iframe is `absolute inset-0` in a pane
+   * whose right edge IS the window's right edge, so every one of them renders a
+   * card at the same `top-4 right-4` and they stack on top of each other.
+   *
+   * Worse than duplicate pixels: only the parent runs the update, so the iframe
+   * copies have no progress state and fall through to the stale-build branch —
+   * two different messages overlapping.
+   *
+   * Read in an effect rather than during render: `window` does not exist during
+   * SSR, and returning different markup on the first client render would be a
+   * hydration mismatch.
+   */
+  const [isTopWindow, setIsTopWindow] = useState(false);
   useEffect(() => {
-    if (restored.current) return;
+    setIsTopWindow(window.self === window.top);
+  }, []);
+
+  // Recover a failed (or still-running) update the reload threw away. Gated on
+  // the same flag so the iframes do not each start their own poll loop.
+  useEffect(() => {
+    if (!isTopWindow || restored.current) return;
     restored.current = true;
     void restoreUpdateProgress();
-  }, []);
+  }, [isTopWindow]);
 
   const inFlight = progress.visible && IN_FLIGHT.has(progress.stage);
 
@@ -91,7 +115,7 @@ export function UpdateProgressCard() {
   // the build guard would otherwise fire mid-update and say the same thing
   // twice.
   const stalePrompt = !progress.visible && stale && !staleDismissed;
-  if (!progress.visible && !stalePrompt) return null;
+  if (!isTopWindow || (!progress.visible && !stalePrompt)) return null;
 
   const elapsedSec = progress.startedAt ? Math.max(0, Math.round((now - progress.startedAt) / 1000)) : 0;
   const baselineSec = progress.baselineMs ? Math.round(progress.baselineMs / 1000) : null;
@@ -127,7 +151,14 @@ export function UpdateProgressCard() {
     <div
       // Top-right, above the panels, below modals and tooltips: this must stay
       // visible across panel swipes without ever blocking a dialog.
-      className="fixed top-4 right-4 z-[100] w-80 rounded-lg border border-border
+      //
+      // z-[110] puts it one step above the toast lane (z-[100]), which shares
+      // this exact `top-4` band. Toasts are transient and re-fireable; this
+      // card is persistent and is the only route to a failed update's fix
+      // command, so if the two ever meet the card must be the one on top.
+      // Toasts are also capped at 26rem so they stop short of this column on
+      // any normal window — see ToastContainer in shared-ui.
+      className="fixed top-4 right-4 z-[110] w-80 rounded-lg border border-border
                  bg-background/95 p-3 shadow-lv2 backdrop-blur"
       role="status"
       aria-live="polite"

@@ -161,8 +161,15 @@ function SessionToastCard({
           </svg>
         </button>
       </div>
+      {/*
+        line-clamp rather than `truncate`: a one-line ellipsis cuts the summary
+        at ~20 CJK chars, which is rarely enough to tell which task finished.
+        Two lines fill the card's existing min-height instead of leaving it
+        half empty. `break-words` keeps long unbroken paths and URLs from
+        overflowing the fixed max-width.
+      */}
       {item.message && (
-        <div className="relative text-xs text-muted-foreground truncate mt-1 ml-6">
+        <div className="relative text-xs text-muted-foreground line-clamp-2 break-words mt-1 ml-6">
           {item.message}
         </div>
       )}

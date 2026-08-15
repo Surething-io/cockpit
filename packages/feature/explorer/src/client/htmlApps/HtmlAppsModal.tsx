@@ -345,12 +345,22 @@ export function HtmlAppsModal({
               <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-border flex-shrink-0">
                 {/* Same icon treatment as the minimised dock pill, so an app
                     looks the same collapsed and expanded. */}
-                <span className="flex items-center gap-2 min-w-0 flex-1">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   {item.icon
                     ? <span className="text-base leading-none flex-shrink-0">{item.icon}</span>
                     : <AppWindow className="w-4 h-4 flex-shrink-0" />}
-                  <span className="text-sm text-muted-foreground truncate min-w-0" data-tooltip={item.path}>{item.title}</span>
-                </span>
+                  <span className="text-sm text-muted-foreground truncate max-w-[35%]" data-tooltip={item.title}>{item.title}</span>
+                  <span className="text-sm text-muted-foreground flex-shrink-0" aria-hidden="true">-</span>
+                  <span className="font-mono text-sm text-muted-foreground truncate min-w-0" data-tooltip={item.path}>{item.path}</span>
+                  <button
+                    onClick={() => handleCopyPath(item.path)}
+                    className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-hover transition-colors flex-shrink-0"
+                    title={t('common.copyPath')}
+                    aria-label={t('common.copyPath')}
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                </div>
                 <button onClick={onMinimizeHtmlAppPreview} className="text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-hover transition-colors flex-shrink-0" title={t('common.minimize')}>
                   <Minimize2 className="w-4 h-4" />
                 </button>

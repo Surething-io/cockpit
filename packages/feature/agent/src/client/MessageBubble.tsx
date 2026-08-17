@@ -16,7 +16,6 @@ import { isMutatingToolName } from '../shared/toolMutation';
 // Allowed by MODULES.md as transitional reverse imports.
 import { HtmlPreviewModal, isMarkdownFile, isHtmlFile, isImageFile, resolveRelativePath, fetchFileStat } from '@cockpit/feature-explorer';
 import { MarkdownRenderer } from '@cockpit/shared-ui';
-import { isFileViewerPath } from '@cockpit/shared-utils';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { MdPreviewModal } from './MdPreviewModal';
 import { readFileForPreview } from './effect/agentClient';
@@ -342,6 +341,7 @@ const TextPartRow = memo(function TextPartRow({
   isUser,
   isStreaming,
   onOpenFileLink,
+  onPreviewFile,
   cwd,
 }: {
   text: string;
@@ -349,6 +349,8 @@ const TextPartRow = memo(function TextPartRow({
   isUser: boolean;
   isStreaming: boolean;
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
+  /** Absolute path → this message's own preview modal (the tool-call doc chips' target). */
+  onPreviewFile?: (path: string) => void;
   cwd?: string;
 }) {
   const { t } = useTranslation();
@@ -359,21 +361,25 @@ const TextPartRow = memo(function TextPartRow({
     /**
      * A file outside the tab's project can't go to the Explorer: that tree is
      * hard-rooted at cwd and the server's `resolveSafePath` refuses to escape
-     * it. A Console browser bubble can show it — but only the extensions the
-     * built-in file-viewer renders.
+     * it. It can go to this message's own preview modal, though — that stack
+     * reads through `/api/file`, which takes an absolute path and has never
+     * been cwd-bound, and it's the same modal the tool-call doc chips open, so
+     * a linked file and a touched file preview identically.
      *
-     * `.html` is excluded on purpose even though the bubble *would* render it:
-     * `/apps/local` injects `window.cockpit` (full shell access) into an
-     * un-sandboxed iframe, so auto-running an out-of-project page straight off
-     * an AI reply link grants a privilege the user never asked for. See the
-     * HTML Apps Runtime notes in CLAUDE.md.
+     * Gated to the extensions that stack actually renders. `.html` is excluded
+     * even though HtmlPreviewModal would display it: `/apps/local` injects
+     * `window.cockpit` (full shell access) into an un-sandboxed iframe, so
+     * previewing an out-of-project page straight off an AI reply link would run
+     * it — a privilege the user never granted. See CLAUDE.md's HTML Apps
+     * Runtime notes; every other entry into that frame is an explicit gesture
+     * on a file the user chose.
      */
     const openOutsideProject = (abs: string) => {
-      if (!isFileViewerPath(abs)) {
+      if (!onPreviewFile || !(isMarkdownFile(abs) || isImageFile(abs))) {
         toast(t('toast.fileOutsideProject'), 'error');
         return;
       }
-      window.dispatchEvent(new CustomEvent('console-open-browser', { detail: { url: abs } }));
+      onPreviewFile(abs);
     };
 
     return (href: string) => {
@@ -405,7 +411,7 @@ const TextPartRow = memo(function TextPartRow({
         .catch(() => openOutsideProject(target.abs!));
       return true;
     };
-  }, [cwd, isUser, onOpenFileLink, t]);
+  }, [cwd, isUser, onOpenFileLink, onPreviewFile, t]);
 
   const body = (
     <>
@@ -839,6 +845,8 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                   isUser={isUser}
                   isStreaming={!!message.isStreaming && i === textParts.length - 1}
                   onOpenFileLink={onOpenFileLink}
+                  // Plain setState — referentially stable, so TextPartRow's memo holds.
+                  onPreviewFile={setPreviewFile}
                   cwd={cwd}
                 />
               ))}

@@ -149,7 +149,7 @@
     "copiedAllQA": "All Q&A copied",
     "sentQA": "Sent to AI",
     "readFileFailed": "Failed to read file",
-    "fileOutsideProject": "File is outside this project — cannot preview",
+    "fileOutsideProject": "File is outside this project — only Markdown and images can be previewed",
     "reviewCreated": "Review created, link copied",
     "reviewUpdated": "Review updated, link copied",
     "reviewCreateFailed": "Failed to create review",

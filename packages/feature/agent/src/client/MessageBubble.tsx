@@ -14,8 +14,9 @@ import { isMutatingToolName } from '../shared/toolMutation';
 //   - FileContextMenu: chat-adjacent code that hasn't migrated yet.
 //   - MarkdownRenderer: a generic markdown renderer; candidate for shared-ui.
 // Allowed by MODULES.md as transitional reverse imports.
-import { HtmlPreviewModal, isMarkdownFile, isHtmlFile, isImageFile, resolveRelativePath } from '@cockpit/feature-explorer';
+import { HtmlPreviewModal, isMarkdownFile, isHtmlFile, isImageFile, resolveRelativePath, fetchFileStat } from '@cockpit/feature-explorer';
 import { MarkdownRenderer } from '@cockpit/shared-ui';
+import { isFileViewerPath } from '@cockpit/shared-utils';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { MdPreviewModal } from './MdPreviewModal';
 import { readFileForPreview } from './effect/agentClient';
@@ -239,7 +240,33 @@ interface MessageBubbleProps {
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
 }
 
-function parseLocalFileLink(href: string, cwd?: string): { path: string; lineNumber?: number } | null {
+/**
+ * Canonical spelling of an absolute path, for prefix-comparing it against cwd.
+ * Drops a trailing slash and macOS's `/private` prefix — `/tmp/x` and
+ * `/private/tmp/x` are the same file, and a bare string compare would call one
+ * of them "outside the project".
+ */
+function normalizeAbsPath(p: string): string {
+  const trimmed = p.replace(/\/+$/, '');
+  return trimmed.startsWith('/private/') ? trimmed.slice('/private'.length) : trimmed;
+}
+
+/**
+ * A local file link parsed out of an AI reply.
+ *
+ * `rel` is always the cwd-relative candidate (the Explorer tree's contract).
+ * `abs` is non-null only when the href was absolute *and* not under cwd — the
+ * one case the string alone can't settle, because `/docs/x.md` is equally
+ * plausible as a repo-root-relative link or as another project's real path.
+ * The click handler resolves that with a single stat rather than guessing.
+ */
+interface LocalFileLink {
+  rel: string;
+  abs: string | null;
+  lineNumber?: number;
+}
+
+function parseLocalFileLink(href: string, cwd?: string): LocalFileLink | null {
   if (!href || href.startsWith('#')) return null;
   if (/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith('file:')) return null;
 
@@ -267,9 +294,20 @@ function parseLocalFileLink(href: string, cwd?: string): { path: string; lineNum
 
   pathPart = pathPart.trim();
   if (!pathPart) return null;
-  if (cwd && pathPart.startsWith(cwd + '/')) pathPart = pathPart.slice(cwd.length + 1);
-  else if (cwd && pathPart === cwd) return null;
-  else if (pathPart.startsWith('/')) pathPart = pathPart.slice(1);
+
+  const line = lineNumber && lineNumber > 0 ? { lineNumber } : {};
+  const root = cwd ? normalizeAbsPath(cwd) : '';
+
+  if (pathPart.startsWith('/')) {
+    const abs = normalizeAbsPath(pathPart);
+    if (root && abs === root) return null; // the project dir itself, not a file
+    if (root && abs.startsWith(root + '/')) {
+      // Plainly inside the project — the Explorer tree can show it.
+      return { rel: resolveRelativePath('', abs.slice(root.length + 1)), abs: null, ...line };
+    }
+    // Outside cwd (or no cwd at all): ambiguous, keep BOTH readings.
+    return { rel: resolveRelativePath('', abs), abs, ...line };
+  }
 
   const looksLocal =
     pathPart.startsWith('./') ||
@@ -278,10 +316,7 @@ function parseLocalFileLink(href: string, cwd?: string): { path: string; lineNum
     /\.[A-Za-z0-9][A-Za-z0-9_-]*$/.test(pathPart);
   if (!looksLocal) return null;
 
-  return {
-    path: resolveRelativePath('', pathPart),
-    ...(lineNumber && lineNumber > 0 ? { lineNumber } : {}),
-  };
+  return { rel: resolveRelativePath('', pathPart), abs: null, ...line };
 }
 
 // Threshold for collapsing tool calls — any tool call (≥1) renders inside a collapsible header,
@@ -316,15 +351,61 @@ const TextPartRow = memo(function TextPartRow({
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
   cwd?: string;
 }) {
+  const { t } = useTranslation();
+
   const handleLinkClick = useMemo(() => {
     if (isUser || !onOpenFileLink) return undefined;
+
+    /**
+     * A file outside the tab's project can't go to the Explorer: that tree is
+     * hard-rooted at cwd and the server's `resolveSafePath` refuses to escape
+     * it. A Console browser bubble can show it — but only the extensions the
+     * built-in file-viewer renders.
+     *
+     * `.html` is excluded on purpose even though the bubble *would* render it:
+     * `/apps/local` injects `window.cockpit` (full shell access) into an
+     * un-sandboxed iframe, so auto-running an out-of-project page straight off
+     * an AI reply link grants a privilege the user never asked for. See the
+     * HTML Apps Runtime notes in CLAUDE.md.
+     */
+    const openOutsideProject = (abs: string) => {
+      if (!isFileViewerPath(abs)) {
+        toast(t('toast.fileOutsideProject'), 'error');
+        return;
+      }
+      window.dispatchEvent(new CustomEvent('console-open-browser', { detail: { url: abs } }));
+    };
+
     return (href: string) => {
       const target = parseLocalFileLink(href, cwd);
       if (!target) return false;
-      onOpenFileLink(target);
+
+      if (!target.abs) {
+        onOpenFileLink({ path: target.rel, ...(target.lineNumber ? { lineNumber: target.lineNumber } : {}) });
+        return true;
+      }
+      if (!cwd) {
+        openOutsideProject(target.abs);
+        return true;
+      }
+
+      // Ambiguous absolute href. `/docs/x.md` may be a repo-root-relative link
+      // or another project's real path, and it's also how a project file gets
+      // spelled when cwd is a symlink/worktree alias. One local stat (<10ms)
+      // settles it; the click is consumed either way so the anchor never
+      // navigates the window away mid-decision.
+      BrowserRuntime.runPromise(fetchFileStat(cwd, target.rel))
+        .then((res) => {
+          if (res.ok && res.data?.exists) {
+            onOpenFileLink({ path: target.rel, ...(target.lineNumber ? { lineNumber: target.lineNumber } : {}) });
+          } else {
+            openOutsideProject(target.abs!);
+          }
+        })
+        .catch(() => openOutsideProject(target.abs!));
       return true;
     };
-  }, [cwd, isUser, onOpenFileLink]);
+  }, [cwd, isUser, onOpenFileLink, t]);
 
   const body = (
     <>

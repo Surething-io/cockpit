@@ -2,11 +2,9 @@
  * /api/kimi/models — live model list from Kimi Code's OpenAI-compatible
  * /coding/v1/models.
  *
- * Unlike DeepSeek this list drives BOTH modes: Kimi serves the same four ids over
- * the Anthropic- and OpenAI-compatible protocols, and which of them a key may call
- * depends on the membership tier — a hardcoded list would show tiers their plan
- * cannot run. The response also carries context_length and think_efforts, which
- * engines/kimi.ts turns into the SDK's context/effort env.
+ * Which models a key may call depends on its membership tier, so the list stays live.
+ * Legacy coding ids remain runnable for saved sessions but are no longer offered in the
+ * picker.
  *
  * Behaviour lives in ../engineModels (shared with DeepSeek).
  */
@@ -22,4 +20,5 @@ export const GET = makeModelsRoute({
   label: 'Kimi',
   url: `${KIMI_OPENAI_BASE_URL}/models`,
   store: kimiApiKey,
+  hiddenModelIds: ['kimi-for-coding', 'kimi-for-coding-highspeed'],
 });

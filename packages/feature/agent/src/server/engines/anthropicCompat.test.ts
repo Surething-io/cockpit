@@ -9,6 +9,10 @@ import { glmProvider as glm } from './glm';
 // only surfaces as a mid-turn HTTP failure.
 
 describe('resolveEndpoints (multi-region providers)', () => {
+  it('ships k3 as the Kimi fallback model', () => {
+    expect(kimi.defaultModel).toBe('k3');
+  });
+
   it('glm: English UI defaults to the international host, everything else to mainland', () => {
     expect(resolveEndpoints(glm, {}, 'en').openAiBaseUrl).toContain('api.z.ai');
     expect(resolveEndpoints(glm, {}, 'zh').openAiBaseUrl).toContain('open.bigmodel.cn');

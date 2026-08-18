@@ -539,8 +539,7 @@ export function EngineConfigPicker({
                       <EngineCheck selected={selected} />
                       <span className="truncate">{m.id}</span>
                       {/* The id is what the engine sends and what a bug report needs, so it
-                          stays primary; the provider's display name only earns space when it
-                          says something the id doesn't (kimi-for-coding → "K2.7 Coding"). */}
+                          stays primary; a distinct provider display name remains secondary. */}
                       {m.label && m.label !== m.id && (
                         <span className="truncate text-[10px] text-muted-foreground">{m.label}</span>
                       )}

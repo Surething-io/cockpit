@@ -53,6 +53,8 @@ export function makeModelsRoute(opts: {
   /** A thunk for providers whose host depends on settings (GLM's region). */
   url: string | (() => Promise<string>);
   store: ApiKeyStore;
+  /** Model ids that remain valid for existing sessions but should not be offered anew. */
+  hiddenModelIds?: readonly string[];
 }) {
   return handler(() =>
     Effect.gen(function* () {
@@ -63,7 +65,10 @@ export function makeModelsRoute(opts: {
             store: opts.store,
             label: opts.label,
           });
-          return (data.data || []).map(toModelInfo).filter((m): m is EngineModelInfo => !!m);
+          const hiddenIds = new Set(opts.hiddenModelIds);
+          return (data.data || [])
+            .map(toModelInfo)
+            .filter((m): m is EngineModelInfo => !!m && !hiddenIds.has(m.id));
         },
         catch: (cause) =>
           new AgentError({ provider: opts.provider, kind: agentErrorKind(cause), cause }),

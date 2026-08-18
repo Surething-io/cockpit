@@ -4,7 +4,7 @@ import { makeAnthropicCompatSpec, type AnthropicCompatProvider } from './anthrop
 // Kimi Code's OpenAI-compatible endpoint — used by the chat loop and by the model/quota
 // routes. https://www.kimi.com/code/docs
 export const KIMI_OPENAI_BASE_URL = 'https://api.kimi.com/coding/v1';
-const DEFAULT_MODEL = 'kimi-for-coding';
+const DEFAULT_MODEL = 'k3';
 
 /** Exported for the endpoint test — the values below are what actually ships. */
 export const kimiProvider: AnthropicCompatProvider = {

@@ -616,11 +616,10 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     addTab(initialCwd, undefined, 'New Codex Chat', { engine: 'codex', appendToEnd: true });
   }, [initialCwd, addTab]);
 
-  // Create new Kimi tab (appended to end). Defaults to kimi-for-coding: the entry tier,
-  // callable on every membership level, so a fresh tab never opens on a model this account
-  // is not entitled to. The picker in the chat header switches it.
+  // Create new Kimi tab (appended to end). Seed the tab with the preferred model so the
+  // picker and the first request agree before any session state has been persisted.
   const handleNewKimiTab = useCallback(() => {
-    addTab(initialCwd, undefined, 'New Kimi Chat', { engine: 'kimi', kimiModel: 'kimi-for-coding', appendToEnd: true });
+    addTab(initialCwd, undefined, 'New Kimi Chat', { engine: 'kimi', kimiModel: 'k3', appendToEnd: true });
   }, [initialCwd, addTab]);
 
   // Create new GLM tab (appended to end). Seeded with an explicit model for the same reason

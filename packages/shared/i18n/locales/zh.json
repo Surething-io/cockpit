@@ -59,7 +59,8 @@
     "builtin": "内置",
     "global": "全局",
     "project": "项目",
-    "current": "当前"
+    "current": "当前",
+    "code": "代码"
   },
   "htmlApps": {
     "title": "HTML 应用",
@@ -1215,6 +1216,11 @@
   },
   "gitFileTree": {
     "noFiles": "无文件"
+  },
+  "deps": {
+    "action": "依赖关系",
+    "none": "无",
+    "symbolMessage": "分析 {{name}} ({{path}}:{{lines}}) 的依赖关系。\n\n调用者：{{callers}}\n调用了：{{callees}}\n外部依赖：{{externals}}\n\n请说明它耦合在哪些模块上，以及哪些依赖是可以收敛掉的。"
   },
   "explain": {
     "action": "解释一下",

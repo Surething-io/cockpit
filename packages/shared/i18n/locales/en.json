@@ -59,7 +59,8 @@
     "builtin": "Built-in",
     "global": "Global",
     "project": "Project",
-    "current": "Current"
+    "current": "Current",
+    "code": "Code"
   },
   "htmlApps": {
     "title": "HTML Apps",
@@ -1215,6 +1216,11 @@
   },
   "gitFileTree": {
     "noFiles": "No files"
+  },
+  "deps": {
+    "action": "Dependencies",
+    "none": "none",
+    "symbolMessage": "Analyse the dependencies of {{name}} ({{path}}:{{lines}}).\n\nCallers: {{callers}}\nCalls: {{callees}}\nExternal: {{externals}}\n\nExplain which modules it is coupled to, and which of those dependencies could be narrowed."
   },
   "explain": {
     "action": "Explain",

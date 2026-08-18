@@ -113,7 +113,22 @@ interface CodeBlockProps {
   comments?: readonly CodeComment[];
   /** Click handler for an existing comment marker. */
   onCommentClick?: (comment: CodeComment, e: React.MouseEvent) => void;
+  /** This block's pins, forwarded from FunctionRow purely to build the
+   *  "dependencies" prompt — the header button needs the same edges the
+   *  left/right columns draw, and they are resolved one level up. */
+  upstream?: readonly RowPin[];
+  downstream?: readonly RowPin[];
 }
+
+/**
+ * Shared by both header AI actions. `h-4 leading-4` pins them to the 16px line
+ * box of the header's `text-xs`: the padded hit area must NOT grow the header,
+ * because HEADER_HEIGHT_PX (29) is hardcoded and every callee pin's `top` is
+ * derived from it. (`py-0.5` would compute to 17px and shift the whole right
+ * column by a pixel.)
+ */
+const AI_ACTION_CLASS =
+  'flex-shrink-0 h-4 leading-4 px-1.5 rounded text-[10px] text-brand hover:bg-brand/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent';
 
 function CodeBlock({
   symbol,
@@ -123,6 +138,8 @@ function CodeBlock({
   comments,
   onCommentClick,
   addedLines,
+  upstream,
+  downstream,
 }: CodeBlockProps) {
   const { resolvedTheme } = useTheme();
   const { t } = useTranslation();
@@ -131,6 +148,7 @@ function CodeBlock({
   // active chat — so it reads the bridge here instead of being threaded
   // down through FunctionRow. Null bridge (no chat host) → no button.
   const aiBridge = useAIBridge();
+  const hasPins = (upstream?.length ?? 0) + (downstream?.length ?? 0) > 0;
   const language = useMemo(
     () => getLanguageFromPath(symbol.filePath),
     [symbol.filePath],
@@ -249,18 +267,39 @@ function CodeBlock({
             derives every `top` from it. (`py-0.5` would compute to 17px and
             shift every pin in the right column by a pixel.) */}
         {aiBridge && (
-          <button
-            onClick={() => aiBridge.sendMessage(t('explain.symbolMessage', {
-              name: symbol.name,
-              path: symbol.filePath,
-              lines: `${symbol.startLine}-${symbol.endLine}`,
-            }))}
-            disabled={aiBridge.isLoading}
-            title={aiBridge.isLoading ? t('comments.aiResponding') : undefined}
-            className="flex-shrink-0 h-4 leading-4 px-1.5 rounded text-[10px] text-brand hover:bg-brand/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-          >
-            {t('explain.action')}
-          </button>
+          <>
+            <button
+              onClick={() => aiBridge.sendMessage(t('explain.symbolMessage', {
+                name: symbol.name,
+                path: symbol.filePath,
+                lines: `${symbol.startLine}-${symbol.endLine}`,
+              }))}
+              disabled={aiBridge.isLoading}
+              title={aiBridge.isLoading ? t('comments.aiResponding') : undefined}
+              className={AI_ACTION_CLASS}
+            >
+              {t('explain.action')}
+            </button>
+            {/* Hidden when the block has no edges at all: asking "analyse the
+                dependencies of X" with three empty lists wastes a turn, and an
+                absent button says "nothing calls this, it calls nothing" faster
+                than a reply would. */}
+            {hasPins && (
+              <button
+                onClick={() => aiBridge.sendMessage(t('deps.symbolMessage', {
+                  name: symbol.name,
+                  path: symbol.filePath,
+                  lines: `${symbol.startLine}-${symbol.endLine}`,
+                  ...dependencySummary(upstream ?? [], downstream ?? [], t('deps.none')),
+                }))}
+                disabled={aiBridge.isLoading}
+                title={aiBridge.isLoading ? t('comments.aiResponding') : undefined}
+                className={AI_ACTION_CLASS}
+              >
+                {t('deps.action')}
+              </button>
+            )}
+          </>
         )}
         <span className="flex-1" />
         {hasChange && (
@@ -571,6 +610,57 @@ function pinKey(side: 'in' | 'out', pin: RowPin): string {
 }
 
 /**
+ * Render a block's pins as three prose lists for the "dependencies" prompt.
+ *
+ * Project-internal edges (cross / self / method) are listed one by one — those
+ * names are the whole point of the question. `ext` pins are rolled up per
+ * package instead: a single block routinely carries a dozen of them (`join`,
+ * `resolve`, `basename`, …) and listing each would bury the project edges in
+ * npm noise, while "which packages does this lean on" is the only thing worth
+ * asking about externals anyway.
+ *
+ * Sent as text rather than as a hidden structured payload because the chat
+ * transcript is the user's record of what was asked — a prompt that names its
+ * own inputs can be read back and corrected six messages later.
+ */
+function dependencySummary(
+  upstream: readonly RowPin[],
+  downstream: readonly RowPin[],
+  none: string,
+): { callers: string; callees: string; externals: string } {
+  const name = (p: RowPin): string | null => {
+    switch (p.kind) {
+      case 'cross':
+      case 'self':
+        return `${p.external.name} (${p.external.filePath})`;
+      case 'method':
+        return `${p.receiverName}.${p.methodName}()`;
+      case 'ext':
+        return null; // rolled up per package below
+    }
+  };
+  const list = (pins: readonly RowPin[]): string => {
+    const names = pins.map(name).filter((n): n is string => n !== null);
+    return names.length ? names.join(', ') : none;
+  };
+
+  const byPackage = new Map<string, string[]>();
+  for (const p of downstream) {
+    if (p.kind !== 'ext') continue;
+    const names = byPackage.get(p.packageSpec);
+    if (names) names.push(p.name);
+    else byPackage.set(p.packageSpec, [p.name]);
+  }
+  const externals = [...byPackage].map(([pkg, names]) => `${pkg} (${names.join(', ')})`);
+
+  return {
+    callers: list(upstream),
+    callees: list(downstream),
+    externals: externals.length ? externals.join('; ') : none,
+  };
+}
+
+/**
  * Accent decision: cross / self use accentQnames lookup (target function
  * also changed). Ext / method pins never accent — there's no "other
  * end" inside the project graph to mark.
@@ -694,6 +784,8 @@ function FunctionRow({
         comments={comments}
         onCommentClick={onCommentClick}
         addedLines={addedLines}
+        upstream={upstream}
+        downstream={downstream}
       />
       {/* Right column: callees absolutely positioned, each `top` aligned
           to its first call site so the pin sits next to the actual line.
@@ -2299,7 +2391,7 @@ function Header({
             onClick={onSwitchToCode}
             className="text-xs px-2 py-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"
           >
-            Code
+            {t('common.code', 'Code')}
           </button>
         )}
       </div>

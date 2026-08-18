@@ -13,6 +13,10 @@ describe('resolveEndpoints (multi-region providers)', () => {
     expect(kimi.defaultModel).toBe('k3');
   });
 
+  it('ships glm-5.3 as the GLM fallback model', () => {
+    expect(glm.defaultModel).toBe('glm-5.3');
+  });
+
   it('glm: English UI defaults to the international host, everything else to mainland', () => {
     expect(resolveEndpoints(glm, {}, 'en').openAiBaseUrl).toContain('api.z.ai');
     expect(resolveEndpoints(glm, {}, 'zh').openAiBaseUrl).toContain('open.bigmodel.cn');

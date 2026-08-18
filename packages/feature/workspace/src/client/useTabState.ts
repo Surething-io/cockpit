@@ -626,7 +626,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   // kimi is: the tab's model must be DECIDED at creation, otherwise nothing is persisted for
   // the session and the picker has no value to show until the first round trip.
   const handleNewGlmTab = useCallback(() => {
-    addTab(initialCwd, undefined, 'New GLM Chat', { engine: 'glm', glmModel: 'glm-5.2', appendToEnd: true });
+    addTab(initialCwd, undefined, 'New GLM Chat', { engine: 'glm', glmModel: 'glm-5.3', appendToEnd: true });
   }, [initialCwd, addTab]);
 
   // Create new Ollama tab (appended to end)

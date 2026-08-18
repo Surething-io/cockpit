@@ -18,7 +18,7 @@ const GLM_REGIONS: Record<string, EngineEndpoints> = {
 /** Region ids, for the picker. Keep in sync with GLM_REGIONS. */
 export const GLM_REGION_IDS = Object.keys(GLM_REGIONS);
 
-const DEFAULT_MODEL = 'glm-5.2';
+const DEFAULT_MODEL = 'glm-5.3';
 
 /** Exported for the endpoint test — the values below are what actually ships. */
 export const glmProvider: AnthropicCompatProvider = {

@@ -150,7 +150,7 @@
     "copiedAllQA": "All Q&A copied",
     "sentQA": "Sent to AI",
     "readFileFailed": "Failed to read file",
-    "fileOutsideProject": "File is outside this project — only Markdown and images can be previewed",
+    "fileOutsideProject": "File is outside this project — only Markdown, CSV and images can be previewed",
     "reviewCreated": "Review created, link copied",
     "reviewUpdated": "Review updated, link copied",
     "reviewCreateFailed": "Failed to create review",
@@ -464,6 +464,13 @@
     "noContentSearchResults": "No results",
     "enterKeywordToSearch": "Enter keyword to search file contents",
     "searchMinChars": "Search requires at least 2 characters"
+  },
+  "csv": {
+    "table": "Table",
+    "raw": "Raw",
+    "empty": "Empty table",
+    "summary": "{{rows}} rows · {{cols}} columns",
+    "loadMore": "Load more ({{shown}} / {{total}} shown)"
   },
   "codeViewer": {
     "fileModifiedExternally": "File was modified externally. Saving will overwrite external changes.",

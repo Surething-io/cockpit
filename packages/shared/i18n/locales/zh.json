@@ -150,7 +150,7 @@
     "copiedAllQA": "已复制所有问答",
     "sentQA": "已发送给 AI",
     "readFileFailed": "读取文件失败",
-    "fileOutsideProject": "文件在当前项目之外，仅支持预览 Markdown 和图片",
+    "fileOutsideProject": "文件在当前项目之外，仅支持预览 Markdown、CSV 和图片",
     "reviewCreated": "评审已创建，链接已复制",
     "reviewUpdated": "评审已更新，链接已复制",
     "reviewCreateFailed": "创建评审失败",
@@ -464,6 +464,13 @@
     "noContentSearchResults": "无匹配结果",
     "enterKeywordToSearch": "输入关键词搜索文件内容",
     "searchMinChars": "搜索内容至少需要 2 个字符"
+  },
+  "csv": {
+    "table": "表格",
+    "raw": "原始内容",
+    "empty": "空表格",
+    "summary": "{{rows}} 行 · {{cols}} 列",
+    "loadMore": "加载更多（已显示 {{shown}} / {{total}}）"
   },
   "codeViewer": {
     "fileModifiedExternally": "文件已被外部修改，保存将覆盖外部更改",

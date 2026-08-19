@@ -14,7 +14,7 @@ import { isMutatingToolName } from '../shared/toolMutation';
 //   - FileContextMenu: chat-adjacent code that hasn't migrated yet.
 //   - MarkdownRenderer: a generic markdown renderer; candidate for shared-ui.
 // Allowed by MODULES.md as transitional reverse imports.
-import { HtmlPreviewModal, isMarkdownFile, isHtmlFile, isImageFile, resolveRelativePath, fetchFileStat } from '@cockpit/feature-explorer';
+import { HtmlPreviewModal, CsvPreviewModal, isMarkdownFile, isHtmlFile, isImageFile, isCsvFile, resolveRelativePath, fetchFileStat } from '@cockpit/feature-explorer';
 import { MarkdownRenderer } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { MdPreviewModal } from './MdPreviewModal';
@@ -366,7 +366,8 @@ const TextPartRow = memo(function TextPartRow({
      * been cwd-bound, and it's the same modal the tool-call doc chips open, so
      * a linked file and a touched file preview identically.
      *
-     * Gated to the extensions that stack actually renders. `.html` is excluded
+     * Gated to the extensions that stack actually renders (markdown, images,
+     * and csv/tsv as a parsed table). `.html` is excluded
      * even though HtmlPreviewModal would display it: `/apps/local` injects
      * `window.cockpit` (full shell access) into an un-sandboxed iframe, so
      * previewing an out-of-project page straight off an AI reply link would run
@@ -375,7 +376,7 @@ const TextPartRow = memo(function TextPartRow({
      * on a file the user chose.
      */
     const openOutsideProject = (abs: string) => {
-      if (!onPreviewFile || !(isMarkdownFile(abs) || isImageFile(abs))) {
+      if (!onPreviewFile || !(isMarkdownFile(abs) || isImageFile(abs) || isCsvFile(abs))) {
         toast(t('toast.fileOutsideProject'), 'error');
         return;
       }
@@ -561,7 +562,8 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     [message.toolCalls]
   );
 
-  // Extract deduplicated previewable paths (.md / .html / .htm / images) from
+  // Extract deduplicated previewable paths (.md / .html / .htm / .csv / .tsv /
+  // images) from
   // Read/Edit/Write tool calls. Single-click opens an in-modal preview.
   const docFiles = useMemo(() => {
     if (!message.toolCalls) return [];
@@ -570,7 +572,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     for (const tc of message.toolCalls) {
       if (tc.name === 'Read' || tc.name === 'Edit' || tc.name === 'Write') {
         const fp = (tc.input as { file_path?: string }).file_path;
-        if (fp && (isMarkdownFile(fp) || isHtmlFile(fp) || isImageFile(fp)) && !seen.has(fp)) {
+        if (fp && (isMarkdownFile(fp) || isHtmlFile(fp) || isImageFile(fp) || isCsvFile(fp)) && !seen.has(fp)) {
           seen.add(fp);
           result.push(fp);
         }
@@ -954,6 +956,11 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                         <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4-4 3 3 4-4 5 5" />
                       </svg>
+                    ) : isCsvFile(fp) ? (
+                      // CSV/TSV — table glyph
+                      <svg className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm0 4h16M10 10v10" />
+                      </svg>
                     ) : isHtmlFile(fp) ? (
                       // HTML — code/`</>` glyph to distinguish from markdown docs
                       <svg className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1139,7 +1146,8 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
       )}
 
       {/* File preview — image via raw <img src>, html in a same-origin iframe
-          with the bash SDK (i.e. previewing it runs it), md via the rich preview */}
+          with the bash SDK (i.e. previewing it runs it), csv as a parsed table,
+          md via the rich preview */}
       {previewFile && isImageFile(previewFile) && (
         <ImageFilePreviewModal filePath={previewFile} onClose={() => setPreviewFile(null)} />
       )}
@@ -1151,6 +1159,12 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             cwd={cwd}
             onClose={() => setPreviewFile(null)}
             onContentSearch={onContentSearch}
+          />
+        ) : isCsvFile(previewFile) ? (
+          <CsvPreviewModal
+            filePath={previewFile}
+            content={previewContent}
+            onClose={() => setPreviewFile(null)}
           />
         ) : (
           <MdPreviewModal

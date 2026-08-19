@@ -220,6 +220,13 @@ export function isHtmlFile(filePath: string): boolean {
   return lower.endsWith('.html') || lower.endsWith('.htm');
 }
 
+/** Delimited-text files the CSV table preview can parse (`.tsv` included: same
+ *  grid, tab delimiter). */
+export function isCsvFile(filePath: string): boolean {
+  const lower = filePath.toLowerCase();
+  return lower.endsWith('.csv') || lower.endsWith('.tsv');
+}
+
 export function isJsonFile(filePath: string): boolean {
   return filePath.toLowerCase().endsWith('.json');
 }

@@ -36,7 +36,11 @@ export function useFileTree({ cwd }: UseFileTreeOptions) {
   const [searchExactMatch, setSearchDirExact] = useState(false);
   // New file creation state
   const [creatingItem, setCreatingItem] = useState<{ type: 'file'; parentPath: string } | null>(null);
-  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  // The initial tree load starts in FileBrowserModal's mount effect. Mark it
+  // loading from the first render so external file-open requests cannot be
+  // consumed against an empty tree and then lose their parent expansion when
+  // the persisted tree state arrives.
+  const [isLoadingFiles, setIsLoadingFiles] = useState(true);
   const [isLoadingContent, setIsLoadingContent] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);

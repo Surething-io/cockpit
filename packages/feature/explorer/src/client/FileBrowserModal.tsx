@@ -28,7 +28,8 @@ import { FileTree, type GitStatusMap, type GitStatusCode } from './FileTree';
 import { GitFileTree, buildGitFileTree, collectFilesUnderNode } from './GitFileTree';
 import { MenuContainerProvider } from '@cockpit/shared-ui';
 import { CodeViewer } from '@cockpit/feature-explorer';
-import { isMarkdownFile, isHtmlFile, isJsonFile, isSkillFile, formatAsHumanReadable, THEME_JSON_COLORS } from './toolCallUtils';
+import { isMarkdownFile, isHtmlFile, isJsonFile, isCsvFile, isSkillFile, formatAsHumanReadable, THEME_JSON_COLORS } from './toolCallUtils';
+import { CsvTableView } from './CsvTableView';
 import { ExternalLink, BookmarkPlus, SquareTerminal } from 'lucide-react';
 import { toExternalBrowserAppUrl, toLocalAppUrl } from '@cockpit/shared-utils';
 import { useAddHtmlApp } from './htmlApps/useAddHtmlApp';
@@ -786,9 +787,18 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
 
   // ========== Auto-select first recent file when switching to tree/recent tab ==========
   const prevTabRef = useRef<TabType>(activeTab);
+  // A file link also switches `activeTab` to tree. On the following render the
+  // recent-file effect would otherwise mistake that programmatic transition
+  // for a normal status/history → tree switch and overwrite the explicit file.
+  const skipNextRecentAutoSelectRef = useRef(false);
   useEffect(() => {
     const prevTab = prevTabRef.current;
     prevTabRef.current = activeTab;
+
+    if (activeTab === 'tree' && skipNextRecentAutoSelectRef.current) {
+      skipNextRecentAutoSelectRef.current = false;
+      return;
+    }
 
     if ((activeTab === 'tree' || activeTab === 'recent') && fileTree.recentFiles.length > 0) {
       const isFromOtherTab = prevTab === 'status' || prevTab === 'history';
@@ -946,14 +956,19 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
 
   useEffect(() => {
     if (!fileOpenRequest) return;
+    // `loadFiles` hydrates the persisted expansion state. Let it finish before
+    // selecting a deep file so that hydration cannot overwrite the parent
+    // directories expanded by handleSelectFile.
+    if (fileTree.isLoadingFiles) return;
     if (lastFileOpenNonceRef.current === fileOpenRequest.nonce) return;
     lastFileOpenNonceRef.current = fileOpenRequest.nonce;
+    skipNextRecentAutoSelectRef.current = true;
     setEditorMode('code');
     setActiveTab('tree');
     if (fileOpenRequest.lineNumber != null) setPreviewMarkdown(false);
     selectFileWithSaveRef.current(fileOpenRequest.path, fileOpenRequest.lineNumber);
     setShouldScrollToSelected(true);
-  }, [fileOpenRequest, setPreviewMarkdown, setShouldScrollToSelected]);
+  }, [fileOpenRequest, fileTree.isLoadingFiles, setPreviewMarkdown, setShouldScrollToSelected]);
 
   // ========== Code Map header slots (shared by the plain and diff variants) ==========
   // Both map variants take over the whole right panel, so their header is the
@@ -1899,7 +1914,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                               carries the diff overlay across. */}
                           <DiffDensityToggle value={treeDiffDensity} onChange={setTreeDiffDensity} />
                           <DiffViewModeToggle value={treeDiffViewMode} onChange={setTreeDiffViewMode} />
-                          {!isMarkdownFile(fileTree.selectedPath) && !isHtmlFile(fileTree.selectedPath) && !isJsonFile(fileTree.selectedPath) && (
+                          {!isMarkdownFile(fileTree.selectedPath) && !isHtmlFile(fileTree.selectedPath) && !isJsonFile(fileTree.selectedPath) && !isCsvFile(fileTree.selectedPath) && (
                             <button
                               onClick={() => setEditorMode('map')}
                               className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-hover"
@@ -1943,12 +1958,12 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                               }
                             />
                           )}
-                          {fileTree.fileContent?.type === 'text' && (isMarkdownFile(fileTree.selectedPath) || isHtmlFile(fileTree.selectedPath) || isJsonFile(fileTree.selectedPath)) && (() => {
+                          {fileTree.fileContent?.type === 'text' && (isMarkdownFile(fileTree.selectedPath) || isHtmlFile(fileTree.selectedPath) || isJsonFile(fileTree.selectedPath) || isCsvFile(fileTree.selectedPath)) && (() => {
                             // Preview toggle: ON → main area renders the md / html / json
-                            // preview in-place (replacing CodeViewer). HTML uses its OWN
+                            // / csv preview in-place (replacing CodeViewer). HTML uses its OWN
                             // flag (previewHtml, default OFF) so an interactive+SDK preview
                             // never auto-renders — the click is the trust gesture. md/json
-                            // keep the shared, default-on previewMarkdown flag.
+                            // keep the shared, default-on previewMarkdown flag, and so does csv.
                             const isHtml = isHtmlFile(fileTree.selectedPath);
                             const on = isHtml ? fileTree.previewHtml : fileTree.previewMarkdown;
                             const toggle = () => isHtml ? fileTree.setPreviewHtml(v => !v) : fileTree.setPreviewMarkdown(v => !v);
@@ -2016,7 +2031,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                               </>
                             );
                           })()}
-                          {fileTree.fileContent?.type === 'text' && !((fileTree.previewMarkdown && (isMarkdownFile(fileTree.selectedPath) || isJsonFile(fileTree.selectedPath))) || (fileTree.previewHtml && isHtmlFile(fileTree.selectedPath))) && (
+                          {fileTree.fileContent?.type === 'text' && !((fileTree.previewMarkdown && (isMarkdownFile(fileTree.selectedPath) || isJsonFile(fileTree.selectedPath) || isCsvFile(fileTree.selectedPath))) || (fileTree.previewHtml && isHtmlFile(fileTree.selectedPath))) && (
                             <button
                               onClick={fileTree.handleToggleBlame}
                               disabled={fileTree.isLoadingBlame}
@@ -2036,7 +2051,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                           )}
                           {/* Edit — semi-stable (hidden only in md-preview submode), so it sits
                               left of the always-present Copy / Code Map right-edge anchors. */}
-                          {fileTree.fileContent?.type === 'text' && !((fileTree.previewMarkdown && (isMarkdownFile(fileTree.selectedPath) || isJsonFile(fileTree.selectedPath))) || (fileTree.previewHtml && isHtmlFile(fileTree.selectedPath))) && (
+                          {fileTree.fileContent?.type === 'text' && !((fileTree.previewMarkdown && (isMarkdownFile(fileTree.selectedPath) || isJsonFile(fileTree.selectedPath) || isCsvFile(fileTree.selectedPath))) || (fileTree.previewHtml && isHtmlFile(fileTree.selectedPath))) && (
                             <button
                               onClick={() => fileTree.setShowEditor(true)}
                               className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-hover"
@@ -2067,7 +2082,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                               physically gone when Code Map mode is on.
                               Hidden for markdown — code-structure map is
                               meaningless for prose. */}
-                          {fileTree.fileContent?.type === 'text' && !isMarkdownFile(fileTree.selectedPath) && !isHtmlFile(fileTree.selectedPath) && !isJsonFile(fileTree.selectedPath) && (
+                          {fileTree.fileContent?.type === 'text' && !isMarkdownFile(fileTree.selectedPath) && !isHtmlFile(fileTree.selectedPath) && !isJsonFile(fileTree.selectedPath) && !isCsvFile(fileTree.selectedPath) && (
                             <button
                               onClick={() => setEditorMode('map')}
                               className="px-1.5 py-0.5 text-xs rounded transition-colors text-muted-foreground hover:bg-hover"
@@ -2165,6 +2180,15 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                               </pre>
                             </div>
                           </div>
+                        ) : (fileTree.previewMarkdown && isCsvFile(fileTree.selectedPath) && !fileTree.showBlame) ? (
+                          // In-place CSV/TSV table — same toggle UX as markdown/json;
+                          // turning the preview off falls through to CodeViewer, which
+                          // is the raw delimited source.
+                          <CsvTableView
+                            content={fileTree.fileContent.content}
+                            filePath={fileTree.selectedPath}
+                            className="h-full"
+                          />
                         ) : (fileTree.previewMarkdown && isMarkdownFile(fileTree.selectedPath) && !fileTree.showBlame) ? (
                           // In-place markdown preview replaces CodeViewer when the global
                           // toggle is on. `embedded` drops the inner header (host toolbar

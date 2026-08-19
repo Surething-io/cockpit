@@ -150,6 +150,18 @@ function callSubject(call: CallEntry): string {
   return call.fullSubject || call.subject;
 }
 
+/** Keep enough tool input to identify a call without letting a pasted script
+ *  take over the timeline or the diff toolbar. The complete value remains in
+ *  the tooltip. */
+function callSubjectPreview(call: CallEntry, maxChars: number, maxLines: number): string {
+  const subject = callSubject(call);
+  const lines = subject.split('\n');
+  const lineLimited = lines.length > maxLines ? lines.slice(0, maxLines).join('\n') : subject;
+  const preview = lineLimited.length > maxChars ? lineLimited.slice(0, maxChars) : lineLimited;
+  const truncated = lines.length > maxLines || lineLimited.length > maxChars;
+  return truncated ? `${preview.trimEnd()}…` : preview;
+}
+
 function toRelativePath(filePath: string, cwd?: string): string {
   if (cwd && filePath.startsWith(cwd)) {
     const rel = filePath.slice(cwd.length);
@@ -488,7 +500,7 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                     )}
                   </div>
                   <div className="text-sm text-foreground whitespace-pre-wrap break-words mt-0.5" data-tooltip={callSubject(call)}>
-                    {callSubject(call)}
+                    {callSubjectPreview(call, 320, 10)}
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
                     <span>{t('commitDetail.nChanges', { count: call.files.length })}</span>
@@ -524,10 +536,10 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                   {displayCall.timestamp !== undefined && (
                     <span>{formatCallTime(displayCall.timestamp)}</span>
                   )}
-                  {/* Description (commit subject). Takes the flexible middle and
-                      wraps so long commands remain readable in-place. */}
+                  {/* Description (commit subject). Keep a generous preview in
+                      place; the complete command remains available on hover. */}
                   <span className="flex-1 min-w-0 whitespace-pre-wrap break-words" data-tooltip={callSubject(displayCall)}>
-                    {callSubject(displayCall)}
+                    {callSubjectPreview(displayCall, 640, 6)}
                   </span>
                   {displayCall.truncated && (
                     <span className="text-amber-11">{t('diffViewer.truncated')}</span>

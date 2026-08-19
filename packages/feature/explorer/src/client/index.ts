@@ -25,6 +25,8 @@ export * from './DiffDensityToggle';
 export * from './DiffViewModeToggle';
 export * from './CodeViewer';
 export * from './InteractiveMarkdownPreview';
+export * from './CsvTableView';
+export { CsvPreviewModal } from './CsvPreviewModal';
 export * from './HtmlAppFrame';
 export { HtmlAppsModal, type HtmlAppPreview } from './htmlApps/HtmlAppsModal';
 export { HtmlPreviewModal } from './htmlApps/HtmlPreviewModal';

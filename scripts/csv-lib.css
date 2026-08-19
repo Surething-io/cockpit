@@ -1,0 +1,54 @@
+/*
+ * Tailwind entry for /html-lib/csv-viewer.css (built by scripts/build-html-lib.mjs).
+ *
+ * Compiles ONLY the utilities used by CsvTableView (+ the standalone entry),
+ * skipping preflight — same approach as md-lib.css / pdf-lib.css. The mini-reset
+ * scoped to `.cockpit-csv` (the widget wrapper) stands in for preflight: html
+ * apps are plain pages, and <table> / <button> native chrome is exactly what
+ * would show through without it.
+ *
+ * Token mapping caveat (same as md-lib.css): /html-lib/theme.css SEMANTIC vars
+ * are complete colors → map directly, no hsl() wrapper.
+ */
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+@source "../packages/feature/explorer/src/client/CsvTableView.tsx";
+@source "../packages/feature/explorer/src/standalone/cockpitCsv.tsx";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-border: var(--border);
+  --color-hover: var(--tint-hover);
+}
+
+@layer base {
+  /* Preflight stand-in, scoped to the widget only. */
+  .cockpit-csv {
+    font-family: var(--font-sans);
+    color: var(--foreground);
+  }
+  .cockpit-csv table {
+    border-collapse: collapse;
+  }
+  .cockpit-csv th,
+  .cockpit-csv td {
+    text-align: left;
+    font-weight: inherit;
+  }
+  .cockpit-csv button {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+}

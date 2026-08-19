@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>File Viewer</title>
 <meta name="cockpit-name" content="file-viewer">
-<meta name="description" content="Preview local files: markdown (with TOC), json, images, pdf">
+<meta name="description" content="Preview local files: markdown (with TOC), json, csv, images, pdf">
 <meta name="cockpit-icon" content="📄">
 <!-- Opt into the SDK's theme handling: follows the Cockpit host, falls back to
      the OS outside it, and mounts the top-right light/dark toggle. -->
@@ -55,6 +55,28 @@
   .img-view.natural img { max-width: none; max-height: none; cursor: zoom-out; }
   /* ---- PDF view: CockpitPdf widget, full viewport ---- */
   .pdf-view { position: fixed; inset: 0; }
+  /* ---- CSV view: CockpitCsv widget owns its own scroll container ---- */
+  .csv-view { position: fixed; inset: 0; }
+  /* ---- Bar + content stack (CSV raw mode) ----
+     In table mode the toggle lives at the right end of the widget's own filter
+     toolbar. Raw mode has no widget toolbar, so the page draws a bar with the
+     SAME metrics (6px/8px padding, 12px button, bottom border) and the button
+     flush right — the button then does not MOVE between the two modes, which a
+     fixed floating one (.json-toggle, 48px in from the edge) could not do.
+     Flex column instead of a top offset: no magic number to keep in sync. */
+  .viewer-stack { position: fixed; inset: 0; display: flex; flex-direction: column; }
+  .viewer-bar {
+    flex: none; display: flex; align-items: center; justify-content: flex-end;
+    gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--border);
+  }
+  .viewer-bar button {
+    font-family: var(--font-sans); font-size: 12px; line-height: 16px;
+    padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px;
+    background: transparent; color: var(--muted-foreground); cursor: pointer;
+  }
+  .viewer-bar button:hover { color: var(--foreground); background: var(--tint-hover); }
+  /* The widget inside a stack fills the leftover height instead of the viewport. */
+  .viewer-stack .md-view { position: relative; inset: auto; flex: 1; min-height: 0; }
 </style>
 </head>
 <body>

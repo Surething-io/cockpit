@@ -1,5 +1,5 @@
 /**
- * file-viewer — preview a local file (markdown / json / image / pdf).
+ * file-viewer — preview a local file (markdown / json / csv / image / pdf).
  *
  * Built-in, but written against the PUBLIC contract only, so it doubles as the
  * reference app (see ~/.cockpit/skills/html/SKILL.md):
@@ -299,17 +299,91 @@ function JsonView({ file }) {
   );
 }
 
-function jsonToMarkdown(text) {
-  let body = text;
-  try { body = JSON.stringify(JSON.parse(text), null, 2); } catch { /* show raw */ }
-  // The fence must be longer than any backtick run inside the content.
+/** Wrap text in a markdown fence longer than any backtick run inside it. */
+function toFence(body, lang) {
   let fence = '```';
   const runs = body.match(/`+/g);
   if (runs) {
     const longest = Math.max.apply(null, runs.map((s) => s.length));
     while (fence.length <= longest) fence += '`';
   }
-  return fence + 'json\n' + body + '\n' + fence;
+  return fence + lang + '\n' + body + '\n' + fence;
+}
+
+function jsonToMarkdown(text) {
+  let body = text;
+  try { body = JSON.stringify(JSON.parse(text), null, 2); } catch { /* show raw */ }
+  return toFence(body, 'json');
+}
+
+/**
+ * CSV / TSV. Default is the table widget; a button swaps to the raw delimited
+ * source rendered as a markdown fence — same two-widget dance (and the same
+ * `loadedMode` reasoning) as JsonView.
+ *
+ * The button placement differs from JsonView on purpose: JsonView's floating
+ * .json-toggle would land on top of the table's sticky header, and it sits 48px
+ * in from the edge, so the button would visibly jump on every mode switch. Here
+ * table mode hands the button to the widget's filter toolbar and raw mode draws
+ * a bar with the same metrics, leaving it in one place.
+ */
+function CsvView({ file }) {
+  const ref = useRef(null);
+  const t = useLang();
+  const lang = pickLang();
+  const [mode, setMode] = useState('table');
+  const [loadedMode, setLoadedMode] = useState(null);
+  const [libError, setLibError] = useState(null);
+  const { loading, data, error } = useAsync(() => readText(file), [file]);
+
+  useEffect(() => {
+    const lib = mode === 'table'
+      ? loadLib('/html-lib/csv-viewer.js', '/html-lib/csv-viewer.css')
+      : loadLib('/html-lib/markdown.js', '/html-lib/markdown.css');
+    let alive = true;
+    setLibError(null);
+    lib
+      .then(() => { if (alive) setLoadedMode(mode); })
+      .catch((e) => { if (alive) setLibError(e.message); });
+    return () => { alive = false; };
+  }, [mode]);
+
+  useWidget(
+    ref, loadedMode === mode && !loading && data != null,
+    (el) => {
+      if (mode === 'table') {
+        window.CockpitCsv.render(el, data, {
+          filePath: file,
+          actionLabel: t('raw'),
+          onAction: () => setMode('raw'),
+        });
+      } else {
+        window.CockpitMarkdown.render(el, toFence(data, ''), { toc: false });
+      }
+    },
+    (el) => {
+      if (mode === 'table') window.CockpitCsv.unmount(el);
+      else window.CockpitMarkdown.unmount(el);
+    },
+    [loadedMode, mode, loading, data, file, lang],
+    setLibError
+  );
+
+  if (loading) return <Status kind="loading">loading…</Status>;
+  if (error) return <Status kind="error">{'file-viewer: ' + file + '\n\n' + error}</Status>;
+  if (libError) return <Status kind="error">{'file-viewer: ' + libError}</Status>;
+  // Table mode: the toggle is handed to the widget (right end of its filter
+  // toolbar). Raw mode: the page draws a bar with the same metrics so the button
+  // stays in exactly the same spot across the switch.
+  if (mode === 'table') return <div className="csv-view" ref={ref} />;
+  return (
+    <div className="viewer-stack">
+      <div className="viewer-bar">
+        <button type="button" onClick={() => setMode('table')}>{t('table')}</button>
+      </div>
+      <div className="md-view" ref={ref} />
+    </div>
+  );
 }
 
 function ImageView({ file }) {
@@ -358,8 +432,8 @@ function PdfView({ file }) {
 // App-local dictionary. The app only PERCEIVES the language, it does not import
 // the host's i18n — same as any user app would.
 const DICT = {
-  zh: { readable: '可读', raw: '原文' },
-  en: { readable: 'Readable', raw: 'Raw' },
+  zh: { readable: '可读', raw: '原文', table: '表格' },
+  en: { readable: 'Readable', raw: 'Raw', table: 'Table' },
 };
 
 /**
@@ -404,6 +478,7 @@ function App() {
   if (ext === 'md') return <MarkdownView file={file} />;
   if (ext === 'json') return <JsonView file={file} />;
   if (ext === 'pdf') return <PdfView file={file} />;
+  if (ext === 'csv' || ext === 'tsv') return <CsvView file={file} />;
   if (IMAGE_EXTS.indexOf(ext) >= 0) return <ImageView file={file} />;
   return <Status kind="error">{'file-viewer: unsupported file type .' + ext + '\n' + file}</Status>;
 }

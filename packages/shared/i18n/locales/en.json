@@ -470,7 +470,14 @@
     "raw": "Raw",
     "empty": "Empty table",
     "summary": "{{rows}} rows · {{cols}} columns",
-    "loadMore": "Load more ({{shown}} / {{total}} shown)"
+    "summaryFiltered": "{{rows}} / {{total}} rows matched · {{cols}} columns",
+    "loadMore": "Load more ({{shown}} / {{total}} shown)",
+    "filterPlaceholder": "Filter rows…",
+    "filterColumn": "Filter column",
+    "clearFilter": "Clear filter",
+    "allColumns": "All columns",
+    "noMatch": "No matching rows",
+    "sortHint": "Click to sort (asc / desc / off)"
   },
   "codeViewer": {
     "fileModifiedExternally": "File was modified externally. Saving will overwrite external changes.",

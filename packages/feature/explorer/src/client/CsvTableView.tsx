@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChevronDown, ChevronUp, Search, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 /**
@@ -79,15 +80,68 @@ export function detectDelimiter(text: string, filePath?: string): string {
   return best[1] > 0 ? best[0] : ',';
 }
 
+
+/** Cells that read as a number get right-aligned and sort numerically. */
 const NUMERIC = /^-?[\d,]*\.?\d+%?$/;
 
-export function CsvTableView({ content, filePath, className = '' }: {
+/** Numeric value of a cell for sorting, or NaN when it isn't one. */
+function numeric(cell: string): number {
+  if (!NUMERIC.test(cell)) return NaN;
+  return parseFloat(cell.replace(/,/g, ''));
+}
+
+/**
+ * Order two cells for a sorted column. Exported for tests.
+ *
+ * Numbers compare numerically (so 9 < 10, which a string sort gets wrong),
+ * everything else by locale with `numeric: true` so embedded digits (`item2` vs
+ * `item10`) still read naturally. Empty cells sink to the BOTTOM in both
+ * directions: they carry nothing to compare, and a block of blanks on top hides
+ * the data being sorted.
+ */
+export function compareCells(x: string, y: string, dir: 1 | -1): number {
+  if (x === '' || y === '') return x === y ? 0 : x === '' ? 1 : -1;
+  const nx = numeric(x);
+  const ny = numeric(y);
+  if (!isNaN(nx) && !isNaN(ny)) return (nx - ny) * dir;
+  return x.localeCompare(y, undefined, { numeric: true }) * dir;
+}
+
+type Sort = { col: number; dir: 'asc' | 'desc' } | null;
+
+/** Row index (0-based, in file order) carried alongside the cells so filtering
+ *  and sorting never lose which line a row came from. */
+interface Row {
+  index: number;
+  cells: string[];
+}
+
+/**
+ * A CSV/TSV file as a scannable grid: sticky header + row numbers, click-to-sort
+ * columns, and a substring filter that can be scoped to one column.
+ *
+ * Filter and sort are VIEW state, deliberately not lifted to the hosts: every
+ * host (Explorer pane, chat modal, the console's file-viewer widget) wants the
+ * same behavior, and the raw-source view they each offer is the escape hatch
+ * when someone needs the file as written.
+ *
+ * `action` renders one host button at the right end of the toolbar. It exists so
+ * a host with no chrome of its own — the file-viewer html app, which otherwise
+ * floats a fixed button over the header — has somewhere to put its
+ * table/raw toggle.
+ */
+export function CsvTableView({ content, filePath, className = '', action }: {
   content: string;
   filePath?: string;
   className?: string;
+  action?: { label: string; onClick: () => void };
 }) {
   const { t } = useTranslation();
   const [visibleRows, setVisibleRows] = useState(ROWS_PER_CHUNK);
+  const [query, setQuery] = useState('');
+  /** Column index the filter is scoped to; -1 = every column. */
+  const [scope, setScope] = useState(-1);
+  const [sort, setSort] = useState<Sort>(null);
 
   const { header, body, columnCount } = useMemo(() => {
     const rows = parseDelimitedText(content, detectDelimiter(content, filePath))
@@ -96,13 +150,51 @@ export function CsvTableView({ content, filePath, className = '' }: {
     // Ragged rows are common in hand-edited exports; width is the widest row so
     // no data is silently hidden past the header's column count.
     const columnCount = rows.reduce((max, r) => Math.max(max, r.length), 0);
-    return { header: rows[0] ?? [], body: rows.slice(1), columnCount };
+    const body: Row[] = rows.slice(1).map((cells, index) => ({ index, cells }));
+    return { header: rows[0] ?? [], body, columnCount };
   }, [content, filePath]);
 
-  // A new file in the same mounted view starts over at one chunk.
-  useEffect(() => { setVisibleRows(ROWS_PER_CHUNK); }, [content, filePath]);
+  // A new file in the same mounted view starts over: one chunk, no filter, no sort.
+  useEffect(() => {
+    setVisibleRows(ROWS_PER_CHUNK);
+    setQuery('');
+    setScope(-1);
+    setSort(null);
+  }, [content, filePath]);
 
-  if (header.length === 0) {
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return body;
+    return body.filter((row) =>
+      scope >= 0
+        ? (row.cells[scope] ?? '').toLowerCase().includes(needle)
+        : row.cells.some((cell) => cell.toLowerCase().includes(needle))
+    );
+  }, [body, query, scope]);
+
+  const sorted = useMemo(() => {
+    if (!sort) return filtered;
+    const dir: 1 | -1 = sort.dir === 'asc' ? 1 : -1;
+    // Copy first: filtered may be `body` itself, and sorting in place would
+    // permanently reorder the parsed file (breaking "no sort" and row numbers).
+    return [...filtered].sort((a, b) =>
+      compareCells(a.cells[sort.col] ?? '', b.cells[sort.col] ?? '', dir)
+    );
+  }, [filtered, sort]);
+
+  // Filtering narrows the result set, so the chunk cap starts over with it —
+  // otherwise a filter applied after "load more" keeps an arbitrary cap.
+  useEffect(() => { setVisibleRows(ROWS_PER_CHUNK); }, [query, scope]);
+
+  // asc → desc → off, so a click can always undo itself back to file order.
+  const toggleSort = useCallback((col: number) => {
+    setSort((prev) => {
+      if (!prev || prev.col !== col) return { col, dir: 'asc' };
+      return prev.dir === 'asc' ? { col, dir: 'desc' } : null;
+    });
+  }, []);
+
+  if (columnCount === 0) {
     return (
       <div className={`flex items-center justify-center ${className}`}>
         <span className="text-sm text-muted-foreground">{t('csv.empty')}</span>
@@ -110,10 +202,55 @@ export function CsvTableView({ content, filePath, className = '' }: {
     );
   }
 
-  const shown = body.slice(0, visibleRows);
+  const shown = sorted.slice(0, visibleRows);
+  const columnLabel = (i: number) => header[i] || `#${i + 1}`;
 
   return (
     <div className={`flex flex-col min-h-0 ${className}`}>
+      {/* Filter toolbar. The column <select> is a native control on purpose:
+          this view also runs inside the console's file-viewer iframe, where a
+          custom popover would have to solve positioning against a document the
+          panel layout knows nothing about. */}
+      <div className="flex items-center gap-2 px-2 py-1.5 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-1.5 flex-1 min-w-0 px-1.5 py-0.5 rounded border border-border bg-card focus-within:border-brand transition-colors">
+          <Search className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" aria-hidden />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('csv.filterPlaceholder')}
+            className="flex-1 min-w-0 bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
+          />
+          {query && (
+            <button
+              onClick={() => setQuery('')}
+              className="text-muted-foreground hover:text-foreground flex-shrink-0"
+              title={t('csv.clearFilter')}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+        <select
+          value={scope}
+          onChange={(e) => setScope(Number(e.target.value))}
+          className="text-xs bg-card text-muted-foreground border border-border rounded px-1 py-1 max-w-[10rem] flex-shrink-0"
+          title={t('csv.filterColumn')}
+        >
+          <option value={-1}>{t('csv.allColumns')}</option>
+          {Array.from({ length: columnCount }, (_, i) => (
+            <option key={i} value={i}>{columnLabel(i)}</option>
+          ))}
+        </select>
+        {action && (
+          <button
+            onClick={action.onClick}
+            className="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-hover transition-colors flex-shrink-0"
+          >
+            {action.label}
+          </button>
+        )}
+      </div>
+
       <div className="flex-1 overflow-auto">
         <table className="text-xs border-collapse w-max min-w-full">
           <thead className="sticky top-0 z-10">
@@ -124,21 +261,32 @@ export function CsvTableView({ content, filePath, className = '' }: {
               {Array.from({ length: columnCount }, (_, i) => (
                 <th
                   key={i}
-                  className="bg-accent border-b border-border px-2 py-1.5 text-left font-medium text-foreground whitespace-nowrap"
+                  onClick={() => toggleSort(i)}
+                  className="bg-accent border-b border-border px-2 py-1.5 text-left font-medium text-foreground whitespace-nowrap cursor-pointer select-none hover:bg-hover"
+                  title={t('csv.sortHint')}
                 >
-                  {header[i] ?? ''}
+                  <span className="inline-flex items-center gap-1">
+                    {header[i] ?? ''}
+                    {sort?.col === i && (
+                      sort.dir === 'asc'
+                        ? <ChevronUp className="w-3 h-3 text-brand" aria-hidden />
+                        : <ChevronDown className="w-3 h-3 text-brand" aria-hidden />
+                    )}
+                  </span>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {shown.map((row, r) => (
-              <tr key={r} className="hover:bg-hover">
+            {shown.map((row) => (
+              // File-order row number, kept through filter and sort so a row
+              // stays traceable back to the line it came from.
+              <tr key={row.index} className="hover:bg-hover">
                 <td className="sticky left-0 bg-card border-b border-r border-border px-2 py-1 text-right text-muted-foreground tabular-nums select-none">
-                  {r + 1}
+                  {row.index + 1}
                 </td>
                 {Array.from({ length: columnCount }, (_, c) => {
-                  const cell = row[c] ?? '';
+                  const cell = row.cells[c] ?? '';
                   return (
                     <td
                       key={c}
@@ -158,15 +306,23 @@ export function CsvTableView({ content, filePath, className = '' }: {
             ))}
           </tbody>
         </table>
+        {shown.length === 0 && (
+          <div className="p-4 text-xs text-muted-foreground">{t('csv.noMatch')}</div>
+        )}
       </div>
+
       <div className="flex items-center gap-3 px-3 py-1.5 border-t border-border text-xs text-muted-foreground flex-shrink-0">
-        <span>{t('csv.summary', { rows: body.length, cols: columnCount })}</span>
-        {shown.length < body.length && (
+        <span>
+          {filtered.length === body.length
+            ? t('csv.summary', { rows: body.length, cols: columnCount })
+            : t('csv.summaryFiltered', { rows: filtered.length, total: body.length, cols: columnCount })}
+        </span>
+        {shown.length < sorted.length && (
           <button
             onClick={() => setVisibleRows((n) => n + ROWS_PER_CHUNK)}
             className="px-1.5 py-0.5 rounded hover:bg-hover hover:text-foreground transition-colors"
           >
-            {t('csv.loadMore', { shown: shown.length, total: body.length })}
+            {t('csv.loadMore', { shown: shown.length, total: sorted.length })}
           </button>
         )}
       </div>

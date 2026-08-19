@@ -8,12 +8,15 @@
  * sticky header + row numbers, chunked rows. Imperative widget API, same
  * rationale as CockpitMarkdown / CockpitJson / CockpitPdf.
  *
- *   CockpitCsv.render(el, csvText, { filePath })   // mount or update in place
- *   CockpitCsv.unmount(el)                         // dispose
+ *   CockpitCsv.render(el, csvText, { filePath, actionLabel, onAction })
+ *   CockpitCsv.unmount(el)                                    // dispose
  *
  * `filePath` only decides the delimiter default (`.tsv` → tab); content is
  * passed in, so the widget never touches the filesystem — the host app reads
- * the file through cockpit.bash like any user app.
+ * the file through cockpit.bash like any user app. `actionLabel` + `onAction`
+ * put ONE host button at the right end of the widget's filter toolbar, which is
+ * how a page with no chrome of its own (the built-in file-viewer) offers its
+ * table/raw toggle without floating a button over the table header.
  *
  * Requires /html-lib/csv-viewer.css (utilities) and /html-lib/theme.css
  * (semantic color vars) on the page; light/dark follows the `dark` class on
@@ -35,14 +38,28 @@ const LABELS = {
     raw: 'Raw',
     empty: 'Empty table',
     summary: '{{rows}} rows · {{cols}} columns',
+    summaryFiltered: '{{rows}} / {{total}} rows matched · {{cols}} columns',
     loadMore: 'Load more ({{shown}} / {{total}} shown)',
+    filterPlaceholder: 'Filter rows…',
+    filterColumn: 'Filter column',
+    clearFilter: 'Clear filter',
+    allColumns: 'All columns',
+    noMatch: 'No matching rows',
+    sortHint: 'Click to sort (asc / desc / off)',
   },
   zh: {
     table: '表格',
     raw: '原始内容',
     empty: '空表格',
     summary: '{{rows}} 行 · {{cols}} 列',
+    summaryFiltered: '匹配 {{rows}} / {{total}} 行 · {{cols}} 列',
     loadMore: '加载更多（已显示 {{shown}} / {{total}}）',
+    filterPlaceholder: '筛选内容…',
+    filterColumn: '筛选列',
+    clearFilter: '清除筛选',
+    allColumns: '全部列',
+    noMatch: '没有匹配的行',
+    sortHint: '点击排序（升序 / 降序 / 取消）',
   },
 } as const;
 
@@ -70,16 +87,30 @@ window.addEventListener('message', (e) => {
 
 const mounts = new Map<Element, Root>();
 
-function render(el: Element, csvText: string, opts: { filePath?: string } = {}) {
+interface CsvOpts {
+  /** Only decides the delimiter default (`.tsv` → tab). */
+  filePath?: string;
+  /** One host button at the right end of the filter toolbar (e.g. "Raw"). */
+  actionLabel?: string;
+  onAction?: () => void;
+}
+
+function render(el: Element, csvText: string, opts: CsvOpts = {}) {
   let root = mounts.get(el);
   if (!root) {
     root = createRoot(el);
     mounts.set(el, root);
   }
+  const { actionLabel, onAction } = opts;
   root.render(
     <I18nextProvider i18n={i18n}>
       <div className="cockpit-csv" style={{ height: '100%' }}>
-        <CsvTableView content={csvText} filePath={opts.filePath} className="h-full" />
+        <CsvTableView
+          content={csvText}
+          filePath={opts.filePath}
+          className="h-full"
+          action={actionLabel && onAction ? { label: actionLabel, onClick: onAction } : undefined}
+        />
       </div>
     </I18nextProvider>,
   );

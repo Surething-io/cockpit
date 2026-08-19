@@ -5,6 +5,9 @@
  *                         packages/shared/ui/src/standalone/cockpitMarkdown.tsx)
  *   pdf-viewer.{js,css} — window.CockpitPdf (Explorer's FilePdfPreview, see
  *                         packages/feature/explorer/src/standalone/cockpitPdf.tsx)
+ *   json-viewer.js      — window.CockpitJson (readable JSON, inline-styled)
+ *   csv-viewer.{js,css} — window.CockpitCsv (CSV/TSV table, see
+ *                         packages/feature/explorer/src/standalone/cockpitCsv.tsx)
  *
  * Each bundle is SELF-CONTAINED (own React copy; widgets expose imperative
  * APIs precisely so the host page's React version never matters). Per bundle:
@@ -51,6 +54,12 @@ const BUNDLES = [
     name: "json-viewer",
     entry: "packages/feature/explorer/src/standalone/cockpitJson.tsx",
     twEntry: null,
+  },
+  {
+    // CSV / TSV table (same parser + grid the Explorer and chat previews use).
+    name: "csv-viewer",
+    entry: "packages/feature/explorer/src/standalone/cockpitCsv.tsx",
+    twEntry: "scripts/csv-lib.css",
   },
 ]
 

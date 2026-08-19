@@ -470,7 +470,14 @@
     "raw": "原始内容",
     "empty": "空表格",
     "summary": "{{rows}} 行 · {{cols}} 列",
-    "loadMore": "加载更多（已显示 {{shown}} / {{total}}）"
+    "summaryFiltered": "匹配 {{rows}} / {{total}} 行 · {{cols}} 列",
+    "loadMore": "加载更多（已显示 {{shown}} / {{total}}）",
+    "filterPlaceholder": "筛选内容…",
+    "filterColumn": "筛选列",
+    "clearFilter": "清除筛选",
+    "allColumns": "全部列",
+    "noMatch": "没有匹配的行",
+    "sortHint": "点击排序（升序 / 降序 / 取消）"
   },
   "codeViewer": {
     "fileModifiedExternally": "文件已被外部修改，保存将覆盖外部更改",

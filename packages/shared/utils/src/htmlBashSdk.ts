@@ -909,9 +909,10 @@ export function resolveLocalMediaUrl(
  * Extensions handled by the built-in file-viewer app (apps/file-viewer/):
  * markdown (CockpitMarkdown + TocSidebar), images (themed, centered, fit/100%
  * toggle), pdf (CockpitPdf, Explorer's themed viewer), json (readable widget
- * with a raw-source toggle).
+ * with a raw-source toggle), csv/tsv (CockpitCsv table with a raw-source
+ * toggle).
  */
-const FILE_VIEWER_EXT_RE = /\.(md|png|jpe?g|gif|webp|svg|pdf|json)$/i
+const FILE_VIEWER_EXT_RE = /\.(md|png|jpe?g|gif|webp|svg|pdf|json|csv|tsv)$/i
 
 /** True for a local file path the console routes to the file-viewer app. */
 export function isFileViewerPath(filePath: string): boolean {

@@ -25,6 +25,7 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-border: var(--border);
+  --color-brand: var(--brand);
   --color-hover: var(--tint-hover);
 }
 
@@ -50,5 +51,21 @@
     font: inherit;
     color: inherit;
     cursor: pointer;
+  }
+  /* Filter toolbar controls: the utilities set colors/borders, so the reset
+     only has to strip the UA's native field chrome. */
+  .cockpit-csv input,
+  .cockpit-csv select {
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+  }
+  .cockpit-csv input {
+    outline: none;
+  }
+  .cockpit-csv svg {
+    display: block;
   }
 }

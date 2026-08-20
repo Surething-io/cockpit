@@ -610,7 +610,7 @@ You can run either; they do the same thing.
 Everything in your Cockpit data folder (`~/.cockpit/`) is untouched by an upgrade:
 
 - API keys and engine settings
-- Sessions and pinned tabs
+- Sessions and favourited sessions
 - Scheduled tasks
 - Skills registry
 - Notes

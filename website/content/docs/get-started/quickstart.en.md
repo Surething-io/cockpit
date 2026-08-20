@@ -202,7 +202,7 @@ To remove all local state too:
 rm -rf ~/.cockpit
 ```
 
-> If you'll reinstall later, back up your `~/.cockpit/` folder first — it carries your sessions, pinned tabs, scheduled tasks, and other state.
+> If you'll reinstall later, back up your `~/.cockpit/` folder first — it carries your sessions, favourites, scheduled tasks, and other state.
 
 ## What's next
 

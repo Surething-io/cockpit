@@ -12,19 +12,19 @@ Open the Agent panel (`Cmd+1`) and look at the tab strip across the top. Each ta
 
 Click the `+` button next to the tabs to open a new one (with a dropdown to pick the engine). Hover a tab and a `×` appears on the right to close it. Drag a tab to reorder.
 
-## Pinning a session
+## Favouriting a session
 
-**Hover over a tab and a star icon appears in its top-right corner** — click it to toggle pinned (filled star = pinned, empty star = unpinned). **Not a right-click menu** — just a hover-icon click.
+**Hover over a tab and a star appears on the top-right corner of its number chip** (the small circle at the far left of the tab) — click it to toggle (filled gold star = favourited, outlined star = not). **Not a right-click menu** — just a hover-icon click. A blank tab that has not sent a message yet shows no star: favouriting stores a session ID, and there isn't one yet.
 
-Pinned sessions:
+Favourite sessions:
 
 - Persist across Cockpit restarts (saved into the `pinned-sessions` file in Cockpit's data folder).
-- Show as a **star button with a badge counter** at the bottom of the left sidebar (badge shows how many you've pinned).
-- Click the star button to open the **Pinned Sessions popover**, which floats to the right of the sidebar. One row per pinned session, showing project name + a custom title (or the first 8 chars of the session ID), with:
-  - A drag handle (6-dot icon) to reorder
-  - **Pencil icon** to set a custom title
-  - **× icon** to unpin
+- Show as a **star button with a badge counter** at the bottom of the left sidebar (badge shows how many you have).
+- Click the star button to open the **Favorite Sessions popover**, which floats to the right of the sidebar. Each row carries the same information as the Recent Sessions list above it: status dot (running / unread / idle), engine mark, project name, last-active time and session number, then the title, then the last message you sent. The row for your current project is highlighted. Hover a row and a card floats out to the right with the full path, the git branch and a first/last message excerpt.
+- Each row has a drag handle (6-dot icon) on the left to reorder; hovering reveals a **pencil icon** to set a custom title and an **× icon** to remove it from favourites.
 - Single click to jump back to the tab.
+
+> A session favourited long ago may have aged out of the recent-sessions record. Its row then shows only the project name and the title you gave it — the status, engine and timestamp come from that record, and it is gone.
 
 Use this for long-running sessions you keep coming back to — your "main thread of work" across days.
 
@@ -76,7 +76,7 @@ Costs are estimates — final billing is whatever your provider reports. Ollama 
 
 A common pattern after a few days:
 
-- 3–5 pinned sessions for major workstreams — one click via the star button at the sidebar bottom.
+- 3–5 favourite sessions for major workstreams — one click via the star button at the sidebar bottom.
 - 2–3 transient tabs for one-off questions — close them when done.
 - 1 "scratch" tab on the side for `/qa` clarification, `/cg` exploration, etc.
 

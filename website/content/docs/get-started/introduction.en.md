@@ -22,7 +22,7 @@ Cockpit's whole UI is three panels rendered in parallel. None of them ever unmou
 The chat surface. Each tab is an independent conversation with whatever engine you picked.
 
 - **Engines.** Claude / Codex / DeepSeek / GLM (Zhipu) / Kimi (Moonshot) / Ollama — switch per tab. Claude works out of the box; the rest need a one-time key (or none for Ollama).
-- **Sessions.** Pin a session to the sidebar, fork it to branch the conversation, search across projects via the Session Browser (sidebar icon).
+- **Sessions.** Favourite a session to the sidebar, fork it to branch the conversation, search across projects via the Session Browser (sidebar icon).
 - **AI mode slash commands.** Type `/` in the chat input to pick from **six** modes that rewire how the AI approaches the next reply: `/qa` (clarify before changing code), `/fx` (bug evidence chain, analysis only), `/ex` (deep structured analysis), `/go` (landing mode — MVP-staged implementation with self-verify), `/cg` (CodeGraph exploration), `/cc` (Cockpit-CLI-driven end-to-end verification). Skills installed via `SKILL.md` show up in the same menu as `/skill-name`.
 - **Shell prefix.** Any input starting with `!` runs as a shell command and its output is appended to the prompt.
 - **Scheduled tasks.** A sidebar panel for one-shot, interval, and cron schedules — run a prompt every morning to summarise yesterday's PRs, every hour to scan release notes, every 5 minutes to babysit a long-running task.

@@ -93,7 +93,7 @@ rm -rf ~/.cockpit
 
 **怎么把一切迁移到新机器？**
 
-把 `~/.cockpit` 文件夹从旧机器拷到新机器（USB / scp / rsync 都行），在新机器上装 Cockpit，会话 / 钉住 tab / 定时任务 / API key 都跟着过来。
+把 `~/.cockpit` 文件夹从旧机器拷到新机器（USB / scp / rsync 都行），在新机器上装 Cockpit，会话 / 收藏 / 定时任务 / API key 都跟着过来。
 
 ## 升级
 

@@ -610,7 +610,7 @@ npm install -g @surething/cockpit@latest
 你的 Cockpit 数据目录（`~/.cockpit/`）里的一切升级时都不动：
 
 - API key 和引擎设置
-- 会话和固定 tab
+- 会话和收藏会话
 - 定时任务
 - Skills 注册表
 - 笔记

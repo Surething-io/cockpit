@@ -22,7 +22,7 @@ Cockpit 整个 UI 就是三个并行渲染的面板。它们永远不卸载 —�
 聊天界面。每个 tab 是一个独立会话，对接你选的引擎。
 
 - **引擎。** Claude / Codex / DeepSeek / GLM（智谱）/ Kimi（月之暗面）/ Ollama —— 每 tab 独立切换。Claude 开箱即用；其它一次性配 key（Ollama 连 key 都不用）。
-- **会话。** 把会话固定到侧栏、fork 一份分叉对话、通过侧栏 sessions 图标打开 Session Browser 跨项目搜索。
+- **会话。** 把会话收藏到侧栏、fork 一份分叉对话、通过侧栏 sessions 图标打开 Session Browser 跨项目搜索。
 - **AI 模式斜杠命令。** 在聊天输入框打 `/` 弹出**六个**模式菜单，改变 AI 接下来的工作方式：`/qa`（改代码前先澄清需求）、`/fx`（bug 证据链，只分析）、`/ex`（深度结构化分析）、`/go`（落地模式 —— MVP 分阶段实现 + 自验证）、`/cg`（CodeGraph 探索）、`/cc`（Cockpit CLI 端到端验证）。通过 `SKILL.md` 安装的 Skills 也在同一菜单里以 `/skill-name` 出现。
 - **Shell 前缀。** 行首 `!` 表示输入是 shell 命令，输出会拼回 prompt。
 - **定时任务。** 侧栏面板支持一次性、间隔、cron 三种调度 —— 比如每天早上跑一次 prompt 总结昨天的 PR、每小时扫一次 release notes、每 5 分钟看一个长任务的进展。

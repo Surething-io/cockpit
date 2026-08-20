@@ -93,7 +93,7 @@ Next launch will recreate the folder with defaults. You'll need to re-enter API 
 
 **How do I move everything to a new machine?**
 
-Copy the `~/.cockpit` folder from the old machine to the new one (USB, scp, rsync — your choice), install Cockpit on the new machine, and your sessions / pinned tabs / scheduled tasks / API keys come along.
+Copy the `~/.cockpit` folder from the old machine to the new one (USB, scp, rsync — your choice), install Cockpit on the new machine, and your sessions / favourites / scheduled tasks / API keys come along.
 
 ## Updating
 

@@ -73,7 +73,7 @@ export const messages = {
         bullets: [
           'Claude out of the box via the official Agent SDK; Codex / DeepSeek / GLM / Kimi / Ollama via per-tab BYOK',
           'Multi-project concurrent sessions with desktop notifications',
-          'Session pinning, forking, cross-project session browser',
+          'Session favourites, forking, cross-project session browser',
           'Per-tool-call snapshots — review each reply as git history, real disk diffs incl. Bash',
           '!command runs shell from chat, output piped back as context',
         ],
@@ -329,7 +329,7 @@ export const messages = {
         },
         {
           dim: 'Session checkpoints / rewind',
-          us: 'Pinning & forking only',
+          us: 'Favourites & forking only',
           official: '✅',
           opcode: '✅ Checkpoint timeline',
         },
@@ -524,7 +524,7 @@ export const messages = {
         bullets: [
           '默认走官方 Claude Agent SDK；Codex / DeepSeek / GLM / Kimi / Ollama 各 tab 独立 BYOK',
           '多项目并发会话，桌面通知提醒',
-          '会话固定、分叉、跨项目浏览',
+          '会话收藏、分叉、跨项目浏览',
           '工具调用级快照 —— 像读 git 历史一样审每条回复的真实磁盘 diff，含 Bash',
           '!command 前缀直接执行 shell，输出回流为对话上下文',
         ],
@@ -780,7 +780,7 @@ export const messages = {
         },
         {
           dim: '会话检查点 / 回滚',
-          us: '仅固定 & 分叉',
+          us: '仅收藏 & 分叉',
           official: '✅',
           opcode: '✅ 检查点时间线',
         },

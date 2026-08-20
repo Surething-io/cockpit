@@ -199,7 +199,7 @@ npm uninstall -g @surething/cockpit
 rm -rf ~/.cockpit
 ```
 
-> 如果之后还会重装，先备份 `~/.cockpit/` 文件夹 —— 会话、钉住 tab、定时任务和其他状态都在里面。
+> 如果之后还会重装，先备份 `~/.cockpit/` 文件夹 —— 会话、收藏、定时任务和其他状态都在里面。
 
 ## 下一步
 

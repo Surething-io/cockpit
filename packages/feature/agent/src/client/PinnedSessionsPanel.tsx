@@ -51,7 +51,7 @@ interface PinnedSessionsPanelProps {
  *
  * A session favourited months ago has aged out of that list entirely. Such a
  * row degrades to what the stored record itself holds (project + custom title)
- * rather than inventing a status or an engine it cannot know.
+ * rather than inventing a status or a timestamp it cannot know.
  *
  * Naming: the UI says "favorite" everywhere (star icon, `sessions.*Favorite*`
  * copy), while the code and storage still say "pin" — the component name, the
@@ -255,9 +255,14 @@ export function PinnedSessionsPanel({
                   <SessionStatusDot status={info?.status} className="mt-1.5" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      {/* Only when we actually know it — an unknown engine must
-                          not render as the default Claude mark. */}
-                      {info?.engine && <EngineBadge engine={info.engine} />}
+                      {/* Unconditional, exactly like the recent list. `engine` is
+                          attached at read time only for sessions the project's
+                          engines map names, and Claude — the default — is
+                          usually absent from it, so gating on it left every
+                          Claude row with a blank where the row above had a
+                          mark. `undefined` means Claude across the whole app;
+                          EngineBadge resolves it. */}
+                      <EngineBadge engine={info?.engine} />
                       <span className="font-medium text-sm truncate">
                         {projectNameOf(session.cwd)}
                       </span>

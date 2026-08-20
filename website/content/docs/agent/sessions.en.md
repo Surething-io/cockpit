@@ -24,7 +24,7 @@ Favourite sessions:
 - Each row has a drag handle (6-dot icon) on the left to reorder; hovering reveals a **pencil icon** to set a custom title and an **× icon** to remove it from favourites.
 - Single click to jump back to the tab.
 
-> A session favourited long ago may have aged out of the recent-sessions record. Its row then shows only the project name and the title you gave it — the status, engine and timestamp come from that record, and it is gone.
+> A session favourited long ago may have aged out of the recent-sessions record. Its row then shows only the project name and the title you gave it — the status and timestamp come from that record, and it is gone.
 
 Use this for long-running sessions you keep coming back to — your "main thread of work" across days.
 

@@ -2,11 +2,17 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BrowserRuntime } from '@cockpit/effect-runtime';
-import { fetchCurrentBranch } from '@cockpit/feature-explorer';
 import { RecentSessionsModal } from './RecentSessionsModal';
 import { EngineBadge } from './EngineBadge';
 import { SessionNumberBadge, badgeStatus } from './SessionNumberBadge';
+import {
+  SessionStatusDot,
+  SessionHoverCard,
+  useSessionHoverCard,
+  formatRelativeTime,
+  statusLabelOf,
+  projectNameOf,
+} from './SessionRowParts';
 
 export interface GlobalSession {
   cwd: string;
@@ -32,42 +38,17 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [now, setNow] = useState(0);
   const [sessionNumbers, setSessionNumbers] = useState<Record<string, string>>({});
   const numberRequestRef = useRef(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  // Rich tooltip: which session is hovered + where to anchor it (fixed positioning
-  // escapes the dropdown's overflow-y-auto clipping)
-  const [tooltip, setTooltip] = useState<{ session: GlobalSession; top: number; left: number } | null>(null);
-  // Per-cwd git branch cache (null = fetched, not a git repo / detached HEAD).
-  // Lazily fetched on hover via the lightweight /api/git/current-branch (mirrors ProjectItem).
-  const [branches, setBranches] = useState<Record<string, string | null>>({});
+  // Row anatomy shared with PinnedSessionsPanel — see SessionRowParts.
+  const hover = useSessionHoverCard();
+  const { show: showCard, hide: hideCard } = hover;
 
-  const showTooltip = useCallback((session: GlobalSession, e: React.MouseEvent<HTMLElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const TOOLTIP_MAX_H = 260;
-    let top = rect.top;
-    if (top + TOOLTIP_MAX_H > window.innerHeight) {
-      top = Math.max(8, window.innerHeight - TOOLTIP_MAX_H - 8);
-    }
-    setTooltip({ session, top, left: rect.right + 8 });
-    // Fetch the branch once per cwd; reuse the cached value on subsequent hovers.
-    setBranches((prev) => {
-      if (session.cwd in prev) return prev;
-      BrowserRuntime.runPromiseExit(fetchCurrentBranch(session.cwd)).then((exit) => {
-        if (exit._tag === 'Success') {
-          setBranches((cur) => ({ ...cur, [session.cwd]: exit.value.branch }));
-        }
-      });
-      return { ...prev, [session.cwd]: null };
-    });
-  }, []);
-  const hideTooltip = useCallback(() => setTooltip(null), []);
-
-  // Drop the tooltip whenever the dropdown closes (e.g. outside click / blur)
+  // Drop the hover card whenever the dropdown closes (e.g. outside click / blur)
   useEffect(() => {
-    if (!isOpen) setTooltip(null);
-  }, [isOpen]);
+    if (!isOpen) hideCard();
+  }, [isOpen, hideCard]);
 
   // Close on outside click (including clicking into an iframe)
   useEffect(() => {
@@ -96,11 +77,9 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
   const handleSessionClick = useCallback((session: GlobalSession) => {
     onSwitchProject(session.cwd, session.sessionId);
     setIsOpen(false);
-    setTooltip(null);
   }, [onSwitchProject]);
 
   const handleToggle = useCallback(() => {
-    setNow(Date.now());
     const nextOpen = !isOpen;
     setIsOpen(nextOpen);
     if (nextOpen) {
@@ -116,26 +95,6 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
 
   const loadingCount = sessions.filter(s => s.status === 'loading').length;
   const unreadCount = sessions.filter(s => s.status === 'unread').length;
-
-  // Format timestamp
-  const formatTime = useCallback((timestamp: number) => {
-    const diff = now - timestamp;
-    const minutes = Math.floor(diff / 60000);
-    if (minutes < 1) return t('common.justNow');
-    if (minutes < 60) return t('common.minutesAgo', { count: minutes });
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return t('common.hoursAgo', { count: hours });
-    return t('common.daysAgo', { count: Math.floor(hours / 24) });
-  }, [t, now]);
-
-  // Get project name
-  const getProjectName = (cwd: string) => cwd.split('/').pop() || cwd;
-
-  // Translated state name — no longer printed as a row label, so it rides along
-  // as the chip's tooltip / aria text.
-  const statusLabel = useCallback((status: string) => (
-    status === 'loading' ? t('sessions.running') : status === 'unread' ? t('sessions.done') : undefined
-  ), [t]);
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -183,7 +142,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
             )}
             {/* Expand into the full searchable recent-sessions panel (up to 100) */}
             <button
-              onClick={() => { setNow(Date.now()); setIsOpen(false); setTooltip(null); setSearchOpen(true); }}
+              onClick={() => { setIsOpen(false); setSearchOpen(true); }}
               className="ml-auto flex items-center gap-1 p-1 -mr-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
               title={t('sessions.searchRecentSessions')}
             >
@@ -203,32 +162,21 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
                 <button
                   key={`${session.cwd}-${session.sessionId}`}
                   onClick={() => handleSessionClick(session)}
-                  onMouseEnter={(e) => showTooltip(session, e)}
-                  onMouseLeave={hideTooltip}
+                  onMouseEnter={(e) => showCard(session, e)}
+                  onMouseLeave={hideCard}
                   className={`w-full px-3 py-2 text-left hover:bg-hover transition-colors flex items-start gap-2 ${
                     index !== sessions.length - 1 ? 'border-b border-border/50' : ''
                   } ${currentCwd === session.cwd ? 'bg-accent/50' : ''}`}
                 >
-                  {/* Status indicator: orange (running) / red (unread) / gray dot.
-                      Solid at the `-11` step, not washed like the pills — an 8px dot has no
-                      room to carry a 20% tint. It does NOT pulse: the round session-number
-                      chip on the right is the one blinking thing per row, and this dot is
-                      what still reports the state before the numbers finish resolving. */}
-                  <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${
-                    session.status === 'loading'
-                      ? 'bg-orange-11'
-                      : session.status === 'unread'
-                        ? 'bg-red-11'
-                        : 'bg-muted-foreground/30'
-                  }`} />
+                  <SessionStatusDot status={session.status} className="mt-1.5" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <EngineBadge engine={session.engine} />
                       <span className="font-medium text-sm truncate">
-                        {getProjectName(session.cwd)}
+                        {projectNameOf(session.cwd)}
                       </span>
                       <span className="text-xs text-muted-foreground flex-shrink-0">
-                        {formatTime(session.lastActive)}
+                        {formatRelativeTime(t, session.lastActive)}
                       </span>
                       {/* Running/done is carried by the round session chip (pulsing wash /
                           solid red) instead of a word — the label repeated what the dot
@@ -236,7 +184,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
                       <SessionNumberBadge
                         coordinate={sessionNumbers[`${session.cwd}\n${session.sessionId}`]}
                         status={badgeStatus(session.status)}
-                        statusLabel={statusLabel(session.status)}
+                        statusLabel={statusLabelOf(t, session.status)}
                         className="ml-auto"
                       />
                     </div>
@@ -258,56 +206,8 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
         </div>
       )}
 
-      {/* Rich hover tooltip: cwd path + first/last user-message preview (mirrors ProjectSessionsModal cards) */}
-      {tooltip && (
-        <div
-          className="fixed z-[60] w-72 max-h-[260px] overflow-y-auto bg-popover border border-border rounded-lg shadow-lv2 p-3 pointer-events-none"
-          style={{ top: tooltip.top, left: tooltip.left }}
-        >
-          <div className="text-xs font-medium text-foreground truncate">{getProjectName(tooltip.session.cwd)}</div>
-          {tooltip.session.title && (
-            <div className="text-xs font-medium text-foreground truncate mt-0.5" data-tooltip={tooltip.session.title}>
-              {tooltip.session.title}
-            </div>
-          )}
-          {branches[tooltip.session.cwd] && (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground font-normal min-w-0">
-              {/* git branch icon — signals this is a git branch */}
-              <svg className="w-3 h-3 flex-shrink-0 text-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <circle cx="6" cy="6" r="2.5" />
-                <circle cx="6" cy="18" r="2.5" />
-                <circle cx="18" cy="7" r="2.5" />
-                <path strokeLinecap="round" d="M6 8.5v7M8.5 6.5h4.5a3 3 0 013 3v0" />
-              </svg>
-              <span className="truncate">{branches[tooltip.session.cwd]}</span>
-            </div>
-          )}
-          {((tooltip.session.firstMessages?.length ?? 0) > 0 || (tooltip.session.lastMessages?.length ?? 0) > 0) ? (
-            <div className="space-y-0.5 text-xs border-t border-border/50 mt-2 pt-2">
-              {tooltip.session.firstMessages?.map((msg, idx) => (
-                <div key={`f-${idx}`} className="text-foreground/90 truncate">
-                  <span className="text-foreground-subtle mr-1">•</span>
-                  {msg}
-                </div>
-              ))}
-              {(tooltip.session.lastMessages?.length ?? 0) > 0 && (
-                <div className="text-foreground-subtle text-center py-0.5">···</div>
-              )}
-              {tooltip.session.lastMessages?.map((msg, idx) => (
-                <div key={`l-${idx}`} className="text-foreground/90 truncate">
-                  <span className="text-foreground-subtle mr-1">•</span>
-                  {msg}
-                </div>
-              ))}
-            </div>
-          ) : tooltip.session.lastUserMessage ? (
-            /* Fallback (e.g. running sessions skipped on the WS path): show whatever message the item already has */
-            <div className="text-xs text-foreground/90 border-t border-border/50 mt-2 pt-2 line-clamp-3 break-words">
-              {tooltip.session.lastUserMessage}
-            </div>
-          ) : null}
-        </div>
-      )}
+      {/* Rich hover card: path + branch + first/last user-message preview */}
+      <SessionHoverCard {...hover} />
 
       {/* Searchable full recent-sessions panel (up to 100) */}
       <RecentSessionsModal

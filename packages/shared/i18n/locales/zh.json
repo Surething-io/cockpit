@@ -236,7 +236,7 @@
     "running": "运行中",
     "done": "完成",
     "pinnedSessions": "常用会话",
-    "noPinnedSessions": "暂无常用会话，在 Tab 栏点击图钉可添加",
+    "noPinnedSessions": "暂无常用会话，在 Tab 栏点击星标可添加",
     "editTitle": "编辑标题",
     "remove": "移除",
     "projectSessions": "项目会话",
@@ -1130,8 +1130,8 @@
     "notSelected": "(未选择)"
   },
   "tabBar": {
-    "unpin": "取消固定",
-    "pin": "固定到常用会话",
+    "unpin": "取消收藏",
+    "pin": "收藏此会话",
     "closeTab": "关闭标签",
     "closeAll": "关闭所有标签",
     "newTab": "新建标签"

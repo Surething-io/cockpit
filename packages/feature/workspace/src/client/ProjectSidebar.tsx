@@ -513,6 +513,7 @@ export function ProjectSidebar({
           collapsed={collapsed}
           pinnedSessions={pinnedSessions}
           sessionNumbers={sessionNumbers}
+          currentCwd={currentCwd}
           onSwitchProject={onSwitchProject}
           onUnpin={unpinSession}
           onUpdateTitle={updateTitle}

@@ -175,6 +175,8 @@ export function TabBar({
       <div className="flex items-center px-2 gap-1 overflow-x-auto">
         {tabs.map((tab, index) => {
           const isActive = tab.id === activeTabId;
+          const pinned = isPinned?.(tab.id) ?? false;
+          const pinLabel = pinned ? t('tabBar.unpin') : t('tabBar.pin');
           const status: SessionNumberStatus = tab.isLoading
             ? 'loading'
             : unreadTabs.has(tab.id) && !isActive
@@ -198,38 +200,41 @@ export function TabBar({
               onClick={() => onSwitchTab(tab.id)}
             >
               {/* Circle number — its colour IS the status (orange pulsing =
-                  generating, red = done but unread, brand/muted = seen). The
-                  status dots that used to sit on its corner are gone, which is
-                  also why the pin badge no longer has to yield the same spot. */}
+                  generating, red = done but unread, brand/muted = seen), which
+                  is also the whole colour budget on this chip: the star's
+                  `amber-9` is the solid-FILL step, one value in both themes,
+                  where the `-11` text step it started as is a brick in light and
+                  a glaring lemon in dark. Filled vs outlined is what carries
+                  favourited/not; hover previews the outcome (amber = about to
+                  gain, faint = about to lose). No star on a session-less tab —
+                  favouriting stores a sessionId, so there it is a silent no-op. */}
               <div className="relative flex-shrink-0">
                 <TabNumberIcon number={index + 1} status={status} isActive={isActive} />
-                {/* Pin badge - top-right */}
-                {onTogglePin && isPinned?.(tab.id) && (
+                {onTogglePin && tab.sessionId && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       onTogglePin(tab.id);
                     }}
-                    className="absolute -top-1 -right-1 w-3.5 h-3.5 flex items-center justify-center rounded-full bg-card text-amber-11 hover:text-destructive transition-colors"
-                    title={t('tabBar.unpin')}
+                    className={`absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-sm transition-colors duration-150 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                      pinned
+                        ? 'text-amber-9 opacity-100 hover:text-foreground-faint'
+                        : 'text-foreground-faint opacity-0 group-hover:opacity-100 hover:text-amber-9'
+                    }`}
+                    data-tooltip={pinLabel}
+                    aria-label={pinLabel}
+                    aria-pressed={pinned}
                   >
-                    <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M16 4h-2V2h-4v2H8c-.55 0-1 .45-1 1v4l-2 3v2h5.97v7l1 1 1-1v-7H19v-2l-2-3V5c0-.55-.45-1-1-1z" />
-                    </svg>
-                  </button>
-                )}
-                {/* Show pin icon on hover when not pinned - top-right */}
-                {onTogglePin && !isPinned?.(tab.id) && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onTogglePin(tab.id);
-                    }}
-                    className="absolute -top-1 -right-1 w-3.5 h-3.5 flex items-center justify-center rounded-full bg-card text-muted-foreground opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:!text-brand transition-all"
-                    title={t('tabBar.pin')}
-                  >
-                    <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                      <path d="M16 4h-2V2h-4v2H8c-.55 0-1 .45-1 1v4l-2 3v2h5.97v7l1 1 1-1v-7H19v-2l-2-3V5c0-.55-.45-1-1-1z" />
+                    <svg
+                      className="h-4 w-4"
+                      viewBox="0 0 24 24"
+                      fill={pinned ? 'currentColor' : 'none'}
+                      stroke="currentColor"
+                      strokeWidth={pinned ? 1 : 2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                     </svg>
                   </button>
                 )}
@@ -244,8 +249,9 @@ export function TabBar({
                   e.stopPropagation();
                   onCloseTab(tab.id);
                 }}
-                className="ml-1 p-0.5 rounded hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
-                title={t('tabBar.closeTab')}
+                className="ml-1 p-0.5 rounded hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                data-tooltip={t('tabBar.closeTab')}
+                aria-label={t('tabBar.closeTab')}
               >
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

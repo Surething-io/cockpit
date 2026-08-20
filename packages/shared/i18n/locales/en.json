@@ -236,7 +236,7 @@
     "running": "Running",
     "done": "Done",
     "pinnedSessions": "Pinned Sessions",
-    "noPinnedSessions": "No pinned sessions. Click the pin icon in the tab bar to add.",
+    "noPinnedSessions": "No pinned sessions. Click the star in the tab bar to add.",
     "editTitle": "Edit title",
     "remove": "Remove",
     "projectSessions": "Project Sessions",
@@ -1130,8 +1130,8 @@
     "notSelected": "(not selected)"
   },
   "tabBar": {
-    "unpin": "Unpin",
-    "pin": "Pin to favorites",
+    "unpin": "Remove from favorites",
+    "pin": "Add to favorites",
     "closeTab": "Close tab",
     "closeAll": "Close all tabs",
     "newTab": "New tab"

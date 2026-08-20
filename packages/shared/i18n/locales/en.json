@@ -230,15 +230,16 @@
   },
   "sessions": {
     "recentSessions": "Recent Sessions",
+    "favorites": "Favorite Sessions",
+    "noFavorites": "No favorite sessions yet. Click the star in the tab bar to add.",
+    "addFavorite": "Add to favorites",
+    "removeFavorite": "Remove from favorites",
     "runningCount": "{{count}} running",
     "unreadCount": "{{count}} unread",
     "noSessions": "No sessions yet",
     "running": "Running",
     "done": "Done",
-    "pinnedSessions": "Pinned Sessions",
-    "noPinnedSessions": "No pinned sessions. Click the star in the tab bar to add.",
     "editTitle": "Edit title",
-    "remove": "Remove",
     "projectSessions": "Project Sessions",
     "browseAllSessions": "Browse all sessions",
     "sessionList": "Session List",
@@ -1130,8 +1131,6 @@
     "notSelected": "(not selected)"
   },
   "tabBar": {
-    "unpin": "Remove from favorites",
-    "pin": "Add to favorites",
     "closeTab": "Close tab",
     "closeAll": "Close all tabs",
     "newTab": "New tab"

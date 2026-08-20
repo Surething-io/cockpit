@@ -81,7 +81,7 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
       <div className="flex flex-shrink-0 items-center gap-3 border-b border-border px-3 py-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
         <div className="flex flex-1 items-center gap-2">
           {tabBtn('recent', t('sessions.recentSessions'))}
-          {tabBtn('pinned', t('sessions.pinnedSessions'))}
+          {tabBtn('pinned', t('sessions.favorites'))}
         </div>
         {pushSupported && (
           <button
@@ -165,7 +165,7 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
             ))
           )
         ) : pinnedSessions.length === 0 ? (
-          <Empty text={t('sessions.noPinnedSessions')} />
+          <Empty text={t('sessions.noFavorites')} />
         ) : (
           pinnedSessions.map((p) => (
             <button

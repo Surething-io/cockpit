@@ -176,7 +176,7 @@ export function TabBar({
         {tabs.map((tab, index) => {
           const isActive = tab.id === activeTabId;
           const pinned = isPinned?.(tab.id) ?? false;
-          const pinLabel = pinned ? t('tabBar.unpin') : t('tabBar.pin');
+          const pinLabel = pinned ? t('sessions.removeFavorite') : t('sessions.addFavorite');
           const status: SessionNumberStatus = tab.isLoading
             ? 'loading'
             : unreadTabs.has(tab.id) && !isActive

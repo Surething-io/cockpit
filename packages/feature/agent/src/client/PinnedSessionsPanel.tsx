@@ -49,9 +49,15 @@ interface PinnedSessionsPanelProps {
  * dropdown that is open for seconds does not also need the live socket feed:
  * nobody watches a run finish from in here, that is what the list above is for.
  *
- * A session pinned months ago has aged out of that list entirely. Such a row
- * degrades to what the pin record itself holds (project + custom title) rather
- * than inventing a status or an engine it cannot know.
+ * A session favourited months ago has aged out of that list entirely. Such a
+ * row degrades to what the stored record itself holds (project + custom title)
+ * rather than inventing a status or an engine it cannot know.
+ *
+ * Naming: the UI says "favorite" everywhere (star icon, `sessions.*Favorite*`
+ * copy), while the code and storage still say "pin" — the component name, the
+ * `isPinned`/`onTogglePin` props, `/api/pinned-sessions` and the file it
+ * persists to. That split is deliberate: renaming the route would orphan every
+ * existing user's saved list. Do not "fix" one half of it in isolation.
  */
 export function PinnedSessionsPanel({
   collapsed,
@@ -186,7 +192,7 @@ export function PinnedSessionsPanel({
         className={`relative flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-hover transition-colors ${
           collapsed ? 'w-full justify-center' : 'w-full'
         }`}
-        title={collapsed ? t('sessions.pinnedSessions') : undefined}
+        title={collapsed ? t('sessions.favorites') : undefined}
       >
         {/* Star, the same mark the tab bar puts on a favourited tab. Outlined
             here because this is a list entry, not a state — the filled amber
@@ -195,7 +201,7 @@ export function PinnedSessionsPanel({
         <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
         </svg>
-        {!collapsed && <span className="text-sm flex-1 text-left">{t('sessions.pinnedSessions')}</span>}
+        {!collapsed && <span className="text-sm flex-1 text-left">{t('sessions.favorites')}</span>}
         {/* Show count badge in collapsed state */}
         {collapsed && pinnedSessions.length > 0 && (
           <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 text-muted-foreground text-xs font-medium rounded-full flex items-center justify-center bg-popover border border-border">
@@ -208,12 +214,12 @@ export function PinnedSessionsPanel({
       {isOpen && (
         <div className="absolute left-full bottom-0 ml-2 w-80 max-h-[450px] bg-popover border border-border rounded-lg shadow-lv2 z-50 flex flex-col">
           <div className="px-3 py-2 border-b border-border bg-muted/50 flex-shrink-0 rounded-t-lg">
-            <span className="text-sm font-medium">{t('sessions.pinnedSessions')}</span>
+            <span className="text-sm font-medium">{t('sessions.favorites')}</span>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto">
             {pinnedSessions.length === 0 ? (
               <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                {t('sessions.noPinnedSessions')}
+                {t('sessions.noFavorites')}
               </div>
             ) : (
               pinnedSessions.map((session, index) => {
@@ -313,7 +319,7 @@ export function PinnedSessionsPanel({
                       <button
                         onClick={(e) => { e.stopPropagation(); hideCard(); onUnpin(session.sessionId); }}
                         className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-destructive"
-                        title={t('sessions.remove')}
+                        title={t('sessions.removeFavorite')}
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

@@ -356,12 +356,22 @@ const dispatchMessage = (
       }
 
       const childEnv: Record<string, string | undefined> = {
+        // The server's own PATH — i.e. the one the user's interactive shell
+        // exported when they launched cockpit. It must be set HERE, not only on
+        // the pty branch: childEnv is rebuilt from scratch, and `zsh --login -c`
+        // is NON-interactive, so it never sources ~/.zshrc. Without this, a pipe
+        // command only sees the system PATH that /etc/zprofile's path_helper
+        // builds, and every tool installed via an rc-file PATH edit (Android
+        // platform-tools, ~/.local/bin, ~/.cargo/bin, nvm/pyenv shims) reports
+        // `command not found` — while the exact same command works in a pty
+        // bubble. Placed before ...env so a user-supplied PATH still wins.
+        PATH: getDefaultPath(),
         HOME: process.env.HOME,
         USER: process.env.USER,
         SHELL: process.env.SHELL,
         TERM: "xterm-256color",
         // UTF-8 locale so the pty renders multi-byte text (CJK, emoji) correctly.
-        // ptyEnv is rebuilt from scratch (not inherited from process.env), and a
+        // childEnv is rebuilt from scratch (not inherited from process.env), and a
         // macOS `--login` shell does NOT restore LANG (Terminal.app/iTerm inject it,
         // not the rc files) — so without this, vim/less open UTF-8 files in the
         // C/POSIX locale and mojibake every non-ASCII char. Pass the real locale
@@ -386,7 +396,9 @@ const dispatchMessage = (
 
       try {
         if (usePty) {
-          const ptyEnv: Record<string, string> = { PATH: getDefaultPath() }
+          // node-pty's env type rejects undefined values (child_process just
+          // skips them), so drop the unset keys here.
+          const ptyEnv: Record<string, string> = {}
           for (const [k, v] of Object.entries(childEnv)) {
             if (v !== undefined) ptyEnv[k] = v
           }

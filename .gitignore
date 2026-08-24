@@ -67,3 +67,10 @@ chrome-extension/_metadata/
 # E2B demo
 e2b/node_modules
 e2b/.vercel
+
+# Impeccable (design skill) working directory — critique snapshots and the
+# per-project ignore list. Local-only: the skill itself lives outside this repo,
+# the timestamped snapshots accumulate one file per run, and their prose quotes
+# on-screen content from the author's own machine. Anyone running the skill
+# regenerates what they need.
+.impeccable/

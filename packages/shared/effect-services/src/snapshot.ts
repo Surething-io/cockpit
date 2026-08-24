@@ -66,6 +66,18 @@ export interface SnapshotFileDiff {
   /** Content omitted when binary or over the size cap. */
   readonly oldContent: string | null
   readonly newContent: string | null
+  /**
+   * Binary file whose extension is an image: contents stay null (bytes never
+   * travel as text), but each side can be rendered as an `<img>` against
+   * /api/snapshots/blob. SVG is text, so it keeps its line diff and is NOT
+   * flagged here — unlike /api/git/commit-diff, which routes on extension
+   * alone and loses the SVG line diff.
+   */
+  readonly isImage?: boolean
+  /** Revision holding the "before" blob; null when the file was added. */
+  readonly oldRev?: string | null
+  /** Revision holding the "after" blob; null when the file was deleted. */
+  readonly newRev?: string | null
 }
 
 export interface SnapshotDiff {
@@ -110,6 +122,17 @@ export interface SnapshotService {
     cwd: string,
     commitHash: string
   ) => Effect.Effect<SnapshotDiff, AppError | ValidationError | NotFoundError>
+  /**
+   * Raw bytes of an IMAGE blob at a snapshot revision — what makes the image
+   * side of a snapshot diff renderable. The project's own repo has no such
+   * objects (snapshots live in a separate GIT_DIR), so /api/git/blob cannot
+   * serve these. Non-image extensions are rejected.
+   */
+  readonly blob: (
+    cwd: string,
+    rev: string,
+    file: string
+  ) => Effect.Effect<Uint8Array<ArrayBuffer>, AppError | ValidationError | NotFoundError>
   /** Retention pass: drop day branches beyond keepDays, gc, remove dead repos. */
   readonly cleanup: Effect.Effect<void, AppError>
 }

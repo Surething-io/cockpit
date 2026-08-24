@@ -162,6 +162,61 @@ describe('SnapshotServiceLive', () => {
     expect(diff.files[0].oldContent).toContain('b = 1');
   });
 
+  it('flags a changed image and serves both sides byte-exact via blob()', async () => {
+    // Two 1x1 PNGs (different pixel), so the change is a real binary modify.
+    const pngOld = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64'
+    );
+    const pngNew = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      'base64'
+    );
+    await writeFile(join(work, 'og.png'), pngOld);
+    await svc((s) =>
+      s.record({ cwd: work, sessionKey: 'session-1', provider: 'claude', toolId: 'toolu_img_a', toolName: 'Write' })
+    );
+    await writeFile(join(work, 'og.png'), pngNew);
+    // An SVG changed in the same commit must NOT be treated as an image: it is
+    // text, so its line diff is strictly more useful than two rendered copies.
+    await writeFile(join(work, 'icon.svg'), '<svg viewBox="0 0 1 1"></svg>\n');
+    await svc((s) =>
+      s.record({ cwd: work, sessionKey: 'session-1', provider: 'claude', toolId: 'toolu_img_b', toolName: 'Write' })
+    );
+
+    const commits = await svc((s) => s.listByToolIds(work, ['toolu_img_b']));
+    const diff = await svc((s) => s.diff(work, commits[0].hash));
+    const png = diff.files.find((f) => f.path === 'og.png')!;
+    expect(png.status).toBe('modified');
+    expect(png.isImage).toBe(true);
+    expect(png.oldContent).toBeNull();
+    expect(png.oldRev).toBe(commits[0].parent);
+    expect(png.newRev).toBe(commits[0].hash);
+
+    const svg = diff.files.find((f) => f.path === 'icon.svg')!;
+    expect(svg.isImage).toBeUndefined();
+    expect(svg.newContent).toContain('<svg');
+
+    const before = await svc((s) => s.blob(work, png.oldRev!, 'og.png'));
+    const after = await svc((s) => s.blob(work, png.newRev!, 'og.png'));
+    expect(Buffer.from(before).equals(pngOld)).toBe(true);
+    expect(Buffer.from(after).equals(pngNew)).toBe(true);
+  });
+
+  it('blob() refuses non-images and paths escaping the repo', async () => {
+    const commits = await svc((s) => s.listByToolIds(work, ['toolu_img_b']));
+    const rev = commits[0].hash;
+    await expect(
+      runtime.runPromise(Effect.flatMap(SnapshotService, (s) => s.blob(work, rev, 'src/a.ts')))
+    ).rejects.toThrow();
+    await expect(
+      runtime.runPromise(Effect.flatMap(SnapshotService, (s) => s.blob(work, rev, '../secrets/og.png')))
+    ).rejects.toThrow();
+    await expect(
+      runtime.runPromise(Effect.flatMap(SnapshotService, (s) => s.blob(work, 'snap/2020-01-01', 'og.png')))
+    ).rejects.toThrow();
+  });
+
   it('listByToolIds on an unknown cwd returns empty', async () => {
     const commits = await svc((s) => s.listByToolIds('/nonexistent/dir', ['x']));
     expect(commits).toEqual([]);

@@ -28,6 +28,10 @@ import { mkdir, readFile, writeFile, readdir, rm, stat, rename } from "node:fs/p
 import { basename, join, isAbsolute, relative, sep } from "node:path"
 import { Effect, Layer, Schedule } from "effect"
 import { AppError, ValidationError, NotFoundError, CockpitConfig } from "@cockpit/effect-core"
+// One source of truth for "is this an image / how big may it get / what MIME":
+// the same table the explorer's file-content routes use (feature-agent →
+// feature-explorer is a declared supporting-subdomain edge in MODULES.md).
+import { isImagePath, MAX_IMAGE_SIZE } from "@cockpit/feature-explorer/server/files/shared"
 import {
   SnapshotService,
   type SnapshotTrigger,
@@ -777,6 +781,77 @@ const showFile = (
     Effect.orElseSucceed(() => null)
   )
 
+/**
+ * `git show <rev>:<path>` with the bytes left ALONE — no utf-8 decode.
+ *
+ * `runGit` decodes stdout into a string, which mangles every non-text byte;
+ * that is fine for the text diff but destroys an image. Kept separate rather
+ * than adding an encoding switch to runGit, whose GitResult shape (and its
+ * stderr matching) is text all the way through.
+ */
+const gitShowBytes = (
+  repoDir: string,
+  cwd: string,
+  rev: string,
+  path: string
+): Effect.Effect<Buffer, NotFoundError> =>
+  Effect.tryPromise({
+    try: () =>
+      new Promise<Buffer>((resolve, reject) => {
+        execFile(
+          "git",
+          ["show", `${rev}:${path}`],
+          {
+            env: {
+              ...process.env,
+              GIT_DIR: repoDir,
+              GIT_WORK_TREE: cwd,
+              GIT_TERMINAL_PROMPT: "0",
+              LC_ALL: "C",
+              GIT_INDEX_FILE: join(repoDir, "index"),
+            },
+            cwd,
+            // Over-cap images fail the exec (maxBuffer) → 404 → the client's
+            // per-side "image failed to load" state.
+            maxBuffer: MAX_IMAGE_SIZE,
+            encoding: "buffer",
+          },
+          (err, stdout) => (err ? reject(err) : resolve(stdout as Buffer))
+        )
+      }),
+    // A miss is ordinary: the path simply doesn't exist at that revision.
+    catch: () => new NotFoundError({ resource: "snapshot-blob", id: `${rev}:${path}` }),
+  })
+
+/**
+ * Image bytes at a snapshot revision. Mirrors /api/git/blob's guards — commit
+ * hash only, image extensions only — because this route also hands out
+ * repository content by path: it is an image endpoint, not a "cat any blob"
+ * endpoint.
+ */
+const blobImpl = (
+  snapshotsRoot: string,
+  cwd: string,
+  rev: string,
+  file: string
+): Effect.Effect<Uint8Array<ArrayBuffer>, AppError | ValidationError | NotFoundError> =>
+  Effect.gen(function* () {
+    if (!/^[0-9a-f]{6,40}$/i.test(rev)) {
+      return yield* Effect.fail(new ValidationError({ field: "rev", reason: "invalid commit hash" }))
+    }
+    // git resolves `<rev>:<path>` from the top of the tree and rejects escapes
+    // itself; rejecting them here keeps the failure a 400 instead of a 404.
+    if (!file || isAbsolute(file) || file.split("/").includes("..")) {
+      return yield* Effect.fail(new ValidationError({ field: "file", reason: "invalid path" }))
+    }
+    if (!isImagePath(file)) {
+      return yield* Effect.fail(new ValidationError({ field: "file", reason: "not an image" }))
+    }
+    const repoDir = yield* resolveRepoDir(snapshotsRoot, cwd)
+    const bytes = yield* gitShowBytes(repoDir, cwd, rev, file)
+    return new Uint8Array(bytes)
+  }).pipe(Effect.withSpan("snapshot.blob", { attributes: { cwd, rev } }))
+
 const diffImpl = (
   snapshotsRoot: string,
   cwd: string,
@@ -847,6 +922,12 @@ const diffImpl = (
         }
       }
       const stats = lineStats.get(path)
+      // Images never travel as content (utf-8 decoding a PNG yields mojibake,
+      // which is why `binary` nulls the contents above). Instead hand the
+      // client the two revisions that hold the blob; it renders an <img> per
+      // side against /api/snapshots/blob. Gated on `binary` as well as the
+      // extension, so an .svg keeps its line diff.
+      const isImage = binary && isImagePath(path)
       files.push({
         path,
         status,
@@ -855,6 +936,16 @@ const diffImpl = (
         deletions: stats?.deletions ?? 0,
         oldContent,
         newContent,
+        ...(isImage
+          ? {
+              isImage: true,
+              // A parentless day-root commit diffs against the empty tree, so
+              // every path comes back "added" — `base` is never handed out as
+              // a revision the client could ask for.
+              oldRev: status === "added" ? null : base,
+              newRev: status === "deleted" ? null : commit.hash,
+            }
+          : {}),
       })
     }
 
@@ -1032,6 +1123,7 @@ export const SnapshotServiceLive = Layer.scoped(
       listByToolIds: (cwd: string, toolIds: ReadonlyArray<string>, sessionKey?: string) =>
         listByToolIdsImpl(snapshotsRoot, cwd, toolIds, sessionKey),
       diff: (cwd: string, commitHash: string) => diffImpl(snapshotsRoot, cwd, commitHash),
+      blob: (cwd: string, rev: string, file: string) => blobImpl(snapshotsRoot, cwd, rev, file),
       cleanup,
     })
   })

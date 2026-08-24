@@ -33,6 +33,12 @@ export interface SnapshotFileDiffDto {
   deletions?: number
   oldContent: string | null
   newContent: string | null
+  /** Binary image: contents are null, but each side has a blob to render. */
+  isImage?: boolean
+  /** Revision holding the "before" blob; null when the file was added. */
+  oldRev?: string | null
+  /** Revision holding the "after" blob; null when the file was deleted. */
+  newRev?: string | null
 }
 
 export interface SnapshotDiffDto {

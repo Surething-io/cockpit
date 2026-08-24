@@ -17,6 +17,7 @@ import {
   GitFileTree,
   buildGitFileTree,
   collectGitTreeDirPaths,
+  ImageDiffView,
   InteractiveMarkdownPreview,
   HtmlPreviewModal,
   isMarkdownFile,
@@ -52,6 +53,11 @@ interface CallFile {
   new_string: string;
   /** Binary or over-cap file — contents not viewable. */
   unviewable?: boolean;
+  /** Binary image: rendered as before/after <img> instead of a text diff. */
+  isImage?: boolean;
+  /** Snapshot revisions holding the image; null = absent on that side. */
+  oldRev?: string | null;
+  newRev?: string | null;
   /** Changed in the same commit but NOT declared by the tool — likely another
    *  concurrent session / external process (best-effort attribution). */
   external?: boolean;
@@ -116,7 +122,12 @@ function callsFromSnapshots(diffs: SnapshotDiffDto[]): CallEntry[] {
         deletions: f.deletions,
         old_string: f.oldContent ?? '',
         new_string: f.newContent ?? '',
-        unviewable: f.binary || (f.oldContent === null && f.newContent === null),
+        // An image is "unviewable" as TEXT but perfectly viewable as an image,
+        // so it must not fall into the not-viewable branch.
+        unviewable: !f.isImage && (f.binary || (f.oldContent === null && f.newContent === null)),
+        isImage: f.isImage,
+        oldRev: f.oldRev,
+        newRev: f.newRev,
         // Attribution is best-effort: only meaningful when the tool declared
         // target files (Edit/Write); Bash declares nothing → no marking.
         external: declared.size > 0 && !declared.has(f.path),
@@ -125,6 +136,10 @@ function callsFromSnapshots(diffs: SnapshotDiffDto[]): CallEntry[] {
     };
   });
 }
+
+/** Image bytes at a snapshot revision — the shadow repo, not the project's. */
+const snapshotBlobUrl = (cwd: string, rev: string, filePath: string) =>
+  `/api/snapshots/blob?cwd=${encodeURIComponent(cwd)}&rev=${encodeURIComponent(rev)}&file=${encodeURIComponent(filePath)}`;
 
 function toolCallDetail(toolCall: ToolCallInfo | undefined): string | undefined {
   if (!toolCall) return undefined;
@@ -556,9 +571,16 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                     </span>
                   )}
                   <div className="ml-auto flex items-center gap-2">
-                    {/* 精简/全文 applies to both split and unified views. */}
-                    <DiffDensityToggle value={density} onChange={setDensity} />
-                    <DiffViewModeToggle value={viewMode} onChange={setViewMode} />
+                    {/* Both toggles are text-diff only — an image side-by-side
+                        has no density and no unified form (same as the
+                        commit-detail / branch-compare panes). */}
+                    {!selectedFile?.isImage && (
+                      <>
+                        {/* 精简/全文 applies to both split and unified views. */}
+                        <DiffDensityToggle value={density} onChange={setDensity} />
+                        <DiffViewModeToggle value={viewMode} onChange={setViewMode} />
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -612,7 +634,21 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
                       search. */}
                   <div className="flex-1 overflow-hidden">
                     {selectedFile ? (
-                      selectedFile.unviewable ? (
+                      selectedFile.isImage ? (
+                        <ImageDiffView
+                          filePath={selectedFile.path}
+                          oldSrc={
+                            cwd && selectedFile.oldRev
+                              ? snapshotBlobUrl(cwd, selectedFile.oldRev, selectedFile.path)
+                              : null
+                          }
+                          newSrc={
+                            cwd && selectedFile.newRev
+                              ? snapshotBlobUrl(cwd, selectedFile.newRev, selectedFile.path)
+                              : null
+                          }
+                        />
+                      ) : selectedFile.unviewable ? (
                         <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
                           {t('diffViewer.notViewable')}
                         </div>

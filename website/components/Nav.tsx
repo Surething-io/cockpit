@@ -27,7 +27,8 @@ export function Nav({ locale }: { locale: Locale }) {
         <Link href={`${base}/`} className="flex items-center gap-2 group">
           <Image
             src="/icons/icon-128x128.png"
-            alt="OpenCockpit"
+            // Decorative: the wordmark next to it already says "OpenCockpit".
+            alt=""
             width={28}
             height={28}
             className="rounded-md"

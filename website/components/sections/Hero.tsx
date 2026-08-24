@@ -1,7 +1,7 @@
 import type { Messages } from '@/content/messages';
 import type { Locale } from '@/lib/i18n';
 import { CopyableCommand } from '../CopyableCommand';
-import { PlainImg } from '../PlainImg';
+import Image from 'next/image';
 
 const TRY_ONLINE_URL = '/try';
 
@@ -28,10 +28,13 @@ export function Hero({ locale, t }: { locale: Locale; t: Messages }) {
         </div>
 
         <div className="mx-auto mt-12 max-w-5xl">
-          <PlainImg
-            src="/opencockpit.png"
+          <Image
+            src="/opencockpit.webp"
             alt={t.home.heroImageAlt}
-            className="w-full rounded-2xl border border-border shadow-2xl ring-1 ring-white/[0.06]"
+            width={2048}
+            height={1190}
+            priority
+            className="h-auto w-full rounded-2xl border border-border shadow-2xl ring-1 ring-white/[0.06]"
           />
         </div>
       </div>

@@ -1,6 +1,17 @@
 import type { Metadata, Viewport } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
 import { PostHogAnalytics } from '@/components/PostHogAnalytics';
+
+/* Self-hosted at build time. Previously the CSS just named "Inter" in the font
+   stack with no @font-face behind it, so Latin text rendered in Inter only for
+   visitors who happened to have it installed and fell through to PingFang SC /
+   Microsoft YaHei for everyone else — a display voice that varied per machine. */
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-inter',
+});
 
 const SITE_URL = 'https://opencockpit.dev';
 const DEFAULT_TITLE = 'OpenCockpit — The Open Claude Code GUI for Any Agent';
@@ -184,7 +195,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   // `LocaleSync` corrects `document.documentElement.lang` on hydration; the
   // authoritative SEO signal is the `hreflang` map in `alternates.languages`.
   return (
-    <html lang="und" className="dark" suppressHydrationWarning>
+    <html lang="und" className={`dark ${inter.variable}`} suppressHydrationWarning>
       <head>
         {PLAUSIBLE_DOMAIN ? (
           <script

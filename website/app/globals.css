@@ -52,7 +52,12 @@
 }
 
 @theme inline {
-  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  /* `--font-inter` is injected by next/font in app/layout.tsx, which self-hosts
+     the face. Naming "Inter" here instead only picked it up when the visitor
+     happened to have Inter installed locally; everyone else silently fell
+     through to PingFang SC / Microsoft YaHei rendering the Latin display type,
+     so the page had no typographic identity of its own. */
+  --font-sans: var(--font-inter), "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   --font-mono: "Maple Mono CN", "JetBrains Mono", "Menlo", "Consolas", monospace;
 
   --color-background: hsl(var(--background));
@@ -136,6 +141,29 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Browser surfaces — the parts we did not draw still carry the design.
+   Selection, caret, focus ring, scrollbar and form-control accents all ship
+   with defaults that belong to no design system: Chrome's focus ring is blue,
+   which on a teal-and-slate page is the giveaway that nobody claimed them. */
+::selection {
+  background: hsl(var(--teal-8) / 0.45);
+  color: hsl(var(--teal-12));
+}
+
+html {
+  caret-color: hsl(var(--brand));
+  scrollbar-color: hsl(var(--slate-7)) transparent;
+  /* Checkbox / radio / range tint from the brand, not the platform blue. */
+  accent-color: hsl(var(--brand));
+}
+
+/* No `border-radius` here on purpose: outlines already follow the element's own
+   radius, and forcing one would square off the pill-shaped chips on focus. */
+:focus-visible {
+  outline: 2px solid hsl(var(--brand));
+  outline-offset: 2px;
+}
+
 /* Aurora gradient backdrop for hero / final CTA — layered teal radials. */
 .hero-bg {
   background:
@@ -165,9 +193,12 @@ body {
 @media (hover: hover) {
   .lift:hover {
     transform: translateY(-2px);
-    /* Black-based so it reads as a soft shadow on light and simply fades out on
-       dark (a slate-12-based shadow would invert to a light glow on dark). */
-    box-shadow: 0 12px 32px -14px rgb(0 0 0 / 0.22);
+    /* Tinted from the brand, not black. The previous `rgb(0 0 0 / 0.22)` was a
+       leftover from the light theme this site no longer has: black at 22% on a
+       #111113 background is mathematically invisible, so the one hover
+       micro-interaction on the site was a bare 2px translate. Keeps a real
+       offset and blur rather than becoming a zero-offset halo. */
+    box-shadow: 0 12px 32px -14px hsl(var(--teal-9) / 0.5);
   }
 }
 

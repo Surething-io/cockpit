@@ -28,11 +28,15 @@ export function LangSwitch({ locale }: { locale: Locale }) {
         <span key={l} className="flex items-center">
           {i > 0 && <span className="mx-1 text-slate-7">·</span>}
           <button
+            type="button"
             onClick={() => switchTo(l)}
             className={
-              l === locale
-                ? 'text-foreground font-medium'
-                : 'text-muted-foreground hover:text-foreground transition-colors'
+              // px/py rather than a bare text node: at 16x16 these were the
+              // smallest targets on the page, below the WCAG 2.5.8 AA minimum.
+              'inline-flex items-center px-1.5 py-3 ' +
+              (l === locale
+                ? 'font-medium text-foreground'
+                : 'text-muted-foreground transition-colors hover:text-foreground')
             }
             aria-current={l === locale ? 'true' : 'false'}
           >

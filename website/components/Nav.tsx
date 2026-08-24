@@ -42,19 +42,19 @@ export function Nav({ locale }: { locale: Locale }) {
         <nav className="hidden md:flex items-center gap-6 text-sm">
           <Link
             href={`${base}/docs/`}
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center py-3 text-muted-foreground transition-colors hover:text-foreground"
           >
             {t.nav.docs}
           </Link>
           <Link
             href={`${base}/blog/`}
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center py-3 text-muted-foreground transition-colors hover:text-foreground"
           >
             {t.nav.blog}
           </Link>
           <Link
             href={`${base}/changelog/`}
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center py-3 text-muted-foreground transition-colors hover:text-foreground"
           >
             {t.nav.changelog}
           </Link>
@@ -62,7 +62,7 @@ export function Nav({ locale }: { locale: Locale }) {
             href={GITHUB_URL}
             target="_blank"
             rel="noreferrer"
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center py-3 text-muted-foreground transition-colors hover:text-foreground"
           >
             {t.nav.github}
           </a>
@@ -72,7 +72,7 @@ export function Nav({ locale }: { locale: Locale }) {
             rel="noreferrer"
             aria-label="Follow @yang1365609 on X"
             title="Follow @yang1365609 on X"
-            className="text-muted-foreground hover:text-foreground transition-colors flex items-center"
+            className="flex h-11 w-11 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
           >
             <svg
               viewBox="0 0 24 24"

@@ -35,19 +35,19 @@ export function Footer({ locale }: { locale: Locale }) {
           <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
             {t.footer.product}
           </div>
-          <ul className="space-y-2 text-muted-foreground">
+          <ul className="space-y-1 text-muted-foreground">
             <li>
-              <Link href={`${base}/docs/`} className="transition-colors hover:text-brand">
+              <Link href={`${base}/docs/`} className="inline-block py-1 transition-colors hover:text-brand">
                 {t.nav.docs}
               </Link>
             </li>
             <li>
-              <Link href={`${base}/blog/`} className="transition-colors hover:text-brand">
+              <Link href={`${base}/blog/`} className="inline-block py-1 transition-colors hover:text-brand">
                 {t.nav.blog}
               </Link>
             </li>
             <li>
-              <Link href={`${base}/changelog/`} className="transition-colors hover:text-brand">
+              <Link href={`${base}/changelog/`} className="inline-block py-1 transition-colors hover:text-brand">
                 {t.nav.changelog}
               </Link>
             </li>
@@ -55,10 +55,13 @@ export function Footer({ locale }: { locale: Locale }) {
               <a
                 href={TRY_ONLINE_URL}
                 target="_blank"
-                rel="noreferrer"
-                className="transition-colors hover:text-brand"
+                /* `noopener`, not `noreferrer`: this is our own /try page, and
+                   dropping the referrer made demo-conversion attribution
+                   impossible. Matches the hero instance of the same link. */
+                rel="noopener"
+                className="inline-block py-1 transition-colors hover:text-brand"
               >
-                {t.hero.tryOnline}
+                {t.home.tryLink}
               </a>
             </li>
           </ul>
@@ -68,14 +71,14 @@ export function Footer({ locale }: { locale: Locale }) {
           <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
             {t.footer.resources}
           </div>
-          <ul className="space-y-2 text-muted-foreground">
+          <ul className="space-y-1 text-muted-foreground">
             <li>
-              <a href={NPM_URL} target="_blank" rel="noreferrer" className="transition-colors hover:text-brand">
+              <a href={NPM_URL} target="_blank" rel="noreferrer" className="inline-block py-1 transition-colors hover:text-brand">
                 npm
               </a>
             </li>
             <li>
-              <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="transition-colors hover:text-brand">
+              <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="inline-block py-1 transition-colors hover:text-brand">
                 GitHub
               </a>
             </li>
@@ -84,7 +87,7 @@ export function Footer({ locale }: { locale: Locale }) {
                 href={`${GITHUB_URL}/blob/main/LICENSE`}
                 target="_blank"
                 rel="noreferrer"
-                className="transition-colors hover:text-brand"
+                className="inline-block py-1 transition-colors hover:text-brand"
               >
                 {t.footer.license}
               </a>
@@ -96,13 +99,13 @@ export function Footer({ locale }: { locale: Locale }) {
           <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
             {t.footer.community}
           </div>
-          <ul className="space-y-2 text-muted-foreground">
+          <ul className="space-y-1 text-muted-foreground">
             <li>
               <a
                 href={`${GITHUB_URL}/issues`}
                 target="_blank"
                 rel="noreferrer"
-                className="transition-colors hover:text-brand"
+                className="inline-block py-1 transition-colors hover:text-brand"
               >
                 Issues
               </a>
@@ -112,7 +115,7 @@ export function Footer({ locale }: { locale: Locale }) {
                 href={X_URL}
                 target="_blank"
                 rel="noreferrer"
-                className="transition-colors hover:text-brand"
+                className="inline-block py-1 transition-colors hover:text-brand"
               >
                 X / @yang1365609
               </a>
@@ -125,7 +128,10 @@ export function Footer({ locale }: { locale: Locale }) {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5 text-xs text-muted-foreground">
           <span>© {new Date().getFullYear()} OpenCockpit · {t.footer.license}</span>
           <span>
-            <a href="https://opencockpit.dev" className="transition-colors hover:text-brand">
+            <a
+              href="https://opencockpit.dev"
+              className="inline-block py-1.5 transition-colors hover:text-brand"
+            >
               opencockpit.dev
             </a>
           </span>

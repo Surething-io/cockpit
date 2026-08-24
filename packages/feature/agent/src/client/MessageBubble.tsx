@@ -234,7 +234,7 @@ interface MessageBubbleProps {
    * auto-swipe there. When omitted (e.g. inside SubagentTranscriptModal, which
    * has no second panel), the button falls back to a local full-screen modal.
    */
-  onShowFileDiff?: (toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string) => void;
+  onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, live?: boolean) => void;
   /** AI reply Markdown local-file link → Explorer tree + optional line jump. */
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
 }
@@ -488,6 +488,16 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   );
   const [snapshotHasChanges, setSnapshotHasChanges] = useState(false);
   const showFileDiff = paramsHaveChanges || snapshotHasChanges;
+
+  // Keep an OPEN file-changes panel growing while this message keeps streaming
+  // new tool calls — the panel used to render a copy of toolCalls frozen at
+  // click time, so nothing the AI did afterwards ever showed up. The host drops
+  // a live push unless it is currently showing this message, so no "am I the
+  // one on screen?" prop is needed here.
+  useEffect(() => {
+    if (!onShowFileDiff || !message.toolCalls?.length) return;
+    onShowFileDiff(message.id, message.toolCalls, cwd, sessionId ?? undefined, true);
+  }, [onShowFileDiff, message.id, message.toolCalls, cwd, sessionId]);
 
   useEffect(() => {
     // Params already prove non-empty, or nothing mutating / no cwd to query.
@@ -1055,7 +1065,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                           // with an auto-swipe; fall back to a local modal when no
                           // panel host is available (e.g. subagent transcript).
                           if (onShowFileDiff && message.toolCalls) {
-                            onShowFileDiff(message.toolCalls, cwd, sessionId ?? undefined);
+                            onShowFileDiff(message.id, message.toolCalls, cwd, sessionId ?? undefined);
                           } else {
                             setShowDiffViewer(true);
                           }

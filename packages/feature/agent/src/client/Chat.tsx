@@ -113,7 +113,7 @@ interface ChatProps {
   }) => void;
   onOpenSession?: (sessionId: string, title?: string) => void; // Open a new session (used for Fork)
   onContentSearch?: (query: string) => void; // Selected text → project-wide search
-  onShowFileDiff?: (toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string) => void; // Message file changes → Explorer panel + auto-swipe
+  onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, live?: boolean) => void; // Message file changes → Explorer panel + auto-swipe
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void; // AI reply file link → Explorer
   onOpenSessionBrowser?: () => void; // Host-handled: open the cross-engine session browser
   onOpenSettings?: () => void; // Host-handled: open the app settings modal

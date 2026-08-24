@@ -65,7 +65,7 @@ interface ChatPanelProps {
   }) => void;
   onOpenSession?: (sessionId: string, title?: string) => void;
   onContentSearch?: (query: string) => void;
-  onShowFileDiff?: (toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string) => void;
+  onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, live?: boolean) => void;
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
 }
 

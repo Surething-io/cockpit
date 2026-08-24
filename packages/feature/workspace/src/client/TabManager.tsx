@@ -8,6 +8,7 @@ import { GitWorktreeModal } from '@cockpit/feature-explorer';
 import { ConsoleView, AliasManager } from '@cockpit/feature-console';
 import { ChatProvider, FileDiffViewer } from '@cockpit/feature-agent';
 import type { ToolCallInfo } from '@cockpit/feature-agent';
+import { nextFileDiffRequest, type FileDiffRequest } from './fileDiffRequest';
 import { SwipeableViewContainer, SwipeableContent, type ViewType } from '@cockpit/shared-ui';
 import { PanelPortalProvider } from '@cockpit/shared-ui';
 import { useTabState } from './useTabState';
@@ -114,7 +115,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
   // Message-level "view all file changes": hosted in the Explorer panel (panel 2)
   // as an overlay above the FileBrowser, instead of a full-screen modal. Null =
   // not showing. Setting it also swipes to Explorer (see handleShowFileDiff).
-  const [fileDiffRequest, setFileDiffRequest] = useState<{ toolCalls: ToolCallInfo[]; cwd?: string; sessionId?: string } | null>(null);
+  const [fileDiffRequest, setFileDiffRequest] = useState<FileDiffRequest | null>(null);
   // Forced chat refresh signal: bumped when a SWITCH_SESSION jump targets a session whose
   // tab already exists. Activating an already-active tab produces no isActive rising edge
   // in Chat, so without this a jump from the scheduled-tasks / recent / pinned panels would
@@ -367,9 +368,12 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
   // — which re-renders TabManager — doesn't re-render the whole FileBrowser subtree.
   const handleExplorerClose = useCallback(() => handleViewChange('agent'), [handleViewChange]);
 
-  const handleShowFileDiff = useCallback((toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string) => {
-    setFileDiffRequest({ toolCalls, cwd, sessionId });
-    handleViewChange('explorer');
+  // `live` = the source message is still streaming and just appended a tool
+  // call; it refreshes the overlay in place (no swipe) and is dropped unless
+  // that message is the one on screen. See fileDiffRequest.ts.
+  const handleShowFileDiff = useCallback((messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, live?: boolean) => {
+    setFileDiffRequest((prev) => nextFileDiffRequest(prev, { messageId, toolCalls, cwd, sessionId }, live === true));
+    if (!live) handleViewChange('explorer');
   }, [handleViewChange]);
 
   const handleOpenFileLink = useCallback((target: { path: string; lineNumber?: number }) => {
@@ -528,10 +532,11 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                   >
                     <FileDiffViewer
                       // Switching to a different message must reset the viewer
-                      // (first commit / first file, or empty state) — key on the
-                      // tool-call identity forces a fresh mount per message while
-                      // leaving same-message refetches (stable key) untouched.
-                      key={fileDiffRequest.toolCalls.map((tc) => tc.id).filter(Boolean).join(',')}
+                      // (first commit / first file, or empty state). Key on the
+                      // MESSAGE, not its tool-call ids: a streaming message keeps
+                      // appending calls, and remounting on each one would throw
+                      // away the selected commit / file / scroll position.
+                      key={fileDiffRequest.messageId}
                       toolCalls={fileDiffRequest.toolCalls}
                       cwd={fileDiffRequest.cwd}
                       sessionId={fileDiffRequest.sessionId}

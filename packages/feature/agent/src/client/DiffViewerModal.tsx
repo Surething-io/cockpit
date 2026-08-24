@@ -302,6 +302,9 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
   // When commits are missing for tools that almost certainly changed files
   // (Edit/Write family), refetch up to twice before settling.
   const [retryTick, setRetryTick] = useState(0);
+  // A streaming message adds tool ids over time; each new one needs its own
+  // retry budget, or its late-landing snapshot is never picked up.
+  useEffect(() => { setRetryTick(0); }, [toolIdsKey]);
   const snapshotsQ = useEffectQuery(
     cwd && toolIds.length > 0
       ? loadSnapshotDiffsForToolIds(cwd, toolIds, sessionId)

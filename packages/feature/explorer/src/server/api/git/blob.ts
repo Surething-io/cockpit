@@ -30,6 +30,16 @@ import {
 /** sha / branch / tag / `HEAD^1` / `main~3` / `@{u}` — no shell metacharacters. */
 const REV_PATTERN = /^[0-9A-Za-z._/^~@{}-]+$/
 
+/**
+ * The index, addressed by git as `:0:<path>`. Accepted as an explicit special
+ * case rather than by letting ":" into REV_PATTERN, which would also admit
+ * `<rev>:<path>` strings that smuggle a second path past the image check.
+ *
+ * The status pane needs it on both sides: an unstaged change is
+ * index → working tree, a staged one is HEAD → index.
+ */
+const INDEX_REV = ":0"
+
 /** Full 40-hex sha (or abbreviated ≥7) → the blob can never change. */
 const IMMUTABLE_REV = /^[0-9a-f]{7,40}$/
 
@@ -61,7 +71,7 @@ export const GET = handler((req) =>
     const rev = sp.get("rev")
     const file = sp.get("file")
 
-    if (!rev || !REV_PATTERN.test(rev)) {
+    if (!rev || (rev !== INDEX_REV && !REV_PATTERN.test(rev))) {
       return yield* Effect.fail(
         new ValidationError({
           field: "rev",
@@ -87,7 +97,7 @@ export const GET = handler((req) =>
       headers: {
         "Content-Type": getMimeType(path.extname(file)),
         "Content-Length": String(bytes.length),
-        // A blob at a sha is immutable; a branch name is not.
+        // A blob at a sha is immutable; a branch name (or the index) is not.
         "Cache-Control": IMMUTABLE_REV.test(rev)
           ? "private, max-age=31536000, immutable"
           : "no-cache",

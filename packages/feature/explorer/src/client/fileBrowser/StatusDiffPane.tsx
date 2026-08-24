@@ -49,6 +49,7 @@ import { isFunctionLike } from '@cockpit/feature-explorer/server/codeMap/types';
 
 import { BlockDiffViewer } from './BlockDiffViewer';
 import { FileImagePreview } from './FileImagePreview';
+import { ImageDiffView } from './ImageDiffView';
 import { isImageFile } from './utils';
 import type { GitFileStatus } from './types';
 
@@ -105,6 +106,10 @@ interface StatusDiffPaneProps {
   onTokenHoverLeave?: () => void;
   onTokenHoverCancel?: () => void;
 }
+
+/** Bytes of an image at a revision — `:0` is the index (see /api/git/blob). */
+const gitBlobUrl = (cwd: string, rev: string, filePath: string) =>
+  `/api/git/blob?cwd=${encodeURIComponent(cwd)}&rev=${encodeURIComponent(rev)}&file=${encodeURIComponent(filePath)}`;
 
 export function StatusDiffPane({
   cwd,
@@ -171,6 +176,9 @@ export function StatusDiffPane({
   const [viewMode, setViewMode] = useState<'split' | 'unified'>('unified');
 
   const filePath = selected.file.path;
+  // Renames: git status reports the NEW path, but HEAD only knows the old one
+  // — same rule /api/git/diff follows for the text sides.
+  const headFile = selected.file.oldPath || filePath;
   const isImage = isImageFile(filePath);
   // Absolute path for the HTML preview modal (opening it is a user gesture → trusted).
   const htmlAbs = filePath.startsWith('/')
@@ -395,12 +403,41 @@ export function StatusDiffPane({
           </div>
           <div className="flex-1 overflow-auto">
             {isImage ? (
-              <FileImagePreview
-                cwd={cwd}
-                path={filePath}
-                className="p-4 flex items-center justify-center"
-                imgClassName="max-w-full max-h-[60vh] object-contain"
-                alt={filePath}
+              <ImageDiffView
+                filePath={filePath}
+                // Before side: whatever the text diff compares against — the
+                // index for an unstaged change, HEAD for a staged one (through
+                // the pre-rename name, which is the only one HEAD knows).
+                // `isNew` means that side doesn't exist yet.
+                oldSrc={
+                  diff.isNew
+                    ? null
+                    : gitBlobUrl(
+                        cwd,
+                        selected.type === 'staged' ? 'HEAD' : ':0',
+                        selected.type === 'staged' ? headFile : filePath,
+                      )
+                }
+                // After side of a STAGED change is the index blob; for an
+                // unstaged one it's the file on disk, which owns its own
+                // stat/ETag round-trip (see FileImagePreview) — hence a node
+                // rather than a URL.
+                newSrc={
+                  diff.isDeleted || selected.type !== 'staged'
+                    ? null
+                    : gitBlobUrl(cwd, ':0', filePath)
+                }
+                newNode={
+                  diff.isDeleted || selected.type === 'staged' ? undefined : (
+                    <FileImagePreview
+                      cwd={cwd}
+                      path={filePath}
+                      className="flex items-center justify-center"
+                      imgClassName="max-w-full max-h-[60vh] object-contain"
+                      alt={filePath}
+                    />
+                  )
+                }
               />
             ) : viewMode === 'unified' ? (
               <DiffUnifiedView

@@ -19,7 +19,10 @@ export async function generateMetadata({
   if (!isLocale(locale)) return {};
   const t = getMessages(locale);
   return {
-    title: t.hero.headline,
+    // `absolute` bypasses the root layout's ' · OpenCockpit' title template.
+    // Using `t.hero.headline` here (itself 'OpenCockpit') rendered the browser
+    // tab as "OpenCockpit · OpenCockpit" in both locales.
+    title: { absolute: t.hero.metaTitle },
     // SEO description (≤160 chars). Separate from `hero.description`,
     // which is the long visible tagline shown in the Hero section.
     description: t.hero.metaDescription,
@@ -32,7 +35,7 @@ export async function generateMetadata({
       },
     },
     openGraph: {
-      title: t.hero.headline,
+      title: t.hero.metaTitle,
       description: t.hero.metaDescription,
       url: `${SITE_URL}/${locale}/`,
       siteName: 'OpenCockpit',
@@ -46,7 +49,7 @@ export async function generateMetadata({
     },
     twitter: {
       card: 'summary_large_image',
-      title: t.hero.headline,
+      title: t.hero.metaTitle,
       description: t.hero.metaDescription,
       images: ['/og.png'],
     },
@@ -150,7 +153,7 @@ export default async function HomePage({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteLd) }}
       />
-      <Hero locale={locale as Locale} t={t} />
+      <Hero t={t} />
       <Reveal>
         <SimpleStory t={t} />
       </Reveal>

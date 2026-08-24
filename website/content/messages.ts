@@ -10,6 +10,10 @@ export const messages = {
     },
     hero: {
       headline: 'OpenCockpit',
+      // Page <title>. Kept separate from `headline` because the root layout's
+      // title template appends ' · OpenCockpit'; using `headline` here rendered
+      // the tab as "OpenCockpit · OpenCockpit".
+      metaTitle: 'OpenCockpit — The Open Claude Code GUI for Any Agent',
       subheadline: 'One seat. One AI. Everything under control.',
       // Short, punchy lead shown in the Hero. `description` below stays long for
       // JSON-LD / structured data — don't merge them.
@@ -29,22 +33,62 @@ export const messages = {
     },
     home: {
       headline: 'Your coding agents. One cockpit.',
-      lead: 'Run Claude, Codex, DeepSeek, GLM, Kimi, and Ollama with your code, terminal, browser, and databases close at hand.',
+      // Two beats, matching zh. The H1 is evocative rather than descriptive, so
+      // this line carries "what is this": the first sentence names the category
+      // the whole site ranks for and which appeared nowhere in visible copy,
+      // the second keeps the concrete proof.
+      lead: 'The open-source, IDE-like Claude Code GUI. Run Claude, Codex, DeepSeek, GLM, Kimi, and Ollama with your code, terminal, browser, and databases all in one.',
       installNote: 'Runs on your machine. Opens in your browser.',
+      // Prerequisite + licence, rendered directly under the install command.
+      // This is the highest-doubt moment on the page: without this line a
+      // visitor with no Node meets `command not found`, and the strongest
+      // argument for the product (you can read every line) was footer-only.
+      trustNode: 'Requires Node 20+',
+      trustLicense: 'MIT licensed',
       tryLink: 'Try the online demo',
       heroImageAlt: 'OpenCockpit workspace with multiple coding agents, project navigation, and slash commands',
-      work: {
-        headline: 'Everything your agents need to work',
-        desc: 'Move between projects while Cockpit keeps every conversation and tool in place.',
-        points: ['Multiple projects in parallel', 'Files, terminals, browsers, and databases'],
+      // Mobile-only. The screenshot is shown at a legible scale inside a
+      // pannable frame instead of being shrunk to an unreadable 342px.
+      heroImageHint: 'Drag the screenshot sideways to explore the full workspace.',
+      // Names the interaction, not the picture. The <img> keeps `heroImageAlt`,
+      // so reusing that string here made screen readers announce the same
+      // hundred characters twice in a row.
+      heroImageGroupLabel: 'Product screenshot — scroll sideways to explore the workspace',
+      copy: {
+        idle: 'Copy',
+        copied: 'Copied',
+        // Shown when the clipboard API is unavailable (any non-secure origin —
+        // including the shared-dev-box HTTP deployment this product advertises).
+        // Mirrors the zh string: the recovery is "copy it yourself", not
+        // "select it" — the component has already done the selecting.
+        failed: 'Copy manually',
+      },
+      engines: {
+        headline: 'Bring the agent you already pay for',
+        desc: 'Claude works out of the box through the official Agent SDK. Codex, DeepSeek, GLM, Kimi and local Ollama each open in their own tab, with their own session history and their own key.',
+        // Single source of truth for the chip row. Previously hardcoded in
+        // SimpleStory.tsx — the only content on the page outside messages.ts.
+        items: [
+          { name: 'Claude', icon: 'claude' },
+          { name: 'Codex', icon: 'codex' },
+          { name: 'DeepSeek', icon: 'deepseek' },
+          { name: 'GLM', icon: 'glm' },
+          { name: 'Kimi', icon: 'kimi' },
+          { name: 'Ollama', icon: 'ollama' },
+        ],
       },
       local: {
         headline: 'Install Cockpit as an app',
-        desc: 'Cockpit is a PWA. Install it from your browser for a standalone window, dock icon, and an app-like experience.',
+        desc: 'Cockpit runs in the browser and installs like a native app — its own window, its own dock icon, no browser chrome in the way.',
         steps: [
-          'Start Cockpit and open it in your browser.',
-          'Choose Install OpenCockpit in your browser menu or address bar.',
-          'Launch it from your dock, desktop, or home screen.',
+          // The command is repeated inline below this step rather than referred
+          // to as "the command above": on a 390px viewport that phrase pointed
+          // at something 1,143px off-screen.
+          'Run this command. Cockpit starts and opens in your browser.',
+          // Named per browser family. "Click the install icon in the address
+          // bar" is Chrome/Edge only — it is false on Safari and on iOS.
+          'In Chrome or Edge, click the install icon in the address bar. In Safari, choose Share, then Add to Dock (Add to Home Screen on iPhone).',
+          'Launch it from your dock, desktop, or home screen, like any other app.',
         ],
       },
     },
@@ -365,7 +409,7 @@ export const messages = {
       ],
     },
     footer: {
-      tagline: 'The open-source, IDE-like Claude Code GUI — solo on your laptop, or a seat for every teammate.',
+      tagline: 'The open-source, IDE-like Claude Code GUI.',
       product: 'Product',
       resources: 'Resources',
       community: 'Community',
@@ -462,6 +506,9 @@ export const messages = {
     },
     hero: {
       headline: 'OpenCockpit',
+      // 页面 <title>。与 headline 分开：根 layout 的 title 模板会追加
+      // ' · OpenCockpit'，直接用 headline 会渲染成 "OpenCockpit · OpenCockpit"。
+      metaTitle: 'OpenCockpit —— 开源的 Claude Code GUI，任何 Agent 都能接',
       subheadline: 'One seat. One AI. Everything under control.',
       // 页面展示用的精简 lead；下方 description 保持长文本供 JSON-LD 使用，勿合并。
       lead:
@@ -479,23 +526,62 @@ export const messages = {
       videoNotice: '观看 24 秒演示',
     },
     home: {
-      headline: '你的编程 Agent，都在一个驾驶舱',
-      lead: '在一个界面中运行 Claude、Codex、DeepSeek、GLM、Kimi 和 Ollama，代码、终端、浏览器与数据库触手可及。',
-      installNote: '运行在你的电脑上，通过浏览器打开。',
+      // Left in English on purpose, not an untranslated string. "One cockpit"
+      // is a pun on the product name, and 驾驶舱 keeps the metaphor while
+      // losing the brand link that makes the line work. The lead directly
+      // below it carries the Chinese.
+      headline: 'Your coding agents. One cockpit.',
+      // Two beats on purpose. The H1 is left in English and is evocative rather
+      // than descriptive, so this line carries "what is this" on its own: the
+      // first sentence names the category the whole site ranks for and which
+      // appeared nowhere in visible copy before, the second keeps the concrete
+      // proof — six engines plus the surfaces they drive.
+      lead: '开源的 Claude Code GUI，做成了 IDE 的样子。Claude、Codex、DeepSeek、GLM、Kimi、Ollama 都能跑，代码、终端、浏览器、数据库统统 All in One。',
+      installNote: '启动本地 web 服务，通过浏览器访问运行。',
+      // 前置条件 + 许可证，紧跟在安装命令下方。这是全页疑虑最重的一刻：
+      // 没有这行，未装 Node 的访客第一次接触产品就是 command not found；
+      // 而「每一行都能读」这个最强论据此前只出现在页脚。
+      trustNode: '需要 Node 20+',
+      trustLicense: 'MIT 开源',
       tryLink: '先体验在线 Demo',
-      heroImageAlt: 'OpenCockpit 工作台中的多个编程 Agent、项目导航和斜杠命令',
-      work: {
-        headline: 'Agent 工作需要的一切',
-        desc: '在不同项目之间切换，每段对话和用到的工具都留在原位。',
-        points: ['多个项目并行推进', '文件、终端、浏览器与数据库'],
+      heroImageAlt: 'OpenCockpit 工作台：多个编程 Agent、项目导航、斜杠命令',
+      // 仅移动端。截图以可读比例放在可拖动的框里，而不是被压到 342px 看不清。
+      heroImageHint: '左右滑动看完整界面。',
+      // 描述的是交互，不是图片本身。<img> 仍用 heroImageAlt，
+      // 此处若复用同一串文字，屏幕阅读器会把同样一百个字符连读两遍。
+      heroImageGroupLabel: '产品截图，可左右滚动查看完整界面',
+      copy: {
+        idle: '复制',
+        copied: '已复制',
+        // 剪贴板 API 不可用时显示（任何非安全源——包括本产品主推的
+        // 共享开发机 HTTP 部署）。
+        failed: '请手动复制',
+      },
+      engines: {
+        headline: '用你已经订阅的账号使用 Agent',
+        desc: 'Claude 走官方 Agent SDK，开箱即用。Codex、DeepSeek、GLM、Kimi、本地 Ollama 各开各的标签页，会话历史和 API Key 互不干扰。',
+        // chip 行的唯一数据源。此前硬编码在 SimpleStory.tsx 里，
+        // 是全页唯一逃出 messages.ts 的内容。
+        items: [
+          { name: 'Claude', icon: 'claude' },
+          { name: 'Codex', icon: 'codex' },
+          { name: 'DeepSeek', icon: 'deepseek' },
+          { name: 'GLM', icon: 'glm' },
+          { name: 'Kimi', icon: 'kimi' },
+          { name: 'Ollama', icon: 'ollama' },
+        ],
       },
       local: {
-        headline: '把 Cockpit 安装成应用',
-        desc: 'Cockpit 支持 PWA。通过浏览器安装后，它会拥有独立窗口和应用图标，用起来更像桌面客户端。',
+        headline: '把 Cockpit 装成独立应用',
+        desc: 'Cockpit 跑在浏览器里，也可以像原生应用一样装起来：有自己的窗口和图标。',
         steps: [
-          '启动 Cockpit，并在浏览器中打开。',
-          '从地址栏或浏览器菜单选择“安装 OpenCockpit”。',
-          '之后可从 Dock、桌面或主屏幕直接启动。',
+          // 命令直接重复在这一步下方，而不是说“上面那条命令”：
+          // 在 390px 视口下，那句话指向的东西在 1143px 之外。
+          '运行这条命令，Cockpit 启动后会自动在浏览器里打开。',
+          // 按浏览器分别说明。“点击地址栏的安装图标”只适用于 Chrome / Edge，
+          // 在 Safari 和 iOS 上并不存在。
+          'Chrome、Edge 点地址栏里的安装图标；Safari 选“共享”→“添加到程序坞”，iPhone 上则是“添加到主屏幕”。',
+          '之后像其他应用一样，从程序坞、桌面或主屏幕启动。',
         ],
       },
     },
@@ -816,7 +902,7 @@ export const messages = {
       ],
     },
     footer: {
-      tagline: '开源、IDE 式的 Claude Code GUI —— 单人本机，或全队一起飞。',
+      tagline: '开源的 Claude Code GUI，做成了 IDE 的样子。',
       product: '产品',
       resources: '资源',
       community: '社区',

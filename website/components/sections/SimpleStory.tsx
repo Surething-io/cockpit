@@ -1,18 +1,11 @@
 import type { Messages } from '@/content/messages';
-
-const AGENTS = [
-  { name: 'Claude', icon: 'claude' },
-  { name: 'Codex', icon: 'codex' },
-  { name: 'DeepSeek', icon: 'deepseek' },
-  { name: 'GLM', icon: 'glm' },
-  { name: 'Kimi', icon: 'kimi' },
-  { name: 'Ollama', icon: 'ollama' },
-] as const;
+import { INSTALL_COMMAND } from '@/content/install';
 
 export function SimpleStory({ t }: { t: Messages }) {
   return (
     <section className="border-t border-border/60">
       <div className="mx-auto max-w-5xl px-6 py-20 md:py-28">
+        {/* Install as an app — the product's only install form, so it leads. */}
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="text-balance text-3xl font-semibold tracking-tight md:text-4xl">
             {t.home.local.headline}
@@ -22,47 +15,57 @@ export function SimpleStory({ t }: { t: Messages }) {
           </p>
           <ol className="mx-auto mt-8 grid max-w-2xl gap-4 text-left sm:grid-cols-3">
             {t.home.local.steps.map((step, index) => (
-              <li key={step} className="rounded-xl border border-border bg-card p-4 text-sm leading-relaxed text-muted-foreground">
+              <li
+                key={step}
+                className="rounded-xl border border-border bg-card p-4 text-sm leading-relaxed text-muted-foreground"
+              >
                 <span className="mb-3 flex size-7 items-center justify-center rounded-full bg-brand/10 font-mono text-xs text-brand">
                   {index + 1}
                 </span>
                 {step}
+                {/* Step 1 repeats the command instead of pointing back at it.
+                    On a 390px viewport the hero command sits 1,143px above this
+                    card, so "the command above" was a memory bridge across a
+                    screen and a half. */}
+                {index === 0 ? (
+                  <code className="scrollbar-hide mt-2.5 block overflow-x-auto whitespace-nowrap rounded-md bg-background px-2.5 py-1.5 font-mono text-xs text-foreground">
+                    {INSTALL_COMMAND}
+                  </code>
+                ) : null}
               </li>
             ))}
           </ol>
         </div>
 
-        <div className="mx-auto mt-24 max-w-3xl border-t border-border/60 pt-20 text-center md:mt-28 md:pt-24">
+        {/* Engines. These marks used to sit unlabelled at the very bottom of the
+            page, reading as "some logos you recognise" rather than as the claim
+            they actually make. They get a heading and a sentence now. */}
+        <div className="mx-auto mt-16 max-w-3xl border-t border-border/60 pt-16 text-center md:mt-20 md:pt-20">
           <h2 className="text-balance text-3xl font-semibold tracking-tight md:text-4xl">
-            {t.home.work.headline}
+            {t.home.engines.headline}
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-balance leading-relaxed text-muted-foreground">
-            {t.home.work.desc}
+            {t.home.engines.desc}
           </p>
-          <div className="mt-8 flex flex-wrap justify-center gap-x-7 gap-y-3 text-sm text-muted-foreground">
-            {t.home.work.points.map((point) => (
-              <span key={point} className="flex items-center gap-2">
-                <span className="size-1 rounded-full bg-brand" />
-                {point}
-              </span>
-            ))}
-          </div>
-          <div className="mt-8 flex flex-wrap justify-center gap-3">
-            {AGENTS.map((agent) => (
-              <div key={agent.name} className="flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-sm">
+          <ul className="mt-8 flex flex-wrap justify-center gap-3">
+            {t.home.engines.items.map((engine) => (
+              <li
+                key={engine.name}
+                className="flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-sm"
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element -- small static SVG marks */}
                 <img
-                  src={`/agent-icons/${agent.icon}.svg`}
+                  src={`/agent-icons/${engine.icon}.svg`}
                   alt=""
                   aria-hidden="true"
                   width={20}
                   height={20}
                   className="size-5"
                 />
-                <span>{agent.name}</span>
-              </div>
+                <span>{engine.name}</span>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       </div>
     </section>

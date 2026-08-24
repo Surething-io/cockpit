@@ -17,7 +17,7 @@ export function FinalCTA({ locale, t }: { locale: Locale; t: Messages }) {
           {t.finalCta.desc}
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <CopyableCommand command="npm i -g @surething/cockpit" />
+          <CopyableCommand command="npm i -g @surething/cockpit" labels={t.home.copy} />
           <a
             href={TRY_ONLINE_URL}
             target="_blank"

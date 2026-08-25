@@ -505,6 +505,8 @@
     "scrollUpForMore": "↑ 向上滚动加载更多历史",
     "jumpToStart": "跳转到开始",
     "jumpToLatest": "跳转到最新",
+    "jumpToPrevUserMessage": "上一条用户消息",
+    "jumpToNextUserMessage": "下一条用户消息",
     "copyMessage": "复制消息",
     "copyImage": "复制图片",
     "copiedImage": "已复制图片",

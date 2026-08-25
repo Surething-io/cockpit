@@ -505,6 +505,8 @@
     "scrollUpForMore": "↑ Scroll up to load more history",
     "jumpToStart": "Jump to start",
     "jumpToLatest": "Jump to latest",
+    "jumpToPrevUserMessage": "Previous user message",
+    "jumpToNextUserMessage": "Next user message",
     "copyMessage": "Copy message",
     "copyImage": "Copy image",
     "copiedImage": "Image copied",

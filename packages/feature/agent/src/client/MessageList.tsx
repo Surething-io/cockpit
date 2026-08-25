@@ -28,6 +28,14 @@ import {
 
 // Migrated from src/components/project/MessageList.tsx.
 
+// Geometry of a user-message jump, shared by the jump itself and by the
+// enabled/disabled state of its buttons so the two can never disagree.
+// STEP_EPSILON must stay WIDER than STEP_PADDING: a jump parks its target at
+// +STEP_PADDING, and that row has to keep counting as "current" afterwards —
+// otherwise `next` re-selects the row it just landed on and appears dead.
+const STEP_PADDING = 8;
+const STEP_EPSILON = STEP_PADDING + 4;
+
 interface MessageListProps {
   messages: ChatMessage[];
   isLoading?: boolean;
@@ -118,6 +126,10 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const [showTopButton, setShowTopButton] = useState(false);
   const [showBottomButton, setShowBottomButton] = useState(false);
+  // Is there a user message above / below the current viewport top? Drives the
+  // greyed-out state of the prev/next buttons.
+  const [canStepPrev, setCanStepPrev] = useState(false);
+  const [canStepNext, setCanStepNext] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   // Sync outerRef to state so we can read it during render without violating ref rules
@@ -450,6 +462,22 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     return container.scrollTop < threshold;
   }, []);
 
+  // Whether a prev/next user message exists from where we are now. Only the
+  // FIRST and LAST user rows are measured — if the first one is not above the
+  // viewport top there is nothing to step back to, and likewise for the last
+  // one below. Measuring every row here would mean an O(messages) burst of
+  // layout reads on every scroll event.
+  const refreshStepAvailability = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const rows = container.querySelectorAll('[data-message-id][data-role="user"]');
+    const first = rows[0];
+    const last = rows[rows.length - 1];
+    const containerTop = container.getBoundingClientRect().top;
+    setCanStepPrev(!!first && first.getBoundingClientRect().top - containerTop < -STEP_EPSILON);
+    setCanStepNext(!!last && last.getBoundingClientRect().top - containerTop > STEP_EPSILON);
+  }, []);
+
   // Listen to scroll events
   const handleScroll = useCallback(() => {
     const atBottom = checkIfAtBottom();
@@ -457,6 +485,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     setShouldAutoScroll(atBottom);
     setShowTopButton(!atTop); // Show scroll-to-top button when not at the top
     setShowBottomButton(!atBottom);
+    refreshStepAvailability();
 
     // When scrolled to the top with more history available, trigger load-more
     if (atTop && hasMoreHistory && !isLoadingMore && onLoadMore) {
@@ -468,7 +497,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       }
       onLoadMore();
     }
-  }, [checkIfAtBottom, checkIfAtTop, hasMoreHistory, isLoadingMore, onLoadMore]); // hasMoreHistory still needed for loading more logic
+  }, [checkIfAtBottom, checkIfAtTop, refreshStepAvailability, hasMoreHistory, isLoadingMore, onLoadMore]); // hasMoreHistory still needed for loading more logic
 
   // Scroll to top
   const scrollToTop = useCallback(() => {
@@ -495,6 +524,37 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         messageElement.classList.remove('ring-2', 'ring-brand', 'ring-offset-2');
       }, 2000);
     }
+  }, []);
+
+  // Jump to the previous / next user message, top-aligned so the reply that
+  // follows it stays in view. No highlight: the jump is a reading move, and the
+  // message landing at the top edge already says where it went.
+  //
+  // Deliberately stateless: the target is recomputed from the live scroll
+  // position on every click, so manual scrolling, streaming appends and
+  // load-more never leave a stale cursor behind. Boundaries are a no-op — the
+  // earliest loaded user message is the end of the line; loading older history
+  // stays the job of the scroll-to-top handler.
+  const jumpToUserMessage = useCallback((direction: 'prev' | 'next') => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const containerTop = container.getBoundingClientRect().top;
+    const rows = Array.from(container.querySelectorAll('[data-message-id][data-role="user"]'));
+    const offsetOf = (el: Element) => el.getBoundingClientRect().top - containerTop;
+
+    const target =
+      direction === 'prev'
+        ? [...rows].reverse().find((el) => offsetOf(el) < -STEP_EPSILON)
+        : rows.find((el) => offsetOf(el) > STEP_EPSILON);
+    if (!target) return;
+
+    // Scroll the container itself rather than scrollIntoView(): the latter also
+    // walks ancestors, which in the three-panel layout can shift the panel.
+    container.scrollTo({
+      top: container.scrollTop + offsetOf(target) - STEP_PADDING,
+      behavior: 'smooth',
+    });
   }, []);
 
   // Expose methods to parent component
@@ -564,6 +624,14 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     }
   }, [messages.length, isActive]);
 
+  // Scroll events alone would miss the cases where the geometry changes without
+  // a scroll: streamed/appended messages, loaded history, a tab becoming
+  // visible (rects are all zero while hidden).
+  useEffect(() => {
+    if (!isActive) return;
+    refreshStepAvailability();
+  }, [messages, isActive, refreshStepAvailability]);
+
   return (
     <div ref={outerRef} className="relative flex-1 min-h-0 overflow-hidden flex flex-col outline-none" tabIndex={-1} onMouseUp={handleSelectionMouseUp} onMouseDown={handleSelectionMouseDown}>
       {/* Search bar */}
@@ -632,7 +700,12 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
               </div>
             )}
             {uniqueMessages.map((message) => (
-              <div key={message.id} data-message-id={message.id} className="transition-[box-shadow] duration-300">
+              <div
+                key={message.id}
+                data-message-id={message.id}
+                data-role={message.role}
+                className="transition-[box-shadow] duration-300"
+              >
                 <MessageBubble
                   message={message}
                   cwd={cwd}
@@ -689,30 +762,59 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         )}
       </div>
 
-      {/* Scroll to top button */}
+      {/* Jump controls. The prev/next pair lives on the bottom capsule only —
+          one home for it, near where the hand already is; the top capsule stays
+          the single-purpose "back to the beginning" button it always was.
+          Icon language: chevron = run to the end of the list, bar-arrow = land
+          on one message (the bar is the row you stop at). */}
       {showTopButton && messages.length > 0 && (
-        <button
-          onClick={scrollToTop}
-          className="absolute top-2 left-1/2 -translate-x-1/2 p-2 bg-card text-muted-foreground hover:text-foreground shadow-lv2 rounded-full transition-all hover:shadow-lv2 active:scale-95"
-          title={t('chat.jumpToStart')}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-          </svg>
-        </button>
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center bg-card shadow-lv2 rounded-full">
+          <button
+            onClick={scrollToTop}
+            className="p-2 text-muted-foreground hover:text-foreground rounded-full transition-all active:scale-95"
+            title={t('chat.jumpToStart')}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+          </button>
+        </div>
       )}
 
-      {/* Scroll to bottom button */}
+      {/* Scroll to latest + the user-message steps */}
       {showBottomButton && messages.length > 0 && (
-        <button
-          onClick={scrollToBottom}
-          className="absolute bottom-2 left-1/2 -translate-x-1/2 p-2 bg-card text-muted-foreground hover:text-foreground shadow-lv2 rounded-full transition-all hover:shadow-lv2 active:scale-95"
-          title={t('chat.jumpToLatest')}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center bg-card shadow-lv2 rounded-full">
+          <button
+            onClick={scrollToBottom}
+            className="p-2 text-muted-foreground hover:text-foreground rounded-full transition-all active:scale-95"
+            title={t('chat.jumpToLatest')}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <span className="w-px h-4 bg-border" />
+          <button
+            onClick={() => jumpToUserMessage('prev')}
+            disabled={!canStepPrev}
+            className="p-2 text-muted-foreground hover:text-foreground rounded-full transition-all active:scale-95 disabled:opacity-40 disabled:hover:text-muted-foreground disabled:active:scale-100 disabled:cursor-default"
+            title={t('chat.jumpToPrevUserMessage')}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5h14M12 19V9m-5 5l5-5 5 5" />
+            </svg>
+          </button>
+          <button
+            onClick={() => jumpToUserMessage('next')}
+            disabled={!canStepNext}
+            className="p-2 text-muted-foreground hover:text-foreground rounded-full transition-all active:scale-95 disabled:opacity-40 disabled:hover:text-muted-foreground disabled:active:scale-100 disabled:cursor-default"
+            title={t('chat.jumpToNextUserMessage')}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 19H5m7-14v10m5-5l-5 5-5-5" />
+            </svg>
+          </button>
+        </div>
       )}
 
       {/* Selection toolbar */}

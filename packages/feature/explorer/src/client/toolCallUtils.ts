@@ -61,6 +61,23 @@ export const THEME_JSON_COLORS: JsonColors = {
   fold: 'hsl(var(--slate-11))',
 };
 
+/**
+ * Broadcast channel for a "collapse all / expand all" toolbar command.
+ *
+ * Deliberately a context rather than an argument to formatAsHumanReadable:
+ * the formatted tree is memoized on file content (it is O(document)), so a
+ * toggle must NOT invalidate that memo. Each CollapsibleEntry reads the
+ * context instead, and only the entries themselves re-render.
+ *
+ * `version` bumps on every command so an entry can tell "the user pressed the
+ * button again" from "my own click"; an entry's per-entry override wins until
+ * the next command arrives. Default {0,false} = today's behaviour (start
+ * expanded, per-entry click toggles), which is what every consumer that does
+ * not render a provider keeps getting.
+ */
+export type JsonCollapseCommand = { version: number; collapsed: boolean };
+export const JsonCollapseContext = React.createContext<JsonCollapseCommand>({ version: 0, collapsed: false });
+
 export function formatAsHumanReadable(
   content: string,
   colors: JsonColors = THEME_JSON_COLORS,
@@ -89,7 +106,12 @@ function isMultilineValue(value: unknown): boolean {
 function CollapsibleEntry({ label, labelColor, value, indent, colors }: {
   label: string; labelColor: string; value: unknown; indent: number; colors: JsonColors;
 }) {
-  const [collapsed, setCollapsed] = React.useState(false);
+  // Per-entry override of the last collapse-all/expand-all command. Tagged with
+  // the command version it was made against, so the next toolbar press wins
+  // without needing to reach into every entry and reset it.
+  const cmd = React.useContext(JsonCollapseContext);
+  const [override, setOverride] = React.useState<JsonCollapseCommand | null>(null);
+  const collapsed = override && override.version === cmd.version ? override.collapsed : cmd.collapsed;
   const [downPos, setDownPos] = React.useState({ x: 0, y: 0 });
   const canFold = isMultilineValue(value);
   const onDown = (e: React.MouseEvent) => { setDownPos({ x: e.clientX, y: e.clientY }); };
@@ -98,7 +120,7 @@ function CollapsibleEntry({ label, labelColor, value, indent, colors }: {
     const dy = e.clientY - downPos.y;
     if (dx * dx + dy * dy > 25) return; // Drag-select does not trigger
     e.stopPropagation();
-    setCollapsed(v => !v);
+    setOverride({ version: cmd.version, collapsed: !collapsed });
   };
   const foldProps = { onMouseDown: onDown, onClick, style: { cursor: 'pointer' as const } };
 

@@ -28,7 +28,7 @@ import { FileTree, type GitStatusMap, type GitStatusCode } from './FileTree';
 import { GitFileTree, buildGitFileTree, collectFilesUnderNode } from './GitFileTree';
 import { MenuContainerProvider } from '@cockpit/shared-ui';
 import { CodeViewer } from '@cockpit/feature-explorer';
-import { isMarkdownFile, isHtmlFile, isJsonFile, isCsvFile, isSkillFile, formatAsHumanReadable, THEME_JSON_COLORS } from './toolCallUtils';
+import { isMarkdownFile, isHtmlFile, isJsonFile, isCsvFile, isSkillFile, formatAsHumanReadable, THEME_JSON_COLORS, JsonCollapseContext } from './toolCallUtils';
 import { CsvTableView } from './CsvTableView';
 import { ExternalLink, BookmarkPlus, SquareTerminal } from 'lucide-react';
 import { toExternalBrowserAppUrl, toLocalAppUrl } from '@cockpit/shared-utils';
@@ -202,6 +202,19 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
     if (!fc || fc.type !== 'text' || typeof fc.content !== 'string' || !path || !isJsonFile(path)) return null;
     return formatAsHumanReadable(fc.content, THEME_JSON_COLORS);
   }, [fileTree.fileContent, fileTree.selectedPath]);
+
+  // Collapse-all / expand-all command for the JSON preview. Broadcast through
+  // JsonCollapseContext rather than passed into formatAsHumanReadable, so
+  // pressing the button does not invalidate the memo above and re-format the
+  // whole document. Each press bumps `version`, which supersedes any per-entry
+  // clicks made since the previous press.
+  const [jsonCollapse, setJsonCollapse] = useState<{ version: number; collapsed: boolean }>({ version: 0, collapsed: false });
+  // Every file opens expanded — a fresh document should not inherit the fold
+  // state of the previous one.
+  useEffect(() => {
+    setJsonCollapse(c => (c.collapsed ? { version: c.version + 1, collapsed: false } : c));
+  }, [fileTree.selectedPath]);
+
   const contentSearch = useContentSearch({ cwd, onSearchComplete: () => setShowSearchPanel(true) });
   const gitStatus = useGitStatus({ cwd, addToRecentFiles: fileTree.addToRecentFiles });
 
@@ -1958,6 +1971,29 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                               }
                             />
                           )}
+                          {/* Collapse / expand every foldable long-text value in the JSON
+                              preview at once. Only foldable *strings* fold (see
+                              isMultilineValue) — objects and arrays always render in full,
+                              so this is not a JSON-tree collapse. Shown only while the JSON
+                              preview is actually on screen, i.e. not in blame view. */}
+                          {fileTree.fileContent?.type === 'text' && isJsonFile(fileTree.selectedPath) && fileTree.previewMarkdown && !fileTree.showBlame && (
+                            <div className="flex items-center gap-0.5 rounded border border-border overflow-hidden">
+                              {([true, false] as const).map((collapsed) => (
+                                <button
+                                  key={String(collapsed)}
+                                  // Always bumps version, even when this side is already
+                                  // active — that's how you re-assert the command after
+                                  // individually clicking a few entries open.
+                                  onClick={(e) => { e.stopPropagation(); setJsonCollapse(c => ({ version: c.version + 1, collapsed })); }}
+                                  className={`px-2 py-0.5 text-xs transition-colors ${
+                                    jsonCollapse.collapsed === collapsed ? 'bg-brand text-white' : 'text-muted-foreground hover:bg-hover'
+                                  }`}
+                                >
+                                  {t(collapsed ? 'fileBrowser.collapseAllJson' : 'fileBrowser.expandAllJson')}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                           {fileTree.fileContent?.type === 'text' && (isMarkdownFile(fileTree.selectedPath) || isHtmlFile(fileTree.selectedPath) || isJsonFile(fileTree.selectedPath) || isCsvFile(fileTree.selectedPath)) && (() => {
                             // Preview toggle: ON → main area renders the md / html / json
                             // / csv preview in-place (replacing CodeViewer). HTML uses its OWN
@@ -2176,7 +2212,9 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                             <JsonSearchBar search={jsonSearch} />
                             <div className="flex-1 overflow-auto px-6 py-4">
                               <pre ref={jsonPreRef} className="whitespace-pre-wrap break-words font-mono" style={{ fontSize: '0.8125rem', lineHeight: '1.5' }}>
-                                {jsonPreviewFormatted}
+                                <JsonCollapseContext.Provider value={jsonCollapse}>
+                                  {jsonPreviewFormatted}
+                                </JsonCollapseContext.Provider>
                               </pre>
                             </div>
                           </div>

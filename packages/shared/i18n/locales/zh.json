@@ -449,6 +449,8 @@
     "toggleJsonReadable": "切换 JSON 可读模式",
     "previewMarkdown": "预览 Markdown 渲染效果",
     "exitPreview": "退出预览",
+    "collapseAllJson": "折叠",
+    "expandAllJson": "展开",
     "viewBlame": "查看每行代码的修改记录",
     "viewDiff": "查看相对 HEAD 的改动",
     "exitDiff": "退出 Diff",

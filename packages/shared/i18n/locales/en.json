@@ -449,6 +449,8 @@
     "toggleJsonReadable": "Toggle JSON readable mode",
     "previewMarkdown": "Preview Markdown",
     "exitPreview": "Exit Preview",
+    "collapseAllJson": "Fold",
+    "expandAllJson": "Full",
     "viewBlame": "View line-by-line change history",
     "viewDiff": "View changes against HEAD",
     "exitDiff": "Exit Diff",

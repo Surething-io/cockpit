@@ -7,7 +7,7 @@ import { fetchAllCommentsWithCode, clearAllComments, buildAIMessage, sendReferen
 import i18n from '@cockpit/shared-i18n';
 import { useAIBridge } from '@cockpit/shared-ui';
 import { useLineHighlight } from './index';
-import { escapeHtml, findMatches } from '@cockpit/shared-ui';
+import { escapeHtml, findMatches, MAX_TOKENS_PER_LINE } from '@cockpit/shared-ui';
 import { useSelectionToolbar } from './useSelectionToolbar';
 import type { BlameLine } from './index';
 import type { CommitInfo } from './index';
@@ -715,7 +715,7 @@ export function useCodeViewerLogic({
 
     // Collect intervals to highlight [startCol, endCol, className]
     type Segment = { start: number; end: number; cls: string };
-    const segments: Segment[] = [];
+    let segments: Segment[] = [];
 
     // 1. Internal search highlight
     if (searchQuery && matches.length > 0) {
@@ -742,6 +742,23 @@ export function useCodeViewerLogic({
 
     // Sort by position, deduplicate overlaps
     segments.sort((a, b) => a.start - b.start || a.end - b.end);
+
+    // Same quadratic hazard `MAX_TOKENS_PER_LINE` guards in tokensToHtml, via
+    // a different door: every segment becomes another inline box on this one
+    // line, and a 1-char query against a 600KB single-line file matches tens
+    // of thousands of times. Without this cap the file opens fine (the token
+    // guard did its job) and then Cmd+F wedges the tab instead.
+    //
+    // Keep the leading run plus — always — the current match, so match
+    // navigation still lands on something visibly highlighted. Segments are
+    // already sorted by `start`, and a dropped current match by definition
+    // starts after every kept one, so appending it preserves that order.
+    if (segments.length > MAX_TOKENS_PER_LINE) {
+      const currentIdx = segments.findIndex(s => s.cls === 'hl-cur');
+      const kept = segments.slice(0, MAX_TOKENS_PER_LINE);
+      if (currentIdx >= MAX_TOKENS_PER_LINE) kept[kept.length - 1] = segments[currentIdx];
+      segments = kept;
+    }
 
     // Split by plain text position, escapeHtml each segment + wrap with highlight tag
     const parts: string[] = [];

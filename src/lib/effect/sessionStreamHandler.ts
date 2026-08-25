@@ -54,6 +54,10 @@ export const handleSessionStream = (
         // Turn time-boundary: lets clients cut the in-flight turn's disk image by
         // message timestamp instead of by prompt text (see useLiveStream).
         startedAt: snap.startedAt,
+        // Turn identity: the viewer scopes this turn's tool-call snapshots by it.
+        // Not derivable from the events alone — an images-only turn seeds no
+        // `_human` event to carry it.
+        runId: snap.runId,
         outputTokens: snap.outputTokens,
         events: snap.events,
       })

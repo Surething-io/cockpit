@@ -42,6 +42,11 @@ interface RunState {
    *  run-snapshot so clients can separate the in-flight turn's disk image from real history
    *  without comparing message text (which breaks on repeated prompts like "继续"). */
   startedAt: number;
+  /** The dispatch runId of the in-flight turn. Also stamped on the seeded `_human`
+   *  event, but that event only exists when the turn had prompt TEXT — an
+   *  images-only send has none, so a viewer needs it on the snapshot too or it
+   *  cannot scope that turn's tool-call snapshots (see ChatMessage.runId). */
+  runId?: string;
   outputTokens?: number;
   updatedAt: number;
   evictTimer?: ReturnType<typeof setTimeout>;
@@ -141,6 +146,7 @@ export function startRun(key: string, cwd: string, promptText?: string, runId?: 
     seq: prevSeq,
     events: [],
     startedAt,
+    ...(runId ? { runId } : {}),
     updatedAt: startedAt,
   });
   if (promptText) {
@@ -236,10 +242,10 @@ export function markRunIdle(key: string, status: RunStatus = 'idle'): void {
 /** Snapshot of the current in-flight turn for a freshly connecting client. */
 export function getRunSnapshot(
   key: string
-): { status: RunStatus; seq: number; events: unknown[]; startedAt: number; outputTokens?: number } | null {
+): { status: RunStatus; seq: number; events: unknown[]; startedAt: number; runId?: string; outputTokens?: number } | null {
   const r = registry.get(key);
   if (!r) return null;
-  return { status: r.status, seq: r.seq, events: r.events.slice(), startedAt: r.startedAt, outputTokens: r.outputTokens };
+  return { status: r.status, seq: r.seq, events: r.events.slice(), startedAt: r.startedAt, runId: r.runId, outputTokens: r.outputTokens };
 }
 
 /** True while a turn is actively running (used by the 409 concurrent-run guard). */

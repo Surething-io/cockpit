@@ -192,11 +192,16 @@ export function useLiveStream(
         type?: string;
         status?: string;
         startedAt?: number;
+        runId?: string;
         events?: unknown[];
         outputTokens?: number;
         message?: Record<string, unknown>;
       };
       if (msg.type === 'run-snapshot' && Array.isArray(msg.events)) {
+        // Authoritative turn identity, and the only source for an images-only
+        // turn (which seeds no `_human` event). Set before the replay below so
+        // every bubble it creates is stamped.
+        if (typeof msg.runId === 'string' && msg.runId) curTurnId.current = msg.runId;
         // Idle run → nothing to stream; the disk history already loaded is authoritative.
         if (msg.status !== 'running') {
           opts?.onRunningChange?.(false);

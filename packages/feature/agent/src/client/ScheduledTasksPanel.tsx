@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast, MODAL_SHELL_CLASS } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
@@ -164,7 +164,18 @@ export function ScheduledTasksPanel({
 }: ScheduledTasksPanelProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
+  // Editing hangs off the row's Edit button as a popover, the same shape the
+  // create flow uses from ChatInput — so the anchor element travels with the state.
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
+  const editAnchorRef = useRef<HTMLElement | null>(null);
+  const editPopoverRef = useRef<HTMLDivElement>(null);
+  const [editPos, setEditPos] = useState<{ top: number; left: number } | null>(null);
+
+  const closeEdit = useCallback(() => {
+    setEditingTask(null);
+    editAnchorRef.current = null;
+    setEditPos(null);
+  }, []);
   // Task-file preview: the path is set on click, the content arrives async.
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
@@ -246,18 +257,71 @@ export function ScheduledTasksPanel({
     setSelectedId(null);
   }, []);
 
-  // Close on ESC — the edit dialog and the preview both sit above and own their
-  // own ESC, so the board must not also swallow the same keypress and close.
+  // Close on ESC, innermost surface first: the preview, then the edit popover,
+  // then the board itself. The popover also handles ESC on its own container for
+  // the focused case; both paths just clear the same state, so a double fire is
+  // harmless — what matters is that ESC never closes the board out from under an
+  // open editor.
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (previewPath) { closePreview(); return; }
-      if (!editingTask) closeBoard();
+      if (editingTask) { closeEdit(); return; }
+      closeBoard();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, editingTask, previewPath, closePreview, closeBoard]);
+  }, [isOpen, editingTask, previewPath, closePreview, closeBoard, closeEdit]);
+
+  // Anchor the edit popover to the right of the Edit button, flipping to its
+  // left only when the right side runs out of room. Vertically it lines up with
+  // the button's top edge and slides up just enough to stay on screen, so it
+  // reads as hanging off that row rather than floating under it. Runs in a
+  // layout effect so the first paint is already in place. Re-runs on scroll
+  // (capture, to catch the list's own scroll container) and resize so the
+  // popover tracks its row.
+  useLayoutEffect(() => {
+    if (!editingTask) return;
+
+    const place = () => {
+      const anchor = editAnchorRef.current;
+      const el = editPopoverRef.current;
+      if (!anchor || !el) return;
+      const a = anchor.getBoundingClientRect();
+      // A zero rect means the row was re-mounted (regrouped) — keep the last spot
+      // rather than teleporting the popover to the corner.
+      if (!a.width && !a.height) return;
+      const { width, height } = el.getBoundingClientRect();
+      const GAP = 8;
+      const MARGIN = 8;
+      let left = a.right + GAP;
+      if (left + width > window.innerWidth - MARGIN) {
+        const toLeft = a.left - width - GAP;
+        left = toLeft >= MARGIN ? toLeft : Math.max(MARGIN, window.innerWidth - width - MARGIN);
+      }
+      const top = Math.max(MARGIN, Math.min(a.top, window.innerHeight - height - MARGIN));
+      // Same spot in, same object out: the ResizeObserver below fires on every
+      // size change and a fresh object each time would re-render for nothing.
+      setEditPos(prev => (prev && prev.top === top && prev.left === left ? prev : { top, left }));
+    };
+
+    place();
+    // The popover is not a fixed-height box: the message/file source toggle swaps
+    // a 5-row textarea for a one-line input, the type buttons add a cron hint or
+    // a time-range row, and the textarea itself is resize-y. Any of those can
+    // grow it past the bottom edge from a position that fit a moment ago, so
+    // re-place on its own size, not just on scroll/resize.
+    const observer = new ResizeObserver(place);
+    if (editPopoverRef.current) observer.observe(editPopoverRef.current);
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [editingTask]);
 
   /**
    * The board's only navigation path — a card click merely selects now, so
@@ -310,7 +374,7 @@ export function ScheduledTasksPanel({
       </button>
       {/* Edit */}
       <button
-        onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
+        onClick={(e) => { e.stopPropagation(); editAnchorRef.current = e.currentTarget; setEditingTask(task); }}
         className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
         title={t('common.edit')}
       >
@@ -547,31 +611,35 @@ export function ScheduledTasksPanel({
         />
       )}
 
-      {/* Edit modal */}
+      {/* Edit popover — anchored to the row's Edit button, matching the create
+          flow's popover from ChatInput. No scrim: ScheduleTaskPopover closes
+          itself on an outside mousedown, and a scrim here would make the board
+          behind it unscrollable while the popover tracks it. */}
       {editingTask && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center">
-          <div className="absolute inset-0 bg-scrim" onClick={() => setEditingTask(null)} />
-          <div className="relative">
-            <ScheduleTaskPopover
-              onClose={() => setEditingTask(null)}
-              onCreate={() => {}}
-              editTask={{
-                id: editingTask.id,
-                message: editingTask.message,
-                taskFile: editingTask.taskFile,
-                type: editingTask.type,
-                delayMinutes: editingTask.delayMinutes,
-                intervalMinutes: editingTask.intervalMinutes,
-                activeFrom: editingTask.activeFrom,
-                activeTo: editingTask.activeTo,
-                cron: editingTask.cron,
-              }}
-              onUpdate={(id, params) => {
-                onUpdateTask(id, params);
-                setEditingTask(null);
-              }}
-            />
-          </div>
+        <div
+          ref={editPopoverRef}
+          className="fixed z-[100]"
+          style={{ top: editPos?.top ?? 0, left: editPos?.left ?? 0, visibility: editPos ? 'visible' : 'hidden' }}
+        >
+          <ScheduleTaskPopover
+            onClose={closeEdit}
+            onCreate={() => {}}
+            editTask={{
+              id: editingTask.id,
+              message: editingTask.message,
+              taskFile: editingTask.taskFile,
+              type: editingTask.type,
+              delayMinutes: editingTask.delayMinutes,
+              intervalMinutes: editingTask.intervalMinutes,
+              activeFrom: editingTask.activeFrom,
+              activeTo: editingTask.activeTo,
+              cron: editingTask.cron,
+            }}
+            onUpdate={(id, params) => {
+              onUpdateTask(id, params);
+              closeEdit();
+            }}
+          />
         </div>
       )}
     </>

@@ -42,10 +42,19 @@ export function useLiveStream(
   // subagent's (arrives mid-turn, already shown as its tool call).
   const turnActive = useRef(false);
 
+  // The dispatch runId of the turn being watched, taken from the seeded
+  // `_human` event (startRun stamps it, and that event precedes the engine's
+  // `system.init`). Stamped onto every bubble this turn produces so the diff
+  // viewer can scope snapshot lookups to one turn — see ChatMessage.runId.
+  const curTurnId = useRef<string | undefined>(undefined);
+
   const newPlaceholder = (): string => {
     const id = `live-asst-${++seq.current}`;
     curAssistantId.current = id;
-    setMessages((prev) => [...prev, { id, role: 'assistant', content: '', isStreaming: true } as ChatMessage]);
+    setMessages((prev) => [
+      ...prev,
+      { id, role: 'assistant', content: '', isStreaming: true, runId: curTurnId.current } as ChatMessage,
+    ]);
     return id;
   };
 
@@ -130,6 +139,7 @@ export function useLiveStream(
           ? c.map((b) => (b as { text?: string })?.text || '').join('')
           : '';
       const turnId = typeof ev._turnId === 'string' ? ev._turnId : null;
+      if (turnId) curTurnId.current = turnId;
       const startedAt = typeof ev._ts === 'number' ? ev._ts : null;
       const id = turnId ? `live-user-${turnId}` : `live-user-${++seq.current}`;
       setMessages((prev) => {

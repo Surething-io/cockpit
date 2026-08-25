@@ -103,7 +103,7 @@ export function useChatStream(
 
   // #10 ws-converge: the active detached run the originator is tailing over
   // /ws/session-stream (runKey to subscribe by + the assistant bubble its events fill).
-  const [activeRun, setActiveRun] = useState<{ runKey: string; assistantId: string } | null>(null);
+  const [activeRun, setActiveRun] = useState<{ runKey: string; assistantId: string; runId?: string } | null>(null);
   const activeRunRef = useRef(activeRun);
   activeRunRef.current = activeRun;
   const sawServerUsageUpdateRef = useRef(false);
@@ -231,7 +231,7 @@ export function useChatStream(
         curAsstIdRef.current = autoId;
         setMessages((prev) => [
           ...prev,
-          { id: autoId, role: 'assistant', content: '', toolCalls: [], isStreaming: true, runKey: activeRunRef.current?.runKey } as ChatMessage,
+          { id: autoId, role: 'assistant', content: '', toolCalls: [], isStreaming: true, runKey: activeRunRef.current?.runKey, runId: activeRunRef.current?.runId } as ChatMessage,
         ]);
       }
       turnActiveRef.current = true;
@@ -544,6 +544,11 @@ export function useChatStream(
       // Fresh send: clear stale retry notice from a previous turn
       setApiRetryInfo(null);
 
+      // Minted BEFORE the assistant placeholder because the bubble carries it:
+      // `runId` is this turn's snapshot scope (see ChatMessage.runId), so it has
+      // to exist by the time the bubble that will own those tool calls does.
+      const runId = genRunId();
+
       // Create assistant message placeholder
       const assistantMessageId = `assistant-${Date.now()}`;
       const assistantMessage: ChatMessage = {
@@ -552,6 +557,7 @@ export function useChatStream(
         content: '',
         toolCalls: [],
         isStreaming: true,
+        runId,
       };
       setMessages((prev) => [...prev, assistantMessage]);
       // #bg: bind live rendering to this launching bubble and reset per-run turn tracking.
@@ -568,8 +574,6 @@ export function useChatStream(
       // Every engine is on one of those two paths, so this is currently always true — it
       // stays explicit as the contract for the next engine added.
       const canDropHistory = engine === 'ollama' || isApiKeyEngine || isClaudeEngine || engine === 'codex';
-
-      const runId = genRunId();
 
       try {
         // Ollama requires a model to be selected
@@ -620,7 +624,7 @@ export function useChatStream(
 
         const startBody = (await response.json().catch(() => ({}))) as { runKey?: string };
         // Hand off to the ws consumer; it ends the run on result / run-idle.
-        setActiveRun({ runKey: startBody.runKey || runId, assistantId: assistantMessageId });
+        setActiveRun({ runKey: startBody.runKey || runId, assistantId: assistantMessageId, runId });
         // Arm the connection watchdog: if /ws/session-stream never delivers a message (it sends
         // a snapshot immediately on connect), the socket failed to connect → unstick the turn.
         wsAliveRef.current = false;

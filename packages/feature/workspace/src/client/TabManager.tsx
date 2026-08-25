@@ -371,8 +371,8 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
   // `live` = the source message is still streaming and just appended a tool
   // call; it refreshes the overlay in place (no swipe) and is dropped unless
   // that message is the one on screen. See fileDiffRequest.ts.
-  const handleShowFileDiff = useCallback((messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, live?: boolean) => {
-    setFileDiffRequest((prev) => nextFileDiffRequest(prev, { messageId, toolCalls, cwd, sessionId }, live === true));
+  const handleShowFileDiff = useCallback((messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, runId?: string, live?: boolean) => {
+    setFileDiffRequest((prev) => nextFileDiffRequest(prev, { messageId, toolCalls, cwd, sessionId, runId }, live === true));
     if (!live) handleViewChange('explorer');
   }, [handleViewChange]);
 
@@ -540,6 +540,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                       toolCalls={fileDiffRequest.toolCalls}
                       cwd={fileDiffRequest.cwd}
                       sessionId={fileDiffRequest.sessionId}
+                      runId={fileDiffRequest.runId}
                       onClose={() => setFileDiffRequest(null)}
                       onContentSearch={handleDiffContentSearch}
                     />

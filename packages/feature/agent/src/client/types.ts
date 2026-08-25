@@ -48,6 +48,14 @@ export interface ChatMessage {
   // bubbles (which the new run's snapshot will never rebuild). Absent on persisted/reloaded
   // messages (they carry real UUIDs and must never be filtered).
   runKey?: string;
+  // The dispatch (`runId`) that produced this LIVE bubble. Scopes its snapshot
+  // lookup to one turn, which is the only sound scope for engines whose tool
+  // ids restart every turn: codex numbers live items `item_0, item_1, …` per
+  // `codex exec` process, so `item_15` from this turn is indistinguishable
+  // from `item_15` of every earlier turn of the same session by id alone.
+  // Absent on reloaded messages — those key on the rollout's globally-unique
+  // `call_…` ids, which never collide, so session-scoping already suffices.
+  runId?: string;
   // Ordered text/tool skeleton of this turn (assistant rows only). Built by the
   // live reducer and the history parsers in lockstep with `content`; see
   // shared/assistantText.ts. `content` is derivable from it (deriveContent).

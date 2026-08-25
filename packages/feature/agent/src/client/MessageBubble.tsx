@@ -234,7 +234,7 @@ interface MessageBubbleProps {
    * auto-swipe there. When omitted (e.g. inside SubagentTranscriptModal, which
    * has no second panel), the button falls back to a local full-screen modal.
    */
-  onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, live?: boolean) => void;
+  onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, runId?: string, live?: boolean) => void;
   /**
    * Suppress every control that opens a window ON TOP of the app — diff viewer,
    * file / image previews, subagent + workflow transcripts, tool input/result
@@ -507,8 +507,8 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   // one on screen?" prop is needed here.
   useEffect(() => {
     if (!onShowFileDiff || !message.toolCalls?.length) return;
-    onShowFileDiff(message.id, message.toolCalls, cwd, sessionId ?? undefined, true);
-  }, [onShowFileDiff, message.id, message.toolCalls, cwd, sessionId]);
+    onShowFileDiff(message.id, message.toolCalls, cwd, sessionId ?? undefined, message.runId, true);
+  }, [onShowFileDiff, message.id, message.toolCalls, cwd, sessionId, message.runId]);
 
   useEffect(() => {
     // Params already prove non-empty, or nothing mutating / no cwd to query.
@@ -525,7 +525,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     let timer: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
     const check = () => {
-      BrowserRuntime.runPromiseExit(loadSnapshotsByToolIds(cwd, toolIds, sessionId ?? undefined)).then((exit) => {
+      BrowserRuntime.runPromiseExit(loadSnapshotsByToolIds(cwd, toolIds, sessionId ?? undefined, message.runId)).then((exit) => {
         if (cancelled) return;
         const commits = exit._tag === 'Success' ? exit.value : [];
         if (commits.length > 0) {
@@ -545,7 +545,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [hasFileChanges, paramsHaveChanges, cwd, sessionId, message.toolCalls]);
+  }, [hasFileChanges, paramsHaveChanges, cwd, sessionId, message.toolCalls, message.runId]);
 
   // Last TodoWrite call
   const lastTodoWrite = useMemo(() => {
@@ -1081,7 +1081,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                           // with an auto-swipe; fall back to a local modal when no
                           // panel host is available (e.g. subagent transcript).
                           if (onShowFileDiff && message.toolCalls) {
-                            onShowFileDiff(message.id, message.toolCalls, cwd, sessionId ?? undefined);
+                            onShowFileDiff(message.id, message.toolCalls, cwd, sessionId ?? undefined, message.runId);
                           } else {
                             setShowDiffViewer(true);
                           }
@@ -1163,7 +1163,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
 
       {/* Diff viewer */}
       {showDiffViewer && message.toolCalls && (
-        <DiffViewerModal toolCalls={message.toolCalls} cwd={cwd} sessionId={sessionId ?? undefined} onClose={() => setShowDiffViewer(false)} onContentSearch={onContentSearch} />
+        <DiffViewerModal toolCalls={message.toolCalls} cwd={cwd} sessionId={sessionId ?? undefined} runId={message.runId} onClose={() => setShowDiffViewer(false)} onContentSearch={onContentSearch} />
       )}
 
       {/* AskQuestion viewer */}

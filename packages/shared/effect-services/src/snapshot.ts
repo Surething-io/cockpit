@@ -22,6 +22,16 @@ export interface SnapshotTrigger {
   readonly cwd: string
   /** Run-registry key at trigger time (real sessionId once revealed). */
   readonly sessionKey: string
+  /**
+   * The dispatch that produced this snapshot. Unlike `sessionKey` this is
+   * stable for the whole run AND unique per run, which is what makes it the
+   * only sound scope for engines whose tool ids are per-turn ephemeral:
+   * codex's live stream numbers items `item_0, item_1, …` and restarts the
+   * counter every turn (one `codex exec` process per turn), so `item_15`
+   * from this turn collides with `item_15` from every earlier turn of the
+   * SAME session. Session-scoping cannot separate them; run-scoping can.
+   */
+  readonly runId?: string
   /** Engine name (claude / codex / kimi / ollama / deepseek). */
   readonly provider: string
   /** tool_use id — absent for baseline snapshots. */
@@ -44,6 +54,9 @@ export interface SnapshotCommit {
   readonly timestamp: number
   readonly subject: string
   readonly sessionKey: string | null
+  /** Dispatch that produced the commit; null on commits written before
+   *  run-scoping existed (they simply fall back to session-scoping). */
+  readonly runId: string | null
   readonly toolId: string | null
   readonly toolName: string | null
   /** cwd-relative files the tool declared it would touch. */
@@ -109,13 +122,23 @@ export interface SnapshotService {
   readonly baseline: (
     cwd: string,
     sessionKey: string,
-    provider: string
+    provider: string,
+    runId?: string
   ) => Effect.Effect<SnapshotRecordResult, AppError>
-  /** Commits whose Cockpit-Tool-Id is in `toolIds`, oldest first. */
+  /**
+   * Commits whose Cockpit-Tool-Id is in `toolIds`, oldest first.
+   *
+   * `sessionKey` / `runId` narrow the match. `runId` is the one that makes
+   * per-turn ephemeral tool ids (codex `item_N`) unambiguous — but it only
+   * EXCLUDES commits that carry a *different* run id: a commit with no
+   * Cockpit-Run-Id trailer (written before run-scoping) still matches, so
+   * existing history keeps resolving instead of vanishing.
+   */
   readonly listByToolIds: (
     cwd: string,
     toolIds: ReadonlyArray<string>,
-    sessionKey?: string
+    sessionKey?: string,
+    runId?: string
   ) => Effect.Effect<ReadonlyArray<SnapshotCommit>, AppError>
   /** Full file-level diff of one snapshot commit vs its parent. */
   readonly diff: (

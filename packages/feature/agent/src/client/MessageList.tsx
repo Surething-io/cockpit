@@ -52,7 +52,7 @@ interface MessageListProps {
   isActive?: boolean; // Whether the tab is active (handles scroll issues for hidden tabs)
   onContentSearch?: (query: string) => void; // Selected text → project-wide search
   /** Show a message's file changes in the Explorer panel (panel 2) + auto-swipe */
-  onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, live?: boolean) => void;
+  onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, runId?: string, live?: boolean) => void;
   /** AI reply Markdown local-file link → Explorer tree + optional line jump. */
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
   /** Plan mode: approve the presented plan → turn off plan mode and resend to execute */

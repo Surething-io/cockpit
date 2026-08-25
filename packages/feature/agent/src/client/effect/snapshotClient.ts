@@ -18,6 +18,7 @@ export interface SnapshotCommitDto {
   timestamp: number
   subject: string
   sessionKey: string | null
+  runId: string | null
   toolId: string | null
   toolName: string | null
   toolFiles: string[]
@@ -68,12 +69,15 @@ const httpJson = <A>(url: string): Effect.Effect<A, AppError> =>
 export const loadSnapshotsByToolIds = (
   cwd: string,
   toolIds: ReadonlyArray<string>,
-  sessionKey?: string
+  sessionKey?: string,
+  /** The dispatch the message belongs to. Without it, an engine whose tool
+   *  ids restart every turn (codex `item_N`) matches earlier turns too. */
+  runId?: string
 ): Effect.Effect<SnapshotCommitDto[], AppError> =>
   httpJson<{ commits: SnapshotCommitDto[] }>(
     `/api/snapshots?cwd=${encodeURIComponent(cwd)}&toolIds=${encodeURIComponent(toolIds.join(","))}${
       sessionKey ? `&sessionKey=${encodeURIComponent(sessionKey)}` : ""
-    }`
+    }${runId ? `&runId=${encodeURIComponent(runId)}` : ""}`
   ).pipe(Effect.map((r) => r.commits ?? []))
 
 export const loadSnapshotDiff = (
@@ -88,9 +92,10 @@ export const loadSnapshotDiff = (
 export const loadSnapshotDiffsForToolIds = (
   cwd: string,
   toolIds: ReadonlyArray<string>,
-  sessionKey?: string
+  sessionKey?: string,
+  runId?: string
 ): Effect.Effect<SnapshotDiffDto[], AppError> =>
-  loadSnapshotsByToolIds(cwd, toolIds, sessionKey).pipe(
+  loadSnapshotsByToolIds(cwd, toolIds, sessionKey, runId).pipe(
     Effect.flatMap((commits) =>
       Effect.all(
         commits.map((c) => loadSnapshotDiff(cwd, c.hash)),

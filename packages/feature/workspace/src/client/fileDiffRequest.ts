@@ -7,6 +7,9 @@ export interface FileDiffRequest {
   toolCalls: ToolCallInfo[];
   cwd?: string;
   sessionId?: string;
+  /** Dispatch that produced the message — scopes the snapshot lookup to one
+   *  turn (codex reuses `item_N` across turns). See ChatMessage.runId. */
+  runId?: string;
 }
 
 /**

@@ -78,7 +78,7 @@ export async function dispatchChat(
   }
   // Tool-call snapshots: baseline commit of any pending external changes so the
   // first tool commit of this run diffs against the true pre-run state.
-  snapshotOnRunStart(cwd || '', currentKey, spec.name);
+  snapshotOnRunStart(cwd || '', currentKey, spec.name, runId);
 
   const ctx: RunCtx = {
     prompt: promptText,
@@ -92,7 +92,10 @@ export async function dispatchChat(
       appendRun(currentKey, event);
       // Tool-call snapshots: observe every engine's tool_use/tool_result here —
       // the single choke point all providers flow through. Fire-and-forget.
-      snapshotOnRunEvent(cwd || '', currentKey, spec.name, event);
+      // runId (NOT currentKey) is what scopes the tool id: it is unique per
+      // dispatch and immune to rekey, so a codex `item_N` recorded here cannot
+      // be confused with the same `item_N` from an earlier turn of this session.
+      snapshotOnRunEvent(cwd || '', currentKey, spec.name, event, runId);
     },
     rekey(realSessionId: string) {
       if (!realSessionId) return;

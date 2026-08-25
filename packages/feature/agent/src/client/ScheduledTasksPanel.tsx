@@ -1,14 +1,16 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { toast } from '@cockpit/shared-ui';
+import { toast, MODAL_SHELL_CLASS } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
+import { getProjectName, getTaskSummary } from './useScheduledTasks';
 import type { ScheduledTask } from './useScheduledTasks';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
 import { MdPreviewModal } from './MdPreviewModal';
 import { EngineBadge } from './EngineBadge';
 import { SessionNumberBadge } from './SessionNumberBadge';
+import { ScheduledTaskPreview } from './ScheduledTaskPreview';
 import { readFileForPreview } from './effect/agentClient';
 
 interface ScheduledTasksPanelProps {
@@ -25,10 +27,6 @@ interface ScheduledTasksPanelProps {
   onDelete: (id: string) => void;
   onMarkRead: (id: string) => void;
   onUpdateTask: (id: string, fields: Partial<Pick<ScheduledTask, 'message' | 'taskFile' | 'type' | 'delayMinutes' | 'intervalMinutes' | 'activeFrom' | 'activeTo' | 'cron'>>) => void;
-}
-
-function getProjectName(cwd: string): string {
-  return cwd.split('/').pop() || cwd;
 }
 
 function formatNextFire(ts: number, t: (key: string, opts?: Record<string, unknown>) => string): string {
@@ -68,16 +66,6 @@ function getStatusColor(task: ScheduledTask): string {
 }
 
 /**
- * What the card shows as the task's instruction: the exact prompt that will be
- * dispatched, so "what the card says" and "what the agent receives" cannot drift.
- * The server computes it (buildTaskPrompt); the fallbacks cover tasks fetched
- * before that field existed.
- */
-function getTaskSummary(task: ScheduledTask): string {
-  return task.resolvedPrompt || task.message || task.taskFile || '';
-}
-
-/**
  * The engine this task will actually fire on. `engine` is a snapshot taken at
  * creation and is absent on tasks made before it was persisted — those run on
  * claude, which is also what the dispatcher falls back to (sendChatMessageEff).
@@ -98,13 +86,63 @@ function getStatusText(task: ScheduledTask, t: (key: string) => string): string 
   return t('common.running');
 }
 
+/** When the task last happened. Never fired → the moment it was created. */
+function occurredAt(task: ScheduledTask): number {
+  return task.lastFiredAt ?? task.createdAt;
+}
+
+/**
+ * Split the board into the three lists the left column shows, each sorted by the
+ * time that group is actually read by:
+ *
+ * - `pendingReview` — anything that has finished and is worth looking at: an
+ *   unread result, or a one-off that has run to completion. Unread first, then
+ *   most recently fired. A `completed` task that has already been read still
+ *   belongs here rather than in `upcoming`: it will never fire again, so listing
+ *   it among the things waiting to run would be a lie.
+ * - `upcoming` — armed tasks, soonest first, so the top of the list answers
+ *   "what fires next".
+ * - `paused` — most recently fired first; there is no next fire to sort by.
+ *
+ * NOTE: this ordering deliberately overrides the server's `sortIndex`
+ * (getTasks sorts by `sortIndex ?? createdAt`, and a `reorder` action exists).
+ * Manual ordering has no entry point in this UI and cannot coexist with
+ * grouping — the board is status-first now.
+ */
+function groupTasks(tasks: ScheduledTask[]) {
+  const pendingReview: ScheduledTask[] = [];
+  const upcoming: ScheduledTask[] = [];
+  const paused: ScheduledTask[] = [];
+  for (const task of tasks) {
+    if (task.unread || task.completed) pendingReview.push(task);
+    else if (task.paused) paused.push(task);
+    else upcoming.push(task);
+  }
+  pendingReview.sort(
+    (a, b) => Number(!!b.unread) - Number(!!a.unread) || occurredAt(b) - occurredAt(a),
+  );
+  // A task with no armed timer sorts last instead of jumping to the front on 0.
+  const nextFire = (task: ScheduledTask) => task.nextFireTime || Number.MAX_SAFE_INTEGER;
+  upcoming.sort((a, b) => nextFire(a) - nextFire(b));
+  paused.sort((a, b) => occurredAt(b) - occurredAt(a));
+  return { pendingReview, upcoming, paused };
+}
+
+/** Left-column groups, top to bottom. Order is the board's reading order. */
+const GROUP_ORDER = [
+  { key: 'pendingReview', labelKey: 'scheduledTasks.groupPendingReview' },
+  { key: 'upcoming', labelKey: 'scheduledTasks.groupUpcoming' },
+  { key: 'paused', labelKey: 'scheduledTasks.paused' },
+] as const;
+
 /**
  * ScheduledTasksPanel — the sidebar clock button plus the full-viewport task
  * board it opens.
  *
- * Visually aligned with RecentSessionsModal (same modal shell + grid card
- * layout), so the sidebar's two "list of things happening elsewhere" surfaces
- * read the same. Unlike that modal there is no search box and no loading /
+ * Shares MODAL_SHELL_CLASS with RecentSessionsModal and the other boards, so
+ * the sidebar's "list of things happening elsewhere" surfaces size alike; the
+ * body is a list + preview split rather than that modal's card grid. There is
+ * no search box here and no loading /
  * error state: tasks arrive as props from useScheduledTasks and stay in the
  * low tens, so filtering would be dead weight.
  *
@@ -131,9 +169,25 @@ export function ScheduledTasksPanel({
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
 
+  // Which task the right-hand transcript follows. Reset on close so every open
+  // lands on the top of "pending review" again.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
   const activeTasks = tasks.filter(t => !t.completed);
   const runningCount = activeTasks.filter(t => !t.paused).length;
-  const completedTasks = tasks.filter(t => t.completed);
+
+  const groups = useMemo(() => groupTasks(tasks), [tasks]);
+  const selectedTask = selectedId ? tasks.find(t => t.id === selectedId) ?? null : null;
+
+  // Auto-select the first card in board order — with the "pending review" group
+  // on top, opening the board shows the newest finished run without a click.
+  // Only fills a hole (nothing selected, or the selection was deleted); it never
+  // steals a selection the user made.
+  useEffect(() => {
+    if (!isOpen || selectedTask) return;
+    const first = groups.pendingReview[0] ?? groups.upcoming[0] ?? groups.paused[0];
+    setSelectedId(first?.id ?? null);
+  }, [isOpen, selectedTask, groups]);
 
   // Auto-refresh display (countdown)
   const [, setTick] = useState(0);
@@ -187,6 +241,11 @@ export function ScheduledTasksPanel({
     }
   }, [t]);
 
+  const closeBoard = useCallback(() => {
+    setIsOpen(false);
+    setSelectedId(null);
+  }, []);
+
   // Close on ESC — the edit dialog and the preview both sit above and own their
   // own ESC, so the board must not also swallow the same keypress and close.
   useEffect(() => {
@@ -194,11 +253,24 @@ export function ScheduledTasksPanel({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (previewPath) { closePreview(); return; }
-      if (!editingTask) setIsOpen(false);
+      if (!editingTask) closeBoard();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, editingTask, previewPath, closePreview]);
+  }, [isOpen, editingTask, previewPath, closePreview, closeBoard]);
+
+  /**
+   * The board's only navigation path — a card click merely selects now, so
+   * jumping (and with it clearing `unread`) happens here and in the preview
+   * header. Selecting deliberately does NOT mark read: the card would jump out
+   * of "pending review" into another group under the cursor, moving the very
+   * row the user just clicked.
+   */
+  const openSession = useCallback((task: ScheduledTask) => {
+    onSwitchProject(task.cwd, task.sessionId);
+    if (task.unread) onMarkRead(task.id);
+    closeBoard();
+  }, [onSwitchProject, onMarkRead, closeBoard]);
 
   const renderActions = (task: ScheduledTask) => (
     <div className="flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -284,6 +356,69 @@ export function ScheduledTasksPanel({
     </div>
   );
 
+  /**
+   * One task card. Clicking selects it for the right-hand preview — it no longer
+   * navigates; that moved to the preview header's "open session" button.
+   */
+  const renderCard = (task: ScheduledTask) => {
+    const isSelected = task.id === selectedId;
+    return (
+      <div
+        key={task.id}
+        onClick={() => setSelectedId(task.id)}
+        className={`group p-3 rounded border cursor-pointer transition-all hover:border-brand hover:shadow-lv2 ${
+          isSelected
+            ? 'border-brand bg-brand/5 shadow-lv2'
+            : task.unread
+              ? 'border-brand/40 bg-brand/5'
+              : 'border-border'
+        } ${task.completed ? 'opacity-70' : ''}`}
+      >
+        {/* Project name + status dot + engine */}
+        <div className="flex items-center gap-1.5 mb-1">
+          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getStatusColor(task)}`} />
+          <EngineBadge engine={getTaskEngine(task)} tooltip={getEngineTooltip(task)} />
+          <h4 className="text-xs font-medium text-foreground truncate flex-1" data-tooltip={task.cwd}>
+            {getProjectName(task.cwd)}
+          </h4>
+          <SessionNumberBadge coordinate={sessionNumbers?.[`${task.cwd}\n${task.sessionId}`]} />
+          <span className="text-[10px] text-muted-foreground flex-shrink-0 group-hover:hidden">
+            {getStatusText(task, t)}
+          </span>
+          {renderActions(task)}
+        </div>
+
+        {/* Task message */}
+        <div className="text-xs text-foreground line-clamp-3 mb-1 whitespace-pre-wrap break-words" data-tooltip={getTaskSummary(task)}>
+          {getTaskSummary(task)}
+        </div>
+
+        {/* Schedule + next fire */}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="truncate">{formatType(task, t)}</span>
+          <span>·</span>
+          {/* A completed task keeps a stale `nextFireTime` from its last arming,
+              so it must never be rendered as a countdown. */}
+          <span className="flex-shrink-0">
+            {task.completed
+              ? (task.lastResult === 'success' ? t('scheduledTasks.success') : t('scheduledTasks.failure'))
+              : task.paused
+                ? t('scheduledTasks.paused')
+                : formatNextFire(task.nextFireTime, t)}
+          </span>
+          {!task.completed && task.lastFiredAt && (
+            <>
+              <span>·</span>
+              <span className="flex-shrink-0">
+                {t('scheduledTasks.lastResult')}: {task.lastResult === 'success' ? '✓' : '✗'}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
       <button
@@ -317,10 +452,10 @@ export function ScheduledTasksPanel({
       {isOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center">
           {/* Backdrop */}
-          <div className="absolute inset-0 bg-scrim" onClick={() => setIsOpen(false)} />
+          <div className="absolute inset-0 bg-scrim" onClick={closeBoard} />
 
           {/* Modal */}
-          <div className="relative w-full max-w-7xl h-[90vh] mx-4 bg-card rounded-lg shadow-lv3 flex flex-col overflow-hidden">
+          <div className={MODAL_SHELL_CLASS}>
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <div className="flex items-center gap-3 min-w-0">
@@ -335,7 +470,7 @@ export function ScheduledTasksPanel({
                 )}
               </div>
               <button
-                onClick={() => setIsOpen(false)}
+                onClick={closeBoard}
                 className="p-1 text-foreground-subtle hover:text-foreground hover:bg-hover rounded transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -344,105 +479,53 @@ export function ScheduledTasksPanel({
               </button>
             </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-4">
+            {/* Content — grouped task list on the left, transcript on the right */}
+            <div className="flex-1 flex min-h-0">
               {tasks.length === 0 ? (
-                <div className="flex items-center justify-center h-full">
+                <div className="flex-1 flex items-center justify-center">
                   <div className="text-xs text-muted-foreground">{t('scheduledTasks.noScheduledTasks')}</div>
                 </div>
               ) : (
                 <>
-                  {/* Active tasks */}
-                  {activeTasks.length > 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {activeTasks.map((task) => (
-                        <div
-                          key={task.id}
-                          onClick={() => {
-                            onSwitchProject(task.cwd, task.sessionId);
-                            if (task.unread) onMarkRead(task.id);
-                            setIsOpen(false);
-                          }}
-                          className={`group p-3 rounded border hover:border-brand hover:shadow-lv2 cursor-pointer transition-all ${
-                            task.unread ? 'border-brand/40 bg-brand/5' : 'border-border'
-                          }`}
-                        >
-                          {/* Project name + status dot + engine */}
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getStatusColor(task)}`} />
-                            <EngineBadge engine={getTaskEngine(task)} tooltip={getEngineTooltip(task)} />
-                            <h4 className="text-xs font-medium text-foreground truncate flex-1" data-tooltip={task.cwd}>
-                              {getProjectName(task.cwd)}
-                            </h4>
-                            <SessionNumberBadge coordinate={sessionNumbers?.[`${task.cwd}\n${task.sessionId}`]} />
-                            <span className="text-[10px] text-muted-foreground flex-shrink-0 group-hover:hidden">
-                              {getStatusText(task, t)}
-                            </span>
-                            {renderActions(task)}
+                  {/* Left: one column of cards, split into the three status groups.
+                      Fixed width because the right pane renders real message bubbles
+                      (code blocks, tool calls) and needs the remaining space. Below
+                      `md` the preview is dropped and the list takes the full width. */}
+                  <div className="w-full md:w-[360px] flex-shrink-0 md:border-r border-border overflow-y-auto p-3 space-y-4">
+                    {GROUP_ORDER.map(({ key, labelKey }) => {
+                      const groupItems = groups[key];
+                      // Empty groups render nothing at all — no header, no gap.
+                      if (groupItems.length === 0) return null;
+                      return (
+                        <div key={key}>
+                          <div className="sticky top-0 z-10 -mx-3 px-3 py-1 bg-card text-[11px] font-medium text-muted-foreground">
+                            {t(labelKey)} ({groupItems.length})
                           </div>
-
-                          {/* Task message */}
-                          <div className="text-xs text-foreground line-clamp-3 mb-1 whitespace-pre-wrap break-words" data-tooltip={getTaskSummary(task)}>
-                            {getTaskSummary(task)}
-                          </div>
-
-                          {/* Schedule + next fire */}
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span className="truncate">{formatType(task, t)}</span>
-                            <span>·</span>
-                            <span className="flex-shrink-0">
-                              {task.paused ? t('scheduledTasks.paused') : formatNextFire(task.nextFireTime, t)}
-                            </span>
-                            {task.lastFiredAt && (
-                              <>
-                                <span>·</span>
-                                <span className="flex-shrink-0">
-                                  {t('scheduledTasks.lastResult')}: {task.lastResult === 'success' ? '✓' : '✗'}
-                                </span>
-                              </>
-                            )}
+                          <div className="mt-1 space-y-2">
+                            {groupItems.map((task) => renderCard(task))}
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      );
+                    })}
+                  </div>
 
-                  {/* Completed tasks */}
-                  {completedTasks.length > 0 && (
-                    <>
-                      <div className={`text-xs text-muted-foreground mb-2 ${activeTasks.length > 0 ? 'mt-5' : ''}`}>
-                        {t('scheduledTasks.completedCount', { count: completedTasks.length })}
+                  {/* Right: the selected task's session transcript */}
+                  <div className="hidden md:flex flex-1 min-w-0">
+                    {selectedTask ? (
+                      <ScheduledTaskPreview
+                        // Remount per task: the preview's transcript, fingerprint
+                        // and scroll position only make sense for one session, so
+                        // the key does the resetting instead of in-component code.
+                        key={selectedTask.id}
+                        task={selectedTask}
+                        onOpenSession={() => openSession(selectedTask)}
+                      />
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">
+                        {t('scheduledTasks.selectTaskHint')}
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {completedTasks.map((task) => (
-                          <div
-                            key={task.id}
-                            onClick={() => {
-                              onSwitchProject(task.cwd, task.sessionId);
-                              setIsOpen(false);
-                            }}
-                            className="group p-3 rounded border border-border opacity-60 hover:opacity-100 hover:border-brand hover:shadow-lv2 cursor-pointer transition-all"
-                          >
-                            <div className="flex items-center gap-1.5 mb-1">
-                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getStatusColor(task)}`} />
-                              <EngineBadge engine={getTaskEngine(task)} tooltip={getEngineTooltip(task)} />
-                              <h4 className="text-xs font-medium text-foreground truncate flex-1" data-tooltip={task.cwd}>
-                                {getProjectName(task.cwd)}
-                              </h4>
-                              <SessionNumberBadge coordinate={sessionNumbers?.[`${task.cwd}\n${task.sessionId}`]} />
-                              {renderActions(task)}
-                            </div>
-                            <div className="text-xs text-foreground line-clamp-3 mb-1 whitespace-pre-wrap break-words" data-tooltip={getTaskSummary(task)}>
-                              {getTaskSummary(task)}
-                            </div>
-                            <div className="text-xs text-muted-foreground truncate">
-                              {formatType(task, t)} · {task.lastResult === 'success' ? t('scheduledTasks.success') : t('scheduledTasks.failure')}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
+                    )}
+                  </div>
                 </>
               )}
             </div>

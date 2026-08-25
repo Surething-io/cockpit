@@ -235,6 +235,17 @@ interface MessageBubbleProps {
    * has no second panel), the button falls back to a local full-screen modal.
    */
   onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, live?: boolean) => void;
+  /**
+   * Suppress every control that opens a window ON TOP of the app — diff viewer,
+   * file / image previews, subagent + workflow transcripts, tool input/result
+   * viewers. In-place controls (expand/collapse, copy) are untouched.
+   *
+   * For a host that is itself an overlay and cannot sanely stack another one
+   * above itself: the scheduled-task board (z-[70]) renders these bubbles in a
+   * read-only pane, and every one of those Portals lands on <body> at z-50 —
+   * i.e. BEHIND the board that opened it.
+   */
+  disableOverlays?: boolean;
   /** AI reply Markdown local-file link → Explorer tree + optional line jump. */
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
 }
@@ -432,7 +443,7 @@ const TextPartRow = memo(function TextPartRow({
 });
 
 // Use memo optimization — only re-render when message or cwd changes
-export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork, forkSupported = true, onApprovePlan, isLoading, onContentSearch, onShowFileDiff, onOpenFileLink }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork, forkSupported = true, onApprovePlan, isLoading, onContentSearch, onShowFileDiff, onOpenFileLink, disableOverlays = false }: MessageBubbleProps) {
   const { t } = useTranslation();
   const [previewImage, setPreviewImage] = useState<MessageImage | null>(null);
   // Single-tool case: default expanded so the content stays visible (we only need the header for special entries).
@@ -831,8 +842,10 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
               {message.images!.map((image, index) => (
                 <div
                   key={index}
-                  className="relative w-16 h-16 rounded-lg overflow-hidden border border-white/20 cursor-pointer hover:opacity-90 transition-opacity"
-                  onClick={() => setPreviewImage(image)}
+                  className={`relative w-16 h-16 rounded-lg overflow-hidden border border-white/20 ${
+                    disableOverlays ? '' : 'cursor-pointer hover:opacity-90 transition-opacity'
+                  }`}
+                  onClick={disableOverlays ? undefined : () => setPreviewImage(image)}
                 >
                   <img
                     src={`data:${image.media_type};base64,${image.data}`}
@@ -956,8 +969,11 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                 {docFiles.map((fp) => (
                   <button
                     key={fp}
+                    // Disabled rather than hidden: the file name is half the
+                    // information in this row, only the preview is an overlay.
+                    disabled={disableOverlays}
                     onClick={() => setPreviewFile(fp)}
-                    className="flex items-center gap-1.5 w-full text-left hover:bg-hover rounded px-1 py-0.5 transition-colors group/md"
+                    className="flex items-center gap-1.5 w-full text-left rounded px-1 py-0.5 group/md transition-colors enabled:hover:bg-hover disabled:cursor-default"
                   >
                     {isImageFile(fp) ? (
                       // Image — picture glyph
@@ -1049,7 +1065,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                         {toolCallsExpanded ? t('chat.collapse') : t('chat.expand')}
                       </span>
                     </button>
-                    {askQuestionCalls.length > 0 && (
+                    {!disableOverlays && askQuestionCalls.length > 0 && (
                       <button
                         onClick={() => setShowAskQuestionViewer(true)}
                         className="px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-hover transition-colors border-l border-line-1"
@@ -1058,7 +1074,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                         <MessageCircleQuestion className="w-4 h-4" />
                       </button>
                     )}
-                    {showFileDiff && (
+                    {!disableOverlays && showFileDiff && (
                       <button
                         onClick={() => {
                           // Prefer showing the diff in the Explorer panel (panel 2)
@@ -1083,7 +1099,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                     // also doubled up with a my-1 on each row.
                     <div className="border-t border-line-1">
                       {displayToolCalls.map((toolCall, index) => (
-                        <ToolCallModal key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} sessionId={sessionId} />
+                        <ToolCallModal key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} sessionId={sessionId} disableOverlays={disableOverlays} />
                       ))}
                     </div>
                   )}
@@ -1091,7 +1107,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
               ) : (
                 // Normal mode: show all tool calls directly
                 displayToolCalls.map((toolCall, index) => (
-                  <ToolCallModal key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} sessionId={sessionId} />
+                  <ToolCallModal key={`${toolCall.id}-${index}`} toolCall={toolCall} cwd={cwd} sessionId={sessionId} disableOverlays={disableOverlays} />
                 ))
               )}
             </div>

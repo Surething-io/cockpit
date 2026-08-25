@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { toast } from '@cockpit/shared-ui';
+import { toast, MODAL_SHELL_CLASS, MODAL_CARD_GRID_CLASS } from '@cockpit/shared-ui';
 import { AppWindow, ExternalLink, Minimize2, RotateCw, SquareTerminal, Trash2, Plus, X, Search, Copy } from 'lucide-react';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { toExternalBrowserAppUrl, toLocalAppUrl } from '@cockpit/shared-utils';
@@ -178,7 +178,7 @@ export function HtmlAppsModal({
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-scrim" onClick={handleClose} />
-          <div className="relative bg-card rounded-lg shadow-lv3 w-full max-w-7xl h-[90vh] mx-4 flex flex-col overflow-hidden">
+          <div className={MODAL_SHELL_CLASS}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
               <h2 className="text-sm font-medium text-foreground">{t('htmlApps.title')}</h2>
               <div className="flex items-center gap-3">
@@ -221,7 +221,7 @@ export function HtmlAppsModal({
               ) : (
                 <>
                   {filtered.length > 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className={MODAL_CARD_GRID_CLASS}>
                       {filtered.map((app) => (
                         <HtmlAppCard
                           key={app.id}

@@ -54,9 +54,16 @@ interface ToolCallProps {
   cwd?: string;
   // Enables the subagent transcript entry on Agent/Task tool calls
   sessionId?: string | null;
+  /**
+   * Drop the entries that open a window on top of the app — subagent transcript,
+   * workflow run, input / result viewers. Expand/collapse and copy-path stay:
+   * they mutate nothing outside this row. Set by hosts that are themselves
+   * overlays (see MessageBubble's `disableOverlays`).
+   */
+  disableOverlays?: boolean;
 }
 
-export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
+export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = false }: ToolCallProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [previewContent, setPreviewContent] = useState<{ title: string; content: string; toolName: string } | null>(null);
@@ -215,7 +222,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
         )}
         {/* Right action area */}
         <span className="ml-auto flex items-center gap-2">
-          {isSubagentCall && (
+          {isSubagentCall && !disableOverlays && (
             <span
               role="button"
               tabIndex={0}
@@ -227,7 +234,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
               {t('chat.subagent')}
             </span>
           )}
-          {isWorkflowCall && (
+          {isWorkflowCall && !disableOverlays && (
             <span
               role="button"
               tabIndex={0}
@@ -239,7 +246,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId }: ToolCallProps) {
               {t('chat.workflowRun')}
             </span>
           )}
-          {expanded && !toolCall.isLoading && (
+          {expanded && !toolCall.isLoading && !disableOverlays && (
             <>
               <span
                 role="button"

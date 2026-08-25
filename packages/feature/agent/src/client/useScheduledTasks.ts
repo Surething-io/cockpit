@@ -46,6 +46,21 @@ export interface ScheduledTask {
   sortIndex?: number;
 }
 
+/** Card / preview heading for a task: the last segment of its project path. */
+export function getProjectName(cwd: string): string {
+  return cwd.split('/').pop() || cwd;
+}
+
+/**
+ * What a task's instruction reads as: the exact prompt the dispatcher will send,
+ * so "what the UI says" and "what the agent receives" cannot drift. The server
+ * computes it (buildTaskPrompt); the fallbacks cover tasks fetched before that
+ * field existed.
+ */
+export function getTaskSummary(task: ScheduledTask): string {
+  return task.resolvedPrompt || task.message || task.taskFile || '';
+}
+
 interface CreateTaskParams {
   cwd: string;
   tabId: string;

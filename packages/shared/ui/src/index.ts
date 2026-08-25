@@ -1,5 +1,8 @@
 // @cockpit/shared-ui — cross-feature reusable presentation components / utilities
 
+// Shared modal shell / card grid class strings
+export { MODAL_SHELL_CLASS, MODAL_SHELL_CLASS_IN_PROJECT, MODAL_CARD_GRID_CLASS } from './modalShell';
+
 // Portal
 export { Portal, PanelPortalProvider, usePanelPortalTarget } from './Portal';
 

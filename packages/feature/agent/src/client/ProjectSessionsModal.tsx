@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { MODAL_SHELL_CLASS_IN_PROJECT, MODAL_CARD_GRID_CLASS } from '@cockpit/shared-ui';
 import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
@@ -138,7 +139,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession, pr
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-7xl h-[90vh] mx-4 bg-card rounded-lg shadow-lv3 flex flex-col overflow-hidden">
+      <div className={MODAL_SHELL_CLASS_IN_PROJECT}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex-1 min-w-0">
@@ -214,7 +215,7 @@ export function ProjectSessionsModal({ isOpen, onClose, cwd, onSelectSession, pr
           )}
 
           {!isLoading && !error && filteredSessions.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className={MODAL_CARD_GRID_CLASS}>
               {filteredSessions.map((session) => {
                 const fileName = session.path.split('/').pop() || '';
                 const sessionId = session.sessionId || fileName.replace('.jsonl', '');

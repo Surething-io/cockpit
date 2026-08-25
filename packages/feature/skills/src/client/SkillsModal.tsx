@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { toast } from '@cockpit/shared-ui';
+import { toast, MODAL_SHELL_CLASS, MODAL_CARD_GRID_CLASS } from '@cockpit/shared-ui';
 import {
   loadSkillsList,
   addSkill,
@@ -144,7 +144,7 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         <div className="absolute inset-0 bg-scrim" onClick={onClose} />
 
-        <div className="relative bg-card rounded-lg shadow-lv3 w-full max-w-7xl h-[90vh] mx-4 flex flex-col overflow-hidden">
+        <div className={MODAL_SHELL_CLASS}>
           {/* Header — title + inline search/add/close (matches SessionBrowser) */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
             <h2 className="text-sm font-medium text-foreground">{t('skills.title')}</h2>
@@ -230,7 +230,7 @@ export function SkillsModal({ isOpen, onClose }: SkillsModalProps) {
                 ) : t('skills.emptyNoMatch')}
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className={MODAL_CARD_GRID_CLASS}>
                 {filtered.map((skill) => (
                   <SkillCard
                     key={skill.id}

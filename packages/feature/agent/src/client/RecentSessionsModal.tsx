@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { MODAL_SHELL_CLASS, MODAL_CARD_GRID_CLASS } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { loadRecentSessions, type RecentSessionInfo } from './effect/agentClient';
 import { EngineBadge } from './EngineBadge';
@@ -112,7 +113,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
       <div className="absolute inset-0 bg-scrim" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative w-full max-w-7xl h-[90vh] mx-4 bg-card rounded-lg shadow-lv3 flex flex-col overflow-hidden">
+      <div className={MODAL_SHELL_CLASS}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex-1 min-w-0">
@@ -185,7 +186,7 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
           )}
 
           {!isLoading && !error && filteredSessions.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className={MODAL_CARD_GRID_CLASS}>
               {filteredSessions.map((session) => (
                 <div
                   key={`${session.cwd}-${session.sessionId}`}

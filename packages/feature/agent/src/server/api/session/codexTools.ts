@@ -256,32 +256,157 @@ function extractPatchLiteral(script: string): string | null {
 }
 
 /**
- * Slice the object literal passed to `tools.exec_command(` — brace-matched rather
- * than regex'd, because the JSON contains braces and quotes of its own.
+ * Minimal recursive-descent reader for the argument literal of
+ * `tools.exec_command(...)`.
+ *
+ * Why not JSON.parse: what codex writes is a JavaScript object literal, not
+ * JSON — its keys are BARE identifiers (`cmd:`, not `"cmd":`). JSON.parse
+ * rejects that at the very first key, so EVERY exec script fell through to
+ * `kind: 'unknown'`. Measured on a real rollout: 659 of 765 scripts unknown,
+ * zero classified as exec. Three things broke off that one call:
+ *   - the rollout's exec list stayed empty, so resolveCodexCallId never had a
+ *     row to match and every Bash call fell back to the per-turn `item_N` id;
+ *   - those snapshots lost their FileDiff after a refresh (the reload path
+ *     keys on the rollout's `call_…`, which was never recorded);
+ *   - a reloaded transcript rendered the raw JS wrapper instead of the command.
+ *
+ * Supported subset — everything codex emits: bare or quoted keys, all three JS
+ * quote styles, numbers, true/false/null, nested objects/arrays, trailing
+ * commas. Anything outside it returns null, which keeps the previous
+ * behaviour (render the script raw) rather than guessing.
  */
+interface JsCursor { readonly s: string; i: number }
+
+const JS_IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*/;
+const JS_SCALAR_RE = /^(-?\d[\d_]*(?:\.\d*)?(?:[eE][+-]?\d+)?|true|false|null|undefined)/;
+
+const skipJsWs = (c: JsCursor): void => {
+  while (c.i < c.s.length && /\s/.test(c.s[c.i])) c.i++;
+};
+
+/** Consumes one string literal; null = not a string, or unterminated. */
+function readJsString(c: JsCursor): string | null {
+  const q = c.s[c.i];
+  if (q !== '"' && q !== "'" && q !== '`') return null;
+  const start = c.i;
+  c.i++;
+  while (c.i < c.s.length) {
+    const ch = c.s[c.i];
+    if (ch === '\\') { c.i += 2; continue; }
+    if (ch === q) { c.i++; return decodeJsStringLiteral(c.s.slice(start, c.i)); }
+    c.i++;
+  }
+  return null;
+}
+
+/** Boxed so a legitimately-null/undefined value is distinguishable from failure. */
+type JsRead = { v: unknown } | null;
+
+function readJsValue(c: JsCursor): JsRead {
+  skipJsWs(c);
+  const ch = c.s[c.i];
+  if (ch === undefined) return null;
+  if (ch === '"' || ch === "'" || ch === '`') {
+    const str = readJsString(c);
+    return str === null ? null : { v: str };
+  }
+  if (ch === '{') return readJsObject(c);
+  if (ch === '[') return readJsArray(c);
+  const m = JS_SCALAR_RE.exec(c.s.slice(c.i));
+  if (!m) return null;
+  c.i += m[0].length;
+  const raw = m[0];
+  if (raw === 'true') return { v: true };
+  if (raw === 'false') return { v: false };
+  if (raw === 'null' || raw === 'undefined') return { v: null };
+  const n = Number(raw.replace(/_/g, ''));
+  return Number.isNaN(n) ? null : { v: n };
+}
+
+function readJsArray(c: JsCursor): JsRead {
+  if (c.s[c.i] !== '[') return null;
+  c.i++;
+  const out: unknown[] = [];
+  for (;;) {
+    skipJsWs(c);
+    if (c.s[c.i] === ']') { c.i++; return { v: out }; }
+    if (c.i >= c.s.length) return null;
+    const item = readJsValue(c);
+    if (!item) return null;
+    out.push(item.v);
+    skipJsWs(c);
+    if (c.s[c.i] === ',') { c.i++; continue; }
+    if (c.s[c.i] === ']') { c.i++; return { v: out }; }
+    return null;
+  }
+}
+
+function readJsObject(c: JsCursor): JsRead {
+  if (c.s[c.i] !== '{') return null;
+  c.i++;
+  const out: Record<string, unknown> = {};
+  for (;;) {
+    skipJsWs(c);
+    if (c.s[c.i] === '}') { c.i++; return { v: out }; }
+    if (c.i >= c.s.length) return null;
+    // Key: quoted string, or the bare identifier JSON.parse used to choke on.
+    let key: string | null = null;
+    const ch = c.s[c.i];
+    if (ch === '"' || ch === "'" || ch === '`') {
+      key = readJsString(c);
+    } else {
+      const m = JS_IDENT_RE.exec(c.s.slice(c.i));
+      if (m) { key = m[0]; c.i += m[0].length; }
+    }
+    if (key === null) return null;
+    skipJsWs(c);
+    if (c.s[c.i] !== ':') return null;
+    c.i++;
+    const val = readJsValue(c);
+    if (!val) return null;
+    out[key] = val.v;
+    skipJsWs(c);
+    if (c.s[c.i] === ',') { c.i++; continue; }
+    if (c.s[c.i] === '}') { c.i++; return { v: out }; }
+    return null;
+  }
+}
+
+/** The object literal passed to `tools.<name>(` at `from`, or null. */
+function readToolArgsAt(script: string, from: number): Record<string, unknown> | null {
+  const open = script.indexOf('{', from);
+  if (open === -1) return null;
+  const read = readJsObject({ s: script, i: open });
+  if (!read || !read.v || typeof read.v !== 'object') return null;
+  return read.v as Record<string, unknown>;
+}
+
+/** The object literal passed to `tools.exec_command(`, or null if unparsable. */
 function extractExecArgs(script: string): Record<string, unknown> | null {
   const call = script.indexOf('tools.exec_command(');
   if (call === -1) return null;
-  const open = script.indexOf('{', call);
-  if (open === -1) return null;
+  return readToolArgsAt(script, call);
+}
 
-  let depth = 0;
-  let quote = '';
-  for (let i = open; i < script.length; i++) {
-    const ch = script[i];
-    if (quote) {
-      if (ch === '\\') i++;
-      else if (ch === quote) quote = '';
-      continue;
-    }
-    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
-    if (ch === '{') depth++;
-    else if (ch === '}' && --depth === 0) {
-      try {
-        const parsed = JSON.parse(script.slice(open, i + 1)) as unknown;
-        return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
-      } catch { return null; }
-    }
+const TOOL_CALL_RE = /tools\.([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g;
+
+/**
+ * The first `tools.<name>({…})` that is NOT exec_command/apply_patch — codex
+ * routes its whole toolbox through the one `exec` freeform tool, so a script
+ * body may be `write_stdin`, `update_plan`, … Recognizing them by name lets the
+ * bubble carry the tool that actually ran; the alternative (the old `unknown`
+ * fallback) mislabels them `Bash` and puts the raw JS wrapper in the command
+ * header — a command that was never run, which normalizeCodexToolName's own
+ * comment calls out as the thing not to do.
+ */
+function extractOtherToolCall(script: string): { tool: string; args: Record<string, unknown> } | null {
+  TOOL_CALL_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = TOOL_CALL_RE.exec(script))) {
+    const tool = m[1];
+    if (tool === 'exec_command' || tool === 'apply_patch') continue;
+    const args = readToolArgsAt(script, m.index);
+    if (args) return { tool, args };
   }
   return null;
 }
@@ -289,6 +414,13 @@ function extractExecArgs(script: string): Record<string, unknown> | null {
 export type CodexExecScript =
   | { kind: 'exec'; command: string; args: Record<string, unknown> }
   | { kind: 'patch'; patch: string }
+  /**
+   * Some other codex tool invoked through the same freeform `exec` tool
+   * (`write_stdin`, `update_plan`, …). Deliberately NOT `exec`: it runs no
+   * command line, so it gets no live `command_execution` item, and counting it
+   * as one would shift every later exec index off its rollout call_id.
+   */
+  | { kind: 'other'; tool: string; args: Record<string, unknown> }
   /** A script we could not classify — rendered raw so the call is never invisible. */
   | { kind: 'unknown' };
 
@@ -301,6 +433,8 @@ export function parseCodexExecScript(script: string): CodexExecScript {
   if (args) {
     return { kind: 'exec', command: typeof args.cmd === 'string' ? args.cmd : '', args };
   }
+  const other = extractOtherToolCall(script);
+  if (other) return { kind: 'other', tool: other.tool, args: other.args };
   return { kind: 'unknown' };
 }
 
@@ -314,6 +448,14 @@ export function codexExecScriptCall(script: string): { name: string; input: Reco
     return {
       name: CODEX_TOOL_NAMES.bash,
       input: normalizeCodexToolInput('exec_command', parsed.args),
+    };
+  }
+  if (parsed.kind === 'other') {
+    // Same mapping the pre-5.6 function_call path uses, so a tool renders
+    // identically whichever transport carried it.
+    return {
+      name: normalizeCodexToolName(parsed.tool),
+      input: normalizeCodexToolInput(parsed.tool, parsed.args),
     };
   }
   // Unclassified: show the script itself in a Bash bubble. Wrong label beats a

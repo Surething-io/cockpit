@@ -170,9 +170,12 @@ function parseCallLines(
       patch.push({ callId: p.call_id, files: parsePatchFiles(p.input || '') });
     } else if (p.type === 'custom_tool_call' && p.name === CODEX_EXEC_SCRIPT_FN_NAME) {
       // 5.6+: one freeform tool for everything, so which list this belongs to is
-      // decided by the script body. An unclassifiable script is deliberately dropped
-      // rather than guessed into a list — a wrong entry would shift every later
-      // index and bind the next live item to the wrong call_id.
+      // decided by the script body. Anything that is not an exec/patch — a
+      // `kind: 'other'` tool such as write_stdin, or a script too dynamic to read
+      // statically — is deliberately dropped rather than guessed into a list: it
+      // runs no command line, so the live stream emits no `command_execution`
+      // item for it, and adding a row here would shift every later index and bind
+      // the next live item to the wrong call_id.
       const script = parseCodexExecScript(p.input || '');
       if (script.kind === 'exec') exec.push({ callId: p.call_id, cmd: script.command });
       else if (script.kind === 'patch') patch.push({ callId: p.call_id, files: parsePatchFiles(script.patch) });

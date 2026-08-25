@@ -58,6 +58,97 @@ describe('normalizeCodexToolName', () => {
 });
 
 describe('codex 5.6 exec script tool', () => {
+  /**
+   * The shape codex ACTUALLY writes: a JavaScript object literal with BARE
+   * identifier keys. The older test below passes a JSON-shaped literal
+   * (`{"cmd": …}`), which is why parsing this with JSON.parse stayed green in
+   * CI while failing on 100% of real traffic — measured on one rollout, 659 of
+   * 765 scripts came back `unknown` and not a single one as `exec`.
+   */
+  it('reads a shell call whose keys are bare identifiers', () => {
+    const script = [
+      'const r = await tools.exec_command({',
+      '  cmd: "sed -n \'1,240p\' .agents/skills/explain/SKILL.md",',
+      '  workdir: "/Users/ka/Work/x",',
+      '  yield_time_ms: 10000,',
+      '  max_output_tokens: 20000',
+      '});',
+      'text(r.output);',
+    ].join('\n');
+    expect(parseCodexExecScript(script)).toEqual({
+      kind: 'exec',
+      command: "sed -n '1,240p' .agents/skills/explain/SKILL.md",
+      args: {
+        cmd: "sed -n '1,240p' .agents/skills/explain/SKILL.md",
+        workdir: '/Users/ka/Work/x',
+        yield_time_ms: 10000,
+        max_output_tokens: 20000,
+      },
+    });
+    expect(codexExecScriptCall(script).name).toBe('Bash');
+  });
+
+  it('handles a trailing comma, nesting and every JS quote style', () => {
+    const script = [
+      'const r = await tools.exec_command({',
+      "  cmd: 'echo hi',",
+      '  `weird`: "ok",',
+      '  env: { A: 1, B: [true, false, null] },',
+      '  timeout: 1_000,',
+      '});',
+    ].join('\n');
+    expect(parseCodexExecScript(script)).toEqual({
+      kind: 'exec',
+      command: 'echo hi',
+      args: { cmd: 'echo hi', weird: 'ok', env: { A: 1, B: [true, false, null] }, timeout: 1000 },
+    });
+  });
+
+  /**
+   * A `:` or `}` inside a command string must not end the object early — the
+   * reason this needs a string-aware scanner rather than a regex that quotes
+   * bare keys.
+   */
+  it('is not confused by braces and colons inside the command', () => {
+    const script =
+      'await tools.exec_command({ cmd: "awk \'{print $1}\' f | sed \'s/a:b/c/\'", workdir: "/r" });';
+    const parsed = parseCodexExecScript(script);
+    expect(parsed).toMatchObject({ kind: 'exec', command: "awk '{print $1}' f | sed 's/a:b/c/'" });
+  });
+
+  it('still refuses to guess a command it cannot read statically', () => {
+    // Real sample: the command is built by a loop over an array, so there is no
+    // literal to read. Guessing here would bind the call to the wrong call_id.
+    const script = [
+      'const cmds = [["types", "pnpm --filter types check-types", 30000]];',
+      'for (const [name, cmd, ms] of cmds) { await tools.exec_command({ cmd, yield_time_ms: ms }); }',
+    ].join('\n');
+    expect(parseCodexExecScript(script)).toEqual({ kind: 'unknown' });
+  });
+
+  it('names a non-exec tool carried by the exec script instead of faking Bash', () => {
+    // 198 of 765 scripts in one real rollout were this. Under the old `unknown`
+    // fallback every one rendered as a Bash bubble whose "command" was the JS
+    // wrapper text.
+    const script =
+      'const r = await tools.write_stdin({session_id:48130, chars:"", yield_time_ms:30000});\ntext(JSON.stringify(r));\n';
+    expect(parseCodexExecScript(script)).toEqual({
+      kind: 'other',
+      tool: 'write_stdin',
+      args: { session_id: 48130, chars: '', yield_time_ms: 30000 },
+    });
+    expect(codexExecScriptCall(script).name).toBe('write_stdin');
+  });
+
+  it('maps update_plan carried by the exec script onto TodoWrite', () => {
+    const script =
+      'const p = await tools.update_plan({ explanation: "go", plan: [ { step: "a", status: "completed" }, { step: "b", status: "pending" } ] });';
+    expect(codexExecScriptCall(script)).toEqual({
+      name: 'TodoWrite',
+      input: { todos: [{ content: 'a', status: 'completed' }, { content: 'b', status: 'pending' }] },
+    });
+  });
+
   it('reads a shell call out of the script body', () => {
     const script =
       'const r = await tools.exec_command({"cmd":"rg -n \'a b\' src","workdir":"/repo","yield_time_ms":10000}); text(r.output);\n';

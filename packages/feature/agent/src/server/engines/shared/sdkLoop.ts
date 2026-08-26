@@ -23,6 +23,30 @@ export type BuildSdkOptions = (
 
 const MAX_COMPACTION_RETRIES = 1;
 
+/** Forward the CLI's stderr into the server log.
+ *
+ *  The SDK pipes the child's stderr ONLY when `options.stderr` is set — otherwise it spawns with
+ *  stdio[2]='ignore' and throws that output away, so every CLI-side failure (unknown flag after a
+ *  version bump, libc mismatch, outright crash) reaches us as a bare
+ *  "Claude Code process exited with code 1" with the actual reason already discarded.
+ *
+ *  Forwarding verbatim is safe: a healthy run writes nothing to stderr. The per-attempt byte
+ *  budget is a flood guard, not an exact cap — it stops on the first chunk past the limit.
+ *
+ *  Permitted `console.error` under EFFECT.md §0 (subprocess IPC adapter gateway). */
+const STDERR_LOG_BUDGET_BYTES = 10_000;
+
+function makeStderrForwarder() {
+  let spent = 0;
+  return (data: string) => {
+    if (spent > STDERR_LOG_BUDGET_BYTES) return;
+    spent += data.length;
+    const text = data.trimEnd();
+    if (text) console.error(`[claude:stderr] ${text}`);
+    if (spent > STDERR_LOG_BUDGET_BYTES) console.error('[claude:stderr] … further output suppressed');
+  };
+}
+
 /** Forward ctx.signal into a fresh AbortController (query() takes an AbortController, not a
  *  signal; each compaction retry needs its own). */
 function follow(ctx: RunCtx): AbortController {
@@ -100,9 +124,10 @@ export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Pr
 
     const attemptAbort = follow(ctx);
     const resume = isRetry ? ctx.currentKey() : ctx.sessionId;
-    const options = isRetry
+    const built = isRetry
       ? { ...buildOptions(attemptAbort, resume, true), resume }
       : buildOptions(attemptAbort, ctx.sessionId, false);
+    const options = { ...built, stderr: makeStderrForwarder() };
 
     const response = query({ prompt: input, options });
 

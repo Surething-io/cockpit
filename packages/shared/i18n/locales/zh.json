@@ -859,7 +859,8 @@
     "language": "语言",
     "languageAuto": "跟随系统",
     "switchDark": "切换暗色",
-    "switchLight": "切换亮色"
+    "switchLight": "切换亮色",
+    "agentsBundled": "内置"
   },
   "editor": {
     "placeholder": "写点什么... 输入 / 打开快捷命令",

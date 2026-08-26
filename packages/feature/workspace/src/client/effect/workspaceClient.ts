@@ -72,7 +72,11 @@ export const saveSettings = (
 // ─────────────────────────────────────────────────────────
 
 export const loadCockpitVersion = (): Effect.Effect<
-  { version?: string },
+  {
+    version?: string
+    /** Versions of the CLIs bundled with this Cockpit. null when not resolvable. */
+    agents?: { claude: string | null; codex: string | null }
+  },
   AppError
 > => httpJson("/api/version")
 

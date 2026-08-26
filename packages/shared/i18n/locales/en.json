@@ -859,7 +859,8 @@
     "language": "Language",
     "languageAuto": "System",
     "switchDark": "Switch to dark",
-    "switchLight": "Switch to light"
+    "switchLight": "Switch to light",
+    "agentsBundled": "bundled"
   },
   "editor": {
     "placeholder": "Write something... Type / for commands",

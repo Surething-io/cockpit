@@ -26,6 +26,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const bridge = useCockpitBridge();
   const [extensionPath, setExtensionPath] = useState<string>('');
   const [appVersion, setAppVersion] = useState<string>('');
+  // Versions of the agent CLIs bundled with this build. Diagnostic only — both ship inside
+  // their SDKs at a pinned version, so the only way to move them is a Cockpit release.
+  const [agentVersions, setAgentVersions] = useState<{ claude: string | null; codex: string | null } | null>(null);
 
   // Language: 'en', 'zh', or 'auto' (use browser detection)
   const [language, setLanguageState] = useState<string>('auto');
@@ -60,9 +63,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   useEffect(() => {
     if (!isOpen) return;
     BrowserRuntime.runPromiseExit(loadCockpitVersion()).then((exit) => {
-      if (exit._tag === 'Success' && exit.value.version) {
-        setAppVersion(exit.value.version);
-      }
+      if (exit._tag !== 'Success') return;
+      if (exit.value.version) setAppVersion(exit.value.version);
+      if (exit.value.agents) setAgentVersions(exit.value.agents);
     });
   }, [isOpen]);
 
@@ -235,6 +238,17 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </label>
             <div className="text-xs text-muted-foreground space-y-1">
               <p>Cockpit{appVersion ? ` v${appVersion}` : ''}</p>
+              {(agentVersions?.claude || agentVersions?.codex) && (
+                <p className="text-muted-foreground/60">
+                  {[
+                    agentVersions.claude && `Claude Code ${agentVersions.claude}`,
+                    agentVersions.codex && `Codex ${agentVersions.codex}`,
+                    t('settings.agentsBundled'),
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              )}
               <p className="text-muted-foreground/60">One seat. One AI. Everything under control.</p>
             </div>
           </div>

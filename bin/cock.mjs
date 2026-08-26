@@ -3,7 +3,7 @@
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { spawnSync } from 'child_process';
-import { hasClaudeBinary } from '../scripts/claudeBinary.mjs';
+import { missingAgentBinaries } from '../scripts/agentBinaries.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..');
@@ -219,11 +219,13 @@ if (!isDev && !existsSync(resolve(PROJECT_ROOT, '.next-prod', 'BUILD_ID'))) {
   process.exit(1);
 }
 
-// Warn (don't block) if the SDK's native binary is missing — every panel but
-// the Claude chat still works, but chat would otherwise fail with a cryptic
-// runtime error only once the user sends a message. See scripts/claudeBinary.mjs.
-if (!hasClaudeBinary()) {
-  console.error('Warning: the native Claude CLI binary is missing; chat may not work.');
+// Warn (don't block) if an agent's native binary is missing — every other panel
+// still works, but that engine would otherwise fail only once the user sends a
+// message, and Codex would not even fail loudly: it silently falls back to an
+// unpinned `codex` on PATH. See scripts/agentBinaries.mjs.
+const missingBinaries = missingAgentBinaries();
+if (missingBinaries.length) {
+  console.error(`Warning: the native ${missingBinaries.join(' and ')} CLI binary is missing; ${missingBinaries.length > 1 ? 'those engines' : 'that engine'} may not work.`);
   console.error('Fix: npm uninstall -g @surething/cockpit && npm install -g @surething/cockpit\n');
 }
 

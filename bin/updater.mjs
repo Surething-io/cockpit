@@ -18,7 +18,7 @@
 // losing the token would silently turn a tunnel-exposed instance into an open
 // one, so it must never be re-derived from defaults.
 import { spawn, spawnSync } from 'child_process';
-import { appendFileSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'fs';
+import { appendFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { createServer } from 'http';
 import { createRequire } from 'module';
 import { dirname, join } from 'path';
@@ -152,9 +152,9 @@ function pidAlive(pid) {
 }
 
 /**
- * Whether the Claude SDK's platform-specific native binary resolves.
+ * Which bundled agent CLIs are missing their platform-specific native binary.
  *
- * DUPLICATED from scripts/claudeBinary.mjs — change both together. This file
+ * DUPLICATED from scripts/agentBinaries.mjs — change both together. This file
  * cannot import it: it runs from <cockpitHome>/updater/ precisely because
  * `npm i -g` deletes the install directory mid-run (see the header).
  *
@@ -164,21 +164,50 @@ function pidAlive(pid) {
  * single time — which, given what the caller does about it, would mean
  * uninstalling and reinstalling cockpit on every update.
  */
-function hasClaudeBinary() {
+function missingAgentBinaries() {
+  const missing = [];
+  let req;
   try {
-    const req = createRequire(join(installRoot, 'package.json'));
-    const base = `${process.platform}-${process.arch}`;
-    // linux ships glibc and musl variants under distinct package names.
-    const variants = process.platform === 'linux' ? [base, `${base}-musl`] : [base];
-    for (const variant of variants) {
-      try {
-        const pkgJson = req.resolve(`@anthropic-ai/claude-agent-sdk-${variant}/package.json`);
-        const bin = join(dirname(pkgJson), 'claude');
-        if (existsSync(bin) || existsSync(`${bin}.exe`)) return true;
-      } catch { /* this variant's sub-package isn't installed */ }
+    req = createRequire(join(installRoot, 'package.json'));
+  } catch {
+    // Install tree unreadable — same answer as everything missing.
+    return ['Claude', 'Codex'];
+  }
+
+  const dirOf = (name) => {
+    try {
+      return dirname(req.resolve(`${name}/package.json`));
+    } catch {
+      return null;
     }
-  } catch { /* install tree unreadable — same answer as missing */ }
-  return false;
+  };
+
+  const base = `${process.platform}-${process.arch}`;
+  // linux ships glibc and musl variants of the Claude binary under distinct package names.
+  const claudeVariants = process.platform === 'linux' ? [base, `${base}-musl`] : [base];
+  const hasClaude = claudeVariants.some((variant) => {
+    const dir = dirOf(`@anthropic-ai/claude-agent-sdk-${variant}`);
+    if (!dir) return false;
+    const bin = join(dir, 'claude');
+    return existsSync(bin) || existsSync(`${bin}.exe`);
+  });
+  if (!hasClaude) missing.push('Claude');
+
+  // Codex nests its binary under a Rust target triple; scan vendor/ rather than
+  // reproducing codex-sdk's private platform->triple table. No musl split here.
+  let hasCodex = false;
+  const codexDir = dirOf(`@openai/codex-${base}`);
+  if (codexDir) {
+    try {
+      hasCodex = readdirSync(join(codexDir, 'vendor')).some((target) => {
+        const bin = join(codexDir, 'vendor', target, 'bin', 'codex');
+        return existsSync(bin) || existsSync(`${bin}.exe`);
+      });
+    } catch { /* no vendor dir — same answer as missing */ }
+  }
+  if (!hasCodex) missing.push('Codex');
+
+  return missing;
 }
 
 function readInstalledVersion() {
@@ -282,14 +311,18 @@ function startServer() {
 const MANUAL_FIX = `npm uninstall -g ${PKG} && npm install -g ${PKG}`;
 
 /**
- * Make sure the SDK's platform-specific native binary survived the install.
+ * Make sure the agents' platform-specific native binaries survived the install.
  *
- * It ships as an OPTIONAL dependency, and npm skips it often enough during an
+ * They ship as OPTIONAL dependencies, and npm skips them often enough during an
  * in-place `npm i -g` that cock-service.mjs guards the offline path the same
  * way. Nothing else notices: the install exits 0, the server comes back, and
  * chat dies at the first message with "Native CLI binary not found". This path
  * — the UI button — had no guard at all, so it reported "update complete" and
  * handed back a Cockpit that could not chat.
+ *
+ * Codex fails more quietly than Claude: rather than throwing, its engine falls
+ * back to whatever `codex` is on PATH — an unpinned build the SDK was never
+ * paired with. That is why both are checked here, not just Claude.
  *
  * Escalates deliberately. The clean uninstall is the only thing that reliably
  * makes npm refetch a skipped optional dep, but it DELETES a working install,
@@ -298,15 +331,16 @@ const MANUAL_FIX = `npm uninstall -g ${PKG} && npm install -g ${PKG}`;
  * resort — and why the status port matters here: with no server, that card is
  * the only channel left to tell the user what to run.
  */
-async function repairClaudeBinary() {
-  if (hasClaudeBinary()) return { ok: true };
+async function repairAgentBinaries() {
+  let missing = missingAgentBinaries();
+  if (!missing.length) return { ok: true };
 
-  log('native claude binary missing after install — repairing');
+  log(`native ${missing.join(' and ')} binary missing after install — repairing`);
   writeState({ ...currentState, phase: 'repairing' });
 
   // Non-destructive first: --force re-reifies the tree without removing it.
   await runNpm(['install', '-g', `${PKG}@${target}`, '--include=optional', '--force']);
-  if (hasClaudeBinary()) {
+  if (!missingAgentBinaries().length) {
     log('repaired with --force');
     return { ok: true };
   }
@@ -321,11 +355,15 @@ async function repairClaudeBinary() {
     }
     return { ok: false, reason: `reinstall failed: ${reinstall.reason}` };
   }
-  if (hasClaudeBinary()) {
+  missing = missingAgentBinaries();
+  if (!missing.length) {
     log('repaired with uninstall + reinstall');
     return { ok: true };
   }
-  return { ok: false, reason: 'the native Claude binary is still missing; chat will not work' };
+  return {
+    ok: false,
+    reason: `the native ${missing.join(' and ')} binary is still missing; ${missing.length > 1 ? 'those engines' : 'that engine'} will not work`,
+  };
 }
 
 async function main() {
@@ -403,8 +441,8 @@ async function main() {
     return;
   }
 
-  // 3b. Installed — but not necessarily complete. See repairClaudeBinary.
-  const repair = await repairClaudeBinary();
+  // 3b. Installed — but not necessarily complete. See repairAgentBinaries.
+  const repair = await repairAgentBinaries();
 
   const installed = readInstalledVersion();
   log(`installed version now: ${installed} (install took ${installMs}ms)`);

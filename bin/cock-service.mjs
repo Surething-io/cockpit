@@ -16,7 +16,7 @@ import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { SERVER_JSON_PATH, LOG_DIR, SERVER_LOG_PATH, COCKPIT_HOME_DIR } from './cockpitHome.mjs';
 import { rotateIfLarge } from './rotateLog.mjs';
-import { hasClaudeBinary } from '../scripts/claudeBinary.mjs';
+import { missingAgentBinaries } from '../scripts/agentBinaries.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..');
@@ -358,12 +358,13 @@ async function updateOffline() {
   const installArgs = ['install', '-g', `${PKG}@latest`, '--include=optional'];
   let status = runNpm(installArgs);
 
-  // An in-place `npm i -g` can drop the SDK's platform-specific native binary
-  // (an optional dependency) when the SDK version bumps — see
-  // scripts/claudeBinary.mjs. A clean uninstall + reinstall reliably refetches
+  // An in-place `npm i -g` can drop an agent's platform-specific native binary
+  // (an optional dependency) when its version bumps — see
+  // scripts/agentBinaries.mjs. A clean uninstall + reinstall reliably refetches
   // it, so chat is never left silently broken.
-  if (status === 0 && !hasClaudeBinary()) {
-    console.log('Native Claude binary missing after update — reinstalling to repair...');
+  let missing = status === 0 ? missingAgentBinaries() : [];
+  if (missing.length) {
+    console.log(`Native ${missing.join(' and ')} binary missing after update — reinstalling to repair...`);
     runNpm(['uninstall', '-g', PKG]);
     status = runNpm(installArgs);
   }
@@ -374,8 +375,9 @@ async function updateOffline() {
       version = JSON.parse(readFileSync(resolve(PROJECT_ROOT, 'package.json'), 'utf8')).version;
     } catch { /* report what we can */ }
     console.log(`\nUpdated to v${version}`);
-    if (!hasClaudeBinary()) {
-      console.error('\nWarning: the native Claude CLI binary is still missing; chat will not work.');
+    missing = missingAgentBinaries();
+    if (missing.length) {
+      console.error(`\nWarning: the native ${missing.join(' and ')} CLI binary is still missing; ${missing.length > 1 ? 'those engines' : 'that engine'} will not work.`);
       console.error(`Fix manually: npm uninstall -g ${PKG} && npm install -g ${PKG}`);
     }
   }

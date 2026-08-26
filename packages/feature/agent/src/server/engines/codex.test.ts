@@ -262,8 +262,13 @@ describe('codex mode routing', () => {
     expect(emit).toHaveBeenCalledWith({ type: 'assistant', message: { content: [{ type: 'text', text: 'from sdk' }] } });
   });
 
-  it('falls back to PATH codex when the bundled SDK binary is unavailable', async () => {
+  it('falls back to PATH codex when the bundled SDK binary is unavailable, and says so', async () => {
     sdkMocks.throwCtorOnce = true;
+    // The fallback keeps Codex usable, but it runs a build the SDK was never pinned against —
+    // and the two negotiate no protocol version. Silence would make that indistinguishable from
+    // a healthy install, so the warning is part of the contract, not decoration.
+
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await codexSpec.runner.run({
       prompt: 'hello',
@@ -279,6 +284,8 @@ describe('codex mode routing', () => {
 
     expect(sdkMocks.codexCtor).toHaveBeenNthCalledWith(1, { env: {} });
     expect(sdkMocks.codexCtor).toHaveBeenNthCalledWith(2, { codexPathOverride: 'codex', env: {} });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('falling back to `codex` on PATH'));
+    warn.mockRestore();
   });
 
   it('stashes the Codex rollout while running an SDK no-history turn', async () => {

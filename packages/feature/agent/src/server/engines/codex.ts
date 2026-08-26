@@ -872,6 +872,16 @@ async function runCodexSdk(ctx: RunCtx): Promise<void> {
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
       if (!message.includes('Unable to locate Codex CLI binaries')) throw error;
+      // The fallback keeps Codex usable when npm skips the optional platform sub-package during
+      // an in-place `npm i -g`. Its silence is what is not worth keeping: `@openai/codex-sdk`
+      // pins its CLI to an exact matching version, and that pairing is the only thing making the
+      // two speak the same protocol — they negotiate no version. Falling back to PATH swaps in
+      // whatever build the machine has, which otherwise looks exactly like a working install.
+      // Permitted `console.error` under EFFECT.md §0 (subprocess IPC adapter gateway).
+      console.error(
+        '[codex] bundled CLI binary is missing — falling back to `codex` on PATH. That build is ' +
+          'not the version this SDK was pinned against. Repair with: cockpit update',
+      );
       codex = new Codex({ codexPathOverride: 'codex', env });
     }
     const thread = ctx.sessionId

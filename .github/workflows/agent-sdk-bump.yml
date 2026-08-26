@@ -1,0 +1,95 @@
+# Weekly check for newer agent SDKs, opening a ready-to-review bump PR.
+#
+# Both SDKs are pinned to an exact version (see package.json). That pin is what keeps the
+# version under test identical to the version users get — a caret range would let every install
+# resolve independently, and neither SDK negotiates protocol versions with the CLI it spawns.
+# The cost of pinning is that nothing moves on its own, which is what this workflow pays.
+#
+# It opens a PR rather than pushing to main: the bump replaces the bundled Claude Code binary,
+# so a human should see the test run before it ships.
+name: Agent SDK bump
+
+on:
+  schedule:
+    # Mondays, 03:00 UTC.
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check for newer SDKs
+        id: check
+        run: |
+          npm run --silent check-agents -- --json > /tmp/agents.json
+          cat /tmp/agents.json
+          echo "behind=$(jq -r '.behind' /tmp/agents.json)" >> "$GITHUB_OUTPUT"
+
+      # `@latest` rather than a version read back out of the check: --save-exact writes whatever
+      # it resolved, so the pin lands the same way without a version ever crossing the step
+      # boundary (and without ${{ }} splicing a registry string into a shell script).
+      - name: Bump to the latest pinned versions
+        if: steps.check.outputs.behind == 'true'
+        run: |
+          npm install --save-exact \
+            @anthropic-ai/claude-agent-sdk@latest \
+            @openai/codex-sdk@latest
+
+      # The bump swaps out the CLI the SDK drives, so the suite runs before a human is asked to
+      # look. A red PR is still worth opening — it says the new CLI broke something.
+      - name: Test against the new CLIs
+        if: steps.check.outputs.behind == 'true'
+        id: verify
+        continue-on-error: true
+        run: npm test
+
+      - name: Open pull request
+        if: steps.check.outputs.behind == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TESTS: ${{ steps.verify.outcome }}
+        run: |
+          BRANCH="chore/agent-sdk-bump"
+          read -r CLAUDE_VERSION CLAUDE_CLI CODEX_VERSION <<<"$(node -p 'const r=(n)=>require(`./node_modules/${n}/package.json`),c=r("@anthropic-ai/claude-agent-sdk");[c.version,c.claudeCodeVersion,r("@openai/codex-sdk").version].join(" ")')"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add package.json package-lock.json
+          git commit -m "chore(deps): bump agent SDKs to claude-agent-sdk@$CLAUDE_VERSION, codex-sdk@$CODEX_VERSION"
+          git push --force origin "$BRANCH"
+
+          BODY=$(cat <<EOF
+          Weekly agent SDK bump.
+
+          | Package | Version | Bundled CLI |
+          | --- | --- | --- |
+          | \`@anthropic-ai/claude-agent-sdk\` | $CLAUDE_VERSION | claude $CLAUDE_CLI |
+          | \`@openai/codex-sdk\` | $CODEX_VERSION | codex $CODEX_VERSION |
+
+          Test suite against the new CLIs: **$TESTS**
+
+          Both CLIs ship inside their SDKs at an exact pin, so this PR is the only way users move
+          to a newer Claude or Codex. Merging it makes the next Cockpit release carry them.
+          EOF
+          )
+
+          # create fails when the PR already exists; the force-push above already refreshed
+          # its commits, so all that is left is bringing the body up to date.
+          gh pr create --base main --head "$BRANCH" \
+            --title "chore(deps): bump agent SDKs" --body "$BODY" \
+            || gh pr edit "$BRANCH" --body "$BODY"

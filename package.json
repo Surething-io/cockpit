@@ -86,7 +86,7 @@
   "scripts": {
     "predev": "node scripts/copy-tree-sitter-wasms.mjs && node scripts/copy-pdfjs-worker.mjs && node scripts/build-html-lib.mjs",
     "dev": "COCKPIT_ENV=dev node --import tsx server.mjs",
-    "prepublishOnly": "npm run build && npm run build:server && rm -rf .next-prod/cache",
+    "prepublishOnly": "npm run check-agents && npm run build && npm run build:server && rm -rf .next-prod/cache",
     "prebuild": "node scripts/copy-tree-sitter-wasms.mjs && node scripts/copy-pdfjs-worker.mjs && node scripts/build-html-lib.mjs",
     "build": "next build --webpack",
     "postbuild": "node scripts/stamp-build.mjs",
@@ -96,6 +96,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check-agents": "node scripts/check-agents.mjs",
     "generate-icons": "node scripts/generate-icons.js",
     "copy-wasms": "node scripts/copy-tree-sitter-wasms.mjs",
     "copy-pdfjs-worker": "node scripts/copy-pdfjs-worker.mjs",
@@ -103,9 +104,9 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.52",
-    "@anthropic-ai/claude-agent-sdk": "^0.3.179",
+    "@anthropic-ai/claude-agent-sdk": "0.3.245",
     "@dagrejs/dagre": "^3.0.0",
-    "@openai/codex-sdk": "0.147.0",
+    "@openai/codex-sdk": "0.149.1",
     "@tanstack/react-virtual": "^3.13.18",
     "@tiptap/extension-link": "^3.19.0",
     "@tiptap/extension-placeholder": "^3.19.0",

@@ -1,39 +1,16 @@
 'use client';
 
-import { useState, useEffect, useLayoutEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback, useMemo, memo } from 'react';
+import { useState, useLayoutEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback, useMemo, memo } from 'react';
 import type { ImageInfo, ChatEngine } from './types';
 import { useTranslation } from 'react-i18next';
 import { ImagePreview } from '@cockpit/shared-ui';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
 import { QuickPromptsPopover } from './QuickPromptsPopover';
-import { onSkillsChanged } from '@cockpit/shared-api';
-import { BrowserRuntime } from '@cockpit/effect-runtime';
-import { loadSkills as loadSkillsEff, loadSlashCommands } from './effect/agentClient';
+import { useCommandAutocomplete, CommandAutocompleteMenu, type CommandInfo } from './commandAutocomplete';
 
 // Migrated from src/components/project/ChatInput.tsx.
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
-
-interface CommandInfo {
-  name: string;
-  description: string;
-  // `'global' | 'project'` (`.claude/commands/*.md`) used to be valid sources;
-  // that mechanism was retired with Claude Code's commands convention.
-  source: 'builtin' | 'skill';
-  // Only present when source === 'skill'
-  skillPath?: string;
-  argumentHint?: string;
-}
-
-interface SkillInfo {
-  id: string;
-  path: string;
-  name: string;
-  description: string;
-  icon?: string;
-  argumentHint?: string;
-  valid: boolean;
-}
 
 interface ChatInputProps {
   onSend: (message: string, images?: ImageInfo[]) => void;
@@ -58,17 +35,10 @@ interface ChatInputProps {
 export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine: _engine, onShowGitStatus, onShowComments, onShowUserMessages, onOpenNote, onCreateScheduledTask }: ChatInputProps) {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
-  // Caret offset into `input`; drives line-aware command autocomplete.
-  const [caret, setCaret] = useState(0);
   const [images, setImages] = useState<ImageInfo[]>([]);
-  const [commands, setCommands] = useState<CommandInfo[]>([]);
-  const [skills, setSkills] = useState<CommandInfo[]>([]);
   const [showScheduler, setShowScheduler] = useState(false);
   const [showQuickPrompts, setShowQuickPrompts] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [commandsDismissed, setCommandsDismissed] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const commandListRef = useRef<HTMLDivElement>(null);
   // Wraps the quick-prompts trigger + its popover; the popover measures
   // outside-click against this so the trigger can close what it opened.
   const quickPromptsAnchorRef = useRef<HTMLDivElement>(null);
@@ -92,66 +62,6 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
     adjustTextareaHeight();
   }, [input, adjustTextareaHeight]);
 
-  // Load command list (builtin only; project/global `.claude/commands/*.md`
-  // sourcing was retired with Claude Code's commands convention)
-  useEffect(() => {
-    BrowserRuntime.runPromiseExit(loadSlashCommands<CommandInfo>()).then((exit) => {
-      if (exit._tag === 'Success') {
-        setCommands(exit.value as CommandInfo[]);
-      } else {
-        console.error('Failed to load commands:', exit.cause);
-      }
-    });
-  }, []);
-
-  // Load skills (separate endpoint, globally-configured, ~/.cockpit/skills.json)
-  const loadSkills = useCallback(async () => {
-    const exit = await BrowserRuntime.runPromiseExit(loadSkillsEff());
-    if (exit._tag === 'Success') {
-      const data = (exit.value as { skills?: SkillInfo[] }).skills
-        ?? (exit.value as unknown as SkillInfo[]);
-      const list = Array.isArray(data) ? data : [];
-      const mapped: CommandInfo[] = list
-        .filter((s) => s.valid && !!s.name)
-        .map((s) => ({
-          name: `/${s.name}`,
-          description: s.description || '',
-          source: 'skill' as const,
-          skillPath: s.path,
-          argumentHint: s.argumentHint,
-        }));
-      setSkills(mapped);
-    } else {
-      console.error('Failed to load skills:', exit.cause);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadSkills();
-    // Re-load when SkillsModal notifies the skills list changed
-    return onSkillsChanged(loadSkills);
-  }, [loadSkills]);
-
-  // The line containing the caret — commands are line-led, so autocomplete keys
-  // off the current line, not the whole (possibly multi-line) input.
-  const activeLine = useMemo(() => {
-    const lineStart = caret === 0 ? 0 : input.lastIndexOf('\n', caret - 1) + 1;
-    const nl = input.indexOf('\n', caret);
-    const lineEnd = nl === -1 ? input.length : nl;
-    return { text: input.slice(lineStart, lineEnd), start: lineStart, end: lineEnd };
-  }, [input, caret]);
-
-  // The command being typed on the active line: a `/` or `@` marker followed by
-  // a partial verb with nothing after it yet (a trailing space starts the body
-  // and dismisses the menu). Marker-agnostic — `@qa` matches the same `/qa` entry.
-  const commandQuery = useMemo(() => {
-    // Verb char class kept in sync with the server (slashCommands' COMMAND_LINE_RE).
-    const m = activeLine.text.match(/^\s*([/@])([a-zA-Z0-9-]*)$/);
-    return m ? { marker: m[1], verb: m[2].toLowerCase() } : null;
-  }, [activeLine.text]);
-
-  // Command filtering: useMemo derived computation, eliminates setState churn per keystroke.
-  // Commands first, then skills — grouped display preserves the two sections.
   // Client-side commands that perform a UI action instead of expanding to a prompt.
   // `/plan` toggles plan mode (consumed in Chat.wrappedHandleSend) — only on claude engines.
   const localCommands = useMemo<CommandInfo[]>(() => {
@@ -165,34 +75,12 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
     }];
   }, [_engine]);
 
-  const filteredCommands = useMemo(() => {
-    if (!commandQuery) return [];
-    const { verb } = commandQuery;
-    const match = (cmd: CommandInfo) => cmd.name.slice(1).toLowerCase().startsWith(verb);
-    return [...localCommands.filter(match), ...commands.filter(match), ...skills.filter(match)];
-  }, [commandQuery, localCommands, commands, skills]);
-
-  const showCommands = !commandsDismissed && !!commandQuery && filteredCommands.length > 0;
-
-  // Reset selected index and dismiss state when input changes
-  const prevInputRef = useRef(input);
-  useLayoutEffect(() => {
-    if (prevInputRef.current !== input) {
-      queueMicrotask(() => setSelectedIndex(0));
-      if (commandsDismissed) queueMicrotask(() => setCommandsDismissed(false));
-      prevInputRef.current = input;
-    }
-  }, [input, commandsDismissed]);
-
-  // Scroll selected item into view
-  useLayoutEffect(() => {
-    if (showCommands && commandListRef.current) {
-      const selectedItem = commandListRef.current.children[selectedIndex] as HTMLElement;
-      if (selectedItem) {
-        selectedItem.scrollIntoView({ block: 'nearest' });
-      }
-    }
-  }, [selectedIndex, showCommands]);
+  const commandAutocomplete = useCommandAutocomplete({
+    value: input,
+    onChange: setInput,
+    textareaRef,
+    extraCommands: localCommands,
+  });
 
   const handleSend = useCallback(() => {
     const trimmed = input.trim();
@@ -220,67 +108,21 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
     onSend(prompt);
   }, [disabled, onSend]);
 
-  const handleSelectCommand = useCallback((command: CommandInfo) => {
-    // Preserve the marker the user typed (`/` main session, `@` subagent); only
-    // replace the command token on the active line, leaving other lines intact.
-    const marker = commandQuery?.marker ?? '/';
-    const insert = `${marker}${command.name.slice(1)} `;
-    const before = input.slice(0, activeLine.start);
-    const after = input.slice(activeLine.end);
-    const next = before + insert + after;
-    const pos = before.length + insert.length;
-    setInput(next);
-    setCaret(pos);
-    requestAnimationFrame(() => {
-      const ta = textareaRef.current;
-      if (ta) {
-        ta.focus();
-        ta.setSelectionRange(pos, pos);
-      }
-    });
-  }, [input, activeLine, commandQuery]);
-
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
     // Check if IME composition is in progress (e.g., Chinese pinyin input)
     if (e.nativeEvent.isComposing) {
       return;
     }
 
-    // Command list keyboard navigation
-    if (showCommands && filteredCommands.length > 0) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setSelectedIndex((prev) => (prev + 1) % filteredCommands.length);
-        return;
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setSelectedIndex((prev) => (prev - 1 + filteredCommands.length) % filteredCommands.length);
-        return;
-      }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleSelectCommand(filteredCommands[selectedIndex]);
-        return;
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setCommandsDismissed(true);
-        return;
-      }
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        handleSelectCommand(filteredCommands[selectedIndex]);
-        return;
-      }
-    }
+    // Command list keyboard navigation takes precedence over send.
+    if (commandAutocomplete.handleKeyDown(e)) return;
 
     // Normal send (excluding IME composition state)
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSend();
     }
-  }, [showCommands, filteredCommands, selectedIndex, handleSelectCommand, handleSend]);
+  }, [commandAutocomplete, handleSend]);
 
   const handlePaste = useCallback((e: ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData?.items;
@@ -328,84 +170,15 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
     setImages((prev) => prev.filter((img) => img.id !== id));
   }, []);
 
-  const getSourceLabel = (source: CommandInfo['source']) => {
-    switch (source) {
-      case 'builtin':
-        return t('common.builtin');
-      case 'skill':
-        return 'Skill';
-    }
-  };
-
-  const getSourceColor = (source: CommandInfo['source']) => {
-    switch (source) {
-      case 'builtin':
-        return 'bg-brand/15 text-brand dark:bg-brand/25 dark:text-teal-11';
-      case 'skill':
-        return 'bg-purple-9/15 text-purple-11 dark:bg-purple-9/25 dark:text-purple-11';
-    }
-  };
-
   return (
     <div className="border-t border-border bg-card relative">
       <ImagePreview images={images} onRemove={handleRemoveImage} disabled={disabled} />
 
       {/* Command candidate list */}
-      {showCommands && filteredCommands.length > 0 && (
-        <div
-          ref={commandListRef}
-          className="absolute bottom-full left-0 right-0 mx-4 mb-2 max-h-64 overflow-y-auto bg-card border border-border rounded-lg shadow-lv2"
-        >
-          {filteredCommands.map((cmd, index) => {
-            const prev = index > 0 ? filteredCommands[index - 1] : null;
-            const isFirstSkill = cmd.source === 'skill' && (!prev || prev.source !== 'skill');
-            const isFirstCommand = cmd.source !== 'skill' && index === 0;
-            return (
-              <div key={cmd.name}>
-                {isFirstCommand && (
-                  <div className="px-4 py-1 text-[10px] uppercase tracking-wider text-muted-foreground bg-muted/40">
-                    Commands
-                  </div>
-                )}
-                {isFirstSkill && (
-                  <div className="px-4 py-1 text-[10px] uppercase tracking-wider text-muted-foreground bg-muted/40">
-                    Skills
-                  </div>
-                )}
-                <div
-                  onClick={() => handleSelectCommand(cmd)}
-                  className={`px-4 py-2 cursor-pointer ${
-                    index === selectedIndex
-                      ? 'bg-brand/10'
-                      : 'hover:bg-hover'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-sm font-medium text-foreground">
-                      {(commandQuery?.marker ?? '/') + cmd.name.slice(1)}
-                    </span>
-                    <span className="flex-1 text-sm text-muted-foreground truncate">
-                      {cmd.source === 'builtin'
-                        ? t(`commands.${cmd.name.slice(1)}`, { defaultValue: cmd.description })
-                        : cmd.description}
-                    </span>
-                    <span
-                      className={`text-xs px-1.5 py-0.5 rounded ${getSourceColor(cmd.source)}`}
-                    >
-                      {getSourceLabel(cmd.source)}
-                    </span>
-                  </div>
-                  {cmd.source === 'skill' && cmd.argumentHint && (
-                    <div className="font-mono text-xs text-muted-foreground mt-0.5 pl-0 truncate">
-                      {cmd.argumentHint}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <CommandAutocompleteMenu
+        ac={commandAutocomplete}
+        className="absolute bottom-full left-0 right-0 mx-4 mb-2 max-h-64"
+      />
 
       <div className="flex gap-2 items-end p-4">
         {/* Git view changes button - clickable even during generation */}
@@ -521,9 +294,9 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
           value={input}
           onChange={(e) => {
             setInput(e.target.value);
-            setCaret(e.target.selectionStart ?? e.target.value.length);
+            commandAutocomplete.trackCaret(e.target);
           }}
-          onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+          onSelect={(e) => commandAutocomplete.trackCaret(e.currentTarget)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           placeholder={disabled ? t('chat.placeholderDisabled') : t('chat.placeholder')}

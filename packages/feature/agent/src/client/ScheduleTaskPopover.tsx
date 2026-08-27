@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '@cockpit/shared-i18n';
 import { modKey } from '@cockpit/shared-utils';
+import { useCommandAutocomplete, CommandAutocompleteMenu } from './commandAutocomplete';
 
 // Convert cron expression to human-readable description
 function describeCron(expr: string): string | null {
@@ -173,6 +174,15 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
   const popoverRef = useRef<HTMLDivElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
 
+  // Same `/` `@` autocomplete as the chat composer. Meaningful here because the
+  // dispatcher runs the task message through resolveCommandPrompt too — a
+  // scheduled `/qa ...` expands exactly like a typed one.
+  const commandAutocomplete = useCommandAutocomplete({
+    value: message,
+    onChange: setMessage,
+    textareaRef: messageRef,
+  });
+
   // Auto-focus
   useEffect(() => {
     messageRef.current?.focus();
@@ -232,6 +242,9 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
   }, [message, source, taskFile, type, selectedPreset, customMinutes, customCron, useTimeRange, activeFrom, activeTo, onCreate, onClose, isEdit, editTask, onUpdate]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // The command menu (when open) already swallowed Escape / Enter / arrows via
+    // stopPropagation in its own textarea handler, so anything reaching this
+    // root-level handler is genuinely meant for the dialog.
     if (e.key === 'Escape') {
       onClose();
     } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -279,14 +292,27 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
             ))}
           </div>
           {source === 'message' ? (
-            <textarea
-              ref={messageRef}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder={t('scheduledTasks.messagePlaceholder')}
-              rows={5}
-              className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y min-h-[6rem]"
-            />
+            <div className="relative">
+              <textarea
+                ref={messageRef}
+                value={message}
+                onChange={(e) => {
+                  setMessage(e.target.value);
+                  commandAutocomplete.trackCaret(e.target);
+                }}
+                onSelect={(e) => commandAutocomplete.trackCaret(e.currentTarget)}
+                onKeyDown={(e) => { commandAutocomplete.handleKeyDown(e); }}
+                placeholder={t('scheduledTasks.messagePlaceholder')}
+                rows={5}
+                className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y min-h-[6rem]"
+              />
+              {/* Opens downward: the textarea sits at the top of the dialog, so
+                  there is no room above it. */}
+              <CommandAutocompleteMenu
+                ac={commandAutocomplete}
+                className="absolute top-full left-0 right-0 mt-1 max-h-48 z-10"
+              />
+            </div>
           ) : (
             <>
               <input

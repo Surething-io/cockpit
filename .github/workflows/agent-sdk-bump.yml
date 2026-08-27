@@ -30,7 +30,12 @@ jobs:
           node-version: 22
           cache: npm
 
+      # @vscode/ripgrep's postinstall queries api.github.com for a prebuilt
+      # binary. Unauthenticated, that is rate-limited to 60 req/h per IP —
+      # shared runner IPs blow through it and the install dies with a 403.
       - run: npm ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check for newer SDKs
         id: check

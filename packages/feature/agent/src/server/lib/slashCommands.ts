@@ -63,10 +63,19 @@ function deriveBaseUrl(): string {
 type StepMarker = '/' | '@';
 
 // One command line: `/verb …` or `@verb …` at the start of a line (leading
-// whitespace allowed). Verb starts with a letter, then letters/digits/hyphens
-// (/qa, /new-branch, /c4). Char class is kept in sync with the client
-// autocomplete (ChatInput's commandQuery).
-const COMMAND_LINE_RE = /^\s*([/@])([a-zA-Z][a-zA-Z0-9-]*)(?:\s+|$)/;
+// whitespace allowed). The verb is every non-space char up to the first
+// whitespace — deliberately NO character class.
+//
+// This regex only TOKENIZES; `isKnown()` below is the gate. Widening it is
+// therefore free: a line the registry doesn't recognize (`/Users/ka/foo.ts`,
+// `@somebody`) falls through to the untouched-prose path exactly as before.
+// A character class here, by contrast, is a silent killer — it rejected
+// `/5e` (digit-first) BEFORE the registry was ever consulted, so a skill that
+// was registered, listed, and offered by autocomplete still no-opped with no
+// error. Skill names legitimately carry digits/`_`/`:`/`.` (see
+// sanitizeName in parseSkillMd.ts), so no class can track them without drifting
+// again. Let the registry decide what exists.
+const COMMAND_LINE_RE = /^\s*([/@])(\S+?)(?:\s+|$)/;
 
 // Resolves slash/at commands before the prompt is sent to the model.
 //

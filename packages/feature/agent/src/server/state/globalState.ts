@@ -45,7 +45,8 @@ interface GlobalSession {
   status: SessionStatus;
   title?: string;
   lastUserMessage?: string;
-  /** Attached at read time by attachEngines — never persisted in state.json. */
+  /** Written by the dispatcher (orchestrator passes spec.name); for sessions that
+   *  predate that, attachEngines still fills it in at read time. */
   engine?: string;
 }
 
@@ -80,7 +81,8 @@ export async function updateGlobalState(
   sessionId: string,
   status: SessionStatus,
   title?: string,
-  lastUserMessage?: string
+  lastUserMessage?: string,
+  engine?: string
 ): Promise<void> {
   // Guard: skip non-existent paths (avoids writing with a wrongly decoded cwd)
   if (!existsSync(cwd)) {
@@ -113,6 +115,9 @@ export async function updateGlobalState(
       status,
       title: truncate(title || existing?.title),
       lastUserMessage: truncate(lastUserMessage || existing?.lastUserMessage),
+      // Carried like title/lastUserMessage: status-only updates (the client's
+      // /api/global-state PATCH) pass no engine and must not erase it.
+      engine: engine || existing?.engine,
     };
 
     if (existingIndex >= 0) {
@@ -373,7 +378,11 @@ export async function attachEngines<T extends { cwd: string; sessionId: string }
 
   return Promise.all(
     sessions.map(async (session) => {
-      const engine = (await enginesFor(session.cwd))[session.sessionId];
+      // What the dispatcher recorded wins; the tab-written map is the fallback
+      // for sessions that last ran before the dispatcher started writing it.
+      const engine =
+        (session as { engine?: string }).engine ??
+        (await enginesFor(session.cwd))[session.sessionId];
       return engine ? { ...session, engine } : session;
     }),
   );

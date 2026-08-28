@@ -339,7 +339,10 @@ export const sendChatMessageEff = (task: ScheduledTask): Effect.Effect<boolean, 
         console.error(`[ScheduledTask] Failed to send message for task ${task.id}:`, err);
         // Even on failure, mark the task unread
         yield* Effect.tryPromise(() =>
-          updateGlobalState(task.cwd, task.sessionId, 'unread'),
+          // Pass the engine here too: this branch also covers dispatch never
+          // starting (bad engine, 409, missing task file), so the orchestrator
+          // never got to record it.
+          updateGlobalState(task.cwd, task.sessionId, 'unread', undefined, undefined, task.engine),
         ).pipe(Effect.orElse(() => Effect.void));
         return false as const;
       })

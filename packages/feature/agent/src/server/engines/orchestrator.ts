@@ -74,7 +74,7 @@ export async function dispatchChat(
     abort.abort();
   });
   if (cwd && sessionId) {
-    updateGlobalState(cwd, sessionId, 'loading', undefined, promptText).catch(() => {});
+    updateGlobalState(cwd, sessionId, 'loading', undefined, promptText, spec.name).catch(() => {});
   }
   // Tool-call snapshots: baseline commit of any pending external changes so the
   // first tool commit of this run diffs against the true pre-run state.
@@ -106,7 +106,7 @@ export async function dispatchChat(
       currentKey = realSessionId;
       actualSessionId = realSessionId;
       if (cwd) {
-        updateGlobalState(cwd, realSessionId, 'loading', undefined, promptText).catch(() => {});
+        updateGlobalState(cwd, realSessionId, 'loading', undefined, promptText, spec.name).catch(() => {});
       }
     },
     currentKey() {
@@ -136,7 +136,7 @@ export async function dispatchChat(
       // Best-effort teardown of global state even on failure.
       if (cwd && actualSessionId) {
         const title = await getSessionTitle(cwd, actualSessionId).catch(() => undefined);
-        await updateGlobalState(cwd, actualSessionId, 'unread', title).catch(() => {});
+        await updateGlobalState(cwd, actualSessionId, 'unread', title, undefined, spec.name).catch(() => {});
       }
       return;
     }
@@ -145,7 +145,7 @@ export async function dispatchChat(
       const title = await (spec.runner.resolveTitle
         ? spec.runner.resolveTitle(cwd, actualSessionId).catch(() => undefined)
         : Promise.resolve(undefined));
-      await updateGlobalState(cwd, actualSessionId, 'unread', title).catch(() => {});
+      await updateGlobalState(cwd, actualSessionId, 'unread', title, undefined, spec.name).catch(() => {});
     }
     isClosed = true;
     markRunIdle(currentKey, 'idle');

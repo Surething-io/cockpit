@@ -552,6 +552,7 @@
     "noQuickPrompts": "No quick prompts yet",
     "addQuickPrompt": "Add quick prompt",
     "quickPromptPlaceholder": "One-line prompt — Enter to save, Esc to cancel",
+    "insertQuickPrompt": "Insert into input (without sending)",
     "context": "Context",
     "output": "Output",
     "copiedCommandTooltip": "Copied!",

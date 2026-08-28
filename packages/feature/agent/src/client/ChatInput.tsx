@@ -108,6 +108,27 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
     onSend(prompt);
   }, [disabled, onSend]);
 
+  // "Fill the box, don't send." APPENDS rather than replaces — the use case is
+  // stacking a canned prompt onto something half-typed, and a silent overwrite
+  // would eat that. NOT gated on `disabled`: this issues no request, and queueing
+  // up the next message while a reply streams is exactly when it is wanted.
+  const handleInsertQuickPrompt = useCallback((prompt: string) => {
+    setInput((prev) => {
+      // trimEnd first, THEN test: a box holding only whitespace is "empty" here,
+      // and testing `prev` raw would prefix the prompt with a stray newline.
+      const head = prev.replace(/\s+$/, '');
+      return head ? `${head}\n${prompt}` : prompt;
+    });
+    // rAF, not a direct call: the popover unmounts in this same commit and the
+    // caret must be set against the post-update value, not the pre-update one.
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    });
+  }, []);
+
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
     // Check if IME composition is in progress (e.g., Chinese pinyin input)
     if (e.nativeEvent.isComposing) {
@@ -285,6 +306,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
               anchorRef={quickPromptsAnchorRef}
               onClose={() => setShowQuickPrompts(false)}
               onSelect={handleQuickPrompt}
+              onInsert={handleInsertQuickPrompt}
             />
           )}
         </div>

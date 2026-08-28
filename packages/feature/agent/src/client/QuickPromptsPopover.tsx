@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, DragEvent as ReactDragEvent, RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, X, Pencil, Send, GripVertical } from 'lucide-react';
+import { Plus, X, Pencil, Send, GripVertical, TextCursorInput } from 'lucide-react';
 import { Tooltip } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
@@ -26,6 +26,13 @@ interface QuickPromptsPopoverProps {
   onClose: () => void;
   /** Fires with the prompt text; the caller sends it. */
   onSelect: (prompt: string) => void;
+  /**
+   * Fires with the prompt text; the caller writes it into the input box WITHOUT
+   * sending. Separate from onSelect because the two differ in more than a flag:
+   * insert stays available while a stream is in flight (it issues no request),
+   * and it must not clobber whatever the user has half-typed.
+   */
+  onInsert: (prompt: string) => void;
 }
 
 /**
@@ -86,6 +93,7 @@ function PromptSection({
   onDelete,
   onReorder,
   onSelect,
+  onInsert,
 }: {
   label: string;
   prompts: string[];
@@ -97,6 +105,7 @@ function PromptSection({
   onDelete: (index: number) => void;
   onReorder: (prompts: string[]) => void;
   onSelect: (prompt: string) => void;
+  onInsert: (prompt: string) => void;
 }) {
   const { t } = useTranslation();
   const [editIndex, setEditIndex] = useState<number | null>(null);
@@ -195,7 +204,16 @@ function PromptSection({
               </button>
             </Tooltip>
             {/* Icon-only: `title` stays as the sole accessible name, per the
-                tooltip migration's own carve-out for unlabelled buttons. */}
+                tooltip migration's own carve-out for unlabelled buttons. No
+                <Tooltip> here — see the note on the main button above. */}
+            <button
+              type="button"
+              onClick={() => onInsert(prompt)}
+              className="p-1 text-muted-foreground hover:text-foreground rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+              title={t('chat.insertQuickPrompt')}
+            >
+              <TextCursorInput className="w-3 h-3" />
+            </button>
             <button
               type="button"
               onClick={() => setEditIndex(i)}
@@ -219,7 +237,7 @@ function PromptSection({
   );
 }
 
-export function QuickPromptsPopover({ cwd, anchorRef, onClose, onSelect }: QuickPromptsPopoverProps) {
+export function QuickPromptsPopover({ cwd, anchorRef, onClose, onSelect, onInsert }: QuickPromptsPopoverProps) {
   const { t } = useTranslation();
   const [globalPrompts, setGlobalPrompts] = useState<string[]>([]);
   const [projectPrompts, setProjectPrompts] = useState<string[]>([]);
@@ -278,6 +296,13 @@ export function QuickPromptsPopover({ cwd, anchorRef, onClose, onSelect }: Quick
     onSelect(prompt);
   }, [onClose, onSelect]);
 
+  // Close first, same as handleSelect: the popover sits directly over the input
+  // box, so leaving it open would hide the text that was just inserted.
+  const handleInsert = useCallback((prompt: string) => {
+    onClose();
+    onInsert(prompt);
+  }, [onClose, onInsert]);
+
   return (
     <div
       className="absolute bottom-full left-0 mb-2 w-80 max-w-[calc(100vw-1.5rem)] bg-popover border border-border rounded-lg shadow-lv2 z-50 max-h-[70vh] overflow-y-auto"
@@ -296,6 +321,7 @@ export function QuickPromptsPopover({ cwd, anchorRef, onClose, onSelect }: Quick
         onDelete={(i) => savePrompts('global', globalPrompts.filter((_, j) => j !== i))}
         onReorder={(prompts) => savePrompts('global', prompts)}
         onSelect={handleSelect}
+        onInsert={handleInsert}
       />
       {cwd && (
         <>
@@ -314,6 +340,7 @@ export function QuickPromptsPopover({ cwd, anchorRef, onClose, onSelect }: Quick
             onDelete={(i) => savePrompts('project', projectPrompts.filter((_, j) => j !== i))}
             onReorder={(prompts) => savePrompts('project', prompts)}
             onSelect={handleSelect}
+            onInsert={handleInsert}
           />
         </>
       )}

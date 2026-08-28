@@ -552,6 +552,7 @@
     "noQuickPrompts": "暂无快捷 Prompt",
     "addQuickPrompt": "新增快捷 Prompt",
     "quickPromptPlaceholder": "输入一句话 Prompt，Enter 保存，Esc 取消",
+    "insertQuickPrompt": "填入输入框（不发送）",
     "context": "上下文",
     "output": "输出",
     "copiedCommandTooltip": "已复制!",

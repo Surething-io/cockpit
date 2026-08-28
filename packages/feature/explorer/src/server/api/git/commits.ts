@@ -53,7 +53,7 @@ export const GET = handler((req) =>
 
     const commits = stdout
       .split("\x01")
-      .filter(Boolean)
+      .filter((r) => r.includes("\x00")) // git appends a newline after each record; drop that tail
       .map((record) => {
         const parts = record.trim().split("\x00")
         const [

@@ -570,13 +570,18 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   }, []);
 
   const handleCreateScheduledTask = useMemo(() => {
-    if (!onCreateScheduledTask || !initialCwd || !tabId || !sessionId) return undefined;
+    if (!onCreateScheduledTask || !initialCwd || !tabId) return undefined;
     return (params: { message: string; taskFile?: string; type: 'once' | 'interval' | 'cron'; delayMinutes?: number; intervalMinutes?: number; activeFrom?: string; activeTo?: string; cron?: string }) => {
       onCreateScheduledTask({
         ...params,
         cwd: initialCwd,
         tabId,
-        sessionId,
+        // A brand-new chat has no session yet. Rather than block scheduling, hand the
+        // task a random id: it misses every engine's session-file lookup, so the first
+        // fire takes the existing startFresh path (see scheduledTasks.ts) and rebinds
+        // the task to the session the engine mints. Must NOT be '' — an empty id makes
+        // findCodexSessionPath glob `*.jsonl` and resume an unrelated rollout.
+        sessionId: sessionId ?? crypto.randomUUID(),
         engine,
         ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),
         ...(apiKeyEngine && engineModel && { model: engineModel }),

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast, MODAL_SHELL_CLASS, MODAL_CARD_GRID_CLASS } from '@cockpit/shared-ui';
 import {
@@ -319,18 +319,38 @@ interface SkillCardProps {
   onCopyPath: () => void;
 }
 
+/**
+ * Fixed-height card: the grid reads as a grid only if a wordy description can't
+ * make one cell taller than its neighbours. Path and description are clamped,
+ * the argument hint is pinned to the bottom, and the full text is recovered on
+ * hover through the global `data-tooltip` popover (which wraps + preserves
+ * newlines, so nothing is lost). The whole card is the preview affordance —
+ * there is no separate eye button.
+ */
 function SkillCard({ skill, onPreview, onDelete, onCopyPath }: SkillCardProps) {
   const { t } = useTranslation();
   const [confirmDel, setConfirmDel] = useState(false);
 
+  const stop = (e: MouseEvent) => e.stopPropagation();
+
   return (
     <div
-      className={`group flex flex-col h-full border border-border rounded-lg p-3 hover:border-brand hover:shadow-lv2 transition-all ${
-        skill.valid ? '' : 'opacity-60'
+      onClick={skill.valid ? onPreview : undefined}
+      role={skill.valid ? 'button' : undefined}
+      tabIndex={skill.valid ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (!skill.valid) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onPreview();
+        }
+      }}
+      className={`group flex flex-col h-56 border border-border rounded-lg p-3 hover:border-brand hover:shadow-lv2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+        skill.valid ? 'cursor-pointer' : 'opacity-60'
       }`}
     >
       {/* Header: icon + name + badge + actions */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2.5 flex-shrink-0">
         <div className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-md bg-brand/10 text-brand text-lg">
           {skill.icon ? (
             <span>{skill.icon}</span>
@@ -355,21 +375,11 @@ function SkillCard({ skill, onPreview, onDelete, onCopyPath }: SkillCardProps) {
         )}
         {/* Actions — appear on hover */}
         <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-          <button
-            onClick={onPreview}
-            disabled={!skill.valid}
-            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title={t('common.preview')}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-          </button>
           {confirmDel ? (
             <>
               <button
-                onClick={() => {
+                onClick={(e) => {
+                  stop(e);
                   setConfirmDel(false);
                   onDelete();
                 }}
@@ -378,7 +388,10 @@ function SkillCard({ skill, onPreview, onDelete, onCopyPath }: SkillCardProps) {
                 {t('common.confirm')}
               </button>
               <button
-                onClick={() => setConfirmDel(false)}
+                onClick={(e) => {
+                  stop(e);
+                  setConfirmDel(false);
+                }}
                 className="px-2 py-1 text-xs rounded border border-border text-muted-foreground hover:text-foreground"
               >
                 {t('common.cancel')}
@@ -386,7 +399,10 @@ function SkillCard({ skill, onPreview, onDelete, onCopyPath }: SkillCardProps) {
             </>
           ) : (
             <button
-              onClick={() => setConfirmDel(true)}
+              onClick={(e) => {
+                stop(e);
+                setConfirmDel(true);
+              }}
               className="p-1.5 text-muted-foreground hover:text-red-11 hover:bg-red-9/10 rounded transition-colors"
               title={t('common.delete')}
             >
@@ -398,11 +414,17 @@ function SkillCard({ skill, onPreview, onDelete, onCopyPath }: SkillCardProps) {
         </div>
       </div>
 
-      {/* Path — shown in full, above the description. Copy icon sits inline at the end of the text. */}
-      <div className="font-mono text-xs text-muted-foreground mt-2 break-all">
+      {/* Path — clamped to two lines; full value on hover and via the copy icon. */}
+      <div
+        className="font-mono text-xs text-muted-foreground mt-2 flex-shrink-0 break-all line-clamp-2"
+        data-tooltip={skill.path}
+      >
         {skill.path}
         <button
-          onClick={onCopyPath}
+          onClick={(e) => {
+            stop(e);
+            onCopyPath();
+          }}
           className="inline-flex align-middle ml-1 p-0.5 hover:text-foreground hover:bg-hover rounded transition-colors"
           title={t('skills.copyPath')}
         >
@@ -412,14 +434,17 @@ function SkillCard({ skill, onPreview, onDelete, onCopyPath }: SkillCardProps) {
         </button>
       </div>
 
-      {/* Description — shown in full */}
-      <p className="text-sm text-muted-foreground mt-2 pt-2 border-t border-border/60 break-words whitespace-pre-wrap">
+      {/* Description — clamped; hover shows it in full. */}
+      <p
+        className="text-sm text-muted-foreground mt-2 pt-2 border-t border-border/60 break-words line-clamp-4"
+        data-tooltip={skill.description || undefined}
+      >
         {skill.description || <span className="italic opacity-60">{t('skills.noDescription')}</span>}
       </p>
 
-      {/* Argument hint */}
+      {/* Argument hint — pinned to the bottom so cards line up. */}
       {skill.argumentHint && (
-        <div className="font-mono text-xs text-muted-foreground mt-1 truncate" data-tooltip={skill.argumentHint}>
+        <div className="font-mono text-xs text-muted-foreground mt-auto pt-1 truncate flex-shrink-0" data-tooltip={skill.argumentHint}>
           {skill.argumentHint}
         </div>
       )}

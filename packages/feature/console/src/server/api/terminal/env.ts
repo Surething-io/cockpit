@@ -3,7 +3,7 @@
  */
 import * as fs from "fs/promises"
 import { Effect } from "effect"
-import { getTerminalEnvPath, ensureParentDir } from "@cockpit/shared-utils"
+import { getTerminalEnvPath, ensureParentDir, HOME_DIR } from "@cockpit/shared-utils"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { FSError, ValidationError } from "@cockpit/effect-core"
 
@@ -28,7 +28,11 @@ export const GET = handler((req) =>
       },
       catch: () => null,
     }).pipe(Effect.orElseSucceed(() => ({}) as Record<string, string>))
-    return ok({ env })
+    // `home` rides along with the env the console already fetches once at mount:
+    // the browser has no home directory of its own, and the terminal needs one
+    // to resolve `cd ~` locally instead of inventing `<cwd>/~`. It is a property
+    // of the machine, not of this project's saved env, so POST never writes it.
+    return ok({ env, home: HOME_DIR })
   })
 )
 

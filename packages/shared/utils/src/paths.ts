@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises';
 import { closeSync, existsSync, mkdirSync, openSync, readSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, readdirSync, readFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { encodePath } from './encodePath';
+import { expandHomePath } from './homePath';
 
 // ============================================
 // Directory Constants
@@ -14,7 +15,7 @@ export const HOME_DIR = homedir();
 // intentional). Set COCKPIT_HOME to isolate (e.g. ~/.cockpit-dev, a CI tmp dir).
 // Everything below derives from this, so this is the only switch needed.
 export const COCKPIT_DIR = process.env.COCKPIT_HOME
-  ? resolve(process.env.COCKPIT_HOME.replace(/^~(?=$|\/)/, HOME_DIR))
+  ? resolve(expandHomePath(process.env.COCKPIT_HOME, HOME_DIR))
   : join(HOME_DIR, '.cockpit');
 export const COCKPIT_PROJECTS_DIR = join(COCKPIT_DIR, 'projects');
 export const GLOBAL_STATE_FILE = join(COCKPIT_DIR, 'state.json');

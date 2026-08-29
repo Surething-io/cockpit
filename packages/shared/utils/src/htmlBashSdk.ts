@@ -39,6 +39,8 @@
  * client-generated call id. The WS only opens on the first bash() call.
  */
 
+import { isHomeRelativePath } from "./homePath"
+
 // Vanilla ES5-ish JS, injected verbatim into the iframe. `__CWD__` / `__WS_URL__`
 // are replaced with JSON-encoded literals before injection. `__WS_URL__` may be
 // "" — the SDK then derives the endpoint from window.location.
@@ -767,6 +769,17 @@ export function isAbsolutePath(p: string): boolean {
   return /^([/\\]|[A-Za-z]:)/.test(p)
 }
 
+/**
+ * Path that must NOT be joined against a base directory: already absolute, or
+ * `~`-rooted. The browser cannot expand `~` (it has no home directory), so the
+ * only correct client-side move is to leave the tilde alone and let the server
+ * expand it -- joining a cwd in front is what produced the
+ * `<cwd>/~/Desktop/x.html` 404s.
+ */
+export function isRootedPath(p: string): boolean {
+  return isAbsolutePath(p) || isHomeRelativePath(p)
+}
+
 /** Join a base dir and a relative segment with a single separator. */
 function joinPath(base: string, rel: string): string {
   const b = base.replace(/[/\\]+$/, "")
@@ -781,13 +794,13 @@ function joinPath(base: string, rel: string): string {
  */
 export function resolveBashCwd(filePath: string, projectRoot?: string): string {
   const dir = dirnameOf(filePath)
-  if (isAbsolutePath(filePath)) return dir
+  if (isRootedPath(filePath)) return dir
   return projectRoot ? joinPath(projectRoot, dir) : dir
 }
 
 /** True when an absolute file path is derivable from these inputs. */
 export function canResolveAbsolute(filePath: string, projectRoot?: string): boolean {
-  return isAbsolutePath(filePath) || !!projectRoot
+  return isRootedPath(filePath) || !!projectRoot
 }
 
 /** Address space for local files inside the unified /apps runtime. */
@@ -803,9 +816,16 @@ export const BUILTIN_APP_PREFIX = "/apps/builtin/"
  */
 export function toLocalAppUrl(filePath: string, projectRoot?: string): string {
   const trimmed = filePath.trim()
-  const abs = isAbsolutePath(trimmed)
-    ? trimmed
-    : joinPath(projectRoot ?? "", trimmed)
+  // `~/x` is rooted, not relative: it keeps its tilde here and the /apps route
+  // expands it against the server's home directory.
+  //
+  // `.` / `..` MUST be collapsed before encoding, for the same reason
+  // resolveLocalMediaUrl collapses them: fromLocalAppUrl rejects a URL still
+  // containing a `..` segment as a traversal attempt, so a console-typed
+  // `../sibling/report.html` came back 403 instead of the file next door.
+  const abs = normalizeSegments(
+    isRootedPath(trimmed) ? trimmed : joinPath(projectRoot ?? "", trimmed)
+  )
   // Normalize Windows separators to `/` so the URL is properly segmented. A
   // Windows absolute path (C:\Users\x) has no `/` — without this the whole path
   // becomes one blob-encoded segment and loses the prefix separator. Always
@@ -933,9 +953,16 @@ export function isFileViewerPath(filePath: string): boolean {
  */
 export function toFileViewerUrl(filePath: string, projectRoot?: string): string {
   const trimmed = filePath.trim()
-  const abs = isAbsolutePath(trimmed)
-    ? trimmed
-    : joinPath(projectRoot ?? "", trimmed)
+  // `~/x` is rooted, not relative: it keeps its tilde here and the /apps route
+  // expands it against the server's home directory.
+  //
+  // `.` / `..` MUST be collapsed before encoding, for the same reason
+  // resolveLocalMediaUrl collapses them: fromLocalAppUrl rejects a URL still
+  // containing a `..` segment as a traversal attempt, so a console-typed
+  // `../sibling/report.html` came back 403 instead of the file next door.
+  const abs = normalizeSegments(
+    isRootedPath(trimmed) ? trimmed : joinPath(projectRoot ?? "", trimmed)
+  )
   // No SDK marker here either — file-viewer/index.html declares
   // <meta name="cockpit-name"> like any other app; built-in gets no exemption.
   // `file` stays a query param: it is per-open context (which file this viewer
@@ -974,10 +1001,11 @@ export function toExternalBrowserAppUrl(appUrl: string, origin: string): string 
 }
 
 /**
- * Reverse of toLocalAppUrl: `/apps/local/<encoded-abs>` → the absolute file path
- * (with `/` separators; node `path` on the server accepts `/` on Windows too).
+ * Reverse of toLocalAppUrl: `/apps/local/<encoded-abs>` → the file path (with
+ * `/` separators; node `path` on the server accepts `/` on Windows too).
  * Returns null on a path-traversal attempt or a NUL byte. The caller still runs
- * path.normalize + a filesystem stat.
+ * expandHomePath + path.normalize + a filesystem stat — the result is absolute
+ * EXCEPT for a `~`-rooted path, which only the server can expand.
  */
 export function fromLocalAppUrl(pathname: string): string | null {
   const rest = pathname.startsWith(LOCAL_APP_PREFIX)
@@ -993,7 +1021,10 @@ export function fromLocalAppUrl(pathname: string): string | null {
   } catch {
     return null
   }
-  let raw = "/" + decoded
+  // A `~`-rooted path (the user typed `~/Desktop/x.html` in the console) round-
+  // trips with its tilde intact -- prepending `/` here would make it the literal
+  // directory `/~`. The CALLER must expand it (see apps.ts); this stays Node-free.
+  let raw = isHomeRelativePath(decoded) ? decoded : "/" + decoded
   // Windows drive path arrives as `/C:/Users/..`; drop the leading slash the
   // posix scheme prepends, else path.win32.normalize yields an invalid `\C:\..`.
   raw = raw.replace(/^\/([A-Za-z]:)/, "$1")

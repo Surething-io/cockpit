@@ -27,7 +27,7 @@ export function EnvManager({ cwd, tabId, onClose, onSave }: EnvManagerProps) {
     setIsLoading(true);
     const exit = await BrowserRuntime.runPromiseExit(loadTerminalEnv(cwd, tabId));
     if (exit._tag === 'Success') {
-      setEnv(exit.value);
+      setEnv(exit.value.env);
     } else {
       console.error('Failed to load env:', exit.cause);
     }

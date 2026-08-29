@@ -55,6 +55,8 @@ import {
   resolveBashCwd,
   fromLocalAppUrl,
   isAbsolutePath,
+  expandHomePath,
+  HOME_DIR,
   APPS_DIR,
 } from "@cockpit/shared-utils"
 import {
@@ -164,7 +166,12 @@ export const GET = handler((req) =>
         // so the app can address its target with a bare basename. It must be
         // absolute: a relative value would silently resolve the app's shell
         // commands against the server process cwd instead of failing loudly.
-        const forFile = url.searchParams.get("file")
+        // `~/x.md` arrives unexpanded on purpose: the console typed it and the
+        // browser has no home directory. This is the one place that knows one.
+        const rawForFile = url.searchParams.get("file")
+        const forFile = rawForFile
+          ? expandHomePath(rawForFile, HOME_DIR)
+          : rawForFile
         if (forFile && !isAbsolutePath(forFile)) {
           return yield* Effect.fail(
             new ValidationError({
@@ -204,7 +211,10 @@ export const GET = handler((req) =>
         new PermissionError({ action: "read", resource: url.pathname })
       )
     }
-    const fullPath = path.normalize(raw)
+    // Expand `~` before normalize: fromLocalAppUrl preserves the tilde (it is
+    // Node-free and cannot know a home directory), so `/apps/local/~/Desktop/x`
+    // reaches here as `~/Desktop/x`.
+    const fullPath = path.normalize(expandHomePath(raw, HOME_DIR))
 
     const info = yield* Effect.tryPromise({
       try: () => statWithSymlink(fullPath),

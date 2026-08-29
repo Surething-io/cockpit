@@ -83,17 +83,28 @@ const httpDelete = (url: string): Effect.Effect<void, AppError> =>
 // terminal/env (cwd + optional tabId)
 // ─────────────────────────────────────────────────────────
 
+/**
+ * `home` is the server process's home directory, not part of the saved env — it
+ * rides along because the console needs one to expand `~` and the browser has
+ * no way to learn it. `""` when the server predates the field.
+ */
+export interface TerminalEnvResult {
+  env: Record<string, string>
+  home: string
+}
+
 export const loadTerminalEnv = (
   cwd: string,
   tabId?: string
-): Effect.Effect<Record<string, string>, AppError> =>
+): Effect.Effect<TerminalEnvResult, AppError> =>
   Effect.gen(function* () {
     const params = new URLSearchParams({ cwd })
     if (tabId) params.set("tabId", tabId)
-    const data = yield* httpGet<{ env?: Record<string, string> }>(
-      `/api/terminal/env?${params}`
-    )
-    return data.env || {}
+    const data = yield* httpGet<{
+      env?: Record<string, string>
+      home?: string
+    }>(`/api/terminal/env?${params}`)
+    return { env: data.env || {}, home: data.home || "" }
   })
 
 // ─────────────────────────────────────────────────────────

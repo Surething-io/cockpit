@@ -140,6 +140,15 @@ interface BrowserBubbleProps {
   onWake?: (id: string) => void;
   /** Forwarded to useBrowserBridge so /ws/browser register attaches projectCwd to the BrowserEntry. */
   projectCwd?: string;
+  /**
+   * Base directory for a RELATIVE local path (`./report.html`, `report.html`).
+   * Deliberately separate from `projectCwd`, which is bridge-registration scope:
+   * this one is the console's cwd at the moment the bubble was created (so
+   * `./x` means what the user saw after `cd`), snapshotted into the item so a
+   * later `cd` cannot silently re-point an existing bubble. An absolute or
+   * `~`-rooted path ignores it entirely.
+   */
+  baseCwd?: string;
   /** Forwarded to useBrowserBridge so the server can scope bubble-titles lookups per-tab. */
   tabId?: string;
 }
@@ -161,6 +170,7 @@ export function BrowserBubble({
   onSleep,
   onWake,
   projectCwd,
+  baseCwd,
   tabId,
 }: BrowserBubbleProps) {
   const { t, i18n } = useTranslation();
@@ -257,7 +267,7 @@ export function BrowserBubble({
       // md/image/pdf paths route to the built-in file-viewer app; other local
       // paths (html) get the bash-SDK preview (unconditional — console bubbles
       // are always opened intentionally: typed path / `/name` registered app).
-      setReadyUrl(isFileViewerPath(url) ? toFileViewerUrl(url, projectCwd) : toLocalAppUrl(url, projectCwd));
+      setReadyUrl(isFileViewerPath(url) ? toFileViewerUrl(url, baseCwd) : toLocalAppUrl(url, baseCwd));
       return;
     }
     const cockpitUrl = addCockpitParam(url);
@@ -266,7 +276,7 @@ export function BrowserBubble({
     } else {
       prepareCookies(url).then(() => setReadyUrl(cockpitUrl));
     }
-  }, [url, id, onWake, projectCwd]);
+  }, [url, id, onWake, baseCwd]);
 
   // Cookie pre-injection: connect directly to background via externally_connectable, then set iframe src after awaiting
   useEffect(() => {
@@ -277,7 +287,7 @@ export function BrowserBubble({
       // md/image/pdf paths route to the built-in file-viewer app; other local
       // paths (html) get the bash-SDK preview (unconditional — console bubbles
       // are always opened intentionally: typed path / `/name` registered app).
-      setReadyUrl(isFileViewerPath(url) ? toFileViewerUrl(url, projectCwd) : toLocalAppUrl(url, projectCwd));
+      setReadyUrl(isFileViewerPath(url) ? toFileViewerUrl(url, baseCwd) : toLocalAppUrl(url, baseCwd));
       return;
     }
 
@@ -295,7 +305,7 @@ export function BrowserBubble({
     });
 
     return () => { cancelled = true; };
-  }, [url, isSleeping, projectCwd]);
+  }, [url, isSleeping, baseCwd]);
 
   const handleIframeLoad = useCallback(() => {
     setIsLoading(false);
@@ -421,13 +431,13 @@ export function BrowserBubble({
     const targetUrl = isHttpUrl(currentUrl)
       ? currentUrl
       : isFileViewerPath(currentUrl)
-        ? toFileViewerUrl(currentUrl, projectCwd)
-        : toLocalAppUrl(currentUrl, projectCwd);
+        ? toFileViewerUrl(currentUrl, baseCwd)
+        : toLocalAppUrl(currentUrl, baseCwd);
     window.open(
       toExternalBrowserAppUrl(targetUrl, window.location.origin),
       '_blank',
     );
-  }, [currentUrl, projectCwd]);
+  }, [currentUrl, baseCwd]);
 
   // ESC to exit maximize / Cmd+M to toggle maximize
   useEffect(() => {

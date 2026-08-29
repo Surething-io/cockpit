@@ -6,6 +6,7 @@ import { matchInput, getPlugin, generatePluginItemId, type PluginItemBase } from
 import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { useWebSocket } from '@cockpit/shared-ui';
+import { expandHomePath, isHomeRelativePath } from '@cockpit/shared-utils/homePath';
 import {
   loadTerminalEnv,
   loadAliases as loadAliasesEff,
@@ -111,6 +112,8 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
   const [currentPage, setCurrentPage] = useState(0);
   const [selectedCommandId, setSelectedCommandId] = useState<string | null>(null);
   const [customEnv, setCustomEnv] = useState<Record<string, string>>({});
+  /** Server home dir for `~` expansion; loaded with the terminal env. */
+  const homeDirRef = useRef('');
   const [aliases, setAliases] = useState<Record<string, string>>({});
   const [bubbleOrder, setBubbleOrder] = useState<string[] | null>(null);
 
@@ -682,7 +685,14 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     if (actualCommand.trim().startsWith('cd ')) {
       const targetDir = actualCommand.trim().substring(3).trim();
       let newCwd = currentCwd;
-      if (targetDir.startsWith('/')) {
+      if (isHomeRelativePath(targetDir)) {
+        // `~` is rooted, not relative. Without a home dir (env fetch failed)
+        // stay put rather than inventing `<cwd>/~`, which is what used to
+        // happen and silently poisoned every later relative path.
+        newCwd = homeDirRef.current
+          ? expandHomePath(targetDir, homeDirRef.current)
+          : currentCwd;
+      } else if (targetDir.startsWith('/')) {
         newCwd = targetDir;
       } else if (targetDir === '..') {
         newCwd = currentCwd.split('/').slice(0, -1).join('/') || '/';
@@ -1059,15 +1069,19 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
   // ========== Initialization ==========
 
   const loadEnv = async () => {
-    const env = await BrowserRuntime.runPromise(
+    const result = await BrowserRuntime.runPromise(
       loadTerminalEnv(cwd, tabId).pipe(
         Effect.tapError((e) =>
           Effect.sync(() => console.error('Failed to load env:', e))
         ),
-        Effect.orElseSucceed(() => ({}) as Record<string, string>)
+        Effect.orElseSucceed(() => ({ env: {}, home: '' }))
       )
     );
-    setCustomEnv(env);
+    setCustomEnv(result.env);
+    // Kept in a ref, not state: `cd ~` reads it inside executeCommand and the
+    // value never changes for the life of the server, so re-rendering on it
+    // would only churn every bubble below.
+    homeDirRef.current = result.home;
   };
 
   const loadAliases = async () => {

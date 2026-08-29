@@ -1,48 +1,24 @@
-// One file per command — body lives in `<cmd>Prompt.ts`, this file stays a
-// thin index. Adding a new builtin: create `<cmd>Prompt.ts` exporting
-// `<CMD>_PROMPT_ZH` and `<CMD>_PROMPT_EN`, then wire it here AND register a
-// matching entry in `packages/feature/agent/src/server/api/commands.ts` so the
-// autocomplete dropdown also lists it.
+// Slash/at command dispatch. Builtin command BODIES are not in this file (nor in
+// any .ts): each one is `skills/<cmd>/SKILL.md` inside the package, enumerated by
+// builtinSkills.ts. Adding a builtin = adding that directory — no wiring here, and
+// no second list in `packages/feature/agent/src/server/api/commands.ts`, which now
+// derives the autocomplete dropdown from the same directory.
 import { mkdirSync, writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { COCKPIT_DIR, SKILLS_FILE } from '@cockpit/shared-utils';
-import { AP_PROMPT_EN, AP_PROMPT_ZH } from './apPrompt';
-import { CC_PROMPT_EN, CC_PROMPT_ZH } from './ccPrompt';
-import { CG_PROMPT_EN, CG_PROMPT_ZH } from './cgPrompt';
-import { CR_PROMPT_EN, CR_PROMPT_ZH } from './crPrompt';
-import { EX_PROMPT_EN, EX_PROMPT_ZH } from './exPrompt';
-import { FX_PROMPT_EN, FX_PROMPT_ZH } from './fxPrompt';
-import { GO_PROMPT_EN, GO_PROMPT_ZH } from './goPrompt';
-import { HTML_PROMPT_EN, HTML_PROMPT_ZH } from './htmlPrompt';
-import { NEW_BRANCH_PROMPT_EN, NEW_BRANCH_PROMPT_ZH } from './newBranchPrompt';
-import { QA_PROMPT_EN, QA_PROMPT_ZH } from './qaPrompt';
-import { SKILLIFY_PROMPT_EN, SKILLIFY_PROMPT_ZH } from './skillifyPrompt';
+import {
+  listBuiltinSkillNames,
+  readBuiltinSkill,
+  readFrontmatterField,
+} from './builtinSkills';
 
-interface CommandEntry {
-  /** Prompt content for each language — a COMPLETE SKILL.md (YAML frontmatter +
-   *  body), same shape as a user-defined skill. Written to disk verbatim. */
-  zh: string;
-  en: string;
-}
-
-export const COMMAND_CONTENT: Record<string, CommandEntry> = {
-  qa: { zh: QA_PROMPT_ZH, en: QA_PROMPT_EN },
-  ap: { zh: AP_PROMPT_ZH, en: AP_PROMPT_EN },
-  fx: { zh: FX_PROMPT_ZH, en: FX_PROMPT_EN },
-  ex: { zh: EX_PROMPT_ZH, en: EX_PROMPT_EN },
-  go: { zh: GO_PROMPT_ZH, en: GO_PROMPT_EN },
-  html: { zh: HTML_PROMPT_ZH, en: HTML_PROMPT_EN },
-  cg: { zh: CG_PROMPT_ZH, en: CG_PROMPT_EN },
-  cc: { zh: CC_PROMPT_ZH, en: CC_PROMPT_EN },
-  cr: { zh: CR_PROMPT_ZH, en: CR_PROMPT_EN },
-  'new-branch': { zh: NEW_BRANCH_PROMPT_ZH, en: NEW_BRANCH_PROMPT_EN },
-  skillify: { zh: SKILLIFY_PROMPT_ZH, en: SKILLIFY_PROMPT_EN },
-};
-
-/** Directory holding the on-disk copies of builtin slash commands, written as
- *  SKILL.md files so the model reads them through the SAME flow as user-defined
- *  skills (`请读取这个 skill 文件：<path>`) instead of inlining the full template. */
-const BUILTIN_SKILLS_DIR = join(COCKPIT_DIR, 'skills');
+/** Where the RESOLVED copy of a builtin lands (~/.cockpit/skills/<cmd>/SKILL.md),
+ *  i.e. user data — not to be confused with BUILTIN_SKILLS_SRC_DIR, the package's
+ *  read-only `skills/` source. The copy exists so the model reads a builtin through
+ *  the SAME flow as a user-defined skill ("read this skill file: <path>") instead of
+ *  having the full template inlined into the prompt, and it is where {{BASE_URL}}
+ *  gets substituted. */
+const BUILTIN_SKILLS_OUT_DIR = join(COCKPIT_DIR, 'skills');
 
 /**
  * Derive the base URL the AI should use in its curl recipes.
@@ -92,8 +68,8 @@ const COMMAND_LINE_RE = /^\s*([/@])(\S+?)(?:\s+|$)/;
 // mode-skills like `/qa` are behaviors, not sequential steps).
 //
 //   - `/verb` runs in the main session; `@verb` is delegated to a subagent.
-//   - builtin commands (COMMAND_CONTENT) AND user-registered skills, mixed. A
-//     user skill shadows a builtin of the same name.
+//   - builtin commands (the package's skills/ dir) AND user-registered skills,
+//     mixed. A user skill shadows a builtin of the same name.
 //   - A command's body = its inline text on the SAME line, PLUS the contiguous
 //     non-blank lines directly below it (up to the first blank line or the next
 //     command line). A blank line is the HARD boundary, so a trailing global
@@ -104,6 +80,10 @@ const COMMAND_LINE_RE = /^\s*([/@])(\S+?)(?:\s+|$)/;
 //   - Reference list: builtins are written to ~/.cockpit/skills/<verb>/SKILL.md;
 //     user skills use their registered path — the SAME flow user-defined skills
 //     use. On a builtin write failure the content is inlined (never a no-op).
+//
+// Builtin bodies are English-only; `language` no longer selects a translation of
+// the skill, it only picks the wording of the wrapper text this function emits
+// (the locus word and the reference-list header).
 //
 // `{{BASE_URL}}` placeholders are substituted at WRITE time with the loopback
 // base URL (http://localhost:<port>) — /cg's curl recipes are executed by the
@@ -120,8 +100,9 @@ export function resolveCommandPrompt(
   // Skill registry read once per dispatch (not per keystroke) so command-line
   // recognition can tell a real `/skill-name` from ordinary text-with-slash.
   const userSkills = listUserSkills();
+  const builtins = new Set(listBuiltinSkillNames());
   const isKnown = (cmd: string) =>
-    !!COMMAND_CONTENT[cmd] || userSkills.some((s) => s.name === cmd);
+    builtins.has(cmd) || userSkills.some((s) => s.name === cmd);
 
   // ── Find command lines; leave every other line exactly as written ──
   const lines = prompt.split('\n');
@@ -156,7 +137,7 @@ export function resolveCommandPrompt(
       bodyLines.push(lines[j].trim());
       consumed.add(j);
     }
-    const ref = resolveSkillRef(c.cmd, lang, baseUrl, userSkills);
+    const ref = resolveSkillRef(c.cmd, baseUrl, userSkills);
     rendered.set(c.i, renderCommandLine(c.marker, ref, bodyLines.join('\n'), lang, showLocus));
     if (ref.path && !seen.has(ref.name)) {
       seen.add(ref.name);
@@ -227,14 +208,20 @@ function locusWord(marker: StepMarker, lang: 'zh' | 'en'): string {
 // returned for inlining. (Callers only pass known verbs.)
 function resolveSkillRef(
   cmd: string,
-  lang: 'zh' | 'en',
   baseUrl: string,
   userSkills: Array<{ name: string; path: string }>,
 ): SkillRef {
   const skill = userSkills.find((s) => s.name === cmd);
   if (skill) return { name: cmd, path: skill.path, content: null };
-  const entry = COMMAND_CONTENT[cmd]!;
-  const content = entry[lang].replaceAll('{{BASE_URL}}', baseUrl);
+  const source = readBuiltinSkill(cmd);
+  if (source === null) {
+    // isKnown() stat'd this file moments ago, so a read failure here means the
+    // install is being mutated underneath us. Log it: the alternative is a
+    // command that vanishes from the prompt with no trace.
+    console.error(`[skills] builtin "${cmd}" disappeared while resolving it`);
+    return { name: cmd, path: null, content: null };
+  }
+  const content = source.replaceAll('{{BASE_URL}}', baseUrl);
   const skillPath = writeBuiltinSkill(cmd, content);
   return skillPath
     ? { name: cmd, path: skillPath, content: null }
@@ -267,16 +254,13 @@ function listUserSkills(): Array<{ name: string; path: string }> {
   }
 }
 
-// Extract the `name:` field from a SKILL.md YAML frontmatter block. Minimal
-// sync parse (no async parseSkillMd dependency) — just enough to match a
-// `/name` command to its file.
+// Extract the `name:` field from a SKILL.md YAML frontmatter block, so a
+// `/name` command can be matched to its file. Sync + regex (no async
+// parseSkillMd dependency); shares readFrontmatterField with the builtin
+// registry so both kinds of skill are parsed by exactly one implementation.
 function readSkillName(path: string): string | null {
   try {
-    const txt = readFileSync(path, 'utf-8');
-    const fm = txt.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-    const block = fm ? fm[1] : txt;
-    const m = block.match(/^name:\s*["']?([^"'\n]+?)["']?\s*$/m);
-    return m ? m[1].trim() : null;
+    return readFrontmatterField(readFileSync(path, 'utf-8'), 'name');
   } catch {
     return null;
   }
@@ -295,7 +279,7 @@ function readSkillName(path: string): string | null {
 // local file, same pattern as notifyReviewChange.
 function writeBuiltinSkill(cmd: string, content: string): string | null {
   try {
-    const dir = join(BUILTIN_SKILLS_DIR, cmd);
+    const dir = join(BUILTIN_SKILLS_OUT_DIR, cmd);
     mkdirSync(dir, { recursive: true });
     const filePath = join(dir, 'SKILL.md');
     writeFileSync(filePath, content.endsWith('\n') ? content : `${content}\n`, 'utf-8');

@@ -1,90 +1,53 @@
-# Cockpit Skills
+# Builtin Slash Commands
 
-This folder is the home of project-internal **Cockpit Skills** — markdown
-playbooks that turn into slash commands once registered with Cockpit's
-Skills sidebar.
+Every subdirectory here is one builtin slash command: `skills/<cmd>/SKILL.md`
+is the command's prompt, in the exact SKILL.md format a user-defined skill
+uses (YAML frontmatter + body). English only.
 
-These skills live alongside the source they describe. If `release/` ever
-goes stale because the release pipeline changed, a PR updates this folder
-the same way it updates `bin/`.
+**This directory is runtime code, not documentation.** It is listed in
+`package.json#files`, so anything added here ships inside the npm package,
+and the server reads these files at dispatch time. Project-internal
+playbooks (`/cockpit-release`, `/cockpit-changelog`) live in
+[`docs/skills/`](../docs/skills/README.md) and are never published.
 
-## What's here
+## How they are loaded
 
-All skill names are prefixed with `cockpit-` so they don't collide with
-generic skills (`/release`, `/changelog`) you may register from other
-projects in the same Cockpit.
+`packages/feature/agent/src/server/lib/slashCommands.ts` resolves this
+directory as `$COCKPIT_ROOT/skills` (same mechanism as `apps/`; `server.mjs`
+sets `COCKPIT_ROOT` to the package root), then:
 
-| Skill | Slash | Purpose |
-|---|---|---|
-| [`cockpit-release/`](./cockpit-release/SKILL.md) | `/cockpit-release [patch\|minor\|major]` | Run the full release pipeline end-to-end: bump → tag → publish → release notes → website redeploy → verify. |
-| [`cockpit-changelog/`](./cockpit-changelog/SKILL.md) | `/cockpit-changelog [from-tag] [to-tag]` | Draft user-facing GitHub release notes in the project's voice. Invoked by `/cockpit-release` at the right step, also runnable standalone. |
+1. `readdir` — every subdirectory containing a `SKILL.md` is a registered
+   command. There is no separate allow-list to keep in sync: the folder set
+   *is* the registry, for both dispatch and the `/api/commands` autocomplete
+   dropdown (whose description text comes from each file's frontmatter).
+2. On dispatch the file is read, `{{BASE_URL}}` is substituted with
+   `http://localhost:<port>`, and the result is written to
+   `~/.cockpit/skills/<cmd>/SKILL.md` — the copy the agent is pointed at, so
+   builtins travel the same "read this skill file" path as user skills.
+3. A user-registered skill with the same `name` shadows the builtin.
 
-## How to use them inside Cockpit
+Edits take effect on the next dispatch — no rebuild, no restart.
 
-These skills are **not** auto-loaded — Cockpit doesn't scan filesystems for
-SKILL.md by default. You register the absolute path once:
+## Adding a builtin command
 
-1. Open Cockpit's Skills sidebar (the ⭐ icon in the workspace sidebar).
-2. Click **+ Add Skill**.
-3. Paste the absolute path to the SKILL.md, e.g. (replace `/path/to/cockpit`
-   with your clone location):
-
-   ```
-   /path/to/cockpit/skills/cockpit-release/SKILL.md
-   /path/to/cockpit/skills/cockpit-changelog/SKILL.md
-   ```
-
-4. Repeat for each skill.
-
-After that, `/cockpit-release patch` and `/cockpit-changelog v1.0.195 v1.0.196`
-show up in the slash autocomplete in any Cockpit chat.
-
-Cockpit watches the source files — edit any SKILL.md in your editor, save,
-and the next slash invocation picks up the change. No re-import.
-
-## Why store them in-repo (and not in `~/.claude/skills/`)
-
-Two reasons:
-
-1. **They reference repo facts.** `/cockpit-release` knows `opencockpit.dev`,
-   the `Surething-io/cockpit` GitHub repo, `@surething/cockpit` on npm,
-   and the exact workflow names. That context is repo-specific, not
-   user-specific. If a contributor clones the repo and registers these
-   paths, the skill works without any per-user customization.
-2. **They're versioned with the code that the playbook describes.** When
-   the release workflow changes, the skill changes in the same PR.
-   `git blame skills/cockpit-release/SKILL.md` answers "why does the
-   release playbook do X?" the same way `git blame bin/cock.mjs` answers
-   "why does the CLI handle Y?".
-
-The skills are **not** shipped as part of the npm package
-(`skills/` is excluded from `package.json#files`). They're project
-documentation, not runtime code.
-
-## Adding a new skill
-
-1. Create a new folder `skills/cockpit-<name>/` (keep the `cockpit-`
-   prefix to avoid colliding with skills from other projects).
-2. Add `SKILL.md` with YAML frontmatter:
+1. `mkdir skills/<cmd>` and write `SKILL.md` with frontmatter:
 
    ```yaml
    ---
-   name: cockpit-<name>
-   description: <one line, ends in a period>
-   argument-hint: [optional-args]
-   icon: 📝
+   name: <cmd>            # MUST equal the directory name
+   description: <one line — this is verbatim what the autocomplete dropdown
+                 shows; it is NOT translated, and must not be given an
+                 i18n commands.<cmd> key, which would silently override it>
+   argument-hint: "[optional]"
    ---
    ```
 
-3. Body is the system prompt the agent will see when `/<name>` is invoked.
-   Be explicit about what to do *and* what to refuse. Look at the existing
-   skills for shape.
-4. Open a PR. After merge, contributors run **+ Add Skill** in their
-   Cockpit and paste the absolute path on their machine.
+2. Body is English prose. Use `{{BASE_URL}}` for any URL the agent must curl
+   on the server host.
+3. That's it — no TypeScript to touch. Both the dropdown and the dispatcher
+   pick it up from the directory.
 
-## Further reading
-
-- [Skills feature blog post](https://opencockpit.dev/en/blog/chat-to-skill/) —
-  the rationale for "skills register pointers, never own your folder".
-- Anthropic's spec for the SKILL.md format:
-  [docs.anthropic.com](https://docs.anthropic.com/) (search for "skills").
+The `name` must match the directory name: the directory name is what `/<cmd>`
+matches and where the file is written under `~/.cockpit/skills/`, while
+`name` is what the agent reads in the file. A mismatch is caught by
+`skills.test.ts`.

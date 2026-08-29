@@ -924,11 +924,6 @@
     "linkDesc": "Insert hyperlink"
   },
   "commands": {
-    "qa": "Enter requirements clarification mode",
-    "fx": "Enter bug evidence-chain analysis mode",
-    "ex": "Enter structured analysis & discussion mode",
-    "go": "Enter landing mode: MVP staged implementation",
-    "cg": "Enter CodeGraph exploration mode",
     "plan": "Enable plan mode · /plan <task> to plan it · /plan off to disable"
   },
   "review": {

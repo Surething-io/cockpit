@@ -11,7 +11,7 @@ Each line that starts with a known command is annotated in place:
 | `/verb` | the **main session** — the AI continues in the current chat |
 | `@verb` | a **sub-agent** — Cockpit delegates the step to a separate agent and reports back |
 
-`verb` is any built-in command (`/qa`, `/fx`, `/cr`, …) or any [installed skill](/en/docs/agent/skills/#custom-skills) of the same name. A verb starts with a letter and may contain letters, digits, and hyphens — so `/new-branch` and `/qa` are both single commands.
+`verb` is any built-in command (`/qa`, `/fx`, `/cr`, …) or any [installed skill](/en/docs/agent/skills/#custom-skills) of the same name. A verb is everything from the marker up to the first space, and whether it counts as a command is decided purely by whether a skill of that name is registered — so `/new-branch`, `/qa`, `/2fa` and `/db:query` all work, while a line like `/usr/local/bin` stays ordinary text because nothing is registered under it.
 
 Here's a three-step message:
 

@@ -41,7 +41,7 @@ serving whatever version was current when the template was last built.
 
 Nothing reports this. The sandbox boots, the demo works, it is just the
 wrong version. Rebuild as part of the release (see
-`skills/cockpit-release/SKILL.md`).
+`docs/skills/cockpit-release/SKILL.md`).
 
 ## Check the version in the build log
 

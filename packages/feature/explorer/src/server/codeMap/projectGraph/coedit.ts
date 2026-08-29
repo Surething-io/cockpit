@@ -6,11 +6,14 @@
  * only express STATIC relationships — "X calls Y", "Y imports X". They can't
  * see CONVENTIONAL coupling: two parallel registries that have to stay in
  * sync but never mention each other in source. The canonical example in
- * cockpit is COMMAND_CONTENT (in slashCommands.ts) and BUILTIN_COMMANDS (in
- * commands.ts) — both list /qa /fx /cg, but neither file imports the other.
+ * cockpit is a shipped asset directory: `paths.ts` resolves it under
+ * COCKPIT_ROOT (APPS_DIR / BUILTIN_SKILLS_SRC_DIR) while `package.json#files`
+ * decides whether it lands in the npm tarball at all — miss the second edit and
+ * the feature works in the checkout and 404s for every installed user, with no
+ * import anywhere linking the two files.
  *
- * Humans encode these conventions in git history: when /cg was added, both
- * files were edited in the same commit. So files that co-appear in commits
+ * Humans encode these conventions in git history: when `skills/` was added,
+ * both files were edited in the same commit. So files that co-appear in commits
  * with the target are a strong signal of conventional coupling, regardless
  * of whether the language semantics see any connection.
  *

@@ -333,6 +333,14 @@ export function CommandAutocompleteMenu({ ac, className = '' }: CommandAutocompl
                   {marker + cmd.name.slice(1)}
                 </span>
                 <span className="flex-1 text-sm text-muted-foreground truncate">
+                  {/* Builtins from the package's skills/ dir describe THEMSELVES:
+                      the text below is their SKILL.md frontmatter `description`,
+                      served by /api/commands. Do NOT add commands.<verb> keys for
+                      them — a translation there silently overrides the file and
+                      the two drift (that is exactly what happened to /go and /cg
+                      before the keys were removed). The lookup survives only for
+                      client-side commands that have no SKILL.md to describe them,
+                      i.e. ChatInput's `/plan`, whose sole zh source is i18n. */}
                   {cmd.source === 'builtin'
                     ? t(`commands.${cmd.name.slice(1)}`, { defaultValue: cmd.description })
                     : cmd.description}

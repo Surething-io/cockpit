@@ -11,7 +11,7 @@
 | `/verb` | **主会话** —— AI 在当前聊天里继续 |
 | `@verb` | **子代理(sub-agent)** —— Cockpit 把这步委派给一个独立 agent,完成后回报 |
 
-`verb` 可以是任意内置命令(`/qa`、`/fx`、`/cr`……),也可以是同名的[已安装 skill](/zh/docs/agent/skills/#custom-skills)。verb 以字母开头,可含字母、数字和连字符 —— 所以 `/new-branch` 和 `/qa` 都是单个命令。
+`verb` 可以是任意内置命令(`/qa`、`/fx`、`/cr`……),也可以是同名的[已安装 skill](/zh/docs/agent/skills/#custom-skills)。verb 是从 `/`(或 `@`)一直到第一个空格为止的内容,算不算命令完全取决于有没有同名 skill 注册过 —— 所以 `/new-branch`、`/qa`、`/2fa`、`/db:query` 都能用;而 `/usr/local/bin` 这种行没有对应注册,原样当普通文本。
 
 来看一条三步消息:
 

@@ -5,8 +5,9 @@
  * `uncommitted` (from git status, current working-tree co-edits). Together
  * they expose "conventional coupling" — files that have to be edited together
  * even though no static syntax edge connects them. Canonical example in
- * cockpit: COMMAND_CONTENT in slashCommands.ts ↔ BUILTIN_COMMANDS in
- * commands.ts, both list /qa /fx /cg with no import linking them.
+ * cockpit: a shipped asset dir resolved in paths.ts (APPS_DIR /
+ * BUILTIN_SKILLS_SRC_DIR) ↔ the same dir listed in `package.json#files`, with
+ * no import linking them.
  *
  * Query params:
  *   cwd       — absolute project path (validated)

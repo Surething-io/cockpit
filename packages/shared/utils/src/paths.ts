@@ -40,6 +40,12 @@ export const REVIEW_SIGNAL_FILE = join(REVIEW_DIR, '_signal');
 // server.mjs sets COCKPIT_ROOT; cwd is the dev fallback.
 export const APPS_DIR = join(process.env.COCKPIT_ROOT || process.cwd(), 'apps');
 
+// Builtin slash-command prompts shipped inside the package (/skills/<cmd>/SKILL.md).
+// Same install-root resolution as APPS_DIR — and for the same reason: these files
+// move with the installation and must never be confused with the user's own skill
+// data under COCKPIT_DIR (~/.cockpit/skills, where resolved copies are written).
+export const BUILTIN_SKILLS_SRC_DIR = join(process.env.COCKPIT_ROOT || process.cwd(), 'skills');
+
 /**
  * Write to the signal file to notify ReviewWatcher of a comment change.
  * Synchronous write ensures fs.watch can detect the change.

@@ -1,18 +1,22 @@
 /**
- * /api/commands — list builtin slash commands.
+ * /api/commands — list builtin slash commands for the autocomplete dropdown.
  *
- * Used to also enumerate `.md` files under `.claude/commands/` and
- * `~/.claude/commands/` (project + global), mirroring Claude Code's command
- * convention. That convention has been retired, so this endpoint now returns
- * the in-process builtin set only.
+ * Derived from the package's `skills/` directory (one subdirectory per command,
+ * each holding a SKILL.md), NOT from a hand-written table. The previous version
+ * kept its own BUILTIN_COMMANDS array that had to be edited in lockstep with the
+ * dispatcher's command map — listing a name here without a matching expansion
+ * made the dropdown advertise a command that silently no-opped. Both sides now
+ * read the same directory, so the two cannot drift.
  *
- * Each entry MUST have a matching expansion in COMMAND_CONTENT
- * (packages/feature/agent/src/server/lib/slashCommands.ts). Listing a name
- * here without an expansion makes the dropdown advertise a feature that
- * silently no-ops on dispatch.
+ * `description` is each SKILL.md's frontmatter `description`.
+ *
+ * Also used to enumerate `.md` files under `.claude/commands/` (project +
+ * global), mirroring Claude Code's command convention; that convention has been
+ * retired.
  */
 import { Effect } from "effect"
 import { handler } from "@cockpit/effect-runtime/server"
+import { listBuiltinSkillsMeta } from "../lib/builtinSkills"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -23,25 +27,16 @@ interface CommandInfo {
   source: "builtin" | "skill"
 }
 
-const BUILTIN_COMMANDS: CommandInfo[] = [
-  { name: "/qa", description: "Enter requirements clarification mode", source: "builtin" },
-  { name: "/ap", description: "Enter apply mode: implement <SPEC> while keeping running apply-notes", source: "builtin" },
-  { name: "/fx", description: "Enter bug evidence-chain analysis mode", source: "builtin" },
-  { name: "/ex", description: "Enter structured analysis & discussion mode", source: "builtin" },
-  { name: "/go", description: "Enter landing mode: MVP staged implementation with self-verify", source: "builtin" },
-  { name: "/html", description: "Generate an interactive self-contained HTML page (built-in bash SDK)", source: "builtin" },
-  { name: "/cg", description: "Enter project graph (codegraph) exploration mode", source: "builtin" },
-  { name: "/cc", description: "Enter Cockpit CLI (cock subcommands) operation mode", source: "builtin" },
-  { name: "/cr", description: "Full code review: static triangulation + dynamic modelling", source: "builtin" },
-  { name: "/new-branch", description: "Create a clean new branch off the latest origin/main", source: "builtin" },
-  { name: "/skillify", description: "Analyze the conversation for reusable knowledge and distil it into a skill", source: "builtin" },
-]
-
 export const GET = handler(() =>
-  Effect.succeed(
-    new Response(JSON.stringify(BUILTIN_COMMANDS), {
+  Effect.sync(() => {
+    const commands: CommandInfo[] = listBuiltinSkillsMeta().map((s) => ({
+      name: `/${s.name}`,
+      description: s.description,
+      source: "builtin",
+    }))
+    return new Response(JSON.stringify(commands), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     })
-  )
+  })
 )

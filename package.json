@@ -71,6 +71,7 @@
     "!**/*.test.*",
     "!**/*.spec.*",
     "public",
+    "skills",
     "server.mjs",
     "dist",
     ".next-prod",

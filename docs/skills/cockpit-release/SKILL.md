@@ -291,7 +291,7 @@ Expected: `version` matches new tag, `dist-tags.latest` matches, `bin` includes 
 
 The publish workflow creates the GitHub Release with **empty body** (the workflow used to use `--generate-notes`, which leaked `**Full Changelog**: ...compare/...` tails — see commit history). The body MUST be filled in by you.
 
-Invoke the `/cockpit-changelog` skill (or if running standalone, draft notes using the same conventions: see `skills/cockpit-changelog/SKILL.md`).
+Invoke the `/cockpit-changelog` skill (or if running standalone, draft notes using the same conventions: see `docs/skills/cockpit-changelog/SKILL.md`).
 
 Save the markdown to a temp file, then:
 
@@ -407,4 +407,4 @@ Expected: new tag at top of changelog (en + zh), no `compare/v1.0.x-1...v1.0.x` 
 - npm publish workflow: `.github/workflows/publish.yml`
 - Website deploy workflow: `.github/workflows/website-deploy.yml`
 - `/try` demo sandbox template: `e2b/README.md`
-- Sister skill: `skills/cockpit-changelog/SKILL.md` (release notes voice + structure)
+- Sister skill: `docs/skills/cockpit-changelog/SKILL.md` (release notes voice + structure)

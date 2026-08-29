@@ -1,8 +1,8 @@
-**Skills** are short prompts you trigger with `/` in any Agent tab — each one rewires how the AI works on a single reply. Cockpit ships **7 built-in Skills** (the `/qa /fx /ex /go /cg /cc /cr` modes); you can also write your own as `SKILL.md` files and install them the same way. Both flavours live in the same `/` menu.
+**Skills** are short prompts you trigger with `/` in any Agent tab — each one rewires how the AI works on a single reply. Cockpit ships **11 built-in Skills** (the `/qa /fx /ex /go /cg /cc /cr` modes, plus `/ap /html /new-branch /skillify`); you can also write your own as `SKILL.md` files and install them the same way. Both flavours live in the same `/` menu.
 
-> Don't confuse these with the slash menu inside **Notes** (the project-notes editor), which is a formatter palette for headings, lists, tables and so on. The chat input only recognises Skills — typing `/` there opens a menu listing exactly `/qa /fx /ex /go /cg /cc /cr` plus any installed `/skill-name`.
+> Don't confuse these with the slash menu inside **Notes** (the project-notes editor), which is a formatter palette for headings, lists, tables and so on. The chat input only recognises Skills — typing `/` there opens a menu listing the built-ins plus any installed `/skill-name`.
 
-## The 7 built-in Skills
+## The built-in Skills
 
 | Command | Intent | Asks back? | Writes code? |
 |---|---|---|---|
@@ -13,6 +13,12 @@
 | **`/cg`** | CodeGraph project exploration | ❌ | ❌ |
 | **`/cc`** | End-to-end verification via `cock` CLI (browser + terminal bubbles) | ❌ | ❌ (drives bubbles, not source edits) |
 | **`/cr`** | Full code review (static + dynamic) | ❌ | ❌ (produces findings, no edits) |
+| **`/ap`** | Implement a spec, logging out-of-spec decisions to an apply-notes file | ❌ | ✅ Yes |
+| **`/html`** | Build an interactive local React app wired to the [bash SDK](/en/docs/agent/html-apps/) | ❌ | ✅ Yes (writes the app) |
+| **`/new-branch`** | Cut a clean branch off the latest `origin/main` | ❌ | ❌ (git only) |
+| **`/skillify`** | Distil this conversation's workflow into a reusable Skill | ❌ | ✅ Yes (writes the SKILL.md) |
+
+The first seven are *modes* — they change how the AI works for one reply — and each gets a section below. The last four are one-shot jobs; their SKILL.md carries the full instructions, so there is nothing to configure.
 
 ## `/qa` — Clarify before changing anything
 
@@ -135,11 +141,11 @@ The right entry point depends on what you have:
 - If the plan is ready → `/go`
 - If a change is done and needs review → `/cr`
 
-> The 7 built-in Skills above are the complete set Cockpit ships. For repeated workflows of your own, see [Custom Skills](#custom-skills) below — they show up in the same `/` menu as `/skill-name`.
+> The 11 built-in Skills above are the complete set Cockpit ships. For repeated workflows of your own, see [Custom Skills](#custom-skills) below — they show up in the same `/` menu as `/skill-name`.
 
 ## Custom Skills
 
-Custom Skills are your own slash commands — the same idea as the 7 built-in modes above, except you write the prompt yourself. Trigger them as `/your-skill-name` in chat.
+Custom Skills are your own slash commands — the same idea as the built-in modes above, except you write the prompt yourself. Trigger them as `/your-skill-name` in chat.
 
 If you find yourself pasting the same long instruction to Claude every week — "review this PR for these specific things", "summarise commits in this format", "follow this debugging checklist" — turn it into a Skill once and reuse it forever.
 

@@ -931,8 +931,31 @@ export function resolveLocalMediaUrl(
  * toggle), pdf (CockpitPdf, Explorer's themed viewer), json (readable widget
  * with a raw-source toggle), csv/tsv (CockpitCsv table with a raw-source
  * toggle).
+ *
+ * `chip` is the label the Console empty-state guide shows for the group. It
+ * lives here rather than in ConsoleView on purpose: the two used to be written
+ * separately and drifted — the guide advertised 5 of these extensions and never
+ * mentioned csv/tsv/webp/svg at all. Adding a group here updates both the
+ * matcher and what the empty state promises.
  */
-const FILE_VIEWER_EXT_RE = /\.(md|png|jpe?g|gif|webp|svg|pdf|json|csv|tsv)$/i
+const FILE_VIEWER_EXT_GROUPS = [
+  { chip: "*.md", exts: ["md"] },
+  { chip: "*.png/jpg/gif/webp/svg", exts: ["png", "jpg", "jpeg", "gif", "webp", "svg"] },
+  { chip: "*.pdf", exts: ["pdf"] },
+  { chip: "*.json", exts: ["json"] },
+  { chip: "*.csv", exts: ["csv"] },
+  { chip: "*.tsv", exts: ["tsv"] },
+] as const
+
+const FILE_VIEWER_EXT_RE = new RegExp(
+  `\\.(${FILE_VIEWER_EXT_GROUPS.flatMap((g) => g.exts).join("|")})$`,
+  "i"
+)
+
+/** Trigger chips for the file-preview row of the Console empty-state guide. */
+export const FILE_VIEWER_CHIPS: readonly string[] = FILE_VIEWER_EXT_GROUPS.map(
+  (g) => g.chip
+)
 
 /** True for a local file path the console routes to the file-viewer app. */
 export function isFileViewerPath(filePath: string): boolean {

@@ -14,6 +14,7 @@ import {
   loadProjectSettings,
   saveProjectSettings,
 } from './effect/consoleClient';
+import { FILE_VIEWER_CHIPS } from '@cockpit/shared-utils';
 
 interface ConsoleViewProps {
   cwd: string;
@@ -30,8 +31,12 @@ const TOOLBAR_HEIGHT = 41;
 const BUBBLE_GUIDE: { key: string; label: string; triggers: string[]; notes?: string[] }[] = [
   { key: 'command', label: 'console.bubbleCommand', triggers: ['ls', 'git status', 'npm run dev'] },
   { key: 'pty', label: 'console.bubbleInteractive', triggers: ['zsh', 'bash', 'vim', 'python'] },
-  { key: 'browser', label: 'console.bubbleBrowser', triggers: ['https://…', '*.html', '*.md', '*.png', '*.pdf', '*.json'], notes: ['console.bubbleBrowserNoteIframe', 'console.bubbleBrowserNoteCookie'] },
+  { key: 'browser', label: 'console.bubbleBrowser', triggers: ['https://…', '*.html'], notes: ['console.bubbleBrowserNoteIframe', 'console.bubbleBrowserNoteCookie'] },
   { key: 'database', label: 'console.bubbleDatabase', triggers: ['postgresql://', 'mysql://', 'redis://', 'neo4j://'] },
+  // Same browser bubble as the row above, but a local file path reads nothing
+  // like "Browser" — it gets its own row so the previewable types are findable.
+  // Chips come from FILE_VIEWER_CHIPS so they cannot drift from the matcher.
+  { key: 'filePreview', label: 'console.bubbleFilePreview', triggers: [...FILE_VIEWER_CHIPS] },
 ];
 
 function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote }: ConsoleViewProps) {

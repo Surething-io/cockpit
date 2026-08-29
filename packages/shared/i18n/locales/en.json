@@ -594,6 +594,7 @@
     "bubbleBrowserNoteIframe": "Some sites block iframe embedding — install Cockpit Bridge under Settings → Browser Extension before opening.",
     "bubbleBrowserNoteCookie": "If a logged-in site first shows as signed out, refresh a few times to restore it.",
     "bubbleDatabase": "Database",
+    "bubbleFilePreview": "File preview",
     "loadingMore": "Loading...",
     "loadMoreHistory": "Load more history",
     "quickCommands": "Quick Commands",

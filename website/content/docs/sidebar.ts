@@ -127,7 +127,6 @@ export const docsSidebar: DocSection[] = [
       { slug: 'console/terminal', labelKey: 'terminalBubble', available: true },
       { slug: 'console/browser', labelKey: 'browserBubble', available: true },
       { slug: 'console/databases', labelKey: 'databases', available: true },
-      { slug: 'console/jupyter', labelKey: 'jupyterBubble', available: true },
       { slug: 'console/aliases-env', labelKey: 'aliasesEnv', available: true },
       { slug: 'console/chrome-extension', labelKey: 'chromeExtension', available: true },
     ],

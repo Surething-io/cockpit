@@ -14,8 +14,8 @@ Hard exclusions:
 - React render layer / pure UI state (hover/expanded/menuOpen)
 - Pure utility functions (`packages/shared/utils`)
 - Third-party "stateful" components (xterm / tiptap / xyflow / shiki / tree-sitter)
-- Subprocess IPC adapters (LSP `pyrightAdapter` / `tsserverAdapter` / `LSPServerRegistry`,
-  Jupyter `JupyterKernelManager`) — child_process + readline + stdio JSON protocol
+- Subprocess IPC adapters (LSP `pyrightAdapter` / `tsserverAdapter` /
+  `LSPServerRegistry`) — child_process + readline + stdio JSON protocol
   are inherently imperative; keep `try/catch` + `console.error` as the subprocess gateway
 - Tracer defect path (`effect-runtime/src/next.ts` uncaught defect handler) —
   the Effect runtime has already failed, no fiber context available, so synchronous

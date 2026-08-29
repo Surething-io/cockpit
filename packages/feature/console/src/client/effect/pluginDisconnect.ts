@@ -2,7 +2,7 @@
  * Plugin client helpers — shared fetch → Effect wrappers used by DB bubble plugins.
  *
  * Provides three categories of helpers:
- *  - `disconnectPluginBubble` / `shutdownJupyterKernel` — plugin/<name>/index.tsx close callbacks
+ *  - `disconnectPluginBubble` — plugin/<name>/index.tsx close callbacks
  *  - `pluginApiPost` — internal business POST inside Bubble.tsx (query/export/CRUD); returns the JSON body or throws Error
  */
 import { Effect } from "effect"
@@ -36,18 +36,6 @@ export const disconnectPluginBubble = (
 ): Promise<void> =>
   BrowserRuntime.runPromise(
     httpPostJson(`/api/${plugin}/disconnect`, { id }).pipe(
-      Effect.orElse(() => Effect.void)
-    )
-  )
-
-/**
- * Jupyter kernel uses its own endpoint POST /api/jupyter/shutdown { bubbleId }.
- */
-export const shutdownJupyterKernel = (
-  bubbleId: string
-): Promise<void> =>
-  BrowserRuntime.runPromise(
-    httpPostJson("/api/jupyter/shutdown", { bubbleId }).pipe(
       Effect.orElse(() => Effect.void)
     )
   )

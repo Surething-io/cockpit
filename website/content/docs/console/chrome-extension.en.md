@@ -1,4 +1,4 @@
-The Cockpit Chrome extension is optional. Most of Cockpit — Agent, Explorer, terminal / database / Jupyter bubbles — works fine without it. You only need it if you want the **Browser bubble** to behave like a real Chrome tab instead of a plain iframe.
+The Cockpit Chrome extension is optional. Most of Cockpit — Agent, Explorer, terminal / database bubbles — works fine without it. You only need it if you want the **Browser bubble** to behave like a real Chrome tab instead of a plain iframe.
 
 If you ever fight CORS errors, login-cookie issues, or "this site refuses to be embedded" messages in a Browser bubble, the extension is the fix.
 

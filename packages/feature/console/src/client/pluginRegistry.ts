@@ -9,7 +9,6 @@
 
 import './plugins/browser';
 import './plugins/database';
-import './plugins/jupyter';
 import './plugins/mysql';
 import './plugins/redis';
 import './plugins/neo4j';

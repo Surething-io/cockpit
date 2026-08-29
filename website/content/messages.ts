@@ -470,7 +470,6 @@ export const messages = {
           terminalBubble: 'Terminal',
           browserBubble: 'Browser',
           databases: 'Database Bubbles',
-          jupyterBubble: 'Jupyter',
           aliasesEnv: 'Aliases & Env Vars',
 
           // Reference
@@ -960,7 +959,6 @@ export const messages = {
           terminalBubble: '终端气泡',
           browserBubble: '浏览器气泡',
           databases: '数据库气泡',
-          jupyterBubble: 'Jupyter',
           aliasesEnv: '别名与环境变量',
 
           // Reference

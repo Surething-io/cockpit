@@ -4,7 +4,7 @@ OpenCockpit is the open-source GUI for Claude Code — and a single canvas for w
 
 - **Multi-project parallel sessions.** Run 5+ agent sessions across separate projects at once. Each one lives in its own tab; you get a desktop toast when any finishes.
 - **Bring any agent.** Claude works out of the box. Codex, DeepSeek, GLM (Zhipu), Kimi (Moonshot), and local Ollama models are one tab away — paste an API key (or none for Ollama).
-- **More than chat.** A real terminal, Chrome automation, and bubbles for PostgreSQL / MySQL / Redis / Neo4j / Jupyter — all inside one window your agent can drive.
+- **More than chat.** A real terminal, Chrome automation, and bubbles for PostgreSQL / MySQL / Redis / Neo4j — all inside one window your agent can drive.
 - **Code-aware navigation.** LSP go-to-definition, a Code Map of function calls, and a `/cg` slash command that lets the AI explore the project graph via HTTP.
 
 ## The three panels
@@ -68,7 +68,6 @@ The "everything else" surface. Type into the input bar at the bottom and Cockpit
 | `postgresql://...` / `postgres://...` | PostgreSQL bubble |
 | `mysql://...` | MySQL bubble |
 | `redis://...` | Redis bubble |
-| any `.ipynb` path | Jupyter bubble |
 
 Each bubble is draggable; `Cmd+M` maximises the focused one. Bubbles persist across sessions until you close them, and the **CLI** lets external scripts drive them (see [CLI Reference](/en/docs/reference/cli/)).
 

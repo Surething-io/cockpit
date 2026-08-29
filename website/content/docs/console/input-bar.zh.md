@@ -20,9 +20,8 @@ Console 面板底部有一个**命令输入框**。每次你回车,Cockpit 按�
 | `mysql://…` | **MySQL 气泡** |
 | `redis://…` / `rediss://…`(TLS) | **Redis 气泡** |
 | `neo4j://…` / `neo4j+s://…` / `bolt://…` / `bolt+s://…` | **Neo4j 气泡** |
-| 任意以 `.ipynb` 结尾的路径 | **Jupyter 气泡** |
 
-> **大小写**:浏览器和数据库插件匹配前都会 `toLowerCase()`,所以 `POSTGRESQL://` 跟 `postgresql://` 一样能识别。**Jupyter 不转小写** —— `.ipynb` 后缀大小写敏感,`foo.IPYNB` 不会被识别成 notebook。
+> **大小写**:浏览器和数据库插件匹配前都会 `toLowerCase()`,所以 `POSTGRESQL://` 跟 `postgresql://` 一样能识别。
 
 ## PTY 命令清单(开交互式终端)
 
@@ -84,7 +83,7 @@ top  htop  less  man
 
 ## 多个气泡并排
 
-每次回车开一个新气泡 —— 它们在面板里堆叠,可以拖任意一个重排。同时连两个不同库的 PostgreSQL、两个不同站点的浏览器气泡、一个终端 + 一个 Jupyter notebook:都没问题。
+每次回车开一个新气泡 —— 它们在面板里堆叠,可以拖任意一个重排。同时连两个不同库的 PostgreSQL、两个不同站点的浏览器气泡、再加一个终端:都没问题。
 
 `Cmd+M` 把当前聚焦的气泡最大化;再按或 `Esc` 还原。
 

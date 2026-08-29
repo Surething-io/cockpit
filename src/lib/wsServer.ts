@@ -1,11 +1,11 @@
 /**
  * WebSocket Server — dispatch only.
  *
- * The 6 WS handlers live in src/lib/effect/; this file only owns WS upgrade,
+ * The WS handlers live in src/lib/effect/; this file only owns WS upgrade,
  * route dispatch, and the broadcast helper.
  *
  * Handler implementations: src/lib/effect/{globalStateHandler,fileWatchHandler,
- * terminalFollowHandler,browserHandler,jupyterHandler,terminalHandler}.ts
+ * terminalFollowHandler,browserHandler,terminalHandler}.ts
  */
 import { IncomingMessage } from 'http';
 import { Duplex } from 'stream';
@@ -15,7 +15,6 @@ import { runGlobalStateHandler } from './effect/globalStateHandler';
 import { runFileWatchHandler } from './effect/fileWatchHandler';
 import { runTerminalFollowHandler } from './effect/terminalFollowHandler';
 import { runBrowserHandler } from './effect/browserHandler';
-import { runJupyterHandler } from './effect/jupyterHandler';
 import { runTerminalHandler } from './effect/terminalHandler';
 import { runBashHandler } from './effect/bashStreamHandler';
 import { runSessionStreamHandler } from './effect/sessionStreamHandler';
@@ -127,8 +126,6 @@ const wss: WebSocketServer = g_ws.__cockpitWss ?? (() => {
       );
     } else if (pathname === '/ws/terminal-follow') {
       runTerminalFollowHandler(ws, query.id as string);
-    } else if (pathname === '/ws/jupyter') {
-      runJupyterHandler(ws, query.bubbleId as string, query.cwd as string);
     } else if (pathname === '/ws/session-stream') {
       runSessionStreamHandler(ws, query.sessionId as string);
     }
@@ -151,7 +148,6 @@ export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer
     pathname === '/ws/bash' ||
     pathname === '/ws/browser' ||
     pathname === '/ws/terminal-follow' ||
-    pathname === '/ws/jupyter' ||
     pathname === '/ws/session-stream'
   ) {
     wss.handleUpgrade(req, socket, head, (ws) => {

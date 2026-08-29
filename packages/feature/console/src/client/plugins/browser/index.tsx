@@ -54,9 +54,9 @@ registerBubble({
   },
 
   parse(input: string) {
-    // `cwd: ''` opts into addPluginItem's cwd injection (same convention as the
-    // jupyter bubble): a relative path typed into the console resolves against
-    // the directory the user is actually standing in, not the project root.
+    // `cwd: ''` opts into addPluginItem's cwd injection: a relative path typed
+    // into the console resolves against the directory the user is actually
+    // standing in, not the project root.
     return { url: input.trim(), cwd: '' };
   },
 

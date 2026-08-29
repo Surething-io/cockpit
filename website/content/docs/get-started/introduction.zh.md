@@ -4,7 +4,7 @@ OpenCockpit 是 Claude Code 的开源 GUI —— 也是你后续想接入的任�
 
 - **多项目并行会话。** 跨不同项目同时跑 5+ 个 agent 会话。每个会话有自己的 tab；结束时桌面会弹 toast 通知你。
 - **接入任意 agent。** Claude 开箱即用。Codex、DeepSeek、GLM（智谱）、Kimi（月之暗面）、本地 Ollama 模型只需新开一个 tab —— 粘贴 API key（Ollama 连 key 都不要）。
-- **不止于聊天。** 真实终端、Chrome 自动化、PostgreSQL / MySQL / Redis / Neo4j / Jupyter 气泡 —— 全部在同一个窗口里，agent 都能驱动。
+- **不止于聊天。** 真实终端、Chrome 自动化、PostgreSQL / MySQL / Redis / Neo4j 气泡 —— 全部在同一个窗口里，agent 都能驱动。
 - **代码感知的导航。** LSP 跳转定义、函数调用图（Code Map）、让 AI 通过 HTTP 探索项目图的 `/cg` 斜杠命令。
 
 ## 三个面板
@@ -68,7 +68,6 @@ Cockpit 整个 UI 就是三个并行渲染的面板。它们永远不卸载 —�
 | `postgresql://...` / `postgres://...` | PostgreSQL 气泡 |
 | `mysql://...` | MySQL 气泡 |
 | `redis://...` | Redis 气泡 |
-| 任意 `.ipynb` 路径 | Jupyter 气泡 |
 
 每个气泡可拖动；`Cmd+M` 把当前聚焦的气泡最大化。气泡跨会话保留直到你关掉，**CLI** 允许外部脚本驱动它们（见 [CLI 参考](/zh/docs/reference/cli/)）。
 

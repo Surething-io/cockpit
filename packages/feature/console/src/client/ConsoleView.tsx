@@ -32,7 +32,6 @@ const BUBBLE_GUIDE: { key: string; label: string; triggers: string[]; notes?: st
   { key: 'pty', label: 'console.bubbleInteractive', triggers: ['zsh', 'bash', 'vim', 'python'] },
   { key: 'browser', label: 'console.bubbleBrowser', triggers: ['https://…', '*.html', '*.md', '*.png', '*.pdf', '*.json'], notes: ['console.bubbleBrowserNoteIframe', 'console.bubbleBrowserNoteCookie'] },
   { key: 'database', label: 'console.bubbleDatabase', triggers: ['postgresql://', 'mysql://', 'redis://', 'neo4j://'] },
-  { key: 'notebook', label: 'console.bubbleNotebook', triggers: ['*.ipynb'] },
 ];
 
 function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote }: ConsoleViewProps) {

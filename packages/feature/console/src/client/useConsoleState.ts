@@ -918,7 +918,7 @@ export function useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange }: Us
     if (!plugin) return;
 
     const fields = plugin.parse(input);
-    // Inject cwd for plugins that need it (e.g. jupyter notebook)
+    // Inject cwd for plugins that need it (e.g. browser bubble relative paths)
     if ('cwd' in fields && !fields.cwd) {
       fields.cwd = currentCwd;
     }

@@ -594,7 +594,6 @@
     "bubbleBrowserNoteIframe": "部分网站会拦截 iframe 嵌入，请在「设置 → 浏览器插件」安装 Cockpit Bridge 后再打开。",
     "bubbleBrowserNoteCookie": "已登录的网站若首次显示未登录，多刷新几次即可恢复。",
     "bubbleDatabase": "数据库",
-    "bubbleNotebook": "笔记本",
     "loadingMore": "加载中...",
     "loadMoreHistory": "加载更多历史",
     "quickCommands": "快捷命令",

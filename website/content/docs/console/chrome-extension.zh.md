@@ -1,4 +1,4 @@
-Cockpit 的 Chrome 扩展是可选的。Cockpit 的大部分能力 —— Agent、Explorer、终端 / 数据库 / Jupyter 气泡 —— 不装也能跑。只有当你想让**浏览器气泡**像真实 Chrome 标签页那样工作(而不是普通 iframe)时才需要它。
+Cockpit 的 Chrome 扩展是可选的。Cockpit 的大部分能力 —— Agent、Explorer、终端 / 数据库气泡 —— 不装也能跑。只有当你想让**浏览器气泡**像真实 Chrome 标签页那样工作(而不是普通 iframe)时才需要它。
 
 如果你在浏览器气泡里碰到 CORS 报错、登录 cookie 丢失、"此网站拒绝在 iframe 中嵌入" 这类问题,扩展就是答案。
 

@@ -35,7 +35,6 @@ export type WSProto =
   | "browser"
   | "watch"
   | "global-state"
-  | "jupyter"
   | "terminal-follow"
   | "session-stream"
   | "bash"

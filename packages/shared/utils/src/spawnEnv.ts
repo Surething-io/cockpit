@@ -10,7 +10,7 @@
  *     NODE_ENV="production"     NEXT_DEPLOYMENT_ID=""     TURBOPACK="auto"
  *
  * Every child we spawn with `{ ...process.env }` (agent engines, PTY drivers,
- * bash bubbles, Jupyter kernels) inherits those. The agent then runs commands
+ * bash bubbles) inherits those. The agent then runs commands
  * in the *user's* project under production semantics — which is wrong and
  * fails in ways that point nowhere near cockpit. The canonical symptom:
  * `React.act` is a dev-only export, so a production `NODE_ENV` turns every

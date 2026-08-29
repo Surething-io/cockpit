@@ -23,9 +23,8 @@ The order means aliases always win first: if `db = postgresql://user@localhost/m
 | `mysql://…` | **MySQL bubble** |
 | `redis://…` / `rediss://…` (TLS) | **Redis bubble** |
 | `neo4j://…` / `neo4j+s://…` / `bolt://…` / `bolt+s://…` | **Neo4j bubble** |
-| Any path ending in `.ipynb` | **Jupyter bubble** |
 
-> **Case handling**: browser and database plugins all `toLowerCase()` before matching, so `POSTGRESQL://` works the same as `postgresql://`. **Jupyter is case-sensitive** — the `.ipynb` suffix has to be lowercase, so `foo.IPYNB` won't be detected as a notebook.
+> **Case handling**: browser and database plugins all `toLowerCase()` before matching, so `POSTGRESQL://` works the same as `postgresql://`.
 
 ## PTY command list (opens interactive terminal)
 
@@ -87,7 +86,7 @@ Use ⚡ to set things up, use `/` for everyday running.
 
 ## Multiple bubbles, side by side
 
-Every Enter creates a new bubble — they stack in the panel and you can drag any of them around to reorder. Two PostgreSQL connections to different databases, two browser bubbles on different sites, a terminal and a Jupyter notebook all at once: no problem.
+Every Enter creates a new bubble — they stack in the panel and you can drag any of them around to reorder. Two PostgreSQL connections to different databases, two browser bubbles on different sites, and a terminal all at once: no problem.
 
 `Cmd+M` maximises the focused bubble; press it again or hit `Esc` to restore.
 

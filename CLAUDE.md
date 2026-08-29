@@ -67,7 +67,7 @@ framework boot. See `MODULES.md` for the dependency rules.
     per project under `~/.cockpit/snapshots/`, per-call diff viewer)
   - `comments/` - Code annotation API + hooks
   - `console/` - Terminal + browser bubbles + DB bubbles (Postgres / MySQL
-    / Redis / Neo4j / MongoDB / Bash / Jupyter)
+    / Redis / Neo4j / MongoDB / Bash)
   - `explorer/` - File browser + code rendering (DiffView, CodeViewer,
     InteractiveMarkdownPreview, PreviewModal) + git + LSP
   - `review/` - Review pages with anchored highlights and threaded comments

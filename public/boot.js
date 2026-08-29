@@ -1,8 +1,9 @@
 // Runs before React hydrates (see app/layout.tsx <Script strategy="beforeInteractive">).
-// Three jobs:
+// Four jobs:
 //   1. Redirect narrow viewports to the mobile route /m (before first paint).
 //   2. Apply the persisted theme class to <html> before first paint to avoid FOUC.
-//   3. Unregister any leftover Service Workers from the PWA era (PWA has been removed).
+//   3. Install a clipboard fallback when the page is not a secure context.
+//   4. Unregister any leftover Service Workers from the PWA era (PWA has been removed).
 (function () {
   // Mobile redirect — runs first and bails out the rest on redirect.
   // Signal is VIEWPORT WIDTH (not User-Agent): it's what actually decides whether the
@@ -41,6 +42,45 @@
     }
     document.documentElement.classList.add(resolved);
   } catch (e) {}
+
+  // Clipboard fallback for insecure contexts.
+  // navigator.clipboard is only exposed on https / localhost, so every
+  // writeText() call in the app throws when Cockpit is opened over the LAN at
+  // http://<ip>:<port> — which is exactly how shared review links get opened.
+  // Defining the shim here fixes every call site at once (there are ~50) and
+  // covers future ones, instead of guarding each caller.
+  // Only writeText is provided: nothing reads the clipboard, and the two image
+  // copy paths (ImagePreview / MessageBubble) probe `navigator.clipboard?.write`
+  // and keep their own fallback when it is absent.
+  // ponytail: execCommand path only — it needs the document focused and may be
+  // refused by Safari outside a user-gesture stack. Swap in a real shim only if
+  // a caller ever needs clipboard read or that ceiling is actually hit.
+  try {
+    if (!navigator.clipboard) {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: function (text) {
+            try {
+              var ta = document.createElement('textarea');
+              ta.value = text;
+              ta.setAttribute('readonly', '');
+              ta.style.cssText = 'position:fixed;top:-9999px;opacity:0';
+              document.body.appendChild(ta);
+              ta.select();
+              ta.setSelectionRange(0, ta.value.length); // iOS ignores select()
+              var ok = document.execCommand('copy');
+              document.body.removeChild(ta);
+              return ok
+                ? Promise.resolve()
+                : Promise.reject(new Error('copy command was rejected'));
+            } catch (e) {
+              return Promise.reject(e);
+            }
+          },
+        },
+      });
+    }
+  } catch (_e) {}
 
   // Clean up legacy Service Workers from the old PWA era, but KEEP our
   // push-only SW (/push-sw.js) — it powers Web Push notifications and does no

@@ -271,6 +271,7 @@
     "noScheduledTasks": "No scheduled tasks. Click the clock button in the chat input to create one.",
     "lastResult": "Last",
     "runNow": "Run now",
+    "deleteFailed": "Failed to delete the task",
     "resume": "Resume",
     "pause": "Pause",
     "completedCount": "Completed ({{count}})",

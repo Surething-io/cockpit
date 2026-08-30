@@ -184,6 +184,14 @@ export function ScheduledTasksPanel({
   // lands on the top of "pending review" again.
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  // Delete is two-step (the SkillCard / HtmlAppCard pattern): the X arms the
+  // card, a second click on "confirm" deletes. Held panel-side rather than in
+  // each row because renderActions is a plain function, not a component — and a
+  // single id gives "arming another card disarms the previous one" for free.
+  // Disarmed on mouse-leave so a card can never sit armed waiting for the next
+  // hover (the rough edge the SkillsModal version has).
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
   const activeTasks = tasks.filter(t => !t.completed);
   const runningCount = activeTasks.filter(t => !t.paused).length;
 
@@ -337,6 +345,25 @@ export function ScheduledTasksPanel({
   }, [onSwitchProject, onMarkRead, closeBoard]);
 
   const renderActions = (task: ScheduledTask) => (
+    confirmDeleteId === task.id ? (
+      /* Armed: the whole icon strip is replaced, so the second click cannot land
+         on a neighbouring action. The title next to it is `truncate flex-1`, so
+         it absorbs the extra width by clipping. */
+      <div className="flex-shrink-0 flex items-center gap-1">
+        <button
+          onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); onDelete(task.id); }}
+          className="px-2 py-0.5 text-[10px] rounded bg-red-9 text-white hover:bg-red-10"
+        >
+          {t('common.confirm')}
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }}
+          className="px-2 py-0.5 text-[10px] rounded border border-border text-muted-foreground hover:text-foreground"
+        >
+          {t('common.cancel')}
+        </button>
+      </div>
+    ) : (
     <div className="flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
       {/* Preview — only a file-backed task has something to show */}
       {task.taskFile && (
@@ -407,9 +434,9 @@ export function ScheduledTasksPanel({
           </svg>
         </button>
       )}
-      {/* Delete */}
+      {/* Delete — arms the card; the actual delete is the confirm button above */}
       <button
-        onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
+        onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(task.id); }}
         className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-destructive"
         title={t('common.delete')}
       >
@@ -418,6 +445,7 @@ export function ScheduledTasksPanel({
         </svg>
       </button>
     </div>
+    )
   );
 
   /**
@@ -430,6 +458,7 @@ export function ScheduledTasksPanel({
       <div
         key={task.id}
         onClick={() => setSelectedId(task.id)}
+        onMouseLeave={() => setConfirmDeleteId(id => (id === task.id ? null : id))}
         className={`group p-3 rounded border cursor-pointer transition-all hover:border-brand hover:shadow-lv2 ${
           isSelected
             ? 'border-brand bg-brand/5 shadow-lv2'

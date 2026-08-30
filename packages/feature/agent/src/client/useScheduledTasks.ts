@@ -3,6 +3,7 @@ import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
 import { Effect } from 'effect';
 import i18n from '@cockpit/shared-i18n';
+import { toast } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
   loadScheduledTasks,
@@ -163,10 +164,17 @@ export function useScheduledTasks() {
 
   const resumeTask = useCallback((id: string) => runPatch({ id, action: 'resume' }), [runPatch]);
 
+  // Unlike the PATCH helpers this reports failure: the card is gone from the
+  // user's intent but still on the board, so a silent no-op reads as a dead
+  // button.
   const deleteTask = useCallback(async (id: string) => {
-    await BrowserRuntime.runPromise(
-      deleteScheduledTask(id).pipe(Effect.orElse(() => Effect.void))
+    const ok = await BrowserRuntime.runPromise(
+      deleteScheduledTask(id).pipe(
+        Effect.as(true),
+        Effect.orElseSucceed(() => false),
+      )
     );
+    if (!ok) toast(i18n.t('scheduledTasks.deleteFailed'), 'error');
     reload();
     notifyChanged();
   }, [reload]);

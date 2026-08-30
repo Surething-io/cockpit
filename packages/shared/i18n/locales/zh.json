@@ -271,6 +271,7 @@
     "noScheduledTasks": "暂无定时任务，在聊天输入栏点击时钟按钮创建",
     "lastResult": "上次",
     "runNow": "立即运行",
+    "deleteFailed": "删除任务失败",
     "resume": "恢复",
     "pause": "暂停",
     "completedCount": "已完成 ({{count}})",

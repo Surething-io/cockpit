@@ -9,6 +9,7 @@ import {
   updateGlobalState,
   getSessionPreview,
   attachEngines,
+  normalizeStatuses,
   type SessionStatus,
 } from "../state/globalState"
 
@@ -36,12 +37,7 @@ export const GET = handler(() =>
       catch: (cause) =>
         new FSError({ path: GLOBAL_STATE_FILE, op: "read", cause }),
     })
-    for (const s of state.sessions) {
-      if (!s.status) {
-        const legacy = s as GlobalSession & { isLoading?: boolean }
-        s.status = legacy.isLoading ? "loading" : "normal"
-      }
-    }
+    normalizeStatuses(state.sessions)
     state.sessions.sort((a, b) => b.lastActive - a.lastActive)
     // Return the full persisted list (week-bounded, 15–100) enriched with a
     // first/last user-message preview so the search panel can render the same

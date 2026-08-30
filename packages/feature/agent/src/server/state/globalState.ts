@@ -33,12 +33,35 @@ function findClaudeStylePath(cwd: string, sessionId: string): string | null {
 import { createReadStream, existsSync, statSync } from 'fs';
 import { createInterface } from 'readline';
 import { basename } from 'path';
+import { isRunActive } from '../sessionRunHub';
 import { sendPushNotification } from '../push/push';
 import { generateTitle } from '../sessionTitle';
 
 export type SessionStatus = 'normal' | 'loading' | 'unread';
 
-interface GlobalSession {
+/**
+ * state.json's 'loading' is a cache of a fact sessionRunHub already owns. Every writer
+ * that forgets to clear it — an explicit stop (requestStop writes no terminal state), a
+ * 409 from the scheduled-task retry, a server restart — leaves a dot pulsing forever,
+ * and any client status write can wipe one that is still true. So don't trust it on
+ * read: the registry decides "running", and a stored 'loading' with no live run means
+ * the run ended without a teardown write -> 'unread' (there IS output to look at).
+ *
+ * Also folds in the legacy isLoading -> status migration both readers duplicated.
+ * Mutates in place; call it on every list read out of state.json.
+ */
+export function normalizeStatuses(sessions: GlobalSession[]): void {
+  for (const s of sessions) {
+    if (!s.status) {
+      const legacy = s as GlobalSession & { isLoading?: boolean };
+      s.status = legacy.isLoading ? 'loading' : 'normal';
+    }
+    if (isRunActive(s.sessionId)) s.status = 'loading';
+    else if (s.status === 'loading') s.status = 'unread';
+  }
+}
+
+export interface GlobalSession {
   cwd: string;
   sessionId: string;
   lastActive: number;
@@ -398,13 +421,7 @@ export async function attachEngines<T extends { cwd: string; sessionId: string }
 export async function getGlobalSessionsSnapshot(limit = 15): Promise<GlobalSessionSnapshot[]> {
   const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
 
-  // backward-compat: isLoading → status
-  for (const s of state.sessions) {
-    if (!s.status) {
-      const legacy = s as GlobalSession & { isLoading?: boolean };
-      s.status = legacy.isLoading ? 'loading' : 'normal';
-    }
-  }
+  normalizeStatuses(state.sessions);
 
   state.sessions.sort((a, b) => b.lastActive - a.lastActive);
   const recent = state.sessions.slice(0, limit);

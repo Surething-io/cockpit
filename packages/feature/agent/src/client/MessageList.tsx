@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react';
 import { useChatContextOptional } from './ChatContext';
 import { ENGINE_LABELS, EngineIcon, isEngineAccentId } from './engineAccents';
-import type { ChatMessage, ApiRetryInfo, ChatEngine, ToolCallInfo, LiveOutputTokens } from './types';
+import type { ChatMessage, ApiRetryInfo, BackgroundTaskInfo, ChatEngine, ToolCallInfo, LiveOutputTokens } from './types';
 import { MessageBubble } from './MessageBubble';
 // Tech debt: cross-package imports into the main shell.
 //   - useChatSearch / useComments / useAllComments: hooks living in
@@ -43,6 +43,8 @@ interface MessageListProps {
   sessionId?: string | null;
   engine?: ChatEngine;
   apiRetryInfo?: ApiRetryInfo | null;
+  /** Live background tasks holding the run resident after its result (see sdkLoop). */
+  backgroundTasks?: BackgroundTaskInfo[];
   liveOutputTokens?: LiveOutputTokens | null;
   runningStartedAt?: number | null;
   hasMoreHistory?: boolean;
@@ -112,7 +114,7 @@ export interface MessageListHandle {
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
-  { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, liveOutputTokens, runningStartedAt, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch, onShowFileDiff, onOpenFileLink, onApprovePlan },
+  { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, backgroundTasks, liveOutputTokens, runningStartedAt, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch, onShowFileDiff, onOpenFileLink, onApprovePlan },
   ref
 ) {
   const { t, i18n } = useTranslation();
@@ -732,6 +734,24 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                       <AnimatedProgressNumber value={liveOutputTokens?.outputTokens ?? 0} />
                     </span>
                   </div>
+                  {backgroundTasks && backgroundTasks.length > 0 && (
+                    <div className="mt-2 flex items-start gap-2 text-xs text-muted-foreground border-t border-border/50 pt-2">
+                      <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <div className="flex-1 min-w-0">
+                        <div>
+                          Waiting on {backgroundTasks.length} background task
+                          {backgroundTasks.length > 1 ? 's' : ''}
+                        </div>
+                        {backgroundTasks.map((task) => (
+                          <div key={task.task_id} className="text-muted-foreground/80 break-words">
+                            {task.description}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {apiRetryInfo && (
                     <div className="mt-2 flex items-start gap-2 text-xs text-amber-11 border-t border-border/50 pt-2">
                       <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -88,6 +88,13 @@ export interface LiveOutputTokens {
   outputTokens: number;
 }
 
+// One live background task (from SDK system/background_tasks_changed).
+// Ambient/housekeeping entries are filtered out before this reaches the UI.
+export interface BackgroundTaskInfo {
+  task_id: string;
+  description: string;
+}
+
 // Retry info (from SDK system/api_retry event)
 export interface ApiRetryInfo {
   attempt: number;

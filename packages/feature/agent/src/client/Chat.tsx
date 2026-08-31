@@ -258,6 +258,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     runningStartedAt: streamRunningStartedAt,
     rateLimitInfo,
     apiRetryInfo,
+    backgroundTasks,
     handleSend,
     handleStop,
   } = useChatStream(messages, setMessages, {
@@ -738,6 +739,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             sessionId={sessionId}
             engine={engine}
             apiRetryInfo={apiRetryInfo}
+            backgroundTasks={backgroundTasks}
             hasMoreHistory={hasMoreHistory}
             isLoadingMore={isLoadingMore}
             onLoadMore={loadMoreHistory}

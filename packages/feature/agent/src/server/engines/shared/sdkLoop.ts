@@ -80,8 +80,9 @@ export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Pr
 
   // Background-task persistence: run every turn over a STREAMING input so the underlying claude
   // process stays alive while `run_in_background` shells (and other backgrounded tasks) are still
-  // in flight. The SDK emits `system/task_started` when a task launches and
-  // `system/task_notification` when it finishes (verified: foreground subagents also notify,
+  // in flight. Membership is driven by `system/background_tasks_changed` (a level signal, replace
+  // semantics) with the `system/task_started` / `system/task_notification` edges as the fallback
+  // for CLIs that predate it (verified: foreground subagents also notify,
   // BEFORE their turn's `result`, so they never leave anything pending). We hold the input stream
   // open — the process resident — until every started task has reported back, then close it so the
   // process winds down. With no pending task, the stream closes on the first `result` —
@@ -138,13 +139,34 @@ export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Pr
         break;
       }
 
-      const msg = message as { type?: string; subtype?: string; session_id?: string; task_id?: string };
+      const msg = message as {
+        type?: string;
+        subtype?: string;
+        session_id?: string;
+        task_id?: string;
+        ambient?: boolean;
+        tasks?: Array<{ task_id: string; ambient?: boolean }>;
+      };
       // New session: the engine reveals its real sessionId in the system.init event.
       if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
         ctx.rekey(msg.session_id);
       }
       // Track background-task lifecycle to decide when the process may wind down.
-      if (msg.type === 'system' && msg.subtype === 'task_started' && msg.task_id) {
+      //
+      // `background_tasks_changed` is a LEVEL signal with REPLACE semantics — the SDK documents it
+      // as the correct input for "is background work running", precisely because pairing the
+      // task_started/task_notification edges lets one missed bookend wedge the set non-empty and
+      // hold this process resident forever. Swap the whole set on every payload. CLIs predating
+      // this event emit nothing here, so the edge bookends below remain as the fallback and those
+      // versions keep today's behaviour verbatim.
+      if (msg.type === 'system' && msg.subtype === 'background_tasks_changed') {
+        pendingTasks.clear();
+        for (const t of msg.tasks ?? []) if (!t.ambient) pendingTasks.add(t.task_id);
+      }
+      // `ambient` marks housekeeping the CLI does not surface as user work (skip_transcript tasks,
+      // auto-started live-update watchers). They can outlive the turn indefinitely, so counting one
+      // would keep every session resident forever — the SDK tells hosts to exclude them.
+      if (msg.type === 'system' && msg.subtype === 'task_started' && msg.task_id && !msg.ambient) {
         pendingTasks.add(msg.task_id);
       }
       if (msg.type === 'system' && msg.subtype === 'task_notification' && msg.task_id) {

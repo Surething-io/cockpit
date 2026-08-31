@@ -121,6 +121,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     liveOutputTokens: streamLiveOutputTokens,
     runningStartedAt: streamRunningStartedAt,
     apiRetryInfo,
+    backgroundTasks,
     handleSend,
     handleStop,
   } = useChatStream(messages, setMessages, {
@@ -212,6 +213,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
           sessionId={sessionId}
           engine={engine}
           apiRetryInfo={apiRetryInfo}
+          backgroundTasks={backgroundTasks}
           hasMoreHistory={hasMoreHistory}
           isLoadingMore={isLoadingMore}
           onLoadMore={loadMoreHistory}

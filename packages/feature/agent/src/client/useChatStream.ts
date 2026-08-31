@@ -11,6 +11,7 @@ import type {
   LiveOutputTokens,
   RateLimitInfo,
   ApiRetryInfo,
+  BackgroundTaskInfo,
   ChatEngine,
   EngineModelId,
   ClaudeModelId,
@@ -21,6 +22,9 @@ import type {
 } from './types';
 import i18n from '@cockpit/shared-i18n';
 import { useWebSocket } from '@cockpit/shared-ui';
+
+// Stable identity for "no background tasks" so clearing never churns the prop and defeats memo.
+const NO_BG_TASKS: BackgroundTaskInfo[] = [];
 
 // Provisional run id the client generates per send so it can subscribe to the run's
 // /ws/session-stream immediately — before the engine reveals its real sessionId.
@@ -75,6 +79,7 @@ interface UseChatStreamReturn {
   runningStartedAt: number | null;
   rateLimitInfo: RateLimitInfo | null;
   apiRetryInfo: ApiRetryInfo | null;
+  backgroundTasks: BackgroundTaskInfo[];
   handleSend: (
     content: string,
     images?: ImageInfo[],
@@ -99,6 +104,7 @@ export function useChatStream(
   const [runningStartedAt, setRunningStartedAt] = useState<number | null>(null);
   const [rateLimitInfo, setRateLimitInfo] = useState<RateLimitInfo | null>(null);
   const [apiRetryInfo, setApiRetryInfo] = useState<ApiRetryInfo | null>(null);
+  const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTaskInfo[]>(NO_BG_TASKS);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // #10 ws-converge: the active detached run the originator is tailing over
@@ -172,6 +178,7 @@ export function useChatStream(
     setIsLoading(false);
     setLiveOutputTokens(null);
     setRunningStartedAt(null);
+    setBackgroundTasks(NO_BG_TASKS);
     const ar = activeRunRef.current;
     const curId = curAsstIdRef.current;
     if (ar) {
@@ -235,6 +242,18 @@ export function useChatStream(
         ]);
       }
       turnActiveRef.current = true;
+      return;
+    }
+
+    // #bg: the live set of background tasks, so the loading bubble can name what the turn is
+    // waiting on. A turn whose `result` already landed stays resident until every task reports
+    // back (sdkLoop holds the input stream open) — without this the spinner is indistinguishable
+    // from the model still thinking, which is exactly how a wedged task reads as a hung session.
+    // REPLACE semantics: swap the whole set, never pair task_started/task_notification edges.
+    if (eventType === 'system' && event.subtype === 'background_tasks_changed') {
+      const live = (event.tasks as Array<BackgroundTaskInfo & { ambient?: boolean }> | undefined) ?? [];
+      const shown = live.filter((t) => !t.ambient).map((t) => ({ task_id: t.task_id, description: t.description }));
+      setBackgroundTasks(shown.length ? shown : NO_BG_TASKS);
       return;
     }
 
@@ -541,8 +560,9 @@ export function useChatStream(
       setLiveOutputTokens(null);
       sawServerUsageUpdateRef.current = false;
       setRunningStartedAt(Date.now());
-      // Fresh send: clear stale retry notice from a previous turn
+      // Fresh send: clear stale retry notice / background-task set from a previous turn
       setApiRetryInfo(null);
+      setBackgroundTasks(NO_BG_TASKS);
 
       // Minted BEFORE the assistant placeholder because the bubble carries it:
       // `runId` is this turn's snapshot scope (see ChatMessage.runId), so it has
@@ -667,6 +687,7 @@ export function useChatStream(
     runningStartedAt,
     rateLimitInfo,
     apiRetryInfo,
+    backgroundTasks,
     handleSend,
     handleStop,
     abortControllerRef,

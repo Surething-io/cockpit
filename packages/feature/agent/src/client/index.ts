@@ -73,6 +73,7 @@ export type {
   ChatSession,
   TokenUsage,
   ApiRetryInfo,
+  BackgroundTaskInfo,
   RateLimitInfo,
   ChatEngine,
   EngineModelId,

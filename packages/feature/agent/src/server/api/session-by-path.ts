@@ -842,6 +842,9 @@ interface CodexPayload {
   // agent_message (response_item) — a sub-agent reporting to its parent.
   author?: string;
   recipient?: string;
+  // task_complete (event_msg) — set when the turn ended in failure (server
+  // overload, rate limit, aborted stream). The ONLY on-disk record of the reason.
+  error?: { message?: string };
 }
 
 async function parseCodexTranscriptFile(
@@ -1108,6 +1111,20 @@ async function parseCodexTranscriptFile(
       assistant.parts = appendToolPart(assistant.parts, payload.call_id);
       assistant.toolCalls.push({ id: payload.call_id, name, input, result, isLoading: false });
       toolSinceText = true;
+    }
+
+    // A failed turn. codex records the reason ONLY here — the CLI exits non-zero with
+    // it absent from stderr, so the SDK's thrown Error carries no reason at all and the
+    // live ⚠️ banner (orchestrator → applyStreamEvent) reads "exited with code 1".
+    // Without this branch the reason is lost on reload and the turn replays as its last
+    // tool call and nothing else. Same shape as applyStreamEvent's banner so `content`
+    // stays byte-identical to deriveContent(parts); codexFork mirrors it (see the
+    // ensureCodexAssistantId call there) or msgCounter drifts and forks cut wrong.
+    if (type === 'event_msg' && payload.type === 'task_complete' && payload.error?.message) {
+      const assistant = ensureAssistant(timestamp);
+      const banner = `⚠️ ${payload.error.message}`;
+      assistant.content = joinAssistantText(assistant.content || '', banner, true);
+      assistant.parts = appendTextPart(assistant.parts, banner, true);
     }
 
     // Usage. codex reports it per request on an `event_msg`/`token_count` line; the

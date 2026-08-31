@@ -42,6 +42,7 @@ function codexVisibleMessageIds(
     name?: string;
     call_id?: string;
     content?: Array<{ type?: string; text?: string; image_url?: string }>;
+    error?: { message?: string };
   } | undefined;
   if (!payload) return [];
 
@@ -107,6 +108,14 @@ function codexVisibleMessageIds(
   }
 
   if (entry.type === 'event_msg' && payload.type === 'web_search_end' && payload.call_id) {
+    const id = ensureCodexAssistantId(state);
+    if (id) ids.push(id);
+  }
+
+  // A failed turn's ⚠️ banner is a bubble in the parser, so it opens an assistant
+  // message here too. Must stay ahead of the caller's finishTurn() on the same line
+  // (it is — the ids are collected first), or the id lands in the following turn.
+  if (entry.type === 'event_msg' && payload.type === 'task_complete' && payload.error?.message) {
     const id = ensureCodexAssistantId(state);
     if (id) ids.push(id);
   }

@@ -772,6 +772,56 @@ describe('session-by-path codex format drift', () => {
     expect(text).toContain('第二轮');
     expect(text).not.toContain('第一轮');
   });
+
+  // A turn killed by the server (capacity, rate limit) records its reason ONLY on
+  // task_complete.error; the CLI exits non-zero without it on stderr. Dropping this
+  // line replays the turn as its last tool call and nothing else — indistinguishable
+  // from an agent that just stopped. Same walker-sync trap as the test above.
+  it('renders a failed turn as a banner and counts it like the fork walker', async () => {
+    const lines = [
+      { type: 'session_meta', payload: { id: 'codex-turn-error', cwd: '/tmp' } },
+      { type: 'event_msg', payload: { type: 'task_started' } },
+      userLine('第一轮'),
+      {
+        type: 'event_msg',
+        payload: {
+          type: 'task_complete',
+          last_agent_message: null,
+          error: { message: 'Selected model is at capacity.', codex_error_info: 'server_overloaded' },
+        },
+      },
+      { type: 'event_msg', payload: { type: 'task_started' } },
+      userLine('第二轮'),
+      {
+        type: 'response_item',
+        payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '第二轮回答' }] },
+      },
+      { type: 'event_msg', payload: { type: 'task_complete' } },
+    ];
+    writeCodexTranscript('codex-turn-error', lines);
+
+    const body = await loadSession('codex-turn-error');
+    expect(body.messages[1].content).toBe('⚠️ Selected model is at capacity.');
+    expect(body.messages[1].parts).toEqual([{ type: 'text', text: '⚠️ Selected model is at capacity.' }]);
+
+    // The banner consumed codex-assistant-0, so the second turn's user id is -2.
+    const secondUserId = body.messages[2].id;
+    expect(secondUserId).toBe('codex-user-2');
+
+    const { buildCodexForkLines } = await import('./session/codexFork');
+    const forked = buildCodexForkLines(
+      lines.map((l) => JSON.stringify(l)),
+      'codex-turn-error',
+      'forked-id',
+      secondUserId,
+      'single'
+    );
+
+    expect(forked.targetMissed).toBe(false);
+    const text = forked.newLines.join('\n');
+    expect(text).toContain('第二轮');
+    expect(text).not.toContain('第一轮');
+  });
 });
 
 describe('session-by-path codex tool types', () => {

@@ -1,17 +1,20 @@
 'use client';
 
 /**
- * FunctionHistoryDrawer — BOTTOM half of the Code Map's left rail,
- * tracking the functions the user has hopped through via input/output
- * pins. Stacked under `FileTOCSection`: TOC = "what's in this file",
- * History = "where I've been across files".
+ * FunctionHistoryDrawer — the second tab panel of the Code Map's left
+ * rail, tracking the functions the user has hopped through via
+ * input/output pins. Sibling of `FileTOCSection`: TOC = "what's in this
+ * file", History = "where I've been across files".
  *
- * Layout: the rail's `w-56` + right border live on the wrapper in
- * `BlockViewer`; both halves are `flex-1 min-h-0`, so the split is a
- * fixed 50/50 with independent scrollers — it does NOT reflow when
- * history is empty or when the TOC is long. This column used to sit
- * on the RIGHT of the chip canvas; moving it here gives the canvas
+ * Layout: the rail's `w-56`, right border and tab bar live on the
+ * wrapper in `BlockViewer`; the selected panel claims the full column.
+ * The two used to share the rail 50/50, which pinned history to the
+ * bottom half whether or not anything was in it. This column used to
+ * sit on the RIGHT of the chip canvas; moving it here gives the canvas
  * back 224px, which it needs far more than a text list does.
+ *
+ * Not auto-selected when a pin jump appends an entry — see the tab
+ * state in `BlockViewer`.
  *
  * Why a trail and not a code preview: the BlockViewer already shows
  * every function's source inline, so a separate drawer displaying the
@@ -27,7 +30,7 @@
  */
 
 import { useTranslation } from 'react-i18next';
-import { History, X } from 'lucide-react';
+import { X } from 'lucide-react';
 
 import type { SymbolKind } from '@cockpit/feature-explorer/server/codeMap/types';
 import { Tooltip } from '@cockpit/shared-ui';
@@ -67,12 +70,11 @@ export function FunctionHistoryDrawer({
   const { t } = useTranslation();
   return (
     <div
-      className="flex-1 min-h-0 bg-card border-t border-border flex flex-col"
+      className="flex-1 min-h-0 bg-card flex flex-col"
       data-testid="function-history-drawer"
     >
       <div className="flex-shrink-0 px-2 py-1.5 border-b border-border flex items-center justify-between gap-1">
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-mono min-w-0">
-          <History className="w-3 h-3 flex-shrink-0" />
+        <div className="flex items-center text-xs text-muted-foreground font-mono min-w-0">
           <span className="truncate">
             {entries.length === 0
               ? t('blockViewer.history.title')

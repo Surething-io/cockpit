@@ -366,13 +366,17 @@
       "toBlock": "Show code map",
       "toCode": "Back to code view"
     },
+    "tabs": {
+      "toc": "Functions",
+      "history": "Trail"
+    },
     "toc": {
       "title": "this file",
       "empty": "No functions detected.",
       "notIndexed": "File not in project graph (unsupported language / not in git tracked set / file cap reached)."
     },
     "history": {
-      "title": "history",
+      "title": "recent",
       "empty": "Click an input or output pin to begin tracing.",
       "clear": "Clear history"
     },

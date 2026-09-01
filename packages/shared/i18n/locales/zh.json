@@ -366,13 +366,17 @@
       "toBlock": "显示代码地图",
       "toCode": "返回代码视图"
     },
+    "tabs": {
+      "toc": "函数列表",
+      "history": "跳转记录"
+    },
     "toc": {
       "title": "本文件",
       "empty": "未检测到函数。",
       "notIndexed": "该文件未被项目图收录（扩展未支持 / 不在 git 跟踪集 / 超出文件上限）。"
     },
     "history": {
-      "title": "历史",
+      "title": "最近",
       "empty": "点击左右两侧的 pin 开始追踪调用链。",
       "clear": "清空历史"
     },

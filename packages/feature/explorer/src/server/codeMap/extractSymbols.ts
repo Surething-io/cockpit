@@ -783,5 +783,43 @@ export function extractSymbolsFromTree(rootNode: Node): ExtractedSymbol[] {
     if (child) out.push(...extractFromNode(child, undefined, false));
   }
   out.push(...computeFillerBlocks(rootNode, out));
+
+  dedupeQualifiedNames(out);
   return out;
+}
+
+/**
+ * Enforce the file-local uniqueness invariant this module documents but never
+ * guarded (see `extractFromCallStatement`'s `#1` / `#2` convention, extended
+ * here to collisions ACROSS statements). Mutates in place, source order, and
+ * is idempotent — a second pass over already-suffixed names is a no-op.
+ *
+ * Real collisions, one per language:
+ *   - TS   two `it("same label", …)` in one test file; a `get foo` / `set foo`
+ *          accessor pair (`A>foo`); declaration merging (`const X` + `type X`)
+ *   - Go   several `func init()` in one file (legal); repeated `var _ = …`
+ *          compile-time interface assertions
+ *   - Rust `impl Display for Foo` + `impl Debug for Foo` — impl members are
+ *          qualified by target type only, so both land on `Foo>fmt`
+ *
+ * Everything downstream keys on qualifiedName and silently collapses on a
+ * duplicate: `symbolsByQname` (last wins), `analytics/graph` node ids (first
+ * wins), the intra-edge dedup key, `diffBlocks`' before/after maps, and the
+ * chip rows' React keys. Suffixing the later occurrence cannot make any of
+ * those worse than the collapse they do today.
+ *
+ * Recurses into `children` — nested members share the file's namespace
+ * (`A>foo` is as much a lookup key as `A` is).
+ */
+export function dedupeQualifiedNames(syms: ExtractedSymbol[]): void {
+  const seen = new Map<string, number>();
+  const walk = (arr: ExtractedSymbol[]) => {
+    for (const s of arr) {
+      const n = (seen.get(s.qualifiedName) ?? 0) + 1;
+      seen.set(s.qualifiedName, n);
+      if (n > 1) s.qualifiedName = `${s.qualifiedName}#${n}`;
+      walk(s.children);
+    }
+  };
+  walk(syms);
 }

@@ -14,12 +14,15 @@
  * Cmd+K is a typed search, not a scan. The TOC is the "scan" surface
  * — orientation in one glance, no typing.
  *
- * Layout: TOP half of the single `w-56` left rail, stacked above
- * `FunctionHistoryDrawer` (each `flex-1 min-h-0` → a fixed 50/50
- * split, independent scrollers). The rail's width + right border live
- * on the wrapper in `BlockViewer`; this component only owns its own
- * half. Both halves render unconditionally so the split never jumps
- * as files swap or history empties.
+ * Layout: one of the two tab panels in the `w-56` left rail (the other
+ * is `FunctionHistoryDrawer`), claiming the full column height when
+ * selected. The rail's width, right border and tab bar live on the
+ * wrapper in `BlockViewer`; this component owns its own header + list.
+ * The inactive panel is hidden, not unmounted, so scroll position
+ * survives a switch.
+ *
+ * The two used to be stacked 50/50, which left half the rail empty on a
+ * file with three functions.
  *
  * History used to be a mirror column on the RIGHT of the canvas. It
  * was moved here to give the chip canvas back those 224px — the
@@ -39,9 +42,33 @@ import { isFunctionLike } from '@cockpit/feature-explorer/server/codeMap/types';
 import { Tooltip } from '@cockpit/shared-ui';
 import { SymbolIcon } from './symbolIcon';
 
+/**
+ * Per-function edge tally shown under the name. Same vocabulary as the
+ * canvas pins so the two surfaces read as one system:
+ *   - `in`  / `out` : CROSS-FILE callers / callees. Same measure as the
+ *                     viewer header's `· 3 in · 3 out`, so the numbers on
+ *                     screen agree with each other.
+ *   - `self`        : same-file edges, incoming and outgoing merged — the
+ *                     rail is too narrow to split them and "this function
+ *                     is wired into its own file" is the signal that matters.
+ * `ext` / `method` pins are deliberately absent: a helper that calls three
+ * npm functions is not a hub, and counting them would say it is.
+ */
+export interface TocEdgeCounts {
+  in: number;
+  out: number;
+  self: number;
+}
+
 interface FileTOCSectionProps {
   /** Every function in the focal file, source order (sorted by startLine). */
   functions: readonly FunctionNode[];
+  /** Per-qualifiedName edge tally, keyed exactly like `functions`. Rows
+   *  with no entry (or an all-zero one) render as a single line. */
+  counts?: ReadonlyMap<string, TocEdgeCounts>;
+  /** Line count of the whole focal file, for the header's `· 311 lines`
+   *  suffix. `null` while the source blob is still loading. */
+  totalLines?: number | null;
   /** qualifiedName of the function whose lines straddle the viewport
    *  center, or `null` if no function is currently in view. Drives the
    *  "you are here" highlight. */
@@ -65,6 +92,8 @@ interface FileTOCSectionProps {
 
 export function FileTOCSection({
   functions,
+  counts,
+  totalLines,
   currentQname,
   onSelect,
   notIndexed,
@@ -97,9 +126,9 @@ export function FileTOCSection({
       data-testid="file-toc-section"
     >
       <div className="flex-shrink-0 px-2 py-1.5 border-b border-border text-xs text-muted-foreground font-mono truncate">
-        {realFunctions.length === 0
-          ? t('blockViewer.toc.title')
-          : `${t('blockViewer.toc.title')} · ${realFunctions.length}`}
+        {t('blockViewer.toc.title')}
+        {realFunctions.length > 0 && ` · ${realFunctions.length}`}
+        {totalLines != null && ` · ${totalLines} ${t('common.lines')}`}
       </div>
       <div className="flex-1 overflow-y-auto">
         {realFunctions.length === 0 ? (
@@ -124,6 +153,17 @@ export function FileTOCSection({
         ) : (
           realFunctions.map((fn) => {
             const isCurrent = currentQname === fn.qualifiedName;
+            const c = counts?.get(fn.qualifiedName);
+            // Zero segments are dropped, not rendered as `0` — in a 26-row
+            // list most functions are leaves, and a column of zeroes is
+            // noise that pushes the real numbers out of view.
+            const parts = c
+              ? ([
+                  c.in > 0 && ['in', c.in, 'text-amber-11/80'],
+                  c.out > 0 && ['out', c.out, 'text-green-11/80'],
+                  c.self > 0 && ['self', c.self, 'text-muted-foreground/60'],
+                ].filter(Boolean) as [string, number, string][])
+              : [];
             return (
               <Tooltip
                 key={fn.qualifiedName}
@@ -131,7 +171,7 @@ export function FileTOCSection({
               >
                 <button
                   onClick={() => onSelect(fn.qualifiedName, fn.startLine)}
-                  className={`w-full text-left px-2 py-1 transition-colors flex items-center gap-1.5 min-w-0 ${
+                  className={`w-full text-left px-2 py-1 transition-colors flex items-start gap-1.5 min-w-0 ${
                     isCurrent
                       ? 'bg-brand/15 hover:bg-brand/20'
                       : 'hover:bg-secondary/60'
@@ -140,14 +180,39 @@ export function FileTOCSection({
                   <SymbolIcon
                     kind={fn.kind}
                     qname={fn.qualifiedName}
-                    className="w-3 h-3 flex-shrink-0"
+                    className="w-3 h-3 flex-shrink-0 mt-0.5"
                   />
-                  <span
-                    className={`text-xs font-mono truncate ${
-                      isCurrent ? 'font-semibold text-brand' : ''
-                    }`}
-                  >
-                    {fn.name}
+                  <span className="flex-1 min-w-0">
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span
+                        className={`flex-1 min-w-0 text-xs font-mono truncate ${
+                          isCurrent ? 'font-semibold text-brand' : ''
+                        }`}
+                      >
+                        {fn.name}
+                      </span>
+                      {/* Line COUNT, not the range: one number costs ~2 chars
+                          of name width instead of ~7, and "how big is this
+                          thing" is the question a file index answers — the
+                          exact position is what clicking the row is for.
+                          Tooltip carries the start line for anyone who
+                          wants it. */}
+                      <span className="flex-shrink-0 text-[10px] text-muted-foreground/50 tabular-nums">
+                        {fn.endLine - fn.startLine + 1}
+                      </span>
+                    </span>
+                    {parts.length > 0 && (
+                      <span className="block text-[10px] font-mono truncate">
+                        {parts.map(([label, n, color], i) => (
+                          <span key={label} className={color}>
+                            {i > 0 && (
+                              <span className="text-muted-foreground/30"> · </span>
+                            )}
+                            {label} {n}
+                          </span>
+                        ))}
+                      </span>
+                    )}
                   </span>
                 </button>
               </Tooltip>

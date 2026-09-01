@@ -69,6 +69,7 @@ import { isFunctionLike } from '../types';
 // only file-level extraction goes through the handler; resolution
 // still uses the legacy local helpers below — moves to handlers in P1b.)
 import { getHandler } from '../handlers';
+import { dedupeQualifiedNames } from '../extractSymbols';
 
 // ============================================================================
 // Index types
@@ -415,6 +416,10 @@ async function parseOneFile(absPath: string, relPath: string): Promise<ParsedFil
     // `b.isReexport` filtering when it needs to walk barrel chains.
     const handler = getHandler(grammar);
     const symbolsTree = handler.extractSymbols(tree.rootNode, source);
+    // Every language funnels through here, so the qname-uniqueness invariant
+    // gets enforced once for all of them — the Go / Rust handlers have their
+    // own extraction paths and never see extractSymbolsFromTree.
+    dedupeQualifiedNames(symbolsTree);
     const flatSymbols = flattenSymbols(relPath, symbolsTree);
     const { specs: importSpecifiers, bindings: importBindings } =
       handler.extractImports(tree.rootNode);

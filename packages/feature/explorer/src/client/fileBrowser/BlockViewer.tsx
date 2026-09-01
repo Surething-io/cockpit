@@ -65,7 +65,7 @@ import {
   pushHistoryEntry,
   type HistoryEntry,
 } from './FunctionHistoryDrawer';
-import { FileTOCSection } from './FileTOCSection';
+import { FileTOCSection, type TocEdgeCounts } from './FileTOCSection';
 import { useSelectionToolbar } from '../useSelectionToolbar';
 import { BlockCommentBubbles } from './BlockCommentBubbles';
 import { BlockDiffMinimap } from './BlockDiffMinimap';
@@ -441,33 +441,52 @@ function PinChip({ side, pin, accent, onClick }: PinChipProps) {
         e.stopPropagation();
         onClick();
       }}
-      className={`${baseClasses}${accentRing} w-full text-left border rounded px-1.5 py-0.5 text-[10px] font-mono cursor-pointer transition-colors flex items-center gap-1.5`}
+      className={`${baseClasses}${accentRing} w-full text-left border rounded px-1.5 py-0.5 text-[10px] font-mono cursor-pointer transition-colors block`}
       // displayName is repeated here even though it's rendered in the
-      // chip: past the width cap the label still truncates, and the
-      // tooltip is then the only way to read the full name.
+      // chip: past TWO lines the label still clips, and the tooltip is
+      // then the only way to read the full name.
       data-tooltip={`${tooltipPrefix} · ${displayName}${tooltipBody ? ' · ' + tooltipBody : ''}`}
     >
-      <span
-        className={`${tagColor} text-[9px] uppercase tracking-wider font-semibold flex-shrink-0`}
-      >
-        {tag}
-      </span>
-      {/* Three separate shrink zones, NOT one shared truncate box. With a
-          single box the ellipsis ate right-to-left, so a long name wiped
-          out the basename AND the call count — the two cheapest, most
-          informative glyphs in the chip. Now each clips on its own:
-          the name shrinks last, the basename absorbs the pressure first
-          (shrink-[10]), and the count never shrinks at all. */}
-      <span className="flex-1 min-w-0 flex items-center gap-1">
-        <span className="font-medium truncate">{displayName}</span>
-        {displayBasename && (
-          <span className="text-muted-foreground/70 truncate shrink-[10]">
+      {/*
+       * Two-line chip. The name is plain inline text in a block box; the
+       * tag and the metadata are FLOATS the text flows around:
+       *
+       *   line 1   [tag] searchEndpointsWith        <- tag floats left
+       *   line 2   Versions        repository.ts ·3x  <- meta floats right,
+       *                                                 `clear-both` drops it
+       *                                                 past the tag
+       *
+       * Floats (not flex) because only they let one text run wrap around
+       * siblings: a short name leaves line 2 to the metadata, a long name
+       * spends both lines and pushes the metadata aside. Flex would force
+       * the name into a single fixed cell, which is what truncated it.
+       *
+       * Height is pinned to exactly two lines (`h-[26px]` = 2 x
+       * `leading-[13px]`) so PIN_HEIGHT_PX stays a constant and the
+       * right column's call-line alignment math keeps working. Names past
+       * two lines clip, and the tooltip carries the full name. The name
+       * wraps with `break-all`, not `break-words`: these are single
+       * camelCase tokens, and `break-words` would bump the whole token
+       * past the tag float onto line 2 before breaking it — costing the
+       * very line we just bought.
+       */}
+      <span className="block h-[26px] leading-[13px] overflow-hidden">
+        <span
+          className={`${tagColor} float-left mr-1.5 text-[9px] uppercase tracking-wider font-semibold`}
+        >
+          {tag}
+        </span>
+        {(displayBasename || callCount > 1) && (
+          <span className="float-right clear-both ml-1.5 max-w-[60%] truncate text-muted-foreground/70">
             {displayBasename}
+            {callCount > 1 && (
+              <span className="text-muted-foreground/60">
+                {displayBasename ? ' ' : ''}·{callCount}×
+              </span>
+            )}
           </span>
         )}
-        {callCount > 1 && (
-          <span className="text-muted-foreground/60 flex-shrink-0">·{callCount}×</span>
-        )}
+        <span className="font-medium break-all">{displayName}</span>
       </span>
     </button>
   );
@@ -491,6 +510,16 @@ function PinChip({ side, pin, accent, onClick }: PinChipProps) {
  * (the inner stack's p-3) ahead of what the pins can actually use —
  * immaterial at these thresholds, and noted so the numbers aren't
  * mistaken for exact canvas widths.
+ *
+ * The left rail rides this SAME ladder (it was a fixed `w-56`, which
+ * looked cramped next to a `w-96` pin column on an ultrawide). It has to
+ * query a different box though — the rail sits outside the scroll
+ * container, so it measures the row that holds rail + canvas + minimap,
+ * which is ~230px wider. Consequence: in a narrow band around each
+ * threshold the rail steps up one notch before the pins do. Harmless and
+ * stable — the outer box's width doesn't depend on the rail's, so there
+ * is no resize feedback loop — but it is why the two columns can differ
+ * by one step instead of always matching exactly.
  *
  * Container width -> pin width (approx. chars at text-[10px] mono):
  *   <900   176px  ~21   laptops, narrow windows (unchanged from before)
@@ -587,7 +616,7 @@ interface FunctionRowProps {
 const LINE_HEIGHT_PX = 18;
 const HEADER_HEIGHT_PX = 29; // px-2 py-1.5 + text-xs (lh 16) + 1px border-b
 const BODY_PADDING_TOP_PX = 8; // py-2
-const PIN_HEIGHT_PX = 22; // text-[10px] py-0.5 + border + small breathing
+const PIN_HEIGHT_PX = 34; // 2 x leading-[13px] + py-0.5 + border + breathing
 
 /**
  * Stable React key for a RowPin. Mixes the side ('in'/'out') so the
@@ -1072,6 +1101,14 @@ export function BlockViewer({
   // Focal file: defaults to whatever the left tree highlights, can be
   // transiently overridden by Cmd+K hits / pin clicks until the
   // highlighted file changes again.
+  // Which half of the left rail is showing. The two panels used to be
+  // stacked 50/50, which meant a one-function file left ~45% of the rail
+  // empty while history was pinned to the bottom. Tabs give whichever
+  // list you're using the whole column.
+  // Deliberately NOT auto-switched when a pin jump appends to history:
+  // stealing the view while the user is reading the function list is
+  // worse than the one click it costs to go look.
+  const [railTab, setRailTab] = useState<'toc' | 'history'>('toc');
   const [focalOverride, setFocalOverride] = useState<string | null>(null);
   const focalFile = focalOverride ?? highlightedFilePath ?? null;
   useEffect(() => {
@@ -1128,6 +1165,15 @@ export function BlockViewer({
       cancelled = true;
     };
   }, [cwd, focalFile]);
+
+  // Total line count of the focal file. Memoised on the source blob, NOT
+  // computed inline: this component re-renders on every scroll tick (the
+  // viewport-range tracker is state), and an O(document) split per frame is
+  // exactly what the perf convention forbids.
+  const totalLines = useMemo(
+    () => (fileSource ? fileSource.content.split('\n').length : null),
+    [fileSource],
+  );
 
   // Freshness cross-check. When fileSource arrives with an mtime
   // newer than `state.data.mtimeMs`, the projection was built from
@@ -1705,24 +1751,25 @@ export function BlockViewer({
     if (!fileSource) return;
     if (state.data.filePath !== flashTarget.filePath) return;
 
-    // Expected count = rows ACTUALLY RENDERED. Must mirror the filter
-    // applied below in the render path — otherwise an active diff-mode
-    // qnameFilter trims `workingFunctions` smaller than `data.functions`,
-    // `highlightedQnames` (which only collects rendered blocks' signals)
-    // never reaches the unfiltered total, and the gate stays closed
-    // forever.
-    let expected: number;
-    const filterActiveForFlash =
-      qnameFilterFile && qnameFilterFile === state.data.filePath;
-    if (filterActiveForFlash && qnameFilter) {
-      let n = 0;
-      for (const f of state.data.functions) {
-        if (qnameFilter.has(f.qualifiedName)) n++;
-      }
-      expected = Math.max(1, n);
-    } else {
-      expected = Math.max(1, state.data.functions.length);
-    }
+    // Expected count = rows ACTUALLY RENDERED, counted the same way
+    // `highlightedQnames` counts them: DISTINCT qualifiedName. Comparing a
+    // Set's size against an array's length deadlocked the gate forever on
+    // any file holding two same-named symbols — and since this effect is the
+    // single exit for every jump path (TOC / ruler / Cmd+K / pin / history),
+    // one duplicate killed navigation for the whole file.
+    // The filter must mirror the render path below: an active diff-mode
+    // qnameFilter trims `workingFunctions`, so counting the unfiltered
+    // projection would leave the gate closed just the same.
+    // `Math.max(1, …)` covers the no-symbols file, where the render path
+    // synthesises a single `__file__` block out of an empty `functions`.
+    const rendered =
+      qnameFilterFile === state.data.filePath && qnameFilter
+        ? state.data.functions.filter((f) => qnameFilter.has(f.qualifiedName))
+        : state.data.functions;
+    const expected = Math.max(
+      1,
+      new Set(rendered.map((f) => f.qualifiedName)).size,
+    );
     if (highlightedQnames.size < expected) return;
 
     consumedFlashNonceRef.current = flashTarget.nonce;
@@ -1904,7 +1951,7 @@ export function BlockViewer({
   // know the line count.
   let workingFunctions = data.functions;
   if (workingFunctions.length === 0 && fileSource) {
-    const lineCount = Math.max(1, fileSource.content.split('\n').length);
+    const lineCount = Math.max(1, totalLines ?? 1);
     workingFunctions = [
       {
         filePath: data.filePath,
@@ -2008,6 +2055,25 @@ export function BlockViewer({
     else methodOutByFrom.set(e.focalQname, [pin]);
   }
 
+  // Per-function edge tally for the TOC rail. Built here rather than in
+  // FileTOCSection because this is where the four maps already exist —
+  // the rail would otherwise need the raw edge arrays and repeat the
+  // grouping. Not memoised on purpose: the maps above are rebuilt every
+  // render anyway, so a useMemo keyed on them would never hit, and
+  // FileTOCSection isn't a memo() component — a fresh Map costs nothing
+  // it wasn't already paying.
+  const tocCounts = new Map<string, TocEdgeCounts>();
+  for (const fn of workingFunctions) {
+    const q = fn.qualifiedName;
+    const counts: TocEdgeCounts = {
+      in: upstreamCrossByQname.get(q)?.length ?? 0,
+      out: downstreamCrossByQname.get(q)?.length ?? 0,
+      self:
+        (intraInByTo.get(q)?.length ?? 0) + (intraOutByFrom.get(q)?.length ?? 0),
+    };
+    if (counts.in || counts.out || counts.self) tocCounts.set(q, counts);
+  }
+
   // Merge cross-file + intra-file (+ ext + method on the out side)
   // into the unified RowPin shape FunctionRow expects. Order within
   // each side:
@@ -2077,27 +2143,69 @@ export function BlockViewer({
           a history drawer sat here as `absolute right-0 w-56` and
           covered the scrollbar, which is why we needed a custom
           overview ruler in the first place. */}
-      <div ref={setReviewAnchor} className="flex-1 relative min-h-0 flex">
-        {/* Left rail — TOC (top 50%) over History (bottom 50%). Both
-            halves are `flex-1 min-h-0`, so the split is fixed rather
-            than content-driven: the boundary never jumps when history
-            fills up or the file's function list gets long. The rail
-            itself is always rendered (even when both halves are
-            empty) so the chip canvas's left edge stays visually
-            stable as files swap. */}
-        <div className="w-56 flex-shrink-0 border-r border-border flex flex-col">
-          <FileTOCSection
-            functions={workingFunctions}
-            currentQname={currentFocalQname}
-            onSelect={handleRulerJump}
-            notIndexed={data.notIndexed}
-            onRebuild={refresh}
-          />
-          <FunctionHistoryDrawer
-            entries={history}
-            onSelect={handleHistorySelect}
-            onClear={() => setHistory([])}
-          />
+      <div
+        ref={setReviewAnchor}
+        className="@container flex-1 relative min-h-0 flex"
+      >
+        {/* Left rail — one tab bar over two panels, only one visible at a
+            time. The inactive panel is HIDDEN, not unmounted, so a long
+            file's TOC keeps its scroll position across switches (same
+            reasoning as the three-panel shell never unmounting). Each
+            panel keeps its own header row (`本文件 · 5 · 67 行`, the
+            history counter + clear button) — the tab bar carries the
+            switch, the header carries the panel's own facts. The rail
+            itself is always rendered (even when both panels are empty)
+            so the chip canvas's left edge stays visually stable as
+            files swap. */}
+        <div
+          className={`${PIN_COL_WIDTH} flex-shrink-0 border-r border-border flex flex-col`}
+        >
+          <div className="flex-shrink-0 flex border-b border-border">
+            {(
+              [
+                ['toc', t('blockViewer.tabs.toc')],
+                ['history', t('blockViewer.tabs.history')],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setRailTab(id)}
+                className={`flex-1 px-2 py-1.5 text-xs font-medium transition-colors ${
+                  railTab === id
+                    ? 'text-brand border-b-2 border-brand'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div
+            className={
+              railTab === 'toc' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'
+            }
+          >
+            <FileTOCSection
+              functions={workingFunctions}
+              counts={tocCounts}
+              totalLines={totalLines}
+              currentQname={currentFocalQname}
+              onSelect={handleRulerJump}
+              notIndexed={data.notIndexed}
+              onRebuild={refresh}
+            />
+          </div>
+          <div
+            className={
+              railTab === 'history' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'
+            }
+          >
+            <FunctionHistoryDrawer
+              entries={history}
+              onSelect={handleHistorySelect}
+              onClear={() => setHistory([])}
+            />
+          </div>
         </div>
         {/* Scroll container — `flex-1` claims the space the rail and
             minimap leave. `min-w-0` so flex children
@@ -2133,7 +2241,11 @@ export function BlockViewer({
           <div className="flex flex-col gap-3 p-3">
             {workingFunctions.map((fn) => (
               <FunctionRow
-                key={fn.qualifiedName}
+                // Composite key: qualifiedName alone collides on duplicates,
+                // and React may then reuse a sibling's state — the Shiki
+                // `html` lives in CodeBlock — rendering a header over the
+                // wrong body.
+                key={`${fn.qualifiedName}#${fn.startLine}`}
                 symbol={fn}
                 fileSource={fileSource?.content ?? null}
                 hasChange={focalFileChanged}

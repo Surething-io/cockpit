@@ -1393,7 +1393,12 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                     />
                   </div>
                 )}
-                {fileTree.isLoadingFiles ? (
+                {/* Only the FIRST load swaps in a placeholder. A refresh (context-menu
+                    Refresh, or the reload fired when the project iframe becomes visible
+                    again) keeps FileTree mounted: unmounting destroys the scroll
+                    container and the virtualizer's offset, so the tree jumped back to
+                    the top on every project switch. */}
+                {fileTree.isLoadingFiles && fileTree.files.length === 0 ? (
                   <div className="p-4 text-center text-muted-foreground text-sm">{t('common.loading')}</div>
                 ) : fileTree.fileError ? (
                   <div className="p-4 text-center text-red-11 text-sm">{fileTree.fileError}</div>

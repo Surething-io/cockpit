@@ -52,6 +52,7 @@ import { BlockDiffViewer } from './fileBrowser/BlockDiffViewer';
 import { StatusDiffPane } from './fileBrowser/StatusDiffPane';
 import { getTargetDirPath, formatDateTime, isImageFile, NOOP, COMMITS_PER_PAGE } from './fileBrowser/utils';
 import { GitImageDiffView } from './fileBrowser/GitImageDiffView';
+import { FilePathActions } from './fileBrowser/FilePathActions';
 
 import { BranchSelector } from './fileBrowser/BranchSelector';
 import { FileImagePreview } from './fileBrowser/FileImagePreview';
@@ -1793,6 +1794,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                   cwd={cwd}
                   embedded={true}
                   initialFilePath={fileTree.selectedPath || undefined}
+                  onLocateInTree={locateInTree}
                   onContentSearch={(query) => {
                     setActiveTab('search');
                     contentSearch.setContentSearchQuery(query);
@@ -2400,14 +2402,21 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                   </div>
                 ) : gitHistory.compareFileDiff ? (
                   <div className="flex-1 flex flex-col overflow-hidden">
-                    {/* Images render as before/after previews, so the diff
-                        toggles have nothing to act on — hide them. */}
-                    {!isImageFile(gitHistory.compareFileDiff.filePath) && (
-                      <div className="flex items-center justify-end gap-2 px-3 py-1.5 border-b border-border flex-shrink-0">
-                        <DiffDensityToggle value={compareDensity} onChange={setCompareDensity} />
-                        <DiffViewModeToggle value={compareViewMode} onChange={setCompareViewMode} />
-                      </div>
-                    )}
+                    {/* Images render as before/after previews, so keep the path
+                        actions but hide the diff-only toggles. */}
+                    <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border flex-shrink-0">
+                      <FilePathActions
+                        cwd={cwd}
+                        filePath={gitHistory.compareFileDiff.filePath}
+                        onLocateInTree={locateInTree}
+                      />
+                      {!isImageFile(gitHistory.compareFileDiff.filePath) && (
+                        <div className="ml-auto flex items-center gap-2">
+                          <DiffDensityToggle value={compareDensity} onChange={setCompareDensity} />
+                          <DiffViewModeToggle value={compareViewMode} onChange={setCompareViewMode} />
+                        </div>
+                      )}
+                    </div>
                     <div className="flex-1 overflow-hidden">
                       {isImageFile(gitHistory.compareFileDiff.filePath) ? (
                         <GitImageDiffView
@@ -2479,6 +2488,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                   commit={gitHistory.selectedCommit}
                   cwd={cwd}
                   embedded={true}
+                  onLocateInTree={locateInTree}
                   onContentSearch={(query) => {
                     setActiveTab('search');
                     contentSearch.setContentSearchQuery(query);

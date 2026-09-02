@@ -7,6 +7,7 @@ import { DiffDensityToggle } from './DiffDensityToggle';
 import { DiffViewModeToggle } from './DiffViewModeToggle';
 import { GitFileTree, buildGitFileTree, collectGitTreeDirPaths, type GitFileNode } from './GitFileTree';
 import { GitImageDiffView } from './fileBrowser/GitImageDiffView';
+import { FilePathActions } from './fileBrowser/FilePathActions';
 import { isImageFile } from './fileBrowser/utils';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { fetchCommitDiff } from './effect/gitClient';
@@ -72,9 +73,10 @@ interface CommitDetailPanelProps {
   embedded?: boolean; // Embedded mode, no Modal wrapper or title bar
   initialFilePath?: string; // Initially selected file path
   onContentSearch?: (query: string) => void; // Selected text → project-wide search
+  onLocateInTree?: (filePath: string) => void;
 }
 
-export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = false, initialFilePath, onContentSearch }: CommitDetailPanelProps) {
+export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = false, initialFilePath, onContentSearch, onLocateInTree }: CommitDetailPanelProps) {
   const { t } = useTranslation();
   const [files, setFiles] = useState<FileChange[]>([]);
   const [fileTree, setFileTree] = useState<GitFileNode<unknown>[]>([]);
@@ -227,6 +229,11 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
     return '';
   }, [commit]);
 
+  const fileDiffPath = fileDiff?.filePath;
+  const filePathActions = useMemo(() => fileDiffPath ? (
+    <FilePathActions cwd={cwd} filePath={fileDiffPath} onLocateInTree={onLocateInTree} />
+  ) : null, [cwd, fileDiffPath, onLocateInTree]);
+
   if (!isOpen || !commit) return null;
 
   // Images get the preview treatment the status pane gives them instead of a
@@ -310,14 +317,21 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
             <div className="h-full flex items-center justify-center text-muted-foreground text-sm">{t('commitDetail.loadingDiff')}</div>
           ) : fileDiff ? (
             isImageDiff ? (
-              <GitImageDiffView
-                cwd={cwd}
-                filePath={fileDiff.filePath}
-                // Fall back to the commit itself when the server didn't name
-                // the revisions: the image at least renders on its "after" side.
-                oldRev={fileDiff.oldRev ?? (fileDiff.isNew ? null : `${commit.hash}^1`)}
-                newRev={fileDiff.newRev ?? (fileDiff.isDeleted ? null : commit.hash)}
-              />
+              <div className="h-full flex flex-col">
+                <div className="flex-shrink-0 px-2 py-1 border-b border-border bg-accent">
+                  {filePathActions}
+                </div>
+                <div className="flex-1 min-h-0">
+                  <GitImageDiffView
+                    cwd={cwd}
+                    filePath={fileDiff.filePath}
+                    // Fall back to the commit itself when the server didn't name
+                    // the revisions: the image at least renders on its "after" side.
+                    oldRev={fileDiff.oldRev ?? (fileDiff.isNew ? null : `${commit.hash}^1`)}
+                    newRev={fileDiff.newRev ?? (fileDiff.isDeleted ? null : commit.hash)}
+                  />
+                </div>
+              </div>
             ) : viewMode === 'unified' ? (
               <DiffUnifiedView
                 oldContent={fileDiff.oldContent}
@@ -326,6 +340,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
                 cwd={cwd}
                 enableComments={true}
                 compact={density === 'compact'}
+                headerLeading={filePathActions}
                 onPreview={
                   fileDiff.isDeleted
                     ? undefined
@@ -348,6 +363,7 @@ export function CommitDetailPanel({ isOpen, onClose, commit, cwd, embedded = fal
                 cwd={cwd}
                 enableComments={true}
                 compact={density === 'compact'}
+                headerLeading={filePathActions}
                 onPreview={
                   fileDiff.isDeleted
                     ? undefined

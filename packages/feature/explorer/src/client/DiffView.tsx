@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { computeLineDiff } from './index';
@@ -42,6 +42,8 @@ interface DiffViewProps {
   // Preview callback (e.g. Markdown preview, JSON readable)
   onPreview?: () => void;
   previewLabel?: string;
+  /** Optional file/path controls placed at the leading edge of the diff header. */
+  headerLeading?: ReactNode;
   // Content search callback (selected text → project-wide search)
   onContentSearch?: (query: string) => void;
   /**
@@ -153,7 +155,7 @@ function formatSignature(s: SymbolInfo): string {
 // new-side rows. The hook+ToolbarRenderer combination is what keeps the
 // toolbar's show/hide isolated from DiffView's virtual list re-renders.
 
-export function DiffView({ oldContent, newContent, filePath, isNew = false, isDeleted = false, cwd, enableComments = false, onPreview, previewLabel, onContentSearch, targetLine, compact = false, symbols, onTokenHover, onTokenHoverLeave, onTokenHoverCancel }: DiffViewProps) {
+export function DiffView({ oldContent, newContent, filePath, isNew = false, isDeleted = false, cwd, enableComments = false, onPreview, previewLabel, headerLeading, onContentSearch, targetLine, compact = false, symbols, onTokenHover, onTokenHoverLeave, onTokenHoverCancel }: DiffViewProps) {
   const { t } = useTranslation();
   const handleTokenMouseOver = useAfterSideTokenHover(onTokenHover);
   const resolvedPreviewLabel = previewLabel ?? t('common.preview');
@@ -568,6 +570,11 @@ export function DiffView({ oldContent, newContent, filePath, isNew = false, isDe
 
   return (
     <div className="font-mono flex flex-col h-full text-sm">
+      {headerLeading && (
+        <div className="flex-shrink-0 px-2 py-1 border-b border-border bg-accent">
+          {headerLeading}
+        </div>
+      )}
       {/* Header row - fixed */}
       <div className="flex flex-shrink-0 border-b border-border">
         <div className={`${leftWidth} min-w-0 px-2 py-1 bg-accent text-muted-foreground text-center text-xs font-medium border-r border-border`}>
@@ -917,7 +924,7 @@ function buildUnifiedCompactRows(diffLines: DiffLine[], expandedGaps: Set<number
   return rows;
 }
 
-export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableComments = false, onPreview, previewLabel, onContentSearch, compact = false, onTokenHover, onTokenHoverLeave, onTokenHoverCancel }: Omit<DiffViewProps, 'isNew' | 'isDeleted'>) {
+export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableComments = false, onPreview, previewLabel, headerLeading, onContentSearch, compact = false, onTokenHover, onTokenHoverLeave, onTokenHoverCancel }: Omit<DiffViewProps, 'isNew' | 'isDeleted'>) {
   const { t } = useTranslation();
   const handleTokenMouseOver = useAfterSideTokenHover(onTokenHover);
   const resolvedPreviewLabel = previewLabel ?? t('common.preview');
@@ -1002,12 +1009,12 @@ export function DiffUnifiedView({ oldContent, newContent, filePath, cwd, enableC
 
   return (
     <div className="font-mono flex flex-col h-full text-sm">
-      {/* Action bar — hosts the preview trigger (the callback has no other home
-          in the single-column layout) and a copy-all button. Only rendered when
-          there's actually an action, so a plain diff isn't padded with an empty
-          bar. Mirrors the split view's header actions. */}
-      {(onPreview || newContent) && (
+      {/* Action bar — hosts optional leading file controls, the preview trigger
+          (the callback has no other home in the single-column layout), and a
+          copy-all button. Plain diffs without any of these stay unpadded. */}
+      {(headerLeading || onPreview || newContent) && (
         <div className="flex-shrink-0 flex items-center justify-end gap-2 px-2 py-1 border-b border-border bg-accent text-xs">
+          {headerLeading && <div className="mr-auto min-w-0">{headerLeading}</div>}
           {onPreview && (
             <button
               onClick={onPreview}

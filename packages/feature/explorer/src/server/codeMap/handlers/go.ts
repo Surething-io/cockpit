@@ -43,6 +43,7 @@ import type {
 import {
   hashText,
   normalizeForHash,
+  absorbLeadingComments,
   computeFillerBlocks,
 } from '../extractSymbols';
 import type { ExtractedSymbol } from '../types';
@@ -557,6 +558,7 @@ export const goHandler: LanguageHandler = {
     if (header) out.push(header);
     const { symbols, pendingMethods } = extractTopLevel(rootNode);
     out.push(...attachMethods(symbols, pendingMethods));
+    absorbLeadingComments(rootNode, out);
     out.push(...computeFillerBlocks(rootNode, out));
     return out;
   },

@@ -683,6 +683,87 @@ function extractImportHeader(rootNode: Node): ExtractedSymbol | null {
 }
 
 /**
+ * Extend each top-level symbol's `startLine` upward over the doc comment
+ * block glued to it, so the comment renders inside the symbol's card
+ * instead of becoming its own `code` filler block.
+ *
+ * Why this exists: every extractor derives a symbol's range from its
+ * DECLARATION node, and tree-sitter keeps leading comments as separate
+ * root-level siblings. So `/** … *\/` above `export const Foo` was left
+ * uncovered and `computeFillerBlocks` scooped it up — the chip view
+ * showed a nameless `code · 5 lines` card followed by the symbol it
+ * documents, splitting one unit of reading across two cards.
+ *
+ * Adjacency rule: absorb ONLY a run of comment nodes that touches the
+ * symbol with no blank line anywhere in the chain (`comment.endLine ===
+ * start - 1`, repeatedly). A comment separated by a blank line is a
+ * section marker about the region, not documentation of the next symbol,
+ * and stays its own filler block. The walk also stops at any line
+ * already covered by another symbol, so two adjacent symbols can never
+ * claim the same comment.
+ *
+ * `contentHash` is deliberately NOT recomputed over the widened range:
+ * it is the pairing/"modified" key for symbol history
+ * (`blockDiffProjection`, FunctionHistoryDrawer), and re-hashing here
+ * would flip the hash of every documented symbol in every project at
+ * once — a wave of "changes" that never happened, with no index-version
+ * field to hang an invalidation off. Range is a view concern; the hash
+ * keeps meaning "the code changed".
+ *
+ * Mutates in place, and is idempotent: after the first pass the comment
+ * lines are inside the symbol, so the `endLine === start - 1` probe
+ * finds the comment node again but its lines now lie within the symbol
+ * itself — guarded by the covered check below.
+ */
+export function absorbLeadingComments(
+  rootNode: Node,
+  symbols: readonly ExtractedSymbol[],
+): void {
+  // Root-level comment nodes, indexed by the line they END on — that is
+  // the only lookup direction the upward walk needs.
+  const commentByEndLine = new Map<number, Node>();
+  for (let i = 0; i < rootNode.namedChildCount; i++) {
+    const c = rootNode.namedChild(i);
+    // Covers `comment` (TS/JS/Go/Python) and Rust's
+    // `line_comment` / `block_comment` / `doc_comment`.
+    if (!c || !c.type.endsWith('comment')) continue;
+    commentByEndLine.set(c.endPosition.row + 1, c);
+  }
+  if (commentByEndLine.size === 0) return;
+
+  // Lines owned by some symbol — the barrier that stops one symbol from
+  // eating a comment that already sits inside its predecessor's range.
+  const covered = new Set<number>();
+  for (const s of symbols) {
+    for (let i = s.startLine; i <= s.endLine; i++) covered.add(i);
+  }
+
+  for (const s of symbols) {
+    // Synthetics (`__imports__`) have no documentation relationship with
+    // the lines above them; leave their ranges exactly as computed.
+    if (s.kind === 'unknown') continue;
+    let start = s.startLine;
+    for (;;) {
+      const c = commentByEndLine.get(start - 1);
+      if (!c) break;
+      const cStart = c.startPosition.row + 1;
+      let blocked = false;
+      for (let i = cStart; i <= start - 1; i++) {
+        if (covered.has(i)) {
+          blocked = true;
+          break;
+        }
+      }
+      if (blocked) break;
+      start = cStart;
+    }
+    if (start === s.startLine) continue;
+    for (let i = start; i < s.startLine; i++) covered.add(i);
+    s.startLine = start;
+  }
+}
+
+/**
  * Synthesise "filler" blocks covering any module-level lines NOT already
  * captured by an extracted symbol or by the imports block.
  *
@@ -782,6 +863,7 @@ export function extractSymbolsFromTree(rootNode: Node): ExtractedSymbol[] {
     const child = rootNode.namedChild(i);
     if (child) out.push(...extractFromNode(child, undefined, false));
   }
+  absorbLeadingComments(rootNode, out);
   out.push(...computeFillerBlocks(rootNode, out));
 
   dedupeQualifiedNames(out);

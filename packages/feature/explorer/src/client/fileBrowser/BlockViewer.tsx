@@ -247,19 +247,33 @@ function CodeBlock({
             this feature shipped. `params === []` (genuinely zero
             params) → `()` rendered, distinguishing a no-arg function
             from "we couldn't resolve params". */}
-        <span className="font-mono truncate min-w-0">
-          <span className="font-medium">{symbol.name}</span>
-          {symbol.params !== undefined && (
-            <span className="text-muted-foreground/80">
-              ({symbol.params.join(', ')})
-            </span>
-          )}
-        </span>
+        {/* Filler blocks (`__code_<lo>_<hi>__`) get NO name at all. Their
+            stored name is the literal `code`, and any label we put in this
+            slot — `code`, `top-level`, anything — reads like a symbol name
+            and competes with the real ones next to it. The icon plus the
+            line count already say "a chunk of module-level code"; silence
+            is the honest rendering. `symbol.name` itself stays untouched
+            for the diff projection and AI messages. */}
+        {!symbol.qualifiedName.startsWith('__code_') && (
+          <span className="font-mono truncate min-w-0">
+            <span className="font-medium">{symbol.name}</span>
+            {symbol.params !== undefined && (
+              <span className="text-muted-foreground/80">
+                ({symbol.params.join(', ')})
+              </span>
+            )}
+          </span>
+        )}
         <span className="text-[10px] text-muted-foreground/70 flex-shrink-0">
-          {symbol.kind} · L{symbol.startLine}-{symbol.endLine}
+          {/* `unknown` is the kind every synthetic shares (filler, imports,
+              markdown headings) — it names nothing the reader didn't already
+              get from the icon and the name slot, so only real kinds print
+              here. On a filler block that leaves just the line count. */}
+          {symbol.kind !== 'unknown' && `${symbol.kind} · `}
+          {symbol.endLine - symbol.startLine + 1} {t('common.lines')}
         </span>
-        {/* Sits right after the line range rather than flushed right: the
-            eye is already here after reading `kind · L18-23`, so the click
+        {/* Sits right after the line count rather than flushed right: the
+            eye is already here after reading `kind · 19 lines`, so the click
             target is where attention is, not a full row-width away.
             `h-4 leading-4` pins it to the 16px line box of the header's
             `text-xs` — the padded hit area must NOT grow the header, since

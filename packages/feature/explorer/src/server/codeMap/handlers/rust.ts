@@ -46,6 +46,7 @@ import type {
 import {
   hashText,
   normalizeForHash,
+  absorbLeadingComments,
   computeFillerBlocks,
 } from '../extractSymbols';
 import type { ExtractedSymbol } from '../types';
@@ -844,6 +845,7 @@ export const rustHandler: LanguageHandler = {
     if (header) out.push(header);
     const { symbols, pendingImpls } = extractTopLevel(rootNode);
     out.push(...attachImplMethods(symbols, pendingImpls));
+    absorbLeadingComments(rootNode, out);
     out.push(...computeFillerBlocks(rootNode, out));
     return out;
   },

@@ -54,15 +54,18 @@ function formatType(task: ScheduledTask, t: (key: string, opts?: Record<string, 
   return task.type;
 }
 
-// Design-system `-11` steps, not raw Tailwind `red-500` / `yellow-500` /
-// `green-500`: the `-11` steps track the theme, so these dots stay readable on
-// the light card as well as the dark one.
+// Design-system steps, not raw Tailwind `red-500` / `yellow-500` / `green-500`,
+// and the `-9` (solid-fill) step rather than `-11` (text): 9 holds one value
+// across both themes, while 11 swings light in dark mode — an unread dot on
+// red-11 came out pink next to the red-9 chip on the same row, reading as a
+// different state rather than the same one. Same step the session lists' dots
+// and number chips use (SessionRowParts / sessionNumberStyles).
 function getStatusColor(task: ScheduledTask): string {
-  if (task.unread) return 'bg-red-11';
+  if (task.unread) return 'bg-red-9';
   if (task.completed) return 'bg-muted-foreground/30';
-  if (task.paused) return 'bg-amber-11';
-  if (task.lastResult === 'error') return 'bg-red-11';
-  return 'bg-green-11';
+  if (task.paused) return 'bg-amber-9';
+  if (task.lastResult === 'error') return 'bg-red-9';
+  return 'bg-green-9';
 }
 
 /**

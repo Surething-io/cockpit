@@ -203,9 +203,9 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
                         also the only status mark on cards whose numbers never resolved. */}
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                       session.status === 'loading'
-                        ? 'bg-orange-9'
+                        ? 'bg-orange-11'
                         : session.status === 'unread'
-                          ? 'bg-red-500'
+                          ? 'bg-red-9'
                           : 'bg-muted-foreground/30'
                     }`} />
                     <EngineBadge engine={session.engine} />

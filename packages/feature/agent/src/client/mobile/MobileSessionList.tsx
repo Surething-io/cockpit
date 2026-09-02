@@ -146,9 +146,9 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
                   aria-label={session.status === 'loading' ? t('sessions.running') : session.status === 'unread' ? t('sessions.done') : undefined}
                   className={`mt-1.5 h-2.5 w-2.5 flex-shrink-0 rounded-full ${
                     session.status === 'loading'
-                      ? 'animate-pulse bg-orange-9'
+                      ? 'animate-pulse bg-orange-11'
                       : session.status === 'unread'
-                        ? 'bg-red-500'
+                        ? 'bg-red-9'
                         : 'bg-muted-foreground/30'
                   }`}
                 />

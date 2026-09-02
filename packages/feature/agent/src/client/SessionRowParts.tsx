@@ -34,10 +34,14 @@ export const projectNameOf = (cwd: string) => cwd.split('/').pop() || cwd;
 /**
  * Status indicator: orange (running) / red (unread) / grey (idle).
  *
- * Solid at the `-11` step, not washed like the pills — an 8px dot has no room
- * to carry a 20% tint. It does NOT pulse: the round session-number chip on the
- * right is the one blinking thing per row, and this dot is what still reports
- * the state before the numbers finish resolving.
+ * Solid, not washed like the pills — an 8px dot has no room to carry a 20%
+ * tint. The STEP is taken from whatever the round chip on the same row fills
+ * with (`sessionNumberStyles`): orange-11 for running, red-9 for unread. They
+ * sit 250px apart on one row, so a dot on red-11 next to a chip on red-9 does
+ * not read as the same red — it reads as two different states.
+ *
+ * It does NOT pulse: the chip is the one blinking thing per row, and this dot
+ * is what still reports the state before the numbers finish resolving.
  */
 export function SessionStatusDot({ status, className = '' }: { status?: string; className?: string }) {
   return (
@@ -46,7 +50,7 @@ export function SessionStatusDot({ status, className = '' }: { status?: string; 
         status === 'loading'
           ? 'bg-orange-11'
           : status === 'unread'
-            ? 'bg-red-11'
+            ? 'bg-red-9'
             : 'bg-muted-foreground/30'
       } ${className}`}
     />

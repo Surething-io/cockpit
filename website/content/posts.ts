@@ -323,7 +323,7 @@ Cockpit 现在会在**每次碰文件的工具调用之后**给项目拍快照�
       en: {
         title: 'Self-Host a Claude Code GUI for Your Whole Team (One Dev Box, Zero Installs)',
         description:
-          'OpenCockpit is web client–server: install it once on a shared dev box, and every teammate opens a browser and gets a seat — each coding with AI in their own project or worktree. Setup takes 5 minutes.',
+          'Self-host Claude Code on one shared dev box with OpenCockpit. Give every teammate a browser-based AI coding workspace with isolated projects and worktrees.',
         readingTime: '6 min read',
         body: `Most Claude Code GUIs are desktop apps: one install per laptop, one config per person, one machine per seat. OpenCockpit is a **web client–server** — which unlocks a deployment model the desktop apps can't do:
 
@@ -425,7 +425,7 @@ One \`npm i -g\` on one box, and the whole team flies together. If you try it, [
       zh: {
         title: '把 Claude Code GUI 自托管到共享开发机：一台机器，全队一起飞',
         description:
-          'OpenCockpit 是 Web client-server 架构：在共享开发机上装一次，每个队友打开浏览器就有一个席位 —— 各自在自己的项目 / worktree 上 AI coding。部署只要 5 分钟。',
+          '用 OpenCockpit 把 Claude Code 自托管到一台共享开发机。队友通过浏览器进入各自项目或 worktree，共用环境与算力，无需逐台安装。',
         readingTime: '6 分钟',
         body: `大多数 Claude Code GUI 是桌面应用：一台笔记本装一份、一个人配一套、一台机器一个座位。OpenCockpit 是 **Web client-server** 架构 —— 这解锁了桌面应用做不到的部署方式：
 
@@ -2312,9 +2312,9 @@ cockpit ~/work/data-pipeline
     ],
     content: {
       en: {
-        title: 'Claude Code GUI: CLI vs official Desktop vs IDE plugins vs Cockpit (2026 buyer’s guide)',
+        title: 'Claude Code GUI Comparison (2026): CLI, Desktop, Cursor & Open Source',
         description:
-          'Anthropic ships Claude Code as a CLI by default. If you want a GUI on top, you have five real options today: stick with the CLI, use the official Claude Code Desktop app, an IDE plugin (Cursor, Continue), Aider in a TUI, or run Cockpit. Here is when each one wins.',
+          'Compare Claude Code GUI options: CLI, official Desktop, Cursor and IDE plugins, Aider, and OpenCockpit—across parallel work, privacy, cost, and teams.',
         readingTime: '8 min read',
         body: `*Updated July 2026 — added the redesigned official Claude Code Desktop app and Cockpit's self-hosting model.*
 
@@ -2409,9 +2409,9 @@ The strongest argument *against* Cockpit is also the simplest: if your day is "o
 Want to try? \`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit)`,
       },
       zh: {
-        title: 'Claude Code GUI 全景对比：CLI、官方 Desktop、Cursor、Aider 还是 Cockpit？（2026 选型指南）',
+        title: 'Claude Code GUI 对比（2026）：CLI、Desktop、Cursor 与开源方案',
         description:
-          'Anthropic 默认把 Claude Code 当 CLI 发布。要 GUI，2026 年其实就五条路：留在 CLI、用官方 Claude Code Desktop、用 IDE 插件（Cursor、Continue）、用 Aider TUI、或者上 Cockpit。这篇讲清楚每条路什么时候赢。',
+          '对比 Claude Code CLI、官方 Desktop、Cursor 等 IDE 插件、Aider 与 OpenCockpit，覆盖并行任务、隐私、成本和团队协作。',
         readingTime: '阅读约 8 分钟',
         body: `*2026 年 7 月更新 —— 加入了改版后的官方 Claude Code Desktop，以及 Cockpit 的自托管模型。*
 

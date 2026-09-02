@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { locales } from '@/lib/i18n';
 import { posts } from '@/content/posts';
+import { getAvailablePages } from '@/content/docs/sidebar';
 
 const SITE_URL = 'https://opencockpit.dev';
 
@@ -14,9 +15,10 @@ export const dynamic = 'force-static';
  * as the same canonical resource — critical for our bilingual content.
  */
 export default function sitemap(): MetadataRoute.Sitemap {
-  const now = new Date();
-
-  const staticRoutes = ['', '/docs', '/changelog', '/blog'];
+  // `/docs/` is a redirect-only route, so only its canonical content pages
+  // belong in the sitemap.
+  const staticRoutes = ['', '/changelog', '/blog'];
+  const docsPages = getAvailablePages();
 
   const entries: MetadataRoute.Sitemap = [];
 
@@ -24,13 +26,28 @@ export default function sitemap(): MetadataRoute.Sitemap {
     for (const locale of locales) {
       entries.push({
         url: `${SITE_URL}/${locale}${route}/`,
-        lastModified: now,
-        changeFrequency: route === '' ? 'weekly' : 'weekly',
-        priority: route === '' ? 1.0 : 0.8,
         alternates: {
           languages: Object.fromEntries(
-            locales.map((l) => [l, `${SITE_URL}/${l}${route}/`]),
+            [
+              ...locales.map((l) => [l, `${SITE_URL}/${l}${route}/`]),
+              ['x-default', `${SITE_URL}/en${route}/`],
+            ],
           ),
+        },
+      });
+    }
+  }
+
+  // Canonical documentation URLs (one per locale and available sidebar page).
+  for (const page of docsPages) {
+    for (const locale of locales) {
+      entries.push({
+        url: `${SITE_URL}/${locale}/docs/${page.slug}/`,
+        alternates: {
+          languages: Object.fromEntries([
+            ...locales.map((l) => [l, `${SITE_URL}/${l}/docs/${page.slug}/`]),
+            ['x-default', `${SITE_URL}/en/docs/${page.slug}/`],
+          ]),
         },
       });
     }
@@ -46,7 +63,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
         priority: 0.7,
         alternates: {
           languages: Object.fromEntries(
-            locales.map((l) => [l, `${SITE_URL}/${l}/blog/${post.slug}/`]),
+            [
+              ...locales.map((l) => [l, `${SITE_URL}/${l}/blog/${post.slug}/`]),
+              ['x-default', `${SITE_URL}/en/blog/${post.slug}/`],
+            ],
           ),
         },
       });

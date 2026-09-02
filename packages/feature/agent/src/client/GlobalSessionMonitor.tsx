@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RecentSessionsModal } from './RecentSessionsModal';
 import { EngineBadge } from './EngineBadge';
 import { SessionNumberBadge, badgeStatus } from './SessionNumberBadge';
+import { sortSessionsForDisplay } from './sessionOrder';
 import {
   SessionStatusDot,
   SessionHoverCard,
@@ -36,6 +37,8 @@ interface GlobalSessionMonitorProps {
 
 export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSessionNumbers, collapsed, sessions }: GlobalSessionMonitorProps) {
   const { t } = useTranslation();
+  // Running first, then done-but-unread, then the rest (see sessionOrder).
+  const orderedSessions = useMemo(() => sortSessionsForDisplay(sessions), [sessions]);
   const [isOpen, setIsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [sessionNumbers, setSessionNumbers] = useState<Record<string, string>>({});
@@ -153,19 +156,19 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
             </button>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto">
-            {sessions.length === 0 ? (
+            {orderedSessions.length === 0 ? (
               <div className="px-3 py-4 text-sm text-muted-foreground text-center">
                 {t('sessions.noSessions')}
               </div>
             ) : (
-              sessions.map((session, index) => (
+              orderedSessions.map((session, index) => (
                 <button
                   key={`${session.cwd}-${session.sessionId}`}
                   onClick={() => handleSessionClick(session)}
                   onMouseEnter={(e) => showCard(session, e)}
                   onMouseLeave={hideCard}
                   className={`w-full px-3 py-2 text-left hover:bg-hover transition-colors flex items-start gap-2 ${
-                    index !== sessions.length - 1 ? 'border-b border-border/50' : ''
+                    index !== orderedSessions.length - 1 ? 'border-b border-border/50' : ''
                   } ${currentCwd === session.cwd ? 'bg-accent/50' : ''}`}
                 >
                   <SessionStatusDot status={session.status} className="mt-1.5" />

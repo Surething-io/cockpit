@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pin, Bell, BellOff, Sun, Moon } from 'lucide-react';
 import { useWebSocket, useTheme } from '@cockpit/shared-ui';
 import { usePinnedSessions } from '../usePinnedSessions';
 import { usePushSubscription } from '../usePushSubscription';
+import { sortSessionsForDisplay } from '../sessionOrder';
 import type { GlobalSession } from '../GlobalSessionMonitor';
 
 // What the list needs to open a session — satisfied by both a recent
@@ -60,6 +61,9 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
 
   const projectName = (cwd: string) => cwd.split('/').pop() || cwd;
   const loadingCount = sessions.filter((s) => s.status === 'loading').length;
+  // Same order as the desktop lists: running, then done-but-unread, then the
+  // rest (see sessionOrder).
+  const orderedSessions = useMemo(() => sortSessionsForDisplay(sessions), [sessions]);
 
   const tabBtn = (key: Tab, label: string) => (
     <button
@@ -125,10 +129,10 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
       {/* List */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'recent' ? (
-          sessions.length === 0 ? (
+          orderedSessions.length === 0 ? (
             <Empty text={t('sessions.noSessions')} />
           ) : (
-            sessions.map((session) => (
+            orderedSessions.map((session) => (
               <button
                 key={`${session.cwd}-${session.sessionId}`}
                 onClick={() => onOpen({ cwd: session.cwd, sessionId: session.sessionId, title: session.title })}

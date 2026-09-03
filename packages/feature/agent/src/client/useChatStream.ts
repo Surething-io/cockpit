@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
-import { applyStreamEvent, type StreamEvent } from './applyStreamEvent';
+import { applyStreamEvent, isSubagentFrame, isTaskEvent, settleRunningTasks, type StreamEvent } from './applyStreamEvent';
 import type {
   ChatMessage,
   ImageInfo,
@@ -24,7 +24,9 @@ import i18n from '@cockpit/shared-i18n';
 import { useWebSocket } from '@cockpit/shared-ui';
 
 // Stable identity for "no background tasks" so clearing never churns the prop and defeats memo.
-const NO_BG_TASKS: BackgroundTaskInfo[] = [];
+// Exported so the viewer path (Chat/MobileChat, fed by useLiveStream) clears to the SAME
+// reference — two "empty" arrays would each defeat MessageList's memo on every run end.
+export const NO_BG_TASKS: BackgroundTaskInfo[] = [];
 
 // Provisional run id the client generates per send so it can subscribe to the run's
 // /ws/session-stream immediately — before the engine reveals its real sessionId.
@@ -175,6 +177,10 @@ export function useChatStream(
       wsWatchdogRef.current = null;
     }
     flushStreamBuffer();
+    // The owning process is gone → no task it spawned is still running (see settleRunningTasks).
+    // endRun fires per RUN, not per turn, so this cannot cut a background task loose between the
+    // launch turn and the follow-up turn the SDK auto-runs when it reports back.
+    setMessages(settleRunningTasks);
     setIsLoading(false);
     setLiveOutputTokens(null);
     setRunningStartedAt(null);
@@ -209,6 +215,10 @@ export function useChatStream(
   // SSE event handling
   const handleStreamEvent = useCallback((event: Record<string, unknown>, messageId: string) => {
     const eventType = event.type as string;
+    // A subagent's frames (tool_use/tool_result the SDK forwards from a nested run, and its text
+    // under forwardSubagentText) are not this turn's — see isSubagentFrame. Dropped before ANY
+    // handling, so they also stop inflating the fallback output-token estimate.
+    if (isSubagentFrame(event as StreamEvent)) return;
     const bumpOutputProgress = (text: unknown) => {
       if (sawServerUsageUpdateRef.current || typeof text !== 'string' || !text) return;
       const delta = estimateOutputUnits(text);
@@ -257,6 +267,15 @@ export function useChatStream(
       return;
     }
 
+    // A spawned task narrating its own life (task_started / task_progress / task_notification,
+    // all carrying `tool_use_id`) → fold into the tool call that launched it. Deliberately not
+    // scoped to this turn's bubble; see applyTaskEvent. task_notification falls through, because
+    // it ALSO renders a system row below.
+    if (isTaskEvent(event as StreamEvent)) {
+      setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
+      if (event.subtype !== 'task_notification') return;
+    }
+
     // #bg: a background task reporting back while idle (after a result, before the next turn) →
     // render a muted system-event bar live, matching the disk-reload view. A notification during
     // an active turn is a foreground subagent (already shown as its tool call) → skip.
@@ -268,6 +287,7 @@ export function useChatStream(
         const detail =
           `<task-notification>\n` +
           (taskId ? `<task-id>${taskId}</task-id>\n` : '') +
+          (event.tool_use_id ? `<tool-use-id>${event.tool_use_id as string}</tool-use-id>\n` : '') +
           (status ? `<status>${status}</status>\n` : '') +
           (summary ? `<summary>${summary}</summary>\n` : '') +
           (event.output_file ? `<output-file>${event.output_file as string}</output-file>\n` : '') +

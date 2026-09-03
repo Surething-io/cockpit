@@ -78,6 +78,39 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
   // Workflow drill-in needs the run id plus the session coordinates to locate
   // the journal under `<sessionId>/workflows/`.
   const isWorkflowCall = isWorkflow && !!workflowRunId && !!cwd && !!sessionId;
+  // The background task this call spawned is still working. Distinct from `isLoading` (= this
+  // tool call has no result yet), which an async launch clears in ~30ms — see
+  // shared/subagentTask.ts.
+  //
+  // Read straight off the status, with no "…and is a run active?" qualifier: `running` is only
+  // ever written by a live event from the owning process (the disk parsers reconstruct `unknown`
+  // instead, and settleRunningTasks clears it when the run ends). Qualifying it with a
+  // session-level flag would be strictly worse than useless — it is true again as soon as the
+  // user sends an UNRELATED next message, which is exactly how a stale task comes back to life.
+  const taskRunning = toolCall.task?.status === 'running';
+  const busy = !!toolCall.isLoading || taskRunning;
+  /**
+   * Poll gate for the sub-agent drill-in. Two engines, two different truths:
+   *
+   *  - claude/deepseek carry explicit task state, because a backgrounded Agent answers its own
+   *    tool call in ~30ms and keeps working; `result` says nothing about the agent.
+   *  - codex carries none, and does not need any: `spawn_agent`'s output is bookkeeping that
+   *    session-by-path.ts deliberately does NOT store as the bubble's result, precisely so an
+   *    unfinished sub-agent reads as "no result yet". That is also the ONLY signal there — the
+   *    codex reload path hard-codes `isLoading: false` on every row.
+   *
+   * So: trust `task` when the engine provides it, keep the legacy test when it does not. The
+   * `|| isLoading` arm covers a FOREGROUND claude subagent, whose spawning call genuinely does
+   * block until it finishes.
+   */
+  const subagentRunning = toolCall.task ? taskRunning || !!toolCall.isLoading : !toolCall.result;
+  // One-line liveness for a running task. Rendered instead of a bare spinner because
+  // "WebFetch · 37" answers "is it stuck?" and a spinner does not.
+  const taskProgress = taskRunning
+    ? [toolCall.task?.lastToolName, toolCall.task?.toolUses ? String(toolCall.task.toolUses) : null]
+        .filter(Boolean)
+        .join(' · ')
+    : '';
   const isSkill = toolCall.name === 'Skill';
   // The header text slot carries a description (Agent) / name (Workflow/Skill),
   // not a path — skip relative-path conversion and the copy-path icon for these.
@@ -246,6 +279,9 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
               {t('chat.workflowRun')}
             </span>
           )}
+          {taskProgress && (
+            <span className="text-xs text-muted-foreground truncate max-w-[16rem]">{taskProgress}</span>
+          )}
           {expanded && !toolCall.isLoading && !disableOverlays && (
             <>
               <span
@@ -272,7 +308,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
               )}
             </>
           )}
-          {toolCall.isLoading ? (
+          {busy ? (
             <span className="inline-block w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin" />
           ) : (
             <span className="text-foreground-subtle text-xs">
@@ -336,6 +372,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
           cwd={cwd}
           sessionId={sessionId}
           toolCall={toolCall}
+          running={subagentRunning}
           onClose={() => setShowSubagent(false)}
         />
       )}
@@ -346,7 +383,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
           cwd={cwd}
           sessionId={sessionId}
           runId={workflowRunId}
-          isRunning={!!toolCall.isLoading}
+          isRunning={busy}
           onClose={() => setShowWorkflow(false)}
         />
       )}

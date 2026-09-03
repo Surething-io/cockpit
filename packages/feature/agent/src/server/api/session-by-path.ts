@@ -5,6 +5,7 @@ import { Effect } from 'effect';
 import { resolveSessionPath } from './session/sessionStore';
 import { findCodexSessionEntry } from '@cockpit/shared-utils';
 import { injectionKind, isHumanTurnStart } from '../../shared/transcriptTurns';
+import { asyncLaunchTaskId, parseTaskNotification, type ToolCallTask } from '../../shared/subagentTask';
 import { handler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import {
   AppError,
@@ -86,6 +87,11 @@ interface TranscriptMessage {
   toolUseResult?: {
     stdout?: string;
     stderr?: string;
+    // Async Agent/Task launch receipt: {isAsync, status:'async_launched', agentId}.
+    // Read through asyncLaunchTaskId — never by pattern-matching the receipt prose.
+    isAsync?: boolean;
+    status?: string;
+    agentId?: string;
   };
 }
 
@@ -118,6 +124,8 @@ interface ChatMessage {
     isLoading: boolean;
     // Skill body loaded by this call (folded here instead of shown as a user bubble).
     skillContent?: string;
+    // The background task this call spawned — see shared/subagentTask.ts.
+    task?: ToolCallTask;
   }>;
 }
 
@@ -667,14 +675,34 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
   // Skill bodies, keyed by the tool call (sourceToolUseID) that loaded them — folded
   // into that tool call instead of being rendered as a user bubble.
   const skillContents = new Map<string, string>();
+  // Background tasks a tool call spawned, keyed by that call. Rebuilt from the transcript so a
+  // reload agrees with what the live `system/task_*` stream put on screen: the launch receipt
+  // opens the entry as `unknown`, the matching `<task-notification>` settles it. Never `running`
+  // — that status is a live claim only the owning process may make; see TaskStatus.
+  const spawnedTasks = new Map<string, ToolCallTask>();
 
-  // First pass: collect all tool results + skill bodies
+  // First pass: collect all tool results + skill bodies + spawned-task state (file order, so a
+  // notification always lands after the launch that opened its entry)
   for (const msg of rawMessages) {
     if (msg.type === 'user' && msg.message?.content && Array.isArray(msg.message.content)) {
       for (const block of msg.message.content) {
         if (block.type === 'tool_result' && block.tool_use_id) {
           toolResults.set(block.tool_use_id, block.content || '');
+          const taskId = asyncLaunchTaskId(msg.toolUseResult);
+          // 'unknown', never 'running': this is a receipt, not a heartbeat. See TaskStatus.
+          if (taskId) spawnedTasks.set(block.tool_use_id, { status: 'unknown', id: taskId });
         }
+      }
+    }
+    if (msg.type === 'user' && injectionKind(msg) === 'task-notification') {
+      const note = parseTaskNotification(messageText(msg));
+      if (note?.toolUseId && note.status) {
+        spawnedTasks.set(note.toolUseId, {
+          ...spawnedTasks.get(note.toolUseId),
+          status: note.status,
+          ...(note.taskId ? { id: note.taskId } : {}),
+          ...(note.summary ? { summary: note.summary } : {}),
+        });
       }
     }
     if (msg.type === 'user' && injectionKind(msg) === 'skill' && msg.sourceToolUseID) {
@@ -799,6 +827,7 @@ function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMessage[] 
               input: tool.input || {},
               result: toolResults.get(tool.id),
               isLoading: false,
+              ...(spawnedTasks.has(tool.id) ? { task: spawnedTasks.get(tool.id) } : {}),
               ...(skillContents.has(tool.id) ? { skillContent: skillContents.get(tool.id) } : {}),
             });
           }

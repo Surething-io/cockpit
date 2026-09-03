@@ -17,10 +17,10 @@ import { TokenUsageBar } from './TokenUsageBar';
 import { UserMessagesModal } from './UserMessagesModal';
 import { useChatContextOptional } from './ChatContext';
 import { useChatHistory } from './useChatHistory';
-import { useChatStream } from './useChatStream';
+import { useChatStream, NO_BG_TASKS } from './useChatStream';
 import { MessageList, MessageListHandle } from './MessageList';
 import { ChatInput } from './ChatInput';
-import type { ChatMessage, TokenUsage, LiveOutputTokens, ImageInfo, ChatEngine, EngineModelId, ToolCallInfo, ClaudeModelId, ClaudeEffort, ClaudeContextWindow, CodexModelId, CodexReasoningEffort } from './types';
+import type { ChatMessage, TokenUsage, LiveOutputTokens, BackgroundTaskInfo, ImageInfo, ChatEngine, EngineModelId, ToolCallInfo, ClaudeModelId, ClaudeEffort, ClaudeContextWindow, CodexModelId, CodexReasoningEffort } from './types';
 // In-package siblings (chat-only)
 import { ProjectSessionsModal } from './ProjectSessionsModal';
 import { OllamaModelPicker } from './OllamaModelPicker';
@@ -181,6 +181,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const [liveRunning, setLiveRunning] = useState(false);
   const [viewerLiveOutputTokens, setViewerLiveOutputTokens] = useState<LiveOutputTokens | null>(null);
   const [viewerRunStartedAt, setViewerRunStartedAt] = useState<number | null>(null);
+  const [viewerBackgroundTasks, setViewerBackgroundTasks] = useState<BackgroundTaskInfo[]>(NO_BG_TASKS);
   const liveRunningRef = useRef(false);
   useEffect(() => { liveRunningRef.current = liveRunning; }, [liveRunning]);
 
@@ -362,6 +363,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     onRunningChange: (r) => { liveRunningRef.current = r; setLiveRunning(r); },
     onLiveOutputTokens: setViewerLiveOutputTokens,
     onRunStartedAt: setViewerRunStartedAt,
+    onBackgroundTasks: (tasks) => setViewerBackgroundTasks(tasks.length ? tasks : NO_BG_TASKS),
     onComplete: () => {
       // Turn finished → reconcile from disk (replaces temp `live-…` bubbles with canonical
       // real-uuid messages).
@@ -374,6 +376,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       setLiveRunning(false);
       setViewerLiveOutputTokens(null);
       setViewerRunStartedAt(null);
+      setViewerBackgroundTasks(NO_BG_TASKS);
     }
   }, [liveViewerEnabled]);
 
@@ -420,6 +423,9 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const tokenUsage = streamTokenUsage || historyTokenUsage;
   const liveOutputTokens = isLoading ? streamLiveOutputTokens : liveRunning ? viewerLiveOutputTokens : null;
   const runningStartedAt = isLoading ? streamRunningStartedAt : liveRunning ? viewerRunStartedAt : null;
+  // Same originator/viewer precedence: a tab that is not the sender still needs to know what a
+  // resident run is waiting on (its background agents), which only the live tail reports.
+  const liveBackgroundTasks = isLoading ? backgroundTasks : liveRunning ? viewerBackgroundTasks : NO_BG_TASKS;
 
   // Notify parent when sessionId changes
   useEffect(() => {
@@ -739,7 +745,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             sessionId={sessionId}
             engine={engine}
             apiRetryInfo={apiRetryInfo}
-            backgroundTasks={backgroundTasks}
+            backgroundTasks={liveBackgroundTasks}
             hasMoreHistory={hasMoreHistory}
             isLoadingMore={isLoadingMore}
             onLoadMore={loadMoreHistory}

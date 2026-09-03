@@ -4,8 +4,8 @@ import type React from 'react';
 import { useRef } from 'react';
 import { useWebSocket } from '@cockpit/shared-ui';
 import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
-import type { ChatMessage, ChatEngine, LiveOutputTokens } from './types';
-import { applyStreamEvent, type StreamEvent } from './applyStreamEvent';
+import type { ChatMessage, ChatEngine, LiveOutputTokens, BackgroundTaskInfo } from './types';
+import { applyStreamEvent, isSubagentFrame, isTaskEvent, settleRunningTasks, type StreamEvent } from './applyStreamEvent';
 
 // #10 viewer hook: tail /ws/session-stream for `sessionId` and render live through the
 // SAME reducer the originator uses (applyStreamEvent) → engine-agnostic, zero per-engine
@@ -30,6 +30,8 @@ export function useLiveStream(
     onComplete?: () => void;
     onLiveOutputTokens?: (tokens: LiveOutputTokens | null) => void;
     onRunStartedAt?: (startedAt: number | null) => void;
+    /** Live set of non-ambient background tasks (REPLACE semantics), mirroring useChatStream. */
+    onBackgroundTasks?: (tasks: BackgroundTaskInfo[]) => void;
   }
 ): void {
   const curAssistantId = useRef<string | null>(null);
@@ -59,6 +61,10 @@ export function useLiveStream(
   };
 
   const apply = (ev: StreamEvent) => {
+    // A subagent's frames are not this turn's — see isSubagentFrame. Returned before the
+    // `curAssistantId ?? newPlaceholder()` at the bottom, so a viewer whose first event happens
+    // to be a subagent tick does not open an empty bubble for it either.
+    if (isSubagentFrame(ev)) return;
     const publishOutputProgress = (tokens: number) => {
       opts?.onLiveOutputTokens?.({
         outputTokens: Math.max(0, Math.round(tokens)),
@@ -96,6 +102,23 @@ export function useLiveStream(
         bumpOutputProgress(raw.delta.text);
       }
     }
+    // The live background-task set (REPLACE semantics — swap, never pair start/stop edges).
+    // The originator gets this through useChatStream; without it here the viewer's loading
+    // bubble cannot say what a resident run is still waiting on.
+    if (ev.type === 'system' && ev.subtype === 'background_tasks_changed') {
+      const live = ev.tasks ?? [];
+      opts?.onBackgroundTasks?.(
+        live.filter((t) => !t.ambient).map((t) => ({ task_id: t.task_id, description: t.description }))
+      );
+      return;
+    }
+    // A spawned task narrating its own life → fold into the tool call that launched it (the
+    // reducer keys on `tool_use_id`, so it lands on the launching row whichever bubble that is
+    // by now). task_notification falls through: it ALSO renders a system row below.
+    if (isTaskEvent(ev)) {
+      setMessages((prev) => applyStreamEvent(prev, ev, { engine, assistantId: curAssistantId.current ?? '' }));
+      if (ev.subtype !== 'task_notification') return;
+    }
     // Background task reporting back. When it arrives while idle (after a result, before the next
     // turn) it's a real background completion → render a muted system-event bar live, matching the
     // disk-reload view. A notification that arrives mid-turn is a foreground subagent (already
@@ -106,6 +129,7 @@ export function useLiveStream(
         const detail =
           `<task-notification>\n` +
           (ev.task_id ? `<task-id>${ev.task_id}</task-id>\n` : '') +
+          (ev.tool_use_id ? `<tool-use-id>${ev.tool_use_id}</tool-use-id>\n` : '') +
           (ev.status ? `<status>${ev.status}</status>\n` : '') +
           (ev.summary ? `<summary>${ev.summary}</summary>\n` : '') +
           (ev.output_file ? `<output-file>${ev.output_file}</output-file>\n` : '') +
@@ -207,6 +231,8 @@ export function useLiveStream(
           opts?.onRunningChange?.(false);
           opts?.onLiveOutputTokens?.(null);
           opts?.onRunStartedAt?.(null);
+          opts?.onBackgroundTasks?.([]);
+          setMessages(settleRunningTasks);
           fallbackOutputTokens.current = 0;
           sawServerUsageUpdate.current = false;
           sawResult.current = false;
@@ -322,6 +348,8 @@ export function useLiveStream(
           opts?.onRunningChange?.(false);
           opts?.onLiveOutputTokens?.(null);
           opts?.onRunStartedAt?.(null);
+          opts?.onBackgroundTasks?.([]);
+          setMessages(settleRunningTasks);
           fallbackOutputTokens.current = 0;
           sawServerUsageUpdate.current = false;
           sawResult.current = false;
@@ -334,6 +362,8 @@ export function useLiveStream(
         opts?.onRunningChange?.(false);
         opts?.onLiveOutputTokens?.(null);
         opts?.onRunStartedAt?.(null);
+        opts?.onBackgroundTasks?.([]);
+        setMessages(settleRunningTasks);
         fallbackOutputTokens.current = 0;
         sawServerUsageUpdate.current = false;
         sawResult.current = false;

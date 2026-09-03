@@ -11,6 +11,7 @@ import * as readline from 'readline';
 import { appendTextPart, appendToolPart, joinAssistantText } from '../../../shared/assistantText';
 import type { MessagePart } from '../../../shared/assistantText';
 import { injectionKind } from '../../../shared/transcriptTurns';
+import { asyncLaunchTaskId, parseTaskNotification, type ToolCallTask } from '../../../shared/subagentTask';
 
 export interface TranscriptMessage {
   type: string;
@@ -44,6 +45,10 @@ export interface TranscriptMessage {
   toolUseResult?: {
     stdout?: string;
     stderr?: string;
+    // Async Agent/Task launch receipt — read through asyncLaunchTaskId.
+    isAsync?: boolean;
+    status?: string;
+    agentId?: string;
   };
 }
 
@@ -70,6 +75,8 @@ interface ChatMessage {
     result?: string;
     isLoading: boolean;
     skillContent?: string;
+    // The background task this call spawned — see shared/subagentTask.ts.
+    task?: ToolCallTask;
   }>;
 }
 
@@ -142,14 +149,31 @@ export function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMes
   let toolSinceText = false;
   const toolResults = new Map<string, string>();
   const skillContents = new Map<string, string>();
+  // Background tasks a tool call spawned, keyed by that call — kept in lockstep with
+  // session-by-path.ts and with the live reducer's task events (shared/subagentTask.ts).
+  const spawnedTasks = new Map<string, ToolCallTask>();
 
-  // First pass: collect all tool results + skill bodies
+  // First pass: collect all tool results + skill bodies + spawned-task state
   for (const msg of rawMessages) {
     if (msg.type === 'user' && msg.message?.content && Array.isArray(msg.message.content)) {
       for (const block of msg.message.content) {
         if (block.type === 'tool_result' && block.tool_use_id) {
           toolResults.set(block.tool_use_id, block.content || '');
+          const taskId = asyncLaunchTaskId(msg.toolUseResult);
+          // 'unknown', never 'running': this is a receipt, not a heartbeat. See TaskStatus.
+          if (taskId) spawnedTasks.set(block.tool_use_id, { status: 'unknown', id: taskId });
         }
+      }
+    }
+    if (msg.type === 'user' && injectionKind(msg) === 'task-notification') {
+      const note = parseTaskNotification(messageText(msg));
+      if (note?.toolUseId && note.status) {
+        spawnedTasks.set(note.toolUseId, {
+          ...spawnedTasks.get(note.toolUseId),
+          status: note.status,
+          ...(note.taskId ? { id: note.taskId } : {}),
+          ...(note.summary ? { summary: note.summary } : {}),
+        });
       }
     }
     if (msg.type === 'user' && injectionKind(msg) === 'skill' && msg.sourceToolUseID) {
@@ -281,6 +305,7 @@ export function convertToChatMessages(rawMessages: TranscriptMessage[]): ChatMes
               input: tool.input || {},
               result: toolResults.get(tool.id),
               isLoading: false,
+              ...(spawnedTasks.has(tool.id) ? { task: spawnedTasks.get(tool.id) } : {}),
               ...(skillContents.has(tool.id) ? { skillContent: skillContents.get(tool.id) } : {}),
             });
           }

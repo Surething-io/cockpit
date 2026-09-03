@@ -1,7 +1,7 @@
 // Regression net for the engine-agnostic stream reducer (#10). Run with `npm test`
 // (vitest) or `npx vitest run <this file>`.
 import { describe, it, expect } from 'vitest';
-import { applyStreamEvent, type StreamEvent } from './applyStreamEvent';
+import { applyStreamEvent, isSubagentFrame, settleRunningTasks, type StreamEvent } from './applyStreamEvent';
 import { deriveContent } from '../shared/assistantText';
 import type { ChatMessage } from './types';
 
@@ -117,6 +117,166 @@ describe('applyStreamEvent (#10 engine-agnostic reducer)', () => {
     );
     expect(out[0].content).toBe('step one\n\nstep two');
   });
+
+  // Frames the SDK forwards from a NESTED run (`parent_tool_use_id` = the spawning
+  // Agent/Task tool_use). They are absent from the parent transcript on disk, so counting
+  // them live breaks live/reload parity — and, because every tool_use flips
+  // pendingTextBreak, a background subagent ticking while the parent narrates used to chop
+  // that narration into a new part per tick (arbitrary mid-word line breaks + markdown
+  // parsed per fragment).
+  describe('subagent frames are not this turn', () => {
+    const subToolUse = (id: string): StreamEvent => ({
+      ...toolUse(id),
+      parent_tool_use_id: 'parent-agent-1',
+    });
+
+    it('a subagent tool_use adds no tool call to the parent bubble', () => {
+      const out = reduce(seed(), [toolUse('t1'), subToolUse('sub-1'), subToolUse('sub-2')]);
+      expect(out[0].toolCalls?.map((tc) => tc.id)).toEqual(['t1']);
+    });
+
+    it('a subagent tick mid-narration does NOT split the parent text (the reported bug)', () => {
+      const out = reduce(seed(), [
+        delta('四路已经在'),
+        subToolUse('sub-1'),
+        delta('跑: **一手**'),
+        subToolUse('sub-2'),
+        delta('还是二手'),
+      ]);
+      expect(out[0].content).toBe('四路已经在跑: **一手**还是二手');
+      expect(out[0].parts).toEqual([{ type: 'text', text: '四路已经在跑: **一手**还是二手' }]);
+    });
+
+    it('subagent text (forwardSubagentText) never lands in the parent bubble', () => {
+      const out = reduce(
+        seed(),
+        [
+          { type: 'assistant', message: { content: [{ type: 'text', text: 'mine' }] } },
+          { type: 'assistant', parent_tool_use_id: 'parent-agent-1', message: { content: [{ type: 'text', text: 'theirs' }] } },
+        ],
+        'codex'
+      );
+      expect(out[0].content).toBe('mine');
+    });
+
+    it('a subagent tool_result does not resolve the parent spawning call', () => {
+      const out = reduce(seed(), [
+        toolUse('t1'),
+        { type: 'user', parent_tool_use_id: 'parent-agent-1', message: { content: [{ tool_use_id: 't1', content: 'leaked' }] } },
+      ]);
+      expect(out[0].toolCalls?.[0].result).toBeUndefined();
+      expect(out[0].toolCalls?.[0].isLoading).toBe(true);
+    });
+
+    it('parent frames (null / absent parent_tool_use_id) are unaffected', () => {
+      expect(isSubagentFrame({})).toBe(false);
+      expect(isSubagentFrame({ parent_tool_use_id: null })).toBe(false);
+      expect(isSubagentFrame({ parent_tool_use_id: 'toolu_1' })).toBe(true);
+    });
+  });
+
+  // system/task_* — the spawned work's OWN lifecycle, joined to the launching call by
+  // `tool_use_id`. Separate from `isLoading` because a backgrounded launch resolves its tool
+  // call in ~30ms and then runs for minutes (shared/subagentTask.ts).
+  describe('spawned background tasks', () => {
+    const agentCall = (id: string): StreamEvent => ({
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', id, name: 'Agent', input: {} }] },
+    });
+    const taskEv = (subtype: string, extra: Partial<StreamEvent>): StreamEvent => ({
+      type: 'system',
+      subtype,
+      task_id: 'a1',
+      tool_use_id: 't1',
+      ...extra,
+    });
+    const task = (m: ChatMessage) => m.toolCalls?.[0].task;
+
+    it('task_started marks the launching call running WITHOUT touching isLoading', () => {
+      const out = reduce(seed(), [
+        agentCall('t1'),
+        { type: 'user', message: { content: [{ tool_use_id: 't1', content: 'Async agent launched' }] } },
+        taskEv('task_started', {}),
+      ]);
+      // The tool call itself is settled — the launch receipt came back — but the task is not.
+      expect(out[0].toolCalls?.[0].isLoading).toBe(false);
+      expect(out[0].toolCalls?.[0].result).toBe('Async agent launched');
+      expect(task(out[0])).toEqual({ status: 'running', id: 'a1' });
+    });
+
+    it('task_progress carries what the agent is doing right now', () => {
+      const out = reduce(seed(), [
+        agentCall('t1'),
+        taskEv('task_started', {}),
+        taskEv('task_progress', { last_tool_name: 'WebFetch', usage: { tool_uses: 37, duration_ms: 9000 } }),
+      ]);
+      expect(task(out[0])).toMatchObject({ status: 'running', lastToolName: 'WebFetch', toolUses: 37, durationMs: 9000 });
+    });
+
+    it('task_notification settles it, and a failure is not laundered into completed', () => {
+      const done = reduce(seed(), [agentCall('t1'), taskEv('task_started', {}), taskEv('task_notification', { status: 'completed' })]);
+      expect(task(done[0])?.status).toBe('completed');
+      const failed = reduce(seed(), [agentCall('t1'), taskEv('task_started', {}), taskEv('task_notification', { status: 'failed' })]);
+      expect(task(failed[0])?.status).toBe('failed');
+    });
+
+    it('lands on the launching bubble even after the turn moved on', () => {
+      // The real background case: the agent reports back long after its launch turn ended, by
+      // which point live events are filling a DIFFERENT bubble. Keying on tool_use_id is what
+      // makes that work — scoping to `assistantId` would drop it on the floor.
+      const msgs: ChatMessage[] = [
+        { id: ID, role: 'assistant', content: 'launched', toolCalls: [{ id: 't1', name: 'Agent', input: {}, isLoading: false }] },
+        { id: 'asst-2', role: 'assistant', content: '', isStreaming: true },
+      ];
+      const out = applyStreamEvent(msgs, taskEv('task_notification', { status: 'completed' }), { assistantId: 'asst-2' });
+      expect(out[0].toolCalls?.[0].task?.status).toBe('completed');
+      expect(out[1].toolCalls).toBeUndefined();
+    });
+
+    it('a task with no matching call (nested subagent work) changes nothing, by identity', () => {
+      const msgs = reduce(seed(), [agentCall('t1')]);
+      const out = applyStreamEvent(msgs, taskEv('task_progress', { tool_use_id: 'nested-9' }), { assistantId: ID });
+      expect(out).toBe(msgs);
+    });
+
+    it('ambient housekeeping tasks are ignored', () => {
+      const out = reduce(seed(), [agentCall('t1'), taskEv('task_started', { ambient: true })]);
+      expect(task(out[0])).toBeUndefined();
+    });
+
+    // A stale `running` is how a dead task comes back to life. sdkLoop keeps the CLI process
+    // resident until every task reports, so a run that ENDS with one still running was stopped
+    // or crashed — the task died with it. Cleared here rather than qualified at render time
+    // with "is any run active", which is true again on the user's next unrelated message.
+    it('a run that ends with a task still running settles it to unknown', () => {
+      const live = reduce(seed(), [agentCall('t1'), taskEv('task_started', {})]);
+      expect(task(live[0])?.status).toBe('running');
+      const settled = settleRunningTasks(live);
+      expect(task(settled[0])).toEqual({ status: 'unknown', id: 'a1' });
+    });
+
+    it('settling preserves terminal outcomes and array identity when there is nothing to settle', () => {
+      const done = reduce(seed(), [agentCall('t1'), taskEv('task_started', {}), taskEv('task_notification', { status: 'failed' })]);
+      const settled = settleRunningTasks(done);
+      expect(settled).toBe(done); // no running task ⇒ same reference, no re-render
+      expect(task(settled[0])?.status).toBe('failed');
+    });
+
+    it('a later unrelated run cannot revive a settled task', () => {
+      // The adversarial cross-run timeline: run A leaves a stale task, run B starts. Nothing
+      // run B emits mentions t1, so t1 must stay settled — no session-wide flag can flip it.
+      const stale = settleRunningTasks(reduce(seed(), [agentCall('t1'), taskEv('task_started', {})]));
+      const afterRunB = reduce(stale, [
+        { type: 'system', subtype: 'init' },
+        agentCall('t2'),
+        { type: 'system', subtype: 'task_started', task_id: 'b1', tool_use_id: 't2' },
+        { type: 'result' },
+      ]);
+      expect(task(afterRunB[0])?.status).toBe('unknown');
+      expect(afterRunB[0].toolCalls?.find((tc) => tc.id === 't2')?.task?.status).toBe('running');
+    });
+  });
+
 
   // #parts: the ordered text/tool skeleton the renderer needs to tell a mid-turn
   // narration segment from the turn's answer. It is built alongside `content`;

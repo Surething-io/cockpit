@@ -78,3 +78,89 @@ describe('convertToChatMessages #parts', () => {
     expect(out[1].content).toBe('');
   });
 });
+
+// The reload half of the spawned-task contract. Its live counterpart is
+// applyStreamEvent.test.ts's "spawned background tasks" block: both must agree, or a refresh
+// mid-run flips a running agent to finished (or resurrects a finished one).
+describe('convertToChatMessages spawned background tasks', () => {
+  const agentCall = (uuid: string, id: string) =>
+    assistant(uuid, [{ type: 'tool_use', id, name: 'Agent', input: { description: 'research' } }]);
+  const launchReceipt = (uuid: string, toolUseId: string, agentId: string) => ({
+    type: 'user',
+    uuid,
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUseId, content: 'Async agent launched successfully.' }] },
+    toolUseResult: { isAsync: true, status: 'async_launched', agentId },
+  }) as Parameters<typeof convertToChatMessages>[0][number];
+  const notification = (uuid: string, toolUseId: string, taskId: string, status: string) => ({
+    type: 'user',
+    uuid,
+    origin: { kind: 'task-notification' },
+    message: {
+      role: 'user',
+      content:
+        `<task-notification>\n<task-id>${taskId}</task-id>\n<tool-use-id>${toolUseId}</tool-use-id>\n` +
+        `<status>${status}</status>\n<summary>Agent "research" finished</summary>\n</task-notification>`,
+    },
+  }) as Parameters<typeof convertToChatMessages>[0][number];
+
+  const taskOf = (msgs: ReturnType<typeof convertToChatMessages>) =>
+    msgs.find((m) => m.toolCalls?.length)?.toolCalls?.[0];
+
+  it('an unsettled async launch reconstructs as UNKNOWN, never running', () => {
+    const tc = taskOf(convertToChatMessages([
+      userTurn('u1', 'go'),
+      agentCall('a1', 'toolu_1'),
+      launchReceipt('r1', 'toolu_1', 'agent-9'),
+    ]));
+    // The receipt IS the tool result — the old "no result ⇒ still working" test read this as
+    // finished within 30ms of launch.
+    expect(tc?.result).toContain('Async agent launched');
+    // …and the fix must not overcorrect into "still running": the process that owned this task
+    // is gone by the time anything reads the transcript. Reconstructing `running` here is what
+    // would let an interrupted run's task re-spin during a LATER, unrelated run.
+    expect(tc?.task).toEqual({ status: 'unknown', id: 'agent-9' });
+  });
+
+  it('the matching task-notification settles it, keyed by <tool-use-id>', () => {
+    const tc = taskOf(convertToChatMessages([
+      userTurn('u1', 'go'),
+      agentCall('a1', 'toolu_1'),
+      launchReceipt('r1', 'toolu_1', 'agent-9'),
+      notification('n1', 'toolu_1', 'agent-9', 'completed'),
+    ]));
+    expect(tc?.task).toMatchObject({ status: 'completed', id: 'agent-9' });
+  });
+
+  it('a failure is preserved, not laundered into completed', () => {
+    const tc = taskOf(convertToChatMessages([
+      userTurn('u1', 'go'),
+      agentCall('a1', 'toolu_1'),
+      launchReceipt('r1', 'toolu_1', 'agent-9'),
+      notification('n1', 'toolu_1', 'agent-9', 'failed'),
+    ]));
+    expect(tc?.task?.status).toBe('failed');
+  });
+
+  it("another agent's notification does not settle this call", () => {
+    const tc = taskOf(convertToChatMessages([
+      userTurn('u1', 'go'),
+      agentCall('a1', 'toolu_1'),
+      launchReceipt('r1', 'toolu_1', 'agent-9'),
+      notification('n1', 'toolu_OTHER', 'agent-other', 'completed'),
+    ]));
+    expect(tc?.task?.status).toBe('unknown');
+  });
+
+  it('a synchronous tool call carries no task at all', () => {
+    const tc = taskOf(convertToChatMessages([
+      userTurn('u1', 'go'),
+      assistant('a1', [tool('t1')]),
+      {
+        type: 'user',
+        uuid: 'r1',
+        message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'file body' }] },
+      } as Parameters<typeof convertToChatMessages>[0][number],
+    ]));
+    expect(tc?.task).toBeUndefined();
+  });
+});

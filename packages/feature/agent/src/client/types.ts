@@ -16,6 +16,10 @@ export interface ToolCallInfo {
   // Skill body loaded by this call (e.g. the Skill tool). Folded into the tool
   // call's expanded view instead of appearing as a separate user bubble.
   skillContent?: string;
+  // The BACKGROUND TASK this call spawned (Agent/Task launch, backgrounded Bash).
+  // Deliberately not folded into `isLoading`: an async launch resolves the tool call
+  // in ~30ms and leaves the task running for minutes — see shared/subagentTask.ts.
+  task?: ToolCallTask;
 }
 
 // Ordered text/tool skeleton of an assistant turn — defined in shared/ because
@@ -23,6 +27,8 @@ export interface ToolCallInfo {
 // keep a single import site for chat types.
 import type { MessagePart } from '../shared/assistantText';
 export type { MessagePart };
+import type { ToolCallTask, TaskStatus } from '../shared/subagentTask';
+export type { ToolCallTask, TaskStatus };
 
 // Re-export image types from shared-utils (single source of truth).
 import type { ImageMediaType, ImageInfo, MessageImage } from '@cockpit/shared-utils';

@@ -36,12 +36,21 @@ interface SubagentTranscriptModalProps {
   sessionId: string;
   // Agent/Task tool call path. Mutually exclusive with `workflowRef`.
   toolCall?: ToolCallInfo;
+  /**
+   * Is the spawned agent still working? Supplied by the host (ToolCallModal), which joins the
+   * live `system/task_*` stream to this call. NOT derivable from `toolCall.result`: a
+   * backgrounded Agent answers its own tool call in ~30ms with a launch receipt and then runs
+   * for minutes, so the old `!toolCall.result` test reported "finished" immediately and the
+   * poll below never started — the transcript only advanced when the modal was reopened.
+   * See shared/subagentTask.ts.
+   */
+  running?: boolean;
   // Workflow run agent path. Mutually exclusive with `toolCall`.
   workflowRef?: WorkflowAgentRef;
   onClose: () => void;
 }
 
-export function SubagentTranscriptModal({ cwd, sessionId, toolCall, workflowRef, onClose }: SubagentTranscriptModalProps) {
+export function SubagentTranscriptModal({ cwd, sessionId, toolCall, workflowRef, running, onClose }: SubagentTranscriptModalProps) {
   const { t } = useTranslation();
   // null = not loaded yet (loading or transcript not found)
   const [messages, setMessages] = useState<ChatMessage[] | null>(null);
@@ -49,9 +58,11 @@ export function SubagentTranscriptModal({ cwd, sessionId, toolCall, workflowRef,
   const [loadAttempted, setLoadAttempted] = useState(false);
   const fingerprintRef = useRef<string | undefined>(undefined);
 
-  // Still running → keep polling. Agent/Task: parent tool call has no result.
-  // Workflow agent: explicit running flag carried by the ref.
-  const isRunning = workflowRef ? !!workflowRef.running : !toolCall?.result;
+  // Still running → keep polling. Both cases now carry an EXPLICIT flag: the workflow agent on
+  // its ref, the Agent/Task call from the host's live task state. The old
+  // `!toolCall.result` fallback survives only for a host that passes neither (none today),
+  // where a missing result is at least never a false "still running".
+  const isRunning = workflowRef ? !!workflowRef.running : (running ?? !toolCall?.result);
 
   const fetchTranscript = useCallback(async () => {
     const exit = await BrowserRuntime.runPromiseExit(

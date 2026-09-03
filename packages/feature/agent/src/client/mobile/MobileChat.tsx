@@ -6,11 +6,11 @@ import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { AppError } from '@cockpit/effect-core';
 import { useChatHistory } from '../useChatHistory';
-import { useChatStream } from '../useChatStream';
+import { useChatStream, NO_BG_TASKS } from '../useChatStream';
 import { useLiveStream } from '../useLiveStream';
 import { MessageList, type MessageListHandle } from '../MessageList';
 import { MobileChatInput } from './MobileChatInput';
-import type { ChatMessage, ChatEngine, EngineModelId, LiveOutputTokens } from '../types';
+import type { ChatMessage, ChatEngine, EngineModelId, LiveOutputTokens, BackgroundTaskInfo } from '../types';
 
 // Per-session engine + model + execution mode, persisted by the desktop tab system in the
 // project's session.json. This is the same source useTabState resumes from —
@@ -86,6 +86,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   const [liveRunning, setLiveRunning] = useState(false);
   const [viewerLiveOutputTokens, setViewerLiveOutputTokens] = useState<LiveOutputTokens | null>(null);
   const [viewerRunStartedAt, setViewerRunStartedAt] = useState<number | null>(null);
+  const [viewerBackgroundTasks, setViewerBackgroundTasks] = useState<BackgroundTaskInfo[]>(NO_BG_TASKS);
   const liveRunningRef = useRef(false);
   useEffect(() => { liveRunningRef.current = liveRunning; }, [liveRunning]);
 
@@ -153,6 +154,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     onRunningChange: (r) => { liveRunningRef.current = r; setLiveRunning(r); },
     onLiveOutputTokens: setViewerLiveOutputTokens,
     onRunStartedAt: setViewerRunStartedAt,
+    onBackgroundTasks: (tasks) => setViewerBackgroundTasks(tasks.length ? tasks : NO_BG_TASKS),
     onComplete: () => {
       if (liveSessionId) loadHistoryByCwdAndSessionId(cwd, liveSessionId, true);
     },
@@ -162,6 +164,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
       setLiveRunning(false);
       setViewerLiveOutputTokens(null);
       setViewerRunStartedAt(null);
+      setViewerBackgroundTasks(NO_BG_TASKS);
     }
   }, [liveViewerEnabled]);
 
@@ -176,6 +179,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   const isRunning = isLoading || liveRunning;
   const liveOutputTokens = isLoading ? streamLiveOutputTokens : liveRunning ? viewerLiveOutputTokens : null;
   const runningStartedAt = isLoading ? streamRunningStartedAt : liveRunning ? viewerRunStartedAt : null;
+  const liveBackgroundTasks = isLoading ? backgroundTasks : liveRunning ? viewerBackgroundTasks : NO_BG_TASKS;
 
   const onSend = useCallback((content: string) => {
     handleSend(content);
@@ -213,7 +217,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
           sessionId={sessionId}
           engine={engine}
           apiRetryInfo={apiRetryInfo}
-          backgroundTasks={backgroundTasks}
+          backgroundTasks={liveBackgroundTasks}
           hasMoreHistory={hasMoreHistory}
           isLoadingMore={isLoadingMore}
           onLoadMore={loadMoreHistory}

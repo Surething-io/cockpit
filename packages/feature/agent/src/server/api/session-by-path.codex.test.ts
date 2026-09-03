@@ -615,6 +615,96 @@ describe('session-by-path codex subagents (0.147 protocol)', () => {
   });
 });
 
+// 0.153 moved the call_id ↔ thread binding a THIRD time. Everything else about sub-agents
+// is unchanged from 0.147 — which is why this shipped unnoticed inside an SDK bump: the
+// Task bubbles still rendered, they just never got a result and never drilled in.
+//
+// The line below is verbatim from a rollout cockpit itself produced
+// (@openai/codex-sdk 0.153.0), minus the ids. Keep it that way: the point of this block is
+// that it is a captured shape, not one we believe in.
+const subAgentStartedV153 = (callId: string, agentThreadId: string, agentPath: string) => ({
+  type: 'event_msg',
+  payload: {
+    type: 'item_completed',
+    thread_id: '01a06745-ee9e-7263-b27e-e20155b39f00',
+    turn_id: '01a06745-ef52-7902-a777-79b320bae3e2',
+    // The call_id moved from `event_id` to `item.id`, and the discriminator from the
+    // payload's own `type` to `item.type`.
+    item: { type: 'SubAgentActivity', id: callId, kind: 'started', agent_thread_id: agentThreadId, agent_path: agentPath },
+    started_at_ms: 1788439051108,
+    completed_at_ms: 1788439051108,
+  },
+});
+/** Its id is synthetic, NOT a call_id — it must never bind to a spawn. */
+const subAgentCompletedV153 = (agentThreadId: string, agentPath: string) => ({
+  type: 'event_msg',
+  payload: {
+    type: 'item_completed',
+    item: {
+      type: 'SubAgentActivity',
+      id: `subagent-completed-${agentThreadId}`,
+      kind: 'completed',
+      agent_thread_id: agentThreadId,
+      agent_path: agentPath,
+    },
+  },
+});
+
+describe('session-by-path codex subagents (0.153 protocol)', () => {
+  it('completes each Task bubble from the agent_message its sub-agent sent back', async () => {
+    const sessionId = 'codex-v153-spawn-wait';
+    writeCodexTranscript(sessionId, [
+      userLine('审查 PR 4226'),
+      spawnCallV147('call_s1', 'cr_static'),
+      spawnOutputV147('call_s1', '/root/cr_static'),
+      subAgentStartedV153('call_s1', 'agent-static', '/root/cr_static'),
+      spawnCallV147('call_s2', 'cr_dynamic'),
+      spawnOutputV147('call_s2', '/root/cr_dynamic'),
+      subAgentStartedV153('call_s2', 'agent-dynamic', '/root/cr_dynamic'),
+      subAgentCompletedV153('agent-dynamic', '/root/cr_dynamic'),
+      agentReport('/root/cr_dynamic', '动态：无 findings'),
+      agentReport('/root/cr_static', '静态：2 条 findings'),
+    ]);
+
+    const body = await loadSession(sessionId);
+    const toolCalls = body.messages[1].toolCalls;
+
+    // Without the binding these results are undefined — the row reads as a sub-agent that
+    // started and never finished, and its drill-in spinner never stops.
+    expect(toolCalls).toHaveLength(2);
+    expect(toolCalls[0]).toMatchObject({ id: 'call_s1', name: 'Task', result: '静态：2 条 findings' });
+    expect(toolCalls[0].input).toMatchObject({ description: 'cr_static', agent_id: 'agent-static' });
+    expect(toolCalls[1]).toMatchObject({ id: 'call_s2', result: '动态：无 findings' });
+    // The synthetic `subagent-completed-…` id bound to nothing and forged no bubble.
+    expect(toolCalls.map((tc: { id: string }) => tc.id)).toEqual(['call_s1', 'call_s2']);
+  });
+
+  it('drills into a sub-agent transcript via the item_completed envelope', async () => {
+    const sessionId = 'codex-v153-drill-in';
+    writeCodexTranscript(sessionId, [
+      userLine('审查'),
+      spawnCallV147('call_s1', 'cr_static'),
+      spawnOutputV147('call_s1', '/root/cr_static'),
+      subAgentStartedV153('call_s1', 'agent-static', '/root/cr_static'),
+    ]);
+    const childPath = writeCodexTranscript('agent-static', [
+      userLine('go'),
+      {
+        type: 'response_item',
+        payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '看完了：2 条 findings' }] },
+      },
+    ]);
+    sessionEntries.set('agent-static', { path: childPath, agentNickname: 'Dirac' });
+
+    // This is the request that answered "未找到子代理消息记录" for every cockpit-produced
+    // codex session between the 0.153 SDK bump and this fix.
+    const body = await loadSession(sessionId, { toolUseId: 'call_s1' });
+
+    expect(body.subagent).toEqual({ agentType: 'cr_static', description: 'Dirac' });
+    expect(body.messages.at(-1)).toMatchObject({ role: 'assistant', content: '看完了：2 条 findings' });
+  });
+});
+
 describe('session-by-path codex format drift', () => {
   it('renders an unknown tool call under its raw type instead of dropping it', async () => {
     const sessionId = 'codex-tool-search';

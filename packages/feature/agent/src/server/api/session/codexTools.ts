@@ -71,8 +71,23 @@ export const CODEX_AGENT_FN_NAMES: ReadonlySet<string> = new Set([
  *
  * Losing the call_id ↔ thread id binding is what breaks the drill-in: it IS the link
  * from the Task bubble (keyed by the spawning call_id) to the sub-agent's own rollout.
+ * It is also what routes the report back onto the bubble, so when it goes the Task row
+ * never gets a result either — it reads as a sub-agent that started and never finished.
+ *
+ * That binding then moved a THIRD time in 0.153 (see
+ * CODEX_SUB_AGENT_ACTIVITY_ITEM_TYPE). Treat "which line carries call_id ↔ thread id"
+ * as the thing to re-verify on every codex SDK bump; codexTools.subagent.test.ts pins one
+ * real line per era so the next move fails a test instead of a drill-in.
  */
 export const CODEX_SUB_AGENT_ACTIVITY_TYPE = 'sub_agent_activity';
+/**
+ * 0.153 moved that line again — same fields, new envelope: it is now an `item_completed`
+ * event wrapping an `item` of this type, with the call_id under `item.id` instead of
+ * `event_id`. Nothing else about sub-agents changed, which is exactly why it was easy to
+ * miss: the bump landed as part of an SDK upgrade and every OTHER codex surface kept working.
+ * `parseCodexSubAgentActivity` reads both.
+ */
+export const CODEX_SUB_AGENT_ACTIVITY_ITEM_TYPE = 'SubAgentActivity';
 export const CODEX_AGENT_MESSAGE_TYPE = 'agent_message';
 
 export const CODEX_PLAN_FN_NAME = 'update_plan';
@@ -715,9 +730,23 @@ export interface CodexSubAgentActivity {
 }
 
 /**
- * 0.147+'s `event_msg`/`sub_agent_activity` line — the only record tying a spawning
- * call_id to the thread it created, now that `spawn_agent`'s output returns just
- * `{"task_name":…}`. Note the call_id arrives under `event_id`, not `call_id`.
+ * The sub-agent activity line — the only record tying a spawning call_id to the thread it
+ * created, ever since `spawn_agent`'s output stopped naming one and returned just
+ * `{"task_name":…}`.
+ *
+ * Two envelopes, both live on disk and both resumable:
+ *
+ *   0.147   {type:'sub_agent_activity', event_id, agent_thread_id, agent_path, kind}
+ *   0.153+  {type:'item_completed', item:{type:'SubAgentActivity', id, agent_thread_id,
+ *                                        agent_path, kind}}
+ *
+ * Same four fields; the call_id just moved from `event_id` to `item.id`. Normalised here so
+ * the three call sites (live rollout reader, reload parser, drill-in lookup) stay era-blind.
+ *
+ * A `kind:'completed'` line is returned as-is even though its id is a synthetic
+ * `subagent-completed-<uuid>` rather than a call_id: callers bind by looking the id up
+ * among the spawn calls they have seen, where it simply never matches. Filtering on `kind`
+ * here would instead bake in an assumption about which kinds exist.
  */
 export function parseCodexSubAgentActivity(payload: {
   type?: string;
@@ -725,16 +754,27 @@ export function parseCodexSubAgentActivity(payload: {
   agent_thread_id?: unknown;
   agent_path?: unknown;
   kind?: unknown;
+  item?: unknown;
 } | undefined | null): CodexSubAgentActivity | null {
-  if (!payload || payload.type !== CODEX_SUB_AGENT_ACTIVITY_TYPE) return null;
-  const { event_id: callId, agent_thread_id: agentThreadId } = payload;
+  if (!payload) return null;
+
+  const item = payload.item as { type?: unknown; id?: unknown } | undefined;
+  const src: { callId: unknown; agent_thread_id?: unknown; agent_path?: unknown; kind?: unknown } | null =
+    payload.type === CODEX_SUB_AGENT_ACTIVITY_TYPE
+      ? { ...payload, callId: payload.event_id }
+      : item && item.type === CODEX_SUB_AGENT_ACTIVITY_ITEM_TYPE
+        ? { ...(item as Record<string, unknown>), callId: item.id }
+        : null;
+  if (!src) return null;
+
+  const { callId, agent_thread_id: agentThreadId } = src;
   if (typeof callId !== 'string' || !callId) return null;
   if (typeof agentThreadId !== 'string' || !agentThreadId) return null;
   return {
     callId,
     agentThreadId,
-    ...(typeof payload.agent_path === 'string' ? { agentPath: payload.agent_path } : {}),
-    ...(typeof payload.kind === 'string' ? { kind: payload.kind } : {}),
+    ...(typeof src.agent_path === 'string' ? { agentPath: src.agent_path } : {}),
+    ...(typeof src.kind === 'string' ? { kind: src.kind } : {}),
   };
 }
 

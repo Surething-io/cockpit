@@ -304,6 +304,8 @@ Next.js 16 · React 19 · TypeScript · TailwindCSS · xterm.js · node-pty · S
 
 欢迎 Issue 和 PR。详见 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [OpenCockpit 文档](https://opencockpit.dev/zh/docs/)。
 
+提问、想法或作品分享，欢迎加入社区 [r/opencockpit](https://www.reddit.com/r/opencockpit/)。
+
 ## 许可证
 
 [MIT](LICENSE) © Surething

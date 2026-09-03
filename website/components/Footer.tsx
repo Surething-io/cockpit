@@ -7,6 +7,7 @@ const GITHUB_URL = 'https://github.com/Surething-io/cockpit';
 const NPM_URL = 'https://www.npmjs.com/package/@surething/cockpit';
 const TRY_ONLINE_URL = '/try';
 const X_URL = 'https://x.com/yang1365609';
+const REDDIT_URL = 'https://www.reddit.com/r/opencockpit/';
 
 export function Footer({ locale }: { locale: Locale }) {
   const t = getMessages(locale);
@@ -118,6 +119,16 @@ export function Footer({ locale }: { locale: Locale }) {
                 className="inline-block py-1 transition-colors hover:text-brand"
               >
                 X / @yang1365609
+              </a>
+            </li>
+            <li>
+              <a
+                href={REDDIT_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-block py-1 transition-colors hover:text-brand"
+              >
+                r/opencockpit
               </a>
             </li>
           </ul>

@@ -62,6 +62,14 @@ const CLAUDE_MODELS: ReadonlyArray<{
     fast: true,
   },
   {
+    id: 'claude-fable-5-1',
+    label: 'Claude Fable 5.1',
+    effort: ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode', 'ultrathink'],
+    defaultEffort: 'high',
+    context: ['200k', '1m'],
+    defaultContext: '1m',
+  },
+  {
     id: 'claude-fable-5',
     label: 'Claude Fable 5',
     effort: ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode', 'ultrathink'],

@@ -15,8 +15,8 @@ const PLAN_EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 /** True for paths inside a `.claude/plans/` directory (project- or home-relative). */
 const isPlanFilePath = (p: string): boolean => /(^|\/)\.claude\/plans\//.test(p);
 const CLAUDE_SDK_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
-const CLAUDE_ULTRACODE_MODELS = new Set(['claude-fable-5', 'claude-opus-5', 'claude-opus-4-8']);
-const CLAUDE_XHIGH_MODELS = new Set(['claude-fable-5', 'claude-opus-5', 'claude-opus-4-8', 'claude-sonnet-5']);
+const CLAUDE_ULTRACODE_MODELS = new Set(['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5', 'claude-opus-4-8']);
+const CLAUDE_XHIGH_MODELS = new Set(['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5', 'claude-opus-4-8', 'claude-sonnet-5']);
 
 function resolveClaudeModel(ctx: RunCtx): string | undefined {
   const model = typeof ctx.params.model === 'string' && ctx.params.model.trim()

@@ -11,23 +11,39 @@ interface TokenStatsModalProps {
   onClose: () => void;
 }
 
-// Claude API official pricing ($/MTok) — 2026.07.
+// Claude API official pricing ($/MTok) — 2026.09.
 // Pricing only: model colors are derived separately (see assignColors) so a new
 // model never has to be added here just to get a distinct color.
+// Cache read is 0.1x base input and cache write (5m) is 1.25x on every model
+// EXCEPT Fable/Mythos 5.1, where reads are 0.025x — the one row you cannot
+// derive from the input price, and the reason the fable/mythos fallback below
+// cannot be trusted for a 5.1-and-later id.
 const MODEL_PRICING: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
-  'claude-fable-5':             { input: 10, output: 50, cacheRead: 1.00, cacheWrite: 12.50 },
-  'claude-opus-4-6':            { input: 5,  output: 25, cacheRead: 0.50, cacheWrite: 6.25 },
-  'claude-opus-4-5-20251101':   { input: 5,  output: 25, cacheRead: 0.50, cacheWrite: 6.25 },
-  'claude-sonnet-4-6':          { input: 3,  output: 15, cacheRead: 0.30, cacheWrite: 3.75 },
-  'claude-sonnet-4-5-20250929': { input: 3,  output: 15, cacheRead: 0.30, cacheWrite: 3.75 },
-  'claude-haiku-4-5-20251001':  { input: 1,  output: 5,  cacheRead: 0.10, cacheWrite: 1.25 },
+  'claude-fable-5-1':  { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.50 },
+  'claude-mythos-5-1': { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.50 },
+  'claude-fable-5':    { input: 10, output: 50, cacheRead: 1.00, cacheWrite: 12.50 },
+  'claude-mythos-5':   { input: 10, output: 50, cacheRead: 1.00, cacheWrite: 12.50 },
+  'claude-opus-5':     { input: 5,  output: 25, cacheRead: 0.50, cacheWrite: 6.25 },
+  'claude-opus-4-8':   { input: 5,  output: 25, cacheRead: 0.50, cacheWrite: 6.25 },
+  'claude-opus-4-7':   { input: 5,  output: 25, cacheRead: 0.50, cacheWrite: 6.25 },
+  'claude-opus-4-6':   { input: 5,  output: 25, cacheRead: 0.50, cacheWrite: 6.25 },
+  'claude-opus-4-5':   { input: 5,  output: 25, cacheRead: 0.50, cacheWrite: 6.25 },
+  'claude-sonnet-5':   { input: 2,  output: 10, cacheRead: 0.20, cacheWrite: 2.50 },
+  'claude-sonnet-4-6': { input: 3,  output: 15, cacheRead: 0.30, cacheWrite: 3.75 },
+  'claude-sonnet-4-5': { input: 3,  output: 15, cacheRead: 0.30, cacheWrite: 3.75 },
+  'claude-haiku-4-5':  { input: 1,  output: 5,  cacheRead: 0.10, cacheWrite: 1.25 },
 };
 
 const DEFAULT_PRICING = { input: 3, output: 15, cacheRead: 0.30, cacheWrite: 3.75 };
 
 function getPricing(modelId: string) {
-  if (MODEL_PRICING[modelId]) return MODEL_PRICING[modelId];
-  const lower = modelId.toLowerCase();
+  // Transcripts carry whatever id the API echoed back, which for older models is
+  // date-suffixed (`claude-opus-4-5-20251101`). Key the table on the undated id
+  // so both spellings hit the same row instead of silently falling through.
+  const base = modelId.replace(/-\d{8}$/, '');
+  const exact = MODEL_PRICING[base];
+  if (exact) return exact;
+  const lower = base.toLowerCase();
   if (lower.includes('fable') || lower.includes('mythos')) return { input: 10, output: 50, cacheRead: 1.00, cacheWrite: 12.50 };
   if (lower.includes('opus')) return { input: 5, output: 25, cacheRead: 0.50, cacheWrite: 6.25 };
   if (lower.includes('haiku')) return { input: 1, output: 5, cacheRead: 0.10, cacheWrite: 1.25 };

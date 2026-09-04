@@ -53,8 +53,19 @@ function ImageSide({
     <div className="flex-1 min-w-0 flex flex-col items-center gap-2">
       <div className={`text-xs font-medium ${labelClassName}`}>{label}</div>
       <div className="w-full flex-1 flex items-center justify-center rounded border border-border bg-secondary p-3 min-h-[8rem]">
-        {node ??
-          (failed ? (
+        {node ? (
+          // Block wrapper with a DEFINITE width, on purpose. A node side owns
+          // its own markup and typically wraps the <img> in a flex box of its
+          // own (FileImagePreview does); dropping that straight into this flex
+          // row makes it shrink-to-fit, which gives the <img> an indefinite
+          // available width. An SVG carrying only a viewBox (no width/height)
+          // has no intrinsic size, so it resolves that available width to 0 and
+          // the side renders blank. Raster images hide the bug behind their
+          // intrinsic size. The src path below is a direct flex child, so it
+          // already had a definite width.
+          <div className="w-full min-w-0">{node}</div>
+        ) : (
+          failed ? (
             <span className="text-xs text-muted-foreground">{t('diffViewer.imageLoadFailed')}</span>
           ) : (
             <img
@@ -63,7 +74,8 @@ function ImageSide({
               onError={() => setFailed(true)}
               className="max-w-full max-h-[60vh] object-contain"
             />
-          ))}
+          )
+        )}
       </div>
     </div>
   );

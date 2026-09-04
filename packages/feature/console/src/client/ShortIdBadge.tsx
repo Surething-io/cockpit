@@ -30,6 +30,14 @@ interface ShortIdBadgeProps {
   projectCwd?: string;
   /** Tab the bubble lives in. Required for title fetch + save. */
   tabId?: string;
+  /**
+   * Controlled connection state. When supplied it is the source of truth —
+   * the browser bubble owns its bridge state and can flip it without a click
+   * (auto-connect on open, disconnect on sleep), which the local toggle below
+   * would otherwise render stale. Omitted → uncontrolled, as terminal bubbles
+   * use it.
+   */
+  registered?: boolean;
 }
 
 export const ShortIdBadge = memo(function ShortIdBadge({
@@ -40,9 +48,11 @@ export const ShortIdBadge = memo(function ShortIdBadge({
   fullId,
   projectCwd,
   tabId,
+  registered: registeredProp,
 }: ShortIdBadgeProps) {
   const { t } = useTranslation();
-  const [registered, setRegistered] = useState(false);
+  const [localRegistered, setLocalRegistered] = useState(false);
+  const registered = registeredProp ?? localRegistered;
   const [title, setTitle] = useState('');
   const [editing, setEditing] = useState(false);
   // Anchor for the title popover. Only one trigger renders at a time
@@ -89,12 +99,12 @@ export const ShortIdBadge = memo(function ShortIdBadge({
     if (registered) {
       // Unregister
       await onUnregister();
-      setRegistered(false);
+      setLocalRegistered(false);
       toast(t('toast.disconnected', { id: shortId }));
     } else {
       // Register + copy help command
       await onRegister();
-      setRegistered(true);
+      setLocalRegistered(true);
       const cmd = `${getCockBin()} ${type} ${shortId}`;
       navigator.clipboard.writeText(cmd);
       toast(t('toast.copiedCommand', { command: cmd }));

@@ -1,6 +1,6 @@
 ---
 name: cc
-description: "Drive the running Cockpit server — terminal/browser bubbles, codegraph — through the `cockpit` CLI."
+description: "Drive the running Cockpit server through the `cockpit` CLI — open and control browser bubbles, observe terminals, query the codegraph."
 ---
 
 Enter Cockpit CLI operation mode.
@@ -22,6 +22,7 @@ Examples below use `cockpit`; only swap in `cockpit-dev` when one of the two dev
 | Subcommand | Purpose |
 |---|---|
 | (none) / `<path>` | Start server, open project |
+| `browser open <url>` | Create a browser bubble (auto-registered) and print its id |
 | `browser <id> <action>` | Drive browser bubbles |
 | `terminal <id> [<action>]` | Read-only observation of a terminal ring buffer |
 | `codegraph <subcmd>` | Project code graph (search/callers/callees/impact/file/coedit/context/related/risk/affected) |
@@ -53,6 +54,30 @@ cockpit connection list --cwd $PWD
 ```
 
 Output rows are TAB-separated: `<type>  <shortId>  <title>  <projectCwd>  <command-or-url>`. Match the user's reference against the title, take the `<shortId>`, then proceed with the typical usage pattern. Unnamed bubbles show `(none)` for title — fall back to the `<command>` column (terminal's command string / browser's URL) to disambiguate.
+
+## When no bubble exists — open one yourself
+
+Do not ask the user to open a browser bubble by hand. `open` creates one in the
+project that owns `--cwd` (default: your shell's cwd), registers its bridge
+automatically, and prints the short id to drive it with:
+
+```bash
+cockpit browser open http://localhost:3000     # → "abcd  →  registered and ready"
+cockpit browser abcd snapshot                  # drive it as usual
+cockpit browser abcd close                     # remove the bubble when done
+```
+
+Close what you open — a registered bubble never sleeps, so leaving them behind
+costs the user a live iframe + WebSocket each.
+
+`open` exits **2** when it created the bubble but no Cockpit UI picked it up
+(nothing is driving it yet). That means no browser window has this project open
+— check `--cwd` points at the right project, and ask the user to open it. It is
+NOT a reason to retry.
+
+Two things `open` cannot do: it only works for projects that are open in a
+Cockpit window, and **previewing a local `.html` runs it with full shell
+access** — treat `cockpit browser open ./some.html` as executing that file.
 
 ## Getting detailed usage
 

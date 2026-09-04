@@ -151,6 +151,12 @@ interface BrowserBubbleProps {
   baseCwd?: string;
   /** Forwarded to useBrowserBridge so the server can scope bubble-titles lookups per-tab. */
   tabId?: string;
+  /**
+   * Connect the automation bridge on mount rather than on a badge click. Set
+   * for bubbles created by `cockpit browser open`, whose whole point is being
+   * drivable the moment they appear — a CLI caller has nothing to click.
+   */
+  autoConnect?: boolean;
 }
 
 export function BrowserBubble({
@@ -172,6 +178,7 @@ export function BrowserBubble({
   projectCwd,
   baseCwd,
   tabId,
+  autoConnect,
 }: BrowserBubbleProps) {
   const { t, i18n } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
@@ -211,6 +218,16 @@ export function BrowserBubble({
   // bridgeConnectedRef: lets IntersectionObserver callbacks read the latest value
   const bridgeConnectedRef = useRef(bridgeConnected);
   bridgeConnectedRef.current = bridgeConnected;
+
+  // CLI-opened bubble: register the bridge itself. Fires once per mount — a
+  // later manual unregister must stay unregistered, so this deliberately does
+  // not re-run when `bridgeConnected` flips back to false.
+  const autoConnectedRef = useRef(false);
+  useEffect(() => {
+    if (!autoConnect || autoConnectedRef.current) return;
+    autoConnectedRef.current = true;
+    bridgeConnect();
+  }, [autoConnect, bridgeConnect]);
 
   // IntersectionObserver: detect whether the bubble is in the viewport
   // Don't start the sleep countdown when bridge is connected
@@ -489,6 +506,7 @@ export function BrowserBubble({
               <ShortIdBadge
                 shortId={shortId}
                 type="browser"
+                registered={bridgeConnected}
                 onRegister={() => bridgeConnect()}
                 onUnregister={async () => {
                   bridgeDisconnect();
@@ -563,6 +581,7 @@ export function BrowserBubble({
               <ShortIdBadge
                 shortId={shortId}
                 type="browser"
+                registered={bridgeConnected}
                 onRegister={() => bridgeConnect()}
                 onUnregister={async () => {
                   bridgeDisconnect();

@@ -5,11 +5,7 @@
  */
 import fs from "fs/promises"
 import { Effect } from "effect"
-import {
-  getTerminalHistoryPath,
-  getTerminalOutputPath,
-  ensureParentDir,
-} from "@cockpit/shared-utils"
+import { getTerminalHistoryPath } from "@cockpit/shared-utils"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { FSError, ValidationError } from "@cockpit/effect-core"
 import {
@@ -18,27 +14,14 @@ import {
   getRunningCommands,
 } from "../../terminal/RunningCommandRegistry"
 import { broadcastConsoleDelta } from "../../terminal/consoleBroadcast"
+import {
+  appendHistoryEntry,
+  removeHistoryEntry,
+  type HistoryEntry,
+} from "../../terminal/historyStore"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
-
-const OUTPUT_FILE_THRESHOLD = 4096
-
-interface HistoryEntry {
-  type?: "command" | "browser" | "database"
-  id: string
-  timestamp: string
-  command?: string
-  output?: string
-  outputFile?: string
-  exitCode?: number
-  cwd?: string
-  usePty?: boolean
-  url?: string
-  sleeping?: boolean
-  connectionString?: string
-  displayName?: string
-}
 
 // ─────────────────────────────────────────────────────────
 // GET — paginated read
@@ -155,41 +138,17 @@ export const DELETE = handler((req) =>
     yield* Effect.tryPromise({
       try: async () => {
         if (commandId) {
-          // Delete single
-          try {
-            const content = await fs.readFile(historyPath, "utf-8")
-            const lines = content.trim().split("\n").filter(Boolean)
-            const remaining: string[] = []
-            for (const line of lines) {
-              try {
-                const entry = JSON.parse(line)
-                if (entry.id === commandId) {
-                  // Kill the backend process (if still running) so closing a
-                  // bubble actually ends it. Tombstoned inside killCommand so
-                  // the process's onExit won't re-persist this entry.
-                  killCommand(commandId)
-                  if (entry.outputFile) {
-                    await fs.unlink(entry.outputFile).catch(() => {})
-                  }
-                  continue
-                }
-              } catch {
-                /* keep unparseable */
-              }
-              remaining.push(line)
+          // Delete single. The onMatch hook runs before the file is rewritten:
+          // killCommand tombstones the process so its onExit cannot re-persist
+          // the entry we are dropping.
+          await removeHistoryEntry(cwd, tabId, commandId, async (entry) => {
+            // Kill the backend process (if still running) so closing a bubble
+            // actually ends it.
+            killCommand(commandId)
+            if (entry.outputFile) {
+              await fs.unlink(entry.outputFile).catch(() => {})
             }
-            if (remaining.length > 0) {
-              await fs.writeFile(
-                historyPath,
-                remaining.join("\n") + "\n",
-                "utf-8"
-              )
-            } else {
-              await fs.unlink(historyPath).catch(() => {})
-            }
-          } catch (e: unknown) {
-            if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e
-          }
+          })
         } else {
           // Clear all — kill every running backend process for this tab first,
           // otherwise "clear" leaves orphaned processes that the registry
@@ -257,63 +216,7 @@ export const POST = handler((req) =>
     const historyPath = getTerminalHistoryPath(cwd, tabId)
 
     const result = yield* Effect.tryPromise({
-      try: async () => {
-        await ensureParentDir(historyPath)
-        const entryToSave: HistoryEntry = { ...entry }
-        if (entry.output && entry.output.length > OUTPUT_FILE_THRESHOLD) {
-          const outputPath = getTerminalOutputPath(cwd, entry.id)
-          await fs.writeFile(outputPath, entry.output, "utf-8")
-          entryToSave.output = ""
-          entryToSave.outputFile = outputPath
-        }
-
-        let existingLines: string[] = []
-        try {
-          const content = await fs.readFile(historyPath, "utf-8")
-          existingLines = content.trim().split("\n").filter(Boolean)
-        } catch {
-          /* file does not exist */
-        }
-
-        if (entry.id) {
-          const alreadyExists = existingLines.some((line) => {
-            try {
-              return JSON.parse(line).id === entry.id
-            } catch {
-              return false
-            }
-          })
-          if (alreadyExists) {
-            return { success: true, skipped: true }
-          }
-        }
-
-        if (existingLines.length >= 100) {
-          const removedLines = existingLines.slice(
-            0,
-            existingLines.length - 99
-          )
-          for (const line of removedLines) {
-            try {
-              const old = JSON.parse(line)
-              if (old.outputFile) {
-                await fs.unlink(old.outputFile).catch(() => {})
-              }
-            } catch {
-              /* ignore */
-            }
-          }
-          existingLines = existingLines.slice(-99)
-        }
-
-        existingLines.push(JSON.stringify(entryToSave))
-        await fs.writeFile(
-          historyPath,
-          existingLines.join("\n") + "\n",
-          "utf-8"
-        )
-        return { success: true }
-      },
+      try: () => appendHistoryEntry(cwd, tabId, entry),
       catch: (cause) =>
         new FSError({ path: historyPath, op: "write", cause }),
     })

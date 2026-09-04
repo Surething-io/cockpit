@@ -12,6 +12,12 @@ export interface BrowserPluginItem extends PluginItemBase {
    * before this field existed — those fall back to the project root.
    */
   cwd?: string;
+  /**
+   * Set by `cockpit browser open`: connect the automation bridge as soon as the
+   * bubble mounts, instead of waiting for a click on the shortId badge. Never
+   * set for bubbles the user types into the console — those stay opt-in.
+   */
+  autoConnect?: boolean;
 }
 
 function BrowserAdapter({ item, selected, maximized, expandedHeight, bubbleContentHeight, timestamp, onSelect, onClose, onToggleMaximize, onTitleMouseDown, extra }: BubbleComponentProps) {
@@ -36,6 +42,7 @@ function BrowserAdapter({ item, selected, maximized, expandedHeight, bubbleConte
       projectCwd={extra?.projectCwd as string | undefined}
       baseCwd={data.cwd || (extra?.projectCwd as string | undefined)}
       tabId={extra?.tabId as string | undefined}
+      autoConnect={data.autoConnect}
     />
   );
 }
@@ -61,12 +68,20 @@ registerBubble({
   },
 
   fromHistory(entry) {
-    return { url: entry.url as string, cwd: (entry.cwd as string) ?? '' };
+    return {
+      url: entry.url as string,
+      cwd: (entry.cwd as string) ?? '',
+      autoConnect: !!entry.autoConnect,
+    };
   },
 
   toHistory(item) {
     const data = item as BrowserPluginItem;
-    return { url: data.url, cwd: data.cwd ?? '' };
+    return {
+      url: data.url,
+      cwd: data.cwd ?? '',
+      ...(data.autoConnect ? { autoConnect: true } : {}),
+    };
   },
 
   Component: BrowserAdapter,

@@ -81,6 +81,16 @@ re-snapshot OR use \`click --text\` / \`click --selector\` /
 
 ──────────────────────────────────────────────────────
 
+Bubbles (create / destroy — no <id> needed for open):
+  cockpit browser open <url> [--cwd PATH] [--wait-ms N]
+                              Open a console browser bubble in the project that
+                              owns --cwd (default: shell cwd), auto-register its
+                              bridge, and print the shortId to drive it with.
+                              Exit 2 if no Cockpit UI picked it up (bubble is
+                              persisted, but nothing is driving it yet).
+  cockpit browser <id> close [--cwd PATH]
+                              Close the bubble and remove it from the console.
+
 Navigation:
   navigate <url>              Navigate to URL
   reload [--noCache]          Reload page
@@ -165,6 +175,13 @@ let id, action;
 if (args[0] === 'list') {
   id = null;
   action = 'list';
+} else if (args[0] === 'open') {
+  // `open` creates a bubble rather than addressing one, so the first token is
+  // the action, not an id. (A shortId is also four lowercase letters, so `open`
+  // and `list` are in principle collidable — the same trade-off `list` already
+  // makes; a colliding bubble is still reachable via every other action.)
+  id = null;
+  action = 'open';
 } else {
   id = args[0];
   action = args[1];
@@ -213,12 +230,13 @@ function parseFlags(flagArgs) {
   return params;
 }
 
-const params = parseFlags(args.slice(action === 'list' ? 1 : 2));
+const params = parseFlags(args.slice(action === 'list' || action === 'open' ? 1 : 2));
 
 // Positional argument handling: some commands treat the first positional as a special value
 if (params._positional?.length) {
   const pos = params._positional;
   if (action === 'navigate' && !params.url) params.url = pos[0];
+  if (action === 'open' && !params.url) params.url = pos[0];
   // click: positional is the ref (or text fallback for convenience if it does
   // not look like a ref). Refs match e<N>#v<M>; anything else is treated as
   // visible text so `click "Sign in"` Just Works.
@@ -276,6 +294,7 @@ if (params['console-no-errors']) { params.consoleNoErrors = true; delete params[
 if (params['same-site']) { params.sameSite = params['same-site']; delete params['same-site']; }
 if (params['http-only']) { params.httpOnly = true; delete params['http-only']; }
 if (params['verify-ms'] != null) { params.verifyMs = Number(params['verify-ms']); delete params['verify-ms']; }
+if (params['wait-ms'] != null) { params.waitMs = Number(params['wait-ms']); delete params['wait-ms']; }
 
 // kebab → camel for flags that the extension expects camel.
 if (params['include-hidden-text']) { params.includeHiddenText = true; delete params['include-hidden-text']; }
@@ -301,8 +320,23 @@ if (!process.env.COCKPIT_PORT) {
 }
 delete params.port;
 const baseUrl = `http://localhost:${port}`;
-const timeout = params.timeout || 15000;
+// `open` blocks server-side until the bubble registers (--wait-ms); the HTTP
+// timeout has to outlast that wait or the CLI aborts a request that was about
+// to succeed.
+const timeout = params.timeout
+  || (action === 'open' && params.waitMs > 10000 ? params.waitMs + 5000 : 15000);
 delete params.timeout;
+
+// The CLI name to suggest in output: dev server (3456) is only reachable via
+// `cockpit-dev`, which has no short alias.
+const cockBin = String(port) === '3456' ? 'cockpit-dev' : 'cockpit';
+
+// `open` / `close` address a project on disk rather than a live page, so they
+// need a cwd. Default to where the shell is standing; the server walks up from
+// there to the project that actually owns the console.
+if ((action === 'open' || action === 'close') && !params.cwd) {
+  params.cwd = process.cwd();
+}
 
 // Quickly fetch browser url and title (2s timeout, silently return empty on failure)
 async function fetchBrowserInfo(shortId) {
@@ -665,6 +699,35 @@ async function formatOutput(action, data) {
 
   // Special formatting
   switch (action) {
+    case 'open':
+      console.log(
+        data.registered
+          ? `${data.shortId}  →  registered and ready`
+          : `${data.shortId}  →  created, but NOT registered`
+      );
+      console.log(`  url:     ${data.url}`);
+      console.log(`  project: ${data.projectCwd}`);
+      if (data.registered) {
+        console.log(`  next:    ${cockBin} browser ${data.shortId} snapshot`);
+        console.log(`  close:   ${cockBin} browser ${data.shortId} close`);
+      } else {
+        console.log(
+          `\n  No Cockpit UI applied the bubble, so nothing is driving it.\n` +
+          `  The entry is persisted — it will appear when this project is next\n` +
+          `  opened in Cockpit. Open the project (or check --cwd) and retry.`
+        );
+        process.exit(2);
+      }
+      return;
+
+    case 'close':
+      console.log(
+        data.removed
+          ? `closed ${data.shortId}`
+          : `closed ${data.shortId} (no persisted entry — nothing to remove)`
+      );
+      return;
+
     case 'snapshot':
       // a11y tree: output as plain text
       console.log(typeof data === 'string' ? data : JSON.stringify(data, null, 2));

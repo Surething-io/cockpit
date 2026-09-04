@@ -41,6 +41,11 @@ import {
   listBrowsers,
   getBrowserHealth,
   readBubbleTitles,
+  openBrowserBubble,
+  closeBrowserBubble,
+  findBrowserBubbleByShortId,
+  resolveProjectCwd,
+  CONSOLE_TAB_ID,
 } from "@cockpit/feature-console/server"
 import type { ReadResult } from "@cockpit/feature-console/server"
 
@@ -553,6 +558,35 @@ export async function handleBrowserApi(
     return true
   }
 
+  // `open` — create a bubble instead of addressing one, so it runs before the
+  // shortId lookup below. The bubble registers its own bridge (autoConnect),
+  // which is what makes the returned shortId immediately drivable; we poll for
+  // that registration rather than assume it, because with no UI connected the
+  // entry is only persisted and nothing ever registers.
+  if (action === "open") {
+    const p = cmdParams as { url?: unknown; cwd?: unknown; waitMs?: unknown }
+    const url = typeof p.url === "string" ? p.url.trim() : ""
+    if (!url) {
+      sendJson(400, { ok: false, error: "Missing url" })
+      return true
+    }
+    const cwd = typeof p.cwd === "string" && p.cwd ? p.cwd : process.cwd()
+    const waitMs = typeof p.waitMs === "number" ? p.waitMs : 8000
+    try {
+      const opened = await openBrowserBubble({ cwd, url })
+      const deadline = Date.now() + Math.max(0, waitMs)
+      let registered = !!getBrowserByShortId(opened.shortId)
+      while (!registered && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100))
+        registered = !!getBrowserByShortId(opened.shortId)
+      }
+      sendJson(200, { ok: true, data: { ...opened, url, registered } })
+    } catch (err) {
+      sendJson(500, { ok: false, error: (err as Error).message })
+    }
+    return true
+  }
+
   if (action === "unregister") {
     if (!id) {
       sendJson(400, { ok: false, error: "Missing browser id" })
@@ -584,6 +618,39 @@ export async function handleBrowserApi(
 
   if (!id) {
     sendJson(400, { ok: false, error: "Missing browser id" })
+    return true
+  }
+
+  // `close` — destroy the bubble. Handled before the registry lookup below
+  // because it must also work for a bubble nobody is driving (UI closed, page
+  // asleep): in that case resolve the id from persisted history instead.
+  if (action === "close") {
+    const p = cmdParams as { cwd?: unknown }
+    const known = getBrowserByShortId(id)
+    let projectCwd = known?.projectCwd
+    let tabId = known?.tabId
+    let fullId: string | null = known?.fullId ?? null
+    if (!fullId || !projectCwd) {
+      const cwd = typeof p.cwd === "string" && p.cwd ? p.cwd : process.cwd()
+      projectCwd = resolveProjectCwd(cwd)
+      tabId = tabId ?? CONSOLE_TAB_ID
+      fullId = await findBrowserBubbleByShortId(projectCwd, id, tabId)
+    }
+    if (!fullId || !projectCwd) {
+      sendJson(404, {
+        ok: false,
+        error:
+          `No browser bubble "${id}" found in this project.\n` +
+          `  Pass --cwd if you are not standing in the project that owns it.`,
+      })
+      return true
+    }
+    try {
+      const removed = await closeBrowserBubble({ projectCwd, tabId, fullId })
+      sendJson(200, { ok: true, data: { shortId: id, fullId, removed } })
+    } catch (err) {
+      sendJson(500, { ok: false, error: (err as Error).message })
+    }
     return true
   }
 

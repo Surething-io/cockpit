@@ -104,9 +104,9 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.52",
-    "@anthropic-ai/claude-agent-sdk": "0.3.259",
+    "@anthropic-ai/claude-agent-sdk": "0.3.260",
     "@dagrejs/dagre": "^3.0.0",
-    "@openai/codex-sdk": "0.153.0",
+    "@openai/codex-sdk": "0.153.2",
     "@tanstack/react-virtual": "^3.13.18",
     "@tiptap/extension-link": "^3.19.0",
     "@tiptap/extension-placeholder": "^3.19.0",

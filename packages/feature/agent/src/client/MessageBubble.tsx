@@ -427,7 +427,7 @@ const TextPartRow = memo(function TextPartRow({
 
   const body = (
     <>
-      <MarkdownRenderer content={text} isUser={isUser} isStreaming={isStreaming} enableMath={false} onLinkClick={handleLinkClick} />
+      <MarkdownRenderer content={text} isUser={isUser} isStreaming={isStreaming} onLinkClick={handleLinkClick} />
       {isStreaming && <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />}
     </>
   );
@@ -938,7 +938,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                   </span>
                 </div>
                 <div className="px-3 py-2">
-                  <MarkdownRenderer content={planCard} isUser={false} enableMath={false} />
+                  <MarkdownRenderer content={planCard} isUser={false} />
                 </div>
                 {/* Approve & run: the in-UI replacement for the (non-existent) "Exit plan
                     mode?" approval dialog. Turns off plan mode and resends to execute.

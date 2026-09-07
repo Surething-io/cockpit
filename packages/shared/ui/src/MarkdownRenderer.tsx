@@ -21,9 +21,12 @@ import { resolveLocalMediaUrl } from '@cockpit/shared-utils/htmlBashSdk';
 import { useThemeSafe } from './ThemeProvider';
 import { scrollToHeadingAnchor } from './markdownLinks';
 import { remarkFrontmatterTable } from './markdownFrontmatter';
+import { normalizeMathDelimiters, remarkMathGuard } from './markdownMath';
 
-// Stable reference — avoid recreating on every render
-const REMARK_PLUGINS = [...remarkFrontmatterTable, remarkGfm, remarkMath, remarkAlert];
+// Stable reference — avoid recreating on every render.
+// `remarkMathGuard` runs after `remarkMath` and demotes its false positives
+// (shell variables, prices) back to literal text — see markdownMath.ts.
+const REMARK_PLUGINS = [...remarkFrontmatterTable, remarkGfm, remarkMath, remarkMathGuard, remarkAlert];
 const REMARK_PLUGINS_NO_MATH = [...remarkFrontmatterTable, remarkGfm, remarkAlert];
 const REHYPE_PLUGINS_BASE = [rehypeRaw, rehypeKatex];
 const REHYPE_PLUGINS_NO_MATH = [rehypeRaw];
@@ -145,15 +148,6 @@ function escapeTablePipes(content: string): string {
   });
 
   return processed.replace(/ MASK(\d+) /g, (_, idx) => masks[+idx]);
-}
-
-/**
- * Escape dollar signs that represent currency, not math delimiters.
- * Pattern: $ immediately followed by a digit (e.g. $500, $1,000, $500M).
- * Replaces $ → \$ so remark-math won't treat it as inline math.
- */
-function escapeCurrencyDollars(content: string): string {
-  return content.replace(/\$(\d)/g, '\\$$1');
 }
 
 /**
@@ -419,7 +413,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
     const processed = escapeUnknownHtmlTags(
       escapeTablePipes(preprocessAsciiArt(content))
     );
-    return enableMath ? escapeCurrencyDollars(processed) : processed;
+    return enableMath ? normalizeMathDelimiters(processed) : processed;
   }, [content, isUser, isStreaming, enableMath]);
 
   // Merge rehype plugins: base plugins + caller-supplied plugins
@@ -455,7 +449,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
           components={components}
         >
           {enableMath
-            ? escapeCurrencyDollars(escapeUnknownHtmlTags(escapeTablePipes(completedLines)))
+            ? normalizeMathDelimiters(escapeUnknownHtmlTags(escapeTablePipes(completedLines)))
             : escapeUnknownHtmlTags(escapeTablePipes(completedLines))}
         </ReactMarkdown>
         {/* Current line being typed — plain text */}

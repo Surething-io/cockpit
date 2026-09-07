@@ -69,6 +69,7 @@ import { FileTOCSection, type TocEdgeCounts } from './FileTOCSection';
 import { useSelectionToolbar } from '../useSelectionToolbar';
 import { BlockCommentBubbles } from './BlockCommentBubbles';
 import { BlockDiffMinimap } from './BlockDiffMinimap';
+import { buildBlockFold, type BlockFold } from './blockFold';
 import { AddCommentInput, SendToAIInput, ToolbarRenderer } from '@cockpit/shared-ui';
 import { ViewCommentCard } from '../ViewCommentCard';
 
@@ -79,6 +80,19 @@ import { ViewCommentCard } from '../ViewCommentCard';
 function basename(p: string): string {
   const i = p.lastIndexOf('/');
   return i >= 0 ? p.slice(i + 1) : p;
+}
+
+/** Escape text destined for the block body's `dangerouslySetInnerHTML`
+ *  blob. Only used for i18n'd fold-bar labels today — those are ours, not
+ *  user content — but the body is a raw-HTML surface and an unescaped
+ *  interpolation there is exactly the kind of thing that stops being safe
+ *  the day someone reuses the helper for a file path. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 // ============================================================================
@@ -118,6 +132,14 @@ interface CodeBlockProps {
    *  left/right columns draw, and they are resolved one level up. */
   upstream?: readonly RowPin[];
   downstream?: readonly RowPin[];
+  /** Compact-mode intra-block folding plan (see `blockFold.ts`). Null /
+   *  undefined = render every line, exactly as before this feature. The
+   *  plan is built by BlockViewer rather than here because the pin column
+   *  and the diff minimap have to agree with it. */
+  fold?: BlockFold | null;
+  /** Click on a fold bar → reveal that whole gap. Gap id is its
+   *  `startLine`. */
+  onExpandGap?: (qname: string, gapStartLine: number) => void;
 }
 
 /**
@@ -140,6 +162,8 @@ function CodeBlock({
   addedLines,
   upstream,
   downstream,
+  fold,
+  onExpandGap,
 }: CodeBlockProps) {
   const { resolvedTheme } = useTheme();
   const { t } = useTranslation();
@@ -153,12 +177,17 @@ function CodeBlock({
     () => getLanguageFromPath(symbol.filePath),
     [symbol.filePath],
   );
-  const [html, setHtml] = useState<string | null>(null);
+  // ONE token-HTML string per source line, index 0 = symbol.startLine.
+  // The highlight pass stops here; row assembly (line numbers, diff tint,
+  // fold bars) is the memo below. Splitting the two means expanding a fold
+  // gap — or a new diff overlay identity — re-stitches rows without paying
+  // for a second Shiki tokenisation of the same slice.
+  const [lineTokens, setLineTokens] = useState<string[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!fileSource) {
-      setHtml(null);
+      setLineTokens(null);
       return;
     }
     let cancelled = false;
@@ -174,34 +203,8 @@ function CodeBlock({
           lang: language as BundledLanguage,
           theme: themeName,
         });
-        // Per-line: a flex row whose `min-width: max-content` makes it
-        // grow to fit its content; the body's `overflow-x: auto` then
-        // surfaces a scrollbar for oversize lines instead of wrapping.
-        const out = tokens.tokens
-          .map((line, i) => {
-            const lineNo = symbol.startLine + i;
-            // data-line carries the absolute file line number — used by
-            // useSelectionToolbar to resolve a drag-selection to a line
-            // range, and by BlockCommentBubbles to anchor existing
-            // comment markers next to their target lines.
-            //
-            // Diff overlay: when this line was touched by the diff
-            // (added or modified), the diff wrapper (`BlockDiffViewer`)
-            // passes its absolute line number in `addedLines`. We tint
-            // the row green via `bg-green-9/15` — same green family
-            // used by file-mode DiffView's after-side, for visual
-            // continuity across the two diff modes.
-            const isAdded = addedLines?.has(lineNo) ?? false;
-            const bgClass = isAdded ? ' bg-green-9/15' : '';
-            return (
-              `<div class="flex${bgClass}" style="min-width:max-content" data-line="${lineNo}">` +
-              `<span class="select-none pr-3 text-muted-foreground/60 tabular-nums" style="min-width:3.2rem;text-align:right">${lineNo}</span>` +
-              `<span class="whitespace-pre">${tokensToHtml(line)}</span></div>`
-            );
-          })
-          .join('');
         if (!cancelled) {
-          setHtml(out);
+          setLineTokens(tokens.tokens.map((line) => tokensToHtml(line)));
           setErr(null);
         }
       } catch (e) {
@@ -211,16 +214,92 @@ function CodeBlock({
     return () => {
       cancelled = true;
     };
-  }, [fileSource, symbol.startLine, symbol.endLine, language, resolvedTheme, symbol.filePath, addedLines]);
+  }, [fileSource, symbol.startLine, symbol.endLine, language, resolvedTheme]);
 
-  // Stable-height signal — fires whenever html OR err transitions to
-  // a non-null value. Idempotent against the parent's tracking Set,
-  // so re-renders / strict-mode double-fires are harmless.
+  const html = useMemo(() => {
+    if (!lineTokens) return null;
+
+    // Per-line: a flex row whose `min-width: max-content` makes it grow to
+    // fit its content; the body's `overflow-x: auto` then surfaces a
+    // scrollbar for oversize lines instead of wrapping.
+    //
+    // data-line carries the absolute file line number — used by
+    // useSelectionToolbar to resolve a drag-selection to a line range, and
+    // by BlockCommentBubbles to anchor existing comment markers next to
+    // their target lines.
+    //
+    // Diff overlay: when this line was touched by the diff (added or
+    // modified), the diff wrapper (`BlockDiffViewer`) passes its absolute
+    // line number in `addedLines`. We tint the row green via
+    // `bg-green-9/15` — same green family used by file-mode DiffView's
+    // after-side, for visual continuity across the two diff modes.
+    const lineRow = (lineNo: number): string => {
+      const tokenHtml = lineTokens[lineNo - symbol.startLine] ?? '';
+      const bgClass = addedLines?.has(lineNo) ? ' bg-green-9/15' : '';
+      return (
+        `<div class="flex${bgClass}" style="min-width:max-content" data-line="${lineNo}">` +
+        `<span class="select-none pr-3 text-muted-foreground/60 tabular-nums" style="min-width:3.2rem;text-align:right">${lineNo}</span>` +
+        `<span class="whitespace-pre">${tokenHtml}</span></div>`
+      );
+    };
+
+    if (!fold) {
+      return lineTokens.map((_, i) => lineRow(symbol.startLine + i)).join('');
+    }
+
+    // Fold bar. Height is pinned to exactly LINE_HEIGHT_PX because the
+    // right column's pin placement counts it as one row — see blockFold.ts
+    // for the row-space contract. `data-fold-gap` is the click target,
+    // resolved by delegation on the body (the body is one innerHTML blob,
+    // so per-bar React handlers aren't an option).
+    const foldBar = (startLine: number, endLine: number): string => {
+      const count = endLine - startLine + 1;
+      const label = escapeHtml(t('diffViewer.gap.hidden', { count }));
+      const title = escapeHtml(t('diffViewer.gap.expandAll', { count }));
+      return (
+        `<div class="flex items-center cursor-pointer select-none hover:bg-hover" ` +
+        `style="min-width:max-content;height:${LINE_HEIGHT_PX}px" ` +
+        `data-fold-gap="${startLine}" title="${title}">` +
+        `<span class="select-none pr-3 text-muted-foreground/40" style="min-width:3.2rem;text-align:right">⋯</span>` +
+        `<span class="text-[10px] text-muted-foreground/60 whitespace-pre">${label}</span></div>`
+      );
+    };
+
+    return fold.segments
+      .map((seg) => {
+        if (seg.kind === 'gap') return foldBar(seg.startLine, seg.endLine);
+        let out = '';
+        for (let ln = seg.startLine; ln <= seg.endLine; ln++) out += lineRow(ln);
+        return out;
+      })
+      .join('');
+  }, [lineTokens, fold, addedLines, symbol.startLine, t]);
+
+  // Stable-height signal — fires whenever the highlight OR err transitions
+  // to a non-null value. Idempotent against the parent's tracking Set, so
+  // re-renders / strict-mode double-fires are harmless. Expanding a fold
+  // gap changes the height AFTER this signal, which is fine: the signal
+  // gates the initial scroll-into-view, and by the time a bar can be
+  // clicked that scroll has long landed.
   useEffect(() => {
-    if (html !== null || err !== null) {
+    if (lineTokens !== null || err !== null) {
       onHighlighted(symbol.qualifiedName);
     }
-  }, [html, err, symbol.qualifiedName, onHighlighted]);
+  }, [lineTokens, err, symbol.qualifiedName, onHighlighted]);
+
+  // Fold-bar clicks, by delegation. Anything that isn't a bar (a code line,
+  // a drag-selection) falls through untouched.
+  const handleBodyClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (!onExpandGap) return;
+      const target = e.target as HTMLElement | null;
+      const bar = target?.closest?.('[data-fold-gap]');
+      if (!bar) return;
+      const startLine = Number(bar.getAttribute('data-fold-gap'));
+      if (Number.isFinite(startLine)) onExpandGap(symbol.qualifiedName, startLine);
+    },
+    [onExpandGap, symbol.qualifiedName],
+  );
 
   return (
     <div className="flex-1 min-w-0 bg-card border border-border rounded overflow-hidden relative">
@@ -335,6 +414,7 @@ function CodeBlock({
         data-block-body
         className="text-[11px] font-mono px-2 py-2 overflow-auto"
         style={{ lineHeight: `${LINE_HEIGHT_PX}px` }}
+        onClick={handleBodyClick}
       >
         {!fileSource && <span className="text-muted-foreground">Loading…</span>}
         {err && <span className="text-red-11">{err}</span>}
@@ -350,6 +430,10 @@ function CodeBlock({
           endLine={symbol.endLine}
           lineHeight={LINE_HEIGHT_PX}
           bodyTopOffset={HEADER_HEIGHT_PX + BODY_PADDING_TOP_PX}
+          // Folded body → a bubble's line is no longer its row index. A
+          // comment on a hidden line parks on the bar that swallowed it,
+          // same rule as a callee pin.
+          rowOf={fold?.rowOf}
           onCommentClick={onCommentClick}
         />
       )}
@@ -617,6 +701,12 @@ interface FunctionRowProps {
   accentQnames?: ReadonlySet<string>;
   /** Forwarded to CodeBlock — line-level diff overlay. */
   addedLines?: ReadonlySet<number>;
+  /** Compact-mode fold plan for this block. Consumed twice: CodeBlock
+   *  renders the collapsed body from it, and the right column places its
+   *  pins in the row space it defines. */
+  fold?: BlockFold | null;
+  /** Forwarded to CodeBlock — fold bar click. */
+  onExpandGap?: (qname: string, gapStartLine: number) => void;
 }
 
 // ----------------------------------------------------------------------------
@@ -722,6 +812,7 @@ function pinAccent(pin: RowPin, accentQnames?: ReadonlySet<string>): boolean {
 function placeDownstreamPins(
   pins: RowPin[],
   symbol: FnNode,
+  fold?: BlockFold | null,
 ): number[] {
   if (pins.length === 0) return [];
   const indexed = pins.map((p, i) => ({
@@ -736,10 +827,15 @@ function placeDownstreamPins(
   const placed = new Array<number>(pins.length).fill(0);
   let prevBottom = -Infinity;
   for (const { i, line } of indexed) {
+    // Row space, not line space: with a fold plan in play the body no
+    // longer renders one row per line, so the offset has to come from the
+    // plan. A pin whose call site was folded away resolves to the bar's
+    // row and parks there — visibly "there are calls inside this".
+    const row = fold ? fold.rowOf(line) : line - symbol.startLine;
     const natural =
       HEADER_HEIGHT_PX +
       BODY_PADDING_TOP_PX +
-      (line - symbol.startLine) * LINE_HEIGHT_PX;
+      row * LINE_HEIGHT_PX;
     const top = Math.max(natural, prevBottom);
     placed[i] = top;
     prevBottom = top + PIN_HEIGHT_PX;
@@ -777,11 +873,13 @@ function FunctionRow({
   onCommentClick,
   accentQnames,
   addedLines,
+  fold,
+  onExpandGap,
 }: FunctionRowProps) {
   // Right-column pins are aligned to their first call line. Compute
   // the placement once per render — cheap (linear in pin count) and
   // saves rendering each pin into a flex stack.
-  const downstreamTops = placeDownstreamPins(downstream, symbol);
+  const downstreamTops = placeDownstreamPins(downstream, symbol, fold);
 
   // The outer wrapper is tagged with `data-block-qname` so the parent's
   // flashTarget effect can locate this row by qualified name and scroll
@@ -829,6 +927,8 @@ function FunctionRow({
         addedLines={addedLines}
         upstream={upstream}
         downstream={downstream}
+        fold={fold}
+        onExpandGap={onExpandGap}
       />
       {/* Right column: callees absolutely positioned, each `top` aligned
           to its first call site so the pin sits next to the actual line.
@@ -1081,6 +1181,15 @@ interface BlockViewerProps {
   addedLines?: ReadonlySet<number>;
   /** File path that `addedLines` was computed against. */
   addedLinesFile?: string;
+  /** Compact (精简) density. Two levels of hiding, not one:
+   *    - BLOCK level: `qnameFilter` already drops untouched chips.
+   *    - LINE level (this flag): inside each surviving chip, keep the
+   *      changed lines ± context and collapse the rest into fold bars —
+   *      the same rule file-view mode uses (`compactDiff`).
+   *  Needs `addedLines` to have anything to anchor on, so a language we
+   *  can't project (no `changedQnames`, but `addedLines` still present)
+   *  still folds; a file with no overlay at all silently doesn't. */
+  compact?: boolean;
 
   /** Render-prop slot — returns content rendered at the END of the
    *  Header's left half (after focal path + stats). Receives the
@@ -1107,6 +1216,7 @@ export function BlockViewer({
   accentFile,
   addedLines,
   addedLinesFile,
+  compact = false,
   headerExtraLeft,
   headerExtraRight,
 }: BlockViewerProps) {
@@ -1387,6 +1497,31 @@ export function BlockViewer({
         qname,
         line,
         nonce: flashNonceRef.current,
+      });
+    },
+    [focalFile],
+  );
+
+  // Fold gaps the user has revealed, keyed `filePath#qname#gapStartLine`.
+  //
+  // Reveal is one-way and one-click (the whole gap opens; there is no bar
+  // left to click a second time) — a code-map gap lives inside a single
+  // already-filtered function, so incremental ±20 stepping like file view's
+  // would be more clicks than value, and each reveal re-runs pin placement.
+  // Re-collapsing is the 全文 → 精简 round trip.
+  //
+  // Keyed by path so `__imports__` (the one qname every file shares) can't
+  // carry an expansion across a pin-jump; stale keys for files the user
+  // left are a few bytes and get reused if they come back.
+  const [expandedGaps, setExpandedGaps] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const handleExpandGap = useCallback(
+    (qname: string, gapStartLine: number) => {
+      setExpandedGaps((prev) => {
+        const next = new Set(prev);
+        next.add(`${focalFile}#${qname}#${gapStartLine}`);
+        return next;
       });
     },
     [focalFile],
@@ -2005,6 +2140,34 @@ export function BlockViewer({
   const effectiveAccent = accentActive ? accentQnames : undefined;
   const effectiveAddedLines = overlayActive ? addedLines : undefined;
 
+  // Level-two compaction: inside each surviving block, fold the runs that
+  // are far from any change. Built here rather than inside FunctionRow
+  // because three consumers must agree on the same row space — the body
+  // (which renders it), the callee pin column (which positions against
+  // it), and the diff minimap (whose axis is the visible lines).
+  //
+  // Plain function call, no useMemo: this render path runs on every scroll
+  // tick (viewportRange is state), but the plan is O(changed lines + gaps)
+  // per block — it never walks the file — so caching it would cost more in
+  // hook plumbing than it saves. See blockFold.ts.
+  const foldByQname = new Map<string, BlockFold | null>();
+  if (compact && effectiveAddedLines) {
+    for (const fn of workingFunctions) {
+      foldByQname.set(
+        fn.qualifiedName,
+        buildBlockFold(
+          fn.startLine,
+          fn.endLine,
+          effectiveAddedLines,
+          (gapStart) =>
+            expandedGaps.has(
+              `${data.filePath}#${fn.qualifiedName}#${gapStart}`,
+            ),
+        ),
+      );
+    }
+  }
+
   // Group cross-file edges by focal-fn qname (de-duped by the external
   // function on each side, so multiple call sites from `db.query` to
   // `loginHandler` collapse to one chip with `lines: [N, M, ...]`).
@@ -2281,6 +2444,8 @@ export function BlockViewer({
                 }
                 accentQnames={effectiveAccent}
                 addedLines={effectiveAddedLines}
+                fold={foldByQname.get(fn.qualifiedName)}
+                onExpandGap={handleExpandGap}
               />
             ))}
           </div>
@@ -2351,11 +2516,29 @@ export function BlockViewer({
           workingFunctions.length > 0 && (
             <BlockDiffMinimap
               addedLines={effectiveAddedLines}
-              blockRanges={workingFunctions.map((fn) => ({
-                qname: fn.qualifiedName,
-                startLine: fn.startLine,
-                endLine: fn.endLine,
-              }))}
+              // Fold-aware: a folded block contributes ONE range per
+              // visible run, not one per block. The minimap's axis is
+              // rendered-line space, so feeding it the full block range
+              // of a body that only renders a third of its lines would
+              // put the thumb and the green ticks back into the exact
+              // disagreement this component was built to avoid.
+              blockRanges={workingFunctions.flatMap((fn) => {
+                const fold = foldByQname.get(fn.qualifiedName);
+                if (!fold) {
+                  return [
+                    {
+                      qname: fn.qualifiedName,
+                      startLine: fn.startLine,
+                      endLine: fn.endLine,
+                    },
+                  ];
+                }
+                return fold.visibleRuns.map((run) => ({
+                  qname: fn.qualifiedName,
+                  startLine: run.startLine,
+                  endLine: run.endLine,
+                }));
+              })}
               viewportRange={viewportRange}
               onJumpToLine={handleRulerJump}
             />

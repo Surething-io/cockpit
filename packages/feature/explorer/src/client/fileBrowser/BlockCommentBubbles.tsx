@@ -44,6 +44,11 @@ interface BlockCommentBubblesProps {
    *  because BlockViewer and BlockDiffViewer have slightly different
    *  header chromes. */
   bodyTopOffset: number;
+  /** Absolute file line → visual row index inside the body. Supplied by
+   *  the block's fold plan in compact mode, where hidden lines collapse
+   *  and a row index no longer equals `line - startLine`; omitted (and
+   *  therefore identity) whenever every line is rendered. */
+  rowOf?: (line: number) => number;
   onCommentClick: (comment: CodeComment, e: React.MouseEvent) => void;
 }
 
@@ -53,6 +58,7 @@ export function BlockCommentBubbles({
   endLine,
   lineHeight,
   bodyTopOffset,
+  rowOf,
   onCommentClick,
 }: BlockCommentBubblesProps) {
   // Group by endLine so multiple comments on the same line stack into
@@ -70,7 +76,8 @@ export function BlockCommentBubbles({
   return (
     <div className="absolute top-0 right-0 bottom-0 w-6 pointer-events-none">
       {Array.from(byEndLine.entries()).map(([line, list]) => {
-        const top = bodyTopOffset + (line - startLine) * lineHeight;
+        const row = rowOf ? rowOf(line) : line - startLine;
+        const top = bodyTopOffset + row * lineHeight;
         // Anchor the bubble's vertical CENTER to the line's CENTER so
         // it visually reads as "this line". The bubble is roughly
         // 16px tall; offset half its height to center on the line's

@@ -216,15 +216,18 @@ export function BlockDiffViewer({
       // what makes the overlay follow pin navigation: when activeFile
       // becomes file B, projection is for B, anchors say B, BlockViewer
       // sees `data.filePath === addedLinesFile` and applies overlay.
-      // Density: 全文 drops ONLY the filter, so every chip in the file
-      // renders while the accent + added-line overlay below still mark
-      // what actually changed.
+      // Density has two levels, and 全文 drops both: the block filter
+      // here, and the intra-block line folding `compact` switches on
+      // below. The accent + added-line overlay stays on either way, so
+      // 全文 still marks what actually changed — it just marks it inside
+      // every chip, at full length.
       qnameFilter={compact ? projection?.changedQnames : undefined}
       qnameFilterFile={activeFile}
       accentQnames={projection?.changedQnames}
       accentFile={activeFile}
       addedLines={projection?.addedLines}
       addedLinesFile={activeFile}
+      compact={compact}
       onFocalChange={(f) => f && setActiveFile(f)}
       onContentSearch={onContentSearch}
       // Undefined hides the header's "Code" button — right for hosts whose

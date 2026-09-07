@@ -1099,7 +1099,8 @@
       "hidden": "{{count}} lines hidden",
       "more": "··· more +{{count}} ···",
       "expandUp": "Expand {{count}} lines up",
-      "expandDown": "Expand {{count}} lines down"
+      "expandDown": "Expand {{count}} lines down",
+      "expandAll": "Click to expand {{count}} lines"
     },
     "loadingSnapshots": "Loading snapshots…",
     "noChanges": "No file changes detected in this turn",

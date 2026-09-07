@@ -1099,7 +1099,8 @@
       "hidden": "已隐藏 {{count}} 行",
       "more": "··· 更多 +{{count}} ···",
       "expandUp": "向上展开 {{count}} 行",
-      "expandDown": "向下展开 {{count}} 行"
+      "expandDown": "向下展开 {{count}} 行",
+      "expandAll": "点击展开 {{count}} 行"
     },
     "loadingSnapshots": "正在加载快照…",
     "noChanges": "本轮未检测到文件变更",

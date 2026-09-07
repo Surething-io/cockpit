@@ -6,6 +6,7 @@ import { toast } from '@cockpit/shared-ui';
 import { SubagentTranscriptModal } from './SubagentTranscriptModal';
 import { WorkflowRunModal } from './WorkflowRunModal';
 import type { ToolCallInfo } from './types';
+import { useLiveTask } from './taskStore';
 // Tech debt: PreviewModal is a heavy main-shell component (depends on
 // DiffView/CodeViewer/MarkdownRenderer/...). Pulling it cleanly would mean
 // migrating its 11+ deps in lockstep. Allowed by MODULES.md as transitional
@@ -78,6 +79,12 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
   // Workflow drill-in needs the run id plus the session coordinates to locate
   // the journal under `<sessionId>/workflows/`.
   const isWorkflowCall = isWorkflow && !!workflowRunId && !!cwd && !!sessionId;
+  // The task this call spawned. The live store wins over whatever a transcript reconstructed:
+  // both describe the same task, but one was observed on the wire. It is also the ONLY source
+  // for a NESTED agent — a sub-agent's transcript records neither the structured launch receipt
+  // nor any completion notification, so the parsers have nothing to rebuild from (taskStore.ts).
+  const liveTask = useLiveTask(toolCall.id);
+  const task = liveTask ?? toolCall.task;
   // The background task this call spawned is still working. Distinct from `isLoading` (= this
   // tool call has no result yet), which an async launch clears in ~30ms — see
   // shared/subagentTask.ts.
@@ -87,7 +94,7 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
   // instead, and settleRunningTasks clears it when the run ends). Qualifying it with a
   // session-level flag would be strictly worse than useless — it is true again as soon as the
   // user sends an UNRELATED next message, which is exactly how a stale task comes back to life.
-  const taskRunning = toolCall.task?.status === 'running';
+  const taskRunning = task?.status === 'running';
   const busy = !!toolCall.isLoading || taskRunning;
   /**
    * Poll gate for the sub-agent drill-in. Two engines, two different truths:
@@ -103,11 +110,11 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
    * `|| isLoading` arm covers a FOREGROUND claude subagent, whose spawning call genuinely does
    * block until it finishes.
    */
-  const subagentRunning = toolCall.task ? taskRunning || !!toolCall.isLoading : !toolCall.result;
+  const subagentRunning = task ? taskRunning || !!toolCall.isLoading : !toolCall.result;
   // One-line liveness for a running task. Rendered instead of a bare spinner because
   // "WebFetch · 37" answers "is it stuck?" and a spinner does not.
   const taskProgress = taskRunning
-    ? [toolCall.task?.lastToolName, toolCall.task?.toolUses ? String(toolCall.task.toolUses) : null]
+    ? [task?.lastToolName, task?.toolUses ? String(task.toolUses) : null]
         .filter(Boolean)
         .join(' · ')
     : '';

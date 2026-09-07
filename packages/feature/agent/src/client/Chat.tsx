@@ -18,6 +18,7 @@ import { UserMessagesModal } from './UserMessagesModal';
 import { useChatContextOptional } from './ChatContext';
 import { useChatHistory } from './useChatHistory';
 import { useChatStream, NO_BG_TASKS } from './useChatStream';
+import { TaskStoreContext, createTaskStore } from './taskStore';
 import { MessageList, MessageListHandle } from './MessageList';
 import { ChatInput } from './ChatInput';
 import type { ChatMessage, TokenUsage, LiveOutputTokens, BackgroundTaskInfo, ImageInfo, ChatEngine, EngineModelId, ToolCallInfo, ClaudeModelId, ClaudeEffort, ClaudeContextWindow, CodexModelId, CodexReasoningEffort } from './types';
@@ -182,6 +183,10 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const [viewerLiveOutputTokens, setViewerLiveOutputTokens] = useState<LiveOutputTokens | null>(null);
   const [viewerRunStartedAt, setViewerRunStartedAt] = useState<number | null>(null);
   const [viewerBackgroundTasks, setViewerBackgroundTasks] = useState<BackgroundTaskInfo[]>(NO_BG_TASKS);
+  // Live `system/task_*` state for this tab, keyed by spawning tool_use id. Held beside the
+  // message tree because a nested agent's spawning call is not in it — see taskStore.ts. One
+  // per Chat instance and never recreated, so a re-render cannot drop a running task's state.
+  const taskStore = useMemo(() => createTaskStore(), []);
   const liveRunningRef = useRef(false);
   useEffect(() => { liveRunningRef.current = liveRunning; }, [liveRunning]);
 
@@ -280,6 +285,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     onSessionId: setSessionId,
     onFetchTitle: fetchSessionTitle,
     onRunComplete: () => reconcileFromDiskRef.current?.(),
+    taskStore,
   });
 
   // ! prefix: first line is command, subsequent lines are user notes, supports images
@@ -364,6 +370,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     onLiveOutputTokens: setViewerLiveOutputTokens,
     onRunStartedAt: setViewerRunStartedAt,
     onBackgroundTasks: (tasks) => setViewerBackgroundTasks(tasks.length ? tasks : NO_BG_TASKS),
+    taskStore,
     onComplete: () => {
       // Turn finished → reconcile from disk (replaces temp `live-…` bubbles with canonical
       // real-uuid messages).
@@ -625,6 +632,10 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   ) : null;
 
   return (
+    // Provider, not props: every tool row needs the store, including the ones inside a
+    // SubagentTranscriptModal nested arbitrarily deep. Portals inherit context, so the modal
+    // stack is covered without threading a prop through each layer.
+    <TaskStoreContext.Provider value={taskStore}>
     <div className={`flex ${hideHeader && hideSidebar ? 'h-full' : 'h-screen'} bg-card`}>
       {/* Main Content */}
       <div
@@ -808,5 +819,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
         }}
       />
     </div>
+    </TaskStoreContext.Provider>
   );
 }

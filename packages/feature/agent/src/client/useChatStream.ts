@@ -20,6 +20,7 @@ import type {
   CodexModelId,
   CodexReasoningEffort,
 } from './types';
+import type { TaskStore } from './taskStore';
 import i18n from '@cockpit/shared-i18n';
 import { useWebSocket } from '@cockpit/shared-ui';
 
@@ -72,6 +73,12 @@ interface UseChatStreamOptions {
    * lingers as ephemeral ids until the next refresh.
    */
   onRunComplete?: () => void;
+  /**
+   * Sink for `system/task_*` events, recorded beside the message tree so a task whose spawning
+   * call is not in this message list at all — a sub-agent's own sub-agent — still has live
+   * state somewhere. See taskStore.ts.
+   */
+  taskStore?: TaskStore;
 }
 
 interface UseChatStreamReturn {
@@ -98,7 +105,7 @@ interface UseChatStreamReturn {
 export function useChatStream(
   messages: ChatMessage[],
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  { sessionId, cwd, engine, planMode, noHistory, ollamaModel, engineModel, claudeModel, claudeEffort, claudeContextWindow, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, onSessionId, onFetchTitle, onRunComplete }: UseChatStreamOptions
+  { sessionId, cwd, engine, planMode, noHistory, ollamaModel, engineModel, claudeModel, claudeEffort, claudeContextWindow, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, onSessionId, onFetchTitle, onRunComplete, taskStore }: UseChatStreamOptions
 ): UseChatStreamReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
@@ -121,6 +128,8 @@ export function useChatStream(
   // handleSend too). endRun runs long after mount, so the ref is always populated by then.
   const onRunCompleteRef = useRef(onRunComplete);
   onRunCompleteRef.current = onRunComplete;
+  const taskStoreRef = useRef(taskStore);
+  taskStoreRef.current = taskStore;
 
   // #10 R5/#7: connection watchdog. The detached run is driven entirely by /ws/session-stream;
   // if that socket never connects (ws server down, upgrade rejected), no event ever arrives and
@@ -181,6 +190,7 @@ export function useChatStream(
     // endRun fires per RUN, not per turn, so this cannot cut a background task loose between the
     // launch turn and the follow-up turn the SDK auto-runs when it reports back.
     setMessages(settleRunningTasks);
+    taskStoreRef.current?.settleRunning();
     setIsLoading(false);
     setLiveOutputTokens(null);
     setRunningStartedAt(null);
@@ -272,6 +282,9 @@ export function useChatStream(
     // scoped to this turn's bubble; see applyTaskEvent. task_notification falls through, because
     // it ALSO renders a system row below.
     if (isTaskEvent(event as StreamEvent)) {
+      // Both sinks, always: the message tree settles the row when the spawning call is on
+      // screen, the store covers every depth including the ones that have no row here.
+      taskStoreRef.current?.applyEvent(event as unknown as StreamEvent);
       setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
       if (event.subtype !== 'task_notification') return;
     }

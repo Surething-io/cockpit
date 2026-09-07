@@ -6,6 +6,7 @@ import { useWebSocket } from '@cockpit/shared-ui';
 import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
 import type { ChatMessage, ChatEngine, LiveOutputTokens, BackgroundTaskInfo } from './types';
 import { applyStreamEvent, isSubagentFrame, isTaskEvent, settleRunningTasks, type StreamEvent } from './applyStreamEvent';
+import type { TaskStore } from './taskStore';
 
 // #10 viewer hook: tail /ws/session-stream for `sessionId` and render live through the
 // SAME reducer the originator uses (applyStreamEvent) → engine-agnostic, zero per-engine
@@ -32,6 +33,8 @@ export function useLiveStream(
     onRunStartedAt?: (startedAt: number | null) => void;
     /** Live set of non-ambient background tasks (REPLACE semantics), mirroring useChatStream. */
     onBackgroundTasks?: (tasks: BackgroundTaskInfo[]) => void;
+    /** Sink for `system/task_*` events at every spawn depth — see taskStore.ts. */
+    taskStore?: TaskStore;
   }
 ): void {
   const curAssistantId = useRef<string | null>(null);
@@ -116,6 +119,8 @@ export function useLiveStream(
     // reducer keys on `tool_use_id`, so it lands on the launching row whichever bubble that is
     // by now). task_notification falls through: it ALSO renders a system row below.
     if (isTaskEvent(ev)) {
+      // Both sinks — see the same call in useChatStream.
+      opts?.taskStore?.applyEvent(ev);
       setMessages((prev) => applyStreamEvent(prev, ev, { engine, assistantId: curAssistantId.current ?? '' }));
       if (ev.subtype !== 'task_notification') return;
     }
@@ -233,6 +238,7 @@ export function useLiveStream(
           opts?.onRunStartedAt?.(null);
           opts?.onBackgroundTasks?.([]);
           setMessages(settleRunningTasks);
+          opts?.taskStore?.settleRunning();
           fallbackOutputTokens.current = 0;
           sawServerUsageUpdate.current = false;
           sawResult.current = false;
@@ -350,6 +356,7 @@ export function useLiveStream(
           opts?.onRunStartedAt?.(null);
           opts?.onBackgroundTasks?.([]);
           setMessages(settleRunningTasks);
+          opts?.taskStore?.settleRunning();
           fallbackOutputTokens.current = 0;
           sawServerUsageUpdate.current = false;
           sawResult.current = false;
@@ -364,6 +371,7 @@ export function useLiveStream(
         opts?.onRunStartedAt?.(null);
         opts?.onBackgroundTasks?.([]);
         setMessages(settleRunningTasks);
+        opts?.taskStore?.settleRunning();
         fallbackOutputTokens.current = 0;
         sawServerUsageUpdate.current = false;
         sawResult.current = false;

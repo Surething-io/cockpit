@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { AppError } from '@cockpit/effect-core';
 import { useChatHistory } from '../useChatHistory';
 import { useChatStream, NO_BG_TASKS } from '../useChatStream';
+import { TaskStoreContext, createTaskStore } from '../taskStore';
 import { useLiveStream } from '../useLiveStream';
 import { MessageList, type MessageListHandle } from '../MessageList';
 import { MobileChatInput } from './MobileChatInput';
@@ -87,6 +88,8 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   const [viewerLiveOutputTokens, setViewerLiveOutputTokens] = useState<LiveOutputTokens | null>(null);
   const [viewerRunStartedAt, setViewerRunStartedAt] = useState<number | null>(null);
   const [viewerBackgroundTasks, setViewerBackgroundTasks] = useState<BackgroundTaskInfo[]>(NO_BG_TASKS);
+  // Mirrors Chat.tsx: live task state for every spawn depth, kept beside the message tree.
+  const taskStore = useMemo(() => createTaskStore(), []);
   const liveRunningRef = useRef(false);
   useEffect(() => { liveRunningRef.current = liveRunning; }, [liveRunning]);
 
@@ -143,6 +146,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     // temp live bubbles converge to canonical uuids — without this the next snapshot /
     // incremental load can double-render the turn on mobile.
     onRunComplete: () => reconcileFromDiskRef.current?.(),
+    taskStore,
   });
 
   // Live viewer: tail the active run whenever we're viewing this session and not
@@ -155,6 +159,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
     onLiveOutputTokens: setViewerLiveOutputTokens,
     onRunStartedAt: setViewerRunStartedAt,
     onBackgroundTasks: (tasks) => setViewerBackgroundTasks(tasks.length ? tasks : NO_BG_TASKS),
+    taskStore,
     onComplete: () => {
       if (liveSessionId) loadHistoryByCwdAndSessionId(cwd, liveSessionId, true);
     },
@@ -186,6 +191,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   }, [handleSend]);
 
   return (
+    <TaskStoreContext.Provider value={taskStore}>
     <div className="flex h-[100dvh] flex-col bg-card">
       {/* Back bar */}
       <div className="flex flex-shrink-0 items-center gap-1 border-b border-border bg-card px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
@@ -233,5 +239,6 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
         disabled={isRunning}
       />
     </div>
+    </TaskStoreContext.Provider>
   );
 }

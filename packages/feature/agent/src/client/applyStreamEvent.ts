@@ -1,5 +1,5 @@
 import { appendTextPart, appendToolPart, joinAssistantText } from '../shared/assistantText';
-import type { ChatMessage, ToolCallInfo } from './types';
+import type { ChatMessage, ToolCallInfo, ToolCallTask } from './types';
 
 // Single engine-agnostic stream→messages reducer (#10 line 1).
 //
@@ -89,6 +89,26 @@ export function isTaskEvent(ev: StreamEvent): boolean {
 }
 
 /**
+ * One task event folded onto whatever is known about that task so far.
+ *
+ * Shared with the live task store (client/taskStore.ts), which records the SAME events for
+ * tasks whose spawning call is not in this message list at all — a sub-agent's sub-agent lives
+ * in the sub-agent's own transcript, which only SubagentTranscriptModal ever renders. Both
+ * sinks folding the identical function is what keeps a nested row and a top-level row from
+ * disagreeing about the same event.
+ */
+export function mergeTaskEvent(prev: ToolCallTask | undefined, ev: StreamEvent): ToolCallTask {
+  const next: ToolCallTask = { status: 'running', ...prev };
+  if (ev.subtype === 'task_notification') next.status = ev.status ?? 'completed';
+  if (ev.task_id) next.id = ev.task_id;
+  if (ev.last_tool_name) next.lastToolName = ev.last_tool_name;
+  if (ev.summary) next.summary = ev.summary;
+  if (typeof ev.usage?.tool_uses === 'number') next.toolUses = ev.usage.tool_uses;
+  if (typeof ev.usage?.duration_ms === 'number') next.durationMs = ev.usage.duration_ms;
+  return next;
+}
+
+/**
  * Fold a `system/task_*` event into the tool call that spawned it.
  *
  * Scanning ALL messages rather than just `assistantId` is deliberate and is the whole point:
@@ -105,16 +125,7 @@ function applyTaskEvent(messages: ChatMessage[], ev: StreamEvent): ChatMessage[]
   const toolId = ev.tool_use_id;
   if (!toolId || ev.ambient) return messages;
 
-  const patch = (prev: ToolCallInfo['task']): ToolCallInfo['task'] => {
-    const next: NonNullable<ToolCallInfo['task']> = { status: 'running', ...prev };
-    if (ev.subtype === 'task_notification') next.status = ev.status ?? 'completed';
-    if (ev.task_id) next.id = ev.task_id;
-    if (ev.last_tool_name) next.lastToolName = ev.last_tool_name;
-    if (ev.summary) next.summary = ev.summary;
-    if (typeof ev.usage?.tool_uses === 'number') next.toolUses = ev.usage.tool_uses;
-    if (typeof ev.usage?.duration_ms === 'number') next.durationMs = ev.usage.duration_ms;
-    return next;
-  };
+  const patch = (prev: ToolCallTask | undefined): ToolCallTask => mergeTaskEvent(prev, ev);
 
   let hit = false;
   const out = messages.map((m) => {

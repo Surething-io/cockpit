@@ -122,9 +122,16 @@ export function SubagentTranscriptModal({ cwd, sessionId, toolCall, workflowRef,
 
   return (
     <Portal>
+      {/*
+        Backdrop. stopPropagation, not a bare onClose: a nested transcript (see the
+        MessageBubble below) renders THROUGH a portal, and React bubbles portal events up the
+        component tree rather than the DOM tree. The inner backdrop therefore sits inside this
+        one as far as React is concerned, so dismissing the inner modal would collapse every
+        ancestor along with it.
+      */}
       <div
         className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
-        onClick={onClose}
+        onClick={(e) => { e.stopPropagation(); onClose(); }}
       >
         <div
           className="bg-card rounded-lg shadow-lv3 w-full max-w-[90%] h-[90vh] flex flex-col"
@@ -164,7 +171,15 @@ export function SubagentTranscriptModal({ cwd, sessionId, toolCall, workflowRef,
                 {loadAttempted ? t('chat.subagentEmpty') : t('common.loading')}
               </div>
             ) : (
-              messages.map((m) => <MessageBubble key={m.id} message={m} cwd={cwd} />)
+              // `sessionId` is what makes an Agent/Task row inside this transcript drillable
+              // (ToolCallModal gates its entry on cwd + sessionId), so a sub-agent's own
+              // sub-agents open the same way its parent did. It is the MAIN session id at
+              // every depth, and correctly so: every agent of a session — depth 1, 2, 3 —
+              // writes its meta sidecar into the one flat `<sessionId>/subagents/` directory,
+              // and findSubagentTranscript resolves purely by the spawning tool_use id. The
+              // lookup was always depth-agnostic; only this prop was missing, which is why a
+              // nested Agent row rendered with no drill-in entry at all.
+              messages.map((m) => <MessageBubble key={m.id} message={m} cwd={cwd} sessionId={sessionId} />)
             )}
           </div>
         </div>

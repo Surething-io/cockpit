@@ -13,12 +13,16 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest"
 import { mkdtempSync, rmSync, mkdirSync } from "fs"
 import { tmpdir } from "os"
-import { join } from "path"
+import { join, resolve } from "path"
+import { encodePath } from "@cockpit/shared-utils/encodePath"
 
 const home = mkdtempSync(join(tmpdir(), "cockpit-bubble-test-"))
 process.env.COCKPIT_HOME = home
 
-const PROJECT = "/tmp/cockpit-bubble-test-project"
+// A real path under the OS temp dir, not a hard-coded "/tmp/..." literal:
+// resolveProjectCwd() runs the input through path.resolve(), which on Windows
+// turns "/tmp/x" into "<drive>:\tmp\x" and breaks the equality assertions.
+const PROJECT = resolve(join(tmpdir(), "cockpit-bubble-test-project"))
 const SUBDIR = join(PROJECT, "packages", "deep")
 
 /** Broadcast frames captured off the fake /ws/global-state client set. */
@@ -50,9 +54,14 @@ beforeAll(async () => {
   toShortId = (await import("@cockpit/shared-utils")).toShortId
 })
 
-afterAll(() => rmSync(home, { recursive: true, force: true }))
+afterAll(() => {
+  rmSync(home, { recursive: true, force: true })
+  rmSync(PROJECT, { recursive: true, force: true })
+})
 
-const projectDataDir = join(home, "projects", "-tmp-cockpit-bubble-test-project")
+// Same encoding the production code uses, so the "known project" marker dir
+// lands where resolveProjectCwd() looks for it on every platform.
+const projectDataDir = join(home, "projects", encodePath(PROJECT))
 
 beforeEach(() => {
   sent = []

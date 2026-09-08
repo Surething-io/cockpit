@@ -100,7 +100,7 @@ async function extractBlocks(
   const tree = parser.parse(source);
   if (!tree) return null;
   try {
-    return extractSymbolsFromTree(tree.rootNode);
+    return extractSymbolsFromTree(tree.rootNode, grammar);
   } finally {
     tree.delete();
   }

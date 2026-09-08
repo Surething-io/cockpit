@@ -33,6 +33,7 @@ import {
 import { pythonHandler } from './python';
 import { goHandler } from './go';
 import { rustHandler } from './rust';
+import { leanHandler } from './lean';
 
 registerHandler(typescriptHandler);
 registerHandler(tsxHandler);
@@ -40,6 +41,7 @@ registerHandler(javascriptHandler);
 registerHandler(pythonHandler);
 registerHandler(goHandler);
 registerHandler(rustHandler);
+registerHandler(leanHandler);
 
 export { registerHandler, getHandler, tryGetHandler, hasHandler } from './registry';
 export type {

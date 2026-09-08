@@ -21,7 +21,7 @@
  */
 
 import type { Node } from 'web-tree-sitter';
-import type { ServerGrammarId } from './serverTreeSitter';
+import type { GrammarId } from '../languageMap';
 
 /**
  * Walk the AST and collect import specifiers.
@@ -182,14 +182,18 @@ export function readPythonModuleSpec(node: Node): string {
 // fall through to the `if (!walker) return []` guard below — those
 // languages have their own handler-internal walkers and don't go
 // through this dispatcher.
-const WALKERS: Partial<Record<ServerGrammarId, (root: Node) => string[]>> = {
+const WALKERS: Partial<Record<GrammarId, (root: Node) => string[]>> = {
   typescript: walkForJsTsImports,
   tsx: walkForJsTsImports,
   javascript: walkForJsTsImports,
   python: walkForPythonImports,
 };
 
-export function extractImportsFromTree(root: Node, grammar: ServerGrammarId): string[] {
+// Takes the full `GrammarId`, not `ServerGrammarId`: callers hold a handler's
+// own `grammarId` and shouldn't have to narrow. Grammars with no walker (Go,
+// Rust — handler-internal walkers; Lean — block-diff only, never indexed) hit
+// the guard below and get an empty spec list, same as before.
+export function extractImportsFromTree(root: Node, grammar: GrammarId): string[] {
   const walker = WALKERS[grammar];
   if (!walker) return [];
   return walker(root);

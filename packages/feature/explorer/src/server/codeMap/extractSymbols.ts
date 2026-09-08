@@ -16,6 +16,7 @@
 
 import type { Node } from 'web-tree-sitter';
 import type { ExtractedSymbol, SymbolKind } from './types';
+import type { GrammarId } from './languageMap';
 
 // ============================================================================
 // Hash — cyrb53, a fast non-crypto hash. Used to detect "modified" symbols by
@@ -639,6 +640,147 @@ function leafCalleeName(node: Node): string {
  * `'use client'` directives) lands in a filler block instead — that
  * keeps the imports block from overlapping random pre-import code.
  */
+// ============================================================================
+// Lean 4
+// ============================================================================
+
+/**
+ * Lean declaration node type → SymbolKind.
+ *
+ * The grammar folds keyword pairs into one node, so this table is shorter than
+ * the Lean keyword list: `theorem` also matches `lemma`, and `structure` also
+ * matches `class`.
+ *
+ * The mapping is lossy — `theorem` and `def` both land on `'function'` —
+ * because `SymbolKind` is a closed union wired into `FUNCTION_LIKE_KINDS`, the
+ * chip layout and the analytics passes. Adding a `'theorem'` kind would ripple
+ * through all of them to serve a language that never enters the call graph
+ * (Lean has no `LanguageHandler`; see `serverTreeSitter.ts`). The declaration
+ * keyword stays visible in the source line the block renders, so nothing a
+ * reviewer needs is actually lost.
+ */
+const LEAN_DECL_KINDS: Readonly<Record<string, SymbolKind>> = {
+  theorem: 'function', // also `lemma`
+  def: 'function',
+  abbrev: 'function',
+  example: 'function',
+  instance: 'const',
+  structure: 'class', // also `class`
+  inductive: 'type',
+  axiom: 'const',
+  opaque: 'const',
+  constant: 'const',
+};
+
+/**
+ * Last line of a node that actually holds content, 1-based.
+ *
+ * Lean tactic blocks (`:= by` + an indented block) are whitespace-delimited, so
+ * tree-sitter ends them at the START of the next token — the node's
+ * `endPosition` sits on the following declaration's first line. Taking that row
+ * verbatim makes ADJACENT DECLARATIONS OVERLAP, e.g. `a` = L1-3 and `b` = L3-3,
+ * and a line owned by two blocks corrupts the block-diff projection.
+ *
+ * Measured: only `by` blocks over-extend; a term-mode `:= trivial` one-liner
+ * ends exactly on its own line. Clamping by the trailing-whitespace newline
+ * count fixes the former and is a no-op for the latter.
+ *
+ * `contentHash` needs no equivalent guard — `normalizeForHash` already collapses
+ * and trims whitespace.
+ */
+function contentEndLine(node: Node): number {
+  const rawEnd = node.endPosition.row + 1;
+  const trimmed = node.text.replace(/\s+$/, '');
+  const dropped = node.text.slice(trimmed.length);
+  if (!dropped) return rawEnd;
+  const newlines = dropped.split('\n').length - 1;
+  // Never collapse past the node's own first line.
+  return Math.max(node.startPosition.row + 1, rawEnd - newlines);
+}
+
+/**
+ * Walk Lean's top level, tracking the namespace stack.
+ *
+ * `namespace` / `section` / `end` are FLAT SIBLINGS in this grammar, not
+ * nesting nodes — upstream made that call because Lean and Mathlib files
+ * routinely leave namespaces unclosed and rely on EOF. So the enclosing
+ * namespace of a declaration is not reachable from the declaration node; it
+ * has to be reconstructed by pairing siblings, which is what this does.
+ *
+ * `namespace Foo.Bar` is a single push (one node, dotted name), so `end
+ * Foo.Bar` is a single pop — the pairing stays 1:1 and we can pop blindly
+ * without matching names. A stray `end` just pops whatever is open; an
+ * unclosed namespace simply stays on the stack until EOF. Both are
+ * best-effort by design: this is a naming aid, not a scope checker.
+ *
+ * Unparsed regions arrive as `ERROR` siblings and are skipped here, then
+ * picked up by `computeFillerBlocks` as anonymous `__code_*__` blocks — i.e.
+ * they degrade to the line-level diff that `.lean` files got before this
+ * grammar existed.
+ */
+function extractLeanTopLevel(rootNode: Node): ExtractedSymbol[] {
+  const out: ExtractedSymbol[] = [];
+  /** Open scopes; `null` = a `section`, which opens a scope but adds no name. */
+  const nsStack: (string | null)[] = [];
+
+  for (let i = 0; i < rootNode.namedChildCount; i++) {
+    const child = rootNode.namedChild(i);
+    if (!child) continue;
+
+    switch (child.type) {
+      case 'namespace':
+        nsStack.push(child.childForFieldName('name')?.text ?? null);
+        continue;
+      case 'section':
+        nsStack.push(null);
+        continue;
+      case 'end':
+        nsStack.pop();
+        continue;
+      default:
+        break;
+    }
+
+    // A declaration is either the `declaration` wrapper (which also carries
+    // attributes and modifiers, so it — not the inner node — is the right
+    // span and hash boundary) or, defensively, a bare declaration node.
+    let inner: Node | null = null;
+    if (child.type === 'declaration') {
+      for (let j = 0; j < child.namedChildCount; j++) {
+        const c = child.namedChild(j);
+        if (c && c.type in LEAN_DECL_KINDS) {
+          inner = c;
+          break;
+        }
+      }
+    } else if (child.type in LEAN_DECL_KINDS) {
+      inner = child;
+    }
+    if (!inner) continue;
+
+    // `example` and anonymous `instance` have no `name` field at all — the
+    // grammar models them as genuinely nameless. Fall back to the keyword and
+    // let `dedupeQualifiedNames` suffix the collisions, rather than emitting
+    // null-named symbols the diff cannot key on.
+    const declared = inner.childForFieldName('name')?.text ?? inner.type;
+    const prefix = nsStack.filter((s): s is string => s !== null);
+
+    out.push({
+      // Dot-joined, not `>`-joined: this IS the Lean name, so a reviewer can
+      // paste it straight into `#check`. Nothing parses `qualifiedName` on
+      // `>` outside the project-graph analytics, which Lean never enters.
+      qualifiedName: [...prefix, declared].join('.'),
+      name: declared,
+      kind: LEAN_DECL_KINDS[inner.type],
+      startLine: child.startPosition.row + 1,
+      endLine: contentEndLine(child),
+      contentHash: hashText(normalizeForHash(child.text)),
+      children: [],
+    });
+  }
+  return out;
+}
+
 function extractImportHeader(rootNode: Node): ExtractedSymbol | null {
   const headerNodes: Node[] = [];
   let firstLine = -1;
@@ -654,7 +796,11 @@ function extractImportHeader(rootNode: Node): ExtractedSymbol | null {
       // Python: `from x import y` / `from .x import y`
       c.type === 'import_from_statement' ||
       // Python: `import x` / `import x.y as z`
-      c.type === 'future_import_statement';
+      c.type === 'future_import_statement' ||
+      // Lean 4: `import Mathlib`, `public import X`, `import all X`.
+      // Bare `import` (not `_statement`) is Lean's node name; no other
+      // bundled grammar uses it, so this needs no language guard.
+      c.type === 'import';
     if (isHeader) {
       headerNodes.push(c);
       if (firstLine < 0) firstLine = c.startPosition.row + 1;
@@ -855,13 +1001,25 @@ export function computeFillerBlocks(
  * Output isn't sorted: callers (`fileFunctionsFromIndex`) sort by
  * startLine for the chip render.
  */
-export function extractSymbolsFromTree(rootNode: Node): ExtractedSymbol[] {
+export function extractSymbolsFromTree(
+  rootNode: Node,
+  grammar?: GrammarId,
+): ExtractedSymbol[] {
   const out: ExtractedSymbol[] = [];
   const header = extractImportHeader(rootNode);
   if (header) out.push(header);
-  for (let i = 0; i < rootNode.namedChildCount; i++) {
-    const child = rootNode.namedChild(i);
-    if (child) out.push(...extractFromNode(child, undefined, false));
+  if (grammar === 'lean') {
+    // Lean needs SIBLING state (the namespace/section/end stack), which
+    // `extractFromNode`'s one-node-at-a-time contract cannot carry. Kept as a
+    // separate walker rather than bolted into that switch so the TS/JS/Python
+    // paths are provably untouched. Everything after this branch — comment
+    // absorption, filler blocks, dedupe — is language-agnostic and shared.
+    out.push(...extractLeanTopLevel(rootNode));
+  } else {
+    for (let i = 0; i < rootNode.namedChildCount; i++) {
+      const child = rootNode.namedChild(i);
+      if (child) out.push(...extractFromNode(child, undefined, false));
+    }
   }
   absorbLeadingComments(rootNode, out);
   out.push(...computeFillerBlocks(rootNode, out));

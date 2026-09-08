@@ -24,14 +24,23 @@ import path from 'node:path';
  */
 const WASM_DIR = path.join(process.cwd(), 'public', 'tree-sitter');
 
-/** Grammar ids we currently bundle. Extend in lockstep with the browser-side `SUPPORTED_GRAMMARS`. */
+/** Grammar ids loadable server-side — i.e. whose `.wasm` we bundle.
+ *
+ * "Loadable" is NOT "indexed". What a project graph build actually walks is
+ * decided by `grammarForExtension` below, which maps only the extensions we
+ * have a `LanguageHandler` for. A grammar may be bundled purely for the
+ * browser-side block diff (which parses on demand and needs no index) and
+ * never appear there.
+ *
+ * Keep in lockstep with the browser-side `SUPPORTED_GRAMMARS`. */
 export type ServerGrammarId =
   | 'typescript'
   | 'tsx'
   | 'javascript'
   | 'python'
   | 'go'
-  | 'rust';
+  | 'rust'
+  | 'lean';
 
 let initPromise: Promise<void> | null = null;
 const grammarPromises = new Map<ServerGrammarId, Promise<Language>>();
@@ -80,7 +89,12 @@ export async function getServerParser(id: ServerGrammarId): Promise<Parser> {
   return parser;
 }
 
-/** Path → grammar mapping. Add new languages here when bundling new WASMs. */
+/** Path → grammar mapping — the gate on what the project graph indexes.
+ *
+ * Adding an extension here commits you to a registered `LanguageHandler` for
+ * that grammar: `codeIndex` calls `getHandler` on whatever this returns and
+ * that throws when none is registered. Bundling a grammar does NOT require an
+ * entry here (Lean has none on purpose). */
 export function grammarForExtension(filePath: string): ServerGrammarId | null {
   const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
   switch (ext) {
@@ -100,6 +114,8 @@ export function grammarForExtension(filePath: string): ServerGrammarId | null {
       return 'go';
     case '.rs':
       return 'rust';
+    case '.lean':
+      return 'lean';
     default:
       return null;
   }

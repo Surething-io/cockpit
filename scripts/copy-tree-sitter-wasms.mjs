@@ -13,8 +13,19 @@
  * pinned `tree-sitter-cli@0.20.x` and produced WASMs without the dylink section
  * required by newer runtimes ("need dylink section" error).
  *
- * The list of grammars MUST stay in sync with `SUPPORTED_GRAMMARS` in
- * `src/lib/codeMap/languageMap.ts`. Add a name here and bump the WASM in.
+ * Grammars come in two kinds, and the difference matters here:
+ *
+ *   COPIED   — shipped by @vscode/tree-sitter-wasm, re-copied on every
+ *              predev/prebuild. Listed in `GRAMMARS`.
+ *   VENDORED — built by hand and committed under public/tree-sitter/ because
+ *              no prebuilt artifact exists upstream. Listed in `VENDORED`.
+ *              There is no source to copy from, so this script only ASSERTS
+ *              their presence; `scripts/build-lean-grammar.mjs` regenerates
+ *              them. Adding one to `GRAMMARS` instead would make this script
+ *              warn "missing source" on every single build.
+ *
+ * Both lists MUST stay in sync with `SUPPORTED_GRAMMARS` in
+ * `packages/feature/explorer/src/server/codeMap/languageMap.ts`.
  *
  * Behaviour:
  *   - Idempotent: skips files that already match by size + mtime.
@@ -30,8 +41,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PROJECT_ROOT = join(SCRIPT_DIR, '..');
 
-// Keep this list aligned with SUPPORTED_GRAMMARS in src/lib/codeMap/languageMap.ts.
+// Keep both lists aligned with SUPPORTED_GRAMMARS in
+// packages/feature/explorer/src/server/codeMap/languageMap.ts.
+/** Copied out of @vscode/tree-sitter-wasm on every build. */
 const GRAMMARS = ['typescript', 'tsx', 'javascript', 'python', 'go', 'rust'];
+/** Committed binaries — no upstream source to copy from. See header. */
+const VENDORED = ['lean'];
 
 function copyIfChanged(src, dst, label) {
   if (!existsSync(src)) {
@@ -65,6 +80,21 @@ export function copyTreeSitterWasms(projectRoot = SCRIPT_PROJECT_ROOT) {
   const runtimeSrc = join(projectRoot, 'node_modules', 'web-tree-sitter', 'web-tree-sitter.wasm');
 
   mkdirSync(destDir, { recursive: true });
+
+  // Vendored grammars have no source to copy from — the committed file IS the
+  // artifact. Assert rather than copy, in BOTH the dev and production paths:
+  // a missing one means a broken checkout or a `files` regression, and the
+  // only symptom otherwise is that .lean files silently fall back to
+  // line-level diff, which looks like "the feature was never built".
+  for (const g of VENDORED) {
+    if (!existsSync(join(destDir, `tree-sitter-${g}.wasm`))) {
+      console.warn(
+        `[copy-tree-sitter-wasms] vendored grammar tree-sitter-${g}.wasm is missing from ` +
+          `public/tree-sitter/. ${g} block-level diff/symbols will be unavailable. ` +
+          `Regenerate it with: node scripts/build-${g}-grammar.mjs`,
+      );
+    }
+  }
 
   if (!existsSync(grammarSrcDir)) {
     // Production install (no devDeps) — WASMs are already vendored in public/.

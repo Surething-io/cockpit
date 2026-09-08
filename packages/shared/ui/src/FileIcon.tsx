@@ -43,6 +43,9 @@ const FILE_COLORS: Record<string, string> = {
   // Rust
   rs: '#dea584',
 
+  // Lean
+  lean: '#448aff',
+
   // Java / Kotlin
   java: '#b07219',
   kt: '#a97bff',
@@ -231,6 +234,21 @@ export function FileIcon({ name, className = '', size = 16 }: FileIconProps) {
         <circle cx="12" cy="12" r="9" stroke={color} strokeWidth="2" fill="none" />
         <circle cx="12" cy="12" r="3" fill={color} />
         <path d="M12 3v3M12 18v3M3 12h3M18 12h3" stroke={color} strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  // Lean — the ∀ logo. Drawn to match the Lean 4 mark (same geometry the
+  // Material Icon Theme uses, which is the palette this file follows).
+  // `evenodd` is what punches the inner triangle out of the solid lower half.
+  if (ext === 'lean') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+        <path
+          d="M3.45 1.5 1.5 2.5 12 22.5 22.5 2.5 20.55 1.5 15.9 10.35H8.1ZM9 12h6l-3 6Z"
+          fill={color}
+          fillRule="evenodd"
+        />
       </svg>
     );
   }

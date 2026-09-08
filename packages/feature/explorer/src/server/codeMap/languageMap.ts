@@ -1,9 +1,11 @@
 /**
  * Map a file path to a tree-sitter grammar identifier.
  *
- * We deliberately keep this list short for now (TS/JS family). Add a language
- * here when you also bundle the corresponding `tree-sitter-<lang>.wasm` into
- * `public/tree-sitter/`.
+ * Add a language here when you also bundle the corresponding
+ * `tree-sitter-<lang>.wasm` into `public/tree-sitter/` — either by adding it
+ * to `GRAMMARS` in `scripts/copy-tree-sitter-wasms.mjs` (if
+ * @vscode/tree-sitter-wasm ships it) or to that script's `VENDORED` list
+ * (if, like Lean, it has to be built and committed by hand).
  *
  * Returning `null` means "we have no grammar; UI should fall back to line-only diff".
  */
@@ -13,7 +15,8 @@ export type GrammarId =
   | 'javascript'
   | 'python'
   | 'go'
-  | 'rust';
+  | 'rust'
+  | 'lean';
 
 /** Set of currently bundled grammars. Keep in sync with public/tree-sitter/. */
 export const SUPPORTED_GRAMMARS: ReadonlySet<GrammarId> = new Set([
@@ -23,6 +26,7 @@ export const SUPPORTED_GRAMMARS: ReadonlySet<GrammarId> = new Set([
   'python',
   'go',
   'rust',
+  'lean',
 ]);
 
 export function grammarForPath(filePath: string): GrammarId | null {
@@ -50,6 +54,14 @@ export function grammarForPath(filePath: string): GrammarId | null {
       return 'go';
     case 'rs':
       return 'rust';
+    case 'lean':
+      // Lean 4 only. The grammar is vendored, not copied from
+      // @vscode/tree-sitter-wasm — see scripts/build-lean-grammar.mjs.
+      // It parses declaration HEADERS reliably but not proof bodies
+      // (user-defined notation/macros are out of scope upstream), so
+      // unparsed regions degrade to unnamed blocks, i.e. today's
+      // line-level behaviour. That is the intended trade.
+      return 'lean';
     default:
       return null;
   }

@@ -24,6 +24,10 @@ const SUPPORTED_LANGS = [
   'python', 'go', 'rust', 'java', 'ruby', 'php',
   'bash', 'shell', 'markdown', 'sql', 'c', 'cpp',
   'swift', 'kotlin', 'dart', 'lua', 'graphql', 'xml',
+  // 'lean4' is a shiki alias of the 'lean' grammar, which IS the Lean 4
+  // grammar (displayName "Lean 4", scopes *.lean4). There is no Lean 3
+  // grammar in the bundle, so the alias is unambiguous.
+  'lean4',
 ] as const;
 
 export function getHighlighter(): Promise<Highlighter> {
@@ -63,6 +67,7 @@ export function getLanguageFromPath(filePath: string): string {
     md: 'markdown', mdx: 'markdown', sql: 'sql',
     swift: 'swift', dart: 'dart', lua: 'lua',
     graphql: 'graphql', gql: 'graphql',
+    lean: 'lean4',
     toml: 'yaml', sass: 'scss', less: 'css',
     scala: 'java', r: 'python', vim: 'bash',
     env: 'bash',

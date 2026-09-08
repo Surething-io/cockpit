@@ -65,10 +65,11 @@ import type { ExtractedSymbol, SymbolKind } from '../types';
 import { isFunctionLike } from '../types';
 // Importing the handlers barrel triggers per-language `registerHandler`
 // side effects, so `getHandler(grammar)` below is guaranteed to find a
-// handler for any grammar that `grammarForExtension` returns. (P1a:
+// handler for any grammar that `grammarForExtension` returns — which is a
+// strict SUBSET of `SUPPORTED_GRAMMARS` (see the seeding loop). (P1a:
 // only file-level extraction goes through the handler; resolution
 // still uses the legacy local helpers below — moves to handlers in P1b.)
-import { getHandler } from '../handlers';
+import { getHandler, tryGetHandler } from '../handlers';
 import { dedupeQualifiedNames } from '../extractSymbols';
 
 // ============================================================================
@@ -498,8 +499,19 @@ export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
   // language is "register a handler", and this loop picks it up
   // automatically. Cost is one filesystem-light read per language;
   // negligible relative to the per-file parse pass below.
+  //
+  // `tryGetHandler`, not `getHandler`: `SUPPORTED_GRAMMARS` means "grammars
+  // whose .wasm we bundle", which is NOT the same set as "grammars with a
+  // handler". A grammar may legitimately be bundled for the block-level diff
+  // (a browser-side, parse-on-demand path) without ever being indexed. Every
+  // bundled grammar happens to have a handler today, but this loop runs on
+  // EVERY index build for EVERY project, so `getHandler`'s throw-on-missing
+  // would turn "someone bundled a grammar" into "the project graph is dead
+  // everywhere". `grammarForExtension` is the real gate on what gets indexed,
+  // so skipping here cannot strand a later phase without its context.
   for (const grammar of SUPPORTED_GRAMMARS) {
-    const handler = getHandler(grammar);
+    const handler = tryGetHandler(grammar);
+    if (!handler) continue;
     projectContexts.set(grammar, await handler.buildProjectContext(cwd, fileSet));
   }
 
@@ -784,6 +796,108 @@ export async function buildCodeIndex(cwd: string): Promise<CodeIndex> {
 const indexCache = new Map<string, CodeIndex>();
 const inflight = new Map<string, Promise<CodeIndex>>();
 
+/** Total flattened symbols in one index. O(files) — a few ms at 60K files.
+ *  Shared with the analytics size guard so both budgets speak the same unit. */
+export function countIndexSymbols(index: CodeIndex): number {
+  let n = 0;
+  for (const f of index.files.values()) n += f.flatSymbols.length;
+  return n;
+}
+
+/**
+ * Cache budget, in symbols summed across every cached project.
+ *
+ * Budgeted by SIZE, not by entry count, because entry count bounds nothing
+ * here: one index can be 2.63 GB on its own (measured — 60,598 files /
+ * 809K symbols / 3.41 KB per symbol), so even a 3-entry cap admits 7.9 GB
+ * against Node's ~4.19 GB default heap. A count-based LRU would also evict
+ * ten small projects for no reason while letting two huge ones through.
+ *
+ * 1M symbols ≈ 3.3 GB at the measured density, leaving ~0.9 GB of the
+ * default heap for everything else Cockpit does. The density figure comes
+ * from one Lean repo; a TypeScript project measured ~0.8 GB for 7.7K files,
+ * a different per-FILE density, which is precisely why the budget is per
+ * SYMBOL rather than per file.
+ *
+ * This bound is best-effort: it cannot make two oversized projects coexist,
+ * it only decides which one is dropped, and whether that happens as an
+ * eviction or as an OOM. Users who genuinely need several large projects
+ * resident should raise the heap instead.
+ */
+export const MAX_CACHED_SYMBOLS = 1_000_000;
+
+/**
+ * Evict least-recently-used indexes until the cache fits the budget.
+ *
+ * `Map` preserves insertion order and `getCodeIndex` re-inserts on every
+ * cache hit, so iteration order IS least-recently-used order — no separate
+ * access-time bookkeeping.
+ *
+ * `keep` is never evicted: it is the entry the caller just built and is
+ * about to return, and dropping it would both waste the build and hand back
+ * an index that is no longer cached (so the next call rebuilds it, forever).
+ * That means the budget can legitimately be exceeded by a single oversized
+ * project — see MAX_CACHED_SYMBOLS.
+ */
+/**
+ * Test-only handle on the module-private cache. NEVER call from production
+ * code — the cache is a process-wide singleton and these bypass every
+ * lifecycle guarantee `getCodeIndex` provides.
+ *
+ * It exists because the eviction path cannot be driven any other way:
+ * `getCodeIndex` calls `buildCodeIndex` through a direct local binding, so
+ * an ESM spy on the module export does not intercept it (an earlier version
+ * of the eviction tests "passed" for exactly that reason — the stub never
+ * ran and every assertion was vacuously true), and the budget is measured
+ * in millions of symbols, far past what a real fixture repo could reach.
+ */
+export const __indexCacheTesting = {
+  seed(cwd: string, index: CodeIndex): void {
+    indexCache.set(cwd, index);
+  },
+  has(cwd: string): boolean {
+    return indexCache.has(cwd);
+  },
+  keys(): string[] {
+    return [...indexCache.keys()];
+  },
+  clear(): void {
+    indexCache.clear();
+    dirtyCwds.clear();
+  },
+  evict(keep: string): void {
+    evictIndexesToBudget(keep);
+  },
+};
+
+function evictIndexesToBudget(keep: string): void {
+  let total = 0;
+  const sizes = new Map<string, number>();
+  for (const [cwd, idx] of indexCache) {
+    const n = countIndexSymbols(idx);
+    sizes.set(cwd, n);
+    total += n;
+  }
+  if (total <= MAX_CACHED_SYMBOLS) return;
+
+  for (const cwd of [...indexCache.keys()]) {
+    if (total <= MAX_CACHED_SYMBOLS) break;
+    if (cwd === keep) continue;
+    const n = sizes.get(cwd) ?? 0;
+    indexCache.delete(cwd);
+    dirtyCwds.delete(cwd);
+    // The analytics entry is keyed separately and has no eviction of its
+    // own; leaving it behind would keep the larger half's companion data
+    // alive for an index that no longer exists.
+    invalidateAnalyticsAsync(cwd);
+    total -= n;
+    console.log(
+      `[codeIndex] evicted ${cwd} (${n} symbols) — cache over ` +
+        `MAX_CACHED_SYMBOLS=${MAX_CACHED_SYMBOLS}`,
+    );
+  }
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Watcher integration — lazy incremental sync on access.
 //
@@ -899,6 +1013,10 @@ export async function getCodeIndex(cwd: string, opts: GetIndexOptions = {}): Pro
   }
   const cached = indexCache.get(cwd);
   if (cached) {
+    // LRU touch: re-insert so this cwd moves to the most-recent end of the
+    // Map. `evictIndexesToBudget` relies on Map order being recency order.
+    indexCache.delete(cwd);
+    indexCache.set(cwd, cached);
     // Lazy flush: drain dirty before returning. Sync runs in the foreground so
     // the caller sees fresh data. We delete the flag BEFORE the sync to make
     // overlapping reads see consistent state (no thundering herd of syncs).
@@ -917,6 +1035,7 @@ export async function getCodeIndex(cwd: string, opts: GetIndexOptions = {}): Pro
   if (pending) return pending;
   const p = buildCodeIndex(cwd).then((index) => {
     indexCache.set(cwd, index);
+    evictIndexesToBudget(cwd);
     inflight.delete(cwd);
     // Fresh build subsumes any dirty flag that arrived during the build.
     dirtyCwds.delete(cwd);

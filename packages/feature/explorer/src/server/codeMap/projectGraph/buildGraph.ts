@@ -52,8 +52,24 @@ const NON_GIT_FALLBACK_SKIP = new Set(['.git', 'node_modules']);
  *
  *  Single source of truth — `codeIndex.ts` imports from here so
  *  `listFilesViaGit` / `walkSource` / the post-list `slice` all use the
- *  SAME limit. */
-export const MAX_FILES = 15000;
+ *  SAME limit.
+ *
+ *  Raised 15000 → 100000. The old value silently truncated in a way that
+ *  looked like a broken feature rather than a cap: `git ls-files` returns
+ *  ALPHABETICAL order, so on a 60,598-file repo the budget was exhausted
+ *  inside `P2M/` and every file under `Theorems/` — the directory the user
+ *  was actually searching — was absent, with `search` simply returning zero
+ *  hits.
+ *
+ *  Measured cost of the new ceiling on that repo (60,598 files / 809K
+ *  symbols): 257s to build, 2.80 GB resident. That is a ONE-TIME
+ *  foreground cost per process — `syncDirtyIndex` is incremental — but it
+ *  is real, and the index has no persistence, so a restart pays it again.
+ *
+ *  The analytics passes are NOT bounded by this number; they have their own
+ *  symbol-count ceiling (`MAX_ANALYTICS_SYMBOLS` in analytics/cache.ts).
+ *  Without that second guard, raising this one OOMs an 8 GB heap. */
+export const MAX_FILES = 100000;
 
 // Tests, specs, and storybook files (`*.test.*` / `*.spec.*` /
 // `*.stories.*`) are deliberately INDEXED — calls from a test into

@@ -18,6 +18,7 @@
 import path from 'node:path';
 import type { CodeIndex } from '../projectGraph/codeIndex';
 import type { AnalyticsEntry } from './cache';
+import { analyticsDegradedReason } from './cache';
 import { impactFromIndex } from '../projectGraph/codeIndex';
 import { coEditAuto } from '../projectGraph/coedit';
 import { makeNodeId } from './types';
@@ -145,7 +146,7 @@ export async function scoreImpact(
       suggestedTests: [],
       coedit: [],
       degraded: !analytics,
-      degradedReason: analytics ? undefined : 'analytics-warming',
+      degradedReason: analytics ? undefined : analyticsDegradedReason(index),
     };
   }
 
@@ -306,7 +307,7 @@ export async function scoreImpact(
 
   const degraded = !analytics || !coeditOk;
   const reason = !analytics
-    ? 'analytics-warming'
+    ? analyticsDegradedReason(index)
     : !coeditOk
       ? 'coedit-unavailable'
       : undefined;

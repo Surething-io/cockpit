@@ -19,7 +19,7 @@
  */
 import type { CodeIndex } from '../projectGraph/codeIndex';
 import type { AnalyticsEntry } from './cache';
-import { cachedPPR } from './cache';
+import { cachedPPR, analyticsDegradedReason } from './cache';
 import type { NodeId } from './types';
 import { makeNodeId, parseNodeId } from './types';
 import type { SymbolKind } from '../types';
@@ -423,7 +423,7 @@ export function buildContext(
       seeds: seedDebug,
       cursorResolution,
       degraded: !analytics,
-      degradedReason: analytics ? undefined : 'analytics-warming',
+      degradedReason: analytics ? undefined : analyticsDegradedReason(index),
     };
   }
 
@@ -510,7 +510,7 @@ export function buildContext(
     seeds: seedDebug,
     cursorResolution,
     degraded: !analytics,
-    degradedReason: analytics ? undefined : 'analytics-warming',
+    degradedReason: analytics ? undefined : analyticsDegradedReason(index),
   };
 }
 

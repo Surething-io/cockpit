@@ -25,6 +25,11 @@
  * harmlessly; last writer wins.
  */
 import type { CodeIndex } from '../projectGraph/codeIndex';
+// Value import, not just the type: the symbol count is the unit BOTH budgets
+// are expressed in (MAX_ANALYTICS_SYMBOLS here, MAX_CACHED_SYMBOLS there), and
+// two copies of the definition could drift apart silently. Safe from a cycle —
+// codeIndex only reaches back into this module via dynamic import.
+import { countIndexSymbols } from '../projectGraph/codeIndex';
 import type { AnalyticsGraph, NodeId } from './types';
 import { buildAnalyticsGraph } from './graph';
 import { pagerank, personalizedPageRank } from './pagerank';
@@ -133,6 +138,78 @@ const cache = new Map<string, AnalyticsEntry>();
 const inflight = new Map<string, Promise<AnalyticsEntry>>();
 let versionCounter = 0;
 
+/**
+ * Symbol ceiling above which analytics are SKIPPED, not merely slow.
+ *
+ * Measured on a 60,598-file Lean formalization repo (809K symbols), heap
+ * readings cumulative:
+ *
+ *     buildCodeIndex        256.9s   2.80 GB   ← index alone
+ *     buildAnalyticsGraph     2.4s   3.85 GB
+ *     pagerank               45.2s   6.99 GB
+ *     TfidfIndex             28.1s  10.12 GB   ← peak
+ *     detectCommunities       7.1s   6.03 GB
+ *
+ * That is 82.8s of SYNCHRONOUS work — the event loop is dead for the whole
+ * of it — and a peak that OOMs an 8 GB heap. Skipping keeps the process at
+ * the index's own 2.80 GB, inside Node's default ~4 GB ceiling.
+ *
+ * The cost is node-bound, not edge-bound: `pagerank` allocates a fresh
+ * `Map` over every node on each iteration (see pagerank.ts), and
+ * `TfidfIndex` tokenizes every symbol name. A dense TypeScript monorepo
+ * with the same symbol count would cost at least as much, so this guard is
+ * not Lean-specific.
+ *
+ * 200K is a deliberate ~4x safety margin below the measured blowup, not a
+ * measured optimum — the only large sample is the one above. Linear
+ * extrapolation puts it around 20s / 2.5 GB, which is already at the edge
+ * of tolerable. Re-derive it if a second large repo is ever profiled.
+ */
+export const MAX_ANALYTICS_SYMBOLS = 200_000;
+
+/** cwds already reported as oversized — keeps the warning to one line per
+ *  project instead of one per request. Not a correctness mechanism: the
+ *  decision itself is recomputed from the live index every time, so an
+ *  index that shrinks back under the ceiling starts working again. */
+const oversizedReported = new Set<string>();
+
+/**
+ * True when this index is too large for the analytics passes to run.
+ *
+ * Deliberately recomputed rather than cached: `refreshFocalFile` mutates
+ * `index.files` in place, so a cached verdict could outlive the shape it
+ * was derived from.
+ */
+export function isAnalyticsOversized(index: CodeIndex): boolean {
+  const n = countIndexSymbols(index);
+  if (n <= MAX_ANALYTICS_SYMBOLS) return false;
+  if (!oversizedReported.has(index.cwd)) {
+    oversizedReported.add(index.cwd);
+    console.warn(
+      `[analytics] skipping precompute for ${index.cwd}: ${n} symbols exceeds ` +
+        `MAX_ANALYTICS_SYMBOLS=${MAX_ANALYTICS_SYMBOLS}. ` +
+        `context / related / risk will report degraded results; ` +
+        `search / file / callers / callees / impact / coedit are unaffected.`,
+    );
+  }
+  return true;
+}
+
+/**
+ * Why analytics are unavailable, for a route's `degradedReason`.
+ *
+ * The distinction matters to callers: `analytics-warming` means "retry in a
+ * moment", `analytics-skipped-oversized` means "this will never arrive, do
+ * not wait for it". Reporting the former for a permanent skip would send
+ * every consumer (the `cg` skill explicitly documents retry-on-warming)
+ * into an endless poll.
+ */
+export function analyticsDegradedReason(index: CodeIndex): string {
+  return isAnalyticsOversized(index)
+    ? 'analytics-skipped-oversized'
+    : 'analytics-warming';
+}
+
 /** Read the cached entry; returns null if not yet built / invalidated. */
 export function getAnalytics(cwd: string): AnalyticsEntry | null {
   return cache.get(cwd) ?? null;
@@ -144,10 +221,12 @@ export function invalidateAnalytics(cwd?: string): void {
   if (!cwd) {
     cache.clear();
     inflight.clear();
+    oversizedReported.clear();
     return;
   }
   cache.delete(cwd);
   inflight.delete(cwd);
+  oversizedReported.delete(cwd);
 }
 
 /** Build (or rebuild) the analytics entry for a given index snapshot.
@@ -159,6 +238,13 @@ export function precomputeAnalytics(
 ): Promise<AnalyticsEntry> {
   const pending = inflight.get(cwd);
   if (pending) return pending;
+  if (isAnalyticsOversized(index)) {
+    // Reject rather than resolve with an empty entry: an empty AnalyticsEntry
+    // would be cached and handed to the builders as if it were real, silently
+    // scoring everything zero. Callers here are all fire-and-forget with a
+    // .catch, or getOrTriggerAnalytics, which never reaches this line.
+    return Promise.reject(new Error('analytics-skipped-oversized'));
+  }
   const p = (async () => {
     const t0 = Date.now();
     versionCounter += 1;
@@ -194,6 +280,10 @@ export function getOrTriggerAnalytics(
 ): AnalyticsEntry | null {
   const hit = cache.get(cwd);
   if (hit) return hit;
+  // Oversized: return null WITHOUT triggering. Triggering here would re-enter
+  // the size check on every /context, /related and /risk request forever —
+  // and before this guard existed, it re-ran the 83s / 10GB passes instead.
+  if (isAnalyticsOversized(index)) return null;
   // Kick off build in the background; don't await.
   precomputeAnalytics(cwd, index).catch((err) => {
     console.error('[analytics] precompute failed:', err);

@@ -1,4 +1,4 @@
-Every time the AI runs a tool that can touch your files — an `Edit`, a `Write`, a `Bash` command, a Task subagent, an MCP tool — Cockpit takes a **snapshot of your project**. The result is a git-history-style timeline for each reply: one entry per tool call, each showing the **real on-disk diff** that call produced.
+Every time the AI runs a tool that can touch your files — an `Edit`, a `Write`, a `Bash` command, a Task subagent, an MCP tool — OpenCockpit takes a **snapshot of your project**. The result is a git-history-style timeline for each reply: one entry per tool call, each showing the **real on-disk diff** that call produced.
 
 | Section | What's in it |
 |---|---|

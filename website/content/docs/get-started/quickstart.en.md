@@ -1,4 +1,4 @@
-From `npm install` to a real, agent-driven task on your own project — in one page. The walkthrough at the end uses all three panels and is the fastest way to internalise what Cockpit actually does.
+From `npm install` to a real, agent-driven task on your own project — in one page. The walkthrough at the end uses all three panels and is the fastest way to internalise what OpenCockpit actually does.
 
 ## Prerequisites
 

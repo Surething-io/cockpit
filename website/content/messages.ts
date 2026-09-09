@@ -78,13 +78,13 @@ export const messages = {
         ],
       },
       local: {
-        headline: 'Install Cockpit as an app',
-        desc: 'Cockpit runs in the browser and installs like a native app — its own window, its own dock icon, no browser chrome in the way.',
+        headline: 'Install OpenCockpit as an app',
+        desc: 'OpenCockpit runs in the browser and installs like a native app — its own window, its own dock icon, no browser chrome in the way.',
         steps: [
           // The command is repeated inline below this step rather than referred
           // to as "the command above": on a 390px viewport that phrase pointed
           // at something 1,143px off-screen.
-          'Run this command. Cockpit starts and opens in your browser.',
+          'Run this command. OpenCockpit starts and opens in your browser.',
           // Named per browser family. "Click the install icon in the address
           // bar" is Chrome/Edge only — it is false on Safari and on iOS.
           'In Chrome or Edge, click the install icon in the address bar. In Safari, choose Share, then Add to Dock (Add to Home Screen on iPhone).',
@@ -268,7 +268,7 @@ export const messages = {
       workflow: {
         tag: 'New · chain them',
         headline: 'Stack commands into one workflow',
-        desc: 'Start several lines with / or @ and Cockpit reads the whole message as one ordered run — clarify, fix, then have a sub-agent review the fix, in a single send.',
+        desc: 'Start several lines with / or @ and OpenCockpit reads the whole message as one ordered run — clarify, fix, then have a sub-agent review the fix, in a single send.',
         mainText: 'runs in the main session',
         subText: 'delegates the step to a sub-agent',
         example: '/fx\nfind why retries double-charge the card\n@cr\naudit the fix for race conditions',
@@ -288,7 +288,7 @@ export const messages = {
     },
     builtOn: {
       headline: 'Built on the official Claude Agent SDK',
-      desc: 'Cockpit\u2019s core uses Anthropic\u2019s official Claude Agent SDK. If your `claude` CLI is configured, Cockpit works — no extra setup. Other engines ride the Vercel AI SDK and the same agent loop. All local.',
+      desc: 'OpenCockpit\u2019s core uses Anthropic\u2019s official Claude Agent SDK. If your `claude` CLI is configured, Cockpit works — no extra setup. Other engines ride the Vercel AI SDK and the same agent loop. All local.',
     },
     finalCta: {
       headline: 'Ready to fly?',
@@ -576,12 +576,12 @@ export const messages = {
         ],
       },
       local: {
-        headline: '把 Cockpit 装成独立应用',
-        desc: 'Cockpit 跑在浏览器里，也可以像原生应用一样装起来：有自己的窗口和图标。',
+        headline: '把 OpenCockpit 装成独立应用',
+        desc: 'OpenCockpit 跑在浏览器里，也可以像原生应用一样装起来：有自己的窗口和图标。',
         steps: [
           // 命令直接重复在这一步下方，而不是说“上面那条命令”：
           // 在 390px 视口下，那句话指向的东西在 1143px 之外。
-          '运行这条命令，Cockpit 启动后会自动在浏览器里打开。',
+          '运行这条命令，OpenCockpit 启动后会自动在浏览器里打开。',
           // 按浏览器分别说明。“点击地址栏的安装图标”只适用于 Chrome / Edge，
           // 在 Safari 和 iOS 上并不存在。
           'Chrome、Edge 点地址栏里的安装图标；Safari 选“共享”→“添加到程序坞”，iPhone 上则是“添加到主屏幕”。',
@@ -765,7 +765,7 @@ export const messages = {
       workflow: {
         tag: '新 · 串起来',
         headline: '把命令叠成一条工作流',
-        desc: '让多行分别以 / 或 @ 开头，Cockpit 就把整条消息当成一条有序流程来跑——澄清、修复、再让子代理审一遍修复，一次发送搞定。',
+        desc: '让多行分别以 / 或 @ 开头，OpenCockpit 就把整条消息当成一条有序流程来跑——澄清、修复、再让子代理审一遍修复，一次发送搞定。',
         mainText: '这步在主会话执行',
         subText: '这步委派给子代理',
         example: '/fx\n查清楚为什么重试会重复扣款\n@cr\n审一下这个修复有没有竞态',
@@ -785,7 +785,7 @@ export const messages = {
     },
     builtOn: {
       headline: '基于官方 Claude Agent SDK',
-      desc: 'Cockpit 核心基于 Anthropic 官方 Claude Agent SDK —— 本机 `claude` CLI 配好即用。其他引擎复用同一套 Agent loop（经 Vercel AI SDK 适配）。全部本地。',
+      desc: 'OpenCockpit 核心基于 Anthropic 官方 Claude Agent SDK —— 本机 `claude` CLI 配好即用。其他引擎复用同一套 Agent loop（经 Vercel AI SDK 适配）。全部本地。',
     },
     finalCta: {
       headline: '起飞吧',

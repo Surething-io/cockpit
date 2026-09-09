@@ -1,4 +1,4 @@
-Cockpit Console 面板会自动识别数据库连接串,开一个**数据库气泡** —— 内置客户端,带表结构浏览 + 数据浏览 + 查询窗口,只针对那一个数据库。不用为了瞄一眼数据再去开 `psql` / `mysql` / DataGrip / RedisInsight。
+OpenCockpit Console 面板会自动识别数据库连接串,开一个**数据库气泡** —— 内置客户端,带表结构浏览 + 数据浏览 + 查询窗口,只针对那一个数据库。不用为了瞄一眼数据再去开 `psql` / `mysql` / DataGrip / RedisInsight。
 
 Cockpit 目前支持四种数据库:
 

@@ -1,4 +1,4 @@
-Cockpit 识别的所有键盘快捷键，一张表搞定。macOS 用 `Cmd`；Linux 和 Windows 用 `Ctrl`。
+OpenCockpit 识别的所有键盘快捷键，一张表搞定。macOS 用 `Cmd`；Linux 和 Windows 用 `Ctrl`。
 
 ## 全局
 

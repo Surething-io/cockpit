@@ -1,4 +1,4 @@
-Terminal in Cockpit is actually two bubbles in one: a **one-shot command** bubble for things like `ls` or `pytest`, and a full **interactive terminal** bubble for things like `bash`, `vim`, or `top`. The input bar picks the right one based on what you type (see [Command Input](/en/docs/console/input-bar/) for the full dispatch rules).
+Terminal in OpenCockpit is actually two bubbles in one: a **one-shot command** bubble for things like `ls` or `pytest`, and a full **interactive terminal** bubble for things like `bash`, `vim`, or `top`. The input bar picks the right one based on what you type (see [Command Input](/en/docs/console/input-bar/) for the full dispatch rules).
 
 ## One-shot command
 

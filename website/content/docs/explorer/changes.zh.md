@@ -1,4 +1,4 @@
-**变更** 标签展示你的 Git 工作树 —— 哪些已 stage、哪些没,以及 Cockpit 的并排 diff 查看器。提交前 review 所有改动（你的 + AI 的）就在这里。
+**变更** 标签展示你的 Git 工作树 —— 哪些已 stage、哪些没,以及 OpenCockpit 的并排 diff 查看器。提交前 review 所有改动（你的 + AI 的）就在这里。
 
 | 章节 | 内容 |
 |---|---|

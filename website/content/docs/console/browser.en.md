@@ -1,4 +1,4 @@
-The Browser bubble drives a real Chrome tab from inside Cockpit's Console panel. You point it at a URL, the page loads, and from there you can navigate, click, type, take screenshots, capture network traffic, and (importantly) **hand the whole tab off to the AI to drive on your behalf**.
+The Browser bubble drives a real Chrome tab from inside OpenCockpit's Console panel. You point it at a URL, the page loads, and from there you can navigate, click, type, take screenshots, capture network traffic, and (importantly) **hand the whole tab off to the AI to drive on your behalf**.
 
 Open one by typing any URL in the Console input bar:
 

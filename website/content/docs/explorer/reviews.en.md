@@ -1,4 +1,4 @@
-**Tech Plan Review** turns a Markdown file in your Cockpit project into a LAN-shared discussion page: anyone on your network opens the URL, reads it in their browser, and leaves line-anchored comments — no login, no install. Designed for **plan-level review** (does the approach make sense?), not line-by-line code review.
+**Tech Plan Review** turns a Markdown file in your OpenCockpit project into a LAN-shared discussion page: anyone on your network opens the URL, reads it in their browser, and leaves line-anchored comments — no login, no install. Designed for **plan-level review** (does the approach make sense?), not line-by-line code review.
 
 | Section | What's in it |
 |---|---|

@@ -1,4 +1,4 @@
-Cockpit 的"终端"其实是两种气泡:跑 `ls`、`pytest` 用的**一次性命令**气泡,和跑 `bash`、`vim`、`top` 用的完整**交互式终端**气泡。输入栏根据你打的内容自动选对的(详见[命令输入](/zh/docs/console/input-bar/))。
+OpenCockpit 的"终端"其实是两种气泡:跑 `ls`、`pytest` 用的**一次性命令**气泡,和跑 `bash`、`vim`、`top` 用的完整**交互式终端**气泡。输入栏根据你打的内容自动选对的(详见[命令输入](/zh/docs/console/input-bar/))。
 
 ## 一次性命令
 

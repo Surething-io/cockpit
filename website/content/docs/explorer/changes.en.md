@@ -1,4 +1,4 @@
-The **Changes** tab shows your Git working tree — what's staged, what isn't — alongside Cockpit's side-by-side diff viewer. This is where you review every change (yours and the AI's) before committing.
+The **Changes** tab shows your Git working tree — what's staged, what isn't — alongside OpenCockpit's side-by-side diff viewer. This is where you review every change (yours and the AI's) before committing.
 
 | Section | What's in it |
 |---|---|

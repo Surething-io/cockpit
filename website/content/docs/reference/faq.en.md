@@ -1,4 +1,4 @@
-Common problems people hit with Cockpit and how to fix them. Organised by symptom.
+Common problems people hit with OpenCockpit and how to fix them. Organised by symptom.
 
 ## Cockpit won't start
 

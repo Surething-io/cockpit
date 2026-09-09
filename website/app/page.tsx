@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { RootRedirect } from '@/components/RootRedirect';
 
 export const metadata: Metadata = {
-  title: 'Cockpit',
+  title: 'OpenCockpit',
   // Discourage indexing of the redirect shim; canonical pages live at /en, /zh
   robots: { index: false, follow: true },
 };

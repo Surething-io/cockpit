@@ -1,4 +1,4 @@
-从 `npm install` 到在你自己的项目上跑一个真实的 agent 任务 —— 一篇看完。最后的实战 walkthrough 会用到三个面板，是最快理解 Cockpit 在干什么的方式。
+从 `npm install` 到在你自己的项目上跑一个真实的 agent 任务 —— 一篇看完。最后的实战 walkthrough 会用到三个面板，是最快理解 OpenCockpit 在干什么的方式。
 
 ## 前置条件
 

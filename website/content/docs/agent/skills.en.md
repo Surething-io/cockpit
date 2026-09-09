@@ -1,4 +1,4 @@
-**Skills** are short prompts you trigger with `/` in any Agent tab — each one rewires how the AI works on a single reply. Cockpit ships **11 built-in Skills** (the `/qa /fx /ex /go /cg /cc /cr` modes, plus `/ap /html /new-branch /skillify`); you can also write your own as `SKILL.md` files and install them the same way. Both flavours live in the same `/` menu.
+**Skills** are short prompts you trigger with `/` in any Agent tab — each one rewires how the AI works on a single reply. OpenCockpit ships **11 built-in Skills** (the `/qa /fx /ex /go /cg /cc /cr` modes, plus `/ap /html /new-branch /skillify`); you can also write your own as `SKILL.md` files and install them the same way. Both flavours live in the same `/` menu.
 
 > Don't confuse these with the slash menu inside **Notes** (the project-notes editor), which is a formatter palette for headings, lists, tables and so on. The chat input only recognises Skills — typing `/` there opens a menu listing the built-ins plus any installed `/skill-name`.
 

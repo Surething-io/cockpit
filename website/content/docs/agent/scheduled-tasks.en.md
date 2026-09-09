@@ -1,4 +1,4 @@
-Scheduled tasks let Cockpit run an AI prompt for you on a schedule — once after a delay, every N minutes, or on a cron expression. Use them for the things you'd otherwise have to remember to do every morning, every hour, or every Friday afternoon.
+Scheduled tasks let OpenCockpit run an AI prompt for you on a schedule — once after a delay, every N minutes, or on a cron expression. Use them for the things you'd otherwise have to remember to do every morning, every hour, or every Friday afternoon.
 
 ## Open the panel
 

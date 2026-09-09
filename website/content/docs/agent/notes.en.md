@@ -1,4 +1,4 @@
-Cockpit's **Notes** are scratchpads for the things that don't belong in a commit or a chat message — memos, todos, links you'll re-open, scratch calculations, anything you want around between sessions. There are two scopes:
+OpenCockpit's **Notes** are scratchpads for the things that don't belong in a commit or a chat message — memos, todos, links you'll re-open, scratch calculations, anything you want around between sessions. There are two scopes:
 
 | Scope | When to use |
 |---|---|

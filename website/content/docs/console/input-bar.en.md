@@ -1,4 +1,4 @@
-The Console panel has one **command input** at the bottom. Every time you hit Enter, Cockpit runs a fixed dispatch order to decide what kind of bubble opens: alias expansion → plugin match → PTY command list → one-shot command. This page is the cheat sheet for what triggers what.
+The Console panel has one **command input** at the bottom. Every time you hit Enter, OpenCockpit runs a fixed dispatch order to decide what kind of bubble opens: alias expansion → plugin match → PTY command list → one-shot command. This page is the cheat sheet for what triggers what.
 
 ## Dispatch order
 

@@ -1,4 +1,4 @@
-Cockpit talks to 6 AI engines out of the box. Each Agent tab picks one engine; you can mix and match across tabs without restarting — pick by what's running locally, what billing account you're on, or which model is best at the task in front of you.
+OpenCockpit talks to 6 AI engines out of the box. Each Agent tab picks one engine; you can mix and match across tabs without restarting — pick by what's running locally, what billing account you're on, or which model is best at the task in front of you.
 
 | Engine | How to sign in | When to use |
 |---|---|---|

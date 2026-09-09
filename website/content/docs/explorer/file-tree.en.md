@@ -1,4 +1,4 @@
-The **Files** tab is the Explorer panel's primary view — a virtualised tree of every file in the project, plus the per-file viewers and the inline annotation surface Cockpit uses to feed code references to the AI.
+The **Files** tab is the Explorer panel's primary view — a virtualised tree of every file in the project, plus the per-file viewers and the inline annotation surface OpenCockpit uses to feed code references to the AI.
 
 | Section | What's in it |
 |---|---|

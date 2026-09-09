@@ -1,4 +1,4 @@
-Cockpit's Console panel auto-detects database connection strings and opens a **database bubble** — a built-in client with a schema browser, a data browser, and a query window, scoped to that one database. No more flipping out to `psql` / `mysql` / DataGrip / RedisInsight just to peek at a row.
+OpenCockpit's Console panel auto-detects database connection strings and opens a **database bubble** — a built-in client with a schema browser, a data browser, and a query window, scoped to that one database. No more flipping out to `psql` / `mysql` / DataGrip / RedisInsight just to peek at a row.
 
 Cockpit recognises four database flavours today:
 

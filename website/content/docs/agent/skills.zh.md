@@ -1,4 +1,4 @@
-**Skills** 是你在 Agent tab 里用 `/` 触发的短 prompt —— 每个 Skill 改变 AI 这一次回复的工作方式。Cockpit 内置 **11 个 Skills**(`/qa /fx /ex /go /cg /cc /cr` 模式,外加 `/ap /html /new-branch /skillify`);你也可以写自己的 `SKILL.md` 文件,同样的方式装上。两种 Skills 共用一个 `/` 菜单。
+**Skills** 是你在 Agent tab 里用 `/` 触发的短 prompt —— 每个 Skill 改变 AI 这一次回复的工作方式。OpenCockpit 内置 **11 个 Skills**(`/qa /fx /ex /go /cg /cc /cr` 模式,外加 `/ap /html /new-branch /skillify`);你也可以写自己的 `SKILL.md` 文件,同样的方式装上。两种 Skills 共用一个 `/` 菜单。
 
 > 不要跟**笔记**（项目笔记编辑器）里的斜杠菜单搞混 —— 那个是标题/列表/表格之类的格式化菜单。聊天输入框只识别 Skills；在聊天里打 `/` 弹出的菜单是这些内置命令加你装过的 `/skill-name`。
 

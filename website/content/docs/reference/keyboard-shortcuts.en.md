@@ -1,4 +1,4 @@
-Every keyboard shortcut Cockpit recognises, in one table. On macOS use `Cmd`; on Linux and Windows use `Ctrl`.
+Every keyboard shortcut OpenCockpit recognises, in one table. On macOS use `Cmd`; on Linux and Windows use `Ctrl`.
 
 ## Global
 

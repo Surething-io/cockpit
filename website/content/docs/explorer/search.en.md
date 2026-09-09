@@ -1,4 +1,4 @@
-Cockpit gives you four overlapping ways to find code, ordered roughly by speed-of-typing:
+OpenCockpit gives you four overlapping ways to find code, ordered roughly by speed-of-typing:
 
 | Section | When to reach for it |
 |---|---|

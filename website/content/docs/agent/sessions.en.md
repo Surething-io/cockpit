@@ -1,4 +1,4 @@
-A **session** in Cockpit is one continuous conversation with one engine — tied to one Agent tab. Every tab is its own session; the whole UI is built around running many of them at once without losing track.
+A **session** in OpenCockpit is one continuous conversation with one engine — tied to one Agent tab. Every tab is its own session; the whole UI is built around running many of them at once without losing track.
 
 ## Tabs are sessions
 

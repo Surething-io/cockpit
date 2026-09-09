@@ -55,7 +55,7 @@ export const posts: Post[] = [
       en: {
         title: 'Turn a prompt into an HTML app that runs real bash',
         description:
-          'A plain HTML preview is static — the same-origin sandbox blocks it from fetching real data. Cockpit now injects a `window.cockpit` SDK into the preview, so `/html` generates a small app whose buttons can `curl`, read/write files, and run scripts. Bookmark it into an HTML panel and reopen it anytime.',
+          'A plain HTML preview is static — the same-origin sandbox blocks it from fetching real data. OpenCockpit now injects a `window.cockpit` SDK into the preview, so `/html` generates a small app whose buttons can `curl`, read/write files, and run scripts. Bookmark it into an HTML panel and reopen it anytime.',
         readingTime: '5 min read',
         body: `You ask an agent for "a small dashboard for my repo's stars," it writes a tidy \`.html\`, you open the preview — and it's dead. The page tries to \`fetch()\` an API and the same-origin sandbox kills it with a CORS error. A rendered HTML preview has always been a picture behind glass: it can lay out, but it can't *do* anything.
 
@@ -123,7 +123,7 @@ Update Cockpit, open a chat, and type \`/html\` with something you'd like to see
       zh: {
         title: '一句话生成能跑真 bash 的 HTML 应用',
         description:
-          '普通 HTML 预览是静态的 —— 同源沙箱会拦掉它拉真实数据。Cockpit 现在往预览里注入了一个 `window.cockpit` SDK,于是 `/html` 生成的 HTML 应用,按钮就能 `curl`、读写文件、跑脚本。把它收藏进 HTML 面板,随时再打开。',
+          '普通 HTML 预览是静态的 —— 同源沙箱会拦掉它拉真实数据。OpenCockpit 现在往预览里注入了一个 `window.cockpit` SDK,于是 `/html` 生成的 HTML 应用,按钮就能 `curl`、读写文件、跑脚本。把它收藏进 HTML 面板,随时再打开。',
         readingTime: '阅读约 5 分钟',
         body: `你让 agent 做「一个看仓库 star 数的小看板」,它写了一个清清爽爽的 \`.html\`,你打开预览 —— 死的。页面想 \`fetch()\` 一个 API,同源沙箱一个 CORS 错误把它掐了。渲染出来的 HTML 预览一直是隔着玻璃的画:能排版,但什么也*做不了*。
 
@@ -211,7 +211,7 @@ const h = cockpit.bash("tail -f ./build.log", {
       en: {
         title: 'Review What Your AI Actually Changed — One Tool Call at a Time',
         description:
-          'Cockpit now snapshots your project after every file-touching tool call. Open any reply and read its changes like git history: one entry per Edit, Write, Bash or MCP call, each with the real on-disk diff — in order.',
+          'OpenCockpit now snapshots your project after every file-touching tool call. Open any reply and read its changes like git history: one entry per Edit, Write, Bash or MCP call, each with the real on-disk diff — in order.',
         readingTime: '5 min read',
         body: `
 An agent turn ends. The reply says "done — refactored the module, updated the callers, fixed the test." Fifteen tool calls scrolled past. Now the only question that matters: **what exactly changed?**
@@ -256,7 +256,7 @@ Update to the latest release, ask your agent to change something, and click the 
       zh: {
         title: '逐个工具调用，看清 AI 到底改了什么',
         description:
-          'Cockpit 现在会在每次碰文件的工具调用后给项目打快照。打开任意一条回复，像读 git 历史一样读它的变更：一次 Edit、Write、Bash 或 MCP 调用一个条目，每条都是真实的磁盘 diff——按执行顺序排列。',
+          'OpenCockpit 现在会在每次碰文件的工具调用后给项目打快照。打开任意一条回复，像读 git 历史一样读它的变更：一次 Edit、Write、Bash 或 MCP 调用一个条目，每条都是真实的磁盘 diff——按执行顺序排列。',
         readingTime: '5 分钟',
         body: `
 一轮 Agent 对话结束，回复说"完成了——重构了模块、更新了调用方、修好了测试"。十五个工具调用刷过去了。现在只剩一个真正要紧的问题：**到底改了什么？**
@@ -546,9 +546,9 @@ OpenCockpit 的多席位模型是**基于信任的**，就像共享机器的 SSH
     ],
     content: {
       en: {
-        title: 'Cockpit now takes an access token',
+        title: 'OpenCockpit now takes an access token',
         description:
-          'Cockpit is local-first and fully open on your own machine. When you expose it on a LAN or a cloud sandbox, an optional access token now guards remote access — while local stays frictionless.',
+          'OpenCockpit is local-first and fully open on your own machine. When you expose it on a LAN or a cloud sandbox, an optional access token now guards remote access — while local stays frictionless.',
         readingTime: '2 min read',
         body: `Cockpit has always been local-first: it binds to \`127.0.0.1\`, and on your own machine anyone on that machine can use it. That's the right default for a local tool. But sometimes you put Cockpit somewhere else — on your LAN, or in a cloud sandbox — and then "anyone who can reach the port" is too open. This release adds an optional shared access token.
 
@@ -591,9 +591,9 @@ That's the whole feature. Full details are in the [CLI reference](/en/docs/refer
 **Try it:** \`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [Try Online](/try)`,
       },
       zh: {
-        title: 'Cockpit 新增访问令牌',
+        title: 'OpenCockpit 新增访问令牌',
         description:
-          'Cockpit 本地优先、在自己机器上完全开放。当你把它暴露到局域网或云沙盒时,新增的可选访问令牌会保护远程访问 —— 而本机照常无感。',
+          'OpenCockpit 本地优先、在自己机器上完全开放。当你把它暴露到局域网或云沙盒时,新增的可选访问令牌会保护远程访问 —— 而本机照常无感。',
         readingTime: '阅读约 2 分钟',
         body: `Cockpit 一直是本地优先的:它绑定 \`127.0.0.1\`,在你自己的机器上,这台机器上的任何人都能用。对本地工具来说,这是对的默认值。但有时你会把 Cockpit 放到别处 —— 局域网,或者云沙盒 —— 这时"任何能连到端口的人"就太开放了。这个版本新增了一个可选的共享访问令牌。
 
@@ -656,9 +656,9 @@ COCKPIT_HOST=0.0.0.0 cockpit --token 你的密钥
     ],
     content: {
       en: {
-        title: 'Cockpit on your phone',
+        title: 'OpenCockpit on your phone',
         description:
-          'Cockpit now has a mobile layout. Open it on your phone to see your sessions, open any chat, and receive a notification when a run finishes.',
+          'OpenCockpit now has a mobile layout. Open it on your phone to see your sessions, open any chat, and receive a notification when a run finishes.',
         readingTime: '2 min read',
         body: `Agents often keep running after you've left your desk. Until now, checking on them meant coming back to a computer. This release adds a mobile layout and notifications, so you can check on your sessions from your phone.
 
@@ -689,9 +689,9 @@ Update Cockpit and open it on your phone. Turn on notifications and start a run.
 **Try it:** \`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [Try Online](/try)`,
       },
       zh: {
-        title: '在手机上用 Cockpit',
+        title: '在手机上用 OpenCockpit',
         description:
-          'Cockpit 新增了移动端布局。在手机上打开,可以查看会话、打开任意聊天,并在一轮跑完时收到通知。',
+          'OpenCockpit 新增了移动端布局。在手机上打开,可以查看会话、打开任意聊天,并在一轮跑完时收到通知。',
         readingTime: '阅读约 2 分钟',
         body: `Agent 经常在你离开桌前之后还在跑。在此之前,查看它们得回到电脑前。这个版本新增了移动端布局和通知,你可以在手机上查看自己的会话。
 
@@ -747,7 +747,7 @@ Update Cockpit and open it on your phone. Turn on notifications and start a run.
       en: {
         title: 'Orchestrate a workflow from the message box',
         description:
-          'A Cockpit message can now hold more than one command. Start several lines with `/` or `@` and Cockpit reads the whole message as an ordered, multi-step workflow — `/` runs in the main session, `@` delegates to a sub-agent. Plan the run once, send it once.',
+          'A OpenCockpit message can now hold more than one command. Start several lines with `/` or `@` and Cockpit reads the whole message as an ordered, multi-step workflow — `/` runs in the main session, `@` delegates to a sub-agent. Plan the run once, send it once.',
         readingTime: '4 min read',
         body: `Most agent work isn't one instruction — it's a small sequence. *Clarify what I actually want, then fix it, then have something independent review the fix.* Until now that was three messages, sent one at a time, each waiting on the last. As of this release you can write the whole thing in one message: start lines with \`/\` or \`@\` and Cockpit reads them as an ordered workflow.
 
@@ -811,7 +811,7 @@ Update Cockpit, open a chat, and write two commands on two lines — say \`/qa\`
       zh: {
         title: '在消息框里编排一条工作流',
         description:
-          'Cockpit 的一条消息现在可以放不止一个命令。让好几行分别以 `/` 或 `@` 开头,Cockpit 就把整条消息当成一条有序的多步工作流来读 —— `/` 在主会话执行,`@` 委派给子代理。一次规划,一次发送。',
+          'OpenCockpit 的一条消息现在可以放不止一个命令。让好几行分别以 `/` 或 `@` 开头,Cockpit 就把整条消息当成一条有序的多步工作流来读 —— `/` 在主会话执行,`@` 委派给子代理。一次规划,一次发送。',
         readingTime: '阅读约 4 分钟',
         body: `大多数 agent 活儿都不是一条指令,而是一小段序列。*先澄清我到底要什么,再修它,然后让一个独立的东西来审这个修复。* 在此之前这是三条消息,一条一条发,每条都等着上一条。从这个版本起,你可以把整件事写进一条消息:让行以 \`/\` 或 \`@\` 开头,Cockpit 就把它们读成一条有序工作流。
 
@@ -900,9 +900,9 @@ Update Cockpit, open a chat, and write two commands on two lines — say \`/qa\`
     ],
     content: {
       en: {
-        title: 'Cockpit now has a Claude Code CLI execution mode',
+        title: 'OpenCockpit now has a Claude Code CLI execution mode',
         description:
-          'Every Claude chat tab in Cockpit can now run in one of two ways: the Claude Agent SDK (headless `query()`), or a real interactive `claude` session driven in a PTY. Both share the same conversation, so you can switch per tab, mid-conversation, one click away. Here is what the new CLI mode is and how it works.',
+          'Every Claude chat tab in OpenCockpit can now run in one of two ways: the Claude Agent SDK (headless `query()`), or a real interactive `claude` session driven in a PTY. Both share the same conversation, so you can switch per tab, mid-conversation, one click away. Here is what the new CLI mode is and how it works.',
         readingTime: '5 min read',
         body: `Cockpit drives Claude Code through the Claude Agent SDK — \`query()\`, headless, programmatic. That is still the default. As of this release, each Claude / Claude2 chat tab also has a second execution mode you can flip to: **Claude Code CLI**.
 
@@ -954,9 +954,9 @@ Update Cockpit, open a Claude or Claude2 chat, and look for the **Claude Agent S
 **Try it:** \`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [Try Online](/try)`,
       },
       zh: {
-        title: 'Cockpit 新增 Claude Code CLI 执行模式',
+        title: 'OpenCockpit 新增 Claude Code CLI 执行模式',
         description:
-          'Cockpit 里每个 Claude 聊天标签现在都能用两种方式跑：Claude Agent SDK（无头 `query()`），或在 PTY 里驱动一个真·交互式 `claude` 会话。两者共享同一份对话，所以你可以 per-tab、在对话中途、一键切换。这篇讲讲新增的 CLI 模式是什么、怎么工作。',
+          'OpenCockpit 里每个 Claude 聊天标签现在都能用两种方式跑：Claude Agent SDK（无头 `query()`），或在 PTY 里驱动一个真·交互式 `claude` 会话。两者共享同一份对话，所以你可以 per-tab、在对话中途、一键切换。这篇讲讲新增的 CLI 模式是什么、怎么工作。',
         readingTime: '阅读约 5 分钟',
         body: `Cockpit 一直是通过 Claude Agent SDK 来驱动 Claude Code 的——\`query()\`、无头、程序化。这仍然是默认。从这个版本起，每个 Claude / Claude2 聊天标签多了一个可切换的执行模式：**Claude Code CLI**。
 
@@ -1307,7 +1307,7 @@ Set the boundaries, keep the vocabulary as small as you can, pull out what isn't
       zh: {
         title: 'Vibe coding 需要一点品味',
         description:
-          '现在的 Cockpit 仓库就两堆代码：`packages/feature/` 是业务，`packages/shared/` 是公共底子，箭头只有一个方向。从这张图能讲清楚为什么 vibe coding 时代反而更需要品味——把东西放对、划清边界、敢删没用的东西，三件老掉牙的事在 agent 改代码的当下比以前更值钱。',
+          '现在的 OpenCockpit 仓库就两堆代码：`packages/feature/` 是业务，`packages/shared/` 是公共底子，箭头只有一个方向。从这张图能讲清楚为什么 vibe coding 时代反而更需要品味——把东西放对、划清边界、敢删没用的东西，三件老掉牙的事在 agent 改代码的当下比以前更值钱。',
         readingTime: '阅读约 6 分钟',
         body: `agent 跑完一轮，diff 一百多行，看着没毛病，你点了通过。
 
@@ -1497,7 +1497,7 @@ That repo you've been meaning to read since January? It's a five-minute walkthro
       zh: {
         title: '把代码读成地图，而不是树',
         description:
-          '文件树告诉你字节存在哪里，但不告诉你代码如何流动。Cockpit 新的 Code Map 视图把任意源文件渲染为函数 chip 画布——左侧列出谁调用了这个函数，右侧列出它调用了谁，点击 pin 即可跳转。陌生代码库五次点击就能走完一遍鉴权流程。下面是 5 个真实使用场景。',
+          '文件树告诉你字节存在哪里，但不告诉你代码如何流动。OpenCockpit 新的 Code Map 视图把任意源文件渲染为函数 chip 画布——左侧列出谁调用了这个函数，右侧列出它调用了谁，点击 pin 即可跳转。陌生代码库五次点击就能走完一遍鉴权流程。下面是 5 个真实使用场景。',
         readingTime: '阅读约 7 分钟',
         body: `你 clone 了一个新仓库。\`npm install\`、\`npm run dev\`，跑起来了。
 
@@ -1608,9 +1608,9 @@ Code Map 完全跑在你笔电上，由 tree-sitter 解析。没有 language ser
     ],
     content: {
       en: {
-        title: 'Use DeepSeek inside Cockpit — and keep all your Claude habits',
+        title: 'Use DeepSeek inside OpenCockpit — and keep all your Claude habits',
         description:
-          'Cockpit now talks to DeepSeek. Open a tab, paste a key, and DeepSeek-v4 edits your files, runs your terminal, reviews your diffs — exactly the way you already use Claude. Here is how to set it up in under a minute and what to expect.',
+          'OpenCockpit now talks to DeepSeek. Open a tab, paste a key, and DeepSeek-v4 edits your files, runs your terminal, reviews your diffs — exactly the way you already use Claude. Here is how to set it up in under a minute and what to expect.',
         readingTime: '4 min read',
         body: `If you already use Cockpit with Claude, you have a workflow: open a tab, ask the agent to fix a bug, watch it edit files, run tests, hand you a clean diff. Slash commands like \`/qa\` and \`/fx\` are muscle memory.
 
@@ -1682,9 +1682,9 @@ Open the app, pick **DeepSeek** from the new-tab menu, paste your key, ask it to
 \`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [Try Online](/try)`,
       },
       zh: {
-        title: 'Cockpit 用上 DeepSeek：你的 Claude 习惯一个都不用改',
+        title: 'OpenCockpit 用上 DeepSeek：你的 Claude 习惯一个都不用改',
         description:
-          'Cockpit 现在能直接对接 DeepSeek：开个 Tab、贴个 Key，DeepSeek-v4 就能像 Claude 一样改你的文件、跑你的终端、评你的 diff。这篇讲怎么 1 分钟内配好，以及配好之后能做什么。',
+          'OpenCockpit 现在能直接对接 DeepSeek：开个 Tab、贴个 Key，DeepSeek-v4 就能像 Claude 一样改你的文件、跑你的终端、评你的 diff。这篇讲怎么 1 分钟内配好，以及配好之后能做什么。',
         readingTime: '阅读约 4 分钟',
         body: `如果你已经在用 Cockpit + Claude，你已经有了一套工作流：开个 Tab、让 Agent 修个 Bug、看它改文件、跑测试、给你一份干净的 diff；\`/qa\`、\`/fx\` 这些斜杠指令早就是肌肉记忆。
 
@@ -1778,7 +1778,7 @@ cock
       en: {
         title: 'From chat to skill: turn yesterday\u2019s 28-minute debug into today\u2019s /command',
         description:
-          'Every productive Claude Code session ends with dark knowledge that dies with the conversation. Cockpit\u2019s Skills feature lets the agent crystallize a chat into a SKILL.md \u2014 saved to *your* knowledge base (not a Cockpit-owned folder), then registered as a slash command. Your notes stay where they live; Cockpit just holds the pointer.',
+          'Every productive Claude Code session ends with dark knowledge that dies with the conversation. OpenCockpit\u2019s Skills feature lets the agent crystallize a chat into a SKILL.md \u2014 saved to *your* knowledge base (not a Cockpit-owned folder), then registered as a slash command. Your notes stay where they live; Cockpit just holds the pointer.',
         readingTime: '6 min read',
         body: `Yesterday I spent **28 minutes** walking Claude through our OAuth refresh-token flow. Token endpoint, leeway window, two custom claims, the one staging-only quirk. Bug found, fixed, shipped.
 
@@ -1957,7 +1957,7 @@ Skills are how you make that choice explicit.
       zh: {
         title: '把对话沉淀成技能：让昨天那 28 分钟变成今天的 /命令',
         description:
-          '每一次高质量的 Claude Code 对话都会沉淀一堆"暗知识"，默认情况下随对话一起死掉。Cockpit 的 Skills 功能让 Agent 把对话浓缩成一个 SKILL.md —— 存到 *你的* 知识库（而不是 Cockpit 强占的目录），再注册为斜杠指令。你的笔记还住在它本来该住的地方，Cockpit 只是持有那个指针。',
+          '每一次高质量的 Claude Code 对话都会沉淀一堆"暗知识"，默认情况下随对话一起死掉。OpenCockpit 的 Skills 功能让 Agent 把对话浓缩成一个 SKILL.md —— 存到 *你的* 知识库（而不是 Cockpit 强占的目录），再注册为斜杠指令。你的笔记还住在它本来该住的地方，Cockpit 只是持有那个指针。',
         readingTime: '阅读约 6 分钟',
         body: `昨天我花了**整整 28 分钟**带着 Claude 把我们 OAuth 刷新令牌流程过了一遍。Token 端点、leeway 窗口、两个自定义 claims、那个仅 staging 环境才有的怪癖。Bug 找到、修掉、上线。
 
@@ -2150,7 +2150,7 @@ Cockpit 的局域网共享评审页（参见[上一篇博客](/zh/blog/claude-co
       en: {
         title: 'How to run 5 Claude Code sessions in parallel without losing your mind',
         description:
-          'Claude Code is incredible at one task at a time — but most engineers want to scope out three features while one is refactoring and another is writing tests. Here is how Cockpit lets you run multiple Claude Code Agent SDK sessions across projects at once, without context-switching pain.',
+          'Claude Code is incredible at one task at a time — but most engineers want to scope out three features while one is refactoring and another is writing tests. Here is how OpenCockpit lets you run multiple Claude Code Agent SDK sessions across projects at once, without context-switching pain.',
         readingTime: '6 min read',
         body: `Most Claude Code users hit the same wall after a week:
 
@@ -2223,7 +2223,7 @@ A cockpit is just an interface that respects how much I/O bandwidth a human has.
       zh: {
         title: '如何同时跑 5 个 Claude Code 会话不疯掉',
         description:
-          'Claude Code 一次干一件事很强，但工程师真实场景常是：一个项目重构、一个项目写测试、一个项目排 bug，外加两个新需求脑暴。直接用裸 `claude` CLI 很快就会卡在终端切换上。这篇讲 Cockpit 是怎么用 Claude Agent SDK 把多项目并发会话跑顺的。',
+          'Claude Code 一次干一件事很强，但工程师真实场景常是：一个项目重构、一个项目写测试、一个项目排 bug，外加两个新需求脑暴。直接用裸 `claude` CLI 很快就会卡在终端切换上。这篇讲 OpenCockpit 是怎么用 Claude Agent SDK 把多项目并发会话跑顺的。',
         readingTime: '阅读约 6 分钟',
         body: `用了一周 Claude Code，多数人都会撞上同一个瓶颈：
 

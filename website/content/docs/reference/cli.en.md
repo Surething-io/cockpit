@@ -1,4 +1,4 @@
-The Cockpit CLI is a thin layer over the running Cockpit server's HTTP API. Two binaries are installed by `npm install -g @surething/cockpit`: **`cockpit`** (canonical name) and **`cock`** (short alias) — identical. The server itself runs continuously; sub-commands speak HTTP to `localhost:3457` to inspect or drive what's open in your panels.
+The OpenCockpit CLI is a thin layer over the running Cockpit server's HTTP API. Two binaries are installed by `npm install -g @surething/cockpit`: **`cockpit`** (canonical name) and **`cock`** (short alias) — identical. The server itself runs continuously; sub-commands speak HTTP to `localhost:3457` to inspect or drive what's open in your panels.
 
 | Command | Purpose |
 |---|---|

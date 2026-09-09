@@ -1,4 +1,4 @@
-Cockpit CLI 是运行中的 Cockpit 服务器 HTTP API 的一层薄包装。`npm install -g @surething/cockpit` 装两个等价的二进制:**`cockpit`**(完整名)和 **`cock`**(短别名)。服务器本身常驻;子命令通过 HTTP 调 `localhost:3457` 来查看或驱动你面板里开着的东西。
+OpenCockpit CLI 是运行中的 Cockpit 服务器 HTTP API 的一层薄包装。`npm install -g @surething/cockpit` 装两个等价的二进制:**`cockpit`**(完整名)和 **`cock`**(短别名)。服务器本身常驻;子命令通过 HTTP 调 `localhost:3457` 来查看或驱动你面板里开着的东西。
 
 | 命令 | 作用 |
 |---|---|

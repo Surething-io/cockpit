@@ -154,8 +154,12 @@ export const metadata: Metadata = {
     images: ['/og.png'],
   },
   icons: {
-    icon: '/icons/icon-128x128.png',
-    apple: '/icons/icon-128x128.png',
+    icon: [
+      { url: '/favicon.ico', sizes: '48x48', type: 'image/x-icon' },
+      { url: '/icons/icon-128x128.png', sizes: '128x128', type: 'image/png' },
+      { url: '/icons/icon-512x512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [{ url: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' }],
   },
   robots: {
     index: true,
@@ -190,10 +194,12 @@ const PLAUSIBLE_SRC =
   process.env.NEXT_PUBLIC_PLAUSIBLE_SRC ?? 'https://plausible.io/js/script.outbound-links.js';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // `lang="und"` (IANA "undetermined"): static export renders one root layout
-  // shared by every route, so we cannot encode the per-route locale here.
-  // `LocaleSync` corrects `document.documentElement.lang` on hydration; the
-  // authoritative SEO signal is the `hreflang` map in `alternates.languages`.
+  // `lang="und"` (IANA "undetermined") is a build-time placeholder, not the
+  // shipped value: a static export renders one root layout for every route, so
+  // the per-route locale isn't knowable here. `scripts/postbuild-seo.mjs`
+  // rewrites it to `en` / `zh-CN` in `out/` — where the path makes the locale
+  // unambiguous — so crawlers and screen readers see a real language tag.
+  // (`LocaleSync` still fixes it on hydration for the client-side nav case.)
   return (
     <html lang="und" className={`dark ${inter.variable}`} suppressHydrationWarning>
       <head>

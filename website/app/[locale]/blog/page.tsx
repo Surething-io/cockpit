@@ -27,6 +27,12 @@ export async function generateMetadata({
         zh: 'https://opencockpit.dev/zh/blog/',
         'x-default': 'https://opencockpit.dev/en/blog/',
       },
+      // Feed files are emitted by `scripts/postbuild-seo.mjs` after export.
+      types: {
+        'application/rss+xml': [
+          { url: `https://opencockpit.dev/${locale}/feed.xml`, title: 'OpenCockpit Blog' },
+        ],
+      },
     },
     openGraph: {
       title: `${t.blog.title} · OpenCockpit`,

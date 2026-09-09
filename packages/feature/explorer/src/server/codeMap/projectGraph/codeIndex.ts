@@ -1909,7 +1909,7 @@ export function searchIndex(
         type: 'file',
         label: basename(f.path),
         hint: f.path,
-        target: { kind: 'file', filePath: f.path },
+        target: { filePath: f.path },
       });
     }
   }
@@ -1932,12 +1932,13 @@ export function searchIndex(
           label: s.name,
           hint: `${s.kind} · ${f.path}`,
           target: {
-            kind: 'symbol',
             filePath: f.path,
-            line: s.startLine,
-            symbolName: s.name,
-            symbolKind: s.kind,
             qualifiedName: s.qualifiedName,
+            name: s.name,
+            kind: s.kind,
+            startLine: s.startLine,
+            endLine: s.endLine,
+            ...(s.params ? { params: s.params } : {}),
           },
         });
       }
@@ -2010,7 +2011,11 @@ export interface CodeGraphCallersResponse {
 
 export interface CodeGraphCalleesResponse {
   qname: string;
-  source: FunctionNode | null;
+  /** The symbol the callees belong to. Named `target` — like every other
+   *  endpoint — rather than the old `source`: the direction of the edge is
+   *  already carried by the endpoint name, so a second vocabulary for the
+   *  same slot only cost consumers a special case. */
+  target: FunctionNode | null;
   callees: CodeGraphCallee[];
   ambiguousIn?: string[];
 }
@@ -2135,7 +2140,7 @@ export function calleesFromIndex(
 ): CodeGraphCalleesResponse {
   const sourceFiles = findTargetFiles(index, qname, filePath);
   if (sourceFiles.length === 0) {
-    return { qname, source: null, callees: [] };
+    return { qname, target: null, callees: [] };
   }
 
   const callees: CodeGraphCallee[] = [];
@@ -2193,7 +2198,7 @@ export function calleesFromIndex(
   const source = toFunctionNode(sourceFiles[0].symbolsByQname.get(qname)!);
   const ambiguousIn =
     sourceFiles.length > 1 ? sourceFiles.map((f) => f.path) : undefined;
-  return { qname, source, callees, ambiguousIn };
+  return { qname, target: source, callees, ambiguousIn };
 }
 
 /** Impact radius — BFS over the callers relation. Returns all symbols that

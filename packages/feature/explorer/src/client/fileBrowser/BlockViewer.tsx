@@ -1100,11 +1100,11 @@ function SearchSection({ label, hits, startIdx, activeIdx, onSelect, setActive }
             {/* File hits get a generic FileText icon; symbol hits route
                 through SymbolIcon so they line up visually with the same
                 symbol's block header / history drawer entry. */}
-            {h.target.kind === 'file' ? (
+            {h.type === 'file' ? (
               <FileText className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-muted-foreground" />
             ) : (
               <SymbolIcon
-                kind={h.target.symbolKind}
+                kind={h.target.kind}
                 qname={h.target.qualifiedName}
                 className="w-3.5 h-3.5 mt-0.5 flex-shrink-0"
               />
@@ -1470,12 +1470,12 @@ export function BlockViewer({
   const handleSearchSelect = useCallback((hit: SearchHit) => {
     setSearchOpen(false);
     setFocalOverride(hit.target.filePath);
-    if (hit.target.kind === 'symbol') {
+    if (hit.type === 'symbol') {
       flashNonceRef.current += 1;
       setFlashTarget({
         filePath: hit.target.filePath,
         qname: hit.target.qualifiedName,
-        line: hit.target.line,
+        line: hit.target.startLine,
         nonce: flashNonceRef.current,
       });
     }

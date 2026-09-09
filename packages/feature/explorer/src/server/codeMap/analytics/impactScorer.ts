@@ -65,6 +65,10 @@ export interface CoeditEntry {
   totalCommits: number;
   /** cooccurrence / totalCommits (precomputed for convenience). */
   probability: number;
+  /** ISO date of the most recent co-edit. Carried so this echo is a strict
+   *  superset of /coedit's history entry — a caller never has to fall back
+   *  to a second request just to learn recency. */
+  lastCoEdit: string;
 }
 
 export interface RiskResponse {
@@ -156,13 +160,20 @@ export async function scoreImpact(
   //    impact node's coeditProb). P0-2: use coEditAuto which tries
   //    commit-granularity first then falls back to merge-granularity
   //    for squash-style projects.
-  const coeditByFile = new Map<string, { cooccurrence: number; total: number }>();
+  const coeditByFile = new Map<
+    string,
+    { cooccurrence: number; total: number; lastCoEdit: string }
+  >();
   let coeditOk = true;
   try {
     const co = await coEditAuto(index.cwd, target.filePath, 100);
     const total = co.totalCommits;
     for (const h of co.history) {
-      coeditByFile.set(h.file, { cooccurrence: h.cooccurrence, total });
+      coeditByFile.set(h.filePath, {
+        cooccurrence: h.cooccurrence,
+        total,
+        lastCoEdit: h.lastCoEdit,
+      });
     }
     if (total === 0 || co.history.length === 0) coeditOk = false;
   } catch {
@@ -325,6 +336,7 @@ export async function scoreImpact(
       cooccurrence: c.cooccurrence,
       totalCommits: c.total,
       probability: c.cooccurrence / c.total,
+      lastCoEdit: c.lastCoEdit,
     });
   }
   coeditEcho.sort((a, b) => b.cooccurrence - a.cooccurrence || a.filePath.localeCompare(b.filePath));

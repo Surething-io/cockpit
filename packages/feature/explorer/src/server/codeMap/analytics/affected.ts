@@ -51,7 +51,8 @@ export interface AffectedTestEntry {
 }
 
 export interface AffectedByInput {
-  file: string;
+  /** Spelled `filePath` like every other path slot in this API. */
+  filePath: string;
   /** Total downstream files reachable via importedBy (incl. tests). */
   reachable: number;
   /** Tests reached from THIS input, ordered by discovery (BFS order). */
@@ -204,7 +205,7 @@ export function findAffected(
     }
 
     byInput.push({
-      file: startFile,
+      filePath: startFile,
       reachable: visited.size - 1, // exclude the input itself
       reachableTests,
     });

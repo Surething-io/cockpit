@@ -231,23 +231,31 @@ export interface FileDetailResponse {
  *     identify the symbol (think methods that share a name with the
  *     class's surrounding initialiser line).
  */
-export interface SearchHit {
-  type: 'file' | 'symbol';
-  /** Display label. */
-  label: string;
-  /** Secondary line for the result. */
-  hint?: string;
-  target:
-    | { kind: 'file'; filePath: string }
-    | {
-        kind: 'symbol';
-        filePath: string;
-        line: number;
-        symbolName: string;
-        symbolKind: SymbolKind;
-        qualifiedName: string;
-      };
-}
+export type SearchHit =
+  | {
+      type: 'file';
+      /** Display label. */
+      label: string;
+      /** Secondary line for the result. */
+      hint?: string;
+      target: { filePath: string };
+    }
+  | {
+      type: 'symbol';
+      label: string;
+      hint?: string;
+      /** The canonical symbol node — byte-identical in shape to what
+       *  callers / callees / impact / file return. It used to carry
+       *  palette-only aliases (`line` / `symbolName` / `symbolKind`) and
+       *  dropped `endLine` + `params`, which forced every consumer to
+       *  learn a second field vocabulary and made a search hit unusable
+       *  as a line RANGE. Both are fixed by reusing FunctionNode.
+       *
+       *  The old inner `kind: 'file' | 'symbol'` discriminant is gone —
+       *  it duplicated the outer `type`, and its name collided with the
+       *  node's own `kind` (SymbolKind). Narrow on `hit.type`. */
+      target: FunctionNode;
+    };
 
 /**
  * A string-literal hit returned ONLY when the search caller opts in via

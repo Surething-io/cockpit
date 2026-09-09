@@ -37,14 +37,22 @@ import { promisify } from 'node:util';
 const execAsync = promisify(exec);
 
 export interface CoEditHistoryEntry {
-  /** Project-relative path of the co-edited file. */
-  file: string;
+  /** Project-relative path of the co-edited file. Named `filePath` to match
+   *  every other node in this API (and the `coedit[]` echo embedded in
+   *  /risk + /related) — the old `file` was the only spelling of this slot
+   *  that differed, which made parsers written against one endpoint read
+   *  `undefined` against the other. */
+  filePath: string;
   /** Number of commits in the scanned window where both this file and the
    *  target appeared. */
   cooccurrence: number;
   /** ISO date of the most recent co-edit commit. Empty when the entry has
    *  no commit (shouldn't happen in history; reserved for future). */
   lastCoEdit: string;
+  /** cooccurrence / totalCommits, precomputed. `cooccurrence` alone is a RAW
+   *  COUNT — comparing it against a ratio threshold is a category error, so
+   *  the ratio ships alongside rather than being left to each caller. */
+  probability: number;
 }
 
 export interface CoEditResponse {
@@ -153,19 +161,31 @@ async function collectHistory(
         existing.cooccurrence += 1;
         if (c.date > existing.lastCoEdit) existing.lastCoEdit = c.date;
       } else {
-        byFile.set(f, { file: f, cooccurrence: 1, lastCoEdit: c.date });
+        byFile.set(f, {
+          filePath: f,
+          cooccurrence: 1,
+          lastCoEdit: c.date,
+          probability: 0, // filled in below, once totalCommits is known
+        });
       }
     }
+  }
+
+  // Denominator is only known after the scan, so probability is a second
+  // pass rather than part of the accumulator.
+  const totalCommits = commitsList.length;
+  for (const e of byFile.values()) {
+    e.probability = totalCommits > 0 ? e.cooccurrence / totalCommits : 0;
   }
 
   const history = Array.from(byFile.values()).sort(
     (a, b) =>
       b.cooccurrence - a.cooccurrence ||
       b.lastCoEdit.localeCompare(a.lastCoEdit) ||
-      a.file.localeCompare(b.file),
+      a.filePath.localeCompare(b.filePath),
   );
 
-  return { history, totalCommits: commitsList.length };
+  return { history, totalCommits };
 }
 
 /**

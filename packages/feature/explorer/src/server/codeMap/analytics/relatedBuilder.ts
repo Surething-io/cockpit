@@ -53,14 +53,11 @@ export interface RelatedHit {
   relations: Relation[];
 }
 
-/** Coedit signal we already fetched. See impactScorer.ts CoeditEntry
- *  for the rationale (avoid duplicate /coedit calls from LLM agents). */
-export interface CoeditEntry {
-  filePath: string;
-  cooccurrence: number;
-  totalCommits: number;
-  probability: number;
-}
+/** Coedit signal we already fetched. Single definition lives in
+ *  impactScorer.ts — this used to be a byte-identical copy, which is how
+ *  the two drifted apart in the first place. */
+export type { CoeditEntry } from './impactScorer';
+import type { CoeditEntry } from './impactScorer';
 
 export interface RelatedResponse {
   target: { filePath: string; qualifiedName: string } | null;
@@ -248,10 +245,11 @@ export async function buildRelated(
       if (total > 0) {
         for (const h of co.history.slice(0, 30)) {
           coeditEcho.push({
-            filePath: h.file,
+            filePath: h.filePath,
             cooccurrence: h.cooccurrence,
             totalCommits: total,
-            probability: h.cooccurrence / total,
+            probability: h.probability,
+            lastCoEdit: h.lastCoEdit,
           });
         }
       }
@@ -260,14 +258,14 @@ export async function buildRelated(
           const prob = h.cooccurrence / total;
           if (prob < 0.2) continue; // weak signal, skip
           // Anchor symbol of coedit partner file.
-          const file = index.files.get(h.file);
+          const file = index.files.get(h.filePath);
           if (!file || file.flatSymbols.length === 0) continue;
           let pick = file.flatSymbols[0];
           // Prefer the highest-pagerank symbol if analytics ready.
           if (analytics) {
             let bestPr = -Infinity;
             for (const s of file.flatSymbols) {
-              const id = makeNodeId(h.file, s.qualifiedName);
+              const id = makeNodeId(h.filePath, s.qualifiedName);
               const pr = analytics.pagerank.get(id) ?? 0;
               if (pr > bestPr) {
                 bestPr = pr;
@@ -275,7 +273,7 @@ export async function buildRelated(
               }
             }
           }
-          const id = makeNodeId(h.file, pick.qualifiedName);
+          const id = makeNodeId(h.filePath, pick.qualifiedName);
           const a = get(id);
           a.coeditProb = prob;
           a.relations.push({

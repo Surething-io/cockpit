@@ -420,6 +420,11 @@ export const messages = {
       // SEO description: ≤160 chars, used by docs page metadata + OG.
       description:
         'OpenCockpit docs — install with one npm command, run anywhere. Cockpit CLI: codegraph, terminal, browser subcommands, each self-documenting via --help.',
+      // Lead paragraph on the docs index (`/[locale]/docs/`). Distinct from
+      // `description`, which is written for the SERP snippet.
+      indexLead:
+        'Everything about running OpenCockpit — the open-source GUI for Claude Code and any other coding agent you bring. Start with the introduction, or jump straight to a panel.',
+      indexStart: 'New here? Start with the introduction →',
       readOnGithub: 'Read on GitHub',
       comingSoon: 'Coming soon',
       onThisPage: 'On this page',
@@ -912,6 +917,11 @@ export const messages = {
       // SEO description：≤160 字符，用于 docs 页 metadata + OG。
       description:
         'OpenCockpit 文档 —— 一行 npm 命令安装，任意目录启动。Cockpit CLI 参考：codegraph / terminal / browser 子命令，均通过 --help 自我说明。',
+      // 文档索引页（`/[locale]/docs/`）的导语。与 `description` 分开：后者是写给
+      // 搜索结果摘要的。
+      indexLead:
+        'OpenCockpit 的完整使用文档 —— 开源的 Claude Code 图形界面，也能接上你手边任何一个编程 Agent。第一次来就从「介绍」开始，或者直接跳到某个面板。',
+      indexStart: '第一次使用？从「介绍」开始 →',
       readOnGithub: '在 GitHub 阅读',
       comingSoon: '即将上线',
       onThisPage: '本页内容',

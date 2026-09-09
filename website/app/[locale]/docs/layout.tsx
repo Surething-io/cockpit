@@ -2,7 +2,7 @@ import { isLocale, type Locale } from '@/lib/i18n';
 import { DocsSidebar } from '@/components/docs/DocsSidebar';
 
 /**
- * Layout shared by `/docs/` (the redirect index) and `/docs/[...slug]/`.
+ * Layout shared by `/docs/` (the index) and `/docs/[...slug]/`.
  *
  * Hosts the left-side `<DocsSidebar />` here — *not* in the page route — so
  * the sidebar's DOM node persists across navigation between docs pages.
@@ -11,9 +11,8 @@ import { DocsSidebar } from '@/components/docs/DocsSidebar';
  * embedded in `page.tsx` get their HTML replaced on every navigation, which
  * resets `scrollTop` to 0).
  *
- * The redirect page (`./page.tsx`) never actually paints — Next.js's
- * `redirect()` short-circuits before the layout renders — so the sidebar's
- * cost is paid only on real `/docs/[...slug]/` views.
+ * `./page.tsx` (the index) renders through this layout too, so the sidebar is
+ * present from the first docs URL a reader lands on.
  */
 export default async function DocsLayout({
   children,

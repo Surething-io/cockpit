@@ -833,7 +833,9 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
          */}
         <div
           className={`chat-turn px-4 py-2 text-foreground ${
-            isUser ? 'max-w-[80%] bg-muted rounded-2xl rounded-br-md' : 'w-full'
+            isUser
+              ? 'max-w-[80%] bg-muted rounded-2xl rounded-br-md border border-brand/40'
+              : 'w-full'
           }`}
         >
           {/* Image content */}

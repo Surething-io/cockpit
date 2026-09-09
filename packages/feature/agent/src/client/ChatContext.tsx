@@ -14,6 +14,14 @@ import { AIBridgeProvider, type AIBridge } from '@cockpit/shared-ui';
 interface ChatContextType {
   // Send a message to the currently active Chat
   sendMessage: (message: string) => void;
+  // Send a message to ONE named tab, regardless of which is active. This is
+  // what the "send to the other pane" button on a message uses: side-by-side
+  // deliberately routes external sends to the focused pane only, so forwarding
+  // to the neighbour needs an addressed send rather than the routed one.
+  // Works for any mounted tab (TabManager renders every tab, hiding the ones
+  // that are not on screen), so the target keeps streaming even if the layout
+  // changes. Returns false when no Chat is registered under that id.
+  sendToTab: (tabId: string, message: string) => boolean;
   // Whether the current Chat is loading (streaming response)
   isLoading: boolean;
   // Register the Chat's sendMessage method (called by Chat component)
@@ -90,15 +98,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Send a message to a specific Chat by tab id (see the interface comment)
+  const sendToTab = useCallback((tabId: string, message: string) => {
+    const sender = chatSendersRef.current.get(tabId);
+    if (!sender) {
+      console.warn(`No chat sender registered for tab ${tabId}`);
+      return false;
+    }
+    sender(message);
+    return true;
+  }, []);
+
   // Use useMemo to stabilize context value, avoiding unnecessary re-renders
   const contextValue = useMemo(() => ({
     sendMessage,
+    sendToTab,
     isLoading,
     registerChat,
     unregisterChat,
     setActiveTab,
     setChatLoading,
-  }), [sendMessage, isLoading, registerChat, unregisterChat, setActiveTab, setChatLoading]);
+  }), [sendMessage, sendToTab, isLoading, registerChat, unregisterChat, setActiveTab, setChatLoading]);
 
   // Bridge the chat sender + loading flag through shared-ui's AIBridge so
   // non-chat features can reach the active chat without depending on

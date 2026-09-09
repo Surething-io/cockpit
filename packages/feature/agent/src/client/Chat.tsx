@@ -100,6 +100,12 @@ interface ChatProps {
   /** Whether this pane owns externally-routed messages. Defaults to isActive;
    *  only side-by-side ever passes it explicitly, to break the tie. */
   isFocused?: boolean;
+  /** Side-by-side only: the tab id of the other column, and which side it is on.
+   *  Undefined in single-pane mode, which is what hides the message footer's
+   *  "send to the other column" button. Chat never derives these itself — panes
+   *  are a workspace concern (see peerProps in TabManager). */
+  peerTabId?: string;
+  peerSide?: 'left' | 'right';
   // Forced history refresh: the host bumps `nonce` when the user explicitly jumps to
   // `sessionId` (scheduled-tasks panel / recent / pinned sessions). Needed because jumping
   // to a tab that is ALREADY active produces no isActive rising edge, so messages appended
@@ -159,7 +165,7 @@ interface ChatProps {
  */
 const ENGINE_OPTIONS_ROW = `${COLUMN_HEADER_ROW} pl-3 pr-8 bg-card/50`;
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeContextWindow, onClaudeContextWindowChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeContextWindow, onClaudeContextWindowChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const composerSlot = useComposerSlot();
   // Owned here, not in ChatInput: the composer is portalled when this pane is
@@ -629,6 +635,35 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     handleForkRef.current(messageId, scope)
   ).current;
 
+  // Forward a message's text to the OTHER column (side-by-side only).
+  //
+  // An addressed send, not the routed one: ChatContext.sendMessage deliberately
+  // goes to the FOCUSED pane, which is this one — the whole point here is to
+  // reach the neighbour without stealing focus from it. Focus stays put, since
+  // both panes are on screen and moving it would drag the shared composer along
+  // (only the focused pane renders one, see the portal below).
+  //
+  // Sends the plain text only, exactly like the copy button beside it — no tool
+  // calls, no thinking, no added framing. Any "forwarded from…" wrapper would be
+  // us guessing at intent, and the receiving model reads it as instructions.
+  const sendToPeerImpl = useCallback((content: string) => {
+    if (!peerTabId || !chatContext) return;
+    if (!chatContext.sendToTab(peerTabId, content)) {
+      // The neighbour's Chat is not registered (unmounted mid-click). Silent
+      // failure here looks exactly like a dead button, so say it.
+      toast(t('toast.sendToPeerFailed', { defaultValue: 'Failed to send to the other pane' }), 'error');
+      return;
+    }
+    toast(t('toast.sentToPeer', { defaultValue: 'Sent to the other pane' }), 'success');
+  }, [peerTabId, chatContext, t]);
+
+  // Same ref indirection as handleFork above, and for the same reason: this
+  // closes over peerTabId + chatContext, and a new identity on every layout
+  // change would re-render every memoized MessageBubble in the list.
+  const sendToPeerRef = useRef(sendToPeerImpl);
+  sendToPeerRef.current = sendToPeerImpl;
+  const handleSendToPeer = useRef((content: string) => sendToPeerRef.current(content)).current;
+
   // Stabilize ChatInput callback props, combined with React.memo to avoid unnecessary re-renders
   const handleShowComments = useCallback(() => {
     setIsCommentsListOpen(true);
@@ -838,6 +873,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             isLoadingMore={isLoadingMore}
             onLoadMore={loadMoreHistory}
             onFork={handleFork}
+            onSendToPeer={handleSendToPeer}
+            peerSide={peerSide}
             isActive={isActive}
             onContentSearch={onContentSearch}
             onShowFileDiff={onShowFileDiff}

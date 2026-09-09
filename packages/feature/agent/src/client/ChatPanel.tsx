@@ -47,6 +47,10 @@ interface ChatPanelProps {
   /** Side-by-side: which of the two live panes owns externally-routed
    *  messages. Forwarded verbatim; see Chat's own prop doc. */
   isFocused?: boolean;
+  /** Side-by-side: the tab id of the OTHER column, and which side it is on.
+   *  Undefined in single-pane mode. Forwarded verbatim; see Chat's prop doc. */
+  peerTabId?: string;
+  peerSide?: 'left' | 'right';
   // Forwarded to Chat: forced history refresh on explicit session jump (see ChatProps.refreshSignal)
   refreshSignal?: { sessionId: string; nonce: number } | null;
   onStateChange: (tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string }) => void;
@@ -72,7 +76,7 @@ interface ChatPanelProps {
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeContextWindow, onClaudeContextWindowChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, isFocused, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeContextWindow, onClaudeContextWindowChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, isFocused, peerTabId, peerSide, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -179,6 +183,8 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
       hideSidebar
       isActive={isActive}
       isFocused={isFocused}
+      peerTabId={peerTabId}
+      peerSide={peerSide}
       refreshSignal={refreshSignal}
       onLoadingChange={handleLoadingChange}
       onSessionIdChange={handleSessionIdChange}

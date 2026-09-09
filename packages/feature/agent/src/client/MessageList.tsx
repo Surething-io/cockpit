@@ -52,6 +52,10 @@ interface MessageListProps {
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
   onFork?: (messageId: string, scope: 'prefix' | 'single') => void;
+  /** Side-by-side: forward a message's text to the other column. Stable identity. */
+  onSendToPeer?: (content: string) => void;
+  /** Which side the other column is on. Undefined in single-pane mode, which hides the button. */
+  peerSide?: 'left' | 'right';
   isActive?: boolean; // Whether the tab is active (handles scroll issues for hidden tabs)
   onContentSearch?: (query: string) => void; // Selected text → project-wide search
   /** Show a message's file changes in the Explorer panel (panel 2) + auto-swipe */
@@ -120,7 +124,7 @@ export interface MessageListHandle {
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
-  { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, backgroundTasks, liveOutputTokens, runningStartedAt, hasMoreHistory, isLoadingMore, onLoadMore, onFork, isActive = true, onContentSearch, onShowFileDiff, onOpenFileLink, onApprovePlan },
+  { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, backgroundTasks, liveOutputTokens, runningStartedAt, hasMoreHistory, isLoadingMore, onLoadMore, onFork, onSendToPeer, peerSide, isActive = true, onContentSearch, onShowFileDiff, onOpenFileLink, onApprovePlan },
   ref
 ) {
   const { t, i18n } = useTranslation();
@@ -735,6 +739,8 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                   sessionId={sessionId}
                   onFork={onFork}
                   forkSupported={forkSupported}
+                  onSendToPeer={onSendToPeer}
+                  peerSide={peerSide}
                   onApprovePlan={onApprovePlan}
                   isLoading={isLoading}
                   onContentSearch={onContentSearch}

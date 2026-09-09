@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, memo } from 'react';
 import type { MouseEvent } from 'react';
 import { Portal, toast } from '@cockpit/shared-ui';
-import { Copy, FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed, Scissors } from 'lucide-react';
+import { Copy, FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed, Scissors, ArrowRightToLine, ArrowLeftToLine } from 'lucide-react';
 import { ToolCallModal } from './ToolCallModal';
 import { AskQuestionViewerModal } from './AskQuestionViewerModal';
 import { DiffViewerModal, resolveDiffCalls } from './DiffViewerModal';
@@ -223,6 +223,18 @@ interface MessageBubbleProps {
    * so this memoized component keeps stable props.
    */
   forkSupported?: boolean;
+  /**
+   * Side-by-side: send this message's text to the other column, which starts a
+   * run there immediately. Stable identity (see Chat), so it does not defeat
+   * this component's memo.
+   */
+  onSendToPeer?: (content: string) => void;
+  /**
+   * Which side the other column is on, so the button can point an arrow at it.
+   * Undefined outside side-by-side, and that is what hides the button: a
+   * message has nowhere to be forwarded to when there is only one column.
+   */
+  peerSide?: 'left' | 'right';
   /** Plan mode: approve the plan card → turn off plan mode and resend to execute */
   onApprovePlan?: () => void;
   /** Disable the approve button while a run is streaming (no concurrent send) */
@@ -470,7 +482,7 @@ function messageTimeFormatter(locale: string): Intl.DateTimeFormat {
 }
 
 // Use memo optimization — only re-render when message or cwd changes
-export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork, forkSupported = true, onApprovePlan, isLoading, onContentSearch, onShowFileDiff, onOpenFileLink, disableOverlays = false }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork, forkSupported = true, onSendToPeer, peerSide, onApprovePlan, isLoading, onContentSearch, onShowFileDiff, onOpenFileLink, disableOverlays = false }: MessageBubbleProps) {
   const { t, i18n } = useTranslation();
   const [previewImage, setPreviewImage] = useState<MessageImage | null>(null);
   // Single-tool case: default expanded so the content stays visible (we only need the header for special entries).
@@ -690,6 +702,16 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   const handleExcerpt = () => {
     if (canFork) {
       onFork!(message.id, 'single');
+    }
+  };
+
+  // Send this message's text to the other column of a side-by-side layout, which
+  // starts a run there right away. Same content as the copy button — plain text,
+  // no tool calls or thinking — so the two controls never mean different things.
+  const canSendToPeer = !!peerSide && !!onSendToPeer && !!message.content;
+  const handleSendToPeer = () => {
+    if (canSendToPeer) {
+      onSendToPeer!(message.content!);
     }
   };
 
@@ -1179,6 +1201,21 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                 title={t('chat.excerptTurn')}
               >
                 <Scissors className="w-4 h-4" />
+              </button>
+            )}
+            {canSendToPeer && (
+              <button
+                onClick={handleSendToPeer}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover"
+                title={t('chat.sendToPeerPane')}
+              >
+                {/* The arrow points AT the other column, so the button is read as
+                    a direction rather than a generic "send". `peerSide` already
+                    accounts for the panes being laid out by flex `order`, which
+                    is not their DOM order (see PaneShell). */}
+                {peerSide === 'right'
+                  ? <ArrowRightToLine className="w-4 h-4" />
+                  : <ArrowLeftToLine className="w-4 h-4" />}
               </button>
             )}
             {timeStr && (

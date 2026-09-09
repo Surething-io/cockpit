@@ -9,7 +9,7 @@ import { ConsoleView, AliasManager } from '@cockpit/feature-console';
 import { ChatProvider, FileDiffViewer } from '@cockpit/feature-agent';
 import type { ToolCallInfo } from '@cockpit/feature-agent';
 import { nextFileDiffRequest, type FileDiffRequest } from './fileDiffRequest';
-import { paneLayout } from './paneLayout';
+import { paneLayout, type PaneLayout } from './paneLayout';
 import { SwipeableViewContainer, SwipeableContent, type ViewType } from '@cockpit/shared-ui';
 import { PanelPortalProvider } from '@cockpit/shared-ui';
 import { useTabState } from './useTabState';
@@ -84,6 +84,27 @@ function paneClass(tabId: string, panes: string[], activePane: number, row: bool
     : '';
   const divider = at > 0 ? ' border-l border-border' : '';
   return `h-full flex-1 min-w-0${focus}${divider}`;
+}
+
+/**
+ * The props a pane needs to describe its NEIGHBOUR to the chat inside it.
+ *
+ * Feeds the message footer's "send this message to the other column" button.
+ * Layout is a workspace concern and Chat does not know it sits in a column, so
+ * rather than pushing pane state down into the chat domain we hand each Chat
+ * only the two facts it needs: who the neighbour is (an opaque tab id it can
+ * address through ChatContext.sendToTab) and which side that neighbour is on
+ * (so the button can point an arrow at it).
+ *
+ * `layout.panes` is indexed BY SIDE, so `1 - at` is the neighbour and `at === 0`
+ * means this pane is the left one. Both are undefined outside split mode, which
+ * is exactly what hides the button in the single-pane case.
+ */
+function peerProps(tabId: string, layout: PaneLayout): { peerTabId?: string; peerSide?: 'left' | 'right' } {
+  if (!layout.split) return {};
+  const at = layout.panes.indexOf(tabId);
+  if (at === -1) return {};
+  return { peerTabId: layout.panes[1 - at], peerSide: at === 0 ? 'right' : 'left' };
 }
 
 /**
@@ -658,6 +679,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                       >
                         <ChatPanel
                           tabId={tab.id}
+                          {...peerProps(tab.id, layout)}
                           cwd={tab.cwd}
                           sessionId={tab.sessionId}
                           engine={tab.engine}
@@ -818,6 +840,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                 >
                   <ChatPanel
                     tabId={tab.id}
+                    {...peerProps(tab.id, layout)}
                     cwd={tab.cwd}
                     sessionId={tab.sessionId}
                     engine={tab.engine}

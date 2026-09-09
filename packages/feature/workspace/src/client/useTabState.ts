@@ -163,7 +163,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   useEffect(() => { paneTabIdsRef.current = paneTabIds; }, [paneTabIds]);
 
   const activeTabId = paneTabIds[activePane] ?? paneTabIds[0] ?? '';
-  const sideBySide = paneTabIds.length > 1;
 
   // "Show this tab" for every caller there has ever been: restore, new tab,
   // history pick, externally opened session, tab click. It lands in the ACTIVE
@@ -1075,7 +1074,6 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     tabs,
     activeTabId,
     activeTab,
-    sideBySide,
     paneTabIds,
     activePane,
     unreadTabs,

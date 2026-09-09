@@ -1088,6 +1088,8 @@
   },
   "diffViewer": {
     "fileChanges": "File Changes ({{count}})",
+    "expandFull": "Expand to full width",
+    "exitFull": "Back to column",
     "toggleFileTree": "Toggle file tree",
     "selectFileToView": "Select a file to view changes",
     "sideBySide": "Side by side",

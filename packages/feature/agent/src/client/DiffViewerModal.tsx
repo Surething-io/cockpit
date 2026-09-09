@@ -5,7 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { Effect } from 'effect';
 import { useEffectQuery } from '@cockpit/effect-react';
 import { Portal, blurActiveElement, MenuContainerProvider } from '@cockpit/shared-ui';
-import { X, PanelLeft, Wrench } from 'lucide-react';
+import { COLUMN_HEADER_ROW } from './columnHeaderRow';
+import { X, PanelLeft, Wrench, Maximize, Minimize } from 'lucide-react';
 // Tech debt: DiffView / GitFileTree are generic renderers used by both
 // file-browser and chat domains. Allowed by MODULES.md as transitional
 // reverse import (agent → explorer is a declared supporting subdomain).
@@ -97,6 +98,18 @@ interface DiffViewerModalProps {
    *  selection toolbar renders the "Search" button (comment / send-to-AI
    *  are always available once `cwd` is present). */
   onContentSearch?: (query: string) => void;
+  /**
+   * Whether the host is currently giving this viewer the whole area.
+   *
+   * The toggle is a HOST capability, not a viewer one: what "full" means is a
+   * fact about the surrounding layout, which this component deliberately knows
+   * nothing about (it renders full-bleed into whatever box it is handed). So
+   * the button appears only when a host passes `onToggleFullscreen` — the
+   * Portal wrapper below is already full-screen and passes neither, which is
+   * how it avoids shipping a control that would have nothing to do.
+   */
+  fullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 }
 
 // ============================================
@@ -298,14 +311,14 @@ function formatCallTime(epochSeconds: number): string {
 // DiffViewerModal
 // ============================================
 
-export function FileDiffViewer({ toolCalls, cwd, sessionId, runId, onClose, onContentSearch }: DiffViewerModalProps) {
+export function FileDiffViewer({ toolCalls, cwd, sessionId, runId, onClose, onContentSearch, fullscreen, onToggleFullscreen }: DiffViewerModalProps) {
   const { t } = useTranslation();
 
   // Portal target for DiffView's floating selection toolbar (comment /
   // send-to-AI / search). DiffView reads it via `useMenuContainer()`, so
   // without our own provider the hook resolves to null and the toolbar
-  // never mounts — this viewer is a SIBLING of FileBrowserModal (the only
-  // other MenuContainerProvider in this panel), not a child of it.
+  // never mounts. Nothing above this viewer provides one: it renders as its
+  // own column in the agent panel, or inside DiffViewerModal's Portal.
   const menuContainerRef = useRef<HTMLDivElement>(null);
   const [menuContainer, setMenuContainer] = useState<HTMLElement | null>(null);
   useEffect(() => {
@@ -458,9 +471,9 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, runId, onClose, onCo
   );
 
   return (
-    // Full-bleed panel: fills its host container (Explorer panel 2, or the
-    // DiffViewerModal backdrop). The three-pane layout (call list + file tree +
-    // diff) needs every pixel.
+    // Full-bleed panel: fills its host container (its column in the agent
+    // panel, or the DiffViewerModal backdrop). The three-pane layout (call list
+    // + file tree + diff) needs every pixel.
     //
     // The root is `relative` and doubles as the floating-toolbar portal target
     // (see MenuContainerProvider above): FloatingToolbar positions itself
@@ -472,7 +485,7 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, runId, onClose, onCo
       onClick={(e) => e.stopPropagation()}
     >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <div className={`${COLUMN_HEADER_ROW} justify-between px-3`}>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowLeft((s) => !s)}
@@ -487,12 +500,34 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, runId, onClose, onCo
               {t('diffViewer.fileChanges', { count: totalFiles })}
             </h3>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            {/* The conventional fullscreen affordance (corner brackets), on
+                purpose: it is the glyph people already read as "make this big"
+                without a tooltip. Strictly it overstates the action — this takes
+                over the pane row and leaves the tab bar and panel switcher in
+                place — but an accurate-but-unfamiliar icon costs a hover on
+                every use, and being read correctly at a glance is worth more
+                than being literal about which axis moves. */}
+            {onToggleFullscreen && (
+              <button
+                onClick={onToggleFullscreen}
+                aria-label={fullscreen ? t('diffViewer.exitFull') : t('diffViewer.expandFull')}
+                title={fullscreen ? t('diffViewer.exitFull') : t('diffViewer.expandFull')}
+                aria-pressed={fullscreen === true}
+                className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
+              >
+                {fullscreen
+                  ? <Minimize className="w-4 h-4" />
+                  : <Maximize className="w-4 h-4" />}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1 text-muted-foreground hover:text-foreground hover:bg-hover rounded transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Body: call list | meta + file tree + diff (mirrors history tab) */}
@@ -793,9 +828,9 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, runId, onClose, onCo
   );
 }
 
-// Backward-compatible full-screen modal wrapper. Used where there is no second
-// panel to host the diff — e.g. SubagentTranscriptModal, which is itself a
-// Portal modal and cannot swipe to the Explorer panel.
+// Backward-compatible full-screen modal wrapper. Used where there is no column
+// to host the diff — e.g. SubagentTranscriptModal, which is itself a Portal
+// modal and has no agent-panel layout to open a column in.
 export function DiffViewerModal({ toolCalls, cwd, sessionId, runId, onClose, onContentSearch }: DiffViewerModalProps) {
   return (
     <Portal>

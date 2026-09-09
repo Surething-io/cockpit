@@ -1088,6 +1088,8 @@
   },
   "diffViewer": {
     "fileChanges": "文件变更 ({{count}})",
+    "expandFull": "扩展到全屏",
+    "exitFull": "回到分栏",
     "toggleFileTree": "切换文件目录",
     "selectFileToView": "选择左侧文件查看变更",
     "sideBySide": "并列对比",

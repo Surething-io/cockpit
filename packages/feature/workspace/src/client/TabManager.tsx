@@ -9,6 +9,7 @@ import { ConsoleView, AliasManager } from '@cockpit/feature-console';
 import { ChatProvider, FileDiffViewer } from '@cockpit/feature-agent';
 import type { ToolCallInfo } from '@cockpit/feature-agent';
 import { nextFileDiffRequest, type FileDiffRequest } from './fileDiffRequest';
+import { paneLayout } from './paneLayout';
 import { SwipeableViewContainer, SwipeableContent, type ViewType } from '@cockpit/shared-ui';
 import { PanelPortalProvider } from '@cockpit/shared-ui';
 import { useTabState } from './useTabState';
@@ -38,27 +39,7 @@ interface TabManagerProps {
 /**
  * Visibility and geometry for one chat tab's pane.
  *
- * Single pane: exactly the behaviour that predates side-by-side — the active
- * tab is `block`, every other mounted tab is `hidden`. Tabs are never
- * unmounted, here or below; that is a hard invariant of this app (CLAUDE.md),
- * and side-by-side does not relax it — it only promotes a second tab out of
- * `hidden`.
- *
- * Side by side: the two chosen tabs each take half, laid out in TAB-BAR ORDER
- * rather than active-then-companion, because the tab bar is the map the user
- * already has; reordering the panes against it would mean maintaining two
- * conflicting mental models of "which one is on the left".
- *
- * The focused pane is marked with a 2px rule on its top edge. Both panes are
- * fully live and each carries its own composer, so focus decides exactly one
- * thing — where an externally-routed message lands (CodeViewer "send to AI",
- * comments) — and a hairline is proportionate to that. The unfocused pane keeps
- * a transparent border of the same width so nothing shifts when focus moves.
- */
-/**
- * Visibility and geometry for one chat tab's pane.
- *
- * `paneTabIds` is the whole answer: a tab is visible iff it is in the list, and
+ * `panes` is the whole answer: a tab is visible iff it is in the list, and
  * its side is its index. One pane is exactly the old behaviour — the tab is
  * `block`, everything else `hidden`. Tabs are never unmounted, here or below;
  * that is a hard invariant of this app (CLAUDE.md), and panes only promote a
@@ -84,16 +65,25 @@ interface TabManagerProps {
  * composer sits below BOTH panes, so the only thing tying it to a column is
  * that column's lower edge running into it. The other pane keeps transparent
  * borders of the same width so nothing shifts when focus changes.
+ *
+ * `row` is NOT `panes.length > 1`. The diff column is a third occupant of the
+ * same flex row that is not a pane, so a single chat can be laid out beside
+ * something without being split — and a pane in a row needs its `order` even
+ * when it is the only one, or the diff column's order competes with DOM
+ * position, the exact failure the paragraph above is about.
  */
-function paneClass(tabId: string, paneTabIds: string[], activePane: number): string {
-  const at = paneTabIds.indexOf(tabId);
-  if (paneTabIds.length < 2) {
-    return `h-full ${at === 0 ? 'block' : 'hidden'}`;
-  }
+function paneClass(tabId: string, panes: string[], activePane: number, row: boolean): string {
+  const at = panes.indexOf(tabId);
   if (at === -1) return 'hidden';
-  const focus = at === activePane ? 'border-y-brand' : 'border-y-transparent';
-  const divider = at > 0 ? 'border-l border-border' : '';
-  return `h-full flex-1 min-w-0 border-y ${focus} ${divider}`;
+  if (!row) return 'h-full block';
+  // Focus is only meaningful between two panes. Beside a diff column there is
+  // one chat, so it carries no rule at all rather than a transparent one —
+  // nothing can shift when focus cannot move.
+  const focus = panes.length > 1
+    ? ` border-y ${at === activePane ? 'border-y-brand' : 'border-y-transparent'}`
+    : '';
+  const divider = at > 0 ? ' border-l border-border' : '';
+  return `h-full flex-1 min-w-0${focus}${divider}`;
 }
 
 /**
@@ -112,6 +102,12 @@ function paneClass(tabId: string, paneTabIds: string[], activePane: number): str
  * that it floats over the top-right of whatever row Chat renders there, so it
  * stays a bare icon — small, and invisible until the pane is hovered.
  *
+ * Small is not enough on its own: it still drew directly on top of that row's
+ * rightmost control. The row keeps clear of it by reserving the width instead
+ * (ENGINE_OPTIONS_ROW in Chat.tsx), which means `right-1 w-6` here is load
+ * bearing over there. Change the ✕'s size or offset and that reservation has
+ * to move with it.
+ *
  * Hidden with opacity rather than `hidden`, so a keyboard Tab can still reach
  * it (display:none would take it out of the tab order entirely).
  *
@@ -128,27 +124,33 @@ function paneClass(tabId: string, paneTabIds: string[], activePane: number): str
  */
 function PaneShell({
   tabId,
-  paneTabIds,
+  panes,
   activePane,
+  row,
   onFocusPane,
   onClosePane,
   children,
 }: {
   tabId: string;
-  paneTabIds: string[];
+  panes: string[];
   activePane: number;
+  row: boolean;
   onFocusPane: (pane: number) => void;
   onClosePane: (pane: number) => void;
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
-  const at = paneTabIds.indexOf(tabId);
-  const split = paneTabIds.length > 1;
+  const at = panes.indexOf(tabId);
+  const split = panes.length > 1;
+  // `at` indexes `panes`, while onFocusPane/onClosePane index `paneTabIds`.
+  // They are the same array whenever `split` holds: the only thing that
+  // narrows `panes` is an open diff column, and that leaves exactly one pane.
+  // Both callbacks are wired only under `split`, so the indices always agree.
   return (
     <div
       onMouseDownCapture={split ? () => onFocusPane(at) : undefined}
-      style={split ? { order: at } : undefined}
-      className={`group/pane relative ${paneClass(tabId, paneTabIds, activePane)}`}
+      style={row && at !== -1 ? { order: at } : undefined}
+      className={`group/pane relative ${paneClass(tabId, panes, activePane, row)}`}
     >
       {split && at !== -1 && (
         <button
@@ -182,7 +184,6 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     tabs,
     activeTabId,
     activeTab,
-    sideBySide,
     paneTabIds,
     activePane,
     toggleSideBySide,
@@ -257,10 +258,21 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
   const [fileBrowserSearchQuery, setFileBrowserSearchQuery] = useState<string | null>(null);
   const [searchQueryTrigger, setSearchQueryTrigger] = useState(0);
   const [fileOpenRequest, setFileOpenRequest] = useState<{ path: string; lineNumber?: number; nonce: number } | null>(null);
-  // Message-level "view all file changes": hosted in the Explorer panel (panel 2)
-  // as an overlay above the FileBrowser, instead of a full-screen modal. Null =
-  // not showing. Setting it also swipes to Explorer (see handleShowFileDiff).
+  // Message-level "view all file changes": a column in the RIGHT HALF of the
+  // agent panel, beside the chat that opened it. Null = not showing.
+  //
+  // It used to overlay the FileBrowser on panel 2, which meant every viewing of
+  // a diff swiped the chat you were reading off screen — the one thing you want
+  // beside a diff is the turn that produced it.
   const [fileDiffRequest, setFileDiffRequest] = useState<FileDiffRequest | null>(null);
+
+  // A diff column and a second chat pane are the same right half of the panel,
+  // so they are mutually exclusive — derived in paneLayout, enforced nowhere.
+  const diffOpen = fileDiffRequest !== null;
+  const layout = useMemo(
+    () => paneLayout(paneTabIds, activePane, activeTabId, diffOpen),
+    [paneTabIds, activePane, activeTabId, diffOpen],
+  );
   // Forced chat refresh signal: bumped when a SWITCH_SESSION jump targets a session whose
   // tab already exists. Activating an already-active tab produces no isActive rising edge
   // in Chat, so without this a jump from the scheduled-tasks / recent / pinned panels would
@@ -497,43 +509,73 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     handleViewChange('explorer');
   }, [handleViewChange]);
 
-  // Same as above but for a search fired from the file-diff overlay: the
-  // overlay sits above the FileBrowser (z-20), so it must be dismissed first
-  // or the search results stay hidden behind it.
-  const handleDiffContentSearch = useCallback((query: string) => {
-    setFileDiffRequest(null);
-    handleContentSearch(query);
-  }, [handleContentSearch]);
-
-  // Message "view all file changes": show the diff in the Explorer panel and
-  // swipe there. Re-firing with a new message replaces the content and (re)asserts
-  // the Explorer panel — no extra bookkeeping needed for the "already on panel 2,
-  // click a new entry" case.
   // Stable onClose for the (memoized) Explorer panel so a chat-tab/session switch
   // — which re-renders TabManager — doesn't re-render the whole FileBrowser subtree.
   const handleExplorerClose = useCallback(() => handleViewChange('agent'), [handleViewChange]);
 
+  // Whether the diff column is currently taking the whole pane row instead of
+  // half of it. Deliberately NOT a third case in paneLayout: full-width is done
+  // by lifting the diff column out of the flex row (`absolute inset-0`) rather
+  // than by shrinking the panes to none, so the panes never move. Nothing about
+  // this reaches the layout model — the new state stays inside the one element
+  // whose geometry it describes.
+  //
+  // Not collapsing the panes is what makes it safe as well as simple. Hiding a
+  // live chat that Chat still believes is active is a state this app has never
+  // been in, and Chat's `isActive` carries known scroll behaviour for hidden
+  // tabs; covering the panes leaves them laid out exactly as they were.
+  const [diffFullscreen, setDiffFullscreen] = useState(false);
+  const handleToggleDiffFullscreen = useCallback(() => setDiffFullscreen((f) => !f), []);
+
+  // The one close path. Full-width is per-viewing, not a remembered preference:
+  // reopening a diff should land in the column it lives in, or the next FileDiff
+  // click would take over the panel on the strength of a choice made minutes ago.
+  const handleCloseFileDiff = useCallback(() => {
+    setFileDiffRequest(null);
+    setDiffFullscreen(false);
+  }, []);
+
+  // The tab bar's layout button restores your layout before it toggles it.
+  // With a diff column open the split is only hidden, so pressing the button
+  // would otherwise rearrange something off screen and look like it did
+  // nothing. First press closes the diff and hands back whatever was
+  // underneath; the next press toggles that.
+  //
+  // diffOpen is read through a ref so this callback's identity stays stable
+  // across every open/close (React performance conventions, CLAUDE.md).
+  const diffOpenRef = useRef(diffOpen);
+  useEffect(() => { diffOpenRef.current = diffOpen; }, [diffOpen]);
+  const handleToggleLayout = useCallback(() => {
+    if (diffOpenRef.current) {
+      handleCloseFileDiff();
+      return;
+    }
+    toggleSideBySide();
+  }, [toggleSideBySide, handleCloseFileDiff]);
+
+  // Message "view all file changes": open the diff column and assert the agent
+  // panel, which is where that column lives. Re-firing with a new message just
+  // replaces its content.
+  //
   // `live` = the source message is still streaming and just appended a tool
-  // call; it refreshes the overlay in place (no swipe) and is dropped unless
+  // call; it refreshes the column in place (no swipe) and is dropped unless
   // that message is the one on screen. See fileDiffRequest.ts.
   const handleShowFileDiff = useCallback((messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, runId?: string, live?: boolean) => {
     setFileDiffRequest((prev) => nextFileDiffRequest(prev, { messageId, toolCalls, cwd, sessionId, runId }, live === true));
-    if (!live) handleViewChange('explorer');
+    if (!live) handleViewChange('agent');
   }, [handleViewChange]);
 
   const handleOpenFileLink = useCallback((target: { path: string; lineNumber?: number }) => {
-    setFileDiffRequest(null);
     setFileOpenRequest({ ...target, nonce: Date.now() });
     handleViewChange('explorer');
   }, [handleViewChange]);
 
-  // Any command that drives the FileBrowser (git status, content search, and any
-  // future file-oriented entry) dismisses the diff overlay in one place — so we
-  // never have to clear it per entry point. Contract: file-oriented entries bump
-  // a trigger counter; handleShowFileDiff deliberately does not, so it survives.
-  useEffect(() => {
-    setFileDiffRequest(null);
-  }, [tabSwitchTrigger, searchQueryTrigger]);
+  // Nothing dismisses the diff column on the user's behalf any more. Every rule
+  // that used to — a FileBrowser-driving command, a search fired from inside the
+  // diff, a file link — existed because the diff overlaid the FileBrowser and
+  // would have hidden what those commands went to show. On its own column it
+  // occludes nothing, so a git-status or a search now swipes to the Explorer and
+  // leaves the diff where the user put it, still there when they swipe back.
 
   // Open note
   const handleOpenNote = useCallback(() => {
@@ -580,8 +622,8 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                   <TabBar
                     tabs={tabs}
                     selectedTabId={activeTabId}
-                    sideBySide={sideBySide}
-                    onToggleSideBySide={toggleSideBySide}
+                    sideBySide={layout.split}
+                    onToggleSideBySide={handleToggleLayout}
                     unreadTabs={unreadTabs}
                     dragTabIndex={dragTabIndex}
                     dragOverTabIndex={dragOverTabIndex}
@@ -602,14 +644,15 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                     onDrop={handleTabDrop}
                     onDragEnd={handleTabDragEnd}
                   />
-                  <ComposerSlotProvider value={sideBySide ? composerSlot : null}>
-                  <div className={`flex-1 overflow-hidden relative ${sideBySide ? 'flex' : ''}`}>
+                  <ComposerSlotProvider value={layout.split ? composerSlot : null}>
+                  <div className={`flex-1 overflow-hidden relative ${layout.row ? 'flex' : ''}`}>
                     {tabs.map((tab) => (
                       <PaneShell
                         key={tab.id}
                         tabId={tab.id}
-                        paneTabIds={paneTabIds}
-                        activePane={activePane}
+                        panes={layout.panes}
+                        activePane={layout.activePane}
+                        row={layout.row}
                         onFocusPane={focusPane}
                         onClosePane={closePane}
                       >
@@ -659,12 +702,56 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                         />
                       </PaneShell>
                     ))}
+                    {/* The diff column: right half of the agent panel, beside the
+                        chat that opened it. Its `order` is past every pane's, so
+                        it is always the rightmost column no matter which pane
+                        survived — panes and this share one flex row, and DOM
+                        position is not what decides sides here (see paneClass). */}
+                    {fileDiffRequest && (
+                      <div
+                        className={
+                          diffFullscreen
+                            // Covers the pane row and nothing above it: the tab
+                            // bar stays reachable, so the way out is never the
+                            // only button on screen. `bg-card` because the
+                            // viewer's root is rounded and the panes are still
+                            // laid out underneath, showing through the corners.
+                            //
+                            // z-30 has one job: beat PaneShell's close-column ✕
+                            // at z-20. `position: relative` with no z-index does
+                            // not open a stacking context, so that ✕ competes
+                            // directly with this element rather than being
+                            // trapped inside its own pane. It stays below the
+                            // z-50 popover tier, which is not in this row.
+                            ? 'absolute inset-0 z-30 bg-card'
+                            : 'h-full flex-1 min-w-0 border-l border-border'
+                        }
+                        style={diffFullscreen ? undefined : { order: layout.diffOrder }}
+                      >
+                        <FileDiffViewer
+                          // Switching to a different message must reset the viewer
+                          // (first commit / first file, or empty state). Key on the
+                          // MESSAGE, not its tool-call ids: a streaming message keeps
+                          // appending calls, and remounting on each one would throw
+                          // away the selected commit / file / scroll position.
+                          key={fileDiffRequest.messageId}
+                          toolCalls={fileDiffRequest.toolCalls}
+                          cwd={fileDiffRequest.cwd}
+                          sessionId={fileDiffRequest.sessionId}
+                          runId={fileDiffRequest.runId}
+                          onClose={handleCloseFileDiff}
+                          onContentSearch={handleContentSearch}
+                          fullscreen={diffFullscreen}
+                          onToggleFullscreen={handleToggleDiffFullscreen}
+                        />
+                      </div>
+                    )}
                   </div>
                   </ComposerSlotProvider>
                   {/* Shared composer. Sits BELOW both panes so neither pane spends
                       column height on it and their token bars stay on one line; the
                       focused Chat portals into it (see ComposerSlot). */}
-                  {sideBySide && <div ref={setComposerSlot} className="flex-shrink-0" />}
+                  {layout.split && <div ref={setComposerSlot} className="flex-shrink-0" />}
                 </div>
               </PanelPortalProvider>
             </div>
@@ -681,29 +768,6 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                   searchQueryTrigger={searchQueryTrigger}
                   fileOpenRequest={fileOpenRequest}
                 />
-                {/* Message "view all file changes": overlays the FileBrowser (kept
-                    mounted underneath). Close stays on this panel — no swipe back. */}
-                {fileDiffRequest && (
-                  <div
-                    className="absolute inset-0 z-20 flex bg-scrim p-[4vmin]"
-                    onClick={() => setFileDiffRequest(null)}
-                  >
-                    <FileDiffViewer
-                      // Switching to a different message must reset the viewer
-                      // (first commit / first file, or empty state). Key on the
-                      // MESSAGE, not its tool-call ids: a streaming message keeps
-                      // appending calls, and remounting on each one would throw
-                      // away the selected commit / file / scroll position.
-                      key={fileDiffRequest.messageId}
-                      toolCalls={fileDiffRequest.toolCalls}
-                      cwd={fileDiffRequest.cwd}
-                      sessionId={fileDiffRequest.sessionId}
-                      runId={fileDiffRequest.runId}
-                      onClose={() => setFileDiffRequest(null)}
-                      onContentSearch={handleDiffContentSearch}
-                    />
-                  </div>
-                )}
               </PanelPortalProvider>
             </div>
 
@@ -720,8 +784,8 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
             <TabBar
               tabs={tabs}
               selectedTabId={activeTabId}
-              sideBySide={sideBySide}
-              onToggleSideBySide={toggleSideBySide}
+              sideBySide={layout.split}
+              onToggleSideBySide={handleToggleLayout}
               unreadTabs={unreadTabs}
               dragTabIndex={dragTabIndex}
               dragOverTabIndex={dragOverTabIndex}
@@ -740,14 +804,15 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
               onDrop={handleTabDrop}
               onDragEnd={handleTabDragEnd}
             />
-            <ComposerSlotProvider value={sideBySide ? composerSlot : null}>
-            <div className={`flex-1 overflow-hidden relative ${sideBySide ? 'flex' : ''}`}>
+            <ComposerSlotProvider value={layout.split ? composerSlot : null}>
+            <div className={`flex-1 overflow-hidden relative ${layout.row ? 'flex' : ''}`}>
               {tabs.map((tab) => (
                 <PaneShell
                   key={tab.id}
                   tabId={tab.id}
-                  paneTabIds={paneTabIds}
-                  activePane={activePane}
+                  panes={layout.panes}
+                  activePane={layout.activePane}
+                  row={layout.row}
                   onFocusPane={focusPane}
                   onClosePane={closePane}
                 >
@@ -797,7 +862,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
             {/* Shared composer. Sits BELOW both panes so neither pane spends
                 column height on it and their token bars stay on one line; the
                 focused Chat portals into it (see ComposerSlot). */}
-            {sideBySide && <div ref={setComposerSlot} className="flex-shrink-0" />}
+            {layout.split && <div ref={setComposerSlot} className="flex-shrink-0" />}
           </div>
         )}
       </div>

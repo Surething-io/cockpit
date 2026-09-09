@@ -9,7 +9,15 @@ export function LangSwitch({ locale }: { locale: Locale }) {
 
   function switchTo(target: Locale) {
     if (target === locale) return;
-    // Persist preference so future visits to / respect this choice
+    // Persist preference so future visits to / respect this choice — the edge
+    // Function in `functions/index.ts` reads this cookie before Accept-Language.
+    //
+    // `react-hooks/immutability` flags any write to a value defined outside the
+    // component and suggests moving it into an effect. That advice is wrong
+    // here: this is an event handler, where side effects are exactly what's
+    // allowed, and the write must happen on the click that triggers the
+    // navigation — not one render later.
+    // eslint-disable-next-line react-hooks/immutability
     document.cookie = `lang_pref=${target}; path=/; max-age=31536000; SameSite=Lax`;
 
     // Swap the leading /<locale>/ segment in the current path

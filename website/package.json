@@ -10,7 +10,7 @@
     "build": "node scripts/fetch-changelog.mjs && node scripts/generate-og.mjs && NODE_ENV=production COCKPIT_VERSION=$(node -p \"require('../package.json').version\") env -u TURBOPACK next build --webpack",
     "postbuild": "node scripts/postbuild-seo.mjs",
     "start": "next start -p 3458",
-    "lint": "next lint",
+    "lint": "eslint",
     "og": "node scripts/generate-og.mjs",
     "lastmod": "node scripts/docs-lastmod.mjs",
     "preview": "npx wrangler pages dev out --compatibility-date=2024-09-23"
@@ -29,6 +29,8 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
     "typescript": "5.9.3"
   },

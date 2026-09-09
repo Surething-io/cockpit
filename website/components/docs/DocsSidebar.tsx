@@ -67,10 +67,14 @@ export function DocsSidebar({ locale }: DocsSidebarProps) {
   const [open, setOpen] = useState(false);
 
   // Close the drawer whenever the reader navigates to another page — clicking a
-  // link changes `currentSlug`, which fires this and slides the drawer shut.
-  useEffect(() => {
+  // link changes `currentSlug`. Adjusted during render (React's documented
+  // "reset state when a value changes" pattern) rather than in an effect,
+  // which would render the drawer open for a frame on the new page first.
+  const [lastSlug, setLastSlug] = useState(currentSlug);
+  if (currentSlug !== lastSlug) {
+    setLastSlug(currentSlug);
     setOpen(false);
-  }, [currentSlug]);
+  }
 
   // While the drawer is open, lock body scroll and let ESC dismiss it — the
   // standard mobile-drawer affordances. Everything is torn down on close.

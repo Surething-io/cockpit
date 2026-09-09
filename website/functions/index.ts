@@ -16,10 +16,12 @@
  *     fallback redirect (see app/page.tsx + components/RootRedirect.tsx).
  */
 
-interface Env {}
+// This Function reads no bindings — no KV, no secrets, nothing from
+// wrangler.toml. `PagesFunction` still needs an env shape, and an empty
+// `interface` would accept `0` or `""` as well as `{}`.
+type Env = Record<string, never>;
 
-const SUPPORTED = ['en', 'zh'] as const;
-type Locale = (typeof SUPPORTED)[number];
+type Locale = 'en' | 'zh';
 const DEFAULT: Locale = 'en';
 
 function pickFromAcceptLanguage(header: string | null): Locale {

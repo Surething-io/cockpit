@@ -40,10 +40,18 @@ export function MobileMenu({
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
-  // Close on navigation (tapping a link changes the path) and on ESC.
-  useEffect(() => {
+  // Close on navigation — tapping a link changes the path, and so does the
+  // browser's back button, so this covers both. Adjusting state during render
+  // (React's documented "reset state when a value changes" pattern) rather
+  // than in an effect: an effect would paint the panel open for one frame at
+  // the new URL, then close it.
+  const [lastPathname, setLastPathname] = useState(pathname);
+  if (pathname !== lastPathname) {
+    setLastPathname(pathname);
     setOpen(false);
-  }, [pathname]);
+  }
+
+  // ESC dismisses the open panel.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {

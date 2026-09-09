@@ -17,6 +17,11 @@ export default function GlobalError() {
         <p style={{ marginTop: '0.5rem', color: '#666' }}>
           An unexpected error occurred. Please refresh or try again later.
         </p>
+        {/* A plain anchor on purpose. `global-error` replaces the root layout
+            after a render crash, so the router this boundary would hand a
+            `next/link` to is the one that just failed — a full page load is the
+            recovery. */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a
           href="/"
           style={{

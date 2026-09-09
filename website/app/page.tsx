@@ -20,7 +20,13 @@ export default function Page() {
     <div className="min-h-screen flex items-center justify-center text-muted-foreground">
       <RootRedirect />
       <noscript>
-        <a href="/en/" className="text-brand underline">Continue to Cockpit (English)</a>
+        {/* Deliberately a plain anchor, not `next/link`: this only ever renders
+            for a reader with JavaScript off, where client-side routing cannot
+            run and a full page load is the entire point. */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+        <a href="/en/" className="text-brand underline">
+          Continue to OpenCockpit (English)
+        </a>
       </noscript>
     </div>
   );

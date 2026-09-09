@@ -1170,7 +1170,12 @@
   },
   "userMessages": {
     "title": "用户消息列表",
-    "noMessages": "暂无用户消息"
+    "noMessages": "暂无用户消息",
+    "searchPlaceholder": "搜索用户消息…",
+    "noResults": "没有匹配的消息",
+    "loadFailed": "加载失败",
+    "count": "{{shown}} / {{total}} 条",
+    "jumping": "正在加载该消息所在的对话…"
   },
   "shortIdBadge": {
     "clickToDisconnect": "点击断开连接",

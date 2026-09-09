@@ -53,6 +53,38 @@ const httpPutJson = <A>(
   })
 
 // ─────────────────────────────────────────────────────────
+// /api/session/user-messages
+// ─────────────────────────────────────────────────────────
+
+/** One row of a session's user-message index. Mirrors UserMessageIndexEntry. */
+export interface UserMessageIndexEntry {
+  /** The bubble's `data-message-id` — what a jump queries the DOM for. */
+  id: string
+  /** Turn cursor: `fromTurnIndex` this to pull the message back on screen. */
+  turnIndex: number
+  timestamp?: string
+  content: string
+}
+
+export interface UserMessageIndex {
+  messages: UserMessageIndexEntry[]
+  totalTurns: number
+  sessionId: string
+}
+
+/**
+ * Every human message of a session, independent of what the chat has paged in.
+ *
+ * `sessionId` must be the file currently on screen (`loadedSessionId`), not the
+ * live one — see the note on the route's request body.
+ */
+export const loadUserMessageIndex = (
+  cwd: string,
+  sessionId: string
+): Effect.Effect<UserMessageIndex, AppError> =>
+  httpPostJson<UserMessageIndex>("/api/session/user-messages", { cwd, sessionId })
+
+// ─────────────────────────────────────────────────────────
 // /api/settings (duplicated here to avoid an agent → workspace reverse dependency)
 // ─────────────────────────────────────────────────────────
 

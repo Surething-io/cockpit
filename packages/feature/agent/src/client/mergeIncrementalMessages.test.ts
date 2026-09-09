@@ -7,7 +7,7 @@
 //   2. externally appended messages (scheduled-task runs) must show up;
 //   3. unchanged data must keep object identity (React skip).
 import { describe, it, expect } from 'vitest';
-import { mergeIncrementalMessages } from './mergeIncrementalMessages';
+import { mergeIncrementalMessages, mergeJumpWindow } from './mergeIncrementalMessages';
 import type { ChatMessage } from './types';
 
 const msg = (id: string, content = `content-${id}`): ChatMessage =>
@@ -87,5 +87,47 @@ describe('mergeIncrementalMessages', () => {
     const window = [msg('dup'), msg('e')];
     const out = mergeIncrementalMessages(prev, window);
     expect(out.map((m) => m.id)).toEqual(['a', 'dup', 'b', 'dup', 'e']);
+  });
+});
+
+// The user-message modal's jump: the window is turns [target, end], pulled in
+// because the target had no bubble on screen. What it must not do is drop the
+// reply that is streaming, or splice in a session the user has since left.
+describe('mergeJumpWindow', () => {
+  it('keeps the not-yet-persisted tail that is streaming', () => {
+    const prev = [msg('c'), msg('d'), msg('live-asst-1', 'streaming…')];
+    const window = [msg('a'), msg('b'), msg('c'), msg('d')];
+    expect(mergeJumpWindow(prev, window).map((m) => m.id)).toEqual([
+      'a', 'b', 'c', 'd', 'live-asst-1',
+    ]);
+  });
+
+  it('recognises the tail by absence from the window, not by an id prefix', () => {
+    // useChatStream mints `auto-*` and `user-<ts>` bubbles too — anything that
+    // hardcoded the `live-` prefix would silently drop these.
+    const prev = [msg('c'), msg('auto-asst-2'), msg('user-1757000000000')];
+    const window = [msg('a'), msg('b'), msg('c')];
+    expect(mergeJumpWindow(prev, window).map((m) => m.id)).toEqual([
+      'a', 'b', 'c', 'auto-asst-2', 'user-1757000000000',
+    ]);
+  });
+
+  it('returns the window when everything rendered is already in it', () => {
+    const prev = [msg('c'), msg('d')];
+    const window = [msg('a'), msg('b'), msg('c'), msg('d')];
+    expect(mergeJumpWindow(prev, window)).toBe(window);
+  });
+
+  it('drops a non-overlapping prev instead of splicing two sessions together', () => {
+    // Reachable only if the session changed while the jump request was in
+    // flight. Concatenating would render both files as one conversation.
+    const prev = [msg('other-1'), msg('other-2')];
+    const window = [msg('a'), msg('b')];
+    expect(mergeJumpWindow(prev, window)).toBe(window);
+  });
+
+  it('leaves the rendered list alone when the window came back empty', () => {
+    const prev = [msg('c'), msg('d')];
+    expect(mergeJumpWindow(prev, [])).toBe(prev);
   });
 });

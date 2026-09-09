@@ -111,7 +111,12 @@ function AnimatedProgressNumber({ value }: { value: number }) {
 
 // Methods exposed to parent component
 export interface MessageListHandle {
-  scrollToMessage: (messageId: string) => void;
+  /**
+   * Scroll a message into view and flash it. Returns false when no node carries
+   * that id, so a caller that just paged in older turns can retry on the next
+   * frame instead of having to know when React commits them.
+   */
+  scrollToMessage: (messageId: string) => boolean;
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
@@ -512,22 +517,33 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  // Scroll to a specific message
-  const scrollToMessage = useCallback((messageId: string) => {
+  // Scroll to a specific message.
+  //
+  // Reports miss/hit rather than holding the request for a later commit. A held
+  // request has to be replayed from a layout effect, and that effect only beats
+  // the follow-the-tail scroll if it is DEFINED after it — an ordering constraint
+  // that lives in a comment, breaks silently when someone inserts an effect
+  // between them, and no test can catch. A caller-side retry needs no such
+  // constraint: requestAnimationFrame already runs after every layout effect of
+  // the commit, so whichever frame the target appears in, the scroll wins.
+  const scrollToMessage = useCallback((messageId: string): boolean => {
     const container = containerRef.current;
-    if (!container) return;
+    const messageElement = container?.querySelector(`[data-message-id="${messageId}"]`);
+    if (!messageElement) return false;
 
-    // Find the DOM element for the message
-    const messageElement = container.querySelector(`[data-message-id="${messageId}"]`);
-    if (messageElement) {
-      messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Add highlight effect
-      messageElement.classList.add('ring-2', 'ring-brand', 'ring-offset-2');
-      setTimeout(() => {
-        messageElement.classList.remove('ring-2', 'ring-brand', 'ring-offset-2');
-      }, 2000);
-    }
+    messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Flash the bubble. Ring only, never ring-offset: Tailwind's
+    // --tw-ring-offset-color defaults to #fff and this project never overrides
+    // it, so `ring-offset-2` painted a 2px WHITE band between the bubble and the
+    // teal ring — the one bright thing on a dark theme. `ring-2 ring-brand` on
+    // its own is what ConsoleView's equivalent highlight uses.
+    messageElement.classList.add('ring-2', 'ring-brand');
+    setTimeout(() => {
+      messageElement.classList.remove('ring-2', 'ring-brand');
+    }, 2000);
+    return true;
   }, []);
+
 
   // Jump to the previous / next user message, top-aligned so the reply that
   // follows it stays in view. No highlight: the jump is a reading move, and the

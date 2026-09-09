@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { ChatMessage, TokenUsage, ChatEngine } from './types';
-import { mergeIncrementalMessages } from './mergeIncrementalMessages';
+import { mergeIncrementalMessages, mergeJumpWindow } from './mergeIncrementalMessages';
 import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { AppError } from '@cockpit/effect-core';
@@ -59,6 +59,7 @@ interface SessionPageData {
   fingerprint?: string;
   totalTurns?: number;
   hasMore?: boolean;
+  startTurnIndex?: number;
   messages?: ChatMessage[];
   sessionId?: string;
   title?: string;
@@ -87,6 +88,15 @@ interface UseChatHistoryReturn {
   isLoadingMore: boolean;
   hasMoreHistory: boolean;
   loadMoreHistory: () => Promise<void>;
+  /**
+   * Widen the loaded window backwards until `turnIndex` is on screen, then resolve.
+   * Used by the user-message modal, whose index covers the whole session while
+   * `messages` only holds the paged-in suffix — clicking an older row has to pull
+   * the turns in first or the DOM jump has nothing to find.
+   *
+   * Resolves after the state update is committed, so the caller can query the DOM.
+   */
+  ensureTurnLoaded: (turnIndex: number) => Promise<void>;
   loadHistory: (sid: string) => Promise<void>;
   loadHistoryByCwdAndSessionId: (
     cwd: string,
@@ -132,6 +142,10 @@ export function useChatHistory(
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(null);
   // Engine echoed by /api/session-by-path for the loaded session.
   const [loadedEngine, setLoadedEngine] = useState<ChatEngine | null>(null);
+  // Ref mirror of loadedSessionId: ensureTurnLoaded is handed down to a memo'd
+  // modal, so it must not take a new identity every time a page lands.
+  const loadedSessionIdRef = useRef<string | null>(null);
+  loadedSessionIdRef.current = loadedSessionId;
 
   // Use ref to ensure callbacks use the latest reference
   const onTitleChangeRef = useRef(onTitleChange);
@@ -300,14 +314,18 @@ export function useChatHistory(
         const data = exit.value as {
           messages?: ChatMessage[];
           hasMore?: boolean;
+          startTurnIndex?: number;
           fingerprint?: string;
         };
         if (data.messages && data.messages.length > 0) {
           // Prepend new messages to existing messages
           setMessages(prev => [...data.messages!, ...prev]);
-          // Update current turn index
+          // Update current turn index. The server resolves the window's first turn
+          // itself; only fall back to counting user bubbles for a response that
+          // predates that field, since the count drifts by one whenever turn 0 is a
+          // leading assistant/system prefix rather than a user message.
           const loadedTurns = data.messages.filter((m: ChatMessage) => m.role === 'user').length;
-          setCurrentTurnIndex(beforeIndex - loadedTurns);
+          setCurrentTurnIndex(data.startTurnIndex ?? beforeIndex - loadedTurns);
           // Older turns were pulled from the same file the rest of the
           // view already represents — keep loadedSessionId in sync.
           setLoadedSessionId(sessionId);
@@ -326,6 +344,49 @@ export function useChatHistory(
       setIsLoadingMore(false);
     }
   }, [cwd, sessionId, isLoadingMore, hasMoreHistory, currentTurnIndex, totalTurns, messages, setMessages]);
+
+  // Pull every turn from `turnIndex` to the end of the session into view.
+  //
+  // One request, not a loop of loadMoreHistory calls: `fromTurnIndex` is resolved
+  // against the server's own totalTurns, so it stays exact even if the session grew
+  // since the modal read its index — a client-side `limit` would slide forward by
+  // however many turns arrived and drop the target off the front of the window.
+  //
+  // The window is contiguous with what is already rendered (it ends at the session
+  // tail either way), so this replaces `messages` wholesale instead of splicing.
+  const ensureTurnLoaded = useCallback(async (turnIndex: number) => {
+    const sid = loadedSessionIdRef.current ?? sessionId;
+    if (!cwd || !sid || turnIndex < 0) return;
+
+    setIsLoadingMore(true);
+    try {
+      const exit = await BrowserRuntime.runPromiseExit(
+        postSessionByPath({ cwd, sessionId: sid, fromTurnIndex: turnIndex })
+      );
+      if (exit._tag === 'Failure') {
+        console.error('Failed to load turns for jump:', exit.cause);
+        return;
+      }
+      if (!exit.value) return;
+      // The rendered session can change while this request is in flight (fork, or
+      // opening another session into this tab). Everything below is scoped to
+      // `sid`, so applying it to a list that has since moved on would splice two
+      // transcripts together — drop the response instead.
+      if (loadedSessionIdRef.current && loadedSessionIdRef.current !== sid) return;
+      const data = exit.value as SessionPageData;
+      if (data.messages && data.messages.length > 0) {
+        const disk = data.messages;
+        setMessages((prev) => mergeJumpWindow(prev, disk));
+        setCurrentTurnIndex(data.startTurnIndex ?? turnIndex);
+        setLoadedSessionId(sid);
+      }
+      if (data.totalTurns !== undefined) setTotalTurns(data.totalTurns);
+      if (data.hasMore !== undefined) setHasMoreHistory(data.hasMore);
+      if (data.fingerprint) fingerprintRef.current = data.fingerprint;
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [cwd, sessionId, setMessages]);
 
   // Load history messages (by sessionId)
   const loadHistory = useCallback(async (sid: string) => {
@@ -361,6 +422,7 @@ export function useChatHistory(
     isLoadingMore,
     hasMoreHistory,
     loadMoreHistory,
+    ensureTurnLoaded,
     loadHistory,
     loadHistoryByCwdAndSessionId,
     loadedSessionId,

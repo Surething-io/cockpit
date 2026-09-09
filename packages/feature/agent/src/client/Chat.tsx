@@ -40,13 +40,21 @@ import {
 } from './AgentModelTraitsPicker';
 import { DeepseekBalanceButton } from './DeepseekBalanceButton';
 import { EngineQuotaButton } from './EngineQuotaButton';
-import type { ApiKeyEngine } from './effect/agentClient';
+import type { ApiKeyEngine, UserMessageIndexEntry } from './effect/agentClient';
 import { CommentsListModal } from '@cockpit/feature-comments';
 import { useTranslation } from 'react-i18next';
 
 // Migrated from src/components/project/Chat.tsx.
 
 const HISTORY_RECONCILE_TURNS = 10;
+
+// Frames a user-message jump waits for its target bubble after paging in the
+// turns around it. requestAnimationFrame runs after the commit's layout effects,
+// so the first frame that renders the target is the first frame that can scroll
+// to it — the budget only has to cover how long React takes, and overshooting
+// costs nothing since the loop exits on the first hit.
+const JUMP_RENDER_FRAMES = 30;
+
 
 interface ChatProps {
   tabId?: string; // Tab ID, used to register with ChatContext
@@ -208,6 +216,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     isLoadingMore,
     hasMoreHistory,
     loadMoreHistory,
+    ensureTurnLoaded,
     loadHistoryByCwdAndSessionId,
     loadedSessionId,
     loadedEngine,
@@ -603,6 +612,28 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     setIsUserMessagesOpen(true);
   }, []);
 
+  // `messages` only holds the paged-in tail, while the user-message modal lists the
+  // whole session — so a row may name a message with no DOM node yet. Page its turn
+  // in first, then jump. Read through a ref: the callback is handed to a modal and
+  // must not take a new identity on every streamed token.
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+
+  const handleJumpToUserMessage = useCallback(async (entry: UserMessageIndexEntry) => {
+    if (messagesRef.current.some((m) => m.id === entry.id)) {
+      messageListRef.current?.scrollToMessage(entry.id);
+      return;
+    }
+    await ensureTurnLoaded(entry.turnIndex);
+    // The bubble exists only once React has committed the turns just loaded, and
+    // that commit is not guaranteed to have happened by the time this promise
+    // continuation runs. Retry per frame until it lands.
+    for (let attempt = 0; attempt < JUMP_RENDER_FRAMES; attempt++) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      if (messageListRef.current?.scrollToMessage(entry.id)) return;
+    }
+  }, [ensureTurnLoaded]);
+
   const handleCreateScheduledTask = useMemo(() => {
     if (!onCreateScheduledTask || !initialCwd || !tabId) return undefined;
     return (params: { message: string; taskFile?: string; type: 'once' | 'interval' | 'cron'; delayMinutes?: number; intervalMinutes?: number; activeFrom?: string; activeTo?: string; cron?: string }) => {
@@ -846,10 +877,9 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       <UserMessagesModal
         isOpen={isUserMessagesOpen}
         onClose={() => setIsUserMessagesOpen(false)}
-        messages={messages}
-        onSelectMessage={(messageId) => {
-          messageListRef.current?.scrollToMessage(messageId);
-        }}
+        cwd={initialCwd}
+        sessionId={loadedSessionId ?? sessionId}
+        onSelectMessage={handleJumpToUserMessage}
       />
     </div>
     </TaskStoreContext.Provider>

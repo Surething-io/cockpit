@@ -1170,7 +1170,12 @@
   },
   "userMessages": {
     "title": "User Messages",
-    "noMessages": "No user messages"
+    "noMessages": "No user messages",
+    "searchPlaceholder": "Search user messages…",
+    "noResults": "No matching messages",
+    "loadFailed": "Failed to load",
+    "count": "{{shown}} / {{total}}",
+    "jumping": "Loading the turns around this message…"
   },
   "shortIdBadge": {
     "clickToDisconnect": "Click to disconnect",

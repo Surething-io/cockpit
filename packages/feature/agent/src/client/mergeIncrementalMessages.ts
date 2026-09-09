@@ -71,3 +71,35 @@ export function mergeIncrementalMessages(
     ...newMessages.slice(diffIndex),
   ];
 }
+
+
+// ============================================
+// Jump-window merge
+//
+// A jump window is turns [target, end] — fetched when the user picks a message
+// from the user-message modal that pagination has not loaded. It always runs to
+// the disk tail, so every rendered message AFTER the last one the window
+// contains is a bubble that is not on disk yet (the reply currently streaming).
+// Replacing `messages` wholesale would erase it mid-render.
+//
+// No-overlap is NOT treated as "prev must be all live". That case is
+// unreachable on the real path — the jump target came from the on-disk index,
+// so the window contains it, so any prev from the same session overlaps — which
+// leaves only one way to observe it: prev belongs to a DIFFERENT session
+// (loaded while the request was in flight). Splicing there would render two
+// sessions' messages as one conversation, so this drops the tail instead.
+// The caller still guards the session id; this is the second lock, not the first.
+// ============================================
+export function mergeJumpWindow(
+  prevMessages: ChatMessage[],
+  windowMessages: ChatMessage[]
+): ChatMessage[] {
+  if (windowMessages.length === 0) return prevMessages;
+
+  const windowIds = new Set(windowMessages.map((m) => m.id));
+  const lastOnDisk = prevMessages.map((m) => windowIds.has(m.id)).lastIndexOf(true);
+  if (lastOnDisk < 0) return windowMessages;
+
+  const liveTail = prevMessages.slice(lastOnDisk + 1);
+  return liveTail.length === 0 ? windowMessages : [...windowMessages, ...liveTail];
+}

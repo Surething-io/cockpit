@@ -20,10 +20,15 @@ interface ChatContextType {
   registerChat: (sendFn: (message: string) => void, tabId: string) => void;
   // Unregister a Chat
   unregisterChat: (tabId: string) => void;
-  // Set the currently active Tab
+  // Set the tab that externally-routed messages go to (the FOCUSED pane in
+  // side-by-side; the only visible tab otherwise).
   setActiveTab: (tabId: string) => void;
-  // Set loading state
-  setIsLoading: (loading: boolean) => void;
+  // Report one tab's loading state. Keyed by tabId because side-by-side puts
+  // two live Chats on screen at once: a single boolean made them race, and
+  // whichever rendered last won, so a streaming pane could be reported idle by
+  // its neighbour. `isLoading` above is the OR across reporters — "is any
+  // visible chat busy", which is the question AIBridge actually asks.
+  setChatLoading: (tabId: string, loading: boolean) => void;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -33,8 +38,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const chatSendersRef = useRef<Map<string, (message: string) => void>>(new Map());
   // Currently active Tab ID
   const activeTabIdRef = useRef<string | null>(null);
-  // Whether currently loading (needs to trigger UI updates, so use state)
-  const [isLoading, setIsLoading] = useState(false);
+  // Per-tab loading, reduced to one boolean for consumers. State (not a ref)
+  // because it drives UI.
+  const [loadingTabIds, setLoadingTabIds] = useState<ReadonlySet<string>>(() => new Set());
+  const isLoading = loadingTabIds.size > 0;
+
+  const setChatLoading = useCallback((tabId: string, loading: boolean) => {
+    setLoadingTabIds((prev) => {
+      if (loading === prev.has(tabId)) return prev;
+      const next = new Set(prev);
+      if (loading) next.add(tabId); else next.delete(tabId);
+      return next;
+    });
+  }, []);
 
   // Register Chat's sendMessage method (does not trigger re-render)
   const registerChat = useCallback((sendFn: (message: string) => void, tabId: string) => {
@@ -44,6 +60,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // Unregister Chat (does not trigger re-render)
   const unregisterChat = useCallback((tabId: string) => {
     chatSendersRef.current.delete(tabId);
+    // A tab that goes away while streaming would otherwise pin isLoading true
+    // forever — there is no longer anyone to report it false.
+    setLoadingTabIds((prev) => {
+      if (!prev.has(tabId)) return prev;
+      const next = new Set(prev);
+      next.delete(tabId);
+      return next;
+    });
   }, []);
 
   // Set the currently active Tab (does not trigger re-render)
@@ -73,8 +97,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     registerChat,
     unregisterChat,
     setActiveTab,
-    setIsLoading,
-  }), [sendMessage, isLoading, registerChat, unregisterChat, setActiveTab]);
+    setChatLoading,
+  }), [sendMessage, isLoading, registerChat, unregisterChat, setActiveTab, setChatLoading]);
 
   // Bridge the chat sender + loading flag through shared-ui's AIBridge so
   // non-chat features can reach the active chat without depending on

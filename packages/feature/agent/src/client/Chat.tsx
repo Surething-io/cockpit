@@ -13,7 +13,9 @@ import {
 import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
 import { ChatHeader } from './ChatHeader';
+import { createPortal } from 'react-dom';
 import { TokenUsageBar } from './TokenUsageBar';
+import { useComposerSlot } from './ComposerSlot';
 import { UserMessagesModal } from './UserMessagesModal';
 import { useChatContextOptional } from './ChatContext';
 import { useChatHistory } from './useChatHistory';
@@ -86,6 +88,9 @@ interface ChatProps {
   hideHeader?: boolean;
   hideSidebar?: boolean;
   isActive?: boolean; // Whether the tab is active (used to handle scroll issues for hidden tabs)
+  /** Whether this pane owns externally-routed messages. Defaults to isActive;
+   *  only side-by-side ever passes it explicitly, to break the tie. */
+  isFocused?: boolean;
   // Forced history refresh: the host bumps `nonce` when the user explicitly jumps to
   // `sessionId` (scheduled-tasks panel / recent / pinned sessions). Needed because jumping
   // to a tab that is ALREADY active produces no isActive rising edge, so messages appended
@@ -120,8 +125,13 @@ interface ChatProps {
   onOpenSettings?: () => void; // Host-handled: open the app settings modal
 }
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeContextWindow, onClaudeContextWindowChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeContextWindow, onClaudeContextWindowChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
+  const composerSlot = useComposerSlot();
+  // Owned here, not in ChatInput: the composer is portalled when this pane is
+  // focused, and a portal container change remounts. Chat is what survives it.
+  const [draft, setDraft] = useState('');
+  const [draftImages, setDraftImages] = useState<ImageInfo[]>([]);
   const chatContext = useChatContextOptional();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -465,13 +475,19 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     prevIsLoadingRef.current = isLoading;
   }, [isLoading, onLoadingChange, initialCwd]);
 
-  // Sync loading state to ChatContext: only sync for the active tab
-  // isActive change on tab switch also triggers this, ensuring the new active tab overrides the old value
+  // Report this tab's loading state to ChatContext, keyed by tabId.
+  //
+  // Still gated on isActive, so background tabs stay out of the global answer
+  // exactly as before. What changed is that "active" is no longer exclusive:
+  // side-by-side has two active panes, and the context ORs their reports
+  // instead of letting the last writer win. Going inactive retracts the report
+  // rather than overwriting the other pane's.
   useEffect(() => {
-    if (isActive) {
-      chatContext?.setIsLoading(isLoading);
-    }
-  }, [isLoading, isActive, chatContext]);
+    if (!tabId || !chatContext) return;
+    chatContext.setChatLoading(tabId, isActive && isLoading);
+    if (!isActive) return;
+    return () => { chatContext.setChatLoading(tabId, false); };
+  }, [tabId, isLoading, isActive, chatContext]);
 
   // Register with ChatContext (used to send messages from CodeViewer)
   useEffect(() => {
@@ -486,12 +502,16 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     };
   }, [tabId, chatContext]);
 
-  // Notify ChatContext when tab becomes active
+  // Claim the destination for externally-routed messages (CodeViewer "send to
+  // AI", comments, …). Gated on isFocused, not isActive: in side-by-side both
+  // panes are active, but only one can be the target, and two claimants would
+  // hand the route to whichever effect ran last. isFocused defaults to isActive,
+  // so the single-pane case is unchanged.
   useEffect(() => {
-    if (tabId && isActive && chatContext) {
+    if (tabId && isActive && isFocused && chatContext) {
       chatContext.setActiveTab(tabId);
     }
-  }, [tabId, isActive, chatContext]);
+  }, [tabId, isActive, isFocused, chatContext]);
 
   // Update handleSendRef for ChatContext to call
   useEffect(() => {
@@ -772,20 +792,33 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
         {/* Token Usage Display */}
         {tokenUsage && <TokenUsageBar tokenUsage={tokenUsage} rateLimitInfo={rateLimitInfo} />}
 
-        {/* Input */}
-        <ChatInput
-          onSend={wrappedHandleSend}
-          // #10: disable while THIS tab streams, or while the session is running elsewhere
-          // (viewer) — one active run per session; a concurrent send would 409.
-          disabled={isLoading || liveRunning}
-          cwd={initialCwd}
-          engine={engine}
-          onShowGitStatus={onShowGitStatus}
-          onShowComments={initialCwd ? handleShowComments : undefined}
-          onShowUserMessages={handleShowUserMessages}
-          onOpenNote={onOpenNote}
-          onCreateScheduledTask={handleCreateScheduledTask}
-        />
+        {/* Input. In side-by-side the focused pane portals its composer into a
+            slot below BOTH panes, so one composer spans the panel and neither
+            pane carries its own — which is what keeps their token bars on the
+            same line. The unfocused pane renders none at all; that is safe
+            because the draft lives on Chat, not inside ChatInput. */}
+        {composerSlot && !isFocused ? null : (() => {
+          const composer = (
+            <ChatInput
+              onSend={wrappedHandleSend}
+              // #10: disable while THIS tab streams, or while the session is running elsewhere
+              // (viewer) — one active run per session; a concurrent send would 409.
+              disabled={isLoading || liveRunning}
+              cwd={initialCwd}
+              engine={engine}
+              onShowGitStatus={onShowGitStatus}
+              onShowComments={initialCwd ? handleShowComments : undefined}
+              onShowUserMessages={handleShowUserMessages}
+              onOpenNote={onOpenNote}
+              onCreateScheduledTask={handleCreateScheduledTask}
+              draft={draft}
+              setDraft={setDraft}
+              draftImages={draftImages}
+              setDraftImages={setDraftImages}
+            />
+          );
+          return composerSlot ? createPortal(composer, composerSlot) : composer;
+        })()}
 
       </div>
 

@@ -263,7 +263,7 @@ function createMarkdownComponents(
 
       if (!isPureText) {
         return (
-          <code className="px-1.5 py-0.5 mx-0.5 rounded bg-accent text-sm font-mono" {...props}>
+          <code className="px-1.5 py-0.5 mx-0.5 rounded bg-accent font-mono" {...props}>
             {children}
           </code>
         );
@@ -274,7 +274,7 @@ function createMarkdownComponents(
 
       if (isInline) {
         return (
-          <code className="px-1.5 py-0.5 mx-0.5 rounded bg-accent text-sm font-mono" {...props}>
+          <code className="px-1.5 py-0.5 mx-0.5 rounded bg-accent font-mono" {...props}>
             {children}
           </code>
         );
@@ -297,7 +297,8 @@ function createMarkdownComponents(
           style={isDark ? oneDark : oneLight}
           language={language}
           PreTag="div"
-          customStyle={{ margin: '0.75rem 0', borderRadius: '0.375rem', fontSize: '0.875rem' }}
+          className="md-figure"
+          customStyle={{ margin: '1.35em 0', borderRadius: '0.375rem', fontSize: '0.92em' }}
           wrapLines
           lineProps={() => {
             const sourceLine = codeStartLine + lineCounter;
@@ -315,15 +316,15 @@ function createMarkdownComponents(
     },
     // All custom components below destructure node (react-markdown passNode) and spread ...rest
     // so that data-source-start/end attributes injected by rehypeSourceLines are forwarded to the DOM
-    p: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'p'> & ExtraProps) => <p className="mb-3 last:mb-0" {...rest}>{children}</p>,
-    h1: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'h1'> & ExtraProps) => <h1 className="text-xl font-bold mb-3 mt-4 first:mt-0" {...rest}>{children}</h1>,
-    h2: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'h2'> & ExtraProps) => <h2 className="text-lg font-bold mb-2 mt-3 first:mt-0" {...rest}>{children}</h2>,
-    h3: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'h3'> & ExtraProps) => <h3 className="text-base font-bold mb-2 mt-3 first:mt-0" {...rest}>{children}</h3>,
-    ul: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'ul'> & ExtraProps) => <ul className="list-disc list-inside mb-3 space-y-1" {...rest}>{children}</ul>,
-    ol: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'ol'> & ExtraProps) => <ol className="list-decimal list-inside mb-3 space-y-1" {...rest}>{children}</ol>,
-    li: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'li'> & ExtraProps) => <li className="leading-relaxed" {...rest}>{children}</li>,
+    p: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'p'> & ExtraProps) => <p {...rest}>{children}</p>,
+    h1: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'h1'> & ExtraProps) => <h1 {...rest}>{children}</h1>,
+    h2: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'h2'> & ExtraProps) => <h2 {...rest}>{children}</h2>,
+    h3: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'h3'> & ExtraProps) => <h3 {...rest}>{children}</h3>,
+    ul: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'ul'> & ExtraProps) => <ul className="list-disc" {...rest}>{children}</ul>,
+    ol: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'ol'> & ExtraProps) => <ol className="list-decimal" {...rest}>{children}</ol>,
+    li: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'li'> & ExtraProps) => <li {...rest}>{children}</li>,
     blockquote: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'blockquote'> & ExtraProps) => (
-      <blockquote className="border-l-4 border-border pl-4 my-3 italic text-muted-foreground" {...rest}>{children}</blockquote>
+      <blockquote className="border-l-2 border-border pl-4 text-muted-foreground" {...rest}>{children}</blockquote>
     ),
     a: ({ href, children, node: _node, ...rest }: ComponentPropsWithoutRef<'a'> & ExtraProps) => (
       <a
@@ -350,7 +351,7 @@ function createMarkdownComponents(
       >{children}</a>
     ),
     table: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'table'> & ExtraProps) => (
-      <div className="overflow-x-auto my-3" {...rest}><table className="min-w-full border border-border">{children}</table></div>
+      <div className="md-figure overflow-x-auto" {...rest}><table className="min-w-full border border-border">{children}</table></div>
     ),
     thead: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'thead'> & ExtraProps) => <thead className="bg-accent" {...rest}>{children}</thead>,
     th: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'th'> & ExtraProps) => (
@@ -359,7 +360,7 @@ function createMarkdownComponents(
     td: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'td'> & ExtraProps) => (
       <td className="px-4 py-2 border-b border-border" {...rest}>{children}</td>
     ),
-    hr: ({ node: _node, ...rest }: ComponentPropsWithoutRef<'hr'> & ExtraProps) => <hr className="my-4 border-border" {...rest} />,
+    hr: ({ node: _node, ...rest }: ComponentPropsWithoutRef<'hr'> & ExtraProps) => <hr className="border-border" {...rest} />,
     img: ({ src, alt, node: _node, height, width, style, ...props }: ComponentPropsWithoutRef<'img'> & ExtraProps) => {
       // Document-relative src (`![](img/a.png)`): resolve against the file's own
       // directory. Markdown is rendered detached from its address, so without a
@@ -424,7 +425,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
 
   // Use simplified style for user messages
   if (isUser) {
-    return <div className="whitespace-pre-wrap break-words">{content}</div>;
+    return <div className="reading-measure whitespace-pre-wrap break-words">{content}</div>;
   }
 
   // While streaming: render completed lines as Markdown, last line as plain text (avoid frequent re-parsing)
@@ -433,7 +434,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
 
     // No newline — render everything as plain text
     if (lastNewlineIndex === -1) {
-      return <div className="whitespace-pre-wrap break-words">{content}</div>;
+      return <div className="reading-measure whitespace-pre-wrap break-words">{content}</div>;
     }
 
     // Split into completed lines and current line
@@ -454,7 +455,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, isUser
         </ReactMarkdown>
         {/* Current line being typed — plain text */}
         {currentLine && (
-          <span className="whitespace-pre-wrap">{currentLine}</span>
+          <span className="md-tail whitespace-pre-wrap">{currentLine}</span>
         )}
       </div>
     );

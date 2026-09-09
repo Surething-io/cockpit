@@ -30,12 +30,27 @@ interface ChatInputProps {
     activeTo?: string;
     cron?: string;
   }) => void;
+  /** Draft text and pending images, optionally owned by the parent.
+   *
+   *  Side-by-side portals the focused pane's composer into a shared slot, and a
+   *  portal that changes container is an unmount + remount as far as React is
+   *  concerned — local draft state would be destroyed on every focus change.
+   *  Chat outlives that, so it holds these instead. The setters are passed as
+   *  Dispatch, not as value+onChange, because several call sites here use the
+   *  functional form. Omitted (any standalone use) falls back to local state. */
+  draft?: string;
+  setDraft?: React.Dispatch<React.SetStateAction<string>>;
+  draftImages?: ImageInfo[];
+  setDraftImages?: React.Dispatch<React.SetStateAction<ImageInfo[]>>;
 }
 
-export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine: _engine, onShowGitStatus, onShowComments, onShowUserMessages, onOpenNote, onCreateScheduledTask }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine: _engine, onShowGitStatus, onShowComments, onShowUserMessages, onOpenNote, onCreateScheduledTask, draft, setDraft, draftImages, setDraftImages }: ChatInputProps) {
   const { t } = useTranslation();
-  const [input, setInput] = useState('');
-  const [images, setImages] = useState<ImageInfo[]>([]);
+  const localInput = useState('');
+  const localImages = useState<ImageInfo[]>([]);
+  const [input, setInput] = draft !== undefined && setDraft ? ([draft, setDraft] as const) : localInput;
+  const [images, setImages] =
+    draftImages !== undefined && setDraftImages ? ([draftImages, setDraftImages] as const) : localImages;
   const [showScheduler, setShowScheduler] = useState(false);
   const [showQuickPrompts, setShowQuickPrompts] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);

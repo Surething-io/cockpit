@@ -288,7 +288,7 @@
     "messagePlaceholder": "Enter message to send...",
     "taskFile": "Task File",
     "taskFilePlaceholder": "/Users/you/project/tasks/daily-report.md",
-    "taskFileHint": "Absolute path. On each fire the agent reads this file first and acts on what it describes \u2014 edits take effect on the next run.",
+    "taskFileHint": "Absolute path. On each fire the agent reads this file first and acts on what it describes — edits take effect on the next run.",
     "taskFilePromptHeader": "Read this task file first, then act accordingly:",
     "type": "Type",
     "once": "Once",
@@ -588,7 +588,10 @@
     "planTitle": "Plan (awaiting your review)",
     "approvePlan": "Approve & run",
     "planApproveHint": "No approval dialog here — click to exit plan mode and execute",
-    "approvePlanPrompt": "Approved — proceed with the plan above."
+    "approvePlanPrompt": "Approved — proceed with the plan above.",
+    "closePane": "Close this pane",
+    "singlePane": "Single pane",
+    "splitPane": "Split into two panes"
   },
   "console": {
     "enterCommandOrUrl": "Enter a command or URL to start",

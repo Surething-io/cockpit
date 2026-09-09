@@ -442,9 +442,36 @@ const TextPartRow = memo(function TextPartRow({
   );
 });
 
+// Message timestamps read "8月12日 23:48" in Chinese and "Aug 12, 23:48" in
+// English. Both come out of the SAME option set — the locale supplies its own
+// date convention, which is why this is Intl rather than a hand-assembled
+// `MM-DD HH:mm` that was Chinese and English at once by being neither.
+//
+// h23 is pinned on purpose: en-US would otherwise render "11:48 PM", and these
+// stamps are read as a log of when turns happened, where a 24h clock sorts and
+// scans without the reader parsing an AM/PM suffix.
+//
+// Cached per locale because constructing a DateTimeFormat is the expensive half
+// of formatting, and a long transcript formats one per bubble.
+const messageTimeFormatters = new Map<string, Intl.DateTimeFormat>();
+function messageTimeFormatter(locale: string): Intl.DateTimeFormat {
+  let fmt = messageTimeFormatters.get(locale);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat(locale, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    });
+    messageTimeFormatters.set(locale, fmt);
+  }
+  return fmt;
+}
+
 // Use memo optimization — only re-render when message or cwd changes
 export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork, forkSupported = true, onApprovePlan, isLoading, onContentSearch, onShowFileDiff, onOpenFileLink, disableOverlays = false }: MessageBubbleProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [previewImage, setPreviewImage] = useState<MessageImage | null>(null);
   // Single-tool case: default expanded so the content stays visible (we only need the header for special entries).
   // Multi-tool case: default collapsed (preserves existing behavior).
@@ -666,19 +693,12 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     }
   };
 
-  // Format time as: 01-15 14:30
-  const formatTime = (ts?: string) => {
-    if (!ts) return '';
-    const d = new Date(ts);
+  const timeStr = useMemo(() => {
+    if (!message.timestamp) return '';
+    const d = new Date(message.timestamp);
     if (isNaN(d.getTime())) return '';
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const hours = String(d.getHours()).padStart(2, '0');
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-    return `${month}-${day} ${hours}:${minutes}`;
-  };
-
-  const timeStr = formatTime(message.timestamp);
+    return messageTimeFormatter(i18n.language).format(d);
+  }, [message.timestamp, i18n.language]);
 
   // System-event row (task-notification / meta): a muted one-line bar, not a
   // conversation bubble. Kept after all hooks so hook order stays stable.
@@ -746,94 +766,74 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   return (
     <>
       <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} mb-4 group`} data-role={message.role}>
-        {/* Message timestamp — shown on hover */}
-        {timeStr && (
-          <span className="text-[11px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity mb-0.5 px-1">
-            {timeStr}
-          </span>
-        )}
-        {/* items-start is load-bearing: the hover action buttons flanking the bubble are a
-            `flex flex-col` of up to three icons (~84px tall) and, being `opacity-0` rather
-            than unmounted, they occupy that height at ALL times. Without it the bubble
-            defaults to `align-self: stretch` and is dragged to the buttons' height, so a
-            short message ("hi") renders as a tall pill with its text pinned to the top and
-            dead space below. Both sides have such a column, so this fixes user and
-            assistant bubbles alike. */}
-        <div className={`flex items-start ${isUser ? 'justify-end' : 'justify-start'} w-full`}>
-        {/* Action buttons for user messages — on the left */}
-        {isUser && (
-          <div className="self-start mt-2 mr-1 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            {message.content && (
-              <button
-                onClick={handleCopy}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover"
-                title={t('chat.copyMessage')}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              </button>
-            )}
-            {canFork && (
-              <button
-                onClick={handleFork}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover"
-                title={t('chat.forkSession')}
-              >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  {/* Git fork icon */}
-                  <circle cx="12" cy="18" r="3" />
-                  <circle cx="6" cy="6" r="3" />
-                  <circle cx="18" cy="6" r="3" />
-                  <path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9" />
-                  <path d="M12 12v3" />
-                </svg>
-              </button>
-            )}
-            {canFork && (
-              <button
-                onClick={handleExcerpt}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover"
-                title={t('chat.excerptTurn')}
-              >
-                <Scissors className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        )}
-        {/* One skin for both sides: --muted, the QUIETEST step of the fill
-         * ladder, and no border. Enough to seat a turn as its own shape
-         * without becoming a surface that everything inside has to climb out
-         * of. Side is carried by alignment and the flipped corner alone — the
-         * user bubble used to add a brand-coloured border on top of a louder
-         * fill, which read as a highlighted/selected state rather than as
-         * "this one is mine".
+        {/* Timestamp and the hover actions both live BELOW the bubble now (see
+            the footer at the end of this block), so nothing hangs off the side
+            of this row any more.
+
+            items-start stays for the half of its job that was never about the
+            rails: without it the bubble takes `align-self: stretch` and a
+            one-word message renders as a tall pill with dead space below. */}
+        <div className={`relative flex items-start ${isUser ? 'justify-end' : 'justify-start'} w-full`}>
+        {/* Only the USER turn wears a skin: --muted, the quietest step of the
+         * fill ladder, no border, with the flipped corner marking the side. The
+         * assistant turn has no fill at all and sits straight on the page.
          *
-         * That choice is what sets the fills nested inside it. The tool-call
-         * group and its rows carry no fill at all, and the code blocks inside
-         * an expanded row take --accent — one step up, so they still read as a
-         * distinct kind of content against a --muted turn rather than
-         * disappearing into it. Two layers total, one step apart.
+         * The two are not symmetric because they are not the same kind of
+         * thing. A user turn is a short utterance and reads as an object — the
+         * fill is what gives it an edge. An assistant turn is a document:
+         * prose, code blocks, tables, a tool-call list, each wanting a surface
+         * of its own. Wrapping all of that in a container fill makes every one
+         * of them a NESTED fill, and since the fills are alpha they compound.
          *
-         * The loud skin is what had to go, not the box. An assistant turn carries
-         * markdown, code blocks and a tool-call list, and each of those wants a
-         * surface of its own; a fill on the turn itself made every one of them
-         * a NESTED fill. Because the fills are alpha they compound, and with
-         * --accent on the turn plus --secondary on the group, the row and the
-         * code block, a code block inside an expanded tool row bottomed out at
+         * That compounding is measured, not theoretical: with --accent on the
+         * turn plus --secondary on the group, the row and the code block, a
+         * code block inside an expanded tool row bottomed out at
          * rgb(179,179,198) on a white page — 2.06:1 against the page it was
-         * meant to sit quietly on. Unfilling the group and the rows and
-         * dropping the turn to --muted lands the same code block on
-         * rgb(231,231,236), 1.23:1.
+         * meant to sit quietly on. Dropping the turn to --muted lifted it to
+         * rgb(231,231,236), 1.23:1; removing the turn fill altogether takes the
+         * nesting out of the picture entirely.
          *
-         * max-w-[80%] is the width mechanism on purpose: a fixed reading
-         * column (52rem, centered) was tried here and reverted, and the two do
-         * not compose — a percentage inside a fixed column just multiplies
-         * down to a narrower measure than either was aiming for.
+         * So the ladder inside an assistant turn is now one step deep: the
+         * tool-call group and its rows carry no fill, and the code blocks
+         * inside an expanded row take --accent, which now reads against the
+         * page rather than against a fill it has to climb out of.
+         *
+         * Width is three bounds at three levels, and they live apart on
+         * purpose.
+         *
+         * 1. The COLUMN (--chat-column, on the message list) carries the
+         *    absolute bound. Alignment is what marks who is speaking, so a
+         *    bound on the turn alone makes each side hug its own edge of a
+         *    wide panel and opens a canyon down the middle.
+         * 2. The TURN is this box, and it is not the text: it also holds
+         *    images, the todo card and the tool-call group. The assistant turn
+         *    always spans the column, and that is safe precisely because
+         *    --chat-column is derived from the measure: full width and full of
+         *    text are the same width, so there is no trailing gap to explain.
+         *    The user turn keeps a percentage, which is what carries the "this
+         *    one is mine" asymmetry now that the two sides differ in width.
+         *    Its 52rem companion bound is gone — the column is already
+         *    narrower than that, so it could only ever be dead code.
+         * 3. The MEASURE is on `.markdown-body` in globals.css, where it
+         *    reaches the four other prose surfaces too. Prose stops at 43rem
+         *    inside a full-width turn; the slack lands on the right.
+         *
+         * --reading-gutter-max is zeroed here (see globals.css): a turn is a
+         * bubble, not a documentation pane, so its text starts at the content
+         * edge instead of being indented by a centring gutter.
+         *
+         * An earlier attempt put a fixed reading column (52rem, centered) on
+         * THIS element and was reverted, with the note that the two "do not
+         * compose — a percentage inside a fixed column just multiplies down".
+         * That was true of the arrangement, not of the idea: both numbers were
+         * being asked to bound prose and machinery at once, so whichever won
+         * was wrong for the other. Split by level and they compose — the turn
+         * shrink-wraps its widest child, and prose inside it stops at the
+         * measure regardless.
          */}
         <div
-          className={`max-w-[80%] px-4 py-2 rounded-2xl bg-muted text-foreground ${
-            isUser ? 'rounded-br-md' : 'rounded-bl-md'
+          className={`chat-turn px-4 py-2 text-foreground ${
+            isUser ? 'max-w-[80%] bg-muted rounded-2xl rounded-br-md' : 'w-full'
           }`}
         >
           {/* Image content */}
@@ -1113,9 +1113,36 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
             </div>
           )}
         </div>
-        {/* Action buttons for AI messages — on the right */}
-        {!isUser && (
-          <div className="self-start mt-2 ml-1 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        </div>
+        {/* Timestamp + hover actions, one row under the bubble.
+
+            They used to be two separate things — the time above the turn, the
+            buttons in a vertical rail hanging off the row's right edge — and
+            the rail could not be mirrored for the user turn: the row is w-full
+            while the user bubble is right-aligned inside it, so anchoring the
+            rail to the other side threw the buttons half a column away from the
+            bubble they act on. Below the bubble that problem disappears,
+            because this row is laid out by the column's own alignment
+            (items-end / items-start) and therefore always ends up flush with
+            the bubble's edge, whichever side that is.
+
+            The two sides are the SAME children in opposite order — the user
+            turn just reverses the row. Read outward from the bubble's aligned
+            edge, both sides give copy → fork → excerpt → time; on screen that
+            reads time-first on the right and time-last on the left, which is
+            what the surrounding chat UIs do.
+
+            In flow, not absolute: it costs every message ~24px of height even
+            while invisible (`opacity-0`, not unmounted), and that is the point —
+            an overlay would appear on hover on top of the next message's first
+            line. The time row above the bubble was already paying most of this
+            height, so the net cost is a few pixels. */}
+        {(timeStr || message.content || canFork) && (
+          <div
+            className={`flex items-center gap-1 mt-0.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity ${
+              isUser ? 'flex-row-reverse' : ''
+            }`}
+          >
             {message.content && (
               <button
                 onClick={handleCopy}
@@ -1134,6 +1161,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                 title={t('chat.forkSession')}
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  {/* Git fork icon */}
                   <circle cx="12" cy="18" r="3" />
                   <circle cx="6" cy="6" r="3" />
                   <circle cx="18" cy="6" r="3" />
@@ -1151,9 +1179,11 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                 <Scissors className="w-4 h-4" />
               </button>
             )}
+            {timeStr && (
+              <span className="text-[11px] text-muted-foreground mx-1">{timeStr}</span>
+            )}
           </div>
         )}
-        </div>
       </div>
 
       {/* Image preview modal */}

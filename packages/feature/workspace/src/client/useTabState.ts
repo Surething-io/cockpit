@@ -90,7 +90,45 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     sessionId: initialSessionId,
     title: initialSessionId ? `Session ${initialSessionId.slice(0, 6)}...` : 'New Chat',
   }]);
-  const [activeTabId, setActiveTabId] = useState<string>(tabs[0]?.id ?? '');
+
+  // Panes. There are one or two slots that can show a chat, and one index
+  // saying which of them is active.
+  //
+  // `activeTabId` is DERIVED from those two rather than being state of its own,
+  // and that is the whole design. Held separately it means both "the left
+  // pane's tab" and "the tab the app is on", so every consumer downstream has
+  // to ask which one is meant — that ambiguity is what grew a parallel routing
+  // helper, a separate id for the tab bar to highlight, and a bespoke pane
+  // check. Derived, the active pane simply IS the old single-pane mode, and
+  // every existing setActiveTabId call site keeps working unchanged.
+  const [paneTabIds, setPaneTabIds] = useState<string[]>(() => [tabs[0]?.id ?? '']);
+  const [activePane, setActivePane] = useState(0);
+  const activePaneRef = useRef(activePane);
+  useEffect(() => { activePaneRef.current = activePane; }, [activePane]);
+  const paneTabIdsRef = useRef(paneTabIds);
+  useEffect(() => { paneTabIdsRef.current = paneTabIds; }, [paneTabIds]);
+
+  const activeTabId = paneTabIds[activePane] ?? paneTabIds[0] ?? '';
+  const sideBySide = paneTabIds.length > 1;
+
+  // "Show this tab" for every caller there has ever been: restore, new tab,
+  // history pick, externally opened session, tab click. It lands in the ACTIVE
+  // pane — except when the tab is already showing in the other one, where the
+  // only thing actually wrong is which pane has focus, so focus moves instead
+  // and nothing on screen is rearranged.
+  const setActiveTabId = useCallback((tabId: string) => {
+    setPaneTabIds((prev) => {
+      const at = prev.indexOf(tabId);
+      if (at !== -1) {
+        if (at !== activePaneRef.current) setActivePane(at);
+        return prev;
+      }
+      const next = [...prev];
+      next[activePaneRef.current] = tabId;
+      return next;
+    });
+  }, []);
+
 
   // Unread tabs (session completed but not yet viewed)
   const [unreadTabs, setUnreadTabs] = useState<Set<string>>(new Set());
@@ -100,6 +138,10 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
   const activeTabIdRef = useRef(activeTabId);
   useEffect(() => { activeTabIdRef.current = activeTabId; }, [activeTabId]);
+  // switchTab reads all three to decide which pane a click lands in; via refs so
+  // its identity stays stable for the memoised TabBar.
+
+
   // Sessions explicitly closed in THIS tab since the last save. The next save sends them as
   // closedSessionIds so the server removes them from the shared union (the only removal path).
   const pendingClosedRef = useRef<Set<string>>(new Set());
@@ -516,28 +558,38 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     // broadcast tells other browser tabs to remove exactly this session).
     const closing = tabsRef.current.find((t) => t.id === tabId);
     if (closing?.sessionId) pendingClosedRef.current.add(closing.sessionId);
-    setTabs((prev) => {
-      const newTabs = prev.filter((t) => t.id !== tabId);
-      if (tabId === activeTabId && newTabs.length > 0) {
-        setActiveTabId(newTabs[newTabs.length - 1].id);
-      }
-      if (newTabs.length === 0) {
-        const newTab: TabInfo = {
-          id: `tab-${Date.now()}`,
-          cwd: initialCwd,
-          title: 'New Chat',
-        };
-        setActiveTabId(newTab.id);
-        return [newTab];
-      }
-      return newTabs;
-    });
-  }, [activeTabId, initialCwd]);
+
+    // The pane invariant lives here and nowhere else: every visible pane holds
+    // a real tab, and no two panes hold the same one. A pane left empty has no
+    // Chat, so no composer, so no split toggle — it becomes a pane you cannot
+    // close. Two panes sharing a tab is worse: one Chat driven by two mounts.
+    const remaining = tabsRef.current.filter((t) => t.id !== tabId);
+    const created: TabInfo[] = [];
+    const blank = (): TabInfo => {
+      const t: TabInfo = { id: `tab-${Date.now()}-${created.length}`, cwd: initialCwd, title: 'New Chat' };
+      created.push(t);
+      return t;
+    };
+
+    const panes = [...paneTabIdsRef.current];
+    for (let i = 0; i < panes.length; i++) {
+      if (panes[i] !== tabId) continue;
+      const takenByOthers = new Set(panes.filter((_, j) => j !== i));
+      const successor = [...remaining].reverse().find((t) => !takenByOthers.has(t.id));
+      panes[i] = successor ? successor.id : blank().id;
+    }
+
+    setTabs([...remaining, ...created]);
+    setPaneTabIds(panes);
+  }, [initialCwd]);
 
   // Close every tab at once, then reset to a single blank tab. Mirrors closeTab's
   // shared-union bookkeeping: record all sessionIds so the next save removes them
   // from the shared set and broadcasts the removals to other browser tabs.
   const closeAllTabs = useCallback(() => {
+    // Collapse to one pane as well: a single surviving blank tab cannot fill
+    // two, and the invariant forbids leaving one of them empty.
+    setActivePane(0);
     tabsRef.current.forEach((t) => {
       if (t.sessionId) pendingClosedRef.current.add(t.sessionId);
     });
@@ -833,6 +885,48 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   }, [activeView, activeTabId, pageVisible, updateSessionStatus]);
 
   // Switch tab and clear unread
+  // One toggle for the whole panel.
+  //
+  // Opening pairs the active tab with the one to its RIGHT, or the one before
+  // it at the end of the bar, or a brand new chat when there is nothing to pair
+  // with. Closing keeps the pane you were looking at, so it is never lossy.
+  const toggleSideBySide = useCallback(() => {
+    const panes = paneTabIdsRef.current;
+    if (panes.length > 1) {
+      setPaneTabIds([panes[activePaneRef.current]]);
+      setActivePane(0);
+      return;
+    }
+    const list = tabsRef.current;
+    const idx = list.findIndex((t) => t.id === panes[0]);
+    const neighbour = list[idx + 1] ?? list[idx - 1];
+    if (neighbour) {
+      setPaneTabIds([panes[0], neighbour.id]);
+      setActivePane(0);
+      return;
+    }
+    const blank: TabInfo = { id: `tab-${Date.now()}`, cwd: initialCwd, title: 'New Chat' };
+    setTabs((prev) => [...prev, blank]);
+    setPaneTabIds([panes[0], blank.id]);
+    setActivePane(1);
+  }, [initialCwd]);
+
+  // Close ONE column of the split: that pane is dropped and the survivor gets
+  // the whole panel back. The tab itself stays open in the bar — this closes a
+  // view, not a session; closing the session is the tab bar's own ✕ (closeTab).
+  // Keeping both is why the pane invariant is untouched here: no pane is left
+  // empty and no tab is left in two panes, because a pane is only ever removed.
+  const closePane = useCallback((pane: number) => {
+    const panes = paneTabIdsRef.current;
+    if (panes.length < 2) return;
+    setPaneTabIds(panes.filter((_, i) => i !== pane));
+    setActivePane(0);
+  }, []);
+
+  const focusPane = useCallback((pane: number) => {
+    setActivePane(pane);
+  }, []);
+
   const switchTab = useCallback((tabId: string) => {
     setActiveTabId(tabId);
     setUnreadTabs(u => {
@@ -891,12 +985,18 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     tabs,
     activeTabId,
     activeTab,
+    sideBySide,
+    paneTabIds,
+    activePane,
     unreadTabs,
     dragTabIndex,
     dragOverTabIndex,
 
     // Tab operations
     addTab,
+    toggleSideBySide,
+    focusPane,
+    closePane,
     closeTab,
     closeAllTabs,
     switchTab,

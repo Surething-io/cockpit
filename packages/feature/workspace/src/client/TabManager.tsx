@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef , useMemo} from 'react';
 import { useTranslation } from 'react-i18next';
-import { ProjectSessionsModal } from '@cockpit/feature-agent';
+import { ProjectSessionsModal, ComposerSlotProvider } from '@cockpit/feature-agent';
 import { FileBrowserModal } from '@cockpit/feature-explorer';
 import { GitWorktreeModal } from '@cockpit/feature-explorer';
 import { ConsoleView, AliasManager } from '@cockpit/feature-console';
@@ -35,16 +35,159 @@ interface TabManagerProps {
   initialView?: ViewType;
 }
 
+/**
+ * Visibility and geometry for one chat tab's pane.
+ *
+ * Single pane: exactly the behaviour that predates side-by-side — the active
+ * tab is `block`, every other mounted tab is `hidden`. Tabs are never
+ * unmounted, here or below; that is a hard invariant of this app (CLAUDE.md),
+ * and side-by-side does not relax it — it only promotes a second tab out of
+ * `hidden`.
+ *
+ * Side by side: the two chosen tabs each take half, laid out in TAB-BAR ORDER
+ * rather than active-then-companion, because the tab bar is the map the user
+ * already has; reordering the panes against it would mean maintaining two
+ * conflicting mental models of "which one is on the left".
+ *
+ * The focused pane is marked with a 2px rule on its top edge. Both panes are
+ * fully live and each carries its own composer, so focus decides exactly one
+ * thing — where an externally-routed message lands (CodeViewer "send to AI",
+ * comments) — and a hairline is proportionate to that. The unfocused pane keeps
+ * a transparent border of the same width so nothing shifts when focus moves.
+ */
+/**
+ * Visibility and geometry for one chat tab's pane.
+ *
+ * `paneTabIds` is the whole answer: a tab is visible iff it is in the list, and
+ * its side is its index. One pane is exactly the old behaviour — the tab is
+ * `block`, everything else `hidden`. Tabs are never unmounted, here or below;
+ * that is a hard invariant of this app (CLAUDE.md), and panes only promote a
+ * second tab out of `hidden`.
+ *
+ * Visual order is imposed with flex `order`, not by DOM position. The panes are
+ * rendered inside tabs.map, so their DOM order is TAB order — which meant a new
+ * chat, appended to the end of the tab list, always landed on the right and
+ * shoved the previous right-hand pane over to the left, whichever pane had
+ * actually been targeted. Reordering the DOM instead is not an option: moving a
+ * tab's position would remount it, and tabs are never unmounted here.
+ *
+ * The divider is a left border on the pane whose ORDER is not 0, not Tailwind's
+ * `divide-x` on the container. `divide-x` selects with `& > * + *`, i.e. by DOM
+ * position — and DOM position no longer says which side a pane is on, so the
+ * rule landed on whichever pane happened to be second in the tab list and
+ * vanished from between them as soon as a new chat shuffled that.
+ *
+ * The active pane is bracketed by a 1px rule on its top AND bottom edge. Both
+ * panes are fully live, so "active" decides exactly one thing — where a new or
+ * reopened session lands, and which pane owns the shared composer — and a
+ * hairline is proportionate. The bottom rule matters more than it looks: the
+ * composer sits below BOTH panes, so the only thing tying it to a column is
+ * that column's lower edge running into it. The other pane keeps transparent
+ * borders of the same width so nothing shifts when focus changes.
+ */
+function paneClass(tabId: string, paneTabIds: string[], activePane: number): string {
+  const at = paneTabIds.indexOf(tabId);
+  if (paneTabIds.length < 2) {
+    return `h-full ${at === 0 ? 'block' : 'hidden'}`;
+  }
+  if (at === -1) return 'hidden';
+  const focus = at === activePane ? 'border-y-brand' : 'border-y-transparent';
+  const divider = at > 0 ? 'border-l border-border' : '';
+  return `h-full flex-1 min-w-0 border-y ${focus} ${divider}`;
+}
+
+/**
+ * One column of the split, plus the hover-only ✕ that closes it.
+ *
+ * The ✕ closes the COLUMN, not the chat: the pane is dropped, the survivor
+ * takes the whole panel, and the tab stays in the bar exactly where it was.
+ * Closing the session is still the tab bar's own ✕. Two different destructive
+ * actions, so they live on two different controls rather than one that means
+ * whichever the layout happens to be in.
+ *
+ * It is an overlay owned here rather than a button inside Chat's toolbar
+ * because panes are a workspace concern — Chat does not know it is in a column,
+ * and threading a close callback through ChatPanel → Chat → every engine's
+ * toolbar row would push layout state down into the chat domain. The cost is
+ * that it floats over the top-right of whatever row Chat renders there, so it
+ * stays a bare icon — small, and invisible until the pane is hovered.
+ *
+ * Hidden with opacity rather than `hidden`, so a keyboard Tab can still reach
+ * it (display:none would take it out of the tab order entirely).
+ *
+ * The group is NAMED (`group/pane`), and that is load-bearing rather than
+ * stylistic. Tailwind compiles a bare `group-hover:x` to
+ * `.group-hover\:x:is(:where(.group):hover *)` — a descendant selector that
+ * matches ANY `.group` ancestor, not the nearest one. An unnamed group on a
+ * container therefore does not scope hover to that container; it seizes the
+ * hover scope of everything below it. Bare `group` shipped here once and made
+ * every message in the pane show its hover footer at once, because a pane is an
+ * ancestor of every bubble. Every other `group` in this codebase sits on a leaf
+ * row or card, where "nearest" and "any" coincide; a panel-level one must be
+ * named.
+ */
+function PaneShell({
+  tabId,
+  paneTabIds,
+  activePane,
+  onFocusPane,
+  onClosePane,
+  children,
+}: {
+  tabId: string;
+  paneTabIds: string[];
+  activePane: number;
+  onFocusPane: (pane: number) => void;
+  onClosePane: (pane: number) => void;
+  children: React.ReactNode;
+}) {
+  const { t } = useTranslation();
+  const at = paneTabIds.indexOf(tabId);
+  const split = paneTabIds.length > 1;
+  return (
+    <div
+      onMouseDownCapture={split ? () => onFocusPane(at) : undefined}
+      style={split ? { order: at } : undefined}
+      className={`group/pane relative ${paneClass(tabId, paneTabIds, activePane)}`}
+    >
+      {split && at !== -1 && (
+        <button
+          type="button"
+          onClick={() => onClosePane(at)}
+          title={t('chat.closePane')}
+          aria-label={t('chat.closePane')}
+          className="absolute top-1 right-1 z-20 flex items-center justify-center w-6 h-6 text-muted-foreground opacity-0 pointer-events-none transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:pointer-events-auto group-hover/pane:opacity-100 group-hover/pane:pointer-events-auto"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
+      {children}
+    </div>
+  );
+}
+
 export function TabManager({ initialCwd, initialSessionId, initialView }: TabManagerProps) {
   const { t } = useTranslation();
   // activeView must be declared before useTabState, as useTabState needs it to determine unread state
   const [activeView, setActiveView] = useState<ViewType>(initialView ?? 'agent');
+  // Mount node for the shared composer, published to Chat through
+  // ComposerSlotProvider. State rather than a ref: the panes must re-render
+  // once the node exists, or the focused Chat portals into null on first paint.
+  const [composerSlot, setComposerSlot] = useState<HTMLElement | null>(null);
 
   // Tab state management
   const {
     tabs,
     activeTabId,
     activeTab,
+    sideBySide,
+    paneTabIds,
+    activePane,
+    toggleSideBySide,
+    focusPane,
+    closePane,
     unreadTabs,
     dragTabIndex,
     dragOverTabIndex,
@@ -79,6 +222,8 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     handleTabDrop,
     handleTabDragEnd,
   } = useTabState({ initialCwd, initialSessionId, activeView });
+
+
 
   // Pin state management
   const { isPinned, pinSession, unpinSession } = usePinnedSessions();
@@ -434,7 +579,9 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                 <div className="w-full h-full flex flex-col">
                   <TabBar
                     tabs={tabs}
-                    activeTabId={activeTabId}
+                    selectedTabId={activeTabId}
+                    sideBySide={sideBySide}
+                    onToggleSideBySide={toggleSideBySide}
                     unreadTabs={unreadTabs}
                     dragTabIndex={dragTabIndex}
                     dragOverTabIndex={dragOverTabIndex}
@@ -455,11 +602,16 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                     onDrop={handleTabDrop}
                     onDragEnd={handleTabDragEnd}
                   />
-                  <div className="flex-1 overflow-hidden relative">
+                  <ComposerSlotProvider value={sideBySide ? composerSlot : null}>
+                  <div className={`flex-1 overflow-hidden relative ${sideBySide ? 'flex' : ''}`}>
                     {tabs.map((tab) => (
-                      <div
+                      <PaneShell
                         key={tab.id}
-                        className={`h-full ${tab.id === activeTabId ? 'block' : 'hidden'}`}
+                        tabId={tab.id}
+                        paneTabIds={paneTabIds}
+                        activePane={activePane}
+                        onFocusPane={focusPane}
+                        onClosePane={closePane}
                       >
                         <ChatPanel
                           tabId={tab.id}
@@ -493,7 +645,8 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                           onPlanModeChange={updateTabPlanMode}
                           noHistory={tab.noHistory}
                           onNoHistoryChange={updateTabNoHistory}
-                          isActive={tab.id === activeTabId && activeView === 'agent'}
+                          isActive={paneTabIds.includes(tab.id) && activeView === 'agent'}
+                          isFocused={tab.id === activeTabId}
                           refreshSignal={sessionRefresh}
                           onStateChange={updateTabState}
                           onShowGitStatus={handleShowGitStatus}
@@ -504,9 +657,14 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                           onCreateScheduledTask={createScheduledTask}
                           onOpenSession={handleOpenSession}
                         />
-                      </div>
+                      </PaneShell>
                     ))}
                   </div>
+                  </ComposerSlotProvider>
+                  {/* Shared composer. Sits BELOW both panes so neither pane spends
+                      column height on it and their token bars stay on one line; the
+                      focused Chat portals into it (see ComposerSlot). */}
+                  {sideBySide && <div ref={setComposerSlot} className="flex-shrink-0" />}
                 </div>
               </PanelPortalProvider>
             </div>
@@ -561,7 +719,9 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
           <div className="flex-1 flex flex-col overflow-hidden">
             <TabBar
               tabs={tabs}
-              activeTabId={activeTabId}
+              selectedTabId={activeTabId}
+              sideBySide={sideBySide}
+              onToggleSideBySide={toggleSideBySide}
               unreadTabs={unreadTabs}
               dragTabIndex={dragTabIndex}
               dragOverTabIndex={dragOverTabIndex}
@@ -580,11 +740,16 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
               onDrop={handleTabDrop}
               onDragEnd={handleTabDragEnd}
             />
-            <div className="flex-1 overflow-hidden relative">
+            <ComposerSlotProvider value={sideBySide ? composerSlot : null}>
+            <div className={`flex-1 overflow-hidden relative ${sideBySide ? 'flex' : ''}`}>
               {tabs.map((tab) => (
-                <div
+                <PaneShell
                   key={tab.id}
-                  className={`h-full ${tab.id === activeTabId ? 'block' : 'hidden'}`}
+                  tabId={tab.id}
+                  paneTabIds={paneTabIds}
+                  activePane={activePane}
+                  onFocusPane={focusPane}
+                  onClosePane={closePane}
                 >
                   <ChatPanel
                     tabId={tab.id}
@@ -618,15 +783,21 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                     onPlanModeChange={updateTabPlanMode}
                     noHistory={tab.noHistory}
                     onNoHistoryChange={updateTabNoHistory}
-                    isActive={tab.id === activeTabId}
+                    isActive={paneTabIds.includes(tab.id)}
+                    isFocused={tab.id === activeTabId}
                     refreshSignal={sessionRefresh}
                     onStateChange={updateTabState}
                     onCreateScheduledTask={createScheduledTask}
                     onOpenSession={handleOpenSession}
                   />
-                </div>
+                </PaneShell>
               ))}
             </div>
+                  </ComposerSlotProvider>
+            {/* Shared composer. Sits BELOW both panes so neither pane spends
+                column height on it and their token bars stay on one line; the
+                focused Chat portals into it (see ComposerSlot). */}
+            {sideBySide && <div ref={setComposerSlot} className="flex-shrink-0" />}
           </div>
         )}
       </div>

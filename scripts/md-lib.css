@@ -93,3 +93,265 @@
     display: block;
   }
 }
+
+/*
+ * Reading typography — mirror of the `.markdown-body` block in
+ * src/app/globals.css. Same component, same contract; the widget just has a
+ * different CSS environment (no preflight, 16px root instead of 14px), which
+ * is exactly why the block is written in ch/em.
+ *
+ * UNLAYERED on purpose, like .bg-brand/5 above. The `.cockpit-md` preflight
+ * stand-in in @layer base zeroes every block margin and strips list padding
+ * with a higher-specificity selector than these rules carry, so inside a layer
+ * they would lose. Unlayered beats every layer regardless of specificity.
+ *
+ * Keep in sync with globals.css.
+ */
+/* ============================================
+   Reading typography — .markdown-body
+   ============================================
+
+   One typographic contract for every prose surface. Chat turns, the Explorer
+   markdown preview, the Review panel, the skills modal and the diff modal all
+   render through MarkdownRenderer, which wraps its output in `.markdown-body`.
+   That class shipped for a long time with no rules attached to it anywhere in
+   the repo, which is why prose here had no measure, no leading and no scale —
+   body text inherited 14px/1.5 from preflight by accident, and line length was
+   whatever the window happened to be.
+
+   It is also the reason this is cheap: one mount point reaches all five
+   surfaces at once, so the contract lives here rather than as per-element
+   Tailwind utilities scattered through the component map.
+
+   Everything is expressed in ch/em on purpose. The block is mirrored into
+   scripts/md-lib.css for the /html-lib widget, where the root is 16px instead
+   of the app's 14px; relative units keep the same proportions in both.
+*/
+
+:root {
+  /* The measure. 68ch is ~600px of 14px Inter and ~43 CJK glyphs — inside the
+   * comfortable band for both scripts at once, which a Latin-only target
+   * (usually 75ch) would overshoot for Chinese.
+   *
+   * The point is that it is a BOUND, not a proportion. Chat prose used to be
+   * capped by max-w-[80%] on the turn, which made line length a side effect of
+   * window width: 69ch at 820px, 125ch at 1440px, ~170ch at 1920px. Only the
+   * narrow end of that range was ever readable.
+   */
+  /* NOT ch, and this is the whole trap: `ch` resolves against the ELEMENT's own
+   * font-size, and the measure is applied per block. An h1 at 1.625rem would
+   * take 68 of ITS characters — 62% wider than the same rule on a paragraph —
+   * and with margin-inline: auto each level then centres at its own width. The
+   * result is a staircase of left edges down the page, which is worse than
+   * having no measure at all.
+   *
+   * 43rem is that 68ch measured once, at body size (68 x 8.83px of 14px Inter
+   * = 602px), and then frozen into a unit every block agrees on. It still
+   * tracks the root font-size, so it survives the /html-lib widget's 16px root
+   * and any future reading-size control. */
+  --reading-measure: 43rem;
+  /* Machinery — code blocks, tables — is allowed past the text block, the way
+   * a figure in a book runs wider than the type area. Without this a fenced
+   * block in a chat turn would be narrower than the terminal it came from.
+   * Same rem reasoning: on a <pre> at 0.92em, ch would have drifted again. */
+  --reading-measure-wide: 58rem;
+  /* How far the text block is allowed to drift from its container's left edge
+   * while centring. Pure `margin-inline: auto` is arithmetically right and
+   * perceptually wrong on a very wide pane: measured on a 1579px preview it
+   * put 488px between the TOC and the text it navigates, severing the two,
+   * while the identical 489px on the right had nothing to relate to. Centre
+   * up to this much, then stop. */
+  --reading-gutter-max: 6rem;
+}
+
+.markdown-body {
+  /* CJK glyphs fill the em box, so mixed Chinese/Latin prose needs more air
+   * than the 1.5 inherited from preflight. 1.75 also buys back the return
+   * sweep that a long measure used to spend. */
+  line-height: 1.75;
+  overflow-wrap: break-word;
+}
+
+/* The measure applies to the text block only, never to the wrapper. Capping
+ * `.markdown-body` itself would drag code blocks and tables in with it, and in
+ * a chat turn it would stop the bubble from shrink-wrapping short messages. */
+.markdown-body > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, hr, .md-tail),
+.reading-measure {
+  max-width: var(--reading-measure);
+  /* clamp() also covers the negative case (container narrower than the
+   * measure), so no separate max() guard is needed. */
+  margin-left: clamp(0px, calc((100% - var(--reading-measure)) / 2), var(--reading-gutter-max));
+  margin-right: auto;
+}
+
+.reading-measure {
+  line-height: 1.75;
+}
+
+/* Code fences and tables. Wider than the measure, still bounded — see
+ * --reading-measure-wide.
+ *
+ * Two selectors because a fenced block arrives wrapped twice: our `code`
+ * override renders the highlighter, but react-markdown still emits its own
+ * <pre> around it, and that <pre> is the direct child here. The .md-figure
+ * class lands on the inner element (and on the table wrapper, which has no
+ * <pre> above it), so both need the bound. */
+.markdown-body > pre,
+.markdown-body > .md-figure {
+  max-width: var(--reading-measure-wide);
+  /* Left edge is pinned to the text block's, not centred. A book centres a
+   * wide figure on the type area, but a book does not put a table every third
+   * screen; here that produced a second left edge that flickered in and out as
+   * you scrolled, which reads as broken rather than as deliberate. One left
+   * edge for the whole document, and figures grow to the right only.
+   *
+   * max() clamps the offset to 0 once the container is narrower than the
+   * measure, where the expression would go negative. */
+  margin-left: clamp(0px, calc((100% - var(--reading-measure)) / 2), var(--reading-gutter-max));
+  margin-right: auto;
+}
+
+.markdown-body > .md-tail {
+  display: block;
+}
+
+/* ---- Vertical rhythm ---- */
+
+.markdown-body > * {
+  margin-top: 0;
+  margin-bottom: 1.35em;
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---- Scale ----
+ * Reconciled with the Tiptap note editor (see "Tiptap Editor Styles" below),
+ * which already used 1.625 / 1.375 / 1.125rem. The renderer used to top out at
+ * text-xl / text-lg / text-base — h3 was exactly body size, so three heading
+ * levels lived inside a 1.25x range and none of them read as structure. A note
+ * and its own markdown preview also disagreed on every level.
+ *
+ * h4-h6 had no entry in the component map at all, which meant preflight reset
+ * them to `font-size: inherit; font-weight: inherit` — indistinguishable from
+ * body copy. They are levels, so they get sizes.
+ */
+.markdown-body :is(h1, h2, h3, h4, h5, h6) {
+  margin-top: 1.9em;
+  margin-bottom: 0.6em;
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.markdown-body h1 {
+  font-size: 1.625rem;
+  line-height: 1.25;
+  margin-top: 1.3em;
+  font-weight: 700;
+  letter-spacing: -0.011em;
+}
+
+.markdown-body h2 {
+  font-size: 1.375rem;
+  line-height: 1.3;
+  margin-top: 1.5em;
+  font-weight: 700;
+  letter-spacing: -0.008em;
+}
+
+.markdown-body h3 {
+  font-size: 1.125rem;
+  line-height: 1.35;
+}
+
+.markdown-body h4 {
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.markdown-body :is(h5, h6) {
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.markdown-body h6 {
+  color: var(--muted-foreground);
+}
+
+/* ---- Prose ---- */
+
+.markdown-body p {
+  text-wrap: pretty;
+}
+
+/* ---- Lists ----
+ * list-style-position was `inside` with zero padding, so a wrapped line ran
+ * back underneath its own bullet and the left margin — the one alignment a
+ * reader actually tracks down the page — disappeared. Lists are roughly 40% of
+ * LLM prose, so this was the single most-seen defect in the app.
+ */
+.markdown-body :is(ul, ol) {
+  list-style-position: outside;
+  padding-left: 1.6em;
+}
+
+.markdown-body li {
+  margin-bottom: 0.35em;
+}
+
+.markdown-body li:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body li > :is(ul, ol) {
+  margin-top: 0.35em;
+  margin-bottom: 0;
+}
+
+/* Paragraph spacing has to be on `p` itself, not on the direct-child rule
+ * above: a <p> inside a blockquote or a list item is not a direct child of
+ * .markdown-body, and stripping the old `mb-3` utility left those with no
+ * bottom margin at all — multi-paragraph quotations ran together. */
+.markdown-body p {
+  margin-bottom: 1.35em;
+}
+
+.markdown-body li > p {
+  margin-bottom: 0.35em;
+}
+
+.markdown-body :is(li, blockquote) > p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---- Quotations ----
+ * Books indent a long quotation and let the type do the rest; they do not set
+ * it in italic. An italic run at reduced contrast across a full measure is
+ * harder to read than the passage quoting it, which inverts the emphasis.
+ */
+.markdown-body blockquote {
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+}
+
+.markdown-body hr {
+  margin-top: 2.6em;
+  margin-bottom: 2.6em;
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+}
+
+/* Inline code sat at an ABSOLUTE text-sm (12.25px) inside 14px prose, so it
+ * punched a hole in the line, and inside a heading it shrank to less than
+ * three-quarters of the surrounding type. Relative to its context instead. */
+.markdown-body code {
+  font-size: 0.92em;
+}
+

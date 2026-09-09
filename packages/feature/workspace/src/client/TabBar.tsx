@@ -122,7 +122,10 @@ function NewTabButton({ onNewTab, onNewCodexTab, onNewKimiTab, onNewGlmTab, onNe
 
 interface TabBarProps {
   tabs: TabInfo[];
-  activeTabId: string;
+  /** Which tab the bar highlights. In side-by-side this is the FOCUSED pane's
+   *  tab, not the primary one — the highlight answers "which session am I
+   *  looking at", and with two panes open that moves with focus. */
+  selectedTabId: string;
   unreadTabs: Set<string>;
   dragTabIndex: number | null;
   dragOverTabIndex: number | null;
@@ -144,11 +147,16 @@ interface TabBarProps {
   onDragOver: (e: React.DragEvent, index: number) => void;
   onDrop: (index: number) => void;
   onDragEnd: () => void;
+  /** Single / side-by-side panes. Lives here rather than in the composer
+   *  because it is panel-level chrome, like the tabs themselves — and reaching
+   *  the composer meant a context purely to cross four component layers. */
+  sideBySide?: boolean;
+  onToggleSideBySide?: () => void;
 }
 
 export function TabBar({
   tabs,
-  activeTabId,
+  selectedTabId,
   unreadTabs,
   dragTabIndex,
   dragOverTabIndex,
@@ -168,13 +176,15 @@ export function TabBar({
   onDragOver,
   onDrop,
   onDragEnd,
+  sideBySide,
+  onToggleSideBySide,
 }: TabBarProps) {
   const { t } = useTranslation();
   return (
     <div className="border-b border-border bg-card shrink-0">
       <div className="flex items-center px-2 gap-1 overflow-x-auto">
         {tabs.map((tab, index) => {
-          const isActive = tab.id === activeTabId;
+          const isActive = tab.id === selectedTabId;
           const pinned = isPinned?.(tab.id) ?? false;
           const pinLabel = pinned ? t('sessions.removeFavorite') : t('sessions.addFavorite');
           const status: SessionNumberStatus = tab.isLoading
@@ -290,6 +300,25 @@ export function TabBar({
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </button>
+        )}
+        {onToggleSideBySide && (
+          <button
+            onClick={onToggleSideBySide}
+            className="flex-shrink-0 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
+            title={sideBySide ? t('chat.singlePane') : t('chat.splitPane')}
+            aria-label={sideBySide ? t('chat.singlePane') : t('chat.splitPane')}
+            aria-pressed={sideBySide}
+          >
+            {/* The icon shows the layout you will GET, not the one you are in —
+                it reads as the action, like every other button in this bar.
+                Current state is carried by aria-pressed and the tooltip, not by
+                a highlight: the neighbours here are all plain, and a lit-up
+                chip among them reads as "selected tab", which it is not. */}
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <rect x="3" y="4" width="18" height="16" rx="2" strokeWidth={2} />
+              {!sideBySide && <path strokeWidth={2} d="M12 4v16" />}
             </svg>
           </button>
         )}

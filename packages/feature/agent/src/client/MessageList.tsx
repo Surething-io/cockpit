@@ -36,6 +36,7 @@ import {
 const STEP_PADDING = 8;
 const STEP_EPSILON = STEP_PADDING + 4;
 
+
 interface MessageListProps {
   messages: ChatMessage[];
   isLoading?: boolean;
@@ -671,7 +672,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="relative flex-1 min-h-0 overflow-y-auto p-4"
+        className="relative flex-1 min-h-0 overflow-y-auto px-8 py-4"
       >
         {messages.length === 0 && !isLoading ? (
           <div className="flex items-center justify-center h-full text-foreground-subtle">
@@ -681,7 +682,11 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
             </div>
           </div>
         ) : (
-          <>
+          /* One centred column for every row type, so turns, the load-more
+             indicator and the thinking row all read against the same centre
+             line. The scroller itself stays full-width: it owns the scrollbar
+             and the absolutely-positioned jump capsules. */
+          <div className="mx-auto w-full max-w-[var(--chat-column)]">
             <div ref={topRef} />
             {/* Load-more history indicator */}
             {hasMoreHistory && (
@@ -778,11 +783,21 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
               </div>
             )}
             <div ref={bottomRef} />
-          </>
+          </div>
         )}
       </div>
 
-      {/* Jump controls. The prev/next pair lives on the bottom capsule only —
+      {/* Jump controls, centred over the conversation. The column is itself
+          centred in the panel, so left-1/2 is the middle of the messages.
+
+          These capsules are opaque and they do float over whatever text scrolls
+          under them — a real finding, and the reason they were briefly moved to
+          the panel edge and then to the column edge. Both were worse: at the
+          panel edge they strand themselves against the window on a wide display,
+          far from the content they scroll. Centred and transient is the
+          conventional place for a scroll control, and it is where they belong.
+
+          The prev/next pair lives on the bottom capsule only —
           one home for it, near where the hand already is; the top capsule stays
           the single-purpose "back to the beginning" button it always was.
           Icon language: chevron = run to the end of the list, bar-arrow = land

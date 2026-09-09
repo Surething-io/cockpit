@@ -6,6 +6,7 @@ export { ChatPanel } from './ChatPanel';
 export { ChatInput } from './ChatInput';
 export { ChatHeader } from './ChatHeader';
 export { TokenUsageBar } from './TokenUsageBar';
+export { ComposerSlotProvider, useComposerSlot } from './ComposerSlot';
 export { MessageList, type MessageListHandle } from './MessageList';
 export { MessageBubble } from './MessageBubble';
 export { OllamaModelPicker } from './OllamaModelPicker';

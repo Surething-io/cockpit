@@ -18,6 +18,9 @@ import { broadcastToGlobalState } from "../../../lib/globalStateBroadcast"
 interface ProjectState {
   sessions: string[]
   activeSessionId?: string
+  /** Pane layout, by session, in on-screen order. `null` = a pane whose chat has
+   *  no session yet. Length < 2 is single-pane and is not stored. */
+  paneSessionIds?: (string | null)[]
   engines?: Record<string, string>
   ollamaModels?: Record<string, string>
   deepseekModels?: Record<string, string>
@@ -151,9 +154,29 @@ export const POST = handler((req) =>
           const planModes = carryOver(existing.planModes, body.planModes, (v) => !v)
           const noHistories = carryOver(existing.noHistories, body.noHistories, (v) => !v)
           const active = normalizeSessionId(body.activeSessionId ?? existing.activeSessionId ?? "")
+          /**
+           * Pane layout is last-writer-wins like activeSessionId, NOT unioned:
+           * it describes one browser tab's screen, and there is no meaningful
+           * union of two different layouts.
+           *
+           * An id that is no longer in the set becomes `null` rather than
+           * dropping the entry — a session closed in another browser tab should
+           * leave that pane blank, not silently collapse a two-pane layout to
+           * one. The client always sends the array (length 1 when single), so
+           * omitting it here is how "split turned off" gets persisted.
+           */
+          const panesIn = body.paneSessionIds ?? existing.paneSessionIds
+          const panes = Array.isArray(panesIn)
+            ? panesIn.map((sid) => {
+                if (typeof sid !== "string" || !sid) return null
+                const n = normalizeSessionId(sid)
+                return inSet.has(n) ? n : null
+              })
+            : undefined
           const next: ProjectState = {
             sessions: union,
             ...(active && inSet.has(active) ? { activeSessionId: active } : {}),
+            ...(panes && panes.length > 1 ? { paneSessionIds: panes } : {}),
             ...(Object.keys(engines).length ? { engines } : {}),
             ...(Object.keys(ollamaModels).length ? { ollamaModels } : {}),
             ...(Object.keys(deepseekModels).length ? { deepseekModels } : {}),

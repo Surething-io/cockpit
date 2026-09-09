@@ -59,6 +59,60 @@ interface UseTabStateOptions {
   activeView?: string;
 }
 
+
+/**
+ * The pane invariant, in one place: **every visible pane holds a tab that
+ * exists, and no two panes hold the same one.**
+ *
+ * Both halves are load-bearing. A pane with no tab has no Chat, so no composer,
+ * so no split toggle — a pane you cannot close. Two panes on one tab is one
+ * Chat driven by two mounts, which renders as a single pane and corrupts the
+ * session state behind it.
+ *
+ * Three call sites need it and used to have three answers: closing a tab,
+ * restoring a saved layout, and reconciling after another browser tab closed
+ * something. The third had none at all, which left a pane pointing at a removed
+ * tab id and made it silently vanish.
+ *
+ * A vacated pane prefers an existing tab no other pane is using, and falls back
+ * to a blank chat only when there is none — the same rule single-pane already
+ * follows when you close the active tab. Returned `created` tabs MUST be
+ * appended to the tab list by the caller: pane bookkeeping alone cannot satisfy
+ * the invariant, a vacancy needs a real tab to point at.
+ */
+export function repairPanes(
+  panes: string[],
+  tabs: TabInfo[],
+  cwd: string | undefined,
+): { panes: string[]; created: TabInfo[] } {
+  const alive = new Set(tabs.map((t) => t.id));
+  const stillValid = new Set(panes.filter((id) => alive.has(id)));
+  const created: TabInfo[] = [];
+  const out: string[] = [];
+
+  for (const id of panes) {
+    if (alive.has(id) && !out.includes(id)) {
+      out.push(id);
+      continue;
+    }
+    const claimed = new Set([...out, ...stillValid]);
+    const successor = [...tabs].reverse().find((t) => !claimed.has(t.id));
+    if (successor) {
+      out.push(successor.id);
+      stillValid.add(successor.id);
+      continue;
+    }
+    const blank: TabInfo = {
+      id: `tab-${Date.now()}-pane${created.length}`,
+      cwd,
+      title: 'New Chat',
+    };
+    created.push(blank);
+    out.push(blank.id);
+  }
+  return { panes: out, created };
+}
+
 export function useTabState({ initialCwd, initialSessionId, activeView }: UseTabStateOptions) {
   // Mark whether sessions have been loaded from server
   const hasLoadedRef = useRef(false);
@@ -244,8 +298,47 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
           if (activeIndex < 0) activeIndex = 0;
 
           const newActiveTabId = restoredTabs[activeIndex].id;
-          setTabs(restoredTabs);
-          setActiveTabId(newActiveTabId);
+
+          /**
+           * Restore the pane layout, if there was one.
+           *
+           * A `null` entry, or an id whose session is gone, becomes a fresh
+           * blank chat rather than an empty pane — the invariant is that every
+           * visible pane holds a real tab (see closeTab), and it has to hold on
+           * the restore path too, not just at runtime.
+           *
+           * The active session still wins over the saved layout: deep-linking to
+           * a session that is not in either pane has to show it, so it takes the
+           * active pane. If that makes both panes the same tab, the layout
+           * collapses to one — two panes on one tab is the other thing the
+           * invariant forbids.
+           */
+          const savedPanes = data.paneSessionIds;
+          if (Array.isArray(savedPanes) && savedPanes.length > 1) {
+            // Sessions -> tab ids; an entry that resolves to nothing (never had
+            // a session, or it has been closed since) is left as '' for
+            // repairPanes to fill by the same rule every other site uses.
+            const wanted = savedPanes.slice(0, 2).map((sid) => {
+              const normalized = sid && rawEngines[sid] === 'codex' ? normalizeCodexSessionId(sid) : sid;
+              return (normalized && restoredTabs.find((t) => t.sessionId === normalized)?.id) || '';
+            });
+            const { panes: paneIds, created } = repairPanes(wanted, restoredTabs, initialCwd);
+
+            // The active session outranks the saved layout: deep-linking to a
+            // session in neither pane still has to show it, so it takes the
+            // active pane. If that collapses both panes onto one tab, drop to a
+            // single pane — the other half of the invariant.
+            let pane = paneIds.indexOf(newActiveTabId);
+            if (pane === -1) { paneIds[0] = newActiveTabId; pane = 0; }
+            const collapsed = paneIds[0] === paneIds[1];
+
+            setTabs([...restoredTabs, ...created]);
+            setPaneTabIds(collapsed ? [paneIds[0]] : paneIds);
+            setActivePane(collapsed ? 0 : pane);
+          } else {
+            setTabs(restoredTabs);
+            setActiveTabId(newActiveTabId);
+          }
 
           setTimeout(finishInitializing, 0);
         } else {
@@ -347,11 +440,20 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     // pending for the next save).
     const closedSessionIds = [...pendingClosedRef.current];
 
+    // Pane layout, by session, in on-screen order. Sent even when single-pane
+    // (length 1): the server stores it only at length > 1, so a length-1 array
+    // is how "split turned off" is persisted. Omitting the key instead would
+    // leave the old layout on disk, since the server keeps what it has.
+    const paneSessionIds = paneTabIds.map(
+      (id) => tabs.find((t) => t.id === id)?.sessionId ?? null
+    );
+
     BrowserRuntime.runFork(
       saveProjectState({
         cwd: initialCwd,
         sessions: sessionIds,
         activeSessionId,
+        paneSessionIds,
         engines,
         ollamaModels,
         deepseekModels,
@@ -379,7 +481,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         Effect.catchAll(() => Effect.void)
       )
     );
-  }, [tabs, activeTabId, initialCwd, initDone]);
+  }, [tabs, activeTabId, paneTabIds, initialCwd, initDone]);
 
   // Notify parent Workspace when switching tab (parent handles URL update)
   useEffect(() => {
@@ -467,11 +569,14 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       if (next.length === 0) {
         next = [{ id: `tab-${Date.now()}`, cwd: initialCwd, title: 'New Chat' }];
       }
+      // A session closed in ANOTHER browser tab vacates a pane here exactly as
+      // closeTab does locally, so the same invariant has to be re-established.
+      // This site had no enforcement at all: a pane kept pointing at a removed
+      // tab id, and silently stopped rendering.
+      const { panes, created } = repairPanes(paneTabIdsRef.current, next, initialCwd);
+      if (created.length) next = [...next, ...created];
       setTabs(next);
-      // active tab closed elsewhere → fall back to the last remaining tab
-      if (!next.some((t) => t.id === activeTabIdRef.current)) {
-        setActiveTabId(next[next.length - 1].id);
-      }
+      setPaneTabIds(panes);
     });
   }, [initialCwd]);
 
@@ -559,25 +664,10 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     const closing = tabsRef.current.find((t) => t.id === tabId);
     if (closing?.sessionId) pendingClosedRef.current.add(closing.sessionId);
 
-    // The pane invariant lives here and nowhere else: every visible pane holds
-    // a real tab, and no two panes hold the same one. A pane left empty has no
-    // Chat, so no composer, so no split toggle — it becomes a pane you cannot
-    // close. Two panes sharing a tab is worse: one Chat driven by two mounts.
+    // Pane repair is shared with the restore and cross-tab-reconcile paths —
+    // see repairPanes for the invariant and why it lives in one place.
     const remaining = tabsRef.current.filter((t) => t.id !== tabId);
-    const created: TabInfo[] = [];
-    const blank = (): TabInfo => {
-      const t: TabInfo = { id: `tab-${Date.now()}-${created.length}`, cwd: initialCwd, title: 'New Chat' };
-      created.push(t);
-      return t;
-    };
-
-    const panes = [...paneTabIdsRef.current];
-    for (let i = 0; i < panes.length; i++) {
-      if (panes[i] !== tabId) continue;
-      const takenByOthers = new Set(panes.filter((_, j) => j !== i));
-      const successor = [...remaining].reverse().find((t) => !takenByOthers.has(t.id));
-      panes[i] = successor ? successor.id : blank().id;
-    }
+    const { panes, created } = repairPanes(paneTabIdsRef.current, remaining, initialCwd);
 
     setTabs([...remaining, ...created]);
     setPaneTabIds(panes);

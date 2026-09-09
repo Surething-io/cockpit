@@ -22,6 +22,12 @@ import type { MarkReadBySessionIdRequest } from "@cockpit/feature-agent"
 export interface LoadedProjectState {
   sessions: string[]
   activeSessionId?: string
+  /** Pane layout, by session, in on-screen order. `null` = a pane holding a chat
+   *  that has no session yet. Persisted as an ARRAY rather than a
+   *  `secondarySessionId` on purpose: the runtime model is N slots plus an
+   *  active index, and naming one of them "secondary" here would put the
+   *  primary/companion asymmetry back on disk. Length < 2 means single pane. */
+  paneSessionIds?: (string | null)[]
   engines?: Record<string, string>
   ollamaModels?: Record<string, string>
   deepseekModels?: Record<string, string>
@@ -57,6 +63,12 @@ export interface ProjectStateSave {
   cwd: string
   sessions: string[]
   activeSessionId?: string
+  /** Pane layout, by session, in on-screen order. `null` = a pane holding a chat
+   *  that has no session yet. Persisted as an ARRAY rather than a
+   *  `secondarySessionId` on purpose: the runtime model is N slots plus an
+   *  active index, and naming one of them "secondary" here would put the
+   *  primary/companion asymmetry back on disk. Length < 2 means single pane. */
+  paneSessionIds?: (string | null)[]
   engines?: Record<string, string>
   ollamaModels?: Record<string, string>
   deepseekModels?: Record<string, string>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AlarmClock } from 'lucide-react';
 import { toast, MODAL_SHELL_CLASS } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { getProjectName, getTaskSummary } from './useScheduledTasks';
@@ -524,11 +525,10 @@ export function ScheduledTasksPanel({
         }`}
         title={collapsed ? t('scheduledTasks.title') : undefined}
       >
-        {/* Clock icon */}
-        <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <circle cx="12" cy="12" r="10" strokeWidth={2} />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2" />
-        </svg>
+        {/* AlarmClock — must match the chat input's scheduled-tasks button, and
+            must NOT be a bare clock: this row sits directly under the recent
+            sessions entry, whose icon is a clock face with a history arrow. */}
+        <AlarmClock className="w-5 h-5 flex-shrink-0" />
         {!collapsed && <span className="text-sm flex-1 text-left">{t('scheduledTasks.title')}</span>}
         {/* Red dot / count badge */}
         {unreadCount > 0 ? (

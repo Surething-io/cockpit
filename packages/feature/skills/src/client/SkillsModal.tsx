@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Joystick } from 'lucide-react';
 import { toast, MODAL_SHELL_CLASS, MODAL_CARD_GRID_CLASS } from '@cockpit/shared-ui';
 import {
   loadSkillsList,
@@ -355,14 +356,10 @@ function SkillCard({ skill, onPreview, onDelete, onCopyPath }: SkillCardProps) {
           {skill.icon ? (
             <span>{skill.icon}</span>
           ) : (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 3l1.9 4.8L19 9l-4.1 3.1L16 18l-4-2.8L8 18l1.1-5.9L5 9l5.1-1.2L12 3z"
-              />
-            </svg>
+            /* Fallback when SKILL.md declares no emoji. Must match the sidebar's
+               Skills entry — a star here would say "favourite", which is what
+               that mark means everywhere else in the app. */
+            <Joystick className="w-5 h-5" />
           )}
         </div>
         <span className="font-mono text-sm font-medium text-foreground truncate flex-1 min-w-0" data-tooltip={`/${skill.name}`}>

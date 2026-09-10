@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { History } from 'lucide-react';
 import { RecentSessionsModal } from './RecentSessionsModal';
 import { EngineBadge } from './EngineBadge';
 import { SessionNumberBadge, badgeStatus } from './SessionNumberBadge';
@@ -108,10 +109,12 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
         }`}
         title={collapsed ? t('sessions.recentSessions') : undefined}
       >
-        {/* Lightning icon indicates active state */}
-        <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
+        {/* History, not a lightning bolt: the bolt reads as "quick action" and is
+            already the chat/console quick-instructions mark, which is on screen at
+            the same time as this rail. Liveness is carried by the badges below
+            (pulsing orange = running, red = unread), so the icon is free to say
+            what the label says — recent. */}
+        <History className="w-5 h-5 flex-shrink-0" />
         {!collapsed && <span className="text-sm flex-1 text-left">{t('sessions.recentSessions')}</span>}
         {/* Badge: loading orange pulse + unread red static, displayed independently.
             A tinted pill with a coloured numeral rather than white-on-saturated-fill:

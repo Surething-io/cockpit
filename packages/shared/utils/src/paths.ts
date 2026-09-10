@@ -140,12 +140,22 @@ export function getServicesConfigPath(cwd: string): string {
 }
 
 /**
- * Get the quick-prompts config path for a project (chat input quick prompts).
+ * Get the quick-instructions config path for a project (chat input shortcuts).
  * Deliberately a separate file from services.json: that one is the Console
  * domain's, and folding an Agent-domain list into it would make either feature's
  * write clobber the other's data on a partial POST.
  */
-export function getPromptsConfigPath(cwd: string): string {
+export function getInstructionsConfigPath(cwd: string): string {
+  return join(getCockpitProjectDir(cwd), 'instructions.json');
+}
+
+/**
+ * Pre-rename location of the same file, back when the feature was called
+ * "quick prompts". Reads fall back to it when the new file is absent; writes
+ * never target it, so the old file is left intact for a version rollback.
+ * Delete this once no install can still be carrying one.
+ */
+export function getLegacyPromptsConfigPath(cwd: string): string {
   return join(getCockpitProjectDir(cwd), 'prompts.json');
 }
 
@@ -208,9 +218,14 @@ export function getGlobalServicesConfigPath(): string {
 }
 
 /**
- * Get the global quick-prompts config path (shared across all projects)
+ * Get the global quick-instructions config path (shared across all projects)
  */
-export function getGlobalPromptsConfigPath(): string {
+export function getGlobalInstructionsConfigPath(): string {
+  return join(COCKPIT_DIR, 'instructions.json');
+}
+
+/** Pre-rename global location — see getLegacyPromptsConfigPath. */
+export function getLegacyGlobalPromptsConfigPath(): string {
   return join(COCKPIT_DIR, 'prompts.json');
 }
 

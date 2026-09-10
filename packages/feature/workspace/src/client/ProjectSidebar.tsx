@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Joystick } from 'lucide-react';
 import { ProjectItem, type ProjectSessionBadge } from './ProjectItem';
 import { GlobalSessionMonitor, GlobalSession } from '@cockpit/feature-agent';
 import { PinnedSessionsPanel } from '@cockpit/feature-agent';
@@ -533,6 +534,43 @@ export function ProjectSidebar({
           onMarkRead={markScheduledRead}
           onUpdateTask={updateScheduledTask}
         />
+        {/* Skills */}
+        <button
+          className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-hover transition-colors ${
+            collapsed ? 'justify-center' : ''
+          }`}
+          onClick={onOpenSkills}
+          title={collapsed ? t('workspace.skills') : undefined}
+        >
+          {/* Joystick: the product is "the cockpit that drives AI", and a skill
+              (/qa, /cr, ...) is how the user actually steers it — the control
+              stick is the cockpit metaphor's own instrument, not a stray gaming
+              reference. Its ball head + shaft + base spans y 3–21, matching
+              star / history / alarm-clock in this rail.
+
+              Four marks were ruled out, all for reasons that outlive this line:
+              - star, because it means "favourite" — PinnedSessionsPanel uses it
+                three rows up in this same rail, and TabBar stamps it on a
+                favourited tab;
+              - wrench, because it already means "tool call" in DiffViewerModal,
+                and a Claude Code tool is not a skill;
+              - graduation cap, on optics rather than meaning: in lucide's 24x24
+                box it spans y 5.2–19 (~13.8 tall) while star, history and
+                alarm-clock all span ~3–21 (~18), so it reads visibly short in a
+                vertical rail. It cannot be scaled up to compensate either — it
+                is nearly full-width already (x 2.6–22), so matching the height
+                would burst the w-5 box and collide with the label;
+              - gamepad / gamepad-2, same optical problem (y 6–18 and 5–19), so a
+                controller was never an option;
+              - sliders-vertical, which is the closest lucide has to a throttle
+                lever and was tried here, but it is the near-universal settings /
+                filter mark and the Settings row sits at the bottom of this same
+                rail — the wrench's clash again, one row further down. lucide has
+                no throttle/thrust/lever glyph at all, so there is no version of
+                that idea without this collision. */}
+          <Joystick className="w-5 h-5 flex-shrink-0" />
+          {!collapsed && <span className="text-sm">{t('workspace.skills')}</span>}
+        </button>
         {/* Notes */}
         <button
           className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-hover transition-colors ${
@@ -545,19 +583,6 @@ export function ProjectSidebar({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
           </svg>
           {!collapsed && <span className="text-sm">{t('workspace.notes')}</span>}
-        </button>
-        {/* Skills */}
-        <button
-          className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-hover transition-colors ${
-            collapsed ? 'justify-center' : ''
-          }`}
-          onClick={onOpenSkills}
-          title={collapsed ? t('workspace.skills') : undefined}
-        >
-          <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3l1.9 4.8L19 9l-4.1 3.1L16 18l-4-2.8L8 18l1.1-5.9L5 9l5.1-1.2L12 3z" />
-          </svg>
-          {!collapsed && <span className="text-sm">{t('workspace.skills')}</span>}
         </button>
         {/* Settings row — the whole row is one click target (opens the
             Settings modal). Help is a secondary action nested inside the

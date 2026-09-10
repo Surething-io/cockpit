@@ -448,31 +448,55 @@ export const loadClaudeStats = <A = Record<string, unknown>>(): Effect.Effect<A,
   httpJson('/api/claude-stats')
 
 // ─────────────────────────────────────────────────────────
-// /api/prompts/config — chat input quick prompts (GET scope=global / cwd=, POST full array)
+// /api/instructions/config — chat input quick instructions (GET scope=global / cwd=, POST full tree)
 // ─────────────────────────────────────────────────────────
 
-export interface PromptsConfigResponse {
-  prompts?: string[]
+/** One instruction. `text` is what gets sent; `id` exists only to key and address
+ *  the row (React key, open editor, drag target) and is never displayed. */
+export interface InstructionItem {
+  id: string
+  text: string
+}
+
+/** A named folder of instructions, opened as a flyout beside the popover.
+ *  One level only — groups never contain groups. */
+export interface InstructionGroup {
+  id: string
+  name: string
+  items: InstructionItem[]
+}
+
+/** Root level is mixed: loose instructions sit beside groups. */
+export type InstructionNode = InstructionItem | InstructionGroup
+
+/** Told apart by `items`, matching the server's own discriminator — no `type`
+ *  tag to keep in sync, and it survives a hand-edited instructions.json. */
+export const isInstructionGroup = (node: InstructionNode): node is InstructionGroup =>
+  Array.isArray((node as InstructionGroup).items)
+
+export interface InstructionsConfigResponse {
+  instructions?: InstructionNode[]
 }
 
 /** Global scope: ?scope=global */
-export const loadGlobalPromptsConfig = (): Effect.Effect<
-  PromptsConfigResponse,
+export const loadGlobalInstructionsConfig = (): Effect.Effect<
+  InstructionsConfigResponse,
   AppError
-> => httpJson("/api/prompts/config?scope=global")
+> => httpJson("/api/instructions/config?scope=global")
 
 /** Project scope: ?cwd=... */
-export const loadProjectPromptsConfig = (
+export const loadProjectInstructionsConfig = (
   cwd: string
-): Effect.Effect<PromptsConfigResponse, AppError> =>
-  httpJson(`/api/prompts/config?cwd=${encodeURIComponent(cwd)}`)
+): Effect.Effect<InstructionsConfigResponse, AppError> =>
+  httpJson(`/api/instructions/config?cwd=${encodeURIComponent(cwd)}`)
 
 /**
- * Returns the prompts as actually PERSISTED — the server normalizes on write
- * (trims, drops empties, collapses duplicates), so callers must adopt this
- * instead of keeping their optimistic array.
+ * Returns the tree as actually PERSISTED — the server normalizes on write
+ * (trims, drops empties, collapses duplicates per scope, issues ids), so
+ * callers must adopt this instead of keeping their optimistic tree. In
+ * particular a newly added row's real id only exists in this response.
  */
-export const savePromptsConfig = (
-  body: { cwd?: string; scope?: "global"; prompts: string[] }
-): Effect.Effect<PromptsConfigResponse & { success?: boolean }, AppError> =>
-  httpPostJson("/api/prompts/config", body)
+export const saveInstructionsConfig = (
+  body: { cwd?: string; scope?: "global"; instructions: InstructionNode[] }
+): Effect.Effect<InstructionsConfigResponse & { success?: boolean }, AppError> =>
+  httpPostJson("/api/instructions/config", body)

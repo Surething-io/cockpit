@@ -3,9 +3,10 @@
 import { useState, useLayoutEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback, useMemo, memo } from 'react';
 import type { ImageInfo, ChatEngine } from './types';
 import { useTranslation } from 'react-i18next';
+import { AlarmClock, Zap } from 'lucide-react';
 import { ImagePreview } from '@cockpit/shared-ui';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
-import { QuickPromptsPopover } from './QuickPromptsPopover';
+import { QuickInstructionsPopover } from './QuickInstructionsPopover';
 import { useCommandAutocomplete, CommandAutocompleteMenu, type CommandInfo } from './commandAutocomplete';
 
 // Migrated from src/components/project/ChatInput.tsx.
@@ -51,11 +52,11 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
   const [images, setImages] =
     draftImages !== undefined && setDraftImages ? ([draftImages, setDraftImages] as const) : localImages;
   const [showScheduler, setShowScheduler] = useState(false);
-  const [showQuickPrompts, setShowQuickPrompts] = useState(false);
+  const [showQuickInstructions, setShowQuickInstructions] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // Wraps the quick-prompts trigger + its popover; the popover measures
+  // Wraps the quick-instructions trigger + its popover; the popover measures
   // outside-click against this so the trigger can close what it opened.
-  const quickPromptsAnchorRef = useRef<HTMLDivElement>(null);
+  const quickInstructionsAnchorRef = useRef<HTMLDivElement>(null);
 
   // Auto-adjust textarea height
   const adjustTextareaHeight = useCallback(() => {
@@ -114,24 +115,24 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
     }
   }, [input, images, disabled, onSend]);
 
-  // Quick prompts send immediately and bypass `input` entirely, so whatever the
+  // Quick instructions send immediately and bypass `input` entirely, so whatever the
   // user has half-typed in the textarea is left untouched. Gated on `disabled`
   // for the same reason handleSend is — the stream can't accept it yet.
-  const handleQuickPrompt = useCallback((prompt: string) => {
+  const handleQuickInstruction = useCallback((instruction: string) => {
     if (disabled) return;
-    onSend(prompt);
+    onSend(instruction);
   }, [disabled, onSend]);
 
   // "Fill the box, don't send." APPENDS rather than replaces — the use case is
-  // stacking a canned prompt onto something half-typed, and a silent overwrite
+  // stacking a canned instruction onto something half-typed, and a silent overwrite
   // would eat that. NOT gated on `disabled`: this issues no request, and queueing
   // up the next message while a reply streams is exactly when it is wanted.
-  const handleInsertQuickPrompt = useCallback((prompt: string) => {
+  const handleInsertQuickInstruction = useCallback((instruction: string) => {
     setInput((prev) => {
       // trimEnd first, THEN test: a box holding only whitespace is "empty" here,
-      // and testing `prev` raw would prefix the prompt with a stray newline.
+      // and testing `prev` raw would prefix the instruction with a stray newline.
       const head = prev.replace(/\s+$/, '');
-      return head ? `${head}\n${prompt}` : prompt;
+      return head ? `${head}\n${instruction}` : instruction;
     });
     // rAF, not a direct call: the popover unmounts in this same commit and the
     // caret must be set against the post-update value, not the pre-update one.
@@ -271,10 +272,11 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
               }`}
               title={t('chat.scheduledTasks')}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="10" strokeWidth={2} />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2" />
-              </svg>
+              {/* AlarmClock, not a bare clock: a plain clock face reads as
+                  "time / recent" — which is what the sidebar's recent-sessions
+                  entry needs — and the two are on screen together. The bells
+                  say "scheduled", and give the two a different silhouette. */}
+              <AlarmClock className="w-5 h-5" />
             </button>
             {showScheduler && (
               <ScheduleTaskPopover
@@ -285,29 +287,30 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
           </div>
         )}
 
-        {/* Quick prompts button */}
-        <div className="relative" ref={quickPromptsAnchorRef}>
+        {/* Quick instructions button */}
+        <div className="relative" ref={quickInstructionsAnchorRef}>
           <button
-            onClick={() => setShowQuickPrompts(!showQuickPrompts)}
+            onClick={() => setShowQuickInstructions(!showQuickInstructions)}
             className={`p-2 rounded-lg transition-all ${
-              showQuickPrompts
+              showQuickInstructions
                 ? 'text-brand bg-brand/10'
                 : 'text-muted-foreground hover:text-foreground hover:bg-hover active:bg-muted active:scale-95'
             }`}
-            title={t('chat.quickPrompts')}
+            title={t('chat.quickInstructions')}
           >
-            {/* Lightning bolt — mirrors the Console input bar's quick commands button */}
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
+            {/* Lightning bolt — mirrors the Console input bar's quick commands
+                button, and now literally the same glyph: this was a hand-inlined
+                heroicons bolt while the Console used lucide's Zap, so the two
+                sides of one concept did not actually match. */}
+            <Zap className="w-5 h-5" />
           </button>
-          {showQuickPrompts && (
-            <QuickPromptsPopover
+          {showQuickInstructions && (
+            <QuickInstructionsPopover
               cwd={cwd}
-              anchorRef={quickPromptsAnchorRef}
-              onClose={() => setShowQuickPrompts(false)}
-              onSelect={handleQuickPrompt}
-              onInsert={handleInsertQuickPrompt}
+              anchorRef={quickInstructionsAnchorRef}
+              onClose={() => setShowQuickInstructions(false)}
+              onSelect={handleQuickInstruction}
+              onInsert={handleInsertQuickInstruction}
             />
           )}
         </div>

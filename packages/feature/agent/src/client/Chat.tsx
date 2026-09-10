@@ -149,13 +149,18 @@ interface ChatProps {
  * bar stay the same height when they are side by side; see that file for why it
  * is declared rather than derived from padding.
  *
- * The 28px reserved on the right is this bar's alone. PaneShell floats the
- * close-this-column ✕ at `right-1` with `w-6`, so it covers the first 24.5px of
- * that edge — not the numbers the class names suggest, because `--spacing` is
+ * The 49px reserved on the right is this bar's alone. PaneShell floats a group
+ * of corner controls over it — maximise and close — at `right-1`, each `w-6`
+ * with a `gap-0.5` between, so together they cover the first 47.25px of that
+ * edge. Those are not the numbers the class names suggest: `--spacing` is
  * .25rem and this app sets `html { font-size: 14px }`, making one Tailwind unit
  * 3.5px here rather than 4px. At `px-3` (10.5px) the row's rightmost control sat
- * squarely under the ✕ and the two icons drew on top of each other. `pr-8` = 28px
- * clears it with 3.5px to spare.
+ * squarely under them and the icons drew on top of each other. `pr-14` = 49px
+ * clears the group with 1.75px to spare.
+ *
+ * This number tracks the corner group's width, and has already had to grow once
+ * when the maximise button joined the ✕ (28px → 49px). Add a third control there
+ * and it has to grow again — there is no way for this to notice on its own.
  *
  * Reserved unconditionally, not only when the pane is split. Making it
  * conditional means telling Chat which column it is in, and Chat deliberately
@@ -163,7 +168,7 @@ interface ChatProps {
  * The cost is 17.5px of empty right edge on one toolbar row when there is no ✕
  * to clear, and nothing competes for that space.
  */
-const ENGINE_OPTIONS_ROW = `${COLUMN_HEADER_ROW} pl-3 pr-8 bg-card/50`;
+const ENGINE_OPTIONS_ROW = `${COLUMN_HEADER_ROW} pl-3 pr-14 bg-card/50`;
 
 export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeContextWindow, onClaudeContextWindowChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();

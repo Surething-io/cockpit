@@ -592,6 +592,8 @@
     "approvePlan": "Approve & run",
     "planApproveHint": "No approval dialog here — click to exit plan mode and execute",
     "approvePlanPrompt": "Approved — proceed with the plan above.",
+    "maximizePane": "Maximize this pane",
+    "restorePane": "Restore both panes",
     "closePane": "Close this pane",
     "singlePane": "Single pane",
     "splitPane": "Split into two panes"

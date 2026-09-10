@@ -592,6 +592,8 @@
     "approvePlan": "批准并执行",
     "planApproveHint": "本环境无审批弹窗，点此退出计划模式并执行",
     "approvePlanPrompt": "已批准，按上述计划开始执行。",
+    "maximizePane": "放大本栏",
+    "restorePane": "还原双栏",
     "closePane": "关闭本栏",
     "singlePane": "切回单栏",
     "splitPane": "并排双栏"

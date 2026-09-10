@@ -9,12 +9,13 @@ import { ConsoleView, AliasManager } from '@cockpit/feature-console';
 import { ChatProvider, FileDiffViewer } from '@cockpit/feature-agent';
 import type { ToolCallInfo } from '@cockpit/feature-agent';
 import { nextFileDiffRequest, type FileDiffRequest } from './fileDiffRequest';
-import { paneLayout, type PaneLayout } from './paneLayout';
+import { paneLayout, paneClass, maximizedTabId, type PaneLayout } from './paneLayout';
 import { SwipeableViewContainer, SwipeableContent, type ViewType } from '@cockpit/shared-ui';
 import { PanelPortalProvider } from '@cockpit/shared-ui';
 import { useTabState } from './useTabState';
 import { TabManagerTopBar } from './TabManagerTopBar';
 import { TabBar } from './TabBar';
+import { Maximize, Minimize } from 'lucide-react';
 import { ChatPanel } from '@cockpit/feature-agent';
 import { useWebSocket } from '@cockpit/shared-ui';
 import { usePinnedSessions } from '@cockpit/feature-agent';
@@ -34,56 +35,6 @@ interface TabManagerProps {
   initialSessionId?: string;
   /** View to force on mount (from the URL). When set, it overrides the saved project view. */
   initialView?: ViewType;
-}
-
-/**
- * Visibility and geometry for one chat tab's pane.
- *
- * `panes` is the whole answer: a tab is visible iff it is in the list, and
- * its side is its index. One pane is exactly the old behaviour — the tab is
- * `block`, everything else `hidden`. Tabs are never unmounted, here or below;
- * that is a hard invariant of this app (CLAUDE.md), and panes only promote a
- * second tab out of `hidden`.
- *
- * Visual order is imposed with flex `order`, not by DOM position. The panes are
- * rendered inside tabs.map, so their DOM order is TAB order — which meant a new
- * chat, appended to the end of the tab list, always landed on the right and
- * shoved the previous right-hand pane over to the left, whichever pane had
- * actually been targeted. Reordering the DOM instead is not an option: moving a
- * tab's position would remount it, and tabs are never unmounted here.
- *
- * The divider is a left border on the pane whose ORDER is not 0, not Tailwind's
- * `divide-x` on the container. `divide-x` selects with `& > * + *`, i.e. by DOM
- * position — and DOM position no longer says which side a pane is on, so the
- * rule landed on whichever pane happened to be second in the tab list and
- * vanished from between them as soon as a new chat shuffled that.
- *
- * The active pane is bracketed by a 1px rule on its top AND bottom edge. Both
- * panes are fully live, so "active" decides exactly one thing — where a new or
- * reopened session lands, and which pane owns the shared composer — and a
- * hairline is proportionate. The bottom rule matters more than it looks: the
- * composer sits below BOTH panes, so the only thing tying it to a column is
- * that column's lower edge running into it. The other pane keeps transparent
- * borders of the same width so nothing shifts when focus changes.
- *
- * `row` is NOT `panes.length > 1`. The diff column is a third occupant of the
- * same flex row that is not a pane, so a single chat can be laid out beside
- * something without being split — and a pane in a row needs its `order` even
- * when it is the only one, or the diff column's order competes with DOM
- * position, the exact failure the paragraph above is about.
- */
-function paneClass(tabId: string, panes: string[], activePane: number, row: boolean): string {
-  const at = panes.indexOf(tabId);
-  if (at === -1) return 'hidden';
-  if (!row) return 'h-full block';
-  // Focus is only meaningful between two panes. Beside a diff column there is
-  // one chat, so it carries no rule at all rather than a transparent one —
-  // nothing can shift when focus cannot move.
-  const focus = panes.length > 1
-    ? ` border-y ${at === activePane ? 'border-y-brand' : 'border-y-transparent'}`
-    : '';
-  const divider = at > 0 ? ' border-l border-border' : '';
-  return `h-full flex-1 min-w-0${focus}${divider}`;
 }
 
 /**
@@ -124,10 +75,11 @@ function peerProps(tabId: string, layout: PaneLayout): { peerTabId?: string; pee
  * stays a bare icon — small, and invisible until the pane is hovered.
  *
  * Small is not enough on its own: it still drew directly on top of that row's
- * rightmost control. The row keeps clear of it by reserving the width instead
- * (ENGINE_OPTIONS_ROW in Chat.tsx), which means `right-1 w-6` here is load
- * bearing over there. Change the ✕'s size or offset and that reservation has
- * to move with it.
+ * rightmost control. The row keeps clear by reserving the width instead
+ * (ENGINE_OPTIONS_ROW in Chat.tsx), which means the corner group's geometry
+ * here — `right-1`, two `w-6` buttons, `gap-0.5` — is load bearing over there.
+ * Adding, removing or resizing a control here means changing that reservation
+ * in the same commit; it has already had to grow once.
  *
  * Hidden with opacity rather than `hidden`, so a keyboard Tab can still reach
  * it (display:none would take it out of the tab order entirely).
@@ -148,16 +100,20 @@ function PaneShell({
   panes,
   activePane,
   row,
+  maximized,
   onFocusPane,
   onClosePane,
+  onToggleMaximize,
   children,
 }: {
   tabId: string;
   panes: string[];
   activePane: number;
   row: boolean;
+  maximized: boolean;
   onFocusPane: (pane: number) => void;
   onClosePane: (pane: number) => void;
+  onToggleMaximize: (pane: number) => void;
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
@@ -170,21 +126,38 @@ function PaneShell({
   return (
     <div
       onMouseDownCapture={split ? () => onFocusPane(at) : undefined}
-      style={row && at !== -1 ? { order: at } : undefined}
-      className={`group/pane relative ${paneClass(tabId, panes, activePane, row)}`}
+      style={row && at !== -1 && !maximized ? { order: at } : undefined}
+      className={`group/pane ${paneClass(tabId, panes, activePane, row, maximized)}`}
     >
       {split && at !== -1 && (
-        <button
-          type="button"
-          onClick={() => onClosePane(at)}
-          title={t('chat.closePane')}
-          aria-label={t('chat.closePane')}
-          className="absolute top-1 right-1 z-20 flex items-center justify-center w-6 h-6 text-muted-foreground opacity-0 pointer-events-none transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:pointer-events-auto group-hover/pane:opacity-100 group-hover/pane:pointer-events-auto"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        // Both corner controls in one hover-revealed group. The reveal moved
+        // from the buttons to this container so the two cannot fade
+        // independently, and `focus-within` replaces the per-button
+        // `focus-visible` for the same reason — opacity-0 keeps them in the tab
+        // order, and a Tab into either one must bring the pair into view.
+        <div className="absolute top-1 right-1 z-20 flex items-center gap-0.5 opacity-0 pointer-events-none transition-opacity focus-within:opacity-100 focus-within:pointer-events-auto group-hover/pane:opacity-100 group-hover/pane:pointer-events-auto">
+          <button
+            type="button"
+            onClick={() => onToggleMaximize(at)}
+            title={maximized ? t('chat.restorePane') : t('chat.maximizePane')}
+            aria-label={maximized ? t('chat.restorePane') : t('chat.maximizePane')}
+            aria-pressed={maximized}
+            className="flex items-center justify-center w-6 h-6 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {maximized ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => onClosePane(at)}
+            title={t('chat.closePane')}
+            aria-label={t('chat.closePane')}
+            className="flex items-center justify-center w-6 h-6 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       )}
       {children}
     </div>
@@ -546,15 +519,49 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
   // been in, and Chat's `isActive` carries known scroll behaviour for hidden
   // tabs; covering the panes leaves them laid out exactly as they were.
   const [diffFullscreen, setDiffFullscreen] = useState(false);
+  // Full width is per-viewing, not a remembered preference: reopening a diff
+  // should land in the column it lives in, or the next FileDiff click would take
+  // over the panel on the strength of a choice made minutes ago.
+  //
+  // Cleared on the EDGE rather than inside the close handler. Today there is
+  // exactly one path that empties `fileDiffRequest`, so a paired statement in
+  // that handler would also be correct — but it would be encoding "there is
+  // currently one close path", not "any close clears this". The pane maximise
+  // below already had to learn that difference the expensive way.
+  useEffect(() => {
+    if (!diffOpen) setDiffFullscreen(false);
+  }, [diffOpen]);
+
+  // Whether a pane is blown up to cover the row. WHICH pane is not stored —
+  // `maximizedTabId` derives it from the focus, so the two cannot disagree.
+  // See that function for the bug this shape exists to make unrepresentable.
+  const [maximized, setMaximized] = useState(false);
+  //
+  // Two mechanisms, two jobs. The gate inside `maximizedTabId` keeps the DERIVED
+  // value honest in the very frame the split disappears; the effect keeps the
+  // STATE from going stale afterwards. The diff column above needs only the
+  // effect, because its whole subtree is already gated on `fileDiffRequest`
+  // being non-null — a stale `true` there cannot render anything.
+  const maximizedTab = maximizedTabId(layout, maximized);
+  useEffect(() => {
+    if (!layout.split) setMaximized(false);
+  }, [layout.split]);
+
+  // Focus follows, always. The shared composer belongs to the FOCUSED pane, so
+  // blowing up a pane you are not focused on would leave you reading one column
+  // and typing into the one it just covered.
+  //
+  // A plain toggle is unambiguous here: the button only exists on a pane that
+  // is on screen, and while maximised the only pane on screen is the focused
+  // one — so there is no "maximise the OTHER pane" press to disambiguate.
+  const handleToggleMaximizePane = useCallback((pane: number) => {
+    setMaximized((m) => !m);
+    focusPane(pane);
+  }, [focusPane]);
   const handleToggleDiffFullscreen = useCallback(() => setDiffFullscreen((f) => !f), []);
 
-  // The one close path. Full-width is per-viewing, not a remembered preference:
-  // reopening a diff should land in the column it lives in, or the next FileDiff
-  // click would take over the panel on the strength of a choice made minutes ago.
-  const handleCloseFileDiff = useCallback(() => {
-    setFileDiffRequest(null);
-    setDiffFullscreen(false);
-  }, []);
+  // Closing is just this: `diffFullscreen` follows on the effect above.
+  const handleCloseFileDiff = useCallback(() => setFileDiffRequest(null), []);
 
   // The tab bar's layout button restores your layout before it toggles it.
   // With a diff column open the split is only hidden, so pressing the button
@@ -564,11 +571,19 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
   //
   // diffOpen is read through a ref so this callback's identity stays stable
   // across every open/close (React performance conventions, CLAUDE.md).
+  // A maximised pane hides the split the same way, and gets the same treatment
+  // and the same order: restore what is covering the layout, THEN toggle it.
   const diffOpenRef = useRef(diffOpen);
   useEffect(() => { diffOpenRef.current = diffOpen; }, [diffOpen]);
+  const maximizedRef = useRef(maximizedTab);
+  useEffect(() => { maximizedRef.current = maximizedTab; }, [maximizedTab]);
   const handleToggleLayout = useCallback(() => {
     if (diffOpenRef.current) {
       handleCloseFileDiff();
+      return;
+    }
+    if (maximizedRef.current !== null) {
+      setMaximized(false);
       return;
     }
     toggleSideBySide();
@@ -674,8 +689,10 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                         panes={layout.panes}
                         activePane={layout.activePane}
                         row={layout.row}
+                        maximized={maximizedTab === tab.id}
                         onFocusPane={focusPane}
                         onClosePane={closePane}
+                        onToggleMaximize={handleToggleMaximizePane}
                       >
                         <ChatPanel
                           tabId={tab.id}
@@ -835,8 +852,10 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
                   panes={layout.panes}
                   activePane={layout.activePane}
                   row={layout.row}
+                  maximized={maximizedTab === tab.id}
                   onFocusPane={focusPane}
                   onClosePane={closePane}
+                  onToggleMaximize={handleToggleMaximizePane}
                 >
                   <ChatPanel
                     tabId={tab.id}

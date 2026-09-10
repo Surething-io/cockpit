@@ -880,6 +880,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             onShowFileDiff={onShowFileDiff}
             onOpenFileLink={onOpenFileLink}
             onApprovePlan={handleApprovePlan}
+            onShowUserMessages={handleShowUserMessages}
           />
         )}
 
@@ -902,7 +903,6 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
               engine={engine}
               onShowGitStatus={onShowGitStatus}
               onShowComments={initialCwd ? handleShowComments : undefined}
-              onShowUserMessages={handleShowUserMessages}
               onOpenNote={onOpenNote}
               onCreateScheduledTask={handleCreateScheduledTask}
               draft={draft}

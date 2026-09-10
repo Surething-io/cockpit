@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Portal, useEscToClose } from '@cockpit/shared-ui';
+import { Portal, useEscToClose, MODAL_SHELL_CLASS_IN_PROJECT } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { loadUserMessageIndex, type UserMessageIndexEntry } from './effect/agentClient';
 
@@ -53,6 +53,18 @@ function formatTime(iso: string): string {
 // CSS handles the actual truncation dynamically based on available width.
 function cleanContent(content: string): string {
   return content.replace(/\s+/g, ' ').trim();
+}
+
+// Hover text for a row. Newlines are kept (the tooltip renders pre-wrap), but the
+// length is not: TooltipProvider caps width, never height, so a pasted diff or
+// stack trace would grow a popover taller than the viewport.
+const TOOLTIP_MAX_CHARS = 500;
+
+function tooltipContent(content: string): string {
+  const text = content.trim();
+  return text.length > TOOLTIP_MAX_CHARS
+    ? `${text.slice(0, TOOLTIP_MAX_CHARS)}…`
+    : text;
 }
 
 export function UserMessagesModal({ isOpen, onClose, cwd, sessionId, onSelectMessage }: UserMessagesModalProps) {
@@ -136,11 +148,15 @@ export function UserMessagesModal({ isOpen, onClose, cwd, sessionId, onSelectMes
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim"
       onClick={onClose}
     >
+      {/* Same board geometry as the session lists — width tracks the display
+          instead of stopping at a breakpoint, height is fixed so filtering does
+          not make the dialog jump. Chat mounts inside the per-project iframe,
+          hence the IN_PROJECT variant (see modalShell.ts). */}
       <div
-        className="bg-card rounded-lg shadow-lv3 w-full max-w-2xl max-h-[85vh] flex flex-col"
+        className={MODAL_SHELL_CLASS_IN_PROJECT}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header — search sits inline with the close button, matching
@@ -196,19 +212,19 @@ export function UserMessagesModal({ isOpen, onClose, cwd, sessionId, onSelectMes
         {/* Content */}
         <div ref={listRef} className="flex-1 overflow-y-auto">
           {isLoading ? (
-            <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
               {t('common.loading')}
             </div>
           ) : failed ? (
-            <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
               {t('userMessages.loadFailed')}
             </div>
           ) : entries.length === 0 ? (
-            <div className="flex items-center justify-center h-32 text-muted-foreground">
+            <div className="flex items-center justify-center h-full text-muted-foreground">
               {t('userMessages.noMessages')}
             </div>
           ) : rows.length === 0 ? (
-            <div className="flex items-center justify-center h-32 text-muted-foreground">
+            <div className="flex items-center justify-center h-full text-muted-foreground">
               {t('userMessages.noResults')}
             </div>
           ) : (
@@ -221,6 +237,7 @@ export function UserMessagesModal({ isOpen, onClose, cwd, sessionId, onSelectMes
                     key={entry.id}
                     onClick={() => { void handleSelect(entry); }}
                     className="w-full px-4 py-3 text-left hover:bg-hover transition-colors"
+                    data-tooltip={tooltipContent(entry.content)}
                   >
                     <div className="flex items-start gap-3">
                       {/* Index */}

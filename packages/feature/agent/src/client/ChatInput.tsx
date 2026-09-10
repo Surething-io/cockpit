@@ -19,7 +19,6 @@ interface ChatInputProps {
   engine?: ChatEngine;
   onShowGitStatus?: () => void;
   onShowComments?: () => void;
-  onShowUserMessages?: () => void;
   onOpenNote?: () => void;
   onCreateScheduledTask?: (params: {
     message: string;
@@ -44,7 +43,7 @@ interface ChatInputProps {
   setDraftImages?: React.Dispatch<React.SetStateAction<ImageInfo[]>>;
 }
 
-export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine: _engine, onShowGitStatus, onShowComments, onShowUserMessages, onOpenNote, onCreateScheduledTask, draft, setDraft, draftImages, setDraftImages }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine: _engine, onShowGitStatus, onShowComments, onOpenNote, onCreateScheduledTask, draft, setDraft, draftImages, setDraftImages }: ChatInputProps) {
   const { t } = useTranslation();
   const localInput = useState('');
   const localImages = useState<ImageInfo[]>([]);
@@ -243,19 +242,6 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-            </svg>
-          </button>
-        )}
-
-        {/* User messages list button */}
-        {onShowUserMessages && (
-          <button
-            onClick={onShowUserMessages}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-hover active:bg-muted active:scale-95 rounded-lg transition-all"
-            title={t('chat.userMessages')}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
         )}

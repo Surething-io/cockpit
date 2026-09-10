@@ -64,6 +64,9 @@ interface MessageListProps {
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
   /** Plan mode: approve the presented plan → turn off plan mode and resend to execute */
   onApprovePlan?: () => void;
+  /** Open the whole-session user-message list. Lives on the jump capsule, next
+      to prev/next — same job, one home. */
+  onShowUserMessages?: () => void;
 }
 
 function AnimatedProgressNumber({ value }: { value: number }) {
@@ -124,7 +127,7 @@ export interface MessageListHandle {
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
-  { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, backgroundTasks, liveOutputTokens, runningStartedAt, hasMoreHistory, isLoadingMore, onLoadMore, onFork, onSendToPeer, peerSide, isActive = true, onContentSearch, onShowFileDiff, onOpenFileLink, onApprovePlan },
+  { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, backgroundTasks, liveOutputTokens, runningStartedAt, hasMoreHistory, isLoadingMore, onLoadMore, onFork, onSendToPeer, peerSide, isActive = true, onContentSearch, onShowFileDiff, onOpenFileLink, onApprovePlan, onShowUserMessages },
   ref
 ) {
   const { t, i18n } = useTranslation();
@@ -838,7 +841,12 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         </div>
       )}
 
-      {/* Scroll to latest + the user-message steps */}
+      {/* Scroll to latest + the user-message steps + the whole-session list.
+          The list button rides the same transient rule as the rest of the capsule
+          rather than pinning itself on top: these capsules are opaque and sit over
+          the text (see the note above), and one button held there permanently was
+          worse than the trip it saves. Consequence to keep in mind — at the bottom
+          of a thread the list has no entry until you scroll up. */}
       {showBottomButton && messages.length > 0 && (
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center bg-card shadow-lv2 rounded-full">
           <button
@@ -871,6 +879,22 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 19H5m7-14v10m5-5l-5 5-5-5" />
             </svg>
           </button>
+          {onShowUserMessages && (
+            <>
+              {/* Stepping through messages and opening a panel are different acts,
+                  so they do not sit flush against each other. */}
+              <span className="w-px h-4 bg-border" />
+              <button
+                onClick={onShowUserMessages}
+                className="p-2 text-muted-foreground hover:text-foreground rounded-full transition-all active:scale-95"
+                title={t('chat.userMessages')}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+            </>
+          )}
         </div>
       )}
 

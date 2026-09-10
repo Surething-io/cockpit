@@ -35,23 +35,16 @@ describe('session-by-path codex history', () => {
           content: [{ type: 'input_text', text: 'run tests' }],
         },
       },
+      // A tool bubble is drawn from its completed item — id, input and result
+      // in one record, the same one the live stream draws from.
       {
-        type: 'response_item',
+        type: 'event_msg',
         payload: {
-          type: 'function_call',
-          name: 'exec_command',
-          arguments: '{"cmd":"npm test"}',
-          call_id: 'call_1',
+          type: 'item_completed',
+          item: { type: 'command_execution', id: 'exec-1', command: 'npm test', aggregated_output: 'ok', exit_code: 0 },
         },
       },
-      {
-        type: 'response_item',
-        payload: {
-          type: 'function_call_output',
-          call_id: 'call_1',
-          output: 'ok',
-        },
-      },
+      { type: 'response_item', payload: { type: 'function_call_output', call_id: 'call_1', output: 'ok' } },
     ]);
 
     const { POST } = await import('./session-by-path');
@@ -64,7 +57,7 @@ describe('session-by-path codex history', () => {
     const body = await response.json();
 
     expect(body.messages[1].toolCalls[0]).toMatchObject({
-      id: 'call_1',
+      id: 'exec-1',
       name: 'Bash',
       input: { command: 'npm test' },
       result: 'ok',
@@ -83,40 +76,23 @@ describe('session-by-path codex history', () => {
         payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'swap the icon' }] },
       },
       {
-        type: 'response_item',
+        type: 'event_msg',
         payload: {
-          type: 'custom_tool_call',
-          name: 'exec',
-          call_id: 'call_1',
-          input: 'const r = await tools.exec_command({"cmd":"npm test","workdir":"/repo"}); text(r.output);\n',
+          type: 'item_completed',
+          item: {
+            type: 'command_execution', id: 'exec-1',
+            command: 'npm test', aggregated_output: 'Script completed\nok', exit_code: 0,
+          },
         },
       },
       {
-        type: 'response_item',
+        type: 'event_msg',
         payload: {
-          type: 'custom_tool_call_output',
-          call_id: 'call_1',
-          output: [
-            { type: 'input_text', text: 'Script completed\n' },
-            { type: 'input_text', text: 'ok' },
-          ],
-        },
-      },
-      {
-        type: 'response_item',
-        payload: {
-          type: 'custom_tool_call',
-          name: 'exec',
-          call_id: 'call_2',
-          input: 'const patch = "*** Begin Patch\\n*** Update File: /repo/a.ts\\n@@\\n-a\\n+b\\n*** End Patch";\ntext(await tools.apply_patch(patch));',
-        },
-      },
-      {
-        type: 'response_item',
-        payload: {
-          type: 'custom_tool_call_output',
-          call_id: 'call_2',
-          output: [{ type: 'input_text', text: '{}' }],
+          type: 'item_completed',
+          item: {
+            type: 'file_change', id: 'exec-2',
+            changes: [{ path: '/repo/a.ts', kind: 'update' }], status: 'completed',
+          },
         },
       },
     ]);
@@ -132,17 +108,17 @@ describe('session-by-path codex history', () => {
 
     expect(body.messages[1].toolCalls).toMatchObject([
       {
-        id: 'call_1',
+        id: 'exec-1',
         name: 'Bash',
-        input: { command: 'npm test', workdir: '/repo' },
+        input: { command: 'npm test' },
         result: 'Script completed\nok',
         isLoading: false,
       },
       {
-        id: 'call_2',
+        id: 'exec-2',
         name: 'ApplyPatch',
         input: { changes: [{ path: '/repo/a.ts', kind: 'update' }] },
-        result: '{}',
+        result: 'update /repo/a.ts',
         isLoading: false,
       },
     ]);
@@ -768,7 +744,7 @@ describe('session-by-path codex format drift', () => {
     const dataUrl = `data:image/png;base64,${'A'.repeat(20000)}`;
     writeCodexTranscript(sessionId, [
       userLine('看图'),
-      { type: 'response_item', payload: { type: 'function_call', name: 'view_image', call_id: 'call_v1', arguments: '{"path":"/tmp/a.png"}' } },
+      { type: 'event_msg', payload: { type: 'item_completed', item: { type: 'image_view', id: 'img-1', path: '/tmp/a.png' } } },
       {
         type: 'response_item',
         payload: {
@@ -920,24 +896,25 @@ describe('session-by-path codex tool types', () => {
     writeCodexTranscript(sessionId, [
       userLine('做个计划'),
       {
-        type: 'response_item',
+        type: 'event_msg',
         payload: {
-          type: 'function_call',
-          name: 'update_plan',
-          arguments: JSON.stringify({ plan: [{ step: '读文件', status: 'completed' }, { step: '分析', status: 'in_progress' }] }),
-          call_id: 'call_p1',
+          type: 'item_completed',
+          item: {
+            type: 'todo_list', id: 'plan-1',
+            items: [{ text: '读文件', status: 'completed' }, { text: '分析', status: 'in_progress' }],
+          },
         },
       },
-      { type: 'response_item', payload: { type: 'function_call_output', call_id: 'call_p1', output: 'Plan updated' } },
     ]);
 
     const body = await loadSession(sessionId);
     expect(body.messages[1].toolCalls[0]).toMatchObject({
-      id: 'call_p1',
+      id: 'plan-1',
       name: 'TodoWrite',
-      // MessageBubble's checklist counts status === 'completed'.
+      // MessageBubble's checklist counts status === 'completed'; the third state
+      // has to survive or every in-progress step reads as not started.
       input: { todos: [{ content: '读文件', status: 'completed' }, { content: '分析', status: 'in_progress' }] },
-      result: 'Plan updated',
+      result: '1/2 completed',
     });
   });
 
@@ -946,16 +923,16 @@ describe('session-by-path codex tool types', () => {
     writeCodexTranscript(sessionId, [
       userLine('算 2+2'),
       {
-        type: 'response_item',
+        type: 'event_msg',
         payload: {
-          type: 'function_call',
-          name: 'js',
-          namespace: 'mcp__node_repl',
-          arguments: JSON.stringify({ code: '2 + 2' }),
-          call_id: 'call_m1',
+          type: 'item_completed',
+          item: {
+            type: 'mcp_tool_call', id: 'call_m1',
+            server: 'node_repl', tool: 'js', arguments: { code: '2 + 2' },
+            result: { content: [{ type: 'text', text: '4' }] }, status: 'completed',
+          },
         },
       },
-      { type: 'response_item', payload: { type: 'function_call_output', call_id: 'call_m1', output: '4' } },
     ]);
 
     const body = await loadSession(sessionId);

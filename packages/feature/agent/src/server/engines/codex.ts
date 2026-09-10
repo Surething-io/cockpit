@@ -1,5 +1,6 @@
-import type { Input, ModelReasoningEffort, ThreadOptions } from '@openai/codex-sdk';
 import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
+import { CodexAppServerClient, type CodexNotification } from './codexAppServer/client';
+import { CodexEventShim } from './codexAppServer/events';
 import { sanitizedSpawnEnv, findCodexSessionPath } from '@cockpit/shared-utils';
 import { randomUUID } from 'crypto';
 import { writeFileSync, unlinkSync, mkdirSync, existsSync, statSync, openSync, readSync, closeSync } from 'fs';
@@ -10,29 +11,26 @@ import type { EngineSpec, ImageData, RunCtx } from './types';
 import { mergeStashedCodexRollout, stashCodexRollout } from './shared/noHistoryRollout';
 import {
   CODEX_AGENT_MESSAGE_TYPE,
-  CODEX_MCP_NAMESPACE_PREFIX,
-  CODEX_EXEC_SCRIPT_FN_NAME,
   CODEX_IMAGE_ONLY_TEXT,
-  CODEX_PATCH_FN_NAME,
   CODEX_SPAWN_FN_NAME,
   CODEX_TOOL_NAMES,
   codexAgentResultText,
-  codexMcpResultText,
-  codexMcpToolName,
-  codexTodoInput,
-  codexTodoResultText,
-  codexWebSearchCall,
+  codexItemBubble,
   parseCodexAgentMessage,
   parseCodexAgentsStates,
-  parseCodexExecScript,
   parseCodexSpawnInput,
   parseCodexSpawnOutput,
   parseCodexSubAgentActivity,
 } from '../api/session/codexTools';
 
-// Codex SDK event adapter. Translates Codex JSON events into the same event shapes the
-// other engines emit.
-type CodexReasoningEffort = ModelReasoningEffort | 'max' | 'ultra';
+// Codex app-server event adapter. Translates Codex events into the same event
+// shapes the other engines emit.
+//
+// Spelled out rather than imported from the SDK's `ModelReasoningEffort`: the
+// SDK is gone, and this list is a Cockpit-side contract anyway — `codexParams`
+// forwards whatever survives `resolveCodexReasoningEffort`, so an unknown value
+// is dropped here rather than rejected by the server mid-turn.
+type CodexReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
 
 const MEDIA_EXT: Record<string, string> = {
   'image/png': '.png',
@@ -66,14 +64,15 @@ interface CodexItem {
   exit_code?: number | null;
   status?: string;
   changes?: Array<{ path?: string; kind?: string }>; // file_change (apply_patch) items
-  // --- collab_tool_call (multi-agent) fields, verified against codex 0.141 ---
+  // --- collab_tool_call (multi-agent) fields. The app-server spelling is
+  //     `collabAgentToolCall`; the shim aliases it onto this exec name. ---
   /** 'spawn_agent' | 'wait' | 'close_agent' | 'send_input' | 'resume_agent' */
   tool?: string;
   sender_thread_id?: string;
   /** Sub-agent thread ids. EMPTY on a spawn's item.started — only item.completed has it. */
   receiver_thread_ids?: string[];
   prompt?: string | null;
-  /** Live per-agent state. Note: a DIFFERENT encoding from the rollout's wait output. */
+  /** Live per-agent state. A DIFFERENT encoding from the rollout's wait output. */
   agents_states?: Record<string, { status?: string; message?: string | null }>;
   // --- mcp_tool_call ---
   server?: string;
@@ -81,7 +80,9 @@ interface CodexItem {
   arguments?: Record<string, unknown>;
   result?: unknown;
   error?: { message?: string } | null;
-  // --- web_search --- (`id` is a stable `ws_…`, matching the rollout's call_id)
+  // --- web_search --- (`id` is a stable `ws_…`, matching the rollout's call_id).
+  //     `action` is the exec shape; app-server sends `results` instead, which is
+  //     not plumbed through — the bubble degrades to the bare query.
   query?: string;
   action?: { type?: string; query?: string; queries?: string[]; url?: string };
   // --- todo_list ---
@@ -101,10 +102,6 @@ export function codexToolUseId(item: CodexItem): string {
   return item.call_id || item.id || `tool-${randomUUID()}`;
 }
 
-const CODEX_EXEC_FN_NAMES = new Set(['exec_command', 'shell_command', 'local_shell']);
-
-export interface RolloutExecCall { callId?: string; cmd: string }
-export interface RolloutPatchCall { callId?: string; files: string[] }
 /**
  * A `spawn_agent` call. `agentId`/`nickname` are only known once codex appends the
  * paired `function_call_output`, so they arrive on a later read than `callId`.
@@ -114,41 +111,36 @@ export interface RolloutSpawnCall {
   args: Record<string, unknown>;
   agentId?: string;
   nickname?: string;
-  /** 0.147+: the sub-agent's path (`/root/cr_static`); no nickname is published here. */
+  /** The sub-agent's path (`/root/cr_static`); no nickname is published here. */
   agentPath?: string;
 }
-/** An MCP call. Persisted as an ordinary function_call under an `mcp__<server>` namespace. */
-export interface RolloutMcpCall { callId?: string; server: string; tool: string }
 /**
  * A sub-agent's final report (0.147+ `response_item`/agent_message). Keyed by the
  * author's agent path, which is what sub_agent_activity also stamps onto the spawn
  * that created it — the two together route a report to its Task bubble.
  */
 export interface RolloutAgentReport { author: string; text: string }
+/**
+ * What the rollout still has to supply.
+ *
+ * It used to also carry ordered exec / patch / mcp call lists, whose only job
+ * was to translate a live tool id into the persistent one. app-server hands us
+ * the persistent id directly (see `toolUseIdFor`), so those lists are gone and
+ * with them the ordinal matching they existed for. Sub-agents remain, for two
+ * reasons neither of which is identity: the spawn's own arguments and the
+ * agent's nickname are not on the live item, and a sub-agent's report is
+ * published on the CHILD's thread, which this connection filters out.
+ */
 export interface RolloutCalls {
-  exec: ReadonlyArray<RolloutExecCall>;
-  patch: ReadonlyArray<RolloutPatchCall>;
   spawn: ReadonlyArray<RolloutSpawnCall>;
-  mcp: ReadonlyArray<RolloutMcpCall>;
   reports: ReadonlyArray<RolloutAgentReport>;
 }
 
-/** Extract the target file paths from an apply_patch body (`*** Update File: <path>`). */
-export function parsePatchFiles(input: string): string[] {
-  const files: string[] = [];
-  const re = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(input))) files.push(m[1].trim());
-  return files;
-}
 
 /** Parse exec_command, apply_patch, spawn_agent, MCP calls and sub-agent reports out of complete JSONL lines. */
 function parseCallLines(
   text: string,
-  exec: RolloutExecCall[],
-  patch: RolloutPatchCall[],
   spawns: RolloutSpawnCall[],
-  mcps: RolloutMcpCall[],
   reports: RolloutAgentReport[],
 ): void {
   for (const line of text.split('\n')) {
@@ -162,30 +154,7 @@ function parseCallLines(
     try { entry = JSON.parse(line); } catch { continue; }
     const p = entry.payload;
     if (!p) continue;
-    if (p.type === 'function_call' && p.name && CODEX_EXEC_FN_NAMES.has(p.name)) {
-      let cmd = '';
-      try { cmd = String((JSON.parse(p.arguments || '{}') as { cmd?: string }).cmd || ''); } catch { /* ignore */ }
-      exec.push({ callId: p.call_id, cmd });
-    } else if (p.type === 'custom_tool_call' && p.name === CODEX_PATCH_FN_NAME) {
-      patch.push({ callId: p.call_id, files: parsePatchFiles(p.input || '') });
-    } else if (p.type === 'custom_tool_call' && p.name === CODEX_EXEC_SCRIPT_FN_NAME) {
-      // 5.6+: one freeform tool for everything, so which list this belongs to is
-      // decided by the script body. Anything that is not an exec/patch — a
-      // `kind: 'other'` tool such as write_stdin, or a script too dynamic to read
-      // statically — is deliberately dropped rather than guessed into a list: it
-      // runs no command line, so the live stream emits no `command_execution`
-      // item for it, and adding a row here would shift every later index and bind
-      // the next live item to the wrong call_id.
-      const script = parseCodexExecScript(p.input || '');
-      if (script.kind === 'exec') exec.push({ callId: p.call_id, cmd: script.command });
-      else if (script.kind === 'patch') patch.push({ callId: p.call_id, files: parsePatchFiles(script.patch) });
-    } else if (p.type === 'function_call' && p.name && p.namespace?.startsWith(CODEX_MCP_NAMESPACE_PREFIX)) {
-      mcps.push({
-        callId: p.call_id,
-        server: p.namespace.slice(CODEX_MCP_NAMESPACE_PREFIX.length),
-        tool: p.name,
-      });
-    } else if (p.type === 'function_call' && p.name === CODEX_SPAWN_FN_NAME) {
+    if (p.type === 'function_call' && p.name === CODEX_SPAWN_FN_NAME) {
       let args: Record<string, unknown> = {};
       try { args = JSON.parse(p.arguments || '{}') as Record<string, unknown>; } catch { /* ignore */ }
       spawns.push({ callId: p.call_id, args });
@@ -221,39 +190,32 @@ function parseCallLines(
 }
 
 /**
- * The live `codex exec --json` stream tags items with an ephemeral per-turn
- * `item.id` (item_0, item_1, ...) and carries NO `call_id`. The persisted rollout
- * JSONL instead stores each call under a stable, session-global `call_id`, which
- * is what the resume path (session-by-path.ts) uses to key tool calls. Recording
- * snapshots under `item.id` therefore breaks the FileDiff entry after a refresh.
+ * Incremental reader over a session's rollout, for the two things the live
+ * stream cannot supply.
  *
- * Codex writes the call (with its call_id) to the rollout before executing, so by
- * the time we see the live item the entry already exists. This factory returns a
- * reader that maps the growing rollout to its ordered exec list (shell commands,
- * live `command_execution`), patch list (apply_patch edits, live `file_change`),
- * spawn list and sub-agent reports (see syncSubAgents — on 0.147 these have NO live
- * event at all, so here the rollout is not an id oracle but the only source)
- * — reading only the bytes appended since the last call (JSONL is append-only),
- * so a long session costs O(total bytes) across a turn, not O(bytes × calls). A
- * StringDecoder keeps multibyte chars intact across the byte boundary; a partial
- * trailing line is carried to the next read.
+ * Sub-agents run as their OWN threads under app-server, and this connection
+ * filters foreign threads out (see CodexEventShim) — so a child's final report
+ * reaches us only through the file. The spawn's own arguments and the agent's
+ * nickname are likewise absent from the live item.
+ *
+ * Reads only the bytes appended since the last call (JSONL is append-only), so
+ * a long session costs O(total bytes) across a turn rather than O(bytes × calls).
+ * A StringDecoder keeps multibyte characters intact across the byte boundary,
+ * and a partial trailing line is carried into the next read.
  */
 export function createRolloutCallReader(): (rolloutPath: string) => RolloutCalls {
   let boundPath: string | null = null;
   let offset = 0;
   let carry = '';
   let decoder = new StringDecoder('utf8');
-  const exec: RolloutExecCall[] = [];
-  const patch: RolloutPatchCall[] = [];
   const spawns: RolloutSpawnCall[] = [];
-  const mcps: RolloutMcpCall[] = [];
   const reports: RolloutAgentReport[] = [];
 
-  const snapshot = (): RolloutCalls => ({ exec, patch, spawn: spawns, mcp: mcps, reports });
+  const snapshot = (): RolloutCalls => ({ spawn: spawns, reports });
 
   const reset = (p: string) => {
     boundPath = p; offset = 0; carry = ''; decoder = new StringDecoder('utf8');
-    exec.length = 0; patch.length = 0; spawns.length = 0; mcps.length = 0; reports.length = 0;
+    spawns.length = 0; reports.length = 0;
   };
 
   return (rolloutPath: string): RolloutCalls => {
@@ -279,92 +241,11 @@ export function createRolloutCallReader(): (rolloutPath: string) => RolloutCalls
     const lastNl = data.lastIndexOf('\n');
     if (lastNl === -1) { carry = data; return snapshot(); } // no complete line yet
     carry = data.slice(lastNl + 1);
-    parseCallLines(data.slice(0, lastNl), exec, patch, spawns, mcps, reports);
+    parseCallLines(data.slice(0, lastNl), spawns, reports);
     return snapshot();
   };
 }
 
-const basename = (p: string): string => p.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || p;
-
-/**
- * Unwrap codex's `/bin/zsh -lc '<cmd>'` shell wrapper to the raw command for comparison.
- * Codex switches the wrapper quote to double when the inner command contains a single
- * quote (e.g. `sed -n '1,3p'`), so both quote styles must be handled.
- */
-function unwrapShellCommand(command: string): string {
-  const m = command.match(/^\/bin\/\S+ -lc (['"])([\s\S]*)\1\s*$/);
-  return m ? m[2] : command;
-}
-
-function normalizeCmd(s: string): string {
-  return s.replace(/\s+/g, ' ').trim();
-}
-
-/**
- * Resolve the persistent call_id for the `index`-th exec call of a turn from the
- * ordered rollout exec list, guarding with a command match. Returns null to signal
- * "fall back to item.id" (missing entry, no call_id, or command desync).
- */
-// Max extra length a shell wrapper adds around the inner command, e.g.
-// `/bin/zsh -lc "<cmd>"` (~16 chars; leave slack for longer shell paths). The
-// includes() fallback only fires within this bound so a short command can't be
-// spuriously matched as a substring of an unrelated, much longer command.
-const SHELL_WRAPPER_SLACK = 32;
-
-export function resolveCodexCallId(
-  execCalls: ReadonlyArray<RolloutExecCall>,
-  index: number,
-  liveCommand: string,
-): string | null {
-  const target = execCalls[index];
-  if (!target?.callId) return null;
-  const persisted = normalizeCmd(target.cmd);
-  const live = normalizeCmd(unwrapShellCommand(liveCommand || ''));
-  const liveRaw = normalizeCmd(liveCommand || '');
-  // Order within a turn is 1:1; the command match guards against desync (rollout not
-  // yet flushed, offset drift). Prefix checks tolerate either side being truncated;
-  // the last clause covers any shell wrapper we failed to strip (rollout stores the
-  // raw inner command, a substring of the wrapped live command) but is length-bounded
-  // to SHELL_WRAPPER_SLACK so it only accepts a genuine wrapper, not a coincidental
-  // substring under desync.
-  if (
-    !live ||
-    live === persisted ||
-    persisted.startsWith(live) ||
-    live.startsWith(persisted) ||
-    (!!persisted && liveRaw.includes(persisted) && liveRaw.length - persisted.length <= SHELL_WRAPPER_SLACK)
-  ) {
-    return target.callId;
-  }
-  return null;
-}
-
-/**
- * Resolve the persistent call_id for the `index`-th apply_patch of a turn from the
- * ordered rollout patch list, guarding with a file-path match (live file_change gives
- * absolute paths; the rollout patch references cwd-relative paths, so compare by
- * basename). Returns null → "fall back to item.id".
- */
-export function resolveCodexPatchCallId(
-  patchCalls: ReadonlyArray<RolloutPatchCall>,
-  index: number,
-  changePaths: ReadonlyArray<string>,
-): string | null {
-  const target = patchCalls[index];
-  if (!target?.callId) return null;
-  if (target.files.length === 0 || changePaths.length === 0) return target.callId; // nothing to cross-check → trust order
-  const wanted = new Set(target.files.map(basename));
-  if (changePaths.some((p) => wanted.has(basename(p)))) return target.callId;
-  return null;
-}
-
-/**
- * Resolve the persistent call_id for a live `spawn_agent`, preferring an exact match
- * on the sub-agent's thread id (the live item carries it in `receiver_thread_ids`,
- * the rollout in the spawn call's output) and falling back to turn order when codex
- * has not flushed that output yet. Returns the matching rollout entry so the caller
- * can also reuse its arguments/nickname, or null → "fall back to item.id".
- */
 export function resolveCodexSpawnCall(
   spawnCalls: ReadonlyArray<RolloutSpawnCall>,
   index: number,
@@ -378,26 +259,20 @@ export function resolveCodexSpawnCall(
   return byOrder?.callId ? byOrder : null;
 }
 
-/**
- * Resolve the persistent call_id for the `index`-th MCP call of a turn, guarded by
- * server+tool so an offset drift falls back to item.id rather than binding the wrong
- * call. MCP tools are unknown names, so `isMutatingToolName` treats them as mutating
- * and they DO get snapshots — which is why their ids have to survive a refresh.
- */
-export function resolveCodexMcpCallId(
-  mcpCalls: ReadonlyArray<RolloutMcpCall>,
-  index: number,
-  server: string | undefined,
-  tool: string | undefined,
-): string | null {
-  const target = mcpCalls[index];
-  if (!target?.callId) return null;
-  if (server && tool && (target.server !== server || target.tool !== tool)) return null;
-  return target.callId;
-}
-
 interface CodexEventAdapter {
   handle(event: CodexEvent): void;
+  /** Point the sub-agent reader at this turn's rollout; see `bindRollout`. */
+  bindRollout(path: string | null | undefined): void;
+  /**
+   * Count streamed assistant text toward the turn's output-token estimate.
+   *
+   * Under the exec transport the estimate ticked once per completed item, so
+   * the "processing N" readout sat at 0 for the whole of a long answer. Text
+   * now arrives as deltas, and the counter has to be fed from there or it goes
+   * backwards: the completed agent_message item is deliberately dropped by the
+   * shim, so nothing else would ever count the reply at all.
+   */
+  noteAssistantText(text: string): void;
   assertSuccess(): void;
 }
 
@@ -409,26 +284,13 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
   const pendingToolCalls = new Map<string, string>(); // item.id -> tool_use_id
   const progressItems = new Set<string>();
 
-  // Map live items to their persistent rollout call_id so snapshots survive a
-  // refresh (see createRolloutCallReader). command_execution <-> exec list and
-  // file_change (apply_patch) <-> patch list are matched independently, each by
-  // its own per-turn order. Resolved lazily, cached per item.id; falls back to
-  // codexToolUseId (item.id) on any mismatch.
+  // Rollout state, kept only for the sub-agent payload the live stream omits.
+  // Tool identity does NOT come from here any more — see toolUseIdFor.
   let rolloutPath: string | null = null;
-  let execBase = 0;  // # of exec calls in the rollout before this turn (resume offset)
-  let patchBase = 0; // # of apply_patch calls in the rollout before this turn
-  let execSeen = 0;  // # of distinct command_execution items seen this turn
-  let patchSeen = 0; // # of distinct file_change items seen this turn
   let spawnBase = 0; // # of spawn_agent calls in the rollout before this turn
   let spawnSeen = 0; // # of distinct spawn_agent items seen this turn
-  let mcpBase = 0;   // # of MCP calls in the rollout before this turn
-  let mcpSeen = 0;   // # of distinct mcp_tool_call items seen this turn
   let reportBase = 0; // # of sub-agent reports in the rollout before this turn
   const agentToolUseIds = new Map<string, string>();
-  let codexThreadId: string | null = sessionId || null;
-  let rolloutLookups = 0;
-  const MAX_ROLLOUT_LOOKUPS = 8;
-  const resolvedToolUseIds = new Map<string, string>();
   const readRollout = createRolloutCallReader();
 
   /**
@@ -437,14 +299,18 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
    * have run — codex appends each call to the rollout before executing it, so sampling
    * any later would count the very call being resolved as history and shift every
    * index by one. A fresh session needs no sample: its rollout starts empty.
+   *
+   * Only spawns and sub-agent reports are counted now. Tool IDS no longer come
+   * from here at all (see toolUseIdFor); what remains is the sub-agent payload
+   * the live stream does not carry — and the reports, which arrive on the
+   * CHILD's thread and are therefore filtered out of this connection.
    */
   let basesReady = false;
   const initBases = () => {
     if (basesReady || !rolloutPath) return;
     basesReady = true;
     const c = readRollout(rolloutPath);
-    execBase = c.exec.length; patchBase = c.patch.length;
-    spawnBase = c.spawn.length; mcpBase = c.mcp.length; reportBase = c.reports.length;
+    spawnBase = c.spawn.length; reportBase = c.reports.length;
   };
 
   if (sessionId) {
@@ -454,54 +320,58 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
     } catch { rolloutPath = null; }
   }
 
-  const ensureRolloutPath = (): string | null => {
-    if (rolloutPath || !codexThreadId || rolloutLookups >= MAX_ROLLOUT_LOOKUPS) return rolloutPath;
-    rolloutLookups += 1;
-    try { rolloutPath = findCodexSessionPath(codexThreadId); } catch { rolloutPath = null; }
-    return rolloutPath;
+  /**
+   * Point the reader at the rollout this turn will actually append to.
+   *
+   * `thread/start` and `thread/resume` both return the file's path, so the turn
+   * can hand it over instead of searching for it. That matters twice:
+   *
+   *   - A resume that FALLS BACK to a fresh thread gets a new id and a new
+   *     file, while this adapter was constructed against the old session's
+   *     path. Without a rebind the whole turn reads the wrong file and every
+   *     sub-agent bubble silently disappears.
+   *   - A brand-new session has no path to find, and searching for one meant
+   *     an `execSync(find …)` over ~/.codex/sessions, capped at a handful of
+   *     attempts before giving up for the rest of the turn.
+   */
+  const bindRollout = (path: string | null | undefined): void => {
+    if (!path || path === rolloutPath) return;
+    rolloutPath = path;
+    // A different file is a different history, so its baseline has to be
+    // re-sampled — and still before the model can have run, which is why this
+    // is called from the turn's setup and not from an event.
+    basesReady = false;
+    initBases();
   };
 
-  const resolveExecToolUseId = (item: CodexItem): string => {
-    const key = item.id || item.call_id || `codex-${randomUUID()}`;
-    const cached = resolvedToolUseIds.get(key);
-    if (cached) return cached;
+  /**
+   * The tool id for a live item, and the whole story now that Codex runs on
+   * app-server: `item.id` IS the persistent id.
+   *
+   * Under the old `exec` transport the live id was a per-turn ordinal
+   * (`item_15`) that appeared nowhere on disk, so a snapshot keyed by it could
+   * not be found again after a reload. Bridging that took a reader over the
+   * growing rollout plus five "how many of these existed before this turn"
+   * offsets, all of which had to be sampled before the model could run.
+   *
+   * app-server publishes `item/completed` with a globally unique id AND records
+   * it at `event_msg/item_completed -> item.id`, so live and reloaded ids are
+   * the same value read from two places. Measured across this machine's
+   * sessions: exec-era rollouts contain 0 `item_completed` entries, app-server
+   * ones contain every tool call. The transcript parser rebinds to the same
+   * field — see `bindItemId` there.
+   *
+   * Note the id is NOT uniform in shape, and must not be forced to be: a
+   * command or patch gets `exec-<uuid>`, while a collab tool call's item id is
+   * literally its `call_id`. Taking whatever the protocol hands us is what
+   * keeps sub-agent routing (`sub_agent_activity.event_id` is the spawning
+   * call_id) working untouched.
+   *
+   * An alias, not a wrapper: this used to memoise, which was already a no-op
+   * (the underlying call is pure) and would become a lie the moment it wasn't.
+   */
+  const toolUseIdFor = codexToolUseId;
 
-    let toolUseId = codexToolUseId(item);
-    const path = ensureRolloutPath();
-    if (!item.call_id && path) {
-      const callId = resolveCodexCallId(readRollout(path).exec, execBase + execSeen, item.command || '');
-      if (callId) toolUseId = callId;
-    }
-    resolvedToolUseIds.set(key, toolUseId);
-    execSeen += 1;
-    return toolUseId;
-  };
-
-  const resolvePatchToolUseId = (item: CodexItem): string => {
-    const key = item.id || item.call_id || `codex-${randomUUID()}`;
-    const cached = resolvedToolUseIds.get(key);
-    if (cached) return cached;
-
-    let toolUseId = codexToolUseId(item);
-    const path = ensureRolloutPath();
-    if (!item.call_id && path) {
-      const paths = (item.changes || []).map((c) => c.path || '').filter(Boolean);
-      const callId = resolveCodexPatchCallId(readRollout(path).patch, patchBase + patchSeen, paths);
-      if (callId) toolUseId = callId;
-    }
-    resolvedToolUseIds.set(key, toolUseId);
-    patchSeen += 1;
-    return toolUseId;
-  };
-
-  const patchInput = (item: CodexItem) => ({
-    changes: (item.changes || []).map((c) => ({ path: c.path || '', kind: c.kind || 'update' })),
-  });
-  const patchResultText = (item: CodexItem): string => {
-    const cs = item.changes || [];
-    if (cs.length === 0) return 'apply_patch';
-    return cs.map((c) => `${c.kind || 'update'} ${c.path || ''}`.trim()).join('\n');
-  };
 
   /** Task bubbles already emitted this turn, keyed by the spawning call_id. */
   const spawnEmitted = new Set<string>();
@@ -524,14 +394,18 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
 
   const emitSpawn = (item: CodexItem) => {
     const agentIds = item.receiver_thread_ids ?? [];
-    const path = ensureRolloutPath();
+    const path = rolloutPath;
     const entry = path
       ? resolveCodexSpawnCall(readRollout(path).spawn, spawnBase + spawnSeen, agentIds[0])
       : null;
     spawnSeen += 1;
 
-    const toolUseId = entry?.callId || codexToolUseId(item);
-    if (spawnEmitted.has(toolUseId)) return; // syncSubAgents got there first
+    // The rollout entry still supplies what the live item does not carry — the
+    // spawn's own arguments, the agent's nickname and path. It no longer
+    // supplies the ID: a collab tool call's `item.id` already IS its call_id,
+    // so preferring an ordinal-matched entry here could only ever be wrong.
+    const toolUseId = toolUseIdFor(item);
+    if (spawnEmitted.has(toolUseId)) return; // syncSubAgents got there first (it reads the rollout on every event tick)
     const args = entry?.args && Object.keys(entry.args).length > 0
       ? entry.args
       : { message: item.prompt || '' };
@@ -544,19 +418,21 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
   };
 
   /**
-   * Drive the sub-agent bubbles off the rollout, because on 0.147 nothing else can:
-   * `spawn_agent` produces no thread item at all, and the one `collab_tool_call` that
-   * does arrive (`tool: "wait"`) carries an empty `agents_states`/`receiver_thread_ids`.
-   * ≤ 0.14x still comes through handleCollabItem; the two dedupe on the spawning
+   * Drive the sub-agent bubbles off the rollout.
+   *
+   * The live path (handleCollabItem) covers the spawn item itself, but two
+   * things reach us only through the file: the spawn's `agentId`, which is
+   * stamped by a later `sub_agent_activity` line, and the child's final report,
+   * which is published on the CHILD's thread — filtered out of this connection
+   * by design (see CodexEventShim). The two paths dedupe on the spawning
    * call_id, which both resolve to.
    *
-   * Emission waits for the spawn's `agentId` (0.147 stamps it from sub_agent_activity,
-   * ≤ 0.14x from spawn_agent's output) so the bubble is emitted once, complete — a
-   * streamed tool_use cannot be amended the way the resume path mutates its input.
-   * flushPending() is the backstop for a spawn that never got one.
+   * Emission waits for that `agentId` so the bubble goes out once, complete: a
+   * streamed tool_use cannot be amended the way the resume path mutates its
+   * input. flushPending() is the backstop for a spawn that never got one.
    */
   const syncSubAgents = (flushPending = false) => {
-    const path = ensureRolloutPath();
+    const path = rolloutPath;
     if (!path) return;
     const { spawn, reports } = readRollout(path);
 
@@ -599,62 +475,8 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
     }
   };
 
-  const resolveMcpToolUseId = (item: CodexItem): string => {
-    const key = item.id || `codex-${randomUUID()}`;
-    const cached = resolvedToolUseIds.get(key);
-    if (cached) return cached;
 
-    let toolUseId = codexToolUseId(item);
-    const path = ensureRolloutPath();
-    if (!item.call_id && path) {
-      const callId = resolveCodexMcpCallId(readRollout(path).mcp, mcpBase + mcpSeen, item.server, item.tool);
-      if (callId) toolUseId = callId;
-    }
-    resolvedToolUseIds.set(key, toolUseId);
-    mcpSeen += 1;
-    return toolUseId;
-  };
 
-  const emitMcpCall = (item: CodexItem, done: boolean) => {
-    const toolUseId = resolveMcpToolUseId(item);
-    const name = codexMcpToolName(item.server || 'mcp', item.tool || 'tool');
-    if (!pendingToolCalls.has(toolUseId)) {
-      pendingToolCalls.set(toolUseId, toolUseId);
-      ctx.emit({
-        type: 'assistant',
-        message: { content: [{ type: 'tool_use', id: toolUseId, name, input: item.arguments || {} }] },
-      });
-    }
-    if (!done) return;
-    ctx.emit({
-      type: 'user',
-      message: { content: [{ tool_use_id: toolUseId, content: codexMcpResultText(item) || `(${item.status || 'completed'})` }] },
-    });
-    pendingToolCalls.delete(toolUseId);
-  };
-
-  const emitWebSearch = (item: CodexItem) => {
-    const toolUseId = codexToolUseId(item);
-    const { name, input, result } = codexWebSearchCall(item.query, item.action);
-    ctx.emit({
-      type: 'assistant',
-      message: { content: [{ type: 'tool_use', id: toolUseId, name, input }] },
-    });
-    ctx.emit({ type: 'user', message: { content: [{ tool_use_id: toolUseId, content: result }] } });
-  };
-
-  const emitTodoList = (item: CodexItem) => {
-    const toolUseId = codexToolUseId(item);
-    const input = codexTodoInput(item.items);
-    ctx.emit({
-      type: 'assistant',
-      message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.todo, input }] },
-    });
-    ctx.emit({
-      type: 'user',
-      message: { content: [{ tool_use_id: toolUseId, content: codexTodoResultText(input.todos) }] },
-    });
-  };
 
   const handleCollabItem = (item: CodexItem) => {
     if (item.tool === CODEX_SPAWN_FN_NAME) { emitSpawn(item); return; }
@@ -672,36 +494,21 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
 
   const handle = (event: CodexEvent): void => {
     if (terminated) return;
-    // 0.147 announces sub-agents nowhere in this stream, so every event doubles as a
-    // tick to pick them up off the rollout (see syncSubAgents). Cheap — the reader
-    // returns immediately unless the file grew. Skipped on thread.started, which is
-    // what establishes the thread id the rollout path is looked up by.
+    // A sub-agent's report is published on the CHILD's thread, which this
+    // connection filters out, so every event doubles as a tick to pick reports
+    // up off the rollout (see syncSubAgents). Cheap — the reader returns
+    // immediately unless the file grew.
     if (event.type !== 'thread.started') syncSubAgents();
     switch (event.type) {
       case 'thread.started': {
         const threadId = event.thread_id || `codex-${randomUUID()}`;
-        if (event.thread_id) codexThreadId = event.thread_id;
         ctx.rekey(threadId);
         ctx.emit({ type: 'system', subtype: 'init', session_id: threadId });
-        ensureRolloutPath();
-        // Recovery only, and only for a resume: if the constructor could not find the
-        // rollout, this is the last point at which a baseline can still be sampled
-        // before the model runs. Without it syncSubAgents would read the session's
-        // whole spawn history as new and re-emit every Task bubble.
-        if (sessionId) initBases();
         break;
       }
       case 'item.completed': {
         const item = event.item;
         if (!item) break;
-        if (item.type === 'agent_message' && item.text) {
-          emitOutputProgress(item.text);
-          ctx.emit({ type: 'assistant', message: { content: [{ type: 'text', text: item.text }] } });
-        }
-        if (item.type === 'error' && (item.message || item.text)) {
-          emitOutputProgress(item.message || item.text || '');
-          ctx.emit({ type: 'error', error: item.message || item.text });
-        }
         if (item.type === 'reasoning' && item.text) {
           emitOutputProgress(item.text);
           ctx.emit({
@@ -709,73 +516,49 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
             message: { content: [{ type: 'text', text: `<details><summary>Reasoning</summary>\n\n${item.text}\n\n</details>` }] },
           });
         }
-        if (item.type === 'command_execution') {
-          const toolUseId = resolveExecToolUseId(item);
-          if (!pendingToolCalls.has(toolUseId)) {
-            emitOutputProgress(item.command || CODEX_TOOL_NAMES.bash, `command-start:${toolUseId}`);
+        /**
+         * One completed item, one bubble, through the SAME `codexItemBubble`
+         * the transcript parser uses. That is what makes a bubble identical
+         * live and after a reload: not two constructions kept in agreement,
+         * but one construction read twice.
+         */
+        const bubble = codexItemBubble(item);
+        if (bubble) {
+          if (!pendingToolCalls.has(bubble.id)) {
+            emitOutputProgress(bubble.input.command as string || bubble.name, `tool-start:${bubble.id}`);
             ctx.emit({
               type: 'assistant',
-              message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.bash, input: { command: item.command || '' } }] },
+              message: { content: [{ type: 'tool_use', id: bubble.id, name: bubble.name, input: bubble.input }] },
             });
           }
-          emitOutputProgress(item.aggregated_output || `(exit code: ${item.exit_code ?? 'unknown'})`, `command-result:${toolUseId}`);
+          emitOutputProgress(bubble.result, `tool-result:${bubble.id}`);
           ctx.emit({
             type: 'user',
-            message: { content: [{ tool_use_id: toolUseId, content: item.aggregated_output || `(exit code: ${item.exit_code ?? 'unknown'})` }] },
+            message: { content: [{ tool_use_id: bubble.id, content: bubble.result }] },
           });
-          pendingToolCalls.delete(toolUseId);
+          pendingToolCalls.delete(bubble.id);
         }
         if (item.type === 'collab_tool_call') handleCollabItem(item);
-        if (item.type === 'mcp_tool_call') {
-          emitOutputProgress(`${item.server || 'mcp'} ${item.tool || ''} ${JSON.stringify(item.result ?? item.error ?? '')}`);
-          emitMcpCall(item, true);
-        }
-        if (item.type === 'web_search') {
-          emitOutputProgress(JSON.stringify(item.action || item.query || 'web_search'));
-          emitWebSearch(item);
-        }
-        if (item.type === 'todo_list') {
-          emitOutputProgress(JSON.stringify(item.items || []));
-          emitTodoList(item);
-        }
-        if (item.type === 'file_change') {
-          const toolUseId = resolvePatchToolUseId(item);
-          if (!pendingToolCalls.has(toolUseId)) {
-            emitOutputProgress(patchResultText(item), `patch-start:${toolUseId}`);
-            ctx.emit({
-              type: 'assistant',
-              message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.applyPatch, input: patchInput(item) }] },
-            });
-          }
-          emitOutputProgress(patchResultText(item), `patch-result:${toolUseId}`);
-          ctx.emit({
-            type: 'user',
-            message: { content: [{ tool_use_id: toolUseId, content: patchResultText(item) }] },
-          });
-          pendingToolCalls.delete(toolUseId);
-        }
         break;
       }
       case 'item.started': {
         const item = event.item;
-        if (item?.type === 'mcp_tool_call') emitMcpCall(item, false);
-        if (item?.type === 'command_execution' && item.command) {
-          const toolUseId = resolveExecToolUseId(item);
-          pendingToolCalls.set(toolUseId, toolUseId);
-          emitOutputProgress(item.command, `command-start:${toolUseId}`);
-          ctx.emit({
-            type: 'assistant',
-            message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.bash, input: { command: item.command } }] },
-          });
-        }
-        if (item?.type === 'file_change' && (item.changes?.length ?? 0) > 0) {
-          const toolUseId = resolvePatchToolUseId(item);
-          pendingToolCalls.set(toolUseId, toolUseId);
-          emitOutputProgress(patchResultText(item), `patch-start:${toolUseId}`);
-          ctx.emit({
-            type: 'assistant',
-            message: { content: [{ type: 'tool_use', id: toolUseId, name: CODEX_TOOL_NAMES.applyPatch, input: patchInput(item) }] },
-          });
+        /**
+         * The call half of the same bubble, so it appears the moment the tool
+         * starts rather than when it finishes. Derived from `codexItemBubble`
+         * too — one construction, drawn twice, instead of a started-shape and a
+         * completed-shape kept in agreement by hand.
+         */
+        if (item) {
+          const started = codexItemBubble(item);
+          if (started && !pendingToolCalls.has(started.id)) {
+            pendingToolCalls.set(started.id, started.id);
+            emitOutputProgress(started.input.command as string || started.name, `tool-start:${started.id}`);
+            ctx.emit({
+              type: 'assistant',
+              message: { content: [{ type: 'tool_use', id: started.id, name: started.name, input: started.input }] },
+            });
+          }
         }
         break;
       }
@@ -813,6 +596,11 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
 
   return {
     handle,
+    bindRollout,
+    noteAssistantText(text: string) {
+      if (terminated) return;
+      emitOutputProgress(text);
+    },
     assertSuccess() {
       if (failure) throw failure;
     },
@@ -825,23 +613,35 @@ function cleanupImageFiles(imageFiles: string[]): void {
   }
 }
 
-function codexSdkInput(prompt: string, imageFiles: string[]): Input {
-  if (imageFiles.length === 0) return prompt;
+/**
+ * `turn/start` always takes an array of input items, and its image variant is
+ * `localImage` — the app-server spelling of exec's `local_image`. The text item
+ * is kept even when empty-but-for-images so the model still gets a prompt.
+ */
+function codexTurnInput(prompt: string, imageFiles: string[]): Array<Record<string, unknown>> {
   return [
-    { type: 'text', text: prompt || CODEX_IMAGE_ONLY_TEXT },
-    ...imageFiles.map((path) => ({ type: 'local_image' as const, path })),
+    { type: 'text', text: imageFiles.length > 0 ? prompt || CODEX_IMAGE_ONLY_TEXT : prompt },
+    ...imageFiles.map((path) => ({ type: 'localImage', path })),
   ];
 }
 
-function codexThreadOptions(ctx: RunCtx): ThreadOptions {
+/**
+ * Thread params for `thread/start` / `thread/resume`.
+ *
+ * `approvalPolicy: 'never'` is load-bearing beyond permissions: it is what
+ * keeps the server from ever issuing a blocking approval request, so this
+ * client never has to park one and answer it later. Verified end to end — a
+ * full-access turn that reads, writes and patches files sends zero
+ * server-to-client requests.
+ */
+function codexThreadParams(ctx: RunCtx): Record<string, unknown> {
   const effort = resolveCodexReasoningEffort(ctx.params.codexReasoningEffort);
   return {
     ...(ctx.params.model ? { model: ctx.params.model } : {}),
-    ...(effort ? { modelReasoningEffort: effort as ModelReasoningEffort } : {}),
-    ...(ctx.cwd ? { workingDirectory: ctx.cwd } : {}),
-    sandboxMode: 'danger-full-access',
+    ...(effort ? { effort } : {}),
+    ...(ctx.cwd ? { cwd: ctx.cwd } : {}),
+    sandbox: 'danger-full-access',
     approvalPolicy: 'never',
-    skipGitRepoCheck: true,
   };
 }
 
@@ -860,37 +660,181 @@ function resolveCodexReasoningEffort(value: unknown): CodexReasoningEffort | und
   }
 }
 
-async function runCodexSdk(ctx: RunCtx): Promise<void> {
+/** How long a stop waits on the server before falling back to killing it. */
+const INTERRUPT_TIMEOUT_MS = 3_000;
+
+/**
+ * Stop every turn this connection has in flight, children before the parent.
+ *
+ * Killing the process stops them too — that is the fallback, and what this used
+ * to do on its own. The difference is what the transcript ends up saying: a
+ * killed sub-agent's rollout simply stops mid-write, with no terminal record,
+ * which is what a stopped session looks like when it is later reopened. Asking
+ * first gives each turn a real `interrupted` terminal.
+ *
+ * Children first because a parent's interrupt does NOT cascade — measured: the
+ * parent reported `interrupted` in 0.1s while its two sub-agents kept working
+ * for the twelve seconds the probe watched.
+ *
+ * Bounded and best-effort throughout: a stop that hangs is worse than a stop
+ * that is abrupt, and the caller kills the process immediately afterwards.
+ */
+async function interruptTurns(client: CodexAppServerClient, shim: CodexEventShim): Promise<void> {
+  const turns = shim.activeTurns();
+  if (turns.length === 0) return;
+  await Promise.race([
+    Promise.allSettled(
+      turns.map((t) => client.request('turn/interrupt', { threadId: t.threadId, turnId: t.turnId }))
+    ),
+    new Promise((resolve) => setTimeout(resolve, INTERRUPT_TIMEOUT_MS)),
+  ]);
+}
+
+/**
+ * Run one turn against `codex app-server`.
+ *
+ * Replaces the `@openai/codex-sdk` path, whose API speaks only
+ * `exec --experimental-json` — a transport that emits assistant text once, as a
+ * finished `item.completed`, with no incremental events on the wire at any
+ * setting. That is why a Codex reply used to appear as one block while every
+ * other engine typed. app-server publishes `item/agentMessage/delta`, and those
+ * deltas are forwarded in Claude's `content_block_delta` shape so the client
+ * needs no Codex-specific handling to render them.
+ *
+ * Everything else is deliberately unchanged: notifications are rewritten into
+ * the exec event shape and handed to the same adapter, so tool bubbles,
+ * sub-agents, todos and diffs keep their existing behaviour.
+ */
+async function runCodexAppServer(ctx: RunCtx): Promise<void> {
   const imageFiles = ctx.images && ctx.images.length > 0 ? writeImagesToTemp(ctx.images) : [];
   const adapter = createCodexEventAdapter(ctx);
-  try {
-    const { Codex } = await import('@openai/codex-sdk');
-    const env = sanitizedSpawnEnv({});
-    let codex: InstanceType<typeof Codex>;
-    try {
-      codex = new Codex({ env });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '';
-      if (!message.includes('Unable to locate Codex CLI binaries')) throw error;
-      // The fallback keeps Codex usable when npm skips the optional platform sub-package during
-      // an in-place `npm i -g`. Its silence is what is not worth keeping: `@openai/codex-sdk`
-      // pins its CLI to an exact matching version, and that pairing is the only thing making the
-      // two speak the same protocol — they negotiate no version. Falling back to PATH swaps in
-      // whatever build the machine has, which otherwise looks exactly like a working install.
-      // Permitted `console.error` under EFFECT.md §0 (subprocess IPC adapter gateway).
-      console.error(
-        '[codex] bundled CLI binary is missing — falling back to `codex` on PATH. That build is ' +
-          'not the version this SDK was pinned against. Repair with: cockpit update',
-      );
-      codex = new Codex({ codexPathOverride: 'codex', env });
+  const shim = new CodexEventShim();
+
+  let terminal: 'completed' | 'failed' | null = null;
+  let settle: (() => void) | null = null;
+  const finished = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+
+  const onNotification = (n: CodexNotification): void => {
+    for (const out of shim.handle(n)) {
+      if (out.kind === 'text-delta') {
+        adapter.noteAssistantText(out.text);
+        ctx.emit({
+          type: 'stream_event',
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text: out.text } },
+        });
+        continue;
+      }
+      adapter.handle(out.event as CodexEvent);
+      if (out.event.type === 'turn.completed') terminal = 'completed';
+      if (out.event.type === 'turn.failed') terminal = 'failed';
     }
-    const thread = ctx.sessionId
-      ? codex.resumeThread(ctx.sessionId, codexThreadOptions(ctx))
-      : codex.startThread(codexThreadOptions(ctx));
-    const { events } = await thread.runStreamed(codexSdkInput(ctx.prompt ?? '', imageFiles), { signal: ctx.signal });
-    for await (const event of events) adapter.handle(event as CodexEvent);
+    if (terminal) settle?.();
+  };
+
+  /**
+   * How the transport died, if it did. Once `turn/start` has resolved there is
+   * no pending request left for a rejection to travel on, so without this a
+   * crashed or killed child leaves the turn waiting forever on a notification
+   * that can never arrive.
+   */
+  let closedReason: Error | null = null;
+
+  let client: CodexAppServerClient;
+  try {
+    client = CodexAppServerClient.start({
+      env: sanitizedSpawnEnv({}),
+      ...(ctx.cwd ? { cwd: ctx.cwd } : {}),
+      onNotification,
+      // Permitted `console.error` under EFFECT.md §0 (subprocess IPC adapter gateway).
+      onStderr: (line) => console.error(`[codex app-server] ${line}`),
+      onClosed: (err) => {
+        closedReason = err;
+        settle?.();
+      },
+    });
+  } catch (error) {
+    // Resolving the binary throws when the platform package is missing, which is
+    // the likeliest startup failure of all — and it happens before the try below,
+    // so the images written above would leak on exactly that path.
+    cleanupImageFiles(imageFiles);
+    throw error;
+  }
+
+  try {
+    await client.request('initialize', {
+      clientInfo: { name: 'cockpit', title: 'Cockpit', version: '1' },
+      capabilities: { experimentalApi: true },
+    });
+    // Params-less, and it must land before any thread/* call.
+    client.notify('initialized');
+
+    const params = codexThreadParams(ctx);
+    /**
+     * A stale thread id is recoverable: the session may have been archived, or
+     * its rollout removed out from under us. Starting fresh loses the history
+     * but keeps the turn, which is strictly better than failing the send.
+     */
+    let opened: Record<string, unknown>;
+    if (ctx.sessionId) {
+      try {
+        opened = await client.request('thread/resume', { threadId: ctx.sessionId, ...params });
+      } catch {
+        opened = await client.request('thread/start', params);
+      }
+    } else {
+      opened = await client.request('thread/start', params);
+    }
+
+    const thread = opened.thread as { id?: string; path?: string | null } | undefined;
+    const threadId = thread?.id;
+    if (!threadId) throw new Error('codex app-server returned no thread id');
+    // The protocol hands back the rollout's path, so the sub-agent reader never
+    // has to go looking for it — and a resume that fell back to a fresh thread
+    // gets pointed at the new file instead of the old session's.
+    adapter.bindRollout(thread?.path);
+    // Everything on the connection that is not this thread belongs to a
+    // sub-agent; see the guard in CodexEventShim.handle.
+    shim.bindThread(threadId);
+
+    /**
+     * Synthesised rather than taken from the `thread/started` notification, and
+     * the timing is the reason: this is what samples the rollout's per-turn
+     * baseline counters, which is only correct BEFORE the model can have run.
+     * A request result is ordered against `turn/start`; a notification is not.
+     */
+    adapter.handle({ type: 'thread.started', thread_id: threadId });
+
+    const startedTurn = await client.request('turn/start', {
+      threadId,
+      input: codexTurnInput(ctx.prompt ?? '', imageFiles),
+    });
+    // Needed to stop this turn by name later; see `interruptTurns`.
+    const turnId = (startedTurn.turn as { id?: string } | undefined)?.id;
+    if (turnId) shim.noteOwnTurn(threadId, turnId);
+
+    // `turn/start` returns as soon as the turn is accepted; the turn itself ends
+    // on a notification, on the transport dying (`onClosed` settles the same
+    // promise), or on an abort. Abort resolves rather than throws, so a stopped
+    // run tears the child down instead of being reported as a failure.
+    await Promise.race([
+      finished,
+      new Promise<void>((resolve) => {
+        if (ctx.signal.aborted) return resolve();
+        ctx.signal.addEventListener('abort', () => resolve(), { once: true });
+      }),
+    ]);
+
+    if (ctx.signal.aborted) await interruptTurns(client, shim);
+
     adapter.assertSuccess();
+    // The child went away mid-turn and the user did not ask for it. Reported
+    // last so a real engine error (which the adapter already holds) wins the
+    // race to explain what happened.
+    if (closedReason && !ctx.signal.aborted && !terminal) throw closedReason;
   } finally {
+    client.dispose();
     cleanupImageFiles(imageFiles);
   }
 }
@@ -901,14 +845,14 @@ export const codexSpec: EngineSpec = {
   runner: {
     async run(ctx: RunCtx) {
       if (ctx.params.noHistory !== true || !ctx.sessionId) {
-        await runCodexSdk(ctx);
+        await runCodexAppServer(ctx);
         return;
       }
 
       const sessionPath = findCodexSessionPath(ctx.sessionId);
       const stashed = sessionPath ? stashCodexRollout(sessionPath) : false;
       try {
-        await runCodexSdk(ctx);
+        await runCodexAppServer(ctx);
       } finally {
         if (stashed && sessionPath) mergeStashedCodexRollout(sessionPath);
       }

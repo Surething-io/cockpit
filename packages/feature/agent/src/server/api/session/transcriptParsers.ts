@@ -20,7 +20,6 @@ import { generateTitle } from '../../sessionTitle';
 import { appendTextPart, appendToolPart, joinAssistantText } from '../../../shared/assistantText';
 import type { MessagePart } from '../../../shared/assistantText';
 import {
-  CODEX_AGENT_FN_NAMES,
   CODEX_AGENT_MESSAGE_TYPE,
   CODEX_CUSTOM_TOOL_NAMES,
   CODEX_EXEC_SCRIPT_FN_NAME,
@@ -28,6 +27,8 @@ import {
   CODEX_SPAWN_FN_NAME,
   CODEX_WAIT_FN_NAME,
   codexAgentResultText,
+  codexItemBubble,
+  type CodexItemLike,
   codexExecScriptCall,
   codexSpawnDescription,
   codexToolOutputText,
@@ -37,7 +38,7 @@ import {
   normalizeCodexToolName,
   codexUnknownCallResult,
   parseCodexAgentMessage,
-  parseCodexPatchInput,
+  parseCodexExecScript,
   parseCodexSpawnOutput,
   parseCodexSubAgentActivity,
   parseCodexTokenUsage,
@@ -569,6 +570,9 @@ interface CodexPayload {
   // task_complete (event_msg) — set when the turn ended in failure (server
   // overload, rate limit, aborted stream). The ONLY on-disk record of the reason.
   error?: { message?: string };
+  // item_completed (event_msg) — written only by the app-server transport, and
+  // the sole source of tool bubbles. Self-sufficient: id, input and result.
+  item?: CodexItemLike;
 }
 
 export async function parseCodexTranscriptFile(
@@ -592,7 +596,31 @@ export async function parseCodexTranscriptFile(
   const spawnByCallId = new Map<string, CodexToolCall>();
   const agentToCall = new Map<string, CodexToolCall>();
   const waitCallIds = new Set<string>();
-  // 0.147+ addresses a sub-agent by its path (`/root/cr_static`), not its thread id,
+
+  /**
+   * Tool bubbles come from `event_msg/item_completed`, which carries a call's
+   * id, its input and its result in ONE record — the same record the live
+   * engine draws from, through the same `codexItemBubble`. That is what makes a
+   * bubble identical live and after a reload without anything being rewritten.
+   *
+   * Two kinds of call never get an item, so they are built from their
+   * `response_item` instead and are the only reason a call_id index survives:
+   *
+   *   - an `exec` script that runs no command line (`write_stdin`,
+   *     `create_goal`, or a body too dynamic to read) — measured at ~5% of exec
+   *     calls, and today they draw a history bubble the live stream never had;
+   *   - a `spawn_agent`, whose own arguments live on the call line while the
+   *     item carries only thread ids and states.
+   */
+  const toolByCallId = new Map<string, CodexToolCall>();
+  /**
+   * Ids already drawn this session. A web search is recorded twice by the two
+   * transports — `event_msg/web_search_end` and an `item_completed` — under the
+   * SAME `ws_…` id, so a session resumed across the transport change could
+   * otherwise draw it twice.
+   */
+  const drawnToolIds = new Set<string>();
+  // A sub-agent is addressed by its path (`/root/cr_static`), not its thread id, (`/root/cr_static`), not its thread id,
   // in the agent_message that carries its report.
   const agentPathToCall = new Map<string, CodexToolCall>();
 
@@ -679,16 +707,14 @@ export async function parseCodexTranscriptFile(
         }
       }
 
-      // Tool call (function_call)
+      // Tool call (function_call). Only `spawn_agent` draws its bubble here:
+      // its arguments exist nowhere else. Every other named tool (MCP included)
+      // arrives as a completed item, which carries input AND result together.
       if (payload.type === 'function_call' && payload.name) {
         const fnName = payload.name;
         if (fnName === CODEX_WAIT_FN_NAME && payload.call_id) waitCallIds.add(payload.call_id);
-        // Multi-agent plumbing gets no bubble of its own: `spawn_agent` is the only one
-        // that becomes a Task, and the rest merely feed it (see codexTools). This must
-        // match the live engine's handleCollabItem or the turn changes shape on refresh.
-        const isAgentPlumbing = CODEX_AGENT_FN_NAMES.has(fnName) && fnName !== CODEX_SPAWN_FN_NAME;
 
-        if (!isAgentPlumbing) {
+        if (fnName === CODEX_SPAWN_FN_NAME) {
           const assistant = ensureAssistant(timestamp);
           let input: Record<string, unknown> = {};
           try { input = JSON.parse(payload.arguments || '{}'); } catch { /* */ }
@@ -697,13 +723,13 @@ export async function parseCodexTranscriptFile(
           assistant.parts = appendToolPart(assistant.parts, callId);
           const toolCall: CodexToolCall = {
             id: callId,
-            // The namespace is what turns a bare `js` into `mcp__node_repl__js`.
-            name: normalizeCodexToolName(fnName, payload.namespace),
+            name: normalizeCodexToolName(fnName),
             input: normalizeCodexToolInput(fnName, input),
             isLoading: false,
           };
           assistant.toolCalls.push(toolCall);
-          if (fnName === CODEX_SPAWN_FN_NAME) spawnByCallId.set(callId, toolCall);
+          toolByCallId.set(callId, toolCall);
+          spawnByCallId.set(callId, toolCall);
           toolSinceText = true;
         }
       }
@@ -743,8 +769,8 @@ export async function parseCodexTranscriptFile(
             if (tc) tc.result = codexAgentResultText(state);
           }
         } else {
-          const assistant = ensureAssistant(timestamp);
-          const tc = assistant.toolCalls?.find(t => t.id === callId);
+          ensureAssistant(timestamp);
+          const tc = toolByCallId.get(callId);
           if (tc) {
             tc.result = output;
             tc.isLoading = false;
@@ -752,31 +778,49 @@ export async function parseCodexTranscriptFile(
         }
       }
 
-      // Custom tool call — codex's file editor (`apply_patch`) and, from gpt-5.6 on,
-      // the freeform `exec` script that replaced every per-tool function_call. Surface
-      // it as its own tool call so an edit shows a bubble and its FileDiff resolves
-      // (matches the live engine's file_change handling).
+      /**
+       * The exception path: a custom tool call that will never produce an item.
+       *
+       * gpt-5.6 routes everything through one freeform `exec` script, and only
+       * the bodies that actually run a command line or apply a patch yield a
+       * `command_execution` / `file_change` item. The rest — `write_stdin`,
+       * `create_goal`, a body too dynamic to read statically — measured at ~5%
+       * of exec calls, produce nothing, and would otherwise vanish. A name
+       * outside CODEX_CUSTOM_TOOL_NAMES is the same case: unknown shape, no
+       * item, but the call did happen.
+       *
+       * Anything that WILL get an item is skipped here on purpose; letting both
+       * paths draw it is how a turn ends up with the same call twice.
+       */
       if (payload.type === 'custom_tool_call' && payload.name) {
-        const assistant = ensureAssistant(timestamp);
-        assistant.toolCalls = assistant.toolCalls || [];
-        const callId = payload.call_id || `tool-${msgCounter++}`;
-        assistant.parts = appendToolPart(assistant.parts, callId);
-        // A name outside CODEX_CUSTOM_TOOL_NAMES used to drop the whole call. Show it
-        // under its raw name instead: the body is freeform, so there is nothing to
-        // parse, but the call itself did happen.
-        const { name, input } = !CODEX_CUSTOM_TOOL_NAMES.has(payload.name)
-          ? { name: payload.name, input: { input: payload.input || '' } }
-          : payload.name === CODEX_EXEC_SCRIPT_FN_NAME
-            ? codexExecScriptCall(payload.input || '')
-            : { name: normalizeCodexToolName(payload.name), input: parseCodexPatchInput(payload.input || '') };
-        assistant.toolCalls.push({ id: callId, name, input, isLoading: false });
-        toolSinceText = true;
+        const known = CODEX_CUSTOM_TOOL_NAMES.has(payload.name);
+        const isExecScript = payload.name === CODEX_EXEC_SCRIPT_FN_NAME;
+        // Only a body that runs a command line or applies a patch yields an
+        // item. `other` (a named tool like write_stdin) and `unknown` (a body
+        // too dynamic to read) both yield nothing — the same split the rollout
+        // reader used to make before the ids made it unnecessary.
+        const execKind = isExecScript ? parseCodexExecScript(payload.input || '').kind : null;
+        const producesItem = known && (!isExecScript || execKind === 'exec' || execKind === 'patch');
+
+        if (!producesItem) {
+          const assistant = ensureAssistant(timestamp);
+          assistant.toolCalls = assistant.toolCalls || [];
+          const callId = payload.call_id || `tool-${msgCounter++}`;
+          assistant.parts = appendToolPart(assistant.parts, callId);
+          const { name, input } = !known
+            ? { name: payload.name, input: { input: payload.input || '' } }
+            : codexExecScriptCall(payload.input || '');
+          const customCall: CodexToolCall = { id: callId, name, input, isLoading: false };
+          assistant.toolCalls.push(customCall);
+          toolByCallId.set(callId, customCall);
+          toolSinceText = true;
+        }
       }
 
       // Custom tool call result (apply_patch / exec output)
       if (payload.type === 'custom_tool_call_output' && payload.call_id) {
-        const assistant = ensureAssistant(timestamp);
-        const tc = assistant.toolCalls?.find(t => t.id === payload.call_id);
+        ensureAssistant(timestamp);
+        const tc = toolByCallId.get(payload.call_id);
         if (tc) {
           tc.result = codexToolOutputText(payload.output);
           tc.isLoading = false;
@@ -791,19 +835,21 @@ export async function parseCodexTranscriptFile(
       const unknownCall = parseCodexUnknownCall(payload);
       if (unknownCall) {
         const assistant = ensureAssistant(timestamp);
-        const existing = assistant.toolCalls?.find(t => t.id === unknownCall.callId);
+        const existing = toolByCallId.get(unknownCall.callId);
         if (existing) {
           existing.result = codexUnknownCallResult(payload as unknown as Record<string, unknown>);
           existing.isLoading = false;
         } else {
           assistant.toolCalls = assistant.toolCalls || [];
           assistant.parts = appendToolPart(assistant.parts, unknownCall.callId);
-          assistant.toolCalls.push({
+          const unknownTool: CodexToolCall = {
             id: unknownCall.callId,
             name: unknownCall.name,
             input: unknownCall.input,
             isLoading: false,
-          });
+          };
+          assistant.toolCalls.push(unknownTool);
+          toolByCallId.set(unknownCall.callId, unknownTool);
           toolSinceText = true;
         }
       }
@@ -825,10 +871,40 @@ export async function parseCodexTranscriptFile(
       }
     }
 
+    /**
+     * The tool bubbles. `item_completed` carries the call's id, its input and
+     * its result in one record, and `codexItemBubble` is the same function the
+     * live engine draws from — so a bubble is identical live and after a reload,
+     * with nothing rewritten in between.
+     *
+     * Written only by the app-server transport. A rollout from the old `exec`
+     * transport has none of these lines and therefore no tool bubbles; that is
+     * the deliberate cost of not carrying a second, contradictory code path.
+     */
+    if (type === 'event_msg' && payload.type === 'item_completed' && payload.item) {
+      const bubble = codexItemBubble(payload.item as CodexItemLike);
+      if (bubble && !drawnToolIds.has(bubble.id)) {
+        drawnToolIds.add(bubble.id);
+        const assistant = ensureAssistant(timestamp);
+        assistant.toolCalls = assistant.toolCalls || [];
+        assistant.parts = appendToolPart(assistant.parts, bubble.id);
+        assistant.toolCalls.push({
+          id: bubble.id,
+          name: bubble.name,
+          input: bubble.input,
+          result: bubble.result,
+          isLoading: false,
+        });
+        toolSinceText = true;
+      }
+    }
+
     // Web search. Unlike every other tool this is NOT persisted as a function_call:
     // the `response_item`/`web_search_call` line has no id at all, so the only usable
     // record is this event_msg — which carries the same `ws_…` id the live item uses.
-    if (type === 'event_msg' && payload.type === 'web_search_end' && payload.call_id) {
+    if (type === 'event_msg' && payload.type === 'web_search_end' && payload.call_id
+        && !drawnToolIds.has(payload.call_id)) {
+      drawnToolIds.add(payload.call_id);
       const assistant = ensureAssistant(timestamp);
       const { name, input, result } = codexWebSearchCall(payload.query, payload.action);
       assistant.toolCalls = assistant.toolCalls || [];

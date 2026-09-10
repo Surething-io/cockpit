@@ -186,7 +186,13 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   const runningStartedAt = isLoading ? streamRunningStartedAt : liveRunning ? viewerRunStartedAt : null;
   const liveBackgroundTasks = isLoading ? backgroundTasks : liveRunning ? viewerBackgroundTasks : NO_BG_TASKS;
 
+  // Mirrors Chat.tsx: a turn the person sent takes the viewport, anything the
+  // transcript receives on its own does not. Matters more here than on desktop,
+  // where the soft keyboard already leaves only a few lines of conversation
+  // visible — a reply that pushes the question off the top has nowhere to
+  // scroll back to one-handed.
   const onSend = useCallback((content: string) => {
+    messageListRef.current?.pinNextUserMessage();
     handleSend(content);
   }, [handleSend]);
 

@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo, memo } from 'react';
-import type { MouseEvent } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { Portal, toast } from '@cockpit/shared-ui';
-import { Copy, FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed, Scissors, ArrowRightToLine, ArrowLeftToLine } from 'lucide-react';
+import { Copy, FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed, Scissors, ArrowRightToLine, ArrowLeftToLine, ChevronDown, ChevronUp } from 'lucide-react';
 import { ToolCallModal } from './ToolCallModal';
 import { AskQuestionViewerModal } from './AskQuestionViewerModal';
 import { DiffViewerModal, resolveDiffCalls } from './DiffViewerModal';
@@ -246,7 +246,7 @@ interface MessageBubbleProps {
    * auto-swipe there. When omitted (e.g. inside SubagentTranscriptModal, which
    * has no second panel), the button falls back to a local full-screen modal.
    */
-  onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, runId?: string, live?: boolean) => void;
+  onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, live?: boolean) => void;
   /**
    * Suppress every control that opens a window ON TOP of the app — diff viewer,
    * file / image previews, subagent + workflow transcripts, tool input/result
@@ -454,6 +454,128 @@ const TextPartRow = memo(function TextPartRow({
   );
 });
 
+/**
+ * A user turn is whatever the user pasted, and that is routinely a whole
+ * SKILL.md, a stack trace or a config dump. Uncapped, one such bubble pushes
+ * the reply that answers it several screens down, so the transcript stops
+ * reading as a conversation.
+ *
+ * The cap is stated in `em`, not px: `.reading-measure` sets line-height 1.75,
+ * so this is exactly COLLAPSED_LINES lines at whatever font-size the bubble
+ * inherits — and it stays that many lines if the chat type scale is ever
+ * retuned, which a px constant would silently stop tracking.
+ */
+const COLLAPSED_LINES = 16;
+const COLLAPSED_MAX_HEIGHT = `${COLLAPSED_LINES * 1.75}em`;
+
+/**
+ * Clips its children to COLLAPSED_LINES with a show-more / collapse toggle.
+ *
+ * memo'd and children-based rather than content-based: the rows inside are the
+ * memo'd `TextPartRow`s, and passing them through as `children` means toggling
+ * this wrapper re-renders the wrapper only — the markdown/pre-wrap bodies below
+ * keep their element identity and never re-render (see CLAUDE.md's React
+ * performance conventions).
+ */
+const CollapsibleText = memo(function CollapsibleText({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const clipRef = useRef<HTMLDivElement | null>(null);
+  const innerRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Whether the toggle is needed at all is a LAYOUT question, not a content
+   * one: the same 900 characters are 8 lines in a wide pane and 24 in a narrow
+   * one, and this panel's width changes on every swipe and window resize. So
+   * measure, and keep measuring via ResizeObserver on the unclipped inner
+   * element — the clipped one stops changing size once it hits the cap, so
+   * observing it would report nothing.
+   *
+   * Skipped entirely while expanded: with the cap lifted scrollHeight equals
+   * clientHeight, which would read as "fits" and yank the collapse control out
+   * from under the cursor. The last collapsed verdict is the right one to hold.
+   */
+  useEffect(() => {
+    if (expanded) return;
+    const clip = clipRef.current;
+    const inner = innerRef.current;
+    if (!clip || !inner) return;
+    // +1 absorbs sub-pixel rounding, so prose that lands exactly on the cap
+    // doesn't sprout a toggle that reveals nothing.
+    const measure = () => setOverflows(clip.scrollHeight > clip.clientHeight + 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, [expanded]);
+
+  const handleToggle = useCallback(() => {
+    if (!expanded) {
+      setExpanded(true);
+      return;
+    }
+    /**
+     * Collapsing removes several screens of content that sat ABOVE the control
+     * just clicked, so without this the reader is left staring at whatever fell
+     * into the gap, with no clue where the message went. Pull the bubble's top
+     * back into view — but only when it actually left the viewport, so
+     * collapsing a barely-over-cap message doesn't jump the page.
+     *
+     * The scroll is scheduled from the handler, never from inside the setState
+     * updater: React may replay an updater (StrictMode does, in dev), and a
+     * replayed rAF schedules the scroll twice.
+     *
+     * rAF, because the position can only be read once the collapse has laid out.
+     */
+    const el = rootRef.current?.closest('[data-message-id]') ?? rootRef.current;
+    setExpanded(false);
+    requestAnimationFrame(() => {
+      if (el && el.getBoundingClientRect().top < 0) {
+        el.scrollIntoView({ block: 'start', behavior: 'auto' });
+      }
+    });
+  }, [expanded]);
+
+  return (
+    <div ref={rootRef}>
+      <div
+        ref={clipRef}
+        className={expanded ? undefined : 'overflow-hidden'}
+        style={expanded ? undefined : { maxHeight: COLLAPSED_MAX_HEIGHT }}
+      >
+        <div ref={innerRef}>{children}</div>
+      </div>
+      {overflows && (
+        <>
+          {/* Reads as "the text keeps going", which a hard clip alone does not
+              — the cap lands on a line boundary, so without this the last
+              visible line looks like the end of the message. */}
+          {!expanded && <div className="text-muted-foreground leading-none pt-1 select-none">…</div>}
+          <button
+            type="button"
+            onClick={handleToggle}
+            className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {expanded ? t('chat.showLess') : t('chat.showMore')}
+            {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        </>
+      )}
+    </div>
+  );
+});
+
+/**
+ * `collapsible` is derived from the message role, so it never flips for a given
+ * bubble — the branch is a static shape choice, not a conditional hook.
+ */
+function MaybeCollapsible({ collapsible, children }: { collapsible: boolean; children: ReactNode }) {
+  if (!collapsible) return <>{children}</>;
+  return <CollapsibleText>{children}</CollapsibleText>;
+}
+
 // Message timestamps read "8月12日 23:48" in Chinese and "Aug 12, 23:48" in
 // English. Both come out of the SAME option set — the locale supplies its own
 // date convention, which is why this is Intl rather than a hand-assembled
@@ -546,8 +668,8 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   // one on screen?" prop is needed here.
   useEffect(() => {
     if (!onShowFileDiff || !message.toolCalls?.length) return;
-    onShowFileDiff(message.id, message.toolCalls, cwd, sessionId ?? undefined, message.runId, true);
-  }, [onShowFileDiff, message.id, message.toolCalls, cwd, sessionId, message.runId]);
+    onShowFileDiff(message.id, message.toolCalls, cwd, sessionId ?? undefined, true);
+  }, [onShowFileDiff, message.id, message.toolCalls, cwd, sessionId]);
 
   useEffect(() => {
     // Params already prove non-empty, or nothing mutating / no cwd to query.
@@ -564,7 +686,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
     let timer: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
     const check = () => {
-      BrowserRuntime.runPromiseExit(loadSnapshotsByToolIds(cwd, toolIds, sessionId ?? undefined, message.runId)).then((exit) => {
+      BrowserRuntime.runPromiseExit(loadSnapshotsByToolIds(cwd, toolIds, sessionId ?? undefined)).then((exit) => {
         if (cancelled) return;
         const commits = exit._tag === 'Success' ? exit.value : [];
         if (commits.length > 0) {
@@ -584,7 +706,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [hasFileChanges, paramsHaveChanges, cwd, sessionId, message.toolCalls, message.runId]);
+  }, [hasFileChanges, paramsHaveChanges, cwd, sessionId, message.toolCalls]);
 
   // Last TodoWrite call
   const lastTodoWrite = useMemo(() => {
@@ -885,21 +1007,28 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
               segments used to get as sibling <p>s inside one document (p is mb-3,
               last:mb-0), so splitting the blob costs no vertical rhythm. */}
           {textParts.length > 0 && (
-            <div className="space-y-3">
-              {textParts.map((part, i) => (
-                <TextPartRow
-                  key={i}
-                  text={part.text}
-                  isAside={part.isAside}
-                  isUser={isUser}
-                  isStreaming={!!message.isStreaming && i === textParts.length - 1}
-                  onOpenFileLink={onOpenFileLink}
-                  // Plain setState — referentially stable, so TextPartRow's memo holds.
-                  onPreviewFile={setPreviewFile}
-                  cwd={cwd}
-                />
-              ))}
-            </div>
+            /* User turns only. An assistant turn is the thing being read, and
+               it already arrives paced by streaming; a user turn is a paste,
+               and capping it is what keeps the reply visible next to the ask.
+               Images stay OUTSIDE the clip above — folding them in would leave
+               a collapsed picture message showing nothing at all. */
+            <MaybeCollapsible collapsible={isUser}>
+              <div className="space-y-3">
+                {textParts.map((part, i) => (
+                  <TextPartRow
+                    key={i}
+                    text={part.text}
+                    isAside={part.isAside}
+                    isUser={isUser}
+                    isStreaming={!!message.isStreaming && i === textParts.length - 1}
+                    onOpenFileLink={onOpenFileLink}
+                    // Plain setState — referentially stable, so TextPartRow's memo holds.
+                    onPreviewFile={setPreviewFile}
+                    cwd={cwd}
+                  />
+                ))}
+              </div>
+            </MaybeCollapsible>
           )}
 
           {/* Inline Todo display */}
@@ -1105,7 +1234,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
                           // with an auto-swipe; fall back to a local modal when no
                           // panel host is available (e.g. subagent transcript).
                           if (onShowFileDiff && message.toolCalls) {
-                            onShowFileDiff(message.id, message.toolCalls, cwd, sessionId ?? undefined, message.runId);
+                            onShowFileDiff(message.id, message.toolCalls, cwd, sessionId ?? undefined);
                           } else {
                             setShowDiffViewer(true);
                           }
@@ -1232,7 +1361,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
 
       {/* Diff viewer */}
       {showDiffViewer && message.toolCalls && (
-        <DiffViewerModal toolCalls={message.toolCalls} cwd={cwd} sessionId={sessionId ?? undefined} runId={message.runId} onClose={() => setShowDiffViewer(false)} onContentSearch={onContentSearch} />
+        <DiffViewerModal toolCalls={message.toolCalls} cwd={cwd} sessionId={sessionId ?? undefined} onClose={() => setShowDiffViewer(false)} onContentSearch={onContentSearch} />
       )}
 
       {/* AskQuestion viewer */}

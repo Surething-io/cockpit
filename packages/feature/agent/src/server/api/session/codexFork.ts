@@ -1,5 +1,9 @@
 import {
-  CODEX_AGENT_FN_NAMES,
+  CODEX_CUSTOM_TOOL_NAMES,
+  CODEX_EXEC_SCRIPT_FN_NAME,
+  codexItemBubble,
+  parseCodexExecScript,
+  type CodexItemLike,
   CODEX_SPAWN_FN_NAME,
   CODEX_WAIT_FN_NAME,
   extractCodexUserContent,
@@ -13,6 +17,8 @@ interface CodexForkState {
   assistantOpen: boolean;
   spawnCallIds: Set<string>;
   waitCallIds: Set<string>;
+  /** Mirrors the parser's draw-once guard; see it for why. */
+  drawnToolIds: Set<string>;
 }
 
 function isCodexTaskStarted(entry: Record<string, unknown>): boolean {
@@ -41,8 +47,10 @@ function codexVisibleMessageIds(
     role?: string;
     name?: string;
     call_id?: string;
+    input?: string;
     content?: Array<{ type?: string; text?: string; image_url?: string }>;
     error?: { message?: string };
+    item?: CodexItemLike;
   } | undefined;
   if (!payload) return [];
 
@@ -67,23 +75,36 @@ function codexVisibleMessageIds(
       }
     }
 
+    // Only `spawn_agent` draws a bubble from a function_call now; every other
+    // named tool is drawn from its completed item instead.
     if (payload.type === 'function_call' && payload.name) {
       if (payload.name === CODEX_WAIT_FN_NAME && payload.call_id) state.waitCallIds.add(payload.call_id);
-      const isAgentPlumbing = CODEX_AGENT_FN_NAMES.has(payload.name) && payload.name !== CODEX_SPAWN_FN_NAME;
-      if (!isAgentPlumbing) {
+      if (payload.name === CODEX_SPAWN_FN_NAME) {
         const id = ensureCodexAssistantId(state);
         if (id) ids.push(id);
-        if (payload.name === CODEX_SPAWN_FN_NAME && payload.call_id) state.spawnCallIds.add(payload.call_id);
+        if (payload.call_id) state.spawnCallIds.add(payload.call_id);
       }
     }
 
-    // Must stay in step with the transcript parser's custom_tool_call branch
-    // (apply_patch, 5.6's `exec`, and any other name — an unrecognized custom tool
-    // still gets a bubble there), or a fork cuts at the wrong message.
-    if (
-      (payload.type === 'custom_tool_call' && payload.name) ||
-      (payload.type === 'custom_tool_call_output' && payload.call_id)
-    ) {
+    /**
+     * The parser's exception path: a custom tool call draws a bubble ONLY when
+     * no completed item will arrive for it — an `exec` script that runs no
+     * command line, or a tool name it has never heard of. Mirrored condition
+     * for condition; if the two drift, a fork cuts at the wrong message.
+     */
+    if (payload.type === 'custom_tool_call' && payload.name) {
+      const known = CODEX_CUSTOM_TOOL_NAMES.has(payload.name);
+      const isExecScript = payload.name === CODEX_EXEC_SCRIPT_FN_NAME;
+      const execKind = isExecScript ? parseCodexExecScript(payload.input || '').kind : null;
+      const producesItem = known && (!isExecScript || execKind === 'exec' || execKind === 'patch');
+      if (!producesItem) {
+        const id = ensureCodexAssistantId(state);
+        if (id) ids.push(id);
+      }
+    }
+
+    // The paired output always opens one, exactly as the parser does.
+    if (payload.type === 'custom_tool_call_output' && payload.call_id) {
       const id = ensureCodexAssistantId(state);
       if (id) ids.push(id);
     }
@@ -107,7 +128,24 @@ function codexVisibleMessageIds(
     }
   }
 
-  if (entry.type === 'event_msg' && payload.type === 'web_search_end' && payload.call_id) {
+  /**
+   * Tool bubbles now come from the completed item, so this is where most of a
+   * turn's assistant messages are opened. Mirrors the parser's
+   * `codexItemBubble` branch — including its "no bubble, no open" for items
+   * that draw nothing (messages, reasoning).
+   */
+  if (entry.type === 'event_msg' && payload.type === 'item_completed' && payload.item) {
+    const bubble = codexItemBubble(payload.item as CodexItemLike);
+    if (bubble && !state.drawnToolIds.has(bubble.id)) {
+      state.drawnToolIds.add(bubble.id);
+      const id = ensureCodexAssistantId(state);
+      if (id) ids.push(id);
+    }
+  }
+
+  if (entry.type === 'event_msg' && payload.type === 'web_search_end' && payload.call_id
+      && !state.drawnToolIds.has(payload.call_id)) {
+    state.drawnToolIds.add(payload.call_id);
     const id = ensureCodexAssistantId(state);
     if (id) ids.push(id);
   }
@@ -162,6 +200,7 @@ export function buildCodexForkLines(
     assistantOpen: false,
     spawnCallIds: new Set(),
     waitCallIds: new Set(),
+    drawnToolIds: new Set(),
   };
   let currentTurn: string[] = [];
   let targetTurn = -1;

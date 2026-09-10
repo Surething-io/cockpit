@@ -92,7 +92,6 @@ interface DiffViewerModalProps {
   /** Dispatch that produced the source message. Required to disambiguate
    *  engines whose tool ids restart each turn (codex `item_N`); absent on
    *  reloaded messages, which key on globally-unique `call_…` ids. */
-  runId?: string;
   onClose: () => void;
   /** Selected text → project-wide search. When provided, the diff's
    *  selection toolbar renders the "Search" button (comment / send-to-AI
@@ -311,7 +310,7 @@ function formatCallTime(epochSeconds: number): string {
 // DiffViewerModal
 // ============================================
 
-export function FileDiffViewer({ toolCalls, cwd, sessionId, runId, onClose, onContentSearch, fullscreen, onToggleFullscreen }: DiffViewerModalProps) {
+export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSearch, fullscreen, onToggleFullscreen }: DiffViewerModalProps) {
   const { t } = useTranslation();
 
   // Portal target for DiffView's floating selection toolbar (comment /
@@ -339,9 +338,9 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, runId, onClose, onCo
   useEffect(() => { setRetryTick(0); }, [toolIdsKey]);
   const snapshotsQ = useEffectQuery(
     cwd && toolIds.length > 0
-      ? loadSnapshotDiffsForToolIds(cwd, toolIds, sessionId, runId)
+      ? loadSnapshotDiffsForToolIds(cwd, toolIds, sessionId)
       : Effect.succeed([] as SnapshotDiffDto[]),
-    [cwd, sessionId, runId, toolIdsKey, retryTick],
+    [cwd, sessionId, toolIdsKey, retryTick],
   );
   const snapshotBackedIds = useMemo(
     () =>
@@ -831,7 +830,7 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, runId, onClose, onCo
 // Backward-compatible full-screen modal wrapper. Used where there is no column
 // to host the diff — e.g. SubagentTranscriptModal, which is itself a Portal
 // modal and has no agent-panel layout to open a column in.
-export function DiffViewerModal({ toolCalls, cwd, sessionId, runId, onClose, onContentSearch }: DiffViewerModalProps) {
+export function DiffViewerModal({ toolCalls, cwd, sessionId, onClose, onContentSearch }: DiffViewerModalProps) {
   return (
     <Portal>
       <div
@@ -842,7 +841,6 @@ export function DiffViewerModal({ toolCalls, cwd, sessionId, runId, onClose, onC
           toolCalls={toolCalls}
           cwd={cwd}
           sessionId={sessionId}
-          runId={runId}
           onClose={onClose}
           // Searching leaves this fullscreen modal — close it first so the
           // Explorer search results aren't hidden behind the backdrop

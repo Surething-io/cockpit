@@ -9,7 +9,7 @@
  *
  * The pairing that matters is not the SDK version but the CLI version behind it:
  *   @anthropic-ai/claude-agent-sdk  declares `claudeCodeVersion` (the bundled Claude Code build)
- *   @openai/codex-sdk               pins `@openai/codex` exactly (SDK and CLI move together)
+ *   @openai/codex                   the CLI itself; Cockpit spawns its `app-server`
  *
  * Run: npm run check-agents           human-readable table
  *      npm run check-agents -- --json  machine-readable, for CI
@@ -60,11 +60,11 @@ const targets = [
     cli: (meta) => (meta?.claudeCodeVersion ? `claude ${meta.claudeCodeVersion}` : null),
   },
   {
-    name: '@openai/codex-sdk',
-    cli: (meta) => {
-      const v = meta?.dependencies?.['@openai/codex'];
-      return v ? `codex ${v}` : null;
-    },
+    // The CLI package, depended on directly: Cockpit spawns its `app-server`
+    // rather than going through `@openai/codex-sdk`, whose API only speaks the
+    // non-streaming `exec` transport.
+    name: '@openai/codex',
+    cli: (meta) => (meta?.version ? `codex ${meta.version}` : null),
   },
 ];
 

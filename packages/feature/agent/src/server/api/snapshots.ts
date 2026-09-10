@@ -1,14 +1,15 @@
 /**
- * GET /api/snapshots?cwd=<abs path>&toolIds=<id,id,...>[&sessionKey=<id>][&runId=<id>]
+ * GET /api/snapshots?cwd=<abs path>&toolIds=<id,id,...>[&sessionKey=<id>]
  *
  * Snapshot commits (shadow-git, one per tool call) whose Cockpit-Tool-Id is
  * in `toolIds`, oldest first. The chat UI passes the tool_use ids of one
  * message to resolve that message's real on-disk changes.
  *
- * `runId` narrows the match to a single dispatch. It matters for engines whose
- * tool ids are only unique WITHIN a turn — codex numbers live items
- * `item_0, item_1, …` and restarts the counter each turn — where tool id plus
- * session id still matches every earlier turn of the same session.
+ * `sessionKey` narrows the match. It is enough on its own: a tool id
+ * identifies exactly one call within a session for every engine — Anthropic's
+ * `toolu_…`, codex's app-server item ids, the AI SDK's `call_…`. This route
+ * also took a `runId` while codex's old `exec` transport restarted an `item_N`
+ * counter each turn; that transport is gone.
  */
 import { Effect } from 'effect';
 import { handler, ok } from '@cockpit/effect-runtime/server';
@@ -27,12 +28,11 @@ export const GET = handler((req) =>
       .map((s) => s.trim())
       .filter(Boolean);
     const sessionKey = searchParams.get('sessionKey') || undefined;
-    const runId = searchParams.get('runId') || undefined;
     if (!cwd) {
       return yield* Effect.fail(new ValidationError({ field: 'cwd', reason: 'missing' }));
     }
     const svc = yield* SnapshotService;
-    const commits = yield* svc.listByToolIds(cwd, toolIds, sessionKey, runId);
+    const commits = yield* svc.listByToolIds(cwd, toolIds, sessionKey);
     return ok({ commits });
   })
 );

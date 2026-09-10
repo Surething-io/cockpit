@@ -134,7 +134,7 @@ interface ChatProps {
   }) => void;
   onOpenSession?: (sessionId: string, title?: string) => void; // Open a new session (used for Fork)
   onContentSearch?: (query: string) => void; // Selected text → project-wide search
-  onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, runId?: string, live?: boolean) => void; // Message file changes → Explorer panel + auto-swipe
+  onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, live?: boolean) => void; // Message file changes → Explorer panel + auto-swipe
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void; // AI reply file link → Explorer
   onOpenSessionBrowser?: () => void; // Host-handled: open the cross-engine session browser
   onOpenSettings?: () => void; // Host-handled: open the app settings modal
@@ -321,7 +321,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     rateLimitInfo,
     apiRetryInfo,
     backgroundTasks,
-    handleSend,
+    handleSend: streamHandleSend,
     handleStop,
   } = useChatStream(messages, setMessages, {
     sessionId,
@@ -345,6 +345,19 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   });
 
   // ! prefix: first line is command, subsequent lines are user notes, supports images
+  /**
+   * The one funnel every person-initiated turn passes through — typing in the
+   * composer, a slash/bang command's expansion, "send to AI" from the code
+   * viewer, approving a plan. Pinning here rather than inferring it inside
+   * MessageList from "a user row appeared" is what keeps a scheduled task or
+   * the peer pane writing into this transcript from stealing the viewport out
+   * from under someone who is reading.
+   */
+  const handleSend = useCallback<typeof streamHandleSend>((...args) => {
+    messageListRef.current?.pinNextUserMessage();
+    return streamHandleSend(...args);
+  }, [streamHandleSend]);
+
   const wrappedHandleSend = useCallback(async (content: string, images?: ImageInfo[]) => {
     const firstLine = content.split('\n')[0];
 

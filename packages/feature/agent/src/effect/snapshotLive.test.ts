@@ -135,84 +135,24 @@ describe('SnapshotServiceLive', () => {
    * `item_7`. Before run-scoping, opening the newest turn's file-changes panel
    * listed the older turn's commits as if they belonged to it.
    */
-  it('separates same-session turns that reuse a tool id', async () => {
+  /**
+   * A tool id identifies exactly one call within a session, for every engine.
+   * This replaces run-scoping, which existed only because codex's old `exec`
+   * transport restarted an `item_N` counter each turn.
+   */
+  it('returns one commit per tool id within a session', async () => {
     await writeFile(join(work, 'src', 'a.ts'), 'export const a = 5;\n');
     await svc((s) =>
-      s.record({
-        cwd: work,
-        sessionKey: 'codex-thread',
-        runId: 'run-A',
-        provider: 'codex',
-        toolId: 'item_7',
-        toolName: 'Bash',
-      })
+      s.record({ cwd: work, sessionKey: 'codex-thread', provider: 'codex', toolId: 'exec-aaa', toolName: 'Bash' })
     );
-
     await writeFile(join(work, 'src', 'a.ts'), 'export const a = 6;\n');
     await svc((s) =>
-      s.record({
-        cwd: work,
-        sessionKey: 'codex-thread',
-        runId: 'run-B',
-        provider: 'codex',
-        toolId: 'item_7',
-        toolName: 'Bash',
-      })
+      s.record({ cwd: work, sessionKey: 'codex-thread', provider: 'codex', toolId: 'exec-bbb', toolName: 'Bash' })
     );
 
-    // Session-scoping alone still sees both — the bug, reproduced.
-    const bySession = await svc((s) => s.listByToolIds(work, ['item_7'], 'codex-thread'));
-    expect(bySession).toHaveLength(2);
-
-    // Run-scoping isolates the turn the user is actually looking at.
-    const byRun = await svc((s) => s.listByToolIds(work, ['item_7'], 'codex-thread', 'run-B'));
-    expect(byRun).toHaveLength(1);
-    expect(byRun[0].runId).toBe('run-B');
-  });
-
-  /**
-   * Run-scoping EXCLUDES, it does not require. Commits written before the
-   * Cockpit-Run-Id trailer existed carry none; dropping them would make a
-   * user's existing history vanish from the diff viewer on upgrade.
-   */
-  it('keeps run-id-less commits when a runId is supplied', async () => {
-    await writeFile(join(work, 'src', 'a.ts'), 'export const a = 7;\n');
-    await svc((s) =>
-      s.record({
-        cwd: work,
-        sessionKey: 'legacy-session',
-        provider: 'codex',
-        toolId: 'item_legacy',
-        toolName: 'Bash',
-      })
-    );
-
-    const found = await svc((s) =>
-      s.listByToolIds(work, ['item_legacy'], 'legacy-session', 'run-whatever')
-    );
-    expect(found).toHaveLength(1);
-    expect(found[0].runId).toBeNull();
-  });
-
-  /** A crafted runId must not be able to append trailers of its own. */
-  it('sanitizes a runId carrying newlines', async () => {
-    await writeFile(join(work, 'src', 'a.ts'), 'export const a = 8;\n');
-    await svc((s) =>
-      s.record({
-        cwd: work,
-        sessionKey: 'inject-session',
-        runId: 'evil\nCockpit-Kind: baseline',
-        provider: 'codex',
-        toolId: 'item_inject',
-        toolName: 'Bash',
-      })
-    );
-
-    const found = await svc((s) => s.listByToolIds(work, ['item_inject'], 'inject-session'));
-    expect(found).toHaveLength(1);
-    expect(found[0].runId).toBe('evil Cockpit-Kind: baseline');
-    // The injected trailer must NOT have been parsed as a real one.
-    expect(found[0].baseline).toBe(false);
+    expect(await svc((s) => s.listByToolIds(work, ['exec-aaa'], 'codex-thread'))).toHaveLength(1);
+    expect(await svc((s) => s.listByToolIds(work, ['exec-bbb'], 'codex-thread'))).toHaveLength(1);
+    expect(await svc((s) => s.listByToolIds(work, ['exec-aaa', 'exec-bbb'], 'codex-thread'))).toHaveLength(2);
   });
 
   it('skips the snapshot when nothing changed', async () => {

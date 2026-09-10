@@ -35,11 +35,33 @@ import {
 // otherwise `next` re-selects the row it just landed on and appears dead.
 // How long a jump target stays lit once it has ARRIVED. The scroll that precedes
 // it is instant, so this whole budget is spent on screen rather than on travel.
-// Must match the flash-turn-fade animation in globals.css.
 const FLASH_HOLD_MS = 2000;
 
 const STEP_PADDING = 8;
 const STEP_EPSILON = STEP_PADDING + 4;
+
+/**
+ * Scroll ownership. Exactly one of these is true at a time, and every automatic
+ * scroll in this file has to name the mode it belongs to — the bug this replaces
+ * was five independent `scrollTop = scrollHeight` effects with no shared notion
+ * of who was in charge.
+ *
+ *   follow → glue the viewport to the end of the transcript (the old default)
+ *   pinned → the turn the user just sent sits at the top of the viewport, and
+ *            the reply grows downward into reserved blank space below it
+ *   free   → the user took over by hand; touch nothing
+ *
+ * follow ──send──▶ pinned ──reply outgrows viewport──▶ follow
+ *   ▲                │                                    │
+ *   │           manual scroll                     manual scroll
+ *   │                ▼                                    ▼
+ *   └── scroll to content bottom ──────────────────────  free
+ */
+type ScrollMode = 'follow' | 'pinned' | 'free';
+
+// How close to the bottom of the CONTENT (not of the scroller — see the spacer)
+// still counts as "at the end".
+const AT_BOTTOM_THRESHOLD = 50;
 
 
 interface MessageListProps {
@@ -64,7 +86,7 @@ interface MessageListProps {
   isActive?: boolean; // Whether the tab is active (handles scroll issues for hidden tabs)
   onContentSearch?: (query: string) => void; // Selected text → project-wide search
   /** Show a message's file changes in the Explorer panel (panel 2) + auto-swipe */
-  onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, runId?: string, live?: boolean) => void;
+  onShowFileDiff?: (messageId: string, toolCalls: ToolCallInfo[], cwd?: string, sessionId?: string, live?: boolean) => void;
   /** AI reply Markdown local-file link → Explorer tree + optional line jump. */
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
   /** Plan mode: approve the presented plan → turn off plan mode and resend to execute */
@@ -129,6 +151,14 @@ export interface MessageListHandle {
    * frame instead of having to know when React commits them.
    */
   scrollToMessage: (messageId: string) => boolean;
+  /**
+   * Ask for the next user turn to be pinned to the top of the viewport once it
+   * renders. Called from the send path rather than inferred from `messages`,
+   * because only the caller knows whether a new user row is a person pressing
+   * enter or a scheduled task / peer pane writing into the transcript — and
+   * only the first of those may take the viewport.
+   */
+  pinNextUserMessage: () => void;
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
@@ -147,7 +177,38 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const flashTargetRef = useRef<Element | null>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const [outerEl, setOuterEl] = useState<HTMLDivElement | null>(null);
-  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+  const [scrollMode, setScrollMode] = useState<ScrollMode>('follow');
+  /**
+   * The mode, readable SYNCHRONOUSLY. A pin is armed from a layout effect, and
+   * the follow-the-bottom effects run later in that same commit still seeing
+   * `scrollMode === 'follow'` from the pre-send render — they would slam
+   * scrollTop to the end of the freshly reserved blank and cancel the pin's
+   * animation before it drew a frame. State drives re-subscription; this drives
+   * the guards.
+   */
+  const scrollModeRef = useRef<ScrollMode>('follow');
+  const setMode = useCallback((next: ScrollMode) => {
+    scrollModeRef.current = next;
+    setScrollMode(next);
+  }, []);
+  /**
+   * Reserved blank space below the last turn, in px. This is what makes a pin
+   * possible at all: the browser caps scrollTop at `scrollHeight - clientHeight`,
+   * so without roughly a viewport of content underneath it, the LAST message
+   * physically cannot be moved to the top of the viewport.
+   *
+   * Held in a ref and written straight to the node, NOT in state: it is
+   * re-derived on every streaming delta, and a setState there would re-render
+   * the whole list twice per token — once for the delta, once for the spacer —
+   * running the memo comparison over every mounted bubble for a number that
+   * nothing but this one element reads.
+   */
+  const spacerRef = useRef<HTMLDivElement>(null);
+  const spacerHeightRef = useRef(0);
+  const applySpacer = useCallback((px: number) => {
+    spacerHeightRef.current = px;
+    if (spacerRef.current) spacerRef.current.style.height = `${px}px`;
+  }, []);
   const [showTopButton, setShowTopButton] = useState(false);
   const [showBottomButton, setShowBottomButton] = useState(false);
   // Is there a user message above / below the current viewport top? Drives the
@@ -470,12 +531,18 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const scrollHeightBeforeLoadRef = useRef(0);
   const shouldRestoreScrollRef = useRef(false);
 
-  // Check if near the bottom (within 50px of the bottom)
+  /**
+   * Near the end of the CONTENT — deliberately not the end of the scroller.
+   * While a pin is held, the scroller ends a spacer below the last message, and
+   * measuring against that would report "not at the bottom" for a reader who is
+   * looking straight at the last line of the transcript, permanently arming the
+   * scroll-to-bottom button and blocking the return to follow mode.
+   */
   const checkIfAtBottom = useCallback(() => {
     const container = containerRef.current;
     if (!container) return true;
-    const threshold = 50;
-    return container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+    const contentHeight = container.scrollHeight - spacerHeightRef.current;
+    return contentHeight - container.scrollTop - container.clientHeight < AT_BOTTOM_THRESHOLD;
   }, []);
 
   // Check if near the top (within 50px of the top)
@@ -506,7 +573,18 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const handleScroll = useCallback(() => {
     const atBottom = checkIfAtBottom();
     const atTop = checkIfAtTop();
-    setShouldAutoScroll(atBottom);
+    /**
+     * `follow` and `free` are decided by position, exactly as the old
+     * `setShouldAutoScroll(atBottom)` did. `pinned` is deliberately NOT: while
+     * a pin is held nothing here ever moves scrollTop (the spacer absorbs the
+     * reply instead), so position carries no signal, and a short reply parks
+     * the pinned message BOTH at the viewport top and within 50px of the
+     * content end — which position alone would misread as "resume following".
+     * A pin is left by user INTENT only; see the wheel/touch effect below.
+     */
+    if (scrollModeRef.current !== 'pinned') {
+      setMode(atBottom ? 'follow' : 'free');
+    }
     setShowTopButton(!atTop); // Show scroll-to-top button when not at the top
     setShowBottomButton(!atBottom);
     refreshStepAvailability();
@@ -528,10 +606,25 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     topRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  // Scroll to bottom
+  /**
+   * "Back to the end" means the end of the transcript, not the end of the
+   * scroller: with a spacer standing, `bottomRef` sits below a screen of
+   * reserved blank, and the button that promises the last message would deliver
+   * an empty viewport.
+   */
   const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, []);
+    const container = containerRef.current;
+    if (!container) return;
+    setMode('follow');
+    // Drop the spacer FIRST, then read scrollHeight: the read forces layout, so
+    // the target below is already the end of the real content rather than the
+    // end of the blank that is on its way out.
+    applySpacer(0);
+    container.scrollTo({
+      top: container.scrollHeight - container.clientHeight,
+      behavior: 'smooth',
+    });
+  }, [applySpacer]);
 
   // Scroll to a specific message.
   //
@@ -544,17 +637,33 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   // the commit, so whichever frame the target appears in, the scroll wins.
   const scrollToMessage = useCallback((messageId: string): boolean => {
     const container = containerRef.current;
-    const messageElement = container?.querySelector(`[data-message-id="${messageId}"]`);
+    if (!container) return false;
+    const messageElement = container.querySelector(`[data-message-id="${messageId}"]`);
     if (!messageElement) return false;
 
+    // Land the message at the TOP, not centred: what you want to read after
+    // jumping to a question is the answer under it, and centring spends half the
+    // viewport on the conversation you jumped away from. Same landing formula as
+    // the prev/next steppers below — one geometry (STEP_PADDING) for every jump,
+    // so the two cannot drift apart.
+    //
     // Instant, not smooth. A jump out of the message list is usually a long one
     // — tens of turns, thousands of pixels — and a smooth scroll of that length
     // is both slow and unreadable, everything in between merely blurring past.
     // It also broke the flash outright: the hold below starts counting when the
-    // animation STARTS, so a long glide ate the whole budget and the highlight
-    // was over by the time the message arrived. CodeViewer's equivalent jump
-    // lands instantly for the same reasons.
-    messageElement.scrollIntoView({ behavior: 'auto', block: 'center' });
+    // animation STARTS, so a long glide ate the whole 2s and the highlight was
+    // over by the time the message arrived. CodeViewer's equivalent jump lands
+    // instantly for the same reasons.
+    //
+    // scrollTo on the container rather than scrollIntoView: the latter walks
+    // every scrollable ancestor, which in a three-panel shell can move more than
+    // the thread.
+    const offsetTop =
+      messageElement.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    container.scrollTo({
+      top: container.scrollTop + offsetTop - STEP_PADDING,
+      behavior: 'auto',
+    });
 
     // Flash the target. The class goes on the ROW — the only anchor we have —
     // and `.flash-turn .chat-turn` in globals.css projects it onto the bubble
@@ -562,13 +671,15 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     // the row itself.
     //
     // Restart rather than extend: clear whatever the previous jump left behind,
-    // drop the class, and re-add it after a forced reflow so re-selecting the
-    // SAME row replays the animation instead of doing nothing visible. Doing the
-    // reflow synchronously beats deferring to requestAnimationFrame — the class
-    // is on the element before this returns, so no React commit lands in the gap.
+    // drop the class, and re-add it a frame later so re-selecting the SAME row
+    // replays the transition instead of doing nothing visible.
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     flashTargetRef.current?.classList.remove('flash-turn');
     messageElement.classList.remove('flash-turn');
+    // Force a reflow between remove and add so the transition restarts. Doing
+    // this synchronously beats deferring the add to requestAnimationFrame: the
+    // class is on the element before this function returns, so no React commit
+    // can land in the gap and no caller has to reason about frames.
     void (messageElement as HTMLElement).offsetWidth;
     messageElement.classList.add('flash-turn');
     flashTargetRef.current = messageElement;
@@ -612,33 +723,207 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     });
   }, []);
 
+  /**
+   * A send asks for the NEXT user row to be pinned; it cannot pin anything
+   * itself, because the row does not exist in the DOM until the optimistic
+   * message commits a tick later.
+   */
+  const pendingPinRef = useRef(false);
+  const pinnedIdRef = useRef<string | null>(null);
+
+  const requestPin = useCallback(() => {
+    pendingPinRef.current = true;
+  }, []);
+
   // Expose methods to parent component
   useImperativeHandle(ref, () => ({
     scrollToMessage,
-  }), [scrollToMessage]);
+    pinNextUserMessage: requestPin,
+  }), [scrollToMessage, requestPin]);
+
+  /**
+   * The whole pin, in one formula.
+   *
+   * `rowTop` (the pinned row's offset inside the scrolled content) and
+   * `clientHeight` are both fixed for the duration of a turn, so
+   *
+   *     spacer = (rowTop - STEP_PADDING + clientHeight) - contentHeight
+   *
+   * makes `scrollHeight` a CONSTANT: every pixel the reply grows is a pixel the
+   * spacer gives back. That is the point — the pin is held by never scrolling,
+   * not by re-scrolling to the same place each frame. Re-scrolling is what
+   * makes streaming chat views jitter, and it fights the user for the scrollbar.
+   *
+   * When the reply finally outgrows the reserved space the formula goes
+   * negative, clamps to 0, and the pinned position has by then converged
+   * exactly onto the bottom — so handing back to follow mode is seamless.
+   */
+  const measurePin = useCallback(() => {
+    const container = containerRef.current;
+    const id = pinnedIdRef.current;
+    if (!container || !id) return null;
+    const row = container.querySelector(`[data-message-id="${CSS.escape(id)}"]`);
+    if (!row) return null;
+
+    const rowTop =
+      row.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
+    const contentHeight = container.scrollHeight - spacerHeightRef.current;
+    const desiredScrollTop = Math.max(0, rowTop - STEP_PADDING);
+    const spacer = Math.max(0, desiredScrollTop + container.clientHeight - contentHeight);
+    return { desiredScrollTop, spacer };
+  }, []);
 
   // Flag for whether this is the initial load
   const isInitialLoadRef = useRef(true);
+
+  /**
+   * Arm the pin on the first commit after a send, targeting the LAST USER row
+   * rather than the last row.
+   *
+   * The send path appends the user message and the assistant placeholder in two
+   * `setMessages` calls inside one event handler, so React batches them into a
+   * single commit whose final element is the *assistant* placeholder. An
+   * earlier version of this waited for the last row to be a user row and
+   * therefore never fired at all.
+   *
+   * Timing is safe without any "is this the right commit" test: `requestPin`
+   * runs inside the send handler, no effect can run between it and the commit
+   * it triggers, and that commit is the one carrying the new user row.
+   */
+  useLayoutEffect(() => {
+    if (!pendingPinRef.current) return;
+    // Search the RENDERED list: `messages` can carry rows that never reach the
+    // DOM (uniqueMessages drops duplicate ids and empty assistant husks), and a
+    // pin target with no node is a pin that measures nothing.
+    let target: ChatMessage | undefined;
+    for (let i = uniqueMessages.length - 1; i >= 0; i -= 1) {
+      if (uniqueMessages[i].role === 'user') { target = uniqueMessages[i]; break; }
+    }
+    if (!target) return;
+
+    pendingPinRef.current = false;
+    pinnedIdRef.current = target.id;
+    const m = measurePin();
+    if (!m) return;
+
+    // Order matters: the spacer must be in the layout BEFORE the scroll is
+    // asked for, or the target is past the scrollable range and the browser
+    // silently clamps it, landing the message short of the top. Writing the
+    // node directly (rather than via state) is what makes "before" possible
+    // inside a single layout effect.
+    applySpacer(m.spacer);
+    setMode('pinned');
+    // scrollTo on the container, not scrollIntoView: the latter walks ancestors,
+    // which in the three-panel layout can shift the panel itself.
+    containerRef.current?.scrollTo({ top: m.desiredScrollTop, behavior: 'smooth' });
+  }, [uniqueMessages, measurePin, applySpacer]);
+
+  /**
+   * Hold the pin: re-derive the spacer from the reply's current height. Runs on
+   * every streaming delta and costs one layout read — no scrolling, no render.
+   *
+   * Safe to run while the entry animation is still in flight: `measurePin`
+   * derives everything from `getBoundingClientRect` offsets plus `scrollTop`,
+   * which is invariant under scrolling, so a mid-animation measurement returns
+   * the same numbers as a settled one.
+   */
+  useLayoutEffect(() => {
+    if (scrollMode !== 'pinned') return;
+    const m = measurePin();
+    if (!m) return;
+    if (m.spacer <= 0) {
+      // The reply outgrew the reserved space; the two positions have converged,
+      // so follow mode takes over without a visible jump.
+      applySpacer(0);
+      setMode('follow');
+      return;
+    }
+    applySpacer(m.spacer);
+  }, [messages, isLoading, scrollMode, measurePin, applySpacer]);
+
+  /**
+   * Re-establish the pin when the viewport itself changes size — the reserved
+   * space is derived from `clientHeight`, and on mobile the soft keyboard
+   * changes that out from under a held pin. Re-scroll instantly rather than
+   * smoothly: this follows a resize the user just caused, so it should look
+   * like the layout settling, not like a second animated jump.
+   */
+  useEffect(() => {
+    if (scrollMode !== 'pinned') return;
+    const container = containerRef.current;
+    if (!container) return;
+    const ro = new ResizeObserver(() => {
+      const m = measurePin();
+      if (!m) return;
+      applySpacer(m.spacer);
+      container.scrollTop = m.desiredScrollTop;
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [scrollMode, measurePin, applySpacer]);
+
+  /**
+   * Leaving a pin is an intent question, not a position one. wheel/touchmove
+   * fire only for a real gesture, so this cannot be tripped by our own scrolling
+   * the way a scroll-position check would be. Either direction counts: scrolling
+   * DOWN into the reserved blank is just as much a takeover as scrolling up.
+   */
+  useEffect(() => {
+    if (scrollMode !== 'pinned') return;
+    const container = containerRef.current;
+    if (!container) return;
+    const release = () => setMode('free');
+    container.addEventListener('wheel', release, { passive: true });
+    container.addEventListener('touchmove', release, { passive: true });
+    return () => {
+      container.removeEventListener('wheel', release);
+      container.removeEventListener('touchmove', release);
+    };
+  }, [scrollMode]);
+
+  /**
+   * A pin belongs to one session. Carrying its spacer into another transcript
+   * (fork, resume, session switch) would leave a hole under a conversation
+   * nobody just sent to.
+   */
+  const prevSessionIdRef = useRef(sessionId);
+  useEffect(() => {
+    const prev = prevSessionIdRef.current;
+    prevSessionIdRef.current = sessionId;
+    /**
+     * A NEW session has no id until the engine reports one, which happens while
+     * the very first message is mid-flight — i.e. while it is pinned. Treating
+     * that null → id transition as a session switch would cancel the pin on
+     * exactly the turn most likely to be someone's first impression of this
+     * behaviour. Only a switch between two established transcripts counts.
+     */
+    if (!prev || prev === sessionId) return;
+
+    pendingPinRef.current = false;
+    pinnedIdRef.current = null;
+    applySpacer(0);
+    setMode('follow');
+  }, [sessionId, applySpacer, setMode]);
 
   // Keep following the bottom whenever rendered messages change, as long as the
   // user has not intentionally scrolled away. This covers streaming deltas and
   // disk reconcile updates where the message count does not change.
   useLayoutEffect(() => {
     if (isInitialLoadRef.current) return;
-    if (!shouldAutoScroll) return;
+    if (scrollModeRef.current !== 'follow') return;
     if (shouldRestoreScrollRef.current) return;
 
     const container = containerRef.current;
     if (container) container.scrollTop = container.scrollHeight;
-  }, [messages, shouldAutoScroll]);
+  }, [messages, scrollMode]);
 
   // Also check scroll on isLoading change (showing/hiding the "thinking" indicator)
   useLayoutEffect(() => {
-    if (shouldAutoScroll && isLoading) {
+    if (scrollModeRef.current === 'follow' && isLoading) {
       const container = containerRef.current;
       if (container) container.scrollTop = container.scrollHeight;
     }
-  }, [isLoading, shouldAutoScroll]);
+  }, [isLoading, scrollMode]);
 
   // Restore scroll position after loading more history
   useLayoutEffect(() => {
@@ -835,6 +1120,16 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                 </div>
               </div>
             )}
+            {/* Reserved space that lets the pinned turn reach the top of the
+                viewport. Left standing after a short reply on purpose:
+                collapsing it the moment the answer finishes would yank the
+                page down by up to a screen exactly as the reader starts
+                reading. It is reclaimed by the next send, by scrolling to the
+                content end, or by switching session. */}
+            {/* Height is owned by `applySpacer`, which writes this node
+                directly. No style prop: React would then hold its own idea of
+                the height and the two writers would race on re-render. */}
+            <div ref={spacerRef} aria-hidden />
             <div ref={bottomRef} />
           </div>
         )}

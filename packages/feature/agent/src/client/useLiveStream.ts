@@ -47,10 +47,10 @@ export function useLiveStream(
   // subagent's (arrives mid-turn, already shown as its tool call).
   const turnActive = useRef(false);
 
-  // The dispatch runId of the turn being watched, taken from the seeded
-  // `_human` event (startRun stamps it, and that event precedes the engine's
-  // `system.init`). Stamped onto every bubble this turn produces so the diff
-  // viewer can scope snapshot lookups to one turn — see ChatMessage.runId.
+  // Identity of the turn being watched, taken from the seeded `_human` event
+  // (startRun stamps it as `_turnId`, and that event precedes the engine's
+  // `system.init`). Used to dedup this turn's live user bubble by identity
+  // rather than by text — see the dedup layers in `apply`.
   const curTurnId = useRef<string | undefined>(undefined);
 
   const newPlaceholder = (): string => {
@@ -58,7 +58,7 @@ export function useLiveStream(
     curAssistantId.current = id;
     setMessages((prev) => [
       ...prev,
-      { id, role: 'assistant', content: '', isStreaming: true, runId: curTurnId.current } as ChatMessage,
+      { id, role: 'assistant', content: '', isStreaming: true } as ChatMessage,
     ]);
     return id;
   };
@@ -229,7 +229,7 @@ export function useLiveStream(
       if (msg.type === 'run-snapshot' && Array.isArray(msg.events)) {
         // Authoritative turn identity, and the only source for an images-only
         // turn (which seeds no `_human` event). Set before the replay below so
-        // every bubble it creates is stamped.
+        // the bubbles it creates dedup against it.
         if (typeof msg.runId === 'string' && msg.runId) curTurnId.current = msg.runId;
         // Idle run → nothing to stream; the disk history already loaded is authoritative.
         if (msg.status !== 'running') {

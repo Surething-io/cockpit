@@ -104,11 +104,10 @@ export function snapshotOnRunStart(
   cwd: string,
   sessionKey: string,
   provider: string,
-  runId?: string,
 ): void {
   if (!cwd) return;
   forkSnapshot(
-    Effect.flatMap(SnapshotService, (svc) => svc.baseline(cwd, sessionKey, provider, runId))
+    Effect.flatMap(SnapshotService, (svc) => svc.baseline(cwd, sessionKey, provider))
   );
 }
 
@@ -121,9 +120,6 @@ export function snapshotOnRunEvent(
   sessionKey: string,
   provider: string,
   event: RunEvent,
-  /** The dispatch this event belongs to — the scope codex's per-turn
-   *  `item_N` tool ids actually live in. See SnapshotTrigger.runId. */
-  runId?: string,
 ): void {
   if (!cwd) return;
 
@@ -158,7 +154,6 @@ export function snapshotOnRunEvent(
           svc.record({
             cwd,
             sessionKey,
-            runId,
             provider,
             toolId,
             toolName: meta?.name ?? 'tool',

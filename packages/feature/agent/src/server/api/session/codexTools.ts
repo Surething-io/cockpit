@@ -24,6 +24,8 @@ export const CODEX_TOOL_NAMES = {
   todo: 'TodoWrite',
   webSearch: 'WebSearch',
   webFetch: 'WebFetch',
+  /** `image_generation` writes a file, so it reads as a Write in the timeline. */
+  imageGeneration: 'Write',
 } as const;
 
 /**
@@ -160,14 +162,20 @@ export function parseCodexPlanInput(args: Record<string, unknown>): { todos: Cod
   };
 }
 
-/** Live-stream counterpart of parseCodexPlanInput (`todo_list.items`). */
+/**
+ * Live-stream counterpart of parseCodexPlanInput (`todo_list.items`).
+ *
+ * `status` is preferred over `completed` so the plan's third state survives:
+ * flattening to a boolean turned every in-progress step into a pending one, and
+ * MessageBubble's checklist has no way to tell the difference afterwards.
+ */
 export function codexTodoInput(
-  items: Array<{ text?: string; completed?: boolean }> | undefined
+  items: Array<{ text?: string; completed?: boolean; status?: string }> | undefined
 ): { todos: CodexTodo[] } {
   return {
     todos: (items ?? []).flatMap((i) =>
       typeof i?.text === 'string'
-        ? [{ content: i.text, status: i.completed ? 'completed' : 'pending' }]
+        ? [{ content: i.text, status: i.status || (i.completed ? 'completed' : 'pending') }]
         : []
     ),
   };
@@ -203,8 +211,19 @@ export function codexWebSearchCall(
   return {
     name: CODEX_TOOL_NAMES.webSearch,
     input: { query: q },
-    // codex reports the queries it ran but never the hits; showing the queries beats
-    // an empty result, which would leave the bubble looking unfinished.
+    /**
+     * The queries, not the hits — deliberately.
+     *
+     * A web_search item does carry `results`, but the protocol types it as
+     * `Array<Unknown>` and says why: "These stay as opaque JSON at the
+     * extension/app-server boundary so new result fields and result types can
+     * pass through without a Codex release." Rendering it would mean inventing
+     * a shape upstream has explicitly refused to fix, and finding out it moved
+     * the way every other spelling mismatch here has been found — by a bubble
+     * silently going blank.
+     *
+     * Showing the queries beats an empty result, which reads as unfinished.
+     */
     result: queries.join('\n'),
   };
 }
@@ -216,7 +235,23 @@ export function codexMcpResultText(item: {
 }): string {
   if (item.error?.message) return item.error.message;
   if (item.result === null || item.result === undefined) return '';
-  return typeof item.result === 'string' ? item.result : JSON.stringify(item.result, null, 2);
+  if (typeof item.result === 'string') return item.result;
+
+  /**
+   * MCP answers in content blocks (`{content:[{type:'text',text}]}`). Unwrap
+   * them: the raw JSON is what the live stream used to show while a reload
+   * showed the text, and of the two the text is the one worth keeping.
+   */
+  const content = (item.result as { content?: unknown }).content;
+  if (Array.isArray(content)) {
+    const text = content
+      .filter((b): b is { type?: string; text?: string } => !!b && typeof b === 'object')
+      .filter((b) => typeof b.text === 'string')
+      .map((b) => b.text as string)
+      .join('');
+    if (text) return text;
+  }
+  return JSON.stringify(item.result, null, 2);
 }
 
 /**
@@ -985,4 +1020,215 @@ export function extractCodexUserContent(content: CodexContentBlock[] | undefined
     .filter((image): image is MessageImage => image !== null) || [];
 
   return { text, images };
+}
+
+/**
+ * One completed thread item, in the shape both consumers need.
+ *
+ * `event_msg/item_completed` is self-sufficient: a command carries its own
+ * command line AND its output, a patch its changes AND their outcome. That is
+ * what lets the live engine and the transcript parser derive a bubble from the
+ * SAME record through the SAME function, instead of the parser reconstructing
+ * one from a call line, an id line and an output line and hoping the three
+ * agree with what actually streamed.
+ */
+export interface CodexItemLike {
+  id?: string;
+  call_id?: string;
+  type?: string;
+  /** String from the live notification, argv from the rollout. */
+  command?: unknown;
+  aggregated_output?: string;
+  exit_code?: number | null;
+  status?: string;
+  /** Array from the live notification, path-keyed object from the rollout. */
+  changes?: Array<{ path?: string; kind?: unknown }> | Record<string, unknown>;
+  server?: string;
+  tool?: string;
+  arguments?: Record<string, unknown>;
+  result?: unknown;
+  error?: { message?: string } | null;
+  query?: string;
+  action?: { type?: string; query?: string; queries?: string[]; url?: string };
+  items?: Array<{ text?: string; completed?: boolean; status?: string }>;
+  // imageView
+  path?: string;
+  // dynamicToolCall
+  namespace?: string;
+  contentItems?: unknown;
+  success?: boolean;
+  // sleep
+  durationMs?: number;
+  // imageGeneration
+  savedPath?: string;
+  revisedPrompt?: string;
+}
+
+/** The tool bubble a completed item draws: its call and its result, together. */
+export interface CodexItemBubble {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  result: string;
+}
+
+export function codexItemToolUseId(item: CodexItemLike): string {
+  return item.call_id || item.id || '';
+}
+
+/**
+ * One spelling for an item type, whichever of the three the caller happens to
+ * hold: the live notification says `commandExecution`, the rollout says
+ * `CommandExecution`, and the name every switch in this codebase is written
+ * against is `command_execution`.
+ *
+ * Normalising HERE rather than at each call site is the point — a caller that
+ * forgets produces no bubble at all, silently, which is a bug this file has
+ * already shipped twice.
+ */
+export function codexItemKind(type: string | undefined): string {
+  if (!type) return '';
+  return type.replace(/^([A-Z])/, (c) => c.toLowerCase()).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+}
+
+/**
+ * A file change's two encodings, and there is no avoiding both: the live
+ * notification sends an ARRAY (`[{path, kind, diff}]`) while the rollout stores
+ * an OBJECT KEYED BY PATH (`{"/a.ts": {type, unified_diff}}`). Same data, same
+ * item type, different shape — so the one function both sides call has to read
+ * either.
+ */
+/**
+ * A command's two encodings — again. The live notification sends the shell
+ * string (`/bin/zsh -lc 'cat a.txt'`); the rollout stores argv
+ * (`["/bin/zsh","-lc","cat a.txt"]`). Rebuilt into the live form rather than
+ * the reverse: that is what the bubble has always shown, and joining argv with
+ * plain spaces would silently drop the quoting that makes it re-runnable.
+ */
+export function codexCommandText(command: unknown): string {
+  if (typeof command === 'string') return command;
+  if (!Array.isArray(command)) return '';
+  return command
+    .map((a) => {
+      const arg = String(a);
+      return /[\s"'$`\\|&;<>()]/.test(arg) ? `'${arg.replace(/'/g, `'\\''`)}'` : arg;
+    })
+    .join(' ');
+}
+
+const patchChanges = (item: CodexItemLike): Array<{ path: string; kind: string }> => {
+  const raw = item.changes;
+  if (!raw) return [];
+
+  const kindOf = (v: unknown): string => {
+    if (typeof v === 'string') return v;
+    // The live shape tags it (`kind: {type: 'update'}`); the rollout puts the
+    // tag on the change itself.
+    const o = v as { kind?: unknown; type?: unknown } | null;
+    const tag = (o?.kind && typeof o.kind === 'object' ? (o.kind as { type?: unknown }).type : o?.kind) ?? o?.type;
+    return typeof tag === 'string' ? tag : 'update';
+  };
+
+  if (Array.isArray(raw)) {
+    return raw.map((c) => ({ path: c?.path || '', kind: kindOf(c) }));
+  }
+  return Object.entries(raw as Record<string, unknown>).map(([path, v]) => ({ path, kind: kindOf(v) }));
+};
+
+const patchResultText = (item: CodexItemLike): string => {
+  const cs = patchChanges(item);
+  if (cs.length === 0) return 'apply_patch';
+  return cs.map((c) => `${c.kind} ${c.path}`.trim()).join('\n');
+};
+
+/**
+ * Map a completed item to its bubble, or null when the item draws none
+ * (messages, reasoning) or needs data this record does not carry.
+ *
+ * `collab_tool_call` is the deliberate exception: a spawn's own arguments and
+ * the agent's nickname live on the `function_call` line, not on the item, so
+ * that bubble is assembled elsewhere from both.
+ */
+export function codexItemBubble(item: CodexItemLike): CodexItemBubble | null {
+  const id = codexItemToolUseId(item);
+  if (!id) return null;
+
+  switch (codexItemKind(item.type)) {
+    case 'command_execution':
+      return {
+        id,
+        name: CODEX_TOOL_NAMES.bash,
+        input: { command: codexCommandText(item.command) },
+        // An empty result spins forever in the UI, so a bare exit code stands
+        // in for a command that printed nothing.
+        result: item.aggregated_output || `(exit code: ${item.exit_code ?? 'unknown'})`,
+      };
+
+    case 'file_change':
+      return {
+        id,
+        name: CODEX_TOOL_NAMES.applyPatch,
+        input: { changes: patchChanges(item) },
+        result: patchResultText(item),
+      };
+
+    case 'mcp_tool_call':
+      return {
+        id,
+        name: codexMcpToolName(item.server || 'mcp', item.tool || 'tool'),
+        input: item.arguments || {},
+        result: codexMcpResultText(item) || `(${item.status || 'completed'})`,
+      };
+
+    case 'web_search': {
+      const { name, input, result } = codexWebSearchCall(item.query, item.action);
+      return { id, name, input, result };
+    }
+
+    case 'todo_list': {
+      const input = codexTodoInput(item.items);
+      return { id, name: CODEX_TOOL_NAMES.todo, input, result: codexTodoResultText(input.todos) };
+    }
+
+    // Reading an image back. The result is deliberately the placeholder and not
+    // the image: inlining a screenshot's data URL used to push ~600KB of base64
+    // through the API, React state and the DOM for one bubble.
+    case 'image_view':
+      return {
+        id,
+        name: CODEX_TOOL_NAMES.read,
+        input: { file_path: item.path || '' },
+        result: CODEX_IMAGE_ONLY_TEXT,
+      };
+
+    /**
+     * Generating an image. It writes a file, so it belongs in the timeline like
+     * any other write — it was grouped with `sleep` and the review-mode markers
+     * by mistake, which left a generated image invisible on both sides.
+     */
+    case 'image_generation':
+      return {
+        id,
+        name: CODEX_TOOL_NAMES.imageGeneration,
+        input: { file_path: item.savedPath || '', ...(item.revisedPrompt ? { prompt: item.revisedPrompt } : {}) },
+        result: item.savedPath || `(${item.status || 'completed'})`,
+      };
+
+    // A tool reached through codex's dynamic namespace rather than a fixed one.
+    // Named like an MCP call because that is what it is from the reader's side.
+    case 'dynamic_tool_call':
+      return {
+        id,
+        name: codexMcpToolName(item.namespace || 'tool', item.tool || 'call'),
+        input: item.arguments || {},
+        result: codexMcpResultText(item) || `(${item.status || 'completed'})`,
+      };
+
+    default:
+      // Every other variant — messages, reasoning, sleep, review-mode markers,
+      // context compaction — draws no bubble on either side. Returning null
+      // rather than guessing is what keeps an unrecognised future item from
+      // inventing one.
+      return null;
+  }
 }

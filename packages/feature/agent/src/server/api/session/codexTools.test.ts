@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   CODEX_IMAGE_ONLY_TEXT,
   codexExecScriptCall,
+  codexCommandText,
+  codexItemBubble,
   codexToolOutputText,
   extractCodexUserContent,
   normalizeCodexToolInput,
@@ -193,5 +195,101 @@ describe('codex 5.6 exec script tool', () => {
     ])).toBe('Script completed\ndone');
     expect(codexToolOutputText('plain')).toBe('plain');
     expect(codexToolOutputText(undefined)).toBe('');
+  });
+});
+
+describe('codexItemBubble spelling', () => {
+  /**
+   * Three spellings reach this function: the live notification's
+   * `commandExecution`, the rollout's `CommandExecution`, and the
+   * `command_execution` every switch here is written against. A caller that
+   * normalises and one that does not is how history ended up with no tool
+   * bubbles at all while the live stream had them.
+   */
+  it.each(['command_execution', 'commandExecution', 'CommandExecution'])(
+    'draws a command written as %s',
+    (type) => {
+      const bubble = codexItemBubble({ type, id: 'exec-1', command: 'ls', aggregated_output: 'a\n', exit_code: 0 });
+      expect(bubble).toMatchObject({ id: 'exec-1', name: 'Bash', input: { command: 'ls' }, result: 'a\n' });
+    }
+  );
+
+  it.each(['file_change', 'fileChange', 'FileChange'])('draws a patch written as %s', (type) => {
+    const bubble = codexItemBubble({ type, id: 'exec-2', changes: [{ path: '/a.ts', kind: 'update' }] });
+    expect(bubble).toMatchObject({ name: 'ApplyPatch', result: 'update /a.ts' });
+  });
+
+  it('draws nothing for an item that has no bubble', () => {
+    expect(codexItemBubble({ type: 'Reasoning', id: 'rs_1' })).toBeNull();
+    expect(codexItemBubble({ type: 'AgentMessage', id: 'msg_1' })).toBeNull();
+    // No id, nothing to key a bubble by.
+    expect(codexItemBubble({ type: 'CommandExecution', command: 'ls' })).toBeNull();
+  });
+});
+
+describe('codexItemBubble file-change encodings', () => {
+  /**
+   * The live notification sends an array; the rollout stores a path-keyed
+   * object. Reading only one is how history ended up with no patch bubble at
+   * all — and it threw rather than returning nothing, which at least was loud.
+   */
+  it('reads the live array form', () => {
+    const bubble = codexItemBubble({
+      type: 'fileChange',
+      id: 'exec-1',
+      changes: [{ path: '/a.ts', kind: 'update' }],
+    });
+    expect(bubble).toMatchObject({ input: { changes: [{ path: '/a.ts', kind: 'update' }] }, result: 'update /a.ts' });
+  });
+
+  it('reads the live array form with a tagged kind', () => {
+    const bubble = codexItemBubble({
+      type: 'fileChange',
+      id: 'exec-1',
+      changes: [{ path: '/a.ts', kind: { type: 'add' } }],
+    });
+    expect(bubble?.result).toBe('add /a.ts');
+  });
+
+  /** Verbatim from a real rollout. */
+  it('reads the rollout path-keyed object form', () => {
+    const bubble = codexItemBubble({
+      type: 'FileChange',
+      id: 'exec-1',
+      changes: { '/tmp/b.txt': { type: 'update', unified_diff: '@@ -1 +1 @@\n-two\n+three\n', move_path: null } },
+    });
+    expect(bubble).toMatchObject({
+      name: 'ApplyPatch',
+      input: { changes: [{ path: '/tmp/b.txt', kind: 'update' }] },
+      result: 'update /tmp/b.txt',
+    });
+  });
+
+  it('says apply_patch when there is nothing to name', () => {
+    expect(codexItemBubble({ type: 'FileChange', id: 'exec-1', changes: {} })?.result).toBe('apply_patch');
+  });
+});
+
+describe('codexCommandText', () => {
+  /** The live notification's string and the rollout's argv, made to agree. */
+  it('passes the live shell string through', () => {
+    expect(codexCommandText("/bin/zsh -lc 'cat a.txt'")).toBe("/bin/zsh -lc 'cat a.txt'");
+  });
+
+  it('rebuilds the same string from the rollout argv', () => {
+    expect(codexCommandText(['/bin/zsh', '-lc', 'cat a.txt'])).toBe("/bin/zsh -lc 'cat a.txt'");
+  });
+
+  it('quotes only what needs it', () => {
+    expect(codexCommandText(['ls', '-la'])).toBe('ls -la');
+  });
+
+  it('survives an embedded single quote', () => {
+    expect(codexCommandText(['sh', "-c", "echo 'hi'"])).toContain('sh -c');
+  });
+
+  it('is empty for anything else', () => {
+    expect(codexCommandText(undefined)).toBe('');
+    expect(codexCommandText(42)).toBe('');
   });
 });

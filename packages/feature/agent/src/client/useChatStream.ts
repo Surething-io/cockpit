@@ -118,7 +118,7 @@ export function useChatStream(
 
   // #10 ws-converge: the active detached run the originator is tailing over
   // /ws/session-stream (runKey to subscribe by + the assistant bubble its events fill).
-  const [activeRun, setActiveRun] = useState<{ runKey: string; assistantId: string; runId?: string } | null>(null);
+  const [activeRun, setActiveRun] = useState<{ runKey: string; assistantId: string } | null>(null);
   const activeRunRef = useRef(activeRun);
   activeRunRef.current = activeRun;
   const sawServerUsageUpdateRef = useRef(false);
@@ -258,7 +258,7 @@ export function useChatStream(
         curAsstIdRef.current = autoId;
         setMessages((prev) => [
           ...prev,
-          { id: autoId, role: 'assistant', content: '', toolCalls: [], isStreaming: true, runKey: activeRunRef.current?.runKey, runId: activeRunRef.current?.runId } as ChatMessage,
+          { id: autoId, role: 'assistant', content: '', toolCalls: [], isStreaming: true, runKey: activeRunRef.current?.runKey } as ChatMessage,
         ]);
       }
       turnActiveRef.current = true;
@@ -597,9 +597,11 @@ export function useChatStream(
       setApiRetryInfo(null);
       setBackgroundTasks(NO_BG_TASKS);
 
-      // Minted BEFORE the assistant placeholder because the bubble carries it:
-      // `runId` is this turn's snapshot scope (see ChatMessage.runId), so it has
-      // to exist by the time the bubble that will own those tool calls does.
+      // This turn's identity on the wire. The server stamps it onto the seeded
+      // `_human` event as `_turnId`, which is how a viewer pane dedups the live
+      // user bubble by identity instead of by text — required for a repeated
+      // prompt ("继续"), where text comparison suppresses the new turn's bubble.
+      // It is also the idempotency key for the run registry's test-and-set.
       const runId = genRunId();
 
       // Create assistant message placeholder
@@ -610,7 +612,6 @@ export function useChatStream(
         content: '',
         toolCalls: [],
         isStreaming: true,
-        runId,
       };
       setMessages((prev) => [...prev, assistantMessage]);
       // #bg: bind live rendering to this launching bubble and reset per-run turn tracking.
@@ -677,7 +678,7 @@ export function useChatStream(
 
         const startBody = (await response.json().catch(() => ({}))) as { runKey?: string };
         // Hand off to the ws consumer; it ends the run on result / run-idle.
-        setActiveRun({ runKey: startBody.runKey || runId, assistantId: assistantMessageId, runId });
+        setActiveRun({ runKey: startBody.runKey || runId, assistantId: assistantMessageId });
         // Arm the connection watchdog: if /ws/session-stream never delivers a message (it sends
         // a snapshot immediately on connect), the socket failed to connect → unstick the turn.
         wsAliveRef.current = false;

@@ -171,7 +171,6 @@ const commitFromLogRecord = (record: string): SnapshotCommit | null => {
     timestamp: Number(ts) || 0,
     subject: body.split("\n")[0] ?? "",
     sessionKey: trailers["Session"] ?? null,
-    runId: trailers["Run-Id"] ?? null,
     toolId: trailers["Tool-Id"] ?? null,
     toolName: trailers["Tool"] ?? null,
     toolFiles,
@@ -514,12 +513,6 @@ const ensureDayBranch = (
 const sanitizeSubject = (s: string): string =>
   s.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80)
 
-/** One trailer VALUE, newline-free. `runId` arrives from the request body
- *  (`body.runId`), so it is external input on the same footing as a file
- *  name: without this a crafted id could append trailers of its own. */
-const sanitizeTrailerValue = (s: string): string =>
-  s.replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, 128)
-
 const buildCommitMessage = (trigger: SnapshotTrigger, relFiles: string[], kind: "tool" | "baseline"): string => {
   // Subject detail: declared files when present; otherwise the tool's
   // human-readable detail (Bash/Task description, or the raw command).
@@ -536,10 +529,6 @@ const buildCommitMessage = (trigger: SnapshotTrigger, relFiles: string[], kind: 
   const trailers = [
     `Cockpit-Kind: ${kind}`,
     `Cockpit-Session: ${trigger.sessionKey}`,
-    // Scopes the tool id to ONE dispatch. Required because codex restarts its
-    // live `item_N` counter every turn, so the tool id alone (and even
-    // tool id + session) matches earlier turns of the same session.
-    ...(trigger.runId ? [`Cockpit-Run-Id: ${sanitizeTrailerValue(trigger.runId)}`] : []),
     `Cockpit-Provider: ${trigger.provider}`,
     ...(trigger.toolId ? [`Cockpit-Tool-Id: ${trigger.toolId}`] : []),
     ...(trigger.toolName ? [`Cockpit-Tool: ${trigger.toolName}`] : []),
@@ -748,8 +737,7 @@ const listByToolIdsImpl = (
   snapshotsRoot: string,
   cwd: string,
   toolIds: ReadonlyArray<string>,
-  sessionKey?: string,
-  runId?: string
+  sessionKey?: string
 ): Effect.Effect<ReadonlyArray<SnapshotCommit>, AppError> =>
   Effect.gen(function* () {
     if (toolIds.length === 0) return []
@@ -778,12 +766,7 @@ const listByToolIdsImpl = (
           !!c &&
           !!c.toolId &&
           wanted.has(c.toolId) &&
-          (!sessionKey || c.sessionKey === sessionKey) &&
-          // Run-scoping EXCLUDES, it does not require: a commit with no
-          // Cockpit-Run-Id predates run-scoping, and dropping it would make
-          // existing history disappear from the diff viewer. Only a commit
-          // that names a DIFFERENT run is a proven foreign match.
-          (!runId || !c.runId || c.runId === runId)
+          (!sessionKey || c.sessionKey === sessionKey)
       )
   }).pipe(Effect.withSpan("snapshot.listByToolIds", { attributes: { cwd } }))
 
@@ -1135,14 +1118,13 @@ export const SnapshotServiceLive = Layer.scoped(
     return SnapshotService.of({
       record: (trigger: SnapshotTrigger) =>
         snapshotOnce(snapshotsRoot, maxFileBytes, trigger, "tool"),
-      baseline: (cwd: string, sessionKey: string, provider: string, runId?: string) =>
-        snapshotOnce(snapshotsRoot, maxFileBytes, { cwd, sessionKey, provider, runId }, "baseline"),
+      baseline: (cwd: string, sessionKey: string, provider: string) =>
+        snapshotOnce(snapshotsRoot, maxFileBytes, { cwd, sessionKey, provider }, "baseline"),
       listByToolIds: (
         cwd: string,
         toolIds: ReadonlyArray<string>,
         sessionKey?: string,
-        runId?: string
-      ) => listByToolIdsImpl(snapshotsRoot, cwd, toolIds, sessionKey, runId),
+      ) => listByToolIdsImpl(snapshotsRoot, cwd, toolIds, sessionKey),
       diff: (cwd: string, commitHash: string) => diffImpl(snapshotsRoot, cwd, commitHash),
       blob: (cwd: string, rev: string, file: string) => blobImpl(snapshotsRoot, cwd, rev, file),
       cleanup,

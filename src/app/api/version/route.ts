@@ -47,8 +47,8 @@ export const GET = handler(() =>
     }).pipe(Effect.orElseSucceed(() => ""))
 
     // Claude's CLI has no package of its own here — the SDK declares the build it ships in
-    // `claudeCodeVersion`. Codex's CLI IS a package (`@openai/codex-sdk` pins it exactly), so
-    // read that package's own version rather than inferring it from the SDK's.
+    // `claudeCodeVersion`. Codex's CLI IS a package (`@openai/codex`, depended on directly
+    // since Cockpit spawns its `app-server`), so read that package's own version.
     const claude = packageField(root, "@anthropic-ai/claude-agent-sdk", "claudeCodeVersion")
     const codex = packageField(root, "@openai/codex", "version")
 

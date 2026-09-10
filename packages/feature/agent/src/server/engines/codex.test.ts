@@ -2,66 +2,116 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { codexSpec, codexToolUseId, resolveCodexCallId, resolveCodexPatchCallId, resolveCodexSpawnCall, parsePatchFiles, createRolloutCallReader } from './codex';
+import { codexSpec, codexToolUseId, resolveCodexSpawnCall, createRolloutCallReader } from './codex';
 
 const mocks = vi.hoisted(() => ({ rolloutPath: null as string | null }));
-const sdkMocks = vi.hoisted(() => ({
-  codexCtor: vi.fn(),
-  startThread: vi.fn(),
-  resumeThread: vi.fn(),
-  runStreamed: vi.fn(),
-  throwCtorOnce: false,
-}));
+/**
+ * Stands in for the app-server child.
+ *
+ * Fixtures throughout this file are written in the EXEC event spelling, and
+ * they stay that way: the shim's camelCase→snake_case key rewrite is a no-op on
+ * keys that are already snake_case, so only the method name needs translating.
+ * That keeps these tests about what they were always about — what the adapter
+ * emits for a given Codex event — rather than about the transport under it.
+ */
+const appServer = vi.hoisted(() => {
+  const METHOD: Record<string, string> = {
+    'item.started': 'item/started',
+    'item.completed': 'item/completed',
+    'turn.completed': 'turn/completed',
+    'turn.failed': 'turn/failed',
+    error: 'error',
+  };
+  const state = {
+    requests: [] as Array<{ method: string; params: Record<string, unknown> }>,
+    notify: null as null | ((n: { method: string; params: Record<string, unknown> }) => void),
+    threadId: 'sdk-thread',
+    resumeThrows: false,
+    onTurnStart: null as null | (() => void),
+    /** Exec-shaped events replayed as soon as the turn is accepted. */
+    script: [] as Array<Record<string, unknown>>,
+    disposed: 0,
+    feed(event: Record<string, unknown>) {
+      // `thread.started` is no longer on the wire — the runner synthesises it
+      // from the thread/start result so the rollout baseline is sampled before
+      // the model can run.
+      const method = METHOD[event.type as string];
+      if (!method) return;
+      const { type: _type, ...params } = event;
+      state.notify?.({ method, params: params as Record<string, unknown> });
+    },
+    /** Resolve once the runner has actually opened the turn. */
+    async ready() {
+      for (let i = 0; i < 50; i += 1) {
+        if (state.requests.some((r) => r.method === 'turn/start')) return;
+        await new Promise((r) => setImmediate(r));
+      }
+    },
+    reset() {
+      state.requests = [];
+      state.notify = null;
+      state.threadId = 'sdk-thread';
+      state.resumeThrows = false;
+      state.onTurnStart = null;
+      state.script = [];
+      state.disposed = 0;
+    },
+  };
+  return state;
+});
 
-vi.mock('@openai/codex-sdk', () => ({
-  Codex: vi.fn(function MockCodex(this: { startThread: unknown; resumeThread: unknown }, options) {
-    sdkMocks.codexCtor(options);
-    if (sdkMocks.throwCtorOnce) {
-      sdkMocks.throwCtorOnce = false;
-      throw new Error('Unable to locate Codex CLI binaries. Ensure @openai/codex is installed with optional dependencies.');
-    }
-    const thread = { runStreamed: sdkMocks.runStreamed };
-    sdkMocks.startThread.mockReturnValue(thread);
-    sdkMocks.resumeThread.mockReturnValue(thread);
-    this.startThread = sdkMocks.startThread;
-    this.resumeThread = sdkMocks.resumeThread;
-  }),
+vi.mock('./codexAppServer/client', () => ({
+  CodexAppServerClient: {
+    start(opts: { onNotification: (n: { method: string; params: Record<string, unknown> }) => void }) {
+      appServer.notify = opts.onNotification;
+      return {
+        async request(method: string, params: Record<string, unknown>) {
+          appServer.requests.push({ method, params });
+          if (method === 'thread/resume' && appServer.resumeThrows) throw new Error('no such thread');
+          if (method === 'thread/resume' || method === 'thread/start') {
+            // The real protocol returns the rollout's path here, and the engine
+            // binds its sub-agent reader to it rather than searching the disk.
+            return { thread: { id: appServer.threadId, path: mocks.rolloutPath } };
+          }
+          if (method === 'turn/start') {
+            appServer.onTurnStart?.();
+            queueMicrotask(() => {
+              for (const ev of appServer.script) appServer.feed(ev);
+            });
+            return { turn: { id: 'turn-1' } };
+          }
+          return {};
+        },
+        notify() {},
+        dispose() {
+          appServer.disposed += 1;
+        },
+      };
+    },
+  },
 }));
 vi.mock('@cockpit/shared-utils', () => ({
   sanitizedSpawnEnv: () => ({}),
   findCodexSessionPath: () => mocks.rolloutPath,
 }));
 
+/**
+ * Push exec-shaped events at the runner. `close()` ends the turn, which under
+ * app-server is a `turn/completed` notification rather than a stream ending.
+ */
 function createEventStream() {
-  const queue: unknown[] = [];
-  const waiters: Array<() => void> = [];
-  let closed = false;
-  const wake = () => waiters.shift()?.();
   return {
     push(event: unknown) {
-      queue.push(event);
-      wake();
+      appServer.feed(event as Record<string, unknown>);
     },
     close() {
-      closed = true;
-      wake();
-    },
-    async *events() {
-      while (!closed || queue.length > 0) {
-        if (queue.length > 0) {
-          yield queue.shift();
-          continue;
-        }
-        await new Promise<void>((resolve) => waiters.push(resolve));
-      }
+      appServer.notify?.({ method: 'turn/completed', params: {} });
     },
   };
 }
 
 const fnCall = (callId: string, cmd: string) =>
   JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'exec_command', call_id: callId, arguments: JSON.stringify({ cmd }) } }) + '\n';
-const patchCall = (callId: string, file: string) =>
-  JSON.stringify({ type: 'response_item', payload: { type: 'custom_tool_call', name: 'apply_patch', call_id: callId, input: `*** Begin Patch\n*** Update File: ${file}\n@@\n-a\n+b\n*** End Patch\n` } }) + '\n';
 const noise = JSON.stringify({ type: 'response_item', payload: { type: 'reasoning', text: 'x' } }) + '\n';
 
 describe('codexToolUseId', () => {
@@ -74,221 +124,80 @@ describe('codexToolUseId', () => {
   });
 });
 
-describe('resolveCodexCallId', () => {
-  const calls = [
-    { callId: 'call_A', cmd: 'echo AAA' },
-    { callId: 'call_B', cmd: 'npm test -- pkg/a' },
-    { callId: 'call_C', cmd: 'echo CCC > out.txt' },
-  ];
-
-  it('maps the index-th exec to its persistent call_id (live command is /bin/zsh wrapped)', () => {
-    expect(resolveCodexCallId(calls, 0, "/bin/zsh -lc 'echo AAA'")).toBe('call_A');
-    expect(resolveCodexCallId(calls, 2, "/bin/zsh -lc 'echo CCC > out.txt'")).toBe('call_C');
-  });
-
-  it('honours a resume offset via index (base + execSeen)', () => {
-    // base=1 (one exec from a prior turn) + execSeen=1 → index 2
-    expect(resolveCodexCallId(calls, 2, "/bin/zsh -lc 'echo CCC > out.txt'")).toBe('call_C');
-  });
-
-  it('unwraps double-quoted shell wrapper (codex uses " when the command contains \')', () => {
-    const c = [{ callId: 'call_S', cmd: "sed -n '1,3p' README.zh.md" }];
-    expect(resolveCodexCallId(c, 0, `/bin/zsh -lc "sed -n '1,3p' README.zh.md"`)).toBe('call_S');
-  });
-
-  it('unwraps single-quoted shell wrapper', () => {
-    const c = [{ callId: 'call_T', cmd: 'tail -n 5 README.zh.md' }];
-    expect(resolveCodexCallId(c, 0, "/bin/zsh -lc 'tail -n 5 README.zh.md'")).toBe('call_T');
-  });
-
-  it('tolerates truncated commands on either side (prefix match)', () => {
-    expect(resolveCodexCallId(calls, 1, "/bin/zsh -lc 'npm test -- pkg/a --coverage'")).toBe('call_B');
-    expect(resolveCodexCallId([{ callId: 'call_B', cmd: 'npm test -- pkg/a --coverage' }], 0, "/bin/zsh -lc 'npm test -- pkg/a'")).toBe('call_B');
-  });
-
-  it('falls back (null) on command desync so item.id is used instead', () => {
-    expect(resolveCodexCallId(calls, 0, "/bin/zsh -lc 'rm -rf /'")).toBeNull();
-  });
-
-  it('falls back (null) when the entry is missing or has no call_id', () => {
-    expect(resolveCodexCallId(calls, 9, "/bin/zsh -lc 'echo AAA'")).toBeNull();
-    expect(resolveCodexCallId([{ cmd: 'echo AAA' }], 0, "/bin/zsh -lc 'echo AAA'")).toBeNull();
-  });
-
-  it('does not spuriously match a short command inside an unrelated long one (bounded includes)', () => {
-    // persisted "ls" would be a substring of a long unrelated command; the length
-    // bound must reject it so we fall back rather than bind the wrong call_id.
-    const long = '/bin/zsh -lc "find . -name ls -type f | while read f; do echo $f; done"';
-    expect(resolveCodexCallId([{ callId: 'call_X', cmd: 'ls' }], 0, long)).toBeNull();
-  });
-});
-
-describe('parsePatchFiles', () => {
-  it('extracts add/update/delete file paths from an apply_patch body', () => {
-    const body = '*** Begin Patch\n*** Update File: a/b.ts\n@@\n-x\n+y\n*** Add File: c.md\n*** Delete File: d.txt\n*** End Patch\n';
-    expect(parsePatchFiles(body)).toEqual(['a/b.ts', 'c.md', 'd.txt']);
-  });
-});
-
-describe('resolveCodexPatchCallId', () => {
-  const patches = [
-    { callId: 'call_P0', files: ['README.zh.md'] },
-    { callId: 'call_P1', files: ['src/a.ts', 'src/b.ts'] },
-  ];
-
-  it('maps the index-th patch by basename (live abs path vs rollout relative path)', () => {
-    expect(resolveCodexPatchCallId(patches, 0, ['/repo/README.zh.md'])).toBe('call_P0');
-    expect(resolveCodexPatchCallId(patches, 1, ['/repo/src/b.ts'])).toBe('call_P1');
-  });
-
-  it('trusts order when there is nothing to cross-check', () => {
-    expect(resolveCodexPatchCallId([{ callId: 'call_P', files: [] }], 0, ['/x/y.ts'])).toBe('call_P');
-    expect(resolveCodexPatchCallId(patches, 0, [])).toBe('call_P0');
-  });
-
-  it('falls back (null) on a file mismatch or missing/no-callId entry', () => {
-    expect(resolveCodexPatchCallId(patches, 0, ['/repo/other.ts'])).toBeNull();
-    expect(resolveCodexPatchCallId(patches, 9, ['/repo/README.zh.md'])).toBeNull();
-    expect(resolveCodexPatchCallId([{ files: ['a'] }], 0, ['/x/a'])).toBeNull();
-  });
-});
-
-describe('createRolloutCallReader', () => {
-  const tmp = () => join(mkdtempSync(join(tmpdir(), 'codex-rollout-')), 'rollout.jsonl');
-
-  it('accumulates exec and patch lists independently, in order', () => {
-    const path = tmp();
-    writeFileSync(path, noise + fnCall('call_1', 'echo A') + patchCall('call_P0', 'README.md'));
-    const read = createRolloutCallReader();
-    let r = read(path);
-    expect(r.exec.map(c => c.callId)).toEqual(['call_1']);
-    expect(r.patch.map(c => c.callId)).toEqual(['call_P0']);
-    expect(r.patch[0].files).toEqual(['README.md']);
-    // nothing appended → same lists
-    r = read(path);
-    expect(r.exec.length).toBe(1);
-    expect(r.patch.length).toBe(1);
-    // append more of both kinds
-    appendFileSync(path, fnCall('call_2', 'echo B') + patchCall('call_P1', 'src/x.ts'));
-    r = read(path);
-    expect(r.exec.map(c => c.callId)).toEqual(['call_1', 'call_2']);
-    expect(r.patch.map(c => c.callId)).toEqual(['call_P0', 'call_P1']);
-  });
-
-  it('routes 5.6 exec scripts into the exec or patch list by what the script calls', () => {
-    // One freeform `exec` tool now carries both kinds, so the call_id → live item
-    // mapping depends on classifying the script body.
-    const execScript = (callId: string, cmd: string) =>
-      JSON.stringify({ type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: callId, input: `const r = await tools.exec_command(${JSON.stringify({ cmd, workdir: '/repo' })}); text(r.output);` } }) + '\n';
-    const patchScript = (callId: string, file: string) =>
-      JSON.stringify({ type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: callId, input: `const patch = ${JSON.stringify(`*** Begin Patch\n*** Update File: ${file}\n@@\n-a\n+b\n*** End Patch`)};\ntext(await tools.apply_patch(patch));` } }) + '\n';
-    const unknownScript = JSON.stringify({ type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_X', input: 'text("hi");' } }) + '\n';
-
-    const path = tmp();
-    writeFileSync(path, execScript('call_1', 'echo A') + patchScript('call_P0', 'src/x.ts') + unknownScript + execScript('call_2', 'echo B'));
-    const r = createRolloutCallReader()(path);
-    // The unclassifiable script is dropped rather than guessed into either list,
-    // which is what keeps call_2 at index 1 of the exec list.
-    expect(r.exec.map(c => c.callId)).toEqual(['call_1', 'call_2']);
-    expect(r.exec.map(c => c.cmd)).toEqual(['echo A', 'echo B']);
-    expect(r.patch).toEqual([{ callId: 'call_P0', files: ['src/x.ts'] }]);
-    expect(resolveCodexCallId(r.exec, 1, '/bin/zsh -lc "echo B"')).toBe('call_2');
-  });
-
-  it('carries a partial trailing line until its newline arrives', () => {
-    const path = tmp();
-    const line = fnCall('call_1', 'echo hello');
-    writeFileSync(path, line.slice(0, 20)); // half a line, no newline yet
-    const read = createRolloutCallReader();
-    expect(read(path).exec).toEqual([]);
-    appendFileSync(path, line.slice(20));
-    expect(read(path).exec.map(c => c.callId)).toEqual(['call_1']);
-  });
-
-  it('re-scans from scratch if the file shrinks (truncate/rewrite)', () => {
-    const path = tmp();
-    writeFileSync(path, fnCall('call_1', 'echo A') + fnCall('call_2', 'echo B'));
-    const read = createRolloutCallReader();
-    expect(read(path).exec.length).toBe(2);
-    writeFileSync(path, fnCall('call_9', 'echo Z'));
-    expect(read(path).exec.map(c => c.callId)).toEqual(['call_9']);
-  });
-});
-
 describe('codex mode routing', () => {
-  const events = async function* () {
-    yield { type: 'thread.started', thread_id: 'sdk-thread' };
-    yield { type: 'item.completed', item: { id: 'msg_1', type: 'agent_message', text: 'from sdk' } };
-    yield {
-      type: 'turn.completed',
-      usage: { input_tokens: 1, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 2, reasoning_output_tokens: 0 },
-    };
-  };
+  /**
+   * The assistant message is intentionally NOT scripted: text now arrives as
+   * `item/agentMessage/delta`, and the completed item is dropped by the shim so
+   * the reply is not appended twice.
+   */
+  const defaultScript: Array<Record<string, unknown>> = [{ type: 'turn.completed' }];
+  const say = (text: string) =>
+    appServer.notify?.({ method: 'item/agentMessage/delta', params: { delta: text } });
+
+  const ctx = (over: Record<string, unknown> = {}) => ({
+    prompt: 'hello', images: undefined, cwd: '/repo', sessionId: undefined,
+    params: {} as never, signal: new AbortController().signal,
+    emit: vi.fn(), rekey: vi.fn(), currentKey: () => 'k',
+    ...over,
+  });
 
   beforeEach(() => {
     mocks.rolloutPath = null;
-    sdkMocks.codexCtor.mockClear();
-    sdkMocks.startThread.mockClear();
-    sdkMocks.resumeThread.mockClear();
-    sdkMocks.runStreamed.mockReset();
-    sdkMocks.throwCtorOnce = false;
-    sdkMocks.runStreamed.mockResolvedValue({ events: events() });
+    appServer.reset();
+    appServer.script = [...defaultScript];
   });
 
-  it('defaults to the Codex SDK path', async () => {
-    const emit = vi.fn();
+  it('drives one turn over app-server: handshake, thread, turn, teardown', async () => {
     const rekey = vi.fn();
-    await codexSpec.runner.run({
-      prompt: 'hello',
-      images: undefined,
-      cwd: '/repo',
-      sessionId: undefined,
-      params: {} as never,
-      signal: new AbortController().signal,
-      emit,
-      rekey,
-      currentKey: () => 'k',
-    } as never);
+    await codexSpec.runner.run(ctx({ rekey }) as never);
 
-    expect(sdkMocks.codexCtor).toHaveBeenCalledWith({ env: {} });
-    expect(sdkMocks.startThread).toHaveBeenCalledWith({
-      workingDirectory: '/repo',
-      sandboxMode: 'danger-full-access',
+    expect(appServer.requests.map((r) => r.method)).toEqual(['initialize', 'thread/start', 'turn/start']);
+    expect(appServer.requests[1].params).toEqual({
+      cwd: '/repo',
+      sandbox: 'danger-full-access',
+      // Load-bearing beyond permissions: it is what keeps the server from ever
+      // issuing a blocking approval request this client would have to park.
       approvalPolicy: 'never',
-      skipGitRepoCheck: true,
     });
-    expect(sdkMocks.runStreamed).toHaveBeenCalledWith('hello', { signal: expect.any(AbortSignal) });
+    expect(appServer.requests[2].params).toEqual({
+      threadId: 'sdk-thread',
+      input: [{ type: 'text', text: 'hello' }],
+    });
+    // Synthesised from the thread/start result, not awaited from a notification.
     expect(rekey).toHaveBeenCalledWith('sdk-thread');
-    expect(emit).toHaveBeenCalledWith({ type: 'assistant', message: { content: [{ type: 'text', text: 'from sdk' }] } });
+    expect(appServer.disposed).toBe(1);
   });
 
-  it('falls back to PATH codex when the bundled SDK binary is unavailable, and says so', async () => {
-    sdkMocks.throwCtorOnce = true;
-    // The fallback keeps Codex usable, but it runs a build the SDK was never pinned against —
-    // and the two negotiate no protocol version. Silence would make that indistinguishable from
-    // a healthy install, so the warning is part of the contract, not decoration.
+  it('streams assistant text as deltas the client already knows how to append', async () => {
+    const emit = vi.fn();
+    appServer.script = [];
+    const done = codexSpec.runner.run(ctx({ emit }) as never);
+    await appServer.ready();
+    say('Wa');
+    say('ves');
+    appServer.notify?.({ method: 'turn/completed', params: {} });
+    await done;
 
-    const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    await codexSpec.runner.run({
-      prompt: 'hello',
-      images: undefined,
-      cwd: '/repo',
-      sessionId: undefined,
-      params: {} as never,
-      signal: new AbortController().signal,
-      emit: vi.fn(),
-      rekey: vi.fn(),
-      currentKey: () => 'k',
-    } as never);
-
-    expect(sdkMocks.codexCtor).toHaveBeenNthCalledWith(1, { env: {} });
-    expect(sdkMocks.codexCtor).toHaveBeenNthCalledWith(2, { codexPathOverride: 'codex', env: {} });
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('falling back to `codex` on PATH'));
-    warn.mockRestore();
+    const deltas = emit.mock.calls.map(([e]) => e)
+      .filter((e) => e.type === 'stream_event').map((e) => e.event.delta.text);
+    expect(deltas).toEqual(['Wa', 'ves']);
+    // The completed agent_message must NOT also arrive as whole text.
+    const whole = emit.mock.calls.map(([e]) => e)
+      .filter((e) => e.type === 'assistant')
+      .flatMap((e) => e.message.content)
+      .filter((b: { type?: string }) => b.type === 'text');
+    expect(whole).toEqual([]);
   });
 
-  it('stashes the Codex rollout while running an SDK no-history turn', async () => {
+  it('falls back to a fresh thread when the stored id no longer resumes', async () => {
+    appServer.resumeThrows = true;
+    await codexSpec.runner.run(ctx({ sessionId: 'gone-thread' }) as never);
+    expect(appServer.requests.map((r) => r.method)).toEqual([
+      'initialize', 'thread/resume', 'thread/start', 'turn/start',
+    ]);
+  });
+
+  it('stashes the Codex rollout while running a no-history turn', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'codex-run-nohistory-'));
     const sessionPath = join(dir, 'rollout-2026-08-08T00-00-00-sdk-thread.jsonl');
     const meta = JSON.stringify({
@@ -299,47 +208,34 @@ describe('codex mode routing', () => {
     const newLine = JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'new' }] } });
     writeFileSync(sessionPath, `${meta}\n${oldLine}\n`);
     mocks.rolloutPath = sessionPath;
-    sdkMocks.runStreamed.mockImplementation(async () => {
+    // The stub must be in place by the time the turn opens — that is the whole
+    // mechanism, and it only holds because each turn gets a cold process.
+    appServer.onTurnStart = () => {
       expect(readFileSync(sessionPath, 'utf-8').trim().split('\n')).toEqual([meta]);
       appendFileSync(sessionPath, `${newLine}\n`);
-      return { events: events() };
-    });
+    };
 
     try {
-      await codexSpec.runner.run({
-        prompt: 'new',
-        images: undefined,
-        cwd: '/repo',
-        sessionId: 'sdk-thread',
-        params: { noHistory: true } as never,
-        signal: new AbortController().signal,
-        emit: vi.fn(),
-        rekey: vi.fn(),
-        currentKey: () => 'k',
-      } as never);
-
+      await codexSpec.runner.run(ctx({
+        prompt: 'new', sessionId: 'sdk-thread', params: { noHistory: true } as never,
+      }) as never);
       expect(readFileSync(sessionPath, 'utf-8').trim().split('\n')).toEqual([meta, oldLine, newLine]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('sends a non-empty text placeholder for SDK images-only turns', async () => {
-    await codexSpec.runner.run({
+  it('sends a non-empty text placeholder for images-only turns', async () => {
+    await codexSpec.runner.run(ctx({
       prompt: undefined,
       images: [{ media_type: 'image/png', data: Buffer.from('x').toString('base64') }] as never,
-      cwd: '/repo',
-      sessionId: undefined,
-      params: {} as never,
-      signal: new AbortController().signal,
-      emit: vi.fn(),
-      rekey: vi.fn(),
-      currentKey: () => 'k',
-    } as never);
+    }) as never);
 
-    expect(sdkMocks.runStreamed.mock.calls[0][0]).toMatchObject([
+    const turn = appServer.requests.find((r) => r.method === 'turn/start');
+    expect(turn?.params.input).toMatchObject([
       { type: 'text', text: '[Image]' },
-      { type: 'local_image' },
+      // app-server spells this `localImage`; exec spelled it `local_image`.
+      { type: 'localImage' },
     ]);
   });
 
@@ -347,30 +243,13 @@ describe('codex mode routing', () => {
     expect(codexSpec.preflight).toBeUndefined();
   });
 
-  it('ignores unknown SDK item types without failing the turn', async () => {
-    const unknownEvents = async function* () {
-      yield { type: 'thread.started', thread_id: 'sdk-thread' };
-      yield { type: 'item.completed', item: { id: 'future_1', type: 'future_item', text: 'metadata' } };
-      yield {
-        type: 'turn.completed',
-        usage: { input_tokens: 1, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0 },
-      };
-    };
+  it('ignores unknown item types without failing the turn', async () => {
     const emit = vi.fn();
-    sdkMocks.runStreamed.mockResolvedValue({ events: unknownEvents() });
-
-    await codexSpec.runner.run({
-      prompt: 'hello',
-      images: undefined,
-      cwd: '/repo',
-      sessionId: undefined,
-      params: {} as never,
-      signal: new AbortController().signal,
-      emit,
-      rekey: vi.fn(),
-      currentKey: () => 'k',
-    } as never);
-
+    appServer.script = [
+      { type: 'item.completed', item: { id: 'future_1', type: 'future_item', text: 'metadata' } },
+      { type: 'turn.completed' },
+    ];
+    await codexSpec.runner.run(ctx({ emit }) as never);
     expect(emit).toHaveBeenCalledWith(expect.objectContaining({ type: 'result', subtype: 'success' }));
   });
 });
@@ -416,12 +295,27 @@ describe('createRolloutCallReader spawn_agent', () => {
     ]);
   });
 
-  it('keeps spawn calls out of the exec list so command call_ids stay aligned', () => {
+  it('collects only spawns, ignoring the ordinary tool traffic around them', () => {
     const path = join(mkdtempSync(join(tmpdir(), 'codex-spawn-')), 'r.jsonl');
     writeFileSync(path, fnCall('call_1', 'ls') + spawnLine('call_s1', 'explorer', 'go') + fnCall('call_2', 'pwd'));
-    const calls = createRolloutCallReader()(path);
-    expect(calls.exec.map(c => c.callId)).toEqual(['call_1', 'call_2']);
-    expect(calls.spawn.map(c => c.callId)).toEqual(['call_s1']);
+    expect(createRolloutCallReader()(path).spawn.map(c => c.callId)).toEqual(['call_s1']);
+  });
+
+  it('reads incrementally and re-scans when the file is rewritten', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'codex-spawn-inc-')), 'r.jsonl');
+    const line = spawnLine('call_s1', 'explorer', 'go');
+    // Half a line, no newline yet: nothing may be reported until it completes.
+    writeFileSync(path, line.slice(0, 20));
+    const read = createRolloutCallReader();
+    expect(read(path).spawn).toEqual([]);
+    appendFileSync(path, line.slice(20));
+    expect(read(path).spawn.map(c => c.callId)).toEqual(['call_s1']);
+    appendFileSync(path, spawnLine('call_s2', 'explorer', 'more'));
+    expect(read(path).spawn.map(c => c.callId)).toEqual(['call_s1', 'call_s2']);
+    // A SHRINKING file means truncate/rewrite, which is the only signal that the
+    // accumulated state no longer describes what is on disk.
+    writeFileSync(path, spawnLine('call_s9', 'explorer', 'go'));
+    expect(read(path).spawn.map(c => c.callId)).toEqual(['call_s9']);
   });
 });
 
@@ -433,12 +327,7 @@ describe('codex sub-agents (collab_tool_call)', () => {
     mocks.rolloutPath = null;
     emit = vi.fn();
     stream = createEventStream();
-    sdkMocks.codexCtor.mockClear();
-    sdkMocks.startThread.mockClear();
-    sdkMocks.resumeThread.mockClear();
-    sdkMocks.runStreamed.mockReset();
-    sdkMocks.throwCtorOnce = false;
-    sdkMocks.runStreamed.mockResolvedValue({ events: stream.events() });
+    appServer.reset();
   });
 
   const run = () =>
@@ -449,6 +338,7 @@ describe('codex sub-agents (collab_tool_call)', () => {
     } as never);
 
   const feed = async (event: unknown) => {
+    await appServer.ready();
     stream.push(event);
     await new Promise((r) => setImmediate(r));
   };
@@ -491,7 +381,7 @@ describe('codex sub-agents (collab_tool_call)', () => {
     await p;
   });
 
-  it('keys the bubble by the persistent call_id when the rollout is readable', async () => {
+  it('keys the bubble by the id the protocol gave the item, not by a rollout lookup', async () => {
     const path = join(mkdtempSync(join(tmpdir(), 'codex-live-spawn-')), 'r.jsonl');
     writeFileSync(
       path,
@@ -502,17 +392,39 @@ describe('codex sub-agents (collab_tool_call)', () => {
 
     const p = run();
     await feed({ type: 'thread.started', thread_id: 'thread-1' });
-    await feed(spawnCompleted);
+    // A collab tool call's `item.id` IS its call_id, so the live stream already
+    // carries the id the resume parser will key on. The rollout is still read,
+    // but only for what the live item lacks: the spawn's arguments and the
+    // agent's nickname.
+    await feed({ ...spawnCompleted, item: { ...spawnCompleted.item, id: 'call_s1' } });
 
-    // call_id (not item_0) is what the resume parser keys on — a bubble minted under
-    // item_0 would lose its drill-in and its snapshot on the next refresh. The
-    // rollout also supplies agent_type and the nickname the header shows.
     expect(toolUses()).toEqual([{
       type: 'tool_use',
       id: 'call_s1',
       name: 'Task',
       input: { subagent_type: 'explorer', description: 'Turing (explorer)', prompt: '审查 Part A', agent_id: 'agent-1' },
     }]);
+
+    stream.close();
+    await p;
+  });
+
+  it('never lets the rollout override the id the item carries', async () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'codex-live-spawn-id-')), 'r.jsonl');
+    // The rollout's only spawn says call_s1; the live item says otherwise. The
+    // item wins — an ordinal match against a growing file is exactly the guess
+    // this replaced.
+    writeFileSync(
+      path,
+      JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'spawn_agent', call_id: 'call_s1', arguments: '{}' } }) + '\n'
+    );
+    mocks.rolloutPath = path;
+
+    const p = run();
+    await feed({ type: 'thread.started', thread_id: 'thread-1' });
+    await feed({ ...spawnCompleted, item: { ...spawnCompleted.item, id: 'call_from_item' } });
+
+    expect(toolUses()[0]).toMatchObject({ id: 'call_from_item' });
 
     stream.close();
     await p;
@@ -650,12 +562,7 @@ describe('codex mcp / web_search / todo_list items', () => {
     mocks.rolloutPath = null;
     emit = vi.fn();
     stream = createEventStream();
-    sdkMocks.codexCtor.mockClear();
-    sdkMocks.startThread.mockClear();
-    sdkMocks.resumeThread.mockClear();
-    sdkMocks.runStreamed.mockReset();
-    sdkMocks.throwCtorOnce = false;
-    sdkMocks.runStreamed.mockResolvedValue({ events: stream.events() });
+    appServer.reset();
   });
 
   const run = () =>
@@ -666,6 +573,7 @@ describe('codex mcp / web_search / todo_list items', () => {
     } as never);
 
   const feed = async (event: unknown) => {
+    await appServer.ready();
     stream.push(event);
     await new Promise((r) => setImmediate(r));
   };
@@ -695,7 +603,7 @@ describe('codex mcp / web_search / todo_list items', () => {
     await p;
   });
 
-  it('keys an MCP bubble by the rollout call_id, guarded by server+tool', async () => {
+  it('keys an MCP bubble by the id the item carries', async () => {
     const path = join(mkdtempSync(join(tmpdir(), 'codex-mcp-')), 'r.jsonl');
     writeFileSync(path, JSON.stringify({
       type: 'response_item',
@@ -707,7 +615,8 @@ describe('codex mcp / web_search / todo_list items', () => {
     await feed({ type: 'thread.started', thread_id: 'thread-1' });
     // MCP tools are unknown names, so isMutatingToolName treats them as mutating and
     // they get snapshots — the id has to be the persistent one or the diff is orphaned.
-    await feed({ type: 'item.started', item: { id: 'item_0', type: 'mcp_tool_call', server: 'node_repl', tool: 'js', arguments: { code: '2 + 2' }, status: 'in_progress' } });
+    // That id now comes from the item itself; the rollout is not consulted.
+    await feed({ type: 'item.started', item: { id: 'call_m1', type: 'mcp_tool_call', server: 'node_repl', tool: 'js', arguments: { code: '2 + 2' }, status: 'in_progress' } });
 
     expect(toolUses()[0]).toMatchObject({ id: 'call_m1', name: 'mcp__node_repl__js' });
 

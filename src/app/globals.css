@@ -1322,6 +1322,48 @@ code[class*="language-"] .token {
   100% { background-color: transparent; }
 }
 
+/* ---- Chat jump flash: highlight the BUBBLE, not the row ----
+ *
+ * The class lands on the row wrapper, because `[data-message-id]` is the only
+ * anchor scrollToMessage has — and that wrapper is a full-width block with
+ * square corners. Outlining IT drew a rectangle three times the bubble's width,
+ * with hard corners, around a rounded bubble, and swallowed the invisible
+ * hover-footer below it too. Projecting onto the turn instead means the shape,
+ * radius and width all come from the bubble.
+ *
+ * The user turn already wears `border-brand/40`, so the flash is that same edge
+ * at full strength — nothing is added, so nothing can sit outside it.
+ * The assistant turn has no border to raise (`w-full`, unfilled) and so shows
+ * nothing; only user messages are reachable from the jump list, so that path is
+ * theoretical.
+ *
+ * Note for anyone tempted back to Tailwind's ring utilities here: `ring-offset-*`
+ * is unusable on a dark theme. `--tw-ring-offset-color` is the one token with a
+ * hardcoded `initial-value:#fff` and this project never overrides it, so the
+ * offset paints a white band around the target.
+ */
+.flash-turn .chat-turn {
+  /* Nothing is added to the bubble — its OWN border lights up and fades back.
+     Earlier takes drew a ring on top of it (box-shadow, so at least the radius
+     followed) and read as too heavy at any width: the resting edge is already
+     clearly teal, so a second edge outside it is one edge too many.
+
+     Duration tracks FLASH_HOLD_MS in MessageList.tsx, which removes the class.
+     The 0.4 endpoint is the bubble's resting `border-brand/40` — landing on the
+     same value is what makes the class removal invisible. Keep the two in sync. */
+  animation: flash-turn-fade 2s ease-out;
+}
+
+@keyframes flash-turn-fade {
+  /* Hold, then fade. Fading from the first frame looked far shorter than its 2s:
+     ease-out front-loads the decay, so the border was already at alpha .59 by 1s
+     against a .4 resting value — the readable part of the flash was the opening
+     half second. Holding to 30% keeps it lit for ~0.6s, then spends the
+     remaining ~1.4s coming down. */
+  0%, 30% { border-color: hsl(var(--brand)); }
+  100%    { border-color: hsl(var(--brand) / 0.4); }
+}
+
 /* ---- Vi mode cursor line ---- */
 .vi-cursor-line {
   background-color: hsl(var(--brand) / 0.22) !important;

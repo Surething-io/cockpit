@@ -33,6 +33,11 @@ import {
 // STEP_EPSILON must stay WIDER than STEP_PADDING: a jump parks its target at
 // +STEP_PADDING, and that row has to keep counting as "current" afterwards —
 // otherwise `next` re-selects the row it just landed on and appears dead.
+// How long a jump target stays lit once it has ARRIVED. The scroll that precedes
+// it is instant, so this whole budget is spent on screen rather than on travel.
+// Must match the flash-turn-fade animation in globals.css.
+const FLASH_HOLD_MS = 2000;
+
 const STEP_PADDING = 8;
 const STEP_EPSILON = STEP_PADDING + 4;
 
@@ -136,6 +141,10 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const bottomRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Owns the in-flight jump flash, so a second jump cannot have its highlight
+  // cut short by the timer the previous one left running.
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashTargetRef = useRef<Element | null>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const [outerEl, setOuterEl] = useState<HTMLDivElement | null>(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
@@ -538,16 +547,36 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     const messageElement = container?.querySelector(`[data-message-id="${messageId}"]`);
     if (!messageElement) return false;
 
-    messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    // Flash the bubble. Ring only, never ring-offset: Tailwind's
-    // --tw-ring-offset-color defaults to #fff and this project never overrides
-    // it, so `ring-offset-2` painted a 2px WHITE band between the bubble and the
-    // teal ring — the one bright thing on a dark theme. `ring-2 ring-brand` on
-    // its own is what ConsoleView's equivalent highlight uses.
-    messageElement.classList.add('ring-2', 'ring-brand');
-    setTimeout(() => {
-      messageElement.classList.remove('ring-2', 'ring-brand');
-    }, 2000);
+    // Instant, not smooth. A jump out of the message list is usually a long one
+    // — tens of turns, thousands of pixels — and a smooth scroll of that length
+    // is both slow and unreadable, everything in between merely blurring past.
+    // It also broke the flash outright: the hold below starts counting when the
+    // animation STARTS, so a long glide ate the whole budget and the highlight
+    // was over by the time the message arrived. CodeViewer's equivalent jump
+    // lands instantly for the same reasons.
+    messageElement.scrollIntoView({ behavior: 'auto', block: 'center' });
+
+    // Flash the target. The class goes on the ROW — the only anchor we have —
+    // and `.flash-turn .chat-turn` in globals.css projects it onto the bubble
+    // nested inside. See that rule for why the highlight must not be drawn on
+    // the row itself.
+    //
+    // Restart rather than extend: clear whatever the previous jump left behind,
+    // drop the class, and re-add it after a forced reflow so re-selecting the
+    // SAME row replays the animation instead of doing nothing visible. Doing the
+    // reflow synchronously beats deferring to requestAnimationFrame — the class
+    // is on the element before this returns, so no React commit lands in the gap.
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTargetRef.current?.classList.remove('flash-turn');
+    messageElement.classList.remove('flash-turn');
+    void (messageElement as HTMLElement).offsetWidth;
+    messageElement.classList.add('flash-turn');
+    flashTargetRef.current = messageElement;
+    flashTimerRef.current = setTimeout(() => {
+      messageElement.classList.remove('flash-turn');
+      flashTargetRef.current = null;
+      flashTimerRef.current = null;
+    }, FLASH_HOLD_MS);
     return true;
   }, []);
 
@@ -734,7 +763,6 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                 key={message.id}
                 data-message-id={message.id}
                 data-role={message.role}
-                className="transition-[box-shadow] duration-300"
               >
                 <MessageBubble
                   message={message}

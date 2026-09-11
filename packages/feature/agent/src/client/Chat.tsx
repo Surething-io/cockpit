@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { ClipboardList, Scissors } from 'lucide-react';
+import { ClipboardList, MessageSquareOff } from 'lucide-react';
 import { toast } from '@cockpit/shared-ui';
 import { useLiveStream } from './useLiveStream';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
@@ -9,6 +9,7 @@ import {
   querySessionByPath,
   runBashCommand,
   forkSession,
+  deleteSessionTurn,
 } from './effect/agentClient';
 import { publishTopic } from '@cockpit/effect-react';
 import { Topics } from '@cockpit/effect-services';
@@ -655,6 +656,47 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     handleForkRef.current(messageId, scope)
   ).current;
 
+  // Permanently remove one complete question/answer turn from the transcript, then reload
+  // the visible window from disk. A full reload matters for Codex: its bubble ids are ordinal,
+  // so deleting a middle turn renumbers every later bubble.
+  const handleDeleteTurnImpl = useCallback(async (messageId: string) => {
+    const deleteSid = loadedSessionId ?? sessionId;
+    if (!initialCwd || !deleteSid || isLoading || liveRunning) return;
+
+    const visibleTurns = Math.max(
+      HISTORY_RECONCILE_TURNS,
+      messages.filter((message) => message.role === 'user').length,
+    );
+    const exit = await BrowserRuntime.runPromiseExit(
+      deleteSessionTurn(deleteSid, { cwd: initialCwd, messageUuid: messageId })
+    );
+    if (exit._tag === 'Success') {
+      // Remove immediately so an empty one-turn transcript also renders correctly; the disk
+      // reload then supplies canonical ids and pagination metadata for every engine.
+      setMessages((current) => {
+        const target = current.findIndex((message) => message.id === messageId);
+        if (target < 0) return current;
+        let start = target;
+        while (start >= 0 && current[start].role !== 'user') start -= 1;
+        if (start < 0) return current;
+        let end = start + 1;
+        while (end < current.length && current[end].role !== 'user') end += 1;
+        return [...current.slice(0, start), ...current.slice(end)];
+      });
+      await loadHistoryByCwdAndSessionId(initialCwd, deleteSid, false, visibleTurns, undefined, true);
+      toast(t('toast.turnDeleted', { defaultValue: 'Turn deleted' }), 'success');
+    } else {
+      console.error('Delete turn failed:', exit.cause);
+      toast(t('toast.deleteTurnFailed', { defaultValue: 'Failed to delete this turn' }), 'error');
+    }
+  }, [initialCwd, loadedSessionId, sessionId, isLoading, liveRunning, messages, loadHistoryByCwdAndSessionId, t]);
+
+  const handleDeleteTurnRef = useRef(handleDeleteTurnImpl);
+  handleDeleteTurnRef.current = handleDeleteTurnImpl;
+  const handleDeleteTurn = useRef((messageId: string) =>
+    handleDeleteTurnRef.current(messageId)
+  ).current;
+
   // Forward a message's text to the OTHER column (side-by-side only).
   //
   // An addressed send, not the routed one: ChatContext.sendMessage deliberately
@@ -745,21 +787,27 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
      mount point, so keep `supportsNoHistory` and the mount points in step. */
   const independentTaskToggle = supportsNoHistory ? (
     <label
-      className="flex items-center gap-1.5 text-xs cursor-pointer select-none"
-      title={t('chat.noHistoryHint', { defaultValue: 'Independent task: each message is sent to the model on its own, with no prior conversation. The transcript above still records everything.' })}
+      className="flex items-center gap-2 text-xs cursor-pointer select-none"
+      title={t('chat.noHistoryHint', { defaultValue: 'No history context: each message is sent to the model on its own, with no prior conversation. The transcript above still records everything.' })}
     >
       <input
         type="checkbox"
         data-testid="nohistory-toggle"
         checked={noHistory}
         onChange={(e) => setNoHistory(e.target.checked)}
-        className="accent-brand"
+        className="peer sr-only"
       />
-      <span className="flex items-center gap-1 text-foreground">
-        <Scissors className="w-3.5 h-3.5" />
-        {t('chat.noHistory', { defaultValue: 'Independent task' })}
+      <span
+        aria-hidden="true"
+        className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full bg-muted-foreground/30 transition-colors peer-checked:bg-brand peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring"
+      >
+        <span className={`h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${noHistory ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
       </span>
-      <span className="text-muted-foreground">{t('chat.noHistoryDesc', { defaultValue: 'no history sent' })}</span>
+      <span className="flex items-center gap-1.5 text-foreground">
+        <MessageSquareOff className="w-3.5 h-3.5" />
+        {t('chat.noHistory', { defaultValue: 'No history context' })}
+      </span>
+      <span className="text-muted-foreground">· {t('chat.noHistoryDesc', { defaultValue: 'each prompt is independent' })}</span>
     </label>
   ) : null;
 
@@ -814,7 +862,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
                 Plan-only — uncheck and resend to actually implement. */}
             {isClaudeEngine && (
               <label
-                className="flex items-center gap-1.5 text-xs cursor-pointer select-none"
+                className="flex items-center gap-2 text-xs cursor-pointer select-none"
                 title={t('chat.planModeHint', { defaultValue: 'Plan mode: read-only exploration that produces a plan without editing. Uncheck and resend to implement.' })}
               >
                 <input
@@ -822,13 +870,19 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
                   data-testid="planmode-toggle"
                   checked={planMode}
                   onChange={(e) => setPlanMode(e.target.checked)}
-                  className="accent-brand"
+                  className="peer sr-only"
                 />
-                <span className="flex items-center gap-1 text-foreground">
+                <span
+                  aria-hidden="true"
+                  className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full bg-muted-foreground/30 transition-colors peer-checked:bg-brand peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring"
+                >
+                  <span className={`h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${planMode ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                </span>
+                <span className="flex items-center gap-1.5 text-foreground">
                   <ClipboardList className="w-3.5 h-3.5" />
                   {t('chat.planMode', { defaultValue: 'Plan mode' })}
                 </span>
-                <span className="text-muted-foreground">{t('chat.planModeDesc', { defaultValue: 'read-only · plan first, no edits' })}</span>
+                <span className="text-muted-foreground">· {t('chat.planModeDesc', { defaultValue: 'read-only · plan first, no edits' })}</span>
               </label>
             )}
             {independentTaskToggle}
@@ -893,6 +947,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
             isLoadingMore={isLoadingMore}
             onLoadMore={loadMoreHistory}
             onFork={handleFork}
+            onDeleteTurn={handleDeleteTurn}
             onSendToPeer={handleSendToPeer}
             peerSide={peerSide}
             isActive={isActive}

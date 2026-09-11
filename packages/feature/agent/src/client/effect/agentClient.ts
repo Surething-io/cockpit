@@ -304,6 +304,16 @@ export const forkSession = <A = { sessionId?: string }>(
     body
   )
 
+export const deleteSessionTurn = (
+  sessionId: string,
+  body: { cwd: string; messageUuid: string }
+): Effect.Effect<{ success: boolean; deletedLineCount: number }, AppError> =>
+  httpJson(`/api/session/${encodeURIComponent(sessionId)}/turn`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+
 // ─────────────────────────────────────────────────────────
 // /api/sessions/projects/:encodedPath (duplicated here; backend returns an Array directly)
 // ─────────────────────────────────────────────────────────

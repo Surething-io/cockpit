@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
-import { Portal, toast } from '@cockpit/shared-ui';
-import { Copy, FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed, Scissors, ArrowRightToLine, ArrowLeftToLine, ChevronDown, ChevronUp } from 'lucide-react';
+import { Portal, toast, confirm as confirmDialog } from '@cockpit/shared-ui';
+import { Copy, FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed, GitBranch, MessageSquareQuote, Trash2, ArrowRightToLine, ArrowLeftToLine, ChevronDown, ChevronUp } from 'lucide-react';
 import { ToolCallModal } from './ToolCallModal';
 import { AskQuestionViewerModal } from './AskQuestionViewerModal';
 import { DiffViewerModal, resolveDiffCalls } from './DiffViewerModal';
@@ -217,6 +217,8 @@ interface MessageBubbleProps {
    * 'prefix' keeps the conversation up to this turn, 'single' keeps only this turn.
    */
   onFork?: (messageId: string, scope: 'prefix' | 'single') => void;
+  /** Permanently remove the complete question/answer turn containing this bubble. */
+  onDeleteTurn?: (messageId: string) => Promise<void> | void;
   /**
    * Whether a new session can be created in this engine's transcript store at all
    * (false for codex, whose CLI owns the store). A boolean rather than the engine itself,
@@ -604,7 +606,7 @@ function messageTimeFormatter(locale: string): Intl.DateTimeFormat {
 }
 
 // Use memo optimization — only re-render when message or cwd changes
-export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork, forkSupported = true, onSendToPeer, peerSide, onApprovePlan, isLoading, onContentSearch, onShowFileDiff, onOpenFileLink, disableOverlays = false }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, cwd, sessionId, onFork, onDeleteTurn, forkSupported = true, onSendToPeer, peerSide, onApprovePlan, isLoading, onContentSearch, onShowFileDiff, onOpenFileLink, disableOverlays = false }: MessageBubbleProps) {
   const { t, i18n } = useTranslation();
   const [previewImage, setPreviewImage] = useState<MessageImage | null>(null);
   // Single-tool case: default expanded so the content stays visible (we only need the header for special entries).
@@ -613,11 +615,37 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   const [showDiffViewer, setShowDiffViewer] = useState(false);
   const [showAskQuestionViewer, setShowAskQuestionViewer] = useState(false);
   const [showEventDetail, setShowEventDetail] = useState(false);
+  const [forkMenuOpen, setForkMenuOpen] = useState(false);
+  const [deletingTurn, setDeletingTurn] = useState(false);
+  const forkMenuRef = useRef<HTMLDivElement>(null);
+  const forkMenuButtonRef = useRef<HTMLButtonElement>(null);
   const isUser = message.role === 'user';
   const hasImages = message.images && message.images.length > 0;
   const toolCallsCount = message.toolCalls?.length || 0;
   const shouldCollapseToolCalls = toolCallsCount > TOOL_CALLS_COLLAPSE_THRESHOLD;
   const canFork = !!sessionId && !!cwd && !!onFork && forkSupported;
+  const canDeleteTurn = !!sessionId && !!cwd && !!onDeleteTurn;
+
+  useEffect(() => {
+    if (!forkMenuOpen) return;
+
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!forkMenuRef.current?.contains(event.target as Node)) setForkMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setForkMenuOpen(false);
+        forkMenuButtonRef.current?.focus();
+      }
+    };
+
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [forkMenuOpen]);
 
   // Whether this message contains tool calls that may have touched files.
   // Shares the READ_ONLY deny-list with the server-side snapshot hook (single
@@ -814,6 +842,7 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   // Fork session (branch from this message, keeping the conversation up to here)
   const handleFork = () => {
     if (canFork) {
+      setForkMenuOpen(false);
       onFork!(message.id, 'prefix');
     }
   };
@@ -823,7 +852,27 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
   // rewinds an assistant uuid back to the user message that opened it.
   const handleExcerpt = () => {
     if (canFork) {
+      setForkMenuOpen(false);
       onFork!(message.id, 'single');
+    }
+  };
+
+  const handleDeleteTurn = async () => {
+    if (!canDeleteTurn || isLoading || deletingTurn) return;
+    const confirmed = await confirmDialog(
+      t('chat.deleteTurnConfirm', { defaultValue: 'Delete this question, answer, and its tool records? This cannot be undone.' }),
+      {
+        title: t('chat.deleteTurn', { defaultValue: 'Delete turn' }),
+        confirmText: t('chat.deleteTurnConfirmAction', { defaultValue: 'Delete turn' }),
+        danger: true,
+      },
+    );
+    if (!confirmed) return;
+    setDeletingTurn(true);
+    try {
+      await onDeleteTurn!(message.id);
+    } finally {
+      setDeletingTurn(false);
     }
   };
 
@@ -1281,18 +1330,18 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
 
             The two sides are the SAME children in opposite order — the user
             turn just reverses the row. Read outward from the bubble's aligned
-            edge, both sides give copy → fork → excerpt → time; on screen that
-            reads time-first on the right and time-last on the left, which is
-            what the surrounding chat UIs do.
+            edge, both sides give copy → new-session menu → delete → time; on
+            screen that reads time-first on the right and time-last on the
+            left, which is what the surrounding chat UIs do.
 
             In flow, not absolute: it costs every message ~24px of height even
             while invisible (`opacity-0`, not unmounted), and that is the point —
             an overlay would appear on hover on top of the next message's first
             line. The time row above the bubble was already paying most of this
             height, so the net cost is a few pixels. */}
-        {(timeStr || message.content || canFork) && (
+        {(timeStr || message.content || canFork || canDeleteTurn) && (
           <div
-            className={`flex items-center gap-1 mt-0.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity ${
+            className={`flex items-center gap-1 mt-0.5 px-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity ${
               isUser ? 'flex-row-reverse' : ''
             }`}
           >
@@ -1308,28 +1357,61 @@ export const MessageBubble = memo(function MessageBubble({ message, cwd, session
               </button>
             )}
             {canFork && (
-              <button
-                onClick={handleFork}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover"
-                title={t('chat.forkSession')}
-              >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  {/* Git fork icon */}
-                  <circle cx="12" cy="18" r="3" />
-                  <circle cx="6" cy="6" r="3" />
-                  <circle cx="18" cy="6" r="3" />
-                  <path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9" />
-                  <path d="M12 12v3" />
-                </svg>
-              </button>
+              <div ref={forkMenuRef} className="relative">
+                <button
+                  ref={forkMenuButtonRef}
+                  type="button"
+                  onClick={() => setForkMenuOpen((open) => !open)}
+                  className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-hover hover:text-foreground"
+                  aria-expanded={forkMenuOpen}
+                  title={t('chat.newSession')}
+                >
+                  <GitBranch className="h-3.5 w-3.5" />
+                  <span>{t('chat.newSession')}</span>
+                  <ChevronDown className={`h-3 w-3 transition-transform ${forkMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {forkMenuOpen && (
+                  <div
+                    role="group"
+                    aria-label={t('chat.newSession')}
+                    className={`absolute bottom-full z-50 mb-1 w-56 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lv2 ${isUser ? 'right-0' : 'left-0'}`}
+                  >
+                    <button
+                      type="button"
+                      onClick={handleFork}
+                      className="flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left hover:bg-hover focus-visible:bg-hover focus-visible:outline-none"
+                    >
+                      <GitBranch className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>
+                        <span className="block text-xs font-medium">{t('chat.continueFromHere')}</span>
+                        <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">{t('chat.continueFromHereDesc')}</span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExcerpt}
+                      className="flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left hover:bg-hover focus-visible:bg-hover focus-visible:outline-none"
+                    >
+                      <MessageSquareQuote className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>
+                        <span className="block text-xs font-medium">{t('chat.onlyThisTurn')}</span>
+                        <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">{t('chat.onlyThisTurnDesc')}</span>
+                      </span>
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
-            {canFork && (
+            {canDeleteTurn && (
               <button
-                onClick={handleExcerpt}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-hover"
-                title={t('chat.excerptTurn')}
+                type="button"
+                onClick={handleDeleteTurn}
+                disabled={isLoading || deletingTurn}
+                className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-red-3 hover:text-red-11 disabled:cursor-not-allowed disabled:opacity-40"
+                title={isLoading ? t('chat.deleteTurnWhileRunning') : t('chat.deleteTurn')}
               >
-                <Scissors className="w-4 h-4" />
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>{deletingTurn ? t('chat.deletingTurn') : t('chat.deleteTurn')}</span>
               </button>
             )}
             {canSendToPeer && (

@@ -80,6 +80,8 @@ interface MessageListProps {
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
   onFork?: (messageId: string, scope: 'prefix' | 'single') => void;
+  /** Permanently remove the complete human turn containing this message. */
+  onDeleteTurn?: (messageId: string) => Promise<void> | void;
   /** Side-by-side: forward a message's text to the other column. Stable identity. */
   onSendToPeer?: (content: string) => void;
   /** Which side the other column is on. Undefined in single-pane mode, which hides the button. */
@@ -163,7 +165,7 @@ export interface MessageListHandle {
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
-  { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, backgroundTasks, liveOutputTokens, runningStartedAt, hasMoreHistory, isLoadingMore, onLoadMore, onFork, onSendToPeer, peerSide, isActive = true, onContentSearch, onShowFileDiff, onOpenFileLink, onApprovePlan, onShowUserMessages },
+  { messages, isLoading, cwd, sessionId, engine, apiRetryInfo, backgroundTasks, liveOutputTokens, runningStartedAt, hasMoreHistory, isLoadingMore, onLoadMore, onFork, onDeleteTurn, onSendToPeer, peerSide, isActive = true, onContentSearch, onShowFileDiff, onOpenFileLink, onApprovePlan, onShowUserMessages },
   ref
 ) {
   const { t, i18n } = useTranslation();
@@ -1059,6 +1061,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                   cwd={cwd}
                   sessionId={sessionId}
                   onFork={onFork}
+                  onDeleteTurn={onDeleteTurn}
                   forkSupported={forkSupported}
                   onSendToPeer={onSendToPeer}
                   peerSide={peerSide}

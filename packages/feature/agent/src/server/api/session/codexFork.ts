@@ -21,6 +21,12 @@ interface CodexForkState {
   drawnToolIds: Set<string>;
 }
 
+interface PartitionedCodexTurns {
+  metaLine: string | null;
+  turns: string[][];
+  targetTurn: number;
+}
+
 function isCodexTaskStarted(entry: Record<string, unknown>): boolean {
   const payload = entry.payload as { type?: unknown } | undefined;
   return entry.type === 'event_msg' && payload?.type === 'task_started';
@@ -185,6 +191,22 @@ export function buildCodexForkLines(
     };
   }
 
+  const { metaLine, turns, targetTurn } = partitionCodexTurns(originalLines, fromMessageUuid);
+  if (!metaLine || targetTurn < 0) return { newLines: [], targetMissed: true };
+
+  const keptTurns = scope === 'single'
+    ? turns.slice(targetTurn, targetTurn + 1)
+    : turns.slice(0, targetTurn + 1);
+  return {
+    newLines: replaceSessionId([metaLine, ...keptTurns.flat()], originalSessionId, newSessionId),
+    targetMissed: false,
+  };
+}
+
+function partitionCodexTurns(
+  originalLines: string[],
+  targetMessageUuid: string,
+): PartitionedCodexTurns {
   const metaLine = originalLines.find((line) => {
     try {
       return JSON.parse(line).type === 'session_meta';
@@ -192,7 +214,7 @@ export function buildCodexForkLines(
       return false;
     }
   });
-  if (!metaLine) return { newLines: [], targetMissed: true };
+  if (!metaLine) return { metaLine: null, turns: [], targetTurn: -1 };
 
   const turns: string[][] = [];
   const state: CodexForkState = {
@@ -227,19 +249,27 @@ export function buildCodexForkLines(
     currentTurn.push(line);
 
     const ids = codexVisibleMessageIds(entry, state);
-    if (ids.includes(fromMessageUuid)) targetTurn = turns.length;
+    if (ids.includes(targetMessageUuid)) targetTurn = turns.length;
 
     if (isCodexTaskComplete(entry)) finishTurn();
   }
   finishTurn();
 
-  if (targetTurn < 0) return { newLines: [], targetMissed: true };
+  return { metaLine, turns, targetTurn };
+}
 
-  const keptTurns = scope === 'single'
-    ? turns.slice(targetTurn, targetTurn + 1)
-    : turns.slice(0, targetTurn + 1);
+/** Remove one visible Codex turn while preserving the rollout's session metadata. */
+export function deleteCodexTurnLines(
+  originalLines: string[],
+  targetMessageUuid: string,
+): { newLines: string[]; deletedLineCount: number; targetMissed: boolean } {
+  const { metaLine, turns, targetTurn } = partitionCodexTurns(originalLines, targetMessageUuid);
+  if (!metaLine || targetTurn < 0) {
+    return { newLines: [], deletedLineCount: 0, targetMissed: true };
+  }
   return {
-    newLines: replaceSessionId([metaLine, ...keptTurns.flat()], originalSessionId, newSessionId),
+    newLines: [metaLine, ...turns.filter((_, index) => index !== targetTurn).flat()],
+    deletedLineCount: turns[targetTurn].length,
     targetMissed: false,
   };
 }

@@ -239,6 +239,9 @@ export function useChatHistory(
     // pagination cursor) is cached — that's the request every "open a session"
     // fires and the one that hurts over high-latency links.
     const cacheKey = `${cwdPath}::${sid}`;
+    // A mutation such as deleting a turn must not repaint the old transcript from the
+    // stale-while-revalidate cache. Drop it first; the response below becomes the new entry.
+    if (force) firstPageCache.delete(cacheKey);
     const cacheable = !incremental && beforeTurnIndex === undefined;
     const cached = cacheable ? firstPageCache.get(cacheKey) : undefined;
 

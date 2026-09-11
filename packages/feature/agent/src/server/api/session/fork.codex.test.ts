@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCodexForkLines } from './codexFork';
+import { buildCodexForkLines, deleteCodexTurnLines } from './codexFork';
 
 const OLD_ID = '019fecf2-99ce-7af0-9a20-69df24f4fe32';
 const NEW_ID = '7f94d8e0-d91e-4396-898d-28c53f01edd2';
@@ -75,5 +75,26 @@ describe('buildCodexForkLines', () => {
 
     expect(result.targetMissed).toBe(true);
     expect(result.newLines).toEqual([]);
+  });
+});
+
+describe('deleteCodexTurnLines', () => {
+  it('removes only the selected task and preserves session metadata', () => {
+    const result = deleteCodexTurnLines(rollout, 'codex-user-2');
+
+    expect(result.targetMissed).toBe(false);
+    expect(result.deletedLineCount).toBe(6);
+    expect(result.newLines).toHaveLength(5);
+    expect(result.newLines[0]).toContain('session_meta');
+    expect(result.newLines.join('\n')).toContain('alpha answer');
+    expect(result.newLines.join('\n')).not.toContain('beta prompt');
+  });
+
+  it('reports a missing visible message without returning a partial rollout', () => {
+    expect(deleteCodexTurnLines(rollout, 'codex-user-99')).toEqual({
+      newLines: [],
+      deletedLineCount: 0,
+      targetMissed: true,
+    });
   });
 });

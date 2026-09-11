@@ -3,7 +3,7 @@
 import { useState, useLayoutEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback, useMemo, memo } from 'react';
 import type { ImageInfo, ChatEngine } from './types';
 import { useTranslation } from 'react-i18next';
-import { AlarmClock, Zap } from 'lucide-react';
+import { AlarmClock, TextCursorInput } from 'lucide-react';
 import { ImagePreview } from '@cockpit/shared-ui';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
 import { QuickInstructionsPopover } from './QuickInstructionsPopover';
@@ -298,11 +298,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
             }`}
             title={t('chat.quickInstructions')}
           >
-            {/* Lightning bolt — mirrors the Console input bar's quick commands
-                button, and now literally the same glyph: this was a hand-inlined
-                heroicons bolt while the Console used lucide's Zap, so the two
-                sides of one concept did not actually match. */}
-            <Zap className="w-5 h-5" />
+            <TextCursorInput className="w-5 h-5" />
           </button>
           {showQuickInstructions && (
             <QuickInstructionsPopover

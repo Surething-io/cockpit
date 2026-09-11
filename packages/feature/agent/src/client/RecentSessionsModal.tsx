@@ -23,8 +23,8 @@ interface RecentSessionsModalProps {
  *
  * Visually aligned with ProjectSessionsModal (same modal shell + grid card
  * layout + absolute timestamps + first/last message preview). The only
- * cross-project additions are the project name and the status dot, since this
- * panel spans projects whereas ProjectSessionsModal is single-project.
+ * cross-project addition is the project name. Status stays in the right-side
+ * session badge, which falls back to the project-list `·` marker when unnumbered.
  *
  * Uses a full-viewport `fixed inset-0` overlay so it escapes the three-panel
  * SwipeableViewContainer boundaries (see CLAUDE.md UI layout notes).
@@ -197,17 +197,8 @@ export function RecentSessionsModal({ isOpen, onClose, onSwitchProject, sessionN
                   onClick={() => handleSessionClick(session)}
                   className="p-3 rounded border border-border hover:border-brand hover:shadow-lv2 cursor-pointer transition-all"
                 >
-                  {/* Project name + status dot + engine badge */}
+                  {/* Project name + engine badge */}
                   <div className="flex items-center gap-1.5 mb-1">
-                    {/* Static dot (the round number chip is the pulsing one), and it is
-                        also the only status mark on cards whose numbers never resolved. */}
-                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                      session.status === 'loading'
-                        ? 'bg-orange-11'
-                        : session.status === 'unread'
-                          ? 'bg-red-9'
-                          : 'bg-muted-foreground/30'
-                    }`} />
                     <EngineBadge engine={session.engine} />
                     <h4 className="text-xs font-medium text-foreground truncate flex-1" data-tooltip={session.cwd}>
                       {getProjectName(session.cwd)}

@@ -17,8 +17,8 @@ import type { RecentSessionInfo } from './effect/agentClient';
  * the row directly above it showed the engine, the status, when it last ran and
  * what was last said to it.
  *
- * So the row anatomy lives here once: status dot, relative time, and the rich
- * hover card. What stays local to each panel is what genuinely differs — the
+ * So the shared row anatomy lives here once: relative time and the rich hover
+ * card. What stays local to each panel is what genuinely differs — the
  * pinned list owns drag-to-reorder, inline rename and unpin; the recent list
  * owns search and the running/unread counts.
  */
@@ -30,32 +30,6 @@ export type SessionRowInfo = Partial<RecentSessionInfo> & Pick<RecentSessionInfo
 
 /** Last path segment — the name a project is actually known by. */
 export const projectNameOf = (cwd: string) => cwd.split('/').pop() || cwd;
-
-/**
- * Status indicator: orange (running) / red (unread) / grey (idle).
- *
- * Solid, not washed like the pills — an 8px dot has no room to carry a 20%
- * tint. The STEP is taken from whatever the round chip on the same row fills
- * with (`sessionNumberStyles`): orange-11 for running, red-9 for unread. They
- * sit 250px apart on one row, so a dot on red-11 next to a chip on red-9 does
- * not read as the same red — it reads as two different states.
- *
- * It does NOT pulse: the chip is the one blinking thing per row, and this dot
- * is what still reports the state before the numbers finish resolving.
- */
-export function SessionStatusDot({ status, className = '' }: { status?: string; className?: string }) {
-  return (
-    <span
-      className={`w-2 h-2 rounded-full flex-shrink-0 ${
-        status === 'loading'
-          ? 'bg-orange-11'
-          : status === 'unread'
-            ? 'bg-red-9'
-            : 'bg-muted-foreground/30'
-      } ${className}`}
-    />
-  );
-}
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 

@@ -9,7 +9,6 @@ import { EngineBadge } from './EngineBadge';
 import { SessionNumberBadge, badgeStatus } from './SessionNumberBadge';
 import { sortSessionsForDisplay } from './sessionOrder';
 import {
-  SessionStatusDot,
   SessionHoverCard,
   useSessionHoverCard,
   formatRelativeTime,
@@ -113,11 +112,11 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
         {/* History, not a lightning bolt: the bolt reads as "quick action" and is
             already the chat/console quick-instructions mark, which is on screen at
             the same time as this rail. Liveness is carried by the badges below
-            (spinning orange ring = running, red = unread), so the icon is free to say
+            (spinning orange ring = running, solid orange = unread), so the icon is free to say
             what the label says — recent. */}
         <History className="w-5 h-5 flex-shrink-0" />
         {!collapsed && <span className="text-sm flex-1 text-left">{t('sessions.recentSessions')}</span>}
-        {/* Badge: loading orange spinner + unread red static, displayed independently.
+        {/* Badge: loading orange spinner + unread solid orange, displayed independently.
             A tinted pill with a coloured numeral rather than white-on-saturated-fill:
             same family as the session number badges, still loud enough to catch. */}
         {loadingCount > 0 && (
@@ -128,7 +127,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
           </span>
         )}
         {unreadCount > 0 && (
-          <span className={`min-w-[18px] h-[18px] px-1 text-foreground text-xs font-medium rounded-full flex items-center justify-center bg-red-9/55 ${
+          <span className={`min-w-[18px] h-[18px] px-1 border text-xs font-medium rounded-full flex items-center justify-center ${sessionNumberClass('unread', false)} ${
             collapsed && !loadingCount ? 'absolute -top-1 -right-1' : ''
           }`}>
             {unreadCount}
@@ -145,7 +144,7 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
               <span className="ml-2 text-xs text-orange-11">({t('sessions.runningCount', { count: loadingCount })})</span>
             )}
             {unreadCount > 0 && (
-              <span className="ml-2 text-xs text-red-11">({t('sessions.unreadCount', { count: unreadCount })})</span>
+              <span className="ml-2 text-xs text-orange-11">({t('sessions.unreadCount', { count: unreadCount })})</span>
             )}
             {/* Expand into the full searchable recent-sessions panel (up to 100) */}
             <button
@@ -175,7 +174,6 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
                     index !== orderedSessions.length - 1 ? 'border-b border-border/50' : ''
                   } ${currentCwd === session.cwd ? 'bg-accent/50' : ''}`}
                 >
-                  <SessionStatusDot status={session.status} className="mt-1.5" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <EngineBadge engine={session.engine} />
@@ -185,9 +183,8 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
                       <span className="text-xs text-muted-foreground flex-shrink-0">
                         {formatRelativeTime(t, session.lastActive)}
                       </span>
-                      {/* Running/done is carried by the round session chip (pulsing wash /
-                          solid red) instead of a word — the label repeated what the dot
-                          already said and cost the project name its truncation budget. */}
+                      {/* Running/done is carried by the round session chip. When its
+                          coordinate is unknown it uses the project-list `·` marker. */}
                       <SessionNumberBadge
                         coordinate={sessionNumbers[`${session.cwd}\n${session.sessionId}`]}
                         status={badgeStatus(session.status)}

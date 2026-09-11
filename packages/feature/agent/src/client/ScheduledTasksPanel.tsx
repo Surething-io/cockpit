@@ -3,7 +3,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlarmClock } from 'lucide-react';
-import { toast, MODAL_SHELL_CLASS } from '@cockpit/shared-ui';
+import { toast, MODAL_SHELL_CLASS, sessionNumberClass } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { getProjectName, getTaskSummary } from './useScheduledTasks';
 import type { ScheduledTask } from './useScheduledTasks';
@@ -53,20 +53,6 @@ function formatType(task: ScheduledTask, t: (key: string, opts?: Record<string, 
   }
   if (task.type === 'cron') return task.cron || 'cron';
   return task.type;
-}
-
-// Design-system steps, not raw Tailwind `red-500` / `yellow-500` / `green-500`,
-// and the `-9` (solid-fill) step rather than `-11` (text): 9 holds one value
-// across both themes, while 11 swings light in dark mode — an unread dot on
-// red-11 came out pink next to the red-9 chip on the same row, reading as a
-// different state rather than the same one. Same step the session lists' dots
-// and number chips use (SessionRowParts / sessionNumberStyles).
-function getStatusColor(task: ScheduledTask): string {
-  if (task.unread) return 'bg-red-9';
-  if (task.completed) return 'bg-muted-foreground/30';
-  if (task.paused) return 'bg-amber-9';
-  if (task.lastResult === 'error') return 'bg-red-9';
-  return 'bg-green-9';
 }
 
 /**
@@ -471,9 +457,9 @@ export function ScheduledTasksPanel({
               : 'border-border'
         } ${task.completed ? 'opacity-70' : ''}`}
       >
-        {/* Project name + status dot + engine */}
+        {/* Project name + engine. Task state is already explicit in the group,
+            status text and result row, so a leading colour dot would duplicate it. */}
         <div className="flex items-center gap-1.5 mb-1">
-          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getStatusColor(task)}`} />
           <EngineBadge engine={getTaskEngine(task)} tooltip={getEngineTooltip(task)} />
           <h4 className="text-xs font-medium text-foreground truncate flex-1" data-tooltip={task.cwd}>
             {getProjectName(task.cwd)}
@@ -530,9 +516,9 @@ export function ScheduledTasksPanel({
             sessions entry, whose icon is a clock face with a history arrow. */}
         <AlarmClock className="w-5 h-5 flex-shrink-0" />
         {!collapsed && <span className="text-sm flex-1 text-left">{t('scheduledTasks.title')}</span>}
-        {/* Red dot / count badge */}
+        {/* Completed-result count badge */}
         {unreadCount > 0 ? (
-          <span className={`min-w-[18px] h-[18px] px-1 text-foreground text-xs font-medium rounded-full flex items-center justify-center bg-red-9/55 ${
+          <span className={`min-w-[18px] h-[18px] px-1 border text-xs font-medium rounded-full flex items-center justify-center ${sessionNumberClass('unread', false)} ${
             collapsed ? 'absolute -top-1 -right-1' : ''
           }`}>
             {unreadCount}

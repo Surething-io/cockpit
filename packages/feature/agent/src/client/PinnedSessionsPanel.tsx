@@ -9,7 +9,6 @@ import { SessionNumberBadge, badgeStatus } from './SessionNumberBadge';
 import { EngineBadge } from './EngineBadge';
 import { loadRecentSessions } from './effect/agentClient';
 import {
-  SessionStatusDot,
   SessionHoverCard,
   useSessionHoverCard,
   formatRelativeTime,
@@ -252,7 +251,6 @@ export function PinnedSessionsPanel({
                       <circle cx="3" cy="14" r="1.5"/><circle cx="7" cy="14" r="1.5"/>
                     </svg>
                   </span>
-                  <SessionStatusDot status={info?.status} className="mt-1.5" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       {/* Unconditional, exactly like the recent list. `engine` is

@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next';
 // ============================================
 // Session number: circular shape pairs with the project number while keeping
 // the two navigation levels immediately distinguishable. Run/unread state lives
-// directly on this marker: a spinning ring while running, red when done.
+// directly on this marker: a spinning ring while running, solid orange when done.
 // ============================================
 
 function TabNumberIcon({ number, status, statusLabel, isActive, pinned }: { number: number; status: SessionNumberStatus; statusLabel?: string; isActive: boolean; pinned: boolean }) {

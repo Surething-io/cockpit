@@ -148,7 +148,7 @@ export function MobileSessionList({ onOpen, onUseDesktop, initialSessions }: Mob
                     session.status === 'loading'
                       ? 'animate-pulse bg-orange-11'
                       : session.status === 'unread'
-                        ? 'bg-red-9'
+                        ? 'bg-orange-9'
                         : 'bg-muted-foreground/30'
                   }`}
                 />

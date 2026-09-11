@@ -7,8 +7,8 @@ interface SessionNumberBadgeProps {
   sessionNumber?: number | string;
   /** The two numbers as one "1.6" string, which is how every sessionNumbers map
    *  stores them. Takes the place of splitting at each call site — that was the
-   *  same three-line IIFE copied into every list. Renders nothing when absent,
-   *  so callers can pass a lookup straight through. */
+   *  same three-line IIFE copied into every list. When it is absent but a live
+   *  status exists, the round badge uses `·`, matching the project list. */
   coordinate?: string;
   /** Session state, carried by the round chip and its running ring only. */
   status?: SessionNumberStatus;
@@ -39,6 +39,9 @@ export function SessionNumberBadge({ projectNumber, sessionNumber, coordinate, s
     const [project, session] = coordinate.split('.');
     projectNumber ??= project;
     sessionNumber ??= session;
+  }
+  if (projectNumber == null && sessionNumber == null && status !== 'normal') {
+    sessionNumber = '·';
   }
   if (projectNumber == null && sessionNumber == null) return null;
 

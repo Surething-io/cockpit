@@ -25,6 +25,9 @@ export interface ProjectInfo {
  *  project's own session list anyway. Extras are dropped, not counted. */
 const MAX_SESSION_BADGES = 3;
 
+const sessionBadgeStatusRank = (status: string): number =>
+  status === 'unread' ? 0 : status === 'loading' ? 1 : 2;
+
 interface ProjectSidebarProps {
   projects: ProjectInfo[];
   activeIndex: number;
@@ -349,19 +352,32 @@ export function ProjectSidebar({
     const map = new Map<string, ProjectSessionBadge[]>();
     for (const project of projects) {
       const order = sessionOrders[project.cwd] ?? [];
-      const items = sessions
+      const prioritized = sessions
         .filter((s) => s.cwd === project.cwd)
         .map((s) => ({ session: s, position: order.indexOf(s.sessionId) }))
         .filter(({ session, position }) => (
           position >= 0 || session.status === 'loading' || session.status === 'unread'
         ))
         .sort((a, b) => {
-          if (a.position >= 0 && b.position >= 0) return a.position - b.position;
-          if (a.position >= 0) return -1;
-          if (b.position >= 0) return 1;
+          const statusDifference = sessionBadgeStatusRank(a.session.status)
+            - sessionBadgeStatusRank(b.session.status);
+          if (statusDifference !== 0) return statusDifference;
           return b.session.lastActive - a.session.lastActive;
+        });
+      const mostRecentNormal = prioritized.find(
+        ({ session }) => sessionBadgeStatusRank(session.status) === 2,
+      );
+      const items = prioritized
+        .filter(({ session }) => {
+          return sessionBadgeStatusRank(session.status) < 2
+            || session === mostRecentNormal?.session;
         })
         .slice(0, MAX_SESSION_BADGES)
+        .sort((a, b) => {
+          if (a.position < 0) return b.position < 0 ? 0 : 1;
+          if (b.position < 0) return -1;
+          return a.position - b.position;
+        })
         .map(({ session, position }): ProjectSessionBadge => ({
           sessionId: session.sessionId,
           label: position >= 0 ? String(position + 1) : '·',

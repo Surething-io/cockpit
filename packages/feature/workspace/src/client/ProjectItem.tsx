@@ -191,7 +191,7 @@ export function ProjectItem({
           )}
 
           {/* Session badges — always the rightmost column */}
-          {badges.length > 0 ? (
+          {badges.length > 0 && (
             <div className="flex items-center gap-1 flex-shrink-0">
               {badges.map((badge) => (
                 <SessionBadge
@@ -201,9 +201,7 @@ export function ProjectItem({
                 />
               ))}
             </div>
-          ) : isActive ? (
-            <span className="w-2 h-2 rounded-full bg-brand flex-shrink-0" />
-          ) : null}
+          )}
         </>
       )}
     </div>

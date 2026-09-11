@@ -10,7 +10,7 @@ interface SessionNumberBadgeProps {
    *  same three-line IIFE copied into every list. Renders nothing when absent,
    *  so callers can pass a lookup straight through. */
   coordinate?: string;
-  /** Session state, carried by the round chip only (see the note below). */
+  /** Session state, carried by the round chip and its running ring only. */
   status?: SessionNumberStatus;
   /** Translated name of that state, exposed as the chip's tooltip/aria text —
    *  the colour is the whole label now, so the words have to live somewhere. */
@@ -30,9 +30,9 @@ export function badgeStatus(status: string | undefined): SessionNumberStatus {
  *  thing it names, so the colours come from the shared `sessionNumberClass`
  *  rather than a second hand-written copy of them.
  *
- *  `status` tints the ROUND chip only. Running/unread is a property of the
- *  session, not of the project it sits in, and pulsing both chips together turns
- *  a two-glyph coordinate into one blinking blob you can no longer read as
+ *  `status` decorates the ROUND chip only. Running/unread is a property of the
+ *  session, not of the project it sits in, and animating both chips together turns
+ *  a two-glyph coordinate into one moving blob you can no longer read as
  *  "project 5, session 1". The square chip therefore always stays idle. */
 export function SessionNumberBadge({ projectNumber, sessionNumber, coordinate, status = 'normal', statusLabel, className = '' }: SessionNumberBadgeProps) {
   if (coordinate) {

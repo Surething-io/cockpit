@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { History } from 'lucide-react';
+import { sessionNumberClass } from '@cockpit/shared-ui';
 import { RecentSessionsModal } from './RecentSessionsModal';
 import { EngineBadge } from './EngineBadge';
 import { SessionNumberBadge, badgeStatus } from './SessionNumberBadge';
@@ -112,15 +113,15 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
         {/* History, not a lightning bolt: the bolt reads as "quick action" and is
             already the chat/console quick-instructions mark, which is on screen at
             the same time as this rail. Liveness is carried by the badges below
-            (pulsing orange = running, red = unread), so the icon is free to say
+            (spinning orange ring = running, red = unread), so the icon is free to say
             what the label says — recent. */}
         <History className="w-5 h-5 flex-shrink-0" />
         {!collapsed && <span className="text-sm flex-1 text-left">{t('sessions.recentSessions')}</span>}
-        {/* Badge: loading orange pulse + unread red static, displayed independently.
+        {/* Badge: loading orange spinner + unread red static, displayed independently.
             A tinted pill with a coloured numeral rather than white-on-saturated-fill:
             same family as the session number badges, still loud enough to catch. */}
         {loadingCount > 0 && (
-          <span className={`min-w-[18px] h-[18px] px-1 text-foreground text-xs font-medium rounded-full flex items-center justify-center bg-orange-11/20 animate-pulse ${
+          <span className={`min-w-[18px] h-[18px] px-1 border text-xs font-medium rounded-full flex items-center justify-center ${sessionNumberClass('loading', false)} ${
             collapsed ? 'absolute -top-1 -right-1' : ''
           }`}>
             {loadingCount}

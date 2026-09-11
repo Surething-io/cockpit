@@ -11,15 +11,25 @@ import { useTranslation } from 'react-i18next';
 
 // ============================================
 // Session number: circular shape pairs with the project number while keeping
-// the two navigation levels immediately distinguishable. The badge also carries
-// the session status (see sessionNumberStyles) — there is no separate status dot.
+// the two navigation levels immediately distinguishable. Run/unread state lives
+// directly on this marker: a spinning ring while running, red when done.
 // ============================================
 
-function TabNumberIcon({ number, status, isActive }: { number: number; status: SessionNumberStatus; isActive: boolean }) {
+function TabNumberIcon({ number, status, statusLabel, isActive, pinned }: { number: number; status: SessionNumberStatus; statusLabel?: string; isActive: boolean; pinned: boolean }) {
+  const colorClass = status !== 'normal'
+    ? sessionNumberClass(status, isActive)
+    : pinned
+      ? 'border-transparent bg-amber-9 text-black/80'
+      : isActive
+        ? 'border-transparent bg-brand/25 text-brand'
+        : 'border-transparent bg-muted-foreground/25 text-foreground/75';
+
   return (
     <span
-      className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border font-mono text-[9px] font-medium leading-none tabular-nums transition-colors ${sessionNumberClass(status, isActive, { animateLoading: false })}`}
-      aria-hidden="true"
+      className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border font-mono text-[9px] font-medium leading-none tabular-nums transition-colors ${colorClass}`}
+      role={status !== 'normal' ? 'status' : undefined}
+      aria-label={statusLabel}
+      aria-hidden={status === 'normal' ? 'true' : undefined}
     >
       {number}
     </span>
@@ -209,34 +219,44 @@ export function TabBar({
               }`}
               onClick={() => onSwitchTab(tab.id)}
             >
-              {/* Circle number — its colour IS the status (orange = generating,
-                  red = done but unread, brand/muted = seen), which
-                  is also the whole colour budget on this chip: the star's
-                  `amber-9` is the solid-FILL step, one value in both themes,
-                  where the `-11` text step it started as is a brick in light and
-                  a glaring lemon in dark. Filled vs outlined is what carries
-                  favourited/not; hover previews the outcome (amber = about to
-                  gain, faint = about to lose). No star on a session-less tab —
-                  favouriting stores a sessionId, so there it is a silent no-op. */}
-              <div className="relative flex-shrink-0">
-                <TabNumberIcon number={index + 1} status={status} isActive={isActive} />
+              {/* Number, status and favorite share the leading slot. At rest the
+                  number stays useful for navigation; hover reveals the favorite
+                  action without overlap. */}
+              <div className="relative h-4 w-4 -translate-x-1 flex-shrink-0">
+                <span
+                  className={onTogglePin && tab.sessionId
+                    ? 'transition-opacity group-hover:opacity-0 group-focus-within:opacity-0'
+                    : undefined}
+                >
+                  <TabNumberIcon
+                    number={index + 1}
+                    status={status}
+                    statusLabel={status === 'loading' ? t('sessions.running') : status === 'unread' ? t('sessions.done') : undefined}
+                    isActive={isActive}
+                    pinned={pinned}
+                  />
+                </span>
                 {onTogglePin && tab.sessionId && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       onTogglePin(tab.id);
+                      // A pointer click leaves the button focused, which would
+                      // keep group-focus-within active after the pointer exits.
+                      // Preserve focus for keyboard activation only.
+                      if (e.detail > 0) e.currentTarget.blur();
                     }}
-                    className={`absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-sm transition-colors duration-150 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                    className={`absolute inset-0 flex items-center justify-center rounded-sm opacity-0 transition-colors duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                       pinned
-                        ? 'text-amber-9 opacity-100 hover:text-foreground-faint'
-                        : 'text-foreground-faint opacity-0 group-hover:opacity-100 hover:text-amber-9'
+                        ? 'text-amber-9 hover:text-foreground-faint'
+                        : 'text-foreground-faint hover:text-amber-9'
                     }`}
                     data-tooltip={pinLabel}
                     aria-label={pinLabel}
                     aria-pressed={pinned}
                   >
                     <svg
-                      className="h-4 w-4"
+                      className="h-3.5 w-3.5"
                       viewBox="0 0 24 24"
                       fill={pinned ? 'currentColor' : 'none'}
                       stroke="currentColor"
@@ -250,25 +270,26 @@ export function TabBar({
                 )}
               </div>
               <span className="flex-1 min-w-0 truncate">{tab.title}</span>
-              {/* Same mark as the session lists and the engine picker in the chat top bar.
-                  This used to be five hand-written letter chips with their own color table,
-                  which is how they drifted out of step with EngineBadge. */}
-              <span className={`shrink-0 inline-flex items-center ${tab.isLoading ? 'animate-pulse' : ''}`}>
-                <EngineBadge engine={tab.engine} size="sm" />
+              {/* Engine and close share one trailing slot. Status now belongs
+                  to the session number, so engine identity stays visible. */}
+              <span className="relative ml-1 h-4 w-4 translate-x-1 shrink-0">
+                <span className="absolute inset-0 inline-flex items-center justify-center transition-opacity group-hover:opacity-0 group-focus-within:opacity-0">
+                  <EngineBadge engine={tab.engine} size="sm" />
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCloseTab(tab.id);
+                  }}
+                  className="absolute inset-0 flex items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  data-tooltip={t('tabBar.closeTab')}
+                  aria-label={t('tabBar.closeTab')}
+                >
+                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCloseTab(tab.id);
-                }}
-                className="ml-1 p-0.5 rounded hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                data-tooltip={t('tabBar.closeTab')}
-                aria-label={t('tabBar.closeTab')}
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
             </div>
           </Tooltip>
           );

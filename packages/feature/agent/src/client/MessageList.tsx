@@ -620,9 +620,18 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   // Follow the user turn nearest the viewport's reading edge. The rail has at
   // most ten entries, so its scroll work stays bounded even after older pages
   // have been loaded into the transcript.
-  const refreshActiveUserMessage = useCallback(() => {
+  const refreshActiveUserMessage = useCallback((atContentEnd = false) => {
     const container = containerRef.current;
     if (!container) return;
+    // At the transcript end there cannot be a later turn competing for the
+    // reading position. The last user message owns everything through the end
+    // of its answer, even when its row has not crossed the top-edge threshold.
+    // Without this invariant a short final turn leaves the penultimate marker
+    // highlighted while the complete final turn is already on screen.
+    if (atContentEnd && recentUserMessages.length > 0) {
+      setActiveUserMessageId(recentUserMessages[recentUserMessages.length - 1].id);
+      return;
+    }
     const containerRect = container.getBoundingClientRect();
     let current: string | null = null;
     let firstVisible: string | null = null;
@@ -669,7 +678,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     }
     setShowTopButton(!atTop); // Show scroll-to-top button when not at the top
     setShowBottomButton(!atBottom);
-    refreshActiveUserMessage();
+    refreshActiveUserMessage(atBottom);
 
     // When scrolled to the top with more history available, trigger load-more
     if (atTop && hasMoreHistory && !isLoadingMore && onLoadMore) {
@@ -964,8 +973,9 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   // visible (rects are all zero while hidden).
   useEffect(() => {
     if (!isActive) return;
-    refreshActiveUserMessage();
-  }, [messages, isActive, refreshActiveUserMessage]);
+    const g = readGeometry();
+    refreshActiveUserMessage(g ? isContentEndVisible(g) : false);
+  }, [messages, isActive, readGeometry, refreshActiveUserMessage]);
 
   return (
     <div ref={outerRef} className="relative flex-1 min-h-0 overflow-hidden flex flex-col outline-none" tabIndex={-1} onMouseUp={handleSelectionMouseUp} onMouseDown={handleSelectionMouseDown}>
@@ -1065,7 +1075,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                 <div className="px-1 py-1 max-w-[90%]">
                   <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
                     <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center" aria-hidden="true">
-                      <EngineIcon engine={runningEngine} className="h-4 w-4 animate-pulse" />
+                      <EngineIcon engine={runningEngine} className="h-4 w-4" />
                     </span>
                     <span className="text-sm text-muted-foreground/80">
                       {runningEngineLabel} running {elapsedLabel} · processing{' '}
@@ -1135,14 +1145,14 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       {/* The rail is deliberately inside this overflow-hidden panel shell. Its
           preview can cover chat content, but can never leak into the Explorer
           panel beside it in the three-panel layout. On wide panes it docks just
-          outside the centred conversation column instead of clinging to the
-          panel edge; on narrow panes max() keeps the original 8px inset. Oldest
+          outside the centred conversation column's right edge instead of clinging
+          to the panel edge; on narrow panes max() keeps the original 8px inset. Oldest
           is at the top, newest at the bottom, matching the transcript's reading
           direction. */}
       {(recentUserMessages.length > 0 || showTopButton || showBottomButton) && (
         <nav
           className="absolute top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-2"
-          style={{ left: 'max(0.5rem, calc(50% - var(--chat-column) / 2 - 2.25rem))' }}
+          style={{ right: 'max(0.5rem, calc(50% - var(--chat-column) / 2 - 2.25rem))' }}
           aria-label={t('chat.recentUserMessages')}
         >
           {showTopButton && messages.length > 0 && (
@@ -1195,12 +1205,12 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                     aria-hidden
                     className={`h-0.5 rounded-full transition-all ${
                       isActiveMessage
-                        ? 'w-5 bg-foreground'
+                        ? 'w-4 bg-foreground'
                         : 'w-3 bg-foreground/20 group-hover:w-4 group-hover:bg-foreground/45'
                     }`}
                   />
                 </button>
-                <div className="pointer-events-none absolute left-8 top-1/2 hidden w-72 -translate-y-1/2 rounded-xl border border-border bg-card px-3 py-2.5 text-left shadow-lv2 group-hover:block group-focus-within:block">
+                <div className="pointer-events-none absolute right-8 top-1/2 hidden w-72 -translate-y-1/2 rounded-xl border border-border bg-card px-3 py-2.5 text-left shadow-lv2 group-hover:block group-focus-within:block">
                   <div className="line-clamp-4 text-sm leading-5 text-foreground">
                     {preview}
                   </div>

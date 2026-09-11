@@ -1322,6 +1322,34 @@ code[class*="language-"] .token {
   100% { background-color: transparent; }
 }
 
+/* ---- Running session number: stationary digit + comet-tail spinner ---- */
+.session-number-running::after {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: -2px;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from -90deg,
+    transparent 0deg,
+    hsl(var(--orange-11) / 0.08) 70deg,
+    hsl(var(--orange-11) / 0.4) 220deg,
+    hsl(var(--orange-11)) 330deg,
+    transparent 330deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1px), #000 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 1px), #000 0);
+  animation: session-number-spin 900ms linear infinite;
+}
+
+@keyframes session-number-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-number-running::after { animation: none; }
+}
+
 /* ---- Chat jump flash: highlight the BUBBLE, not the row ----
  *
  * The class lands on the row wrapper, because `[data-message-id]` is the only

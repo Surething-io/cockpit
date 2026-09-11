@@ -43,6 +43,13 @@ export interface TabInfo {
   noHistory?: boolean;
 }
 
+interface GlobalSessionStatusSnapshot {
+  cwd: string;
+  sessionId: string;
+  status?: string;
+  engine?: string;
+}
+
 const CODEX_THREAD_ID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\.jsonl)?$/i;
 
 function normalizeCodexSessionId(sessionId: string): string {
@@ -193,6 +200,10 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
   // Ref for tabs (avoid stale closures in callbacks)
   const tabsRef = useRef(tabs);
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
+  // The global-state socket commonly delivers its first snapshot while project
+  // tabs are still being restored. Keep it until initialization finishes so
+  // persisted unread state is not lost merely because tab ids do not exist yet.
+  const globalSessionsRef = useRef<GlobalSessionStatusSnapshot[]>([]);
   const activeTabIdRef = useRef(activeTabId);
   useEffect(() => { activeTabIdRef.current = activeTabId; }, [activeTabId]);
   // Only one project-state write runs at once. While it runs, newer snapshots
@@ -215,6 +226,45 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
       )
     );
   }, [initialCwd]);
+
+  const syncUnreadTabsFromGlobalState = useCallback((sessions: GlobalSessionStatusSnapshot[]) => {
+    if (!initialCwd) return;
+
+    const statusBySession = new Map<string, string>();
+    for (const session of sessions) {
+      if (session.cwd !== initialCwd) continue;
+      const sessionId = session.engine === 'codex'
+        ? normalizeCodexSessionId(session.sessionId)
+        : session.sessionId;
+      statusBySession.set(sessionId, session.status ?? 'normal');
+    }
+
+    setUnreadTabs((current) => {
+      const next = new Set(current);
+      let changed = false;
+      for (const tab of tabsRef.current) {
+        if (!tab.sessionId) continue;
+        const status = statusBySession.get(tab.sessionId);
+        // The WS snapshot is capped, so an absent session is unknown rather
+        // than normal. Only reconcile entries the server actually sent.
+        if (status === undefined) continue;
+        if (status === 'unread') {
+          if (!next.has(tab.id)) {
+            next.add(tab.id);
+            changed = true;
+          }
+        } else if (next.delete(tab.id)) {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [initialCwd]);
+
+  useEffect(() => {
+    if (!initDone) return;
+    syncUnreadTabsFromGlobalState(globalSessionsRef.current);
+  }, [initDone, syncUnreadTabsFromGlobalState]);
 
   // Tab drag state
   const [dragTabIndex, setDragTabIndex] = useState<number | null>(null);
@@ -609,16 +659,36 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     });
   }, [initialCwd]);
 
+  const handleGlobalStateMessage = useCallback((raw: unknown) => {
+    if (!initialCwd) return;
+    const message = raw as {
+      type?: string;
+      cwd?: string;
+      closedSessionIds?: string[];
+      data?: { sessions?: GlobalSessionStatusSnapshot[] };
+    };
+
+    if (message.type === 'global-state' && Array.isArray(message.data?.sessions)) {
+      globalSessionsRef.current = message.data.sessions;
+      if (!isInitializingRef.current) {
+        syncUnreadTabsFromGlobalState(message.data.sessions);
+      }
+      return;
+    }
+
+    if (
+      !isInitializingRef.current
+      && message.type === 'project-state-changed'
+      && message.cwd === initialCwd
+    ) {
+      reconcileTabs(message.closedSessionIds ?? []);
+    }
+  }, [initialCwd, reconcileTabs, syncUnreadTabsFromGlobalState]);
+
   useWebSocket({
     url: '/ws/global-state',
     enabled: !!initialCwd,
-    onMessage: (raw) => {
-      if (isInitializingRef.current || !initialCwd) return;
-      const p = raw as { type?: string; cwd?: string; closedSessionIds?: string[] };
-      if (p.type === 'project-state-changed' && p.cwd === initialCwd) {
-        reconcileTabs(p.closedSessionIds ?? []);
-      }
-    },
+    onMessage: handleGlobalStateMessage,
   });
 
   // Add new tab

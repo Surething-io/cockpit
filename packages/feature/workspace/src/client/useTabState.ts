@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { usePageVisible, useWebSocket } from '@cockpit/shared-ui';
 import type { ChatEngine, DeepseekModel, EngineModelId, ClaudeModelId, ClaudeEffort, ClaudeContextWindow, CodexModelId, CodexReasoningEffort } from '@cockpit/feature-agent';
 import { publishTopic } from '@cockpit/effect-react';
@@ -13,6 +13,8 @@ import {
   updateSessionStatus as updateSessionStatusEff,
   markScheduledTasksReadBySession,
 } from './effect/stateClient';
+import { loadActiveTabTarget, saveActiveTabTarget, type ActiveTabTarget } from './effect/activeTabStorage';
+import { createLatestTaskRunner, type LatestTaskRunner } from './latestTaskRunner';
 
 // ============================================
 // Types
@@ -55,6 +57,8 @@ function normalizeCodexSessionId(sessionId: string): string {
 interface UseTabStateOptions {
   initialCwd?: string;
   initialSessionId?: string;
+  /** The URL explicitly points at a blank New Chat rather than a saved session. */
+  initialBlank?: boolean;
   /** Current view (agent/explorer/console), used to determine unread: active tab also marked unread when not on agent screen */
   activeView?: string;
 }
@@ -113,7 +117,7 @@ export function repairPanes(
   return { panes: out, created };
 }
 
-export function useTabState({ initialCwd, initialSessionId, activeView }: UseTabStateOptions) {
+export function useTabState({ initialCwd, initialSessionId, initialBlank, activeView }: UseTabStateOptions) {
   // Mark whether sessions have been loaded from server
   const hasLoadedRef = useRef(false);
   // Mark whether currently initializing (avoid triggering save during initialization).
@@ -191,6 +195,9 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
   const activeTabIdRef = useRef(activeTabId);
   useEffect(() => { activeTabIdRef.current = activeTabId; }, [activeTabId]);
+  // Only one project-state write runs at once. While it runs, newer snapshots
+  // replace the pending one instead of forming a backlog of stale tab states.
+  const saveRunnerRef = useRef<LatestTaskRunner<Parameters<typeof saveProjectState>[0]> | null>(null);
   // switchTab reads all three to decide which pane a click lands in; via refs so
   // its identity stays stable for the memoised TabBar.
 
@@ -222,6 +229,9 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     // runPromise never rejects; the outer try/catch would never fire. On failure
     // data === null and we fall through to the else branch.
     const loadSessions = async () => {
+      const storedTarget = BrowserRuntime.runSync(
+        loadActiveTabTarget(initialCwd).pipe(Effect.catchAll(() => Effect.succeed(null)))
+      );
       const data = await BrowserRuntime.runPromise(
         loadProjectState(initialCwd).pipe(
           Effect.catchAll(() => Effect.succeed(null))
@@ -238,7 +248,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
           const normalized = rawEngines[sid] === 'codex' ? normalizeCodexSessionId(sid) : sid;
           if (!savedSessions.includes(normalized)) savedSessions.push(normalized);
         }
-        const savedActiveSessionId: string | undefined = data.activeSessionId && rawEngines[data.activeSessionId] === 'codex'
+        const savedActiveSessionId: string | null | undefined = data.activeSessionId && rawEngines[data.activeSessionId] === 'codex'
           ? normalizeCodexSessionId(data.activeSessionId)
           : data.activeSessionId;
         const savedOllamaModels: Record<string, string> = data.ollamaModels || {};
@@ -255,10 +265,17 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
         const savedPlanModes: Record<string, boolean> = data.planModes || {};
         const savedNoHistories: Record<string, boolean> = data.noHistories || {};
 
-        // Merge URL sessionId with sessions in session.json (deduplicate)
+        // The same-window target is written synchronously when selection changes,
+        // so it survives refresh even if URL or project-state IO is still pending.
+        const storedSessionId = storedTarget?.kind === 'session' ? storedTarget.sessionId : undefined;
+
+        // Merge explicit and window-local session targets with session.json.
         let allSessions = [...savedSessions];
         if (initialSessionId && !allSessions.includes(initialSessionId)) {
           allSessions = [initialSessionId, ...allSessions];
+        }
+        if (storedSessionId && !allSessions.includes(storedSessionId)) {
+          allSessions = [storedSessionId, ...allSessions];
         }
 
         if (allSessions.length > 0) {
@@ -291,12 +308,21 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
             };
           });
 
-          // Activation priority: URL sessionId > session.json activeSessionId > first
-          const activeSessionToUse = initialSessionId || savedActiveSessionId;
+          // Activation priority: same-window target > URL sessionId >
+          // session.json activeSessionId > first.
+          // A persisted null is meaningful: the user was on a blank New Chat,
+          // so restore one instead of silently falling back to the first session.
+          const activeSessionToUse = storedSessionId || initialSessionId || savedActiveSessionId;
           let activeIndex = activeSessionToUse ? allSessions.indexOf(activeSessionToUse) : -1;
           if (activeIndex < 0) activeIndex = 0;
 
-          const newActiveTabId = restoredTabs[activeIndex].id;
+          const restoreBlankActive = storedTarget?.kind === 'blank'
+            || (!storedTarget && !initialSessionId && (initialBlank || savedActiveSessionId === null));
+          const blankActiveTab: TabInfo | undefined = restoreBlankActive
+            ? { id: `tab-${Date.now()}-blank`, cwd: initialCwd, title: 'New Chat' }
+            : undefined;
+          const tabsToRestore = blankActiveTab ? [...restoredTabs, blankActiveTab] : restoredTabs;
+          const newActiveTabId = blankActiveTab?.id ?? restoredTabs[activeIndex].id;
 
           /**
            * Restore the pane layout, if there was one.
@@ -321,7 +347,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
               const normalized = sid && rawEngines[sid] === 'codex' ? normalizeCodexSessionId(sid) : sid;
               return (normalized && restoredTabs.find((t) => t.sessionId === normalized)?.id) || '';
             });
-            const { panes: paneIds, created } = repairPanes(wanted, restoredTabs, initialCwd);
+            const { panes: paneIds, created } = repairPanes(wanted, tabsToRestore, initialCwd);
 
             // The active session outranks the saved layout: deep-linking to a
             // session in neither pane still has to show it, so it takes the
@@ -331,11 +357,11 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
             if (pane === -1) { paneIds[0] = newActiveTabId; pane = 0; }
             const collapsed = paneIds[0] === paneIds[1];
 
-            setTabs([...restoredTabs, ...created]);
+            setTabs([...tabsToRestore, ...created]);
             setPaneTabIds(collapsed ? [paneIds[0]] : paneIds);
             setActivePane(collapsed ? 0 : pane);
           } else {
-            setTabs(restoredTabs);
+            setTabs(tabsToRestore);
             setActiveTabId(newActiveTabId);
           }
 
@@ -350,7 +376,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
     };
 
     loadSessions();
-  }, [initialCwd, initialSessionId, finishInitializing]);
+  }, [initialCwd, initialSessionId, initialBlank, finishInitializing]);
 
   // Save to server when tabs or activeTabId changes — and once more the moment
   // initialization ends, to flush anything resolved while saving was suppressed.
@@ -362,7 +388,7 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       .filter((id): id is string => !!id);
 
     const activeTab = tabs.find(t => t.id === activeTabId);
-    const activeSessionId = activeTab?.sessionId;
+    const activeSessionId = activeTab?.sessionId ?? null;
 
     // Build engine map for tabs that have a non-default engine
     const engines: Record<string, string> = {};
@@ -447,53 +473,57 @@ export function useTabState({ initialCwd, initialSessionId, activeView }: UseTab
       (id) => tabs.find((t) => t.id === id)?.sessionId ?? null
     );
 
-    BrowserRuntime.runFork(
-      saveProjectState({
-        cwd: initialCwd,
-        sessions: sessionIds,
-        activeSessionId,
-        paneSessionIds,
-        engines,
-        ollamaModels,
-        deepseekModels,
-        kimiModels,
-        glmModels,
-        claudeModels,
-        claudeEfforts,
-        claudeContextWindows,
-        claudeFastModes,
-        claudeThinkings,
-        codexModels,
-        codexReasoningEfforts,
-        planModes,
-        noHistories,
-        ...(closedSessionIds.length ? { closedSessionIds } : {}),
-      }).pipe(
-        Effect.tap(() =>
-          Effect.sync(() => {
-            for (const id of closedSessionIds) pendingClosedRef.current.delete(id);
-          })
-        ),
-        Effect.tapError((e) =>
-          Effect.sync(() => console.error('Failed to save sessions:', e))
-        ),
-        Effect.catchAll(() => Effect.void)
-      )
-    );
+    const stateToSave = {
+      cwd: initialCwd,
+      sessions: sessionIds,
+      activeSessionId,
+      paneSessionIds,
+      engines,
+      ollamaModels,
+      deepseekModels,
+      kimiModels,
+      glmModels,
+      claudeModels,
+      claudeEfforts,
+      claudeContextWindows,
+      claudeFastModes,
+      claudeThinkings,
+      codexModels,
+      codexReasoningEfforts,
+      planModes,
+      noHistories,
+      ...(closedSessionIds.length ? { closedSessionIds } : {}),
+    };
+
+    if (!saveRunnerRef.current) {
+      saveRunnerRef.current = createLatestTaskRunner(async (snapshot) => {
+        const exit = await BrowserRuntime.runPromiseExit(saveProjectState(snapshot));
+        if (exit._tag === 'Success') {
+          for (const id of snapshot.closedSessionIds ?? []) pendingClosedRef.current.delete(id);
+        } else {
+          console.error('Failed to save sessions:', exit.cause);
+        }
+      });
+    }
+    saveRunnerRef.current.enqueue(stateToSave);
   }, [tabs, activeTabId, paneTabIds, initialCwd, initDone]);
 
   // Notify parent Workspace when switching tab (parent handles URL update)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (isInitializingRef.current || !initialCwd) return;
 
-    const activeTab = tabs.find(t => t.id === activeTabId);
-    if (!activeTab?.sessionId) return;
-
+    const sessionId = tabs.find(t => t.id === activeTabId)?.sessionId;
+    const target: ActiveTabTarget = sessionId
+      ? { kind: 'session', sessionId }
+      : { kind: 'blank' };
+    BrowserRuntime.runSync(
+      saveActiveTabTarget(initialCwd, target).pipe(Effect.catchAll(() => Effect.void))
+    );
     publishTopic(Topics.SessionChange, {
       cwd: initialCwd,
-      sessionId: activeTab.sessionId,
+      sessionId: sessionId ?? null,
     });
-  }, [activeTabId, tabs, initialCwd]);
+  }, [activeTabId, tabs, initialCwd, initDone]);
 
   // #10: keep in-app tabs in sync across browser tabs of the same project. The
   // /api/project-state route broadcasts `project-state-changed` after every tab open/close.

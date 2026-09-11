@@ -13,13 +13,15 @@ import { SkillsModal } from '@cockpit/feature-skills';
 import { SessionCompleteToastContainer, showSessionCompleteToast } from '@cockpit/feature-agent';
 import { useEffectQuery } from '@cockpit/effect-react';
 import { fetchProjects, saveProjects as saveProjectsEffect } from './effect/projectClient';
+import { buildProjectUrl, type InitialProjectTarget } from './projectUrl';
 
 interface WorkspaceProps {
   initialCwd?: string;
   initialSessionId?: string;
+  initialBlank?: boolean;
 }
 
-export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
+export function Workspace({ initialCwd, initialSessionId, initialBlank }: WorkspaceProps) {
   const { t } = useTranslation();
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -49,9 +51,9 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   // sessionId reaches useTabState deterministically via the URL instead of a racy
   // post-onLoad postMessage. Never mutated after birth (mutating it would change the
   // iframe src and force a full reload), so later in-iframe session switches don't touch it.
-  const initialSessionIdsRef = useRef<Map<string, { sessionId: string; switchToAgent?: boolean }>>(new Map());
+  const initialSessionIdsRef = useRef<Map<string, InitialProjectTarget>>(new Map());
   // Track the current sessionId per project (used for URL updates, not iframe src)
-  const projectSessionIdsRef = useRef<Map<string, string>>(new Map());
+  const projectSessionIdsRef = useRef<Map<string, string | null>>(new Map());
   // Project index saved before screenshot; restored when screenshot completes
   const preScreenshotIndexRef = useRef<number | null>(null);
 
@@ -220,13 +222,18 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   }, [isSessionBrowserOpen, resolveSessionNumbers]);
 
   // Utility function to update the browser address bar URL
-  const updateUrl = useCallback((cwd: string, sessionId?: string) => {
+  const updateUrl = useCallback((cwd: string, sessionId?: string, blank = false) => {
     const url = new URL(window.location.href);
     url.searchParams.set('cwd', cwd);
     if (sessionId) {
       url.searchParams.set('sessionId', sessionId);
     } else {
       url.searchParams.delete('sessionId');
+    }
+    if (blank) {
+      url.searchParams.set('newChat', '1');
+    } else {
+      url.searchParams.delete('newChat');
     }
     window.history.replaceState({}, '', url.toString());
 
@@ -247,6 +254,9 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
     if (initialSessionId) {
       initialSessionIdsRef.current.set(initialCwd, { sessionId: initialSessionId });
       projectSessionIdsRef.current.set(initialCwd, initialSessionId);
+    } else if (initialBlank) {
+      initialSessionIdsRef.current.set(initialCwd, { blank: true });
+      projectSessionIdsRef.current.set(initialCwd, null);
     }
 
     // Check if the project already exists
@@ -269,8 +279,8 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
     }
 
     // Update URL
-    updateUrl(initialCwd, initialSessionId);
-  }, [isLoaded, initialCwd, initialSessionId, projects, activeIndex, collapsed, saveProjects, updateUrl]);
+    updateUrl(initialCwd, initialSessionId, initialBlank);
+  }, [isLoaded, initialCwd, initialSessionId, initialBlank, projects, activeIndex, collapsed, saveProjects, updateUrl]);
 
   // Listen for messages from iframes
   useEffect(() => {
@@ -287,14 +297,18 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
         return;
       }
       // Session ID change notification (tab switch inside iframe)
-      if (event.data?.type === 'SESSION_CHANGE' && event.data?.cwd && event.data?.sessionId) {
+      if (event.data?.type === 'SESSION_CHANGE' && event.data?.cwd && 'sessionId' in event.data) {
         const { cwd, sessionId } = event.data;
         // Record the current sessionId for this project
-        projectSessionIdsRef.current.set(cwd, sessionId);
+        if (typeof sessionId === 'string' && sessionId) {
+          projectSessionIdsRef.current.set(cwd, sessionId);
+        } else {
+          projectSessionIdsRef.current.set(cwd, null);
+        }
         // If this is the currently active project, update the URL
         const currentProject = projects[activeIndex];
         if (currentProject?.cwd === cwd) {
-          updateUrl(cwd, sessionId);
+          updateUrl(cwd, typeof sessionId === 'string' ? sessionId : undefined, sessionId === null);
         }
       }
       // Session complete notification (posted directly via postMessage when Chat completes, bypasses state.json watch)
@@ -427,7 +441,7 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
     if (selectedProject?.cwd) {
       // Update URL (using the tracked sessionId)
       const sessionId = projectSessionIdsRef.current.get(selectedProject.cwd);
-      updateUrl(selectedProject.cwd, sessionId);
+      updateUrl(selectedProject.cwd, sessionId ?? undefined, sessionId === null);
     }
   }, [projects, collapsed, saveProjects, updateUrl]);
 
@@ -557,15 +571,8 @@ export function Workspace({ initialCwd, initialSessionId }: WorkspaceProps) {
   // read from initialSessionIdsRef, which is frozen at project birth, so the src string is
   // stable across re-renders (in-iframe session switches never change it → no iframe reload).
   const getProjectUrl = (project: ProjectInfo) => {
-    let url = `/project?cwd=${encodeURIComponent(project.cwd)}`;
     const initial = initialSessionIdsRef.current.get(project.cwd);
-    if (initial?.sessionId) {
-      url += `&sessionId=${encodeURIComponent(initial.sessionId)}`;
-      if (initial.switchToAgent) {
-        url += `&view=agent`;
-      }
-    }
-    return url;
+    return buildProjectUrl(project.cwd, initial);
   };
 
   // Wait for initial load to complete

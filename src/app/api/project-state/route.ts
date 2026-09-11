@@ -17,7 +17,8 @@ import { broadcastToGlobalState } from "../../../lib/globalStateBroadcast"
 
 interface ProjectState {
   sessions: string[]
-  activeSessionId?: string
+  /** `null` means the active tab is a blank New Chat. */
+  activeSessionId?: string | null
   /** Pane layout, by session, in on-screen order. `null` = a pane whose chat has
    *  no session yet. Length < 2 is single-pane and is not stored. */
   paneSessionIds?: (string | null)[]
@@ -153,7 +154,15 @@ export const POST = handler((req) =>
           const codexReasoningEfforts = carryOver(existing.codexReasoningEfforts, body.codexReasoningEfforts)
           const planModes = carryOver(existing.planModes, body.planModes, (v) => !v)
           const noHistories = carryOver(existing.noHistories, body.noHistories, (v) => !v)
-          const active = normalizeSessionId(body.activeSessionId ?? existing.activeSessionId ?? "")
+          // `null` is intentional state, not an omitted value: it records that the
+          // selected tab is a blank New Chat. Using `?? existing.activeSessionId`
+          // here used to resurrect the previous session on refresh.
+          const activeRaw = Object.prototype.hasOwnProperty.call(body, "activeSessionId")
+            ? body.activeSessionId
+            : existing.activeSessionId
+          const active = typeof activeRaw === "string" && activeRaw
+            ? normalizeSessionId(activeRaw)
+            : null
           /**
            * Pane layout is last-writer-wins like activeSessionId, NOT unioned:
            * it describes one browser tab's screen, and there is no meaningful
@@ -175,7 +184,11 @@ export const POST = handler((req) =>
             : undefined
           const next: ProjectState = {
             sessions: union,
-            ...(active && inSet.has(active) ? { activeSessionId: active } : {}),
+            ...(active && inSet.has(active)
+              ? { activeSessionId: active }
+              : active === null
+                ? { activeSessionId: null }
+                : {}),
             ...(panes && panes.length > 1 ? { paneSessionIds: panes } : {}),
             ...(Object.keys(engines).length ? { engines } : {}),
             ...(Object.keys(ollamaModels).length ? { ollamaModels } : {}),

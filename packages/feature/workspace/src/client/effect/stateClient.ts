@@ -21,7 +21,8 @@ import type { MarkReadBySessionIdRequest } from "@cockpit/feature-agent"
 
 export interface LoadedProjectState {
   sessions: string[]
-  activeSessionId?: string
+  /** `null` means the active tab is a blank New Chat. */
+  activeSessionId?: string | null
   /** Pane layout, by session, in on-screen order. `null` = a pane holding a chat
    *  that has no session yet. Persisted as an ARRAY rather than a
    *  `secondarySessionId` on purpose: the runtime model is N slots plus an
@@ -62,7 +63,8 @@ export const loadProjectState = (
 export interface ProjectStateSave {
   cwd: string
   sessions: string[]
-  activeSessionId?: string
+  /** Always sent. `null` clears a previously active session for a blank tab. */
+  activeSessionId: string | null
   /** Pane layout, by session, in on-screen order. `null` = a pane holding a chat
    *  that has no session yet. Persisted as an ARRAY rather than a
    *  `secondarySessionId` on purpose: the runtime model is N slots plus an

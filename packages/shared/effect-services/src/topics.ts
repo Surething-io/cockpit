@@ -12,7 +12,8 @@ import { defineTopic } from "./iframeBus"
 
 export interface SessionChangePayload {
   readonly cwd: string
-  readonly sessionId: string
+  /** `null` means the selected tab is a blank New Chat. */
+  readonly sessionId: string | null
 }
 
 export interface ViewChangePayload {

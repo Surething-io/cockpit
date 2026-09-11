@@ -33,6 +33,7 @@ import { updateSessionStatus, markScheduledTasksReadBySession } from './effect/s
 interface TabManagerProps {
   initialCwd?: string;
   initialSessionId?: string;
+  initialBlank?: boolean;
   /** View to force on mount (from the URL). When set, it overrides the saved project view. */
   initialView?: ViewType;
 }
@@ -164,7 +165,7 @@ function PaneShell({
   );
 }
 
-export function TabManager({ initialCwd, initialSessionId, initialView }: TabManagerProps) {
+export function TabManager({ initialCwd, initialSessionId, initialBlank, initialView }: TabManagerProps) {
   const { t } = useTranslation();
   // activeView must be declared before useTabState, as useTabState needs it to determine unread state
   const [activeView, setActiveView] = useState<ViewType>(initialView ?? 'agent');
@@ -216,7 +217,7 @@ export function TabManager({ initialCwd, initialSessionId, initialView }: TabMan
     handleTabDragOver,
     handleTabDrop,
     handleTabDragEnd,
-  } = useTabState({ initialCwd, initialSessionId, activeView });
+  } = useTabState({ initialCwd, initialSessionId, initialBlank, activeView });
 
 
 

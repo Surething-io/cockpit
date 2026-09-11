@@ -5,7 +5,7 @@ import { Workspace } from '@cockpit/feature-workspace';
 export const dynamic = 'force-dynamic';
 
 interface HomePageProps {
-  searchParams: Promise<{ cwd?: string; sessionId?: string }>;
+  searchParams: Promise<{ cwd?: string; sessionId?: string; newChat?: string }>;
 }
 
 export async function generateMetadata({ searchParams }: HomePageProps): Promise<Metadata> {
@@ -21,7 +21,7 @@ export async function generateMetadata({ searchParams }: HomePageProps): Promise
 
 export default async function Home({ searchParams }: HomePageProps) {
   const params = await searchParams;
-  const { cwd, sessionId } = params;
+  const { cwd, sessionId, newChat } = params;
 
-  return <Workspace initialCwd={cwd} initialSessionId={sessionId} />;
+  return <Workspace initialCwd={cwd} initialSessionId={sessionId} initialBlank={newChat === '1'} />;
 }

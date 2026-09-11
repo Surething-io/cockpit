@@ -340,18 +340,21 @@ export function ProjectSidebar({
     sessions.filter(s => s.status === 'unread').map(s => s.cwd)
   );
 
-  // Per-project session badges: only sessions that are generating or done-but-
-  // unread earn one, so a quiet project row stays clean. Ordered by the session's
-  // live position in that project's tab bar (the number you can point at), which
-  // means a tab drag renumbers these too. Sessions whose project iframe is not
-  // mounted yet have no known position and sort last with a '·' placeholder.
+  // Per-project session badges: recent sessions with a known live tab position
+  // are shown even when idle, so the tab numbers visible in the recent-session
+  // list are also available directly on the project row. Running/unread sessions
+  // stay visible with a '·' placeholder while their project's tab order is not
+  // known yet. A tab drag renumbers the badges immediately.
   const badgesByCwd = useMemo(() => {
     const map = new Map<string, ProjectSessionBadge[]>();
     for (const project of projects) {
       const order = sessionOrders[project.cwd] ?? [];
       const items = sessions
-        .filter((s) => s.cwd === project.cwd && (s.status === 'loading' || s.status === 'unread'))
+        .filter((s) => s.cwd === project.cwd)
         .map((s) => ({ session: s, position: order.indexOf(s.sessionId) }))
+        .filter(({ session, position }) => (
+          position >= 0 || session.status === 'loading' || session.status === 'unread'
+        ))
         .sort((a, b) => {
           if (a.position >= 0 && b.position >= 0) return a.position - b.position;
           if (a.position >= 0) return -1;
@@ -362,7 +365,11 @@ export function ProjectSidebar({
         .map(({ session, position }): ProjectSessionBadge => ({
           sessionId: session.sessionId,
           label: position >= 0 ? String(position + 1) : '·',
-          status: session.status === 'loading' ? 'loading' : 'unread',
+          status: session.status === 'loading'
+            ? 'loading'
+            : session.status === 'unread'
+              ? 'unread'
+              : 'normal',
         }));
       if (items.length > 0) map.set(project.cwd, items);
     }

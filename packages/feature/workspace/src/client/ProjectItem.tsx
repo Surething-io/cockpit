@@ -12,7 +12,7 @@ import { fetchCurrentBranch } from '@cockpit/feature-explorer';
 export interface ProjectSessionBadge {
   sessionId: string;
   label: string;
-  status: Exclude<SessionNumberStatus, 'normal'>;
+  status: SessionNumberStatus;
 }
 
 interface ProjectItemProps {

@@ -3,7 +3,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlarmClock } from 'lucide-react';
-import { toast, MODAL_SHELL_CLASS, sessionNumberClass } from '@cockpit/shared-ui';
+import { toast, MODAL_SHELL_CLASS } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { getProjectName, getTaskSummary } from './useScheduledTasks';
 import type { ScheduledTask } from './useScheduledTasks';
@@ -518,7 +518,7 @@ export function ScheduledTasksPanel({
         {!collapsed && <span className="text-sm flex-1 text-left">{t('scheduledTasks.title')}</span>}
         {/* Completed-result count badge */}
         {unreadCount > 0 ? (
-          <span className={`min-w-[18px] h-[18px] px-1 border text-xs font-medium rounded-full flex items-center justify-center ${sessionNumberClass('unread', false)} ${
+          <span className={`min-w-[18px] h-[18px] px-1 bg-orange-11/15 text-orange-11 text-xs font-medium rounded-full flex items-center justify-center ${
             collapsed ? 'absolute -top-1 -right-1' : ''
           }`}>
             {unreadCount}

@@ -116,18 +116,18 @@ export function GlobalSessionMonitor({ currentCwd, onSwitchProject, onResolveSes
             what the label says — recent. */}
         <History className="w-5 h-5 flex-shrink-0" />
         {!collapsed && <span className="text-sm flex-1 text-left">{t('sessions.recentSessions')}</span>}
-        {/* Badge: loading orange spinner + unread solid orange, displayed independently.
+        {/* Badge: loading orange spinner + unread static wash, displayed independently.
             A tinted pill with a coloured numeral rather than white-on-saturated-fill:
             same family as the session number badges, still loud enough to catch. */}
         {loadingCount > 0 && (
-          <span className={`min-w-[18px] h-[18px] px-1 border text-xs font-medium rounded-full flex items-center justify-center ${sessionNumberClass('loading', false)} ${
+          <span className={`min-w-[18px] h-[18px] px-1 text-xs font-medium rounded-full flex items-center justify-center ${sessionNumberClass('loading', false)} ${
             collapsed ? 'absolute -top-1 -right-1' : ''
           }`}>
             {loadingCount}
           </span>
         )}
         {unreadCount > 0 && (
-          <span className={`min-w-[18px] h-[18px] px-1 border text-xs font-medium rounded-full flex items-center justify-center ${sessionNumberClass('unread', false)} ${
+          <span className={`min-w-[18px] h-[18px] px-1 bg-orange-11/15 text-orange-11 text-xs font-medium rounded-full flex items-center justify-center ${
             collapsed && !loadingCount ? 'absolute -top-1 -right-1' : ''
           }`}>
             {unreadCount}

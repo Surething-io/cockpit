@@ -3,7 +3,7 @@
  * recent-sessions badge was dead markup. attachEngines is what finally fills it in,
  * from the same `engines` map the per-project session lists read.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -15,6 +15,8 @@ const NEVER_OPENED = '/Users/x/ghost';
 let home: string;
 let attachEngines: typeof import('./globalState').attachEngines;
 let updateGlobalState: typeof import('./globalState').updateGlobalState;
+let touchGlobalSession: typeof import('./globalState').touchGlobalSession;
+let updateGlobalSessionStatus: typeof import('./globalState').updateGlobalSessionStatus;
 // updateGlobalState skips non-existent cwds, so this one has to be real on disk.
 let realCwd: string;
 
@@ -35,7 +37,7 @@ beforeAll(async () => {
 
   realCwd = mkdtempSync(join(tmpdir(), 'cockpit-cwd-'));
 
-  ({ attachEngines, updateGlobalState } = await import('./globalState'));
+  ({ attachEngines, updateGlobalState, touchGlobalSession, updateGlobalSessionStatus } = await import('./globalState'));
 });
 
 afterAll(() => {
@@ -122,8 +124,39 @@ describe('updateGlobalState engine', () => {
     await updateGlobalState(realCwd, 'sess-codex', 'loading', undefined, 'hi', 'codex');
     expect((await read()).find((s) => s.sessionId === 'sess-codex')?.engine).toBe('codex');
 
-    // The client's PATCH passes no engine — must not blank it.
-    await updateGlobalState(realCwd, 'sess-codex', 'normal');
+    await updateGlobalSessionStatus(realCwd, 'sess-codex', 'normal');
     expect((await read()).find((s) => s.sessionId === 'sess-codex')?.engine).toBe('codex');
+  });
+
+  it('keeps status-only changes out of recency and lets a touch preserve status', async () => {
+    const now = vi.spyOn(Date, 'now');
+    try {
+      now.mockReturnValue(1_000);
+      await updateGlobalState(realCwd, 'sess-recency', 'unread', undefined, 'work', 'codex');
+
+      now.mockReturnValue(2_000);
+      await touchGlobalSession(realCwd, 'sess-recency');
+      let session = (await read()).find((item) => item.sessionId === 'sess-recency');
+      expect(session).toMatchObject({ lastActive: 2_000, status: 'unread', engine: 'codex' });
+
+      now.mockReturnValue(3_000);
+      await updateGlobalSessionStatus(realCwd, 'sess-recency', 'normal');
+      session = (await read()).find((item) => item.sessionId === 'sess-recency');
+      expect(session).toMatchObject({ lastActive: 2_000, status: 'normal', engine: 'codex' });
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('does not create a recent entry for a status-only visit', async () => {
+    await updateGlobalSessionStatus(realCwd, 'status-only-missing', 'normal');
+    expect((await read()).some((s) => s.sessionId === 'status-only-missing')).toBe(false);
+  });
+
+  it('creates a normal recent entry when leaving a previously untracked session', async () => {
+    await touchGlobalSession(realCwd, 'restored-session');
+    expect((await read()).find((s) => s.sessionId === 'restored-session')).toMatchObject({
+      status: 'normal',
+    });
   });
 });

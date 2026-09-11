@@ -12,8 +12,12 @@ import { NoteModal } from './NoteModal';
 import { SkillsModal } from '@cockpit/feature-skills';
 import { SessionCompleteToastContainer, showSessionCompleteToast } from '@cockpit/feature-agent';
 import { useEffectQuery } from '@cockpit/effect-react';
+import { Effect } from 'effect';
+import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { fetchProjects, saveProjects as saveProjectsEffect } from './effect/projectClient';
+import { touchRecentSession } from './effect/stateClient';
 import { buildProjectUrl, type InitialProjectTarget } from './projectUrl';
+import { recentSessionToTouch } from './recentNavigationPolicy';
 
 interface WorkspaceProps {
   initialCwd?: string;
@@ -82,8 +86,6 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
       newActiveIndex: number,
       newCollapsed: boolean,
     ) => {
-      const { Effect } = await import('effect');
-      const { BrowserRuntime } = await import('@cockpit/effect-runtime');
       const exit = await BrowserRuntime.runPromise(
         saveProjectsEffect({
           projects: newProjects,
@@ -97,6 +99,22 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
     },
     []
   );
+
+  // Global navigation is a context switch, so preserve the session the user is
+  // leaving as the return point. Local tab changes never pass through this policy.
+  const touchBeforeGlobalNavigation = useCallback((targetCwd: string, targetSessionId?: string | null) => {
+    const sourceCwd = projects[activeIndex]?.cwd;
+    const source = sourceCwd
+      ? { cwd: sourceCwd, sessionId: projectSessionIdsRef.current.get(sourceCwd) }
+      : undefined;
+    const session = recentSessionToTouch(source, { cwd: targetCwd, sessionId: targetSessionId });
+    if (!session) return;
+    BrowserRuntime.runFork(
+      touchRecentSession(session.cwd, session.sessionId).pipe(
+        Effect.catchAll(() => Effect.void)
+      )
+    );
+  }, [projects, activeIndex]);
 
   // When activeIndex changes, add the corresponding project to the loaded set
   useEffect(() => {
@@ -365,6 +383,7 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
       if (event.data?.type === 'OPEN_PROJECT' && event.data?.cwd) {
         const { cwd, sessionId } = event.data;
         const targetSessionId = sessionId || '';
+        touchBeforeGlobalNavigation(cwd, targetSessionId || undefined);
         projectSessionIdsRef.current.set(cwd, targetSessionId);
 
         const existingIndex = projects.findIndex(p => p.cwd === cwd);
@@ -404,7 +423,7 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [projects, activeIndex, collapsed, updateUrl, saveProjects, resolveSessionNumbers]);
+  }, [projects, activeIndex, collapsed, updateUrl, saveProjects, resolveSessionNumbers, touchBeforeGlobalNavigation]);
 
   // Parent-window keyboard safety net.
   // iframes don't bubble keydown to the parent window, so the per-panel
@@ -435,15 +454,22 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
 
   // Select project
   const handleSelectProject = useCallback((index: number) => {
+    const selectedProject = projects[index];
+    if (!selectedProject) return;
+    if (index !== activeIndex) {
+      touchBeforeGlobalNavigation(
+        selectedProject.cwd,
+        projectSessionIdsRef.current.get(selectedProject.cwd),
+      );
+    }
     setActiveIndex(index);
     saveProjects(projects, index, collapsed);
-    const selectedProject = projects[index];
     if (selectedProject?.cwd) {
       // Update URL (using the tracked sessionId)
       const sessionId = projectSessionIdsRef.current.get(selectedProject.cwd);
       updateUrl(selectedProject.cwd, sessionId ?? undefined, sessionId === null);
     }
-  }, [projects, collapsed, saveProjects, updateUrl]);
+  }, [projects, activeIndex, collapsed, saveProjects, updateUrl, touchBeforeGlobalNavigation]);
 
   // Remove project
   const handleRemoveProject = useCallback((index: number) => {
@@ -482,6 +508,7 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
 
   // Add project (selected from SessionBrowser or EmptyState)
   const handleAddProject = useCallback((cwd: string, sessionId: string) => {
+    touchBeforeGlobalNavigation(cwd, sessionId);
     // Track sessionId
     projectSessionIdsRef.current.set(cwd, sessionId);
 
@@ -521,10 +548,11 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
     updateUrl(cwd, sessionId);
     // Close SessionBrowser
     setIsSessionBrowserOpen(false);
-  }, [projects, collapsed, saveProjects, updateUrl]);
+  }, [projects, collapsed, saveProjects, updateUrl, touchBeforeGlobalNavigation]);
 
   // Switch project/session (called from GlobalSessionMonitor)
   const handleSwitchProject = useCallback((cwd: string, sessionId: string) => {
+    touchBeforeGlobalNavigation(cwd, sessionId);
     // Track sessionId
     projectSessionIdsRef.current.set(cwd, sessionId);
 
@@ -563,7 +591,7 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
 
     // Update URL
     updateUrl(cwd, sessionId);
-  }, [projects, activeIndex, collapsed, saveProjects, updateUrl]);
+  }, [projects, activeIndex, collapsed, saveProjects, updateUrl, touchBeforeGlobalNavigation]);
 
   // Build iframe URL. For a project opened with a specific session, carry the sessionId
   // (and, when the open intent was "jump into a session", view=agent) in the URL so that
@@ -656,6 +684,10 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
         projectNumbers={projectNumbers}
         onAddProject={(cwd) => {
           const existingIndex = projects.findIndex(p => p.cwd === cwd);
+          touchBeforeGlobalNavigation(
+            cwd,
+            existingIndex >= 0 ? projectSessionIdsRef.current.get(cwd) : undefined,
+          );
           if (existingIndex >= 0) {
             setActiveIndex(existingIndex);
             saveProjects(projects, existingIndex, collapsed);

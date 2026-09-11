@@ -87,6 +87,23 @@ const MIN_SESSIONS = 15;
 const RETENTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // one week
 const MAX_TEXT_LEN = 50; // max character count for title / lastUserMessage
 
+function migrateLegacyStatuses(sessions: GlobalSession[]): void {
+  for (const session of sessions) {
+    if (session.status) continue;
+    const legacy = session as GlobalSession & { isLoading?: boolean };
+    session.status = legacy.isLoading ? 'loading' : 'normal';
+    delete legacy.isLoading;
+  }
+}
+
+function retainRecentSessions(state: GlobalState): void {
+  state.sessions.sort((a, b) => b.lastActive - a.lastActive);
+  const cutoff = Date.now() - RETENTION_WINDOW_MS;
+  const withinWeek = state.sessions.filter((session) => session.lastActive >= cutoff).length;
+  const keep = Math.min(MAX_SESSIONS, Math.max(MIN_SESSIONS, withinWeek));
+  state.sessions = state.sessions.slice(0, keep);
+}
+
 /** Truncate by Unicode characters, appending an ellipsis if over the limit */
 function truncate(s: string | undefined): string | undefined {
   if (!s) return s;
@@ -115,14 +132,7 @@ export async function updateGlobalState(
   return withFileLock(GLOBAL_STATE_FILE, async () => {
     const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
 
-    // Migrate legacy format: isLoading → status
-    for (const s of state.sessions) {
-      if (!s.status) {
-        const legacy = s as GlobalSession & { isLoading?: boolean };
-        s.status = legacy.isLoading ? 'loading' : 'normal';
-        delete legacy.isLoading;
-      }
-    }
+    migrateLegacyStatuses(state.sessions);
 
     // Check if the session already exists
     const existingIndex = state.sessions.findIndex(
@@ -149,16 +159,7 @@ export async function updateGlobalState(
       state.sessions.push(newSession);
     }
 
-    // Sort by lastActive descending
-    state.sessions.sort((a, b) => b.lastActive - a.lastActive);
-
-    // Retention: keep the past week, clamped to [MIN_SESSIONS, MAX_SESSIONS].
-    // Sessions are sorted newest-first, so the within-week ones are a contiguous
-    // prefix — counting them gives the cut point directly.
-    const cutoff = Date.now() - RETENTION_WINDOW_MS;
-    const withinWeek = state.sessions.filter((s) => s.lastActive >= cutoff).length;
-    const keep = Math.min(MAX_SESSIONS, Math.max(MIN_SESSIONS, withinWeek));
-    state.sessions = state.sessions.slice(0, keep);
+    retainRecentSessions(state);
 
     await writeJsonFile(GLOBAL_STATE_FILE, state);
 
@@ -180,6 +181,55 @@ export async function updateGlobalState(
         });
       })().catch(() => {});
     }
+  });
+}
+
+/**
+ * Mark a session as a recently-left work context without changing its live/read state.
+ * Unlike a status update this may insert a missing session: leaving an older restored
+ * session is precisely what makes it useful as a return point in the recent list.
+ */
+export async function touchGlobalSession(cwd: string, sessionId: string): Promise<void> {
+  if (!existsSync(cwd)) return;
+
+  return withFileLock(GLOBAL_STATE_FILE, async () => {
+    const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
+    migrateLegacyStatuses(state.sessions);
+
+    const existing = state.sessions.find(
+      (session) => session.cwd === cwd && session.sessionId === sessionId
+    );
+    if (existing) {
+      existing.lastActive = Date.now();
+    } else {
+      state.sessions.push({ cwd, sessionId, lastActive: Date.now(), status: 'normal' });
+    }
+
+    retainRecentSessions(state);
+    await writeJsonFile(GLOBAL_STATE_FILE, state);
+  });
+}
+
+/**
+ * Change read/live state without treating a UI visit as new session activity.
+ * A status-only write never creates a recent entry and preserves its ordering timestamp.
+ */
+export async function updateGlobalSessionStatus(
+  cwd: string,
+  sessionId: string,
+  status: SessionStatus,
+): Promise<void> {
+  if (!existsSync(cwd)) return;
+
+  return withFileLock(GLOBAL_STATE_FILE, async () => {
+    const state = await readJsonFile<GlobalState>(GLOBAL_STATE_FILE, { sessions: [] });
+    migrateLegacyStatuses(state.sessions);
+    const existing = state.sessions.find(
+      (session) => session.cwd === cwd && session.sessionId === sessionId
+    );
+    if (!existing || existing.status === status) return;
+    existing.status = status;
+    await writeJsonFile(GLOBAL_STATE_FILE, state);
   });
 }
 

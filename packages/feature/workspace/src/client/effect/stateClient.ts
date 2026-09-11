@@ -120,12 +120,29 @@ export const updateSessionStatus = (
       const res = await fetch("/api/global-state", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd, sessionId, status }),
+        body: JSON.stringify({ cwd, sessionId, status, action: "status" }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
     },
     catch: (cause) =>
       new AppError({ message: "updateSessionStatus failed", cause }),
+  })
+
+export const touchRecentSession = (
+  cwd: string,
+  sessionId: string
+): Effect.Effect<void, AppError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const res = await fetch("/api/global-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd, sessionId, action: "touch" }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    },
+    catch: (cause) =>
+      new AppError({ message: "touchRecentSession failed", cause }),
   })
 
 // ─────────────────────────────────────────────────────────

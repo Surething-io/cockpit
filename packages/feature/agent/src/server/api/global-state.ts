@@ -7,6 +7,8 @@ import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { FSError, ValidationError } from "@cockpit/effect-core"
 import {
   updateGlobalState,
+  touchGlobalSession,
+  updateGlobalSessionStatus,
   getSessionPreview,
   attachEngines,
   normalizeStatuses,
@@ -87,6 +89,7 @@ export const POST = handler((req) =>
       sessionId?: string
       status?: SessionStatus
       title?: string
+      action?: "activity" | "status" | "touch"
     }
     if (!body.cwd || !body.sessionId) {
       return yield* Effect.fail(
@@ -96,10 +99,15 @@ export const POST = handler((req) =>
         })
       )
     }
-    const { cwd, sessionId, status, title } = body
+    const { cwd, sessionId, status, title, action = "activity" } = body
     yield* Effect.tryPromise({
-      try: () =>
-        updateGlobalState(cwd, sessionId, status || "normal", title),
+      try: () => {
+        if (action === "touch") return touchGlobalSession(cwd, sessionId)
+        if (action === "status") {
+          return updateGlobalSessionStatus(cwd, sessionId, status || "normal")
+        }
+        return updateGlobalState(cwd, sessionId, status || "normal", title)
+      },
       catch: (cause) =>
         new FSError({ path: GLOBAL_STATE_FILE, op: "write", cause }),
     })

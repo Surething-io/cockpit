@@ -3,7 +3,7 @@
 import { useState, useLayoutEffect, useRef, KeyboardEvent, ClipboardEvent, useCallback, useMemo, memo } from 'react';
 import type { ImageInfo, ChatEngine } from './types';
 import { useTranslation } from 'react-i18next';
-import { AlarmClock, TextCursorInput } from 'lucide-react';
+import { AlarmClock, Star, TextCursorInput } from 'lucide-react';
 import { ImagePreview } from '@cockpit/shared-ui';
 import { ScheduleTaskPopover } from './ScheduleTaskPopover';
 import { QuickInstructionsPopover } from './QuickInstructionsPopover';
@@ -21,6 +21,8 @@ interface ChatInputProps {
   onShowGitStatus?: () => void;
   onShowComments?: () => void;
   onOpenNote?: () => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
   onCreateScheduledTask?: (params: {
     message: string;
     type: 'once' | 'interval' | 'cron';
@@ -44,7 +46,7 @@ interface ChatInputProps {
   setDraftImages?: React.Dispatch<React.SetStateAction<ImageInfo[]>>;
 }
 
-export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine: _engine, onShowGitStatus, onShowComments, onOpenNote, onCreateScheduledTask, draft, setDraft, draftImages, setDraftImages }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine: _engine, onShowGitStatus, onShowComments, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, draft, setDraft, draftImages, setDraftImages }: ChatInputProps) {
   const { t } = useTranslation();
   const localInput = useState('');
   const localImages = useState<ImageInfo[]>([]);
@@ -257,6 +259,23 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
+          </button>
+        )}
+
+        {/* Favorite button */}
+        {onToggleFavorite && (
+          <button
+            onClick={onToggleFavorite}
+            className={`p-2 rounded-lg transition-all ${
+              isFavorite
+                ? 'text-amber-9 hover:text-amber-10 hover:bg-amber-9/10 active:bg-amber-9/20 active:scale-95'
+                : 'text-muted-foreground hover:text-amber-9 hover:bg-amber-9/10 active:bg-amber-9/20 active:scale-95'
+            }`}
+            title={t(isFavorite ? 'sessions.removeFavorite' : 'sessions.addFavorite')}
+            aria-label={t(isFavorite ? 'sessions.removeFavorite' : 'sessions.addFavorite')}
+            aria-pressed={isFavorite}
+          >
+            <Star className="w-5 h-5" fill={isFavorite ? 'currentColor' : 'none'} />
           </button>
         )}
 

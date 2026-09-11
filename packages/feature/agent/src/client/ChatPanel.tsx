@@ -56,6 +56,8 @@ interface ChatPanelProps {
   onStateChange: (tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string }) => void;
   onShowGitStatus?: () => void;
   onOpenNote?: () => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: (tabId: string) => void;
   onCreateScheduledTask?: (params: {
     cwd: string;
     tabId: string;
@@ -76,7 +78,7 @@ interface ChatPanelProps {
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeContextWindow, onClaudeContextWindowChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, isFocused, peerTabId, peerSide, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeContextWindow, onClaudeContextWindowChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, isActive, isFocused, peerTabId, peerSide, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
@@ -146,6 +148,10 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
     onNoHistoryChange?.(tabId, v);
   }, [tabId, onNoHistoryChange]);
 
+  const handleToggleFavorite = useCallback(() => {
+    onToggleFavorite?.(tabId);
+  }, [tabId, onToggleFavorite]);
+
   return (
     <Chat
       tabId={tabId}
@@ -191,6 +197,8 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
       onTitleChange={handleTitleChange}
       onShowGitStatus={onShowGitStatus}
       onOpenNote={onOpenNote}
+      isFavorite={isFavorite}
+      onToggleFavorite={sessionId && onToggleFavorite ? handleToggleFavorite : undefined}
       onCreateScheduledTask={onCreateScheduledTask}
       onOpenSession={onOpenSession}
       onContentSearch={onContentSearch}

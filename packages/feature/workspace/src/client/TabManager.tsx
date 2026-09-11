@@ -665,7 +665,6 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                     dragTabIndex={dragTabIndex}
                     dragOverTabIndex={dragOverTabIndex}
                     isPinned={isTabPinned}
-                    onTogglePin={handleTogglePin}
                     onSwitchTab={switchTab}
                     onCloseTab={closeTab}
                     onCloseAllTabs={closeAllTabs}
@@ -737,6 +736,8 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                           onShowFileDiff={handleShowFileDiff}
                           onOpenFileLink={handleOpenFileLink}
                           onOpenNote={handleOpenNote}
+                          isFavorite={isTabPinned(tab.id)}
+                          onToggleFavorite={handleTogglePin}
                           onCreateScheduledTask={createScheduledTask}
                           onOpenSession={handleOpenSession}
                         />
@@ -829,7 +830,6 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
               dragTabIndex={dragTabIndex}
               dragOverTabIndex={dragOverTabIndex}
               isPinned={isTabPinned}
-              onTogglePin={handleTogglePin}
               onSwitchTab={switchTab}
               onCloseTab={closeTab}
               onCloseAllTabs={closeAllTabs}
@@ -894,6 +894,8 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                     isFocused={tab.id === activeTabId}
                     refreshSignal={sessionRefresh}
                     onStateChange={updateTabState}
+                    isFavorite={isTabPinned(tab.id)}
+                    onToggleFavorite={handleTogglePin}
                     onCreateScheduledTask={createScheduledTask}
                     onOpenSession={handleOpenSession}
                   />

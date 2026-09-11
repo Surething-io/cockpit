@@ -116,6 +116,8 @@ interface ChatProps {
   onTitleChange?: (title: string) => void;
   onShowGitStatus?: () => void;
   onOpenNote?: () => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
   onCreateScheduledTask?: (params: {
     cwd: string;
     tabId: string;
@@ -170,7 +172,7 @@ interface ChatProps {
  */
 const ENGINE_OPTIONS_ROW = `${COLUMN_HEADER_ROW} pl-3 pr-14 bg-card/50`;
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeContextWindow, onClaudeContextWindowChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeContextWindow, onClaudeContextWindowChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onShowGitStatus, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const composerSlot = useComposerSlot();
   // Owned here, not in ChatInput: the composer is portalled when this pane is
@@ -922,6 +924,8 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
               onShowGitStatus={onShowGitStatus}
               onShowComments={initialCwd ? handleShowComments : undefined}
               onOpenNote={onOpenNote}
+              isFavorite={isFavorite}
+              onToggleFavorite={onToggleFavorite}
               onCreateScheduledTask={handleCreateScheduledTask}
               draft={draft}
               setDraft={setDraft}

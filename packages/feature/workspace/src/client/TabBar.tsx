@@ -140,7 +140,6 @@ interface TabBarProps {
   dragTabIndex: number | null;
   dragOverTabIndex: number | null;
   isPinned?: (tabId: string) => boolean;
-  onTogglePin?: (tabId: string) => void;
   onSwitchTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onCloseAllTabs?: () => void;
@@ -171,7 +170,6 @@ export function TabBar({
   dragTabIndex,
   dragOverTabIndex,
   isPinned,
-  onTogglePin,
   onSwitchTab,
   onCloseTab,
   onCloseAllTabs,
@@ -196,7 +194,6 @@ export function TabBar({
         {tabs.map((tab, index) => {
           const isActive = tab.id === selectedTabId;
           const pinned = isPinned?.(tab.id) ?? false;
-          const pinLabel = pinned ? t('sessions.removeFavorite') : t('sessions.addFavorite');
           const status: SessionNumberStatus = tab.isLoading
             ? 'loading'
             : unreadTabs.has(tab.id) && !isActive
@@ -219,55 +216,16 @@ export function TabBar({
               }`}
               onClick={() => onSwitchTab(tab.id)}
             >
-              {/* Number, status and favorite share the leading slot. At rest the
-                  number stays useful for navigation; hover reveals the favorite
-                  action without overlap. */}
-              <div className="relative h-4 w-4 -translate-x-1 flex-shrink-0">
-                <span
-                  className={onTogglePin && tab.sessionId
-                    ? 'transition-opacity group-hover:opacity-0 group-focus-within:opacity-0'
-                    : undefined}
-                >
-                  <TabNumberIcon
-                    number={index + 1}
-                    status={status}
-                    statusLabel={status === 'loading' ? t('sessions.running') : status === 'unread' ? t('sessions.done') : undefined}
-                    isActive={isActive}
-                    pinned={pinned}
-                  />
-                </span>
-                {onTogglePin && tab.sessionId && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onTogglePin(tab.id);
-                      // A pointer click leaves the button focused, which would
-                      // keep group-focus-within active after the pointer exits.
-                      // Preserve focus for keyboard activation only.
-                      if (e.detail > 0) e.currentTarget.blur();
-                    }}
-                    className={`absolute inset-0 flex items-center justify-center rounded-sm opacity-0 transition-colors duration-150 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                      pinned
-                        ? 'text-amber-9 hover:text-foreground-faint'
-                        : 'text-foreground-faint hover:text-amber-9'
-                    }`}
-                    data-tooltip={pinLabel}
-                    aria-label={pinLabel}
-                    aria-pressed={pinned}
-                  >
-                    <svg
-                      className="h-3.5 w-3.5"
-                      viewBox="0 0 24 24"
-                      fill={pinned ? 'currentColor' : 'none'}
-                      stroke="currentColor"
-                      strokeWidth={pinned ? 1 : 2}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                    </svg>
-                  </button>
-                )}
+              {/* The number keeps its pinned colour as a passive status marker;
+                  the favorite action itself lives in the composer toolbar. */}
+              <div className="h-4 w-4 -translate-x-1 flex-shrink-0">
+                <TabNumberIcon
+                  number={index + 1}
+                  status={status}
+                  statusLabel={status === 'loading' ? t('sessions.running') : status === 'unread' ? t('sessions.done') : undefined}
+                  isActive={isActive}
+                  pinned={pinned}
+                />
               </div>
               <span className="flex-1 min-w-0 truncate">{tab.title}</span>
               {/* Engine and close share one trailing slot. Status now belongs

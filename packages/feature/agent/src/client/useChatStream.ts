@@ -21,6 +21,7 @@ import type {
   CodexReasoningEffort,
 } from './types';
 import type { TaskStore } from './taskStore';
+import { buildNoticeMessage } from './systemNotice';
 import i18n from '@cockpit/shared-i18n';
 import { useWebSocket } from '@cockpit/shared-ui';
 
@@ -317,6 +318,15 @@ export function useChatStream(
           } as ChatMessage,
         ]);
       }
+      return;
+    }
+
+    // An engine-level advisory about this run (e.g. codex could not resume the session and
+    // started a fresh one) → muted system row. Emitted right after the init that rebound the
+    // session id, so it reads as an explanation of the change the user is about to notice.
+    if (eventType === 'system' && event.subtype === 'notice') {
+      const row = buildNoticeMessage(event as unknown as StreamEvent, `auto-notice-${++bgSeqRef.current}`);
+      if (row) setMessages((prev) => [...prev, { ...row, runKey: activeRunRef.current?.runKey }]);
       return;
     }
 

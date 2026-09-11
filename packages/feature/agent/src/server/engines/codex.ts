@@ -772,15 +772,32 @@ async function runCodexAppServer(ctx: RunCtx): Promise<void> {
 
     const params = codexThreadParams(ctx);
     /**
-     * A stale thread id is recoverable: the session may have been archived, or
-     * its rollout removed out from under us. Starting fresh loses the history
-     * but keeps the turn, which is strictly better than failing the send.
+     * A stale thread id is recoverable: the session may have been archived, its
+     * rollout removed out from under us, or — measured, and by far the most
+     * common — another Codex client (the ChatGPT desktop app opens the same
+     * `~/.codex/sessions` store) holds the thread's writer lock, which the
+     * server rejects with `thread-store conflict: … already has an active
+     * writer`. Starting fresh loses the history but keeps the turn, which is
+     * strictly better than failing the send.
+     *
+     * It is NOT silent, though. The fallback changes the session id under the
+     * user, and that id change is what makes the tab bar grow a second tab for
+     * the same conversation — so without a word from here the only thing the
+     * user sees is a tab appearing out of nowhere and a model that has
+     * forgotten everything. The reason is logged AND reported into the
+     * transcript as a system notice (see the ctx.emit below).
      */
     let opened: Record<string, unknown>;
+    let resumeFailure: string | null = null;
     if (ctx.sessionId) {
       try {
         opened = await client.request('thread/resume', { threadId: ctx.sessionId, ...params });
-      } catch {
+      } catch (error) {
+        resumeFailure = error instanceof Error ? error.message : String(error);
+        // Permitted `console.error` under EFFECT.md §0 (subprocess IPC adapter gateway).
+        console.error(
+          `[codex app-server] thread/resume failed for ${ctx.sessionId} — starting a fresh thread (history not carried over): ${resumeFailure}`
+        );
         opened = await client.request('thread/start', params);
       }
     } else {
@@ -805,6 +822,24 @@ async function runCodexAppServer(ctx: RunCtx): Promise<void> {
      * A request result is ordered against `turn/start`; a notification is not.
      */
     adapter.handle({ type: 'thread.started', thread_id: threadId });
+
+    /**
+     * Emitted AFTER `thread.started` so the rekey has already happened: the
+     * notice then lands on the run under its new id, which is the one the tab
+     * is about to be bound to. The client renders it as a muted system row
+     * (subtype `notice` → systemEvent kind 'meta'); the raw server message is
+     * carried in `error` for the detail modal, untranslated on purpose.
+     */
+    if (resumeFailure) {
+      ctx.emit({
+        type: 'system',
+        subtype: 'notice',
+        notice: 'codex_resume_failed',
+        previous_session_id: ctx.sessionId,
+        session_id: threadId,
+        error: resumeFailure,
+      });
+    }
 
     const startedTurn = await client.request('turn/start', {
       threadId,

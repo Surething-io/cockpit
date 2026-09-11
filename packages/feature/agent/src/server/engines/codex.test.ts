@@ -197,6 +197,38 @@ describe('codex mode routing', () => {
     ]);
   });
 
+  /**
+   * The fallback swaps the session id under the user (and with it the whole
+   * context), which surfaces as a second tab for what looks like one
+   * conversation. Reporting it is the only thing that makes that legible, so
+   * the notice — and the raw reason inside it — is part of the contract.
+   */
+  it('reports the failed resume as a system notice carrying both ids', async () => {
+    const emit = vi.fn();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    appServer.resumeThrows = true;
+    await codexSpec.runner.run(ctx({ sessionId: 'locked-thread', emit }) as never);
+
+    const notice = emit.mock.calls.map(([e]) => e).find((e) => e.type === 'system' && e.subtype === 'notice');
+    expect(notice).toMatchObject({
+      notice: 'codex_resume_failed',
+      previous_session_id: 'locked-thread',
+      session_id: 'sdk-thread',
+      error: 'no such thread',
+    });
+    // After the rekey, so it lands on the run under the id the tab ends up bound to.
+    const kinds = emit.mock.calls.map(([e]) => `${e.type}/${e.subtype ?? ''}`);
+    expect(kinds.indexOf('system/notice')).toBeGreaterThan(kinds.indexOf('system/init'));
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('thread/resume failed for locked-thread'));
+    consoleError.mockRestore();
+  });
+
+  it('says nothing when the resume succeeds', async () => {
+    const emit = vi.fn();
+    await codexSpec.runner.run(ctx({ sessionId: 'sdk-thread', emit }) as never);
+    expect(emit.mock.calls.map(([e]) => e).some((e) => e.subtype === 'notice')).toBe(false);
+  });
+
   it('stashes the Codex rollout while running a no-history turn', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'codex-run-nohistory-'));
     const sessionPath = join(dir, 'rollout-2026-08-08T00-00-00-sdk-thread.jsonl');

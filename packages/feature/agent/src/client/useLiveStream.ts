@@ -6,6 +6,7 @@ import { useWebSocket } from '@cockpit/shared-ui';
 import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
 import type { ChatMessage, ChatEngine, LiveOutputTokens, BackgroundTaskInfo } from './types';
 import { applyStreamEvent, isSubagentFrame, isTaskEvent, settleRunningTasks, type StreamEvent } from './applyStreamEvent';
+import { buildNoticeMessage } from './systemNotice';
 import type { TaskStore } from './taskStore';
 
 // #10 viewer hook: tail /ws/session-stream for `sessionId` and render live through the
@@ -149,6 +150,14 @@ export function useLiveStream(
           } as ChatMessage,
         ]);
       }
+      return;
+    }
+    // Engine-level advisory about the run (see systemNotice.ts). The originator renders the
+    // same row through useChatStream; a tab merely WATCHING the session needs it just as much,
+    // because the session id it is tailing is exactly what such a notice reports on.
+    if (ev.type === 'system' && ev.subtype === 'notice') {
+      const row = buildNoticeMessage(ev, `live-notice-${++seq.current}`);
+      if (row) setMessages((prev) => [...prev, row]);
       return;
     }
     // Synthetic human-prompt event → render the new user bubble live. (Seeded by

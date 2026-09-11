@@ -33,6 +33,12 @@ export interface StreamEvent {
   event?: { type?: string; delta?: { type?: string; text?: string } };
   result?: unknown;
   error?: string; // {type:'error'} events emitted by engines / the orchestrator's failure path
+  // system/notice: an engine-level advisory about the run (not model output), rendered as a
+  // muted system row — see systemNotice.ts. `notice` names the case, `error` carries the raw
+  // engine message for the detail modal.
+  notice?: string;
+  session_id?: string;
+  previous_session_id?: string;
   // system/task_notification fields (SDKTaskNotificationMessage) — a background task reporting back.
   task_id?: string;
   status?: 'completed' | 'failed' | 'stopped';

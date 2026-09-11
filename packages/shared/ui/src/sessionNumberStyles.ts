@@ -6,7 +6,7 @@
  * Two 8px glyphs stacked on a 16px badge is a lot of flicker for very little
  * information, so the badge itself carries the state:
  *
- *   generating -> warm orange wash, pulsing
+ *   generating -> warm orange wash, pulsing by default
  *   unread     -> red wash, static
  *   seen       -> brand wash (active) / neutral wash (inactive)
  *
@@ -50,8 +50,14 @@
  */
 export type SessionNumberStatus = 'loading' | 'unread' | 'normal';
 
-export function sessionNumberClass(status: SessionNumberStatus, isActive: boolean): string {
-  if (status === 'loading') return 'border-transparent bg-orange-11/20 text-foreground animate-pulse';
+export function sessionNumberClass(
+  status: SessionNumberStatus,
+  isActive: boolean,
+  { animateLoading = true }: { animateLoading?: boolean } = {},
+): string {
+  if (status === 'loading') {
+    return `border-transparent bg-orange-11/20 text-foreground${animateLoading ? ' animate-pulse' : ''}`;
+  }
   if (status === 'unread') return 'border-transparent bg-red-9/55 text-foreground';
   return isActive
     ? 'border-transparent bg-brand/15 text-brand'

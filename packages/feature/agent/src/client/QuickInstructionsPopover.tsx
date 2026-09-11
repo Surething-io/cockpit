@@ -24,6 +24,7 @@ import {
   type InstructionItem,
   type InstructionGroup,
 } from './effect/agentClient';
+import { QuickInstructionsManager } from './QuickInstructionsManager';
 
 type Scope = 'global' | 'project';
 
@@ -187,7 +188,7 @@ function GroupPicker({
         type="button"
         onClick={() => (open ? closeList() : openList())}
         onKeyDown={handleKeyDown}
-        className="w-full min-w-0 mt-1 px-2 py-1 flex items-center gap-1 text-xs rounded border border-input bg-background hover:bg-hover focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
+        className="w-[140px] min-w-0 flex-shrink-0 px-2 py-1 flex items-center gap-1 text-xs rounded border border-input bg-background hover:bg-hover focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
         title={t('chat.instructionGroupLabel')}
       >
         <Folder className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
@@ -294,7 +295,7 @@ function InstructionEditor({
   }, [commit, onCancel]);
 
   return (
-    <div className="mb-1">
+    <div className="mb-1 flex items-center gap-1">
       <input
         type="text"
         value={value}
@@ -302,7 +303,7 @@ function InstructionEditor({
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         autoFocus
-        className="w-full min-w-0 px-2 py-1 text-xs rounded border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+        className="flex-1 min-w-0 px-2 py-1 text-xs rounded border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
       />
       {groupChoices && groupChoices.length > 0 && (
         <GroupPicker
@@ -339,6 +340,7 @@ const InstructionRow = memo(function InstructionRow({
   onDragOver,
   onDrop,
   onDragEnd,
+  management = true,
 }: {
   item: InstructionItem;
   isDragging: boolean;
@@ -351,20 +353,21 @@ const InstructionRow = memo(function InstructionRow({
   onDragOver: (e: ReactDragEvent, id: string) => void;
   onDrop: (id: string) => void;
   onDragEnd: () => void;
+  management?: boolean;
 }) {
   const { t } = useTranslation();
   return (
     // draggable sits on the row, not the grip: the grip is only an affordance,
     // and a drag started anywhere on the row still works.
     <div
-      draggable
-      onDragStart={() => onDragStart(item.id)}
-      onDragOver={(e) => onDragOver(e, item.id)}
-      onDrop={() => onDrop(item.id)}
-      onDragEnd={onDragEnd}
+      draggable={management}
+      onDragStart={management ? () => onDragStart(item.id) : undefined}
+      onDragOver={management ? (e) => onDragOver(e, item.id) : undefined}
+      onDrop={management ? () => onDrop(item.id) : undefined}
+      onDragEnd={management ? onDragEnd : undefined}
       className={rowClass(isDragging, isDragOver)}
     >
-      <GripVertical className="w-3 h-3 flex-shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
+      {management && <GripVertical className="w-3 h-3 flex-shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />}
       {/* Tooltip wraps only this button, not the whole row. TooltipProvider
           resolves it by walking UP the parent chain, so hosting it on the row
           would make hovering the icon buttons below surface the instruction tooltip
@@ -391,22 +394,26 @@ const InstructionRow = memo(function InstructionRow({
       >
         <TextCursorInput className="w-3 h-3" />
       </button>
-      <button
-        type="button"
-        onClick={() => onEdit(item.id)}
-        className={iconButtonClass}
-        title={t('common.edit')}
-      >
-        <Pencil className="w-3 h-3" />
-      </button>
-      <button
-        type="button"
-        onClick={() => onDelete(item.id)}
-        className={`${iconButtonClass} hover:text-destructive`}
-        title={t('common.delete')}
-      >
-        <X className="w-3 h-3" />
-      </button>
+      {management && (
+        <>
+          <button
+            type="button"
+            onClick={() => onEdit(item.id)}
+            className={iconButtonClass}
+            title={t('common.edit')}
+          >
+            <Pencil className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(item.id)}
+            className={`${iconButtonClass} hover:text-destructive`}
+            title={t('common.delete')}
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </>
+      )}
     </div>
   );
 });
@@ -431,6 +438,7 @@ const GroupRow = memo(function GroupRow({
   onDragOver,
   onDrop,
   onDragEnd,
+  management = true,
 }: {
   group: InstructionGroup;
   isOpen: boolean;
@@ -447,6 +455,7 @@ const GroupRow = memo(function GroupRow({
   onDragOver: (e: ReactDragEvent, id: string) => void;
   onDrop: (id: string) => void;
   onDragEnd: () => void;
+  management?: boolean;
 }) {
   const { t } = useTranslation();
   const rowRef = useRef<HTMLDivElement>(null);
@@ -456,11 +465,11 @@ const GroupRow = memo(function GroupRow({
   return (
     <div
       ref={rowRef}
-      draggable
-      onDragStart={() => onDragStart(group.id)}
-      onDragOver={(e) => onDragOver(e, group.id)}
-      onDrop={() => onDrop(group.id)}
-      onDragEnd={onDragEnd}
+      draggable={management}
+      onDragStart={management ? () => onDragStart(group.id) : undefined}
+      onDragOver={management ? (e) => onDragOver(e, group.id) : undefined}
+      onDrop={management ? () => onDrop(group.id) : undefined}
+      onDragEnd={management ? onDragEnd : undefined}
       // Both hover handlers stand down mid-drag: dragging a row past a group
       // would otherwise pop its submenu open over the list, and dragging INSIDE
       // an open submenu fires mouseleave on the row that owns it, closing the
@@ -469,7 +478,7 @@ const GroupRow = memo(function GroupRow({
       onMouseLeave={() => { if (!isDragActive) onHoverClose(); }}
       className={`${rowClass(isDragging, isDragOver)} ${isOpen ? 'bg-hover' : ''}`}
     >
-      <GripVertical className="w-3 h-3 flex-shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
+      {management && <GripVertical className="w-3 h-3 flex-shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />}
       <button
         type="button"
         onClick={() => { const r = rect(); if (r) onToggle(group.id, r); }}
@@ -485,22 +494,26 @@ const GroupRow = memo(function GroupRow({
           <ChevronRight className="w-3 h-3" />
         </span>
       </button>
-      <button
-        type="button"
-        onClick={() => onRename(group.id)}
-        className={iconButtonClass}
-        title={t('common.edit')}
-      >
-        <Pencil className="w-3 h-3" />
-      </button>
-      <button
-        type="button"
-        onClick={() => onDelete(group.id)}
-        className={`${iconButtonClass} hover:text-destructive`}
-        title={t('common.delete')}
-      >
-        <X className="w-3 h-3" />
-      </button>
+      {management && (
+        <>
+          <button
+            type="button"
+            onClick={() => onRename(group.id)}
+            className={iconButtonClass}
+            title={t('common.edit')}
+          >
+            <Pencil className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(group.id)}
+            className={`${iconButtonClass} hover:text-destructive`}
+            title={t('common.delete')}
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </>
+      )}
     </div>
   );
 });
@@ -530,6 +543,7 @@ function GroupFlyout({
   onDragOver,
   onDrop,
   onDragEnd,
+  management = true,
 }: {
   group: InstructionGroup;
   position: FlyoutPosition;
@@ -554,6 +568,7 @@ function GroupFlyout({
   onDragOver: (e: ReactDragEvent, id: string) => void;
   onDrop: (id: string) => void;
   onDragEnd: () => void;
+  management?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -575,17 +590,19 @@ function GroupFlyout({
     >
       <div className="flex items-center justify-between mb-1">
         <span className="text-xs font-medium text-muted-foreground px-1 truncate">{group.name}</span>
-        <button
-          type="button"
-          onClick={onStartAdd}
-          className="p-0.5 text-muted-foreground hover:text-foreground rounded flex-shrink-0"
-          title={t('chat.addQuickInstruction')}
-        >
-          <Plus className="w-3.5 h-3.5" />
-        </button>
+        {management && (
+          <button
+            type="button"
+            onClick={onStartAdd}
+            className="p-0.5 text-muted-foreground hover:text-foreground rounded flex-shrink-0"
+            title={t('chat.addQuickInstruction')}
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
-      {isAdding && (
+      {management && isAdding && (
         <InstructionEditor
           initialValue=""
           placeholder={t('chat.quickInstructionPlaceholder')}
@@ -623,6 +640,7 @@ function GroupFlyout({
             onDragOver={onDragOver}
             onDrop={onDrop}
             onDragEnd={onDragEnd}
+            management={management}
           />
         )
       )}
@@ -644,6 +662,8 @@ function InstructionSection({
   onSave,
   onSelect,
   onInsert,
+  management = true,
+  onManage,
 }: {
   label: string;
   nodes: InstructionNode[];
@@ -656,6 +676,8 @@ function InstructionSection({
   onSave: (scope: Scope, nodes: InstructionNode[]) => void;
   onSelect: (text: string) => void;
   onInsert: (text: string) => void;
+  management?: boolean;
+  onManage?: () => void;
 }) {
   const { t } = useTranslation();
   const [adding, setAdding] = useState<'instruction' | 'group' | null>(null);
@@ -864,24 +886,36 @@ function InstructionSection({
     <div className="p-2">
       <div className="flex items-center justify-between mb-1">
         <span className="text-xs font-medium text-muted-foreground px-1">{label}</span>
-        <div className="flex items-center gap-0.5">
+        {management ? (
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => { setEditId(null); setAdding('group'); }}
+              className="p-0.5 text-muted-foreground hover:text-foreground rounded"
+              title={t('chat.addInstructionGroup')}
+            >
+              <FolderPlus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => { setEditId(null); setAdding('instruction'); }}
+              className="p-0.5 text-muted-foreground hover:text-foreground rounded"
+              title={t('chat.addQuickInstruction')}
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : onManage ? (
           <button
             type="button"
-            onClick={() => { setEditId(null); setAdding('group'); }}
-            className="p-0.5 text-muted-foreground hover:text-foreground rounded"
-            title={t('chat.addInstructionGroup')}
+            onClick={onManage}
+            className="p-1 text-muted-foreground hover:text-brand rounded hover:bg-hover transition-colors"
+            title={t('common.edit')}
+            aria-label={t('common.edit')}
           >
-            <FolderPlus className="w-3.5 h-3.5" />
+            <Pencil className="w-3.5 h-3.5" />
           </button>
-          <button
-            type="button"
-            onClick={() => { setEditId(null); setAdding('instruction'); }}
-            className="p-0.5 text-muted-foreground hover:text-foreground rounded"
-            title={t('chat.addQuickInstruction')}
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
-        </div>
+        ) : null}
       </div>
 
       {adding === 'instruction' && (
@@ -944,6 +978,7 @@ function InstructionSection({
             onDragOver={handleDragOver}
             onDrop={handleRootDrop}
             onDragEnd={clearDrag}
+            management={management}
           />
         ) : (
           <InstructionRow
@@ -959,6 +994,7 @@ function InstructionSection({
             onDragOver={handleDragOver}
             onDrop={handleRootDrop}
             onDragEnd={clearDrag}
+            management={management}
           />
         );
       })}
@@ -988,6 +1024,7 @@ function InstructionSection({
           onDragOver={handleDragOver}
           onDrop={handleGroupDrop}
           onDragEnd={clearDrag}
+          management={management}
         />
       )}
     </div>
@@ -1028,6 +1065,7 @@ export function QuickInstructionsPopover({ cwd, anchorRef, onClose, onSelect, on
   const [globalNodes, setGlobalNodes] = useState<InstructionNode[]>([]);
   const [projectNodes, setProjectNodes] = useState<InstructionNode[]>([]);
   const [flyout, setFlyout] = useState<{ scope: Scope; groupId: string; position: FlyoutPosition } | null>(null);
+  const [managerScope, setManagerScope] = useState<Scope | null>(null);
 
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1128,9 +1166,10 @@ export function QuickInstructionsPopover({ cwd, anchorRef, onClose, onSelect, on
     );
     if (exit._tag === 'Failure') {
       console.error(`Failed to save ${scope} instructions:`, exit.cause);
-      return;
+      return false;
     }
     if (exit.value?.instructions) setLocal(exit.value.instructions);
+    return true;
   }, [cwd]);
 
   const handleSelect = useCallback((instruction: string) => {
@@ -1145,39 +1184,58 @@ export function QuickInstructionsPopover({ cwd, anchorRef, onClose, onSelect, on
     onInsert(instruction);
   }, [onClose, onInsert]);
 
+  const saveManagedInstructions = useCallback(async (nodes: InstructionNode[]) => {
+    if (!managerScope) return false;
+    return saveInstructions(managerScope, nodes);
+  }, [managerScope, saveInstructions]);
+
   return (
-    <div className="absolute bottom-full left-0 mb-2 w-80 max-w-[calc(100vw-1.5rem)] bg-popover border border-border rounded-lg shadow-lv2 z-50 max-h-[70vh] overflow-y-auto">
-      <InstructionSection
-        label={t('chat.globalInstructions')}
-        nodes={globalNodes}
-        scope="global"
-        openGroupId={flyout?.scope === 'global' ? flyout.groupId : null}
-        flyoutPosition={flyout?.scope === 'global' ? flyout.position : null}
-        onOpenFlyout={openFlyout}
-        onCloseFlyout={closeFlyout}
-        onKeepFlyout={keepFlyout}
-        onSave={saveInstructions}
-        onSelect={handleSelect}
-        onInsert={handleInsert}
-      />
-      {cwd && (
-        <>
-          <div className="border-t border-border" />
-          <InstructionSection
-            label={t('chat.projectInstructions')}
-            nodes={projectNodes}
-            scope="project"
-            openGroupId={flyout?.scope === 'project' ? flyout.groupId : null}
-            flyoutPosition={flyout?.scope === 'project' ? flyout.position : null}
-            onOpenFlyout={openFlyout}
-            onCloseFlyout={closeFlyout}
-            onKeepFlyout={keepFlyout}
-            onSave={saveInstructions}
-            onSelect={handleSelect}
-            onInsert={handleInsert}
-          />
-        </>
+    <>
+      <div className="absolute bottom-full left-0 mb-2 w-80 max-w-[calc(100vw-1.5rem)] bg-popover border border-border rounded-lg shadow-lv2 z-50 max-h-[70vh] overflow-y-auto">
+        <InstructionSection
+          label={t('chat.globalInstructions')}
+          nodes={globalNodes}
+          scope="global"
+          openGroupId={flyout?.scope === 'global' ? flyout.groupId : null}
+          flyoutPosition={flyout?.scope === 'global' ? flyout.position : null}
+          onOpenFlyout={openFlyout}
+          onCloseFlyout={closeFlyout}
+          onKeepFlyout={keepFlyout}
+          onSave={saveInstructions}
+          onSelect={handleSelect}
+          onInsert={handleInsert}
+          management={false}
+          onManage={() => { clearTimers(); setFlyout(null); setManagerScope('global'); }}
+        />
+        {cwd && (
+          <>
+            <div className="border-t border-border" />
+            <InstructionSection
+              label={t('chat.projectInstructions')}
+              nodes={projectNodes}
+              scope="project"
+              openGroupId={flyout?.scope === 'project' ? flyout.groupId : null}
+              flyoutPosition={flyout?.scope === 'project' ? flyout.position : null}
+              onOpenFlyout={openFlyout}
+              onCloseFlyout={closeFlyout}
+              onKeepFlyout={keepFlyout}
+              onSave={saveInstructions}
+              onSelect={handleSelect}
+              onInsert={handleInsert}
+              management={false}
+              onManage={() => { clearTimers(); setFlyout(null); setManagerScope('project'); }}
+            />
+          </>
+        )}
+      </div>
+      {managerScope && (
+        <QuickInstructionsManager
+          title={t(managerScope === 'global' ? 'chat.editGlobalInstructions' : 'chat.editProjectInstructions')}
+          nodes={managerScope === 'global' ? globalNodes : projectNodes}
+          onSave={saveManagedInstructions}
+          onClose={() => setManagerScope(null)}
+        />
       )}
-    </div>
+    </>
   );
 }

@@ -1161,7 +1161,13 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
             return (
               <div key={message.id} className="group relative flex h-3 items-center">
                 <button
-                  onClick={() => scrollToMessage(message.id)}
+                  onClick={(event) => {
+                    scrollToMessage(message.id);
+                    // A pointer click leaves the button focused; because the
+                    // preview also supports keyboard focus, that focus would
+                    // keep it open after the pointer had left the marker.
+                    if (event.detail > 0) event.currentTarget.blur();
+                  }}
                   className="flex h-3 w-7 items-center justify-start rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   aria-current={isActiveMessage ? 'true' : undefined}
                   aria-label={t('chat.recentUserMessageNumber', {

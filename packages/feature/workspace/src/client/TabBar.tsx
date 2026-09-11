@@ -18,7 +18,7 @@ import { useTranslation } from 'react-i18next';
 function TabNumberIcon({ number, status, isActive }: { number: number; status: SessionNumberStatus; isActive: boolean }) {
   return (
     <span
-      className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border font-mono text-[9px] font-medium leading-none tabular-nums transition-colors ${sessionNumberClass(status, isActive)}`}
+      className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border font-mono text-[9px] font-medium leading-none tabular-nums transition-colors ${sessionNumberClass(status, isActive, { animateLoading: false })}`}
       aria-hidden="true"
     >
       {number}
@@ -209,8 +209,8 @@ export function TabBar({
               }`}
               onClick={() => onSwitchTab(tab.id)}
             >
-              {/* Circle number — its colour IS the status (orange pulsing =
-                  generating, red = done but unread, brand/muted = seen), which
+              {/* Circle number — its colour IS the status (orange = generating,
+                  red = done but unread, brand/muted = seen), which
                   is also the whole colour budget on this chip: the star's
                   `amber-9` is the solid-FILL step, one value in both themes,
                   where the `-11` text step it started as is a brick in light and
@@ -253,7 +253,9 @@ export function TabBar({
               {/* Same mark as the session lists and the engine picker in the chat top bar.
                   This used to be five hand-written letter chips with their own color table,
                   which is how they drifted out of step with EngineBadge. */}
-              <EngineBadge engine={tab.engine} size="sm" />
+              <span className={`shrink-0 inline-flex items-center ${tab.isLoading ? 'animate-pulse' : ''}`}>
+                <EngineBadge engine={tab.engine} size="sm" />
+              </span>
               <button
                 onClick={(e) => {
                   e.stopPropagation();

@@ -1134,21 +1134,37 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
 
       {/* The rail is deliberately inside this overflow-hidden panel shell. Its
           preview can cover chat content, but can never leak into the Explorer
-          panel beside it in the three-panel layout. Oldest is at the top, newest
-          at the bottom, matching the transcript's reading direction. */}
-      {recentUserMessages.length > 0 && (
+          panel beside it in the three-panel layout. On wide panes it docks just
+          outside the centred conversation column instead of clinging to the
+          panel edge; on narrow panes max() keeps the original 8px inset. Oldest
+          is at the top, newest at the bottom, matching the transcript's reading
+          direction. */}
+      {(recentUserMessages.length > 0 || showTopButton || showBottomButton) && (
         <nav
-          className="absolute left-2 top-1/2 z-10 flex -translate-y-1/2 flex-col items-start gap-2"
+          className="absolute top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-2"
+          style={{ left: 'max(0.5rem, calc(50% - var(--chat-column) / 2 - 2.25rem))' }}
           aria-label={t('chat.recentUserMessages')}
         >
+          {showTopButton && messages.length > 0 && (
+            <button
+              onClick={scrollToTop}
+              className="mb-1 flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-all hover:bg-hover hover:text-foreground active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title={t('chat.jumpToStart')}
+              aria-label={t('chat.jumpToStart')}
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5h14M12 19V9m-5 5l5-5 5 5" />
+              </svg>
+            </button>
+          )}
           {hasOlderUserMessages && onShowUserMessages && (
             <button
               onClick={onShowUserMessages}
-              className="mb-1 flex h-6 w-7 items-center justify-start rounded-sm text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="mb-1 flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               title={t('chat.moreUserMessages')}
               aria-label={t('chat.moreUserMessages')}
             >
-              <svg className="-ml-[3px] h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
@@ -1168,7 +1184,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                     // keep it open after the pointer had left the marker.
                     if (event.detail > 0) event.currentTarget.blur();
                   }}
-                  className="flex h-3 w-7 items-center justify-start rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex h-3 w-7 items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   aria-current={isActiveMessage ? 'true' : undefined}
                   aria-label={t('chat.recentUserMessageNumber', {
                     index: recentOrdinal,
@@ -1192,37 +1208,19 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
               </div>
             );
           })}
+          {showBottomButton && messages.length > 0 && (
+            <button
+              onClick={scrollToBottom}
+              className="mt-1 flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-all hover:bg-hover hover:text-foreground active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title={t('chat.jumpToLatest')}
+              aria-label={t('chat.jumpToLatest')}
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 19H5m7-14v10m5-5l-5 5-5-5" />
+              </svg>
+            </button>
+          )}
         </nav>
-      )}
-
-      {/* Jump controls remain centred over the conversation. */}
-      {showTopButton && messages.length > 0 && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center bg-card shadow-lv2 rounded-full">
-          <button
-            onClick={scrollToTop}
-            className="p-2 text-muted-foreground hover:text-foreground rounded-full transition-all active:scale-95"
-            title={t('chat.jumpToStart')}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-            </svg>
-          </button>
-        </div>
-      )}
-
-      {/* The bottom capsule is now single-purpose: back to the live tail. */}
-      {showBottomButton && messages.length > 0 && (
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center bg-card shadow-lv2 rounded-full">
-          <button
-            onClick={scrollToBottom}
-            className="p-2 text-muted-foreground hover:text-foreground rounded-full transition-all active:scale-95"
-            title={t('chat.jumpToLatest')}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-        </div>
       )}
 
       {/* Selection toolbar */}

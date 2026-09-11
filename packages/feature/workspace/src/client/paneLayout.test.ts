@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { paneLayout, paneClass, maximizedTabId } from './paneLayout';
+import { paneLayout, paneClass, maximizedTabId, isChatSurfaceActive } from './paneLayout';
 
 describe('paneLayout — the diff column and the split are one right half', () => {
   it('is a pass-through when no diff is open', () => {
@@ -152,5 +152,17 @@ describe('maximizedTabId — the maximised pane is the focused pane', () => {
     expect(classes.filter((c) => c.includes('absolute'))).toHaveLength(1);
     expect(classes[1]).toContain('absolute');   // pane 1 is the focused one
     expect(classes[0]).not.toContain('absolute');
+  });
+});
+
+describe('isChatSurfaceActive — visibility across project iframes', () => {
+  it('requires the project iframe as well as the internal pane to be visible', () => {
+    expect(isChatSurfaceActive('a', ['a'], true, true)).toBe(true);
+    expect(isChatSurfaceActive('a', ['a'], true, false)).toBe(false);
+  });
+
+  it('rejects hidden tabs and non-agent panels', () => {
+    expect(isChatSurfaceActive('b', ['a'], true, true)).toBe(false);
+    expect(isChatSurfaceActive('a', ['a'], false, true)).toBe(false);
   });
 });

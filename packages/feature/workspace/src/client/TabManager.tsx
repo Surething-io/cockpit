@@ -9,7 +9,7 @@ import { ConsoleView, AliasManager } from '@cockpit/feature-console';
 import { ChatProvider, FileDiffViewer } from '@cockpit/feature-agent';
 import type { ToolCallInfo } from '@cockpit/feature-agent';
 import { nextFileDiffRequest, type FileDiffRequest } from './fileDiffRequest';
-import { paneLayout, paneClass, maximizedTabId, type PaneLayout } from './paneLayout';
+import { paneLayout, paneClass, maximizedTabId, isChatSurfaceActive, type PaneLayout } from './paneLayout';
 import { SwipeableViewContainer, SwipeableContent, type ViewType } from '@cockpit/shared-ui';
 import { PanelPortalProvider } from '@cockpit/shared-ui';
 import { useTabState } from './useTabState';
@@ -186,6 +186,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
     closePane,
     unreadTabs,
     globalLoadingTabs,
+    pageVisible,
     dragTabIndex,
     dragOverTabIndex,
     closeTab,
@@ -729,7 +730,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                           onPlanModeChange={updateTabPlanMode}
                           noHistory={tab.noHistory}
                           onNoHistoryChange={updateTabNoHistory}
-                          isActive={paneTabIds.includes(tab.id) && activeView === 'agent'}
+                          isActive={isChatSurfaceActive(tab.id, paneTabIds, activeView === 'agent', pageVisible)}
                           isFocused={tab.id === activeTabId}
                           refreshSignal={sessionRefresh}
                           onStateChange={updateTabState}
@@ -893,7 +894,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                     onPlanModeChange={updateTabPlanMode}
                     noHistory={tab.noHistory}
                     onNoHistoryChange={updateTabNoHistory}
-                    isActive={paneTabIds.includes(tab.id)}
+                    isActive={isChatSurfaceActive(tab.id, paneTabIds, true, pageVisible)}
                     isFocused={tab.id === activeTabId}
                     refreshSignal={sessionRefresh}
                     onStateChange={updateTabState}

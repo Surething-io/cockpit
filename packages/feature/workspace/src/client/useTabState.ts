@@ -1202,6 +1202,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     activePane,
     unreadTabs,
     globalLoadingTabs,
+    pageVisible,
     dragTabIndex,
     dragOverTabIndex,
 

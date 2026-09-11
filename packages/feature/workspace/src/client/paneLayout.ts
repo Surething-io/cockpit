@@ -40,6 +40,22 @@ export interface PaneLayout {
   diffOrder: number;
 }
 
+/**
+ * A chat has live, user-visible geometry only when all three layers agree:
+ * its tab occupies a pane, the Agent panel is selected, and the parent
+ * workspace is showing this project's iframe. The last condition matters for
+ * cross-project jumps — an internally selected tab inside a hidden iframe is
+ * not active from the reader's point of view.
+ */
+export function isChatSurfaceActive(
+  tabId: string,
+  paneTabIds: readonly string[],
+  agentViewActive: boolean,
+  projectVisible: boolean,
+): boolean {
+  return projectVisible && agentViewActive && paneTabIds.includes(tabId);
+}
+
 export function paneLayout(
   paneTabIds: string[],
   activePane: number,

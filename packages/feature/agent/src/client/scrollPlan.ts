@@ -48,12 +48,14 @@
  * nothing at all and is re-derived from real numbers when it comes back.
  */
 
-export type ScrollMode = 'follow' | 'pinned' | 'free';
+export type ScrollMode = 'follow' | 'pinned' | 'reading' | 'free';
 
 /**
  * follow → glue the viewport to the end of the CONTENT (the default)
  * pinned → the turn the user just sent sits at the top of the viewport and the
  *          reply grows downward into reserved blank space below it
+ * reading → the reader returned from a background tab at the start of its
+ *           running turn; keep that start fixed until a real gesture takes over
  * free   → the reader took over by hand; never move the viewport for them
  *
  * follow ──send──▶ pinned ──reply outgrows the reserved blank──▶ follow
@@ -61,17 +63,20 @@ export type ScrollMode = 'follow' | 'pinned' | 'free';
  *   │           gesture (wheel/touch/key)                    scroll up
  *   │                ▼                                             ▼
  *   └──── scrolled back to the content end ──────────────────────  free
+ *
+ * background return ──▶ reading ──gesture──▶ free
  */
 export interface ScrollOwner {
   mode: ScrollMode;
   /**
    * The offset a pin is holding, and the only thing the spacer is derived from
-   * while `mode === 'pinned'`. Deliberately NOT `scrollTop`: the pin scrolls
-   * smoothly, so for the length of that animation the live `scrollTop` is
-   * still somewhere in between, and deriving from it would collapse the spacer
-   * mid-flight and clamp the animation short of the top.
+   * while an anchored mode (`pinned` or `reading`) is active. Deliberately NOT
+   * `scrollTop`: a pin can scroll smoothly, so for the length of that animation
+   * the live `scrollTop` is still somewhere in between, and deriving from it
+   * would collapse the spacer mid-flight and clamp the animation short of the
+   * top.
    *
-   * Null in every other mode.
+   * Null in follow/free.
    */
   pinTop: number | null;
 }
@@ -204,24 +209,27 @@ export function reduceScroll(
       return follow(g, 'smooth');
 
     case 'readFrom': {
-      // A background return belongs to the reader, not the stream. Put the
-      // turn start at the top whenever the transcript is long enough; for a
-      // short reply, land at the natural content end so the whole turn is
-      // visible without leaving permanent blank space underneath it.
-      const top = Math.min(event.top, maxContentScroll(g));
+      // A background return belongs to the reader, not the stream. Keep the
+      // turn start reachable even when the reply is shorter than a viewport.
+      // Clamping to the natural content end would both land at the tail and
+      // let the resulting scroll event silently restore follow mode.
+      const top = event.top;
       return {
-        owner: FREE,
-        spacer: 0,
+        owner: { mode: 'reading', pinTop: top },
+        spacer: requiredSpacer(top, g),
         scrollTo: top,
         behavior: 'auto',
-        // A short reply may still have the pin's reserved blank. Keep it until
-        // after the target position is applied or the browser will clamp first
-        // and visibly move the viewport in two steps.
-        deferSpacer: g.spacer > 0,
       };
     }
 
     case 'settle': {
+      // Completion must not pull someone who returned to read from the start
+      // down to the tail. Keep exactly the blank that still makes the anchored
+      // position reachable; later content naturally consumes it.
+      if (owner.mode === 'reading') {
+        const top = owner.pinTop ?? g.scrollTop;
+        return { owner, spacer: requiredSpacer(top, g), scrollTo: null, behavior: 'auto' };
+      }
       // Nothing reserved, nothing to give back. Notably the case for a reader
       // who scrolled away into history: their position is theirs to keep.
       if (g.spacer <= 0) return null;
@@ -253,11 +261,11 @@ export function reduceScroll(
     }
 
     case 'release': {
-      // Only a pin can be taken over. In follow/free the position already
-      // decides the mode (see isAtContentEnd), and a gesture that ends at the
-      // bottom must not be turned into "free" by the mere fact of being a
-      // gesture.
-      if (owner.mode !== 'pinned') return null;
+      // Only an anchored position can be taken over. In follow/free the
+      // position already decides the mode (see isAtContentEnd), and a gesture
+      // that ends at the bottom must not become "free" merely because it was
+      // a gesture.
+      if (owner.mode !== 'pinned' && owner.mode !== 'reading') return null;
       // The blank stays for now, trimmed to what the reader's current position
       // needs. It cannot yank them: by construction it is never smaller than
       // that. From here it decays on its own — every 'content' event re-derives
@@ -288,6 +296,18 @@ export function reduceScroll(
         };
       }
 
+      if (owner.mode === 'reading') {
+        const top = owner.pinTop ?? g.scrollTop;
+        return {
+          owner,
+          spacer: requiredSpacer(top, g),
+          // Streaming never chases the tail. Only re-assert the stored offset
+          // when the viewport itself changes underneath it.
+          scrollTo: event.type === 'viewport' ? top : null,
+          behavior: 'auto',
+        };
+      }
+
       // free: hold the reader's position and let the blank decay under it.
       return { owner, spacer: requiredSpacer(g.scrollTop, g), scrollTo: null, behavior: 'auto' };
     }
@@ -295,10 +315,14 @@ export function reduceScroll(
 }
 
 /**
- * The mode a position implies, for readers who are not pinned. Pinned is
- * excluded on purpose: while a pin stands nothing moves the viewport, so
- * position carries no signal about intent — only a gesture ends a pin.
+ * The mode a position implies when no explicit anchor owns the viewport.
  */
 export function modeForPosition(g: Geometry): ScrollOwner {
   return isAtContentEnd(g) ? FOLLOW : FREE;
+}
+
+/** Programmatic scroll events cannot release an explicit anchored position. */
+export function ownerForPosition(owner: ScrollOwner, g: Geometry): ScrollOwner {
+  if (owner.mode === 'pinned' || owner.mode === 'reading') return owner;
+  return modeForPosition(g);
 }

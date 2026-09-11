@@ -27,7 +27,7 @@ import {
 } from './quickReplies';
 import {
   reduceScroll,
-  modeForPosition,
+  ownerForPosition,
   isContentEndVisible,
   type Geometry,
   type ScrollEvent,
@@ -56,7 +56,7 @@ const STEP_EPSILON = STEP_PADDING + 4;
 const SETTLE_FALLBACK_MS = 700;
 
 /**
- * Scroll ownership (follow / pinned / free), the reserved-blank formula and
+ * Scroll ownership (follow / pinned / reading / free), the reserved-blank formula and
  * every "is the end on screen" predicate live in `scrollPlan.ts` as a pure
  * reducer. This component reads geometry, hands the reducer an event, and
  * applies the plan it gets back — it makes no scrolling decision of its own.
@@ -677,13 +677,12 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     const atTop = checkIfAtTop();
     /**
      * `follow` and `free` are decided by position, exactly as the old
-     * `setShouldAutoScroll(atBottom)` did. `pinned` is deliberately NOT: while
-     * a pin is held nothing here ever moves scrollTop (the spacer absorbs the
-     * reply instead), so position carries no signal. A pin is left by user
-     * INTENT only; see the release effect below.
+     * `setShouldAutoScroll(atBottom)` did. Anchored modes (`pinned` and
+     * `reading`) are deliberately not: their programmatic scrolls carry no
+     * user intent. Only a real gesture releases them; see below.
      */
-    if (g && ownerRef.current.mode !== 'pinned') {
-      ownerRef.current = modeForPosition(g);
+    if (g) {
+      ownerRef.current = ownerForPosition(ownerRef.current, g);
     }
     setShowTopButton(!atTop); // Show scroll-to-top button when not at the top
     setShowBottomButton(!atBottom);

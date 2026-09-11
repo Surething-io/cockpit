@@ -6,6 +6,7 @@ import {
   maxContentScroll,
   isAtContentEnd,
   isContentEndVisible,
+  ownerForPosition,
   type Geometry,
   type ScrollOwner,
   type ScrollEvent,
@@ -300,7 +301,7 @@ describe('readFrom — returning from a background tab', () => {
     s.grow(3000);
     s.send({ type: 'readFrom', top: 1900 });
 
-    expect(s.owner.mode).toBe('free');
+    expect(s.owner.mode).toBe('reading');
     expect(s.scrollTop).toBe(1900);
     expect(s.spacer).toBe(0);
     expect(s.clamped).toBe(false);
@@ -310,7 +311,7 @@ describe('readFrom — returning from a background tab', () => {
     expect(s.scrollTop).toBe(1900);
   });
 
-  it('shows an entire short turn without retaining the pin spacer', () => {
+  it('keeps a short turn at its exact start with a derived spacer', () => {
     const s = new Scroller(2000, VIEWPORT);
     s.scrollTop = 1200;
     s.send({ type: 'pin', top: 1900 });
@@ -318,9 +319,33 @@ describe('readFrom — returning from a background tab', () => {
 
     s.send({ type: 'readFrom', top: 1900 });
 
-    expect(s.owner.mode).toBe('free');
-    expect(s.scrollTop).toBe(1500); // natural content end: 2300 - 800
-    expect(s.spacer).toBe(0);
+    expect(s.owner.mode).toBe('reading');
+    expect(s.scrollTop).toBe(1900);
+    expect(s.spacer).toBe(400); // 1900 + 800 - 2300
+    expect(s.clamped).toBe(false);
+
+    // The programmatic scroll is at the scroller's end, but that is not a
+    // signal that the reader asked to resume following.
+    s.owner = ownerForPosition(s.owner, s.geometry());
+    expect(s.owner.mode).toBe('reading');
+
+    s.grow(200);
+    s.send({ type: 'content' });
+    expect(s.scrollTop).toBe(1900);
+    expect(s.spacer).toBe(200);
+  });
+
+  it('does not move a background reader when the run settles', () => {
+    const s = new Scroller(2000, VIEWPORT);
+    s.send({ type: 'pin', top: 1900 });
+    s.grow(300);
+    s.send({ type: 'readFrom', top: 1900 });
+
+    s.send({ type: 'settle' });
+
+    expect(s.owner.mode).toBe('reading');
+    expect(s.scrollTop).toBe(1900);
+    expect(s.spacer).toBe(400);
     expect(s.clamped).toBe(false);
   });
 });

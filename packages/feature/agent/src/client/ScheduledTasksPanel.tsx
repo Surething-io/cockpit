@@ -573,22 +573,27 @@ export function ScheduledTasksPanel({
                       Fixed width because the right pane renders real message bubbles
                       (code blocks, tool calls) and needs the remaining space. Below
                       `md` the preview is dropped and the list takes the full width. */}
-                  <div className="w-full md:w-[360px] flex-shrink-0 md:border-r border-border overflow-y-auto p-3 space-y-4">
-                    {GROUP_ORDER.map(({ key, labelKey }) => {
-                      const groupItems = groups[key];
-                      // Empty groups render nothing at all — no header, no gap.
-                      if (groupItems.length === 0) return null;
-                      return (
-                        <div key={key}>
-                          <div className="sticky top-0 z-10 -mx-3 px-3 py-1 bg-card text-[11px] font-medium text-muted-foreground">
-                            {t(labelKey)} ({groupItems.length})
+                  {/* Keep padding off the scroll node. A sticky child uses the
+                      scrollport's padding edge as its inset, which left a strip
+                      of old cards visible above the group label while scrolling. */}
+                  <div className="w-full md:w-[360px] min-h-0 flex-shrink-0 md:border-r border-border overflow-y-auto">
+                    <div className="p-3 space-y-4">
+                      {GROUP_ORDER.map(({ key, labelKey }) => {
+                        const groupItems = groups[key];
+                        // Empty groups render nothing at all — no header, no gap.
+                        if (groupItems.length === 0) return null;
+                        return (
+                          <div key={key}>
+                            <div className="sticky top-0 z-10 -mx-3 px-3 py-1 bg-card text-[11px] font-medium text-muted-foreground">
+                              {t(labelKey)} ({groupItems.length})
+                            </div>
+                            <div className="mt-1 space-y-2">
+                              {groupItems.map((task) => renderCard(task))}
+                            </div>
                           </div>
-                          <div className="mt-1 space-y-2">
-                            {groupItems.map((task) => renderCard(task))}
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
 
                   {/* Right: the selected task's session transcript */}

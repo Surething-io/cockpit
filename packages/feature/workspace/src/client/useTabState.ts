@@ -50,6 +50,47 @@ interface GlobalSessionStatusSnapshot {
   engine?: string;
 }
 
+/**
+ * Reconcile one server-owned session status onto the current tab ids.
+ *
+ * The global snapshot is capped, so an absent session is unknown and must keep
+ * its current value. Tabs that no longer exist are removed, while every status
+ * the server did send is authoritative for that session.
+ */
+export function reconcileStatusTabIds(
+  current: ReadonlySet<string>,
+  tabs: TabInfo[],
+  sessions: GlobalSessionStatusSnapshot[],
+  cwd: string,
+  targetStatus: 'loading' | 'unread',
+): Set<string> {
+  const aliveTabIds = new Set(tabs.map((tab) => tab.id));
+  const next = new Set([...current].filter((tabId) => aliveTabIds.has(tabId)));
+  const statusBySession = new Map<string, string>();
+
+  for (const session of sessions) {
+    if (session.cwd !== cwd) continue;
+    const sessionId = session.engine === 'codex'
+      ? normalizeCodexSessionId(session.sessionId)
+      : session.sessionId;
+    statusBySession.set(sessionId, session.status ?? 'normal');
+  }
+
+  for (const tab of tabs) {
+    if (!tab.sessionId) continue;
+    const status = statusBySession.get(tab.sessionId);
+    if (status === undefined) continue;
+    if (status === targetStatus) next.add(tab.id);
+    else next.delete(tab.id);
+  }
+
+  return next;
+}
+
+function sameIds(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  return a.size === b.size && [...a].every((id) => b.has(id));
+}
+
 const CODEX_THREAD_ID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\.jsonl)?$/i;
 
 function normalizeCodexSessionId(sessionId: string): string {
@@ -196,6 +237,10 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
 
   // Unread tabs (session completed but not yet viewed)
   const [unreadTabs, setUnreadTabs] = useState<Set<string>>(new Set());
+  // Server-confirmed running tabs. Kept separate from TabInfo.isLoading: the
+  // latter is the immediate local sender state, while this set restores runs
+  // after a refresh and covers mounted background tabs that do not live-tail.
+  const [globalLoadingTabs, setGlobalLoadingTabs] = useState<Set<string>>(new Set());
 
   // Ref for tabs (avoid stale closures in callbacks)
   const tabsRef = useRef(tabs);
@@ -227,44 +272,23 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     );
   }, [initialCwd]);
 
-  const syncUnreadTabsFromGlobalState = useCallback((sessions: GlobalSessionStatusSnapshot[]) => {
+  const syncTabStatusesFromGlobalState = useCallback((sessions: GlobalSessionStatusSnapshot[]) => {
     if (!initialCwd) return;
 
-    const statusBySession = new Map<string, string>();
-    for (const session of sessions) {
-      if (session.cwd !== initialCwd) continue;
-      const sessionId = session.engine === 'codex'
-        ? normalizeCodexSessionId(session.sessionId)
-        : session.sessionId;
-      statusBySession.set(sessionId, session.status ?? 'normal');
-    }
-
+    setGlobalLoadingTabs((current) => {
+      const next = reconcileStatusTabIds(current, tabsRef.current, sessions, initialCwd, 'loading');
+      return sameIds(current, next) ? current : next;
+    });
     setUnreadTabs((current) => {
-      const next = new Set(current);
-      let changed = false;
-      for (const tab of tabsRef.current) {
-        if (!tab.sessionId) continue;
-        const status = statusBySession.get(tab.sessionId);
-        // The WS snapshot is capped, so an absent session is unknown rather
-        // than normal. Only reconcile entries the server actually sent.
-        if (status === undefined) continue;
-        if (status === 'unread') {
-          if (!next.has(tab.id)) {
-            next.add(tab.id);
-            changed = true;
-          }
-        } else if (next.delete(tab.id)) {
-          changed = true;
-        }
-      }
-      return changed ? next : current;
+      const next = reconcileStatusTabIds(current, tabsRef.current, sessions, initialCwd, 'unread');
+      return sameIds(current, next) ? current : next;
     });
   }, [initialCwd]);
 
   useEffect(() => {
     if (!initDone) return;
-    syncUnreadTabsFromGlobalState(globalSessionsRef.current);
-  }, [initDone, syncUnreadTabsFromGlobalState]);
+    syncTabStatusesFromGlobalState(globalSessionsRef.current);
+  }, [initDone, tabs, syncTabStatusesFromGlobalState]);
 
   // Tab drag state
   const [dragTabIndex, setDragTabIndex] = useState<number | null>(null);
@@ -671,7 +695,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     if (message.type === 'global-state' && Array.isArray(message.data?.sessions)) {
       globalSessionsRef.current = message.data.sessions;
       if (!isInitializingRef.current) {
-        syncUnreadTabsFromGlobalState(message.data.sessions);
+        syncTabStatusesFromGlobalState(message.data.sessions);
       }
       return;
     }
@@ -683,7 +707,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     ) {
       reconcileTabs(message.closedSessionIds ?? []);
     }
-  }, [initialCwd, reconcileTabs, syncUnreadTabsFromGlobalState]);
+  }, [initialCwd, reconcileTabs, syncTabStatusesFromGlobalState]);
 
   useWebSocket({
     url: '/ws/global-state',
@@ -1177,6 +1201,7 @@ export function useTabState({ initialCwd, initialSessionId, initialBlank, active
     paneTabIds,
     activePane,
     unreadTabs,
+    globalLoadingTabs,
     dragTabIndex,
     dragOverTabIndex,
 

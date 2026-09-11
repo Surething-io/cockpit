@@ -137,6 +137,8 @@ interface TabBarProps {
    *  looking at", and with two panes open that moves with focus. */
   selectedTabId: string;
   unreadTabs: Set<string>;
+  /** Running sessions restored from the authoritative server snapshot. */
+  globalLoadingTabs: Set<string>;
   dragTabIndex: number | null;
   dragOverTabIndex: number | null;
   isPinned?: (tabId: string) => boolean;
@@ -167,6 +169,7 @@ export function TabBar({
   tabs,
   selectedTabId,
   unreadTabs,
+  globalLoadingTabs,
   dragTabIndex,
   dragOverTabIndex,
   isPinned,
@@ -194,7 +197,7 @@ export function TabBar({
         {tabs.map((tab, index) => {
           const isActive = tab.id === selectedTabId;
           const pinned = isPinned?.(tab.id) ?? false;
-          const status: SessionNumberStatus = tab.isLoading
+          const status: SessionNumberStatus = tab.isLoading || globalLoadingTabs.has(tab.id)
             ? 'loading'
             : unreadTabs.has(tab.id) && !isActive
               ? 'unread'

@@ -185,6 +185,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
     focusPane,
     closePane,
     unreadTabs,
+    globalLoadingTabs,
     dragTabIndex,
     dragOverTabIndex,
     closeTab,
@@ -662,6 +663,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                     sideBySide={layout.split}
                     onToggleSideBySide={handleToggleLayout}
                     unreadTabs={unreadTabs}
+                    globalLoadingTabs={globalLoadingTabs}
                     dragTabIndex={dragTabIndex}
                     dragOverTabIndex={dragOverTabIndex}
                     isPinned={isTabPinned}
@@ -827,6 +829,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
               sideBySide={layout.split}
               onToggleSideBySide={handleToggleLayout}
               unreadTabs={unreadTabs}
+              globalLoadingTabs={globalLoadingTabs}
               dragTabIndex={dragTabIndex}
               dragOverTabIndex={dragOverTabIndex}
               isPinned={isTabPinned}

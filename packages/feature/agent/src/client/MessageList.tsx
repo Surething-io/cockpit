@@ -202,6 +202,13 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
    * claiming blank that is not on screen.
    */
   const spacerRef = useRef<HTMLDivElement>(null);
+  /**
+   * Set when the reader leaves this tab during a run. Streaming in a hidden
+   * pane must not decide that they have read the turn and return them at its
+   * tail; activation consumes this flag by restoring the latest user row.
+   */
+  const restoreTurnStartRef = useRef(false);
+  const previousActiveRef = useRef(isActive);
 
   /** Everything the reducer is allowed to know. One layout read per event. */
   const readGeometry = useCallback((): Geometry | null => {
@@ -842,6 +849,19 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   }, [uniqueMessages, dispatchScroll]);
 
   /**
+   * Remember an explicit foreground → background transition during a run.
+   * This is intentionally independent of geometry: by the time a parent hides
+   * the pane, every DOM measurement may already be zero.
+   */
+  useLayoutEffect(() => {
+    const wasActive = previousActiveRef.current;
+    previousActiveRef.current = isActive;
+    if (wasActive && !isActive && isLoading) {
+      restoreTurnStartRef.current = true;
+    }
+  }, [isActive, isLoading]);
+
+  /**
    * The transcript's height moved: streamed deltas, a disk reconcile, the
    * thinking indicator appearing. One event, one layout read; what it does
    * depends on who owns the viewport, and that is the reducer's business.
@@ -909,6 +929,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     if (!prev || prev === sessionId) return;
 
     pendingPinRef.current = false;
+    restoreTurnStartRef.current = false;
     dispatchScroll({ type: 'reset' });
   }, [sessionId, dispatchScroll]);
 
@@ -959,6 +980,25 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
    */
   useLayoutEffect(() => {
     if (!isActive) return;
+
+    if (restoreTurnStartRef.current) {
+      const container = containerRef.current;
+      const userRows = container?.querySelectorAll('[data-role="user"]');
+      const row = userRows?.item((userRows?.length ?? 0) - 1);
+      if (container && row) {
+        const rowTop =
+          row.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
+        if (dispatchScroll({ type: 'readFrom', top: Math.max(0, rowTop - STEP_PADDING) })) {
+          restoreTurnStartRef.current = false;
+          // A run that completed in the background queued a settle. readFrom
+          // has already reclaimed its blank while preserving the reading
+          // position, so that settle would only pull the reader to the tail.
+          pendingSettleRef.current = false;
+          return;
+        }
+      }
+    }
+
     dispatchScroll({ type: 'viewport' });
     if (pendingSettleRef.current) {
       pendingSettleRef.current = false;

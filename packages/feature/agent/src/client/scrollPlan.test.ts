@@ -289,6 +289,42 @@ describe('regression — the three reported symptoms', () => {
   });
 });
 
+describe('readFrom — returning from a background tab', () => {
+  it('restores a long turn to its start and leaves streaming under reader control', () => {
+    const s = new Scroller(2000, VIEWPORT);
+    s.scrollTop = 1200;
+    s.send({ type: 'pin', top: 1900 });
+
+    // The reply grew while the pane had no live geometry, so no content event
+    // was dispatched and the original pin is still standing.
+    s.grow(3000);
+    s.send({ type: 'readFrom', top: 1900 });
+
+    expect(s.owner.mode).toBe('free');
+    expect(s.scrollTop).toBe(1900);
+    expect(s.spacer).toBe(0);
+    expect(s.clamped).toBe(false);
+
+    s.grow(200);
+    s.send({ type: 'content' });
+    expect(s.scrollTop).toBe(1900);
+  });
+
+  it('shows an entire short turn without retaining the pin spacer', () => {
+    const s = new Scroller(2000, VIEWPORT);
+    s.scrollTop = 1200;
+    s.send({ type: 'pin', top: 1900 });
+    s.grow(300);
+
+    s.send({ type: 'readFrom', top: 1900 });
+
+    expect(s.owner.mode).toBe('free');
+    expect(s.scrollTop).toBe(1500); // natural content end: 2300 - 800
+    expect(s.spacer).toBe(0);
+    expect(s.clamped).toBe(false);
+  });
+});
+
 describe('viewport changes', () => {
   it('re-establishes a pin when the soft keyboard steals height', () => {
     const s = new Scroller(2000, VIEWPORT);

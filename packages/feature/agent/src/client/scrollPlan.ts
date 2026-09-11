@@ -97,6 +97,8 @@ export type ScrollEvent =
   | { type: 'release' }
   /** "Jump to latest": the end of the content, not the end of the scroller. */
   | { type: 'toEnd' }
+  /** Return from a background tab at the start of the turn being generated. */
+  | { type: 'readFrom'; top: number }
   /** The run finished: give the reserved blank back. */
   | { type: 'settle' }
   /** Another transcript is being shown here; drop everything. */
@@ -200,6 +202,24 @@ export function reduceScroll(
 
     case 'toEnd':
       return follow(g, 'smooth');
+
+    case 'readFrom': {
+      // A background return belongs to the reader, not the stream. Put the
+      // turn start at the top whenever the transcript is long enough; for a
+      // short reply, land at the natural content end so the whole turn is
+      // visible without leaving permanent blank space underneath it.
+      const top = Math.min(event.top, maxContentScroll(g));
+      return {
+        owner: FREE,
+        spacer: 0,
+        scrollTo: top,
+        behavior: 'auto',
+        // A short reply may still have the pin's reserved blank. Keep it until
+        // after the target position is applied or the browser will clamp first
+        // and visibly move the viewport in two steps.
+        deferSpacer: g.spacer > 0,
+      };
+    }
 
     case 'settle': {
       // Nothing reserved, nothing to give back. Notably the case for a reader

@@ -4,45 +4,191 @@
  * Launches the OS-native folder picker dialog. Returns `folder: null` on
  * failure or user cancellation.
  */
-import { execSync } from "child_process"
+import { execFileSync } from "child_process"
 import { homedir } from "os"
 import { Effect } from "effect"
-import {
-  isMac,
-  isWindows,
-  SETTINGS_FILE,
-  readJsonFile,
-} from "@cockpit/shared-utils"
+import { SETTINGS_FILE, readJsonFile } from "@cockpit/shared-utils"
 import en from "@cockpit/shared-i18n/locales/en.json"
 import zh from "@cockpit/shared-i18n/locales/zh.json"
 import { handler, ok } from "@cockpit/effect-runtime/server"
 
 const locales: Record<string, typeof en> = { en, zh }
 
-const pickFolder = (prompt: string, home: string): string => {
-  if (isMac) {
-    const script = `osascript -e 'POSIX path of (choose folder with prompt "${prompt}" default location POSIX file "${home}")'`
-    return execSync(script, { encoding: "utf8", timeout: 60000 }).trim()
+// JXA NSOpenPanel instead of AppleScript `choose folder`: a bare osascript
+// process has no main menu, so Cmd+V/C/X/A have no Edit-menu key equivalents
+// to route through and paste silently does nothing (e.g. in Cmd+Shift+G "Go to
+// Folder"). Installing a minimal Edit menu restores the standard shortcuts.
+const MAC_PICKER_JXA = `
+ObjC.import("AppKit")
+function run(argv) {
+  const app = $.NSApplication.sharedApplication
+  app.setActivationPolicy($.NSApplicationActivationPolicyAccessory)
+  const edit = $.NSMenu.alloc.initWithTitle("Edit")
+  edit.addItemWithTitleActionKeyEquivalent("Undo", "undo:", "z")
+  edit.addItemWithTitleActionKeyEquivalent("Cut", "cut:", "x")
+  edit.addItemWithTitleActionKeyEquivalent("Copy", "copy:", "c")
+  edit.addItemWithTitleActionKeyEquivalent("Paste", "paste:", "v")
+  edit.addItemWithTitleActionKeyEquivalent("Select All", "selectAll:", "a")
+  const editItem = $.NSMenuItem.alloc.init
+  editItem.submenu = edit
+  const mainMenu = $.NSMenu.alloc.init
+  mainMenu.addItem(editItem)
+  app.mainMenu = mainMenu
+  app.activateIgnoringOtherApps(true)
+  const panel = $.NSOpenPanel.openPanel
+  panel.canChooseFiles = false
+  panel.canChooseDirectories = true
+  panel.canCreateDirectories = true
+  panel.allowsMultipleSelection = false
+  panel.message = argv[0]
+  panel.directoryURL = $.NSURL.fileURLWithPath(argv[1])
+  return panel.runModal == $.NSModalResponseOK ? panel.URL.path.js : ""
+}
+`
+
+// Windows: IFileOpenDialog with FOS_PICKFOLDERS instead of WinForms
+// FolderBrowserDialog. The latter (Windows PowerShell 5.1 = .NET Framework)
+// is the legacy tree view with no address bar, so a path cannot be pasted at
+// all. Inputs arrive via env vars and the script via -EncodedCommand, so
+// nothing user-controlled is ever parsed by PowerShell.
+const WIN_PICKER_PS = `
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class CockpitFolderPicker {
+  [ComImport, Guid("DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7")]
+  class FileOpenDialog {}
+  [ComImport, Guid("42f85136-db7e-439c-85f1-e4075d135fc8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IFileDialog {
+    [PreserveSig] int Show(IntPtr parent);
+    void SetFileTypes(uint count, IntPtr specs);
+    void SetFileTypeIndex(uint index);
+    void GetFileTypeIndex(out uint index);
+    void Advise(IntPtr events, out uint cookie);
+    void Unadvise(uint cookie);
+    void SetOptions(uint options);
+    void GetOptions(out uint options);
+    void SetDefaultFolder(IShellItem item);
+    void SetFolder(IShellItem item);
+    void GetFolder(out IShellItem item);
+    void GetCurrentSelection(out IShellItem item);
+    void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string name);
+    void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string name);
+    void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string title);
+    void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string label);
+    void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string label);
+    void GetResult(out IShellItem item);
   }
-  if (isWindows) {
-    const ps = `Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.SelectedPath = '${home}'; if($d.ShowDialog() -eq 'OK'){$d.SelectedPath}`
-    return execSync(`powershell -Command "${ps}"`, {
-      encoding: "utf8",
-      timeout: 60000,
-    }).trim()
+  [ComImport, Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IShellItem {
+    void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
+    void GetParent(out IShellItem item);
+    void GetDisplayName(uint sigdn, [MarshalAs(UnmanagedType.LPWStr)] out string name);
   }
-  // Linux: try zenity, fallback to kdialog
-  try {
-    return execSync(
-      `zenity --file-selection --directory --title="${prompt}" 2>/dev/null`,
-      { encoding: "utf8", timeout: 60000 }
-    ).trim()
-  } catch {
-    return execSync(
-      `kdialog --getexistingdirectory "${home}" --title "${prompt}" 2>/dev/null`,
-      { encoding: "utf8", timeout: 60000 }
-    ).trim()
+  [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+  static extern void SHCreateItemFromParsingName(string path, IntPtr pbc, [MarshalAs(UnmanagedType.LPStruct)] Guid riid, out IShellItem item);
+  public static string Pick(string title, string start) {
+    var dialog = (IFileDialog)new FileOpenDialog();
+    uint options;
+    dialog.GetOptions(out options);
+    dialog.SetOptions(options | 0x20 | 0x40); // FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM
+    dialog.SetTitle(title);
+    try {
+      IShellItem folder;
+      SHCreateItemFromParsingName(start, IntPtr.Zero, typeof(IShellItem).GUID, out folder);
+      dialog.SetFolder(folder);
+    } catch {}
+    if (dialog.Show(IntPtr.Zero) != 0) return "";
+    IShellItem result;
+    dialog.GetResult(out result);
+    string path;
+    result.GetDisplayName(0x80058000, out path); // SIGDN_FILESYSPATH
+    return path;
   }
+}
+'@
+[CockpitFolderPicker]::Pick($env:COCKPIT_PICK_PROMPT, $env:COCKPIT_PICK_HOME)
+`
+
+/** Returns the chosen path, "" on cancel; throws ENOENT if the tool is missing. */
+type FolderPicker = (prompt: string, home: string) => string
+
+// Only the picker's stdout matters; stderr is GTK/Qt warning noise.
+const run = (
+  file: string,
+  args: string[],
+  env?: NodeJS.ProcessEnv
+): string =>
+  execFileSync(file, args, {
+    encoding: "utf8",
+    timeout: 60000,
+    stdio: ["ignore", "pipe", "ignore"],
+    env,
+  }).trim()
+
+// Non-zero exit = user cancelled, so resolve to "" rather than throwing.
+// Only a missing binary propagates, which is what lets firstOf fall through.
+const cancelToEmpty =
+  (picker: FolderPicker): FolderPicker =>
+  (prompt, home) => {
+    try {
+      return picker(prompt, home)
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") throw e
+      return ""
+    }
+  }
+
+/** Try each picker in turn, moving on only when its tool is not installed. */
+const firstOf =
+  (...pickers: FolderPicker[]): FolderPicker =>
+  (prompt, home) => {
+    for (const picker of pickers) {
+      try {
+        return picker(prompt, home)
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e
+      }
+    }
+    return ""
+  }
+
+const macPicker: FolderPicker = (prompt, home) =>
+  run("osascript", ["-l", "JavaScript", "-e", MAC_PICKER_JXA, prompt, home])
+
+const winPicker: FolderPicker = (prompt, home) =>
+  run(
+    "powershell",
+    [
+      "-NoProfile",
+      "-STA",
+      "-EncodedCommand",
+      Buffer.from(WIN_PICKER_PS, "utf16le").toString("base64"),
+    ],
+    { ...process.env, COCKPIT_PICK_PROMPT: prompt, COCKPIT_PICK_HOME: home }
+  )
+
+const zenityPicker: FolderPicker = (prompt, home) =>
+  run("zenity", [
+    "--file-selection",
+    "--directory",
+    `--title=${prompt}`,
+    `--filename=${home}/`,
+  ])
+
+const kdialogPicker: FolderPicker = (prompt, home) =>
+  run("kdialog", ["--getexistingdirectory", home, "--title", prompt])
+
+const pickers: Partial<Record<NodeJS.Platform, FolderPicker>> = {
+  darwin: cancelToEmpty(macPicker),
+  win32: cancelToEmpty(winPicker),
+  linux: firstOf(cancelToEmpty(zenityPicker), cancelToEmpty(kdialogPicker)),
+}
+
+const pickFolder: FolderPicker = (prompt, home) => {
+  const picker = pickers[process.platform] ?? pickers.linux!
+  return picker(prompt, home)
 }
 
 export const GET = handler(() =>

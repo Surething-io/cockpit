@@ -1,11 +1,15 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Portal, useEscToClose } from '@cockpit/shared-ui';
 import type { InstructionNode } from './effect/agentClient';
 import { formatInstructionsMarkdown, parseInstructionsMarkdown } from './quickInstructionsMarkdown';
+
+// Shared by the textarea and its mirror; any drift in font, padding or wrapping
+// rules desynchronises the line numbers from the text.
+const EDITOR_TEXT = 'm-0 border-0 pl-12 pr-3 py-2 text-sm font-mono leading-6 whitespace-pre-wrap break-words';
 
 export function QuickInstructionsManager({
   title,
@@ -23,6 +27,7 @@ export function QuickInstructionsManager({
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const parsed = parseInstructionsMarkdown(text);
+  const lines = useMemo(() => text.split('\n'), [text]);
 
   useEscToClose(onClose);
 
@@ -69,15 +74,35 @@ export function QuickInstructionsManager({
           </header>
 
           <div className="min-h-0 flex-1 px-4 py-3">
-            <textarea
-              autoFocus
-              value={text}
-              onChange={(event) => setText(event.target.value)}
-              placeholder={t('chat.quickInstructionsMarkdownPlaceholder')}
-              rows={24}
-              spellCheck={false}
-              className="w-full h-[60vh] min-h-80 max-h-[70vh] resize-y px-3 py-2 text-sm font-mono leading-6 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:border-brand"
-            />
+            {/* Soft-wrapped continuation rows look identical to new records, but
+                in this outline every physical line IS one instruction. An in-flow
+                mirror renders the same text invisibly, one block per logical line,
+                so it wraps exactly like the textarea laid over it and can number
+                each record once — continuation rows get no number. The textarea
+                grows to the mirror's height and the outer box does the scrolling,
+                so neither side has its own scrollbar skewing the wrap width. */}
+            <div className="h-[60vh] min-h-80 overflow-y-auto bg-background border border-border rounded-lg focus-within:border-brand">
+              <div className="relative min-h-full">
+                <div aria-hidden="true" className={`${EDITOR_TEXT} pointer-events-none select-none text-transparent`}>
+                  {lines.map((line, index) => (
+                    <div key={index} className="relative">
+                      <span className="absolute -left-10 w-7 text-right text-muted-foreground/50 tabular-nums">
+                        {index + 1}
+                      </span>
+                      {line || ' '}
+                    </div>
+                  ))}
+                </div>
+                <textarea
+                  autoFocus
+                  value={text}
+                  onChange={(event) => setText(event.target.value)}
+                  placeholder={t('chat.quickInstructionsMarkdownPlaceholder')}
+                  spellCheck={false}
+                  className={`${EDITOR_TEXT} absolute inset-0 w-full h-full resize-none overflow-hidden bg-transparent text-foreground focus:outline-none`}
+                />
+              </div>
+            </div>
           </div>
 
           <footer className="flex items-center justify-between gap-3 px-4 py-3 border-t border-border">

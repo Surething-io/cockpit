@@ -7,6 +7,7 @@ import {
   stashCodexRollout,
   mergeStashedCodexRollout,
   recoverStashedCodexRollouts,
+  readStashedCodexRolloutView,
 } from './noHistoryRollout';
 
 const SID = '11111111-2222-3333-4444-555555555555';
@@ -145,5 +146,26 @@ describe('recoverStashedCodexRollouts', () => {
 
     expect(recoverStashedCodexRollouts(root)).toBe(1);
     expect(recoverStashedCodexRollouts(root)).toBe(0);
+  });
+});
+
+describe('readStashedCodexRolloutView (mid-turn reads)', () => {
+  it('is null when nothing is stashed', () => {
+    fs.writeFileSync(sessionPath, HISTORY.join('\n') + '\n');
+    expect(readStashedCodexRolloutView(sessionPath)).toBeNull();
+  });
+
+  it('shows history + in-flight turn exactly as the merge will write it, without writing', () => {
+    fs.writeFileSync(sessionPath, HISTORY.join('\n') + '\n');
+    stashCodexRollout(sessionPath);
+    fs.writeFileSync(sessionPath, TURN.join('\n') + '\n');
+
+    const view = readStashedCodexRolloutView(sessionPath)!;
+    // One session_meta — the stub's copy is dropped, as in the merge.
+    expect(view.split('\n').filter((l) => l.includes('session_meta'))).toHaveLength(1);
+    expect(fs.existsSync(codexNoHistoryStashPath(sessionPath))).toBe(true);
+
+    mergeStashedCodexRollout(sessionPath);
+    expect(fs.readFileSync(sessionPath, 'utf-8')).toBe(view);
   });
 });

@@ -15,6 +15,7 @@ import {
 } from '@cockpit/effect-core';
 import { resolveSessionPath } from './sessionStore';
 import { parseUserMessageIndex } from './transcriptParsers';
+import { openTranscriptView } from './transcriptView';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,7 +51,8 @@ export const POST = handler((req) =>
     const { sessionPath, engine } = resolved;
 
     const index = yield* Effect.tryPromise({
-      try: () => parseUserMessageIndex(sessionPath, engine),
+      // Via the view: mid independent-task turn the file holds only that turn.
+      try: () => parseUserMessageIndex(openTranscriptView(sessionPath, engine).source(), engine),
       catch: (cause) =>
         new AppError({ message: 'parseUserMessageIndex failed', cause }),
     });

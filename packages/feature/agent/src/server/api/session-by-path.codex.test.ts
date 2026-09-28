@@ -990,4 +990,40 @@ describe('session-by-path codex tool types', () => {
       input: { url: 'https://npmjs.com/package/@openai/codex' },
     });
   });
+
+  // An independent-task turn replaces the rollout with a session_meta stub for its whole
+  // duration. A mid-turn read used to return that turn alone, numbered from codex-user-0,
+  // and the client — aligning by id — replaced the entire history with it.
+  it('reads the stashed history during an independent-task turn', async () => {
+    const sessionId = 'codex-nohistory-midturn';
+    const meta = { type: 'session_meta', payload: { id: sessionId, cwd: '/tmp' } };
+    const say = (role: string, text: string) => ({
+      type: 'response_item',
+      payload: { type: 'message', role, content: [{ type: role === 'user' ? 'input_text' : 'output_text', text }] },
+    });
+    const filePath = writeCodexTranscript(sessionId, [meta, say('user', 'first'), say('assistant', 'one')]);
+    const { stashCodexRollout } = await import('../engines/shared/noHistoryRollout');
+    stashCodexRollout(filePath);
+    fs.appendFileSync(filePath, [say('user', 'second'), say('assistant', 'two')].map((l) => JSON.stringify(l)).join('\n') + '\n');
+
+    const { POST } = await import('./session-by-path');
+    const read = async (ifFingerprint?: string) =>
+      (await POST(
+        new Request('http://test.local/api/session-by-path', {
+          method: 'POST',
+          body: JSON.stringify({ cwd: '/tmp', sessionId, ifFingerprint }),
+        })
+      )).json();
+
+    const body = await read();
+    expect(body.messages.map((m: { id: string; content: string }) => `${m.id}:${m.content}`)).toEqual([
+      'codex-user-0:first',
+      'codex-assistant-1:one',
+      'codex-user-2:second',
+      'codex-assistant-3:two',
+    ]);
+    // The turn is still growing, so the fingerprint must move with it.
+    fs.appendFileSync(filePath, JSON.stringify(say('assistant', 'more')) + '\n');
+    expect((await read(body.fingerprint)).notModified).toBeUndefined();
+  });
 });

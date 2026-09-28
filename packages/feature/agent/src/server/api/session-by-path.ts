@@ -20,6 +20,7 @@ import {
   parseCodexTranscriptFile,
   parseTranscriptFile,
 } from './session/transcriptParsers';
+import { openTranscriptView } from './session/transcriptView';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -384,19 +385,23 @@ export const POST = handler((req) =>
       return ok({ workflow, fingerprint: journalFingerprint });
     }
 
-    const fingerprint = getFileFingerprint(sessionPath);
+    // Through the view, not the raw file: mid independent-task turn the file holds only
+    // that turn (see session/transcriptView.ts).
+    const view = openTranscriptView(sessionPath, engine);
+    const { fingerprint } = view;
     if (ifFingerprint && ifFingerprint === fingerprint) {
       return ok({ notModified: true, fingerprint });
     }
 
     const parseResult = yield* Effect.tryPromise({
       try: async () => {
-        if (engine === 'codex') return parseCodexTranscriptFile(sessionPath);
+        const source = view.source();
+        if (engine === 'codex') return parseCodexTranscriptFile(source);
         // Everything else (claude/ollama/deepseek/kimi/glm) writes Claude-style
         // transcripts, so one parser covers them.
         // ollama has done so since v1.0.186; the AI SDK ModelMessage legacy fallback
         // (v1.0.184–185 only) was removed.
-        return parseTranscriptFile(sessionPath, { limit, beforeTurnIndex, fromTurnIndex });
+        return parseTranscriptFile(source, { limit, beforeTurnIndex, fromTurnIndex });
       },
       catch: (cause) =>
         new AppError({ message: 'parseTranscriptFile failed', cause }),

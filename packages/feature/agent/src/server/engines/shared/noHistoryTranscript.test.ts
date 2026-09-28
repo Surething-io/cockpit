@@ -7,6 +7,7 @@ import {
   stashTranscript,
   mergeStashedTranscript,
   recoverStashedTranscripts,
+  readStashedTranscriptView,
 } from './noHistoryTranscript';
 
 const SID = '11111111-2222-3333-4444-555555555555';
@@ -139,5 +140,36 @@ describe('recoverStashedTranscripts', () => {
     fs.mkdirSync(join(root, '-proj', SID), { recursive: true });
     expect(recoverStashedTranscripts([root])).toBe(0);
     fs.rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe('readStashedTranscriptView (mid-turn reads)', () => {
+  const entries = (text: string) => text.split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
+
+  it('is null when nothing is stashed, so readers use the file as-is', () => {
+    fs.writeFileSync(sessionPath, HISTORY.join('\n') + '\n');
+    expect(readStashedTranscriptView(sessionPath)).toBeNull();
+  });
+
+  it('shows history + in-flight turn exactly as the merge will write it, without writing', () => {
+    fs.writeFileSync(sessionPath, HISTORY.join('\n') + '\n');
+    stashTranscript(sessionPath);
+    fs.writeFileSync(sessionPath, TURN.join('\n') + '\n');
+
+    const view = readStashedTranscriptView(sessionPath)!;
+    expect(entries(view).map((e) => e.uuid)).toEqual(['u1', 'a1', 'u2', 'a2']);
+    expect(entries(view)[2].parentUuid).toBe('a1');
+    // Read-only: the turn is still in progress.
+    expect(readEntries(sessionPath)).toHaveLength(2);
+    expect(fs.existsSync(noHistoryStashPath(sessionPath))).toBe(true);
+
+    mergeStashedTranscript(sessionPath);
+    expect(fs.readFileSync(sessionPath, 'utf-8')).toBe(view);
+  });
+
+  it('shows the history alone before the turn has written anything', () => {
+    fs.writeFileSync(sessionPath, HISTORY.join('\n') + '\n');
+    stashTranscript(sessionPath);
+    expect(entries(readStashedTranscriptView(sessionPath)!).map((e) => e.uuid)).toEqual(['u1', 'a1']);
   });
 });

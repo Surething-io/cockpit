@@ -95,8 +95,7 @@ export function mergeStashedCodexRollout(sessionPath: string): 'merged' | 'resto
   if (!fs.existsSync(stash)) return 'none';
 
   const history = readLines(stash);
-  const turn = fs.existsSync(sessionPath) ? readLines(sessionPath) : [];
-  const turnLines = turn[0] && isSessionMeta(turn[0]) ? turn.slice(1) : turn;
+  const turnLines = withoutStubMeta(fs.existsSync(sessionPath) ? readLines(sessionPath) : []);
 
   if (turnLines.length === 0) {
     replaceWithStash(stash, sessionPath);
@@ -114,6 +113,35 @@ export function mergeStashedCodexRollout(sessionPath: string): 'merged' | 'resto
   fs.writeFileSync(sessionPath, [...history, ...turnLines].join('\n') + '\n', 'utf-8');
   fs.unlinkSync(stash);
   return 'merged';
+}
+
+/** The in-flight rollout minus the `session_meta` stashCodexRollout seeded it with. */
+function withoutStubMeta(turn: string[]): string[] {
+  return turn[0] && isSessionMeta(turn[0]) ? turn.slice(1) : turn;
+}
+
+/**
+ * The rollout as a reader should see it while an independent turn is in flight: exactly
+ * what mergeStashedCodexRollout will write, assembled in memory. Null when nothing is
+ * stashed. Never writes.
+ *
+ * Needed beyond "history is missing": codex bubble ids are positional
+ * (`codex-user-0`, …), so the stub-plus-turn file numbers the in-flight prompt as the
+ * session's FIRST message — a client aligning by id then takes it for the conversation's
+ * real first message and replaces the whole history with the one turn.
+ *
+ * Read order and the race it covers: see readStashedTranscriptView.
+ */
+export function readStashedCodexRolloutView(sessionPath: string): string | null {
+  const stash = codexNoHistoryStashPath(sessionPath);
+  if (!fs.existsSync(stash)) return null;
+  try {
+    const turnLines = withoutStubMeta(fs.existsSync(sessionPath) ? readLines(sessionPath) : []);
+    const history = readLines(stash);
+    return [...history, ...turnLines].join('\n') + '\n';
+  } catch {
+    return null;
+  }
 }
 
 /**

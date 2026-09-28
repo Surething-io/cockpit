@@ -14,6 +14,7 @@
 // 21-turn conversation into 58 by guessing.
 import * as fs from 'fs';
 import * as readline from 'readline';
+import { Readable } from 'stream';
 import { injectionKind, isHumanTurnStart } from '../../../shared/transcriptTurns';
 import { asyncLaunchTaskId, parseTaskNotification, type ToolCallTask } from '../../../shared/subagentTask';
 import { generateTitle } from '../../sessionTitle';
@@ -131,6 +132,20 @@ export interface ChatMessage {
   }>;
 }
 /**
+ * A transcript to parse: a path on disk, or its full text already in memory.
+ *
+ * The in-memory form exists for "independent task" turns, where the file on disk holds
+ * only the in-flight turn and the conversation has to be reassembled from the stash
+ * before anyone reads it (see session/transcriptView.ts).
+ */
+export type TranscriptSource = string | { text: string };
+
+function openTranscriptLines(source: TranscriptSource): readline.Interface {
+  const input = typeof source === 'string' ? fs.createReadStream(source) : Readable.from([source.text]);
+  return readline.createInterface({ input, crlfDelay: Infinity });
+}
+
+/**
  * Which slice of turns to return. `beforeTurnIndex` + `limit` walks BACKWARDS
  * (scroll-up paging); `fromTurnIndex` pins the start instead, for "bring turn N
  * back on screen" jumps.
@@ -147,7 +162,7 @@ export interface TurnPage {
 }
 
 export async function parseTranscriptFile(
-  filePath: string,
+  filePath: TranscriptSource,
   page: TurnPage = {}
 ): Promise<{
   messages: ChatMessage[];
@@ -161,11 +176,7 @@ export async function parseTranscriptFile(
   startTurnIndex: number;
 }> {
   const { limit, beforeTurnIndex, fromTurnIndex } = page;
-  const fileStream = fs.createReadStream(filePath);
-  const rl = readline.createInterface({
-    input: fileStream,
-    crlfDelay: Infinity,
-  });
+  const rl = openTranscriptLines(filePath);
 
   const rawMessages: TranscriptMessage[] = [];
   let aiTitle = '';
@@ -310,7 +321,7 @@ export interface UserMessageIndexEntry {
  * `type:"user"` lines that are not human messages.
  */
 export async function parseUserMessageIndex(
-  filePath: string,
+  filePath: TranscriptSource,
   engine: string
 ): Promise<{ entries: UserMessageIndexEntry[]; totalTurns: number; title: string }> {
   // Codex rollouts have no pagination (parseCodexTranscriptFile takes no limit),
@@ -583,10 +594,9 @@ interface CodexPayload {
 }
 
 export async function parseCodexTranscriptFile(
-  filePath: string
+  filePath: TranscriptSource
 ): Promise<{ messages: ChatMessage[]; title: string; bot?: string; usage?: TokenUsage }> {
-  const fileStream = fs.createReadStream(filePath);
-  const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+  const rl = openTranscriptLines(filePath);
 
   const messages: ChatMessage[] = [];
   let currentAssistant: ChatMessage | null = null;

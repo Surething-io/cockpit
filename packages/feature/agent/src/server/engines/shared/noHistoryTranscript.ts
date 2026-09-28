@@ -143,12 +143,41 @@ export function mergeStashedTranscript(sessionPath: string): 'merged' | 'restore
     return 'restored';
   }
 
-  const sessionId = basename(sessionPath).replace(/\.jsonl$/, '');
-  const seam = tailUuid(history);
-  const merged = [...history, ...turn.map((line) => relinkAndRestamp(line, seam, sessionId))];
-  fs.writeFileSync(sessionPath, merged.join('\n') + '\n', 'utf-8');
+  fs.writeFileSync(sessionPath, spliceTurn(history, turn, sessionPath).join('\n') + '\n', 'utf-8');
   fs.unlinkSync(stash);
   return 'merged';
+}
+
+/** Stashed history followed by the independent turn, seam re-linked. Shared by merge and view. */
+function spliceTurn(history: string[], turn: string[], sessionPath: string): string[] {
+  const sessionId = basename(sessionPath).replace(/\.jsonl$/, '');
+  const seam = tailUuid(history);
+  return [...history, ...turn.map((line) => relinkAndRestamp(line, seam, sessionId))];
+}
+
+/**
+ * The conversation as a reader should see it while an independent turn is in flight:
+ * exactly what mergeStashedTranscript will write, assembled in memory. Null when nothing
+ * is stashed — the file on disk is then the whole conversation. Never writes.
+ *
+ * Without this, a mid-turn read sees only the in-flight turn, and a client merging that
+ * into the transcript it is showing replaces the whole history with it.
+ *
+ * The session file is read BEFORE the stash on purpose: if the merge lands in between,
+ * the stash read fails and the caller falls back to the file, which is by then complete.
+ * The other order could pair the stash with the already-merged file and show the history
+ * twice. A half-written trailing line passes through; the parsers skip it.
+ */
+export function readStashedTranscriptView(sessionPath: string): string | null {
+  const stash = noHistoryStashPath(sessionPath);
+  if (!fs.existsSync(stash)) return null;
+  try {
+    const turn = fs.existsSync(sessionPath) ? readLines(sessionPath) : [];
+    const history = readLines(stash);
+    return spliceTurn(history, turn, sessionPath).join('\n') + '\n';
+  } catch {
+    return null;
+  }
 }
 
 /**

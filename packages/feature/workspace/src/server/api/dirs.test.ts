@@ -1,6 +1,6 @@
 import path from "path"
 import { describe, expect, it } from "vitest"
-import { isHiddenName, parentOf, resolveInput, toSegments } from "./dirs"
+import { isHiddenName, parentOf, resolveInput, toSegments } from "./dirPaths"
 
 const { posix, win32 } = path
 

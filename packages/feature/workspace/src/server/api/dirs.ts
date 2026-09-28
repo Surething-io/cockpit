@@ -11,6 +11,9 @@
  * All platform differences stay here: the client renders `segments`, `roots`
  * and `sep` as given and never splits or joins a path itself.
  *
+ * Route modules may only export route fields (GET, dynamic, ...), which is
+ * why the pure path helpers live in ./dirPaths.
+ *
  * Not a new exposure: /api/files/readdir already lists any `cwd`; the gate is
  * the same-origin check, as for every other route.
  */
@@ -21,8 +24,7 @@ import { homedir } from "os"
 import { Effect } from "effect"
 import { handler, ok } from "@cockpit/effect-runtime/server"
 import { FSError } from "@cockpit/effect-core"
-
-type PathModule = typeof nodePath.posix
+import { isHiddenName, parentOf, resolveInput, toSegments, type DirSegment } from "./dirPaths"
 
 export interface DirEntry {
   name: string
@@ -30,11 +32,6 @@ export interface DirEntry {
   hidden: boolean
   /** Has a `.git` entry, i.e. is a repository root. */
   git: boolean
-}
-
-export interface DirSegment {
-  name: string
-  path: string
 }
 
 export interface DirListing {
@@ -52,40 +49,6 @@ export interface DirListing {
   /** Set instead of throwing so the picker can show it inline. */
   error?: "notFound" | "notDirectory" | "denied"
 }
-
-/** "", "~" and "~/x" are relative to home; anything else is resolved against it. */
-export const resolveInput = (
-  input: string,
-  home: string,
-  p: PathModule = nodePath
-): string => {
-  const trimmed = input.trim()
-  if (trimmed === "" || trimmed === "~") return p.resolve(home)
-  if (/^~[\\/]/.test(trimmed)) return p.resolve(home, trimmed.slice(2))
-  return p.resolve(home, trimmed)
-}
-
-export const toSegments = (abs: string, p: PathModule = nodePath): DirSegment[] => {
-  const { root } = p.parse(abs)
-  const segments: DirSegment[] = [{ name: root, path: root }]
-  let current = root
-  for (const name of abs.slice(root.length).split(/[\\/]/).filter(Boolean)) {
-    current = p.join(current, name)
-    segments.push({ name, path: current })
-  }
-  return segments
-}
-
-export const parentOf = (abs: string, p: PathModule = nodePath): string | null => {
-  const parent = p.dirname(abs)
-  return parent === abs ? null : parent
-}
-
-/** Dot-dirs everywhere; on Windows also the `$Recycle.Bin`-style system dirs. */
-export const isHiddenName = (name: string, platform: NodeJS.Platform): boolean =>
-  name.startsWith(".") ||
-  (platform === "win32" &&
-    (name.startsWith("$") || name === "System Volume Information"))
 
 const exists = (target: string) =>
   Effect.promise(() =>

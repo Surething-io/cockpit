@@ -4,7 +4,7 @@
  * Launches the OS-native folder picker dialog. Returns `folder: null` on
  * failure or user cancellation.
  */
-import { execFileSync } from "child_process"
+import { execFile } from "child_process"
 import { homedir } from "os"
 import { Effect } from "effect"
 import { SETTINGS_FILE, readJsonFile } from "@cockpit/shared-utils"
@@ -34,6 +34,9 @@ function run(argv) {
   const mainMenu = $.NSMenu.alloc.init
   mainMenu.addItem(editItem)
   app.mainMenu = mainMenu
+  // Without this the app never completes launch: keys still reach the panel,
+  // but mouse clicks are swallowed and it exposes no accessibility windows.
+  app.finishLaunching
   app.activateIgnoringOtherApps(true)
   const panel = $.NSOpenPanel.openPanel
   panel.canChooseFiles = false
@@ -112,28 +115,38 @@ public static class CockpitFolderPicker {
 `
 
 /** Returns the chosen path, "" on cancel; throws ENOENT if the tool is missing. */
-type FolderPicker = (prompt: string, home: string) => string
+type FolderPicker = (prompt: string, home: string) => Promise<string>
+
+// Async on purpose: the dialog stays open while the user browses, and a sync
+// exec would freeze the whole server (WS, terminals, every other route) for
+// that long. The timeout only reaps a dialog left open and forgotten.
+const PICKER_TIMEOUT_MS = 5 * 60 * 1000
 
 // Only the picker's stdout matters; stderr is GTK/Qt warning noise.
 const run = (
   file: string,
   args: string[],
   env?: NodeJS.ProcessEnv
-): string =>
-  execFileSync(file, args, {
-    encoding: "utf8",
-    timeout: 60000,
-    stdio: ["ignore", "pipe", "ignore"],
-    env,
-  }).trim()
+): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const child = execFile(
+      file,
+      args,
+      // windowsHide: no stray console flashes up when the server itself has
+      // none; the dialog is unaffected (checked on a live Windows desktop).
+      { encoding: "utf8", timeout: PICKER_TIMEOUT_MS, env, windowsHide: true },
+      (err, stdout) => (err ? reject(err) : resolve(stdout.trim()))
+    )
+    child.stdin?.end()
+  })
 
 // Non-zero exit = user cancelled, so resolve to "" rather than throwing.
 // Only a missing binary propagates, which is what lets firstOf fall through.
 const cancelToEmpty =
   (picker: FolderPicker): FolderPicker =>
-  (prompt, home) => {
+  async (prompt, home) => {
     try {
-      return picker(prompt, home)
+      return await picker(prompt, home)
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === "ENOENT") throw e
       return ""
@@ -143,10 +156,10 @@ const cancelToEmpty =
 /** Try each picker in turn, moving on only when its tool is not installed. */
 const firstOf =
   (...pickers: FolderPicker[]): FolderPicker =>
-  (prompt, home) => {
+  async (prompt, home) => {
     for (const picker of pickers) {
       try {
-        return picker(prompt, home)
+        return await picker(prompt, home)
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e
       }
@@ -186,10 +199,8 @@ const pickers: Partial<Record<NodeJS.Platform, FolderPicker>> = {
   linux: firstOf(cancelToEmpty(zenityPicker), cancelToEmpty(kdialogPicker)),
 }
 
-const pickFolder: FolderPicker = (prompt, home) => {
-  const picker = pickers[process.platform] ?? pickers.linux!
-  return picker(prompt, home)
-}
+const pickFolder: FolderPicker = (prompt, home) =>
+  (pickers[process.platform] ?? pickers.linux!)(prompt, home)
 
 export const GET = handler(() =>
   Effect.gen(function* () {
@@ -207,7 +218,7 @@ export const GET = handler(() =>
     const home = homedir()
 
     // Dialog failure or user cancellation -> folder = null
-    const result = yield* Effect.try({
+    const result = yield* Effect.tryPromise({
       try: () => pickFolder(prompt, home),
       catch: () => null,
     }).pipe(Effect.orElseSucceed(() => ""))

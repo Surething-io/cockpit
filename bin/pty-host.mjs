@@ -24,14 +24,13 @@
 //   --serve   The host itself.
 //
 // Protocol: newline-delimited JSON over a unix socket (named pipe on Windows).
-// PROTOCOL is part of the socket path; bump it on any incompatible change so a
-// new server never talks to an old host — the old one simply idles out once its
-// sessions end. Must match PTY_HOST_PROTOCOL in ptyHostClient.ts. Additive
-// capabilities go in FEATURES instead, so a host staged by an older build
-// keeps serving the sessions it already has.
+// No compatibility is kept across host code changes: `hello` reports BUILD (a
+// hash of this file), and a server whose bin/pty-host.mjs hashes differently
+// shuts this host down and launches its own — the sessions here end with it.
+// Changes that leave this file untouched keep terminals alive across updates.
 //
 //   client -> host                       host -> client
-//   hello                                hello {proto, pid, features, sessions[]}
+//   hello                                hello {proto, build, pid, sessions[]}
 //   spawn {id,kind,file,args,cwd,env,..} spawned {id,pid} | spawnError {id,error}
 //   write {id,data}                      data {id,data,stream?}
 //   eof {id}       close a pipe's stdin  exit {id,exitCode,signal}
@@ -43,6 +42,7 @@
 // kind is 'pty' (default) or 'pipe'. A pipe command is a plain child with
 // separate stdout/stderr (`stream` on its data events) and no TTY.
 import { spawn } from 'child_process';
+import { createHash } from 'crypto';
 import { appendFileSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { createServer, connect } from 'net';
 import { createRequire } from 'module';
@@ -50,7 +50,8 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 const PROTOCOL = 1;
-const FEATURES = ['pipe'];
+/** Identifies this exact host code; must match hostBuildId() in ptyHostClient.ts. */
+const BUILD = createHash('sha1').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex').slice(0, 12);
 /** Per-session replay buffer while no server is watching (matches the server's ring). */
 const RING_MAX = 2 * 1024 * 1024;
 /** Exit this long after the last client left, provided no session remains. */
@@ -296,7 +297,7 @@ async function serve() {
     const s = msg.id !== undefined ? sessions.get(msg.id) : undefined;
     switch (msg.op) {
       case 'hello':
-        reply({ ev: 'hello', proto: PROTOCOL, pid: process.pid, features: FEATURES, sessions: [...sessions].map(([id, x]) => describe(id, x)) });
+        reply({ ev: 'hello', proto: PROTOCOL, build: BUILD, pid: process.pid, sessions: [...sessions].map(([id, x]) => describe(id, x)) });
         return;
       case 'spawn': {
         if (sessions.has(msg.id)) {
@@ -398,7 +399,7 @@ async function serve() {
   let listening = false;
   server.listen(socketPath, () => {
     listening = true;
-    log(`listening on ${socketPath}`);
+    log(`listening on ${socketPath} (build ${BUILD})`);
     scheduleIdleCheck();
   });
 

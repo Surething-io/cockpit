@@ -15,6 +15,7 @@
 // connections would each receive — and each ack — the same exit events.
 import { spawn } from 'child_process';
 import { createHash } from 'crypto';
+import { readFileSync } from 'fs';
 import { EventEmitter } from 'events';
 import { connect, type Socket } from 'net';
 import { tmpdir } from 'os';
@@ -44,10 +45,7 @@ export interface PtyHandle {
   kill(signal?: string): void;
 }
 
-/**
- * The subset of ChildProcess a pipe-mode command uses; a real ChildProcess
- * satisfies it, which is what the in-process fallback still spawns.
- */
+/** The subset of ChildProcess a pipe-mode command uses (RemotePipe mimics it). */
 export interface PipeProcess {
   readonly pid?: number;
   readonly stdout: EventEmitter | null;
@@ -128,8 +126,6 @@ interface RemoteSession {
 }
 
 class RemotePty implements PtyHandle, RemoteSession {
-  /** See isHostedSession. */
-  readonly hostedSession = true;
   pid: number;
   private dataCbs = new Set<(data: string) => void>();
   private exitCbs = new Set<(e: { exitCode: number; signal?: number }) => void>();
@@ -224,8 +220,6 @@ class RemotePty implements PtyHandle, RemoteSession {
  * It never emits 'error' — the host reports a failed child as exit code 1.
  */
 class RemotePipe extends EventEmitter implements PipeProcess, RemoteSession {
-  /** See isHostedSession. */
-  readonly hostedSession = true;
   pid: number;
   readonly stdout = new EventEmitter();
   readonly stderr = new EventEmitter();
@@ -296,23 +290,13 @@ class RemotePipe extends EventEmitter implements PipeProcess, RemoteSession {
   }
 }
 
-/**
- * Whether a handle is a stand-in for a process living in the pty-host (as
- * opposed to a real in-process child). A brand rather than `instanceof`: in dev
- * several copies of this module exist, each with its own classes.
- */
-export function isHostedSession(handle: unknown): boolean {
-  return (handle as { hostedSession?: unknown } | null | undefined)?.hostedSession === true;
-}
-
 // ─────────────────────────────────────────────────────────
 // Connection
 // ─────────────────────────────────────────────────────────
 
 interface HostSessionWire {
   id: string;
-  /** Absent from hosts that predate pipe support — those only ran PTYs. */
-  kind?: 'pty' | 'pipe';
+  kind: 'pty' | 'pipe';
   pid: number;
   meta: PtySessionMeta | null;
   output: string;
@@ -322,7 +306,8 @@ interface HostSessionWire {
 }
 
 interface HelloWire {
-  features?: string[];
+  /** Hash of the host's own code; absent from hosts that predate the check. */
+  build?: string;
   sessions?: HostSessionWire[];
 }
 
@@ -330,8 +315,6 @@ type AdoptHandler = (sessions: AdoptedHostSession[]) => Promise<void>;
 
 class HostConnection {
   readonly sessions = new Map<string, RemoteSession>();
-  /** Capabilities announced in `hello` (see FEATURES in bin/pty-host.mjs). */
-  features = new Set<string>();
   private spawnWaiters = new Map<string, { resolve: (pid: number) => void; reject: (e: Error) => void }>();
   private buf = '';
   closed = false;
@@ -348,7 +331,7 @@ class HostConnection {
     try { this.sock.write(JSON.stringify(msg) + '\n'); } catch { /* closing */ }
   }
 
-  /** Resolves with the host's capabilities and existing sessions. */
+  /** Resolves with the host's build and existing sessions. */
   hello(): Promise<HelloWire> {
     return new Promise((resolve, reject) => {
       this.helloWaiter = { resolve, reject };
@@ -459,7 +442,6 @@ interface ClientState {
   conn?: HostConnection;
   connecting?: Promise<HostConnection | null>;
   launching?: Promise<HostConnection | null>;
-  replacing?: Promise<HostConnection>;
   adopt?: AdoptHandler;
 }
 
@@ -475,8 +457,29 @@ export function setPtyHostAdoptHandler(fn: AdoptHandler): void {
   state().adopt = fn;
 }
 
-/** One connect attempt. Null when no host is listening. */
-function tryConnect(): Promise<HostConnection | null> {
+/**
+ * Hash of the host code this server ships — what a host must report in
+ * `hello` to be kept. Same algorithm as BUILD in bin/pty-host.mjs. Null when
+ * the install dir is unknown (tests), which disables the check.
+ */
+function hostBuildId(): string | null {
+  const root = process.env.COCKPIT_ROOT;
+  if (!root) return null;
+  try {
+    return createHash('sha1').update(readFileSync(join(root, 'bin', 'pty-host.mjs'))).digest('hex').slice(0, 12);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One connect attempt. Null when no host is listening — or when the one that
+ * is runs different host code and `replaceOutdated` is set: it is shut down
+ * (its sessions end with it, by design — no compatibility is kept across host
+ * changes) and the caller launches the current one. Their bubbles come back
+ * as interrupted, with the scrollback the previous server flushed on exit.
+ */
+function tryConnect(replaceOutdated = true): Promise<HostConnection | null> {
   return new Promise((resolve) => {
     const sock = connect(ptyHostSocketPath());
     const onError = () => resolve(null);
@@ -496,8 +499,15 @@ function tryConnect(): Promise<HostConnection | null> {
         resolve(null);
         return;
       }
+      const expected = hostBuildId();
+      if (replaceOutdated && expected && hello.build !== expected) {
+        console.log(`[pty-host] host runs build ${hello.build ?? 'unknown'}, expected ${expected}; replacing it (${hello.sessions?.length ?? 0} session(s) end)`);
+        conn.shutdownHost();
+        await conn.whenClosed();
+        resolve(null);
+        return;
+      }
       s.conn = conn;
-      conn.features = new Set(hello.features ?? []);
       const adopted: AdoptedHostSession[] = (hello.sessions ?? []).map((w) => {
         const base = { meta: w.meta, output: w.output, ...(w.exited ? { exitCode: w.exitCode ?? 0 } : {}) };
         const remote = w.kind === 'pipe' ? new RemotePipe(w.id, conn, w.pid) : new RemotePty(w.id, conn, w.pid);
@@ -557,7 +567,9 @@ async function getConnection(launch: boolean): Promise<HostConnection | null> {
       const deadline = Date.now() + LAUNCH_TIMEOUT_MS;
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, LAUNCH_POLL_MS));
-        const conn = s.conn ?? (await tryConnect());
+        // Whatever answers now is the host we just launched; never replace it,
+        // or a failed restage (which reruns the previous copy) would loop.
+        const conn = s.conn ?? (await tryConnect(false));
         if (conn) return conn;
       }
       return null;
@@ -580,39 +592,9 @@ export async function spawnPtyInHost(opts: PtySpawnOptions): Promise<PtyHandle> 
   return conn.spawn('pty', new RemotePty(opts.id, conn, 0), opts);
 }
 
-/**
- * Swap a host staged by an older build for one running the current code.
- *
- * Needed because an outdated host never goes away by itself: the server stays
- * connected, so the host's idle exit (no clients, no sessions) never fires.
- * Only safe while it owns no sessions — the caller checks.
- */
-function replaceHost(old: HostConnection): Promise<HostConnection> {
-  const s = state();
-  if (!s.replacing) {
-    s.replacing = (async () => {
-      console.log('[pty-host] host predates a needed feature and is idle, replacing it');
-      old.shutdownHost();
-      await old.whenClosed();
-      return requireConnection();
-    })().finally(() => { s.replacing = undefined; });
-  }
-  return s.replacing;
-}
-
-/**
- * Spawn a pipe-mode command inside the host. Null when the running host was
- * staged by a build without pipe support and still owns live sessions: it
- * cannot be replaced without killing those, so the caller spawns in-process
- * for now. An idle outdated host is replaced on the spot.
- */
-export async function spawnPipeInHost(opts: PipeSpawnOptions): Promise<PipeProcess | null> {
-  let conn = await requireConnection();
-  if (!conn.features.has('pipe')) {
-    if (conn.sessions.size > 0) return null;
-    conn = await replaceHost(conn);
-    if (!conn.features.has('pipe')) return null;
-  }
+/** Spawn a pipe-mode command inside the host, launching the host if needed. */
+export async function spawnPipeInHost(opts: PipeSpawnOptions): Promise<PipeProcess> {
+  const conn = await requireConnection();
   return conn.spawn('pipe', new RemotePipe(opts.id, conn, 0), opts);
 }
 

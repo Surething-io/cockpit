@@ -7,7 +7,7 @@
  *   - Heartbeat is driven by Schedule.spaced and cancels automatically.
  *   - Spawn / attach / signal / resize semantics match the original handler.
  */
-import { spawn, execSync } from "child_process"
+import { execSync } from "child_process"
 import { Effect, Scope, Schedule, Stream } from "effect"
 import type { WebSocket } from "ws"
 import { ValidationError, WSError } from "@cockpit/effect-core"
@@ -495,16 +495,7 @@ const dispatchMessage = (
             )
           }
           // Like PTYs, pipe commands run in the pty-host so they survive a
-          // cockpit update/restart. In-process spawning remains only for a
-          // host staged by a build without pipe support (spawnPipeInHost
-          // returns null) — such a child still dies with this server.
-          const spawnLocal = (): PipeProcess =>
-            spawn(shell, ["--login", "-c", command], {
-              cwd,
-              env: childEnv as NodeJS.ProcessEnv,
-              stdio: ["pipe", "pipe", "pipe"],
-              detached: true,
-            })
+          // cockpit update/restart.
           Effect.runFork(
             Effect.tryPromise(() =>
               spawnPipeInHost({
@@ -516,9 +507,7 @@ const dispatchMessage = (
                 meta,
               })
             ).pipe(
-              Effect.flatMap((child) =>
-                Effect.try(() => register(child ?? spawnLocal()))
-              ),
+              Effect.flatMap((child) => Effect.sync(() => register(child))),
               Effect.catchAll((e) =>
                 send({ type: "error", commandId, error: errorMessage(e) }).pipe(
                   Effect.catchAll(() => Effect.void)

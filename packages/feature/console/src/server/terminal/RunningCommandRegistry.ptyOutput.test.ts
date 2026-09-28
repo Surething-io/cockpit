@@ -127,24 +127,21 @@ describe('sidecar output files do not outlive their entry', () => {
     await expect(fs.access(file)).rejects.toThrow();
   });
 
-  it('the exit-time flush skips commands hosted in the pty-host', async () => {
+  it('the exit-time flush writes every live PTY (hosted ones may not survive)', async () => {
     const projectCwd = path.join(os.tmpdir(), `cockpit-ptyout-${Date.now()}-flush`);
-    const hosted = fakePty(990002);
-    const local = fakePty(990003);
-    const base = { command: 'x', cwd: projectCwd, projectCwd, tabId: 'tab-flush', usePty: true, timestamp: new Date().toISOString() };
-    registerCommand({ ...base, commandId: 'cmd-hosted', pid: hosted.handle.pid, ptyProcess: { ...hosted.handle, hostedSession: true } as PtyHandle });
-    registerCommand({ ...base, commandId: 'cmd-local', pid: local.handle.pid, ptyProcess: local.handle });
+    const pty = fakePty(990002);
+    registerCommand({
+      commandId: 'cmd-flush', command: 'x', cwd: projectCwd, projectCwd, tabId: 'tab-flush',
+      pid: pty.handle.pid, ptyProcess: pty.handle, usePty: true, timestamp: new Date().toISOString(),
+    });
     historyDirs.push(path.dirname(getTerminalOutputPath(projectCwd, 'x')));
     await sleep(100);
-    hosted.emit('hosted output');
-    local.emit('local output');
+    pty.emit('live output');
 
     flushAllRunningSync();
 
-    await expect(fs.access(getTerminalOutputPath(projectCwd, 'cmd-hosted'))).rejects.toThrow();
-    expect(await fs.readFile(getTerminalOutputPath(projectCwd, 'cmd-local'), 'utf-8')).toBe('local output');
-    hosted.exit(0);
-    local.exit(0);
+    expect(await fs.readFile(getTerminalOutputPath(projectCwd, 'cmd-flush'), 'utf-8')).toBe('live output');
+    pty.exit(0);
     await sleep(100);
   });
 });

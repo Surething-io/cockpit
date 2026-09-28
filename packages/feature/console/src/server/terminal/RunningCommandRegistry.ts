@@ -13,7 +13,6 @@ import { broadcastConsoleDelta } from './consoleBroadcast';
 import { removeEntryOutput, sweepOrphanOutputs } from './historyStore';
 import {
   ensurePtyHostConnected,
-  isHostedSession,
   setPtyHostAdoptHandler,
   type AdoptedHostSession,
   type PipeProcess,
@@ -147,9 +146,8 @@ export interface RunningCommand {
   tabId: string;
   pid: number;
   /**
-   * Child process — set in pipe mode only. Normally a stand-in for a child
-   * living in the pty-host (see ptyHostClient.ts); a real ChildProcess only
-   * when that host predates pipe support. PTY mode drives everything through
+   * Child process — set in pipe mode only: a stand-in for a child living in
+   * the pty-host (see ptyHostClient.ts). PTY mode drives everything through
    * `ptyProcess` (output, stdin, kill), so there is no process to record.
    * It used to hold a throwaway `spawn("true")` purely to satisfy this type,
    * which crashed the server on Windows (no `true.exe`, and the async spawn
@@ -665,11 +663,14 @@ export async function finalizeCommand(commandId: string, exitCode: number, pid?:
 export const INTERRUPTED_EXIT_CODE = -1;
 
 /**
- * Synchronously dump every live in-process PTY ring buffer to its output file.
+ * Synchronously dump every live PTY ring buffer to its output file.
  *
- * Called from the process `exit` hook (server.mjs) so a graceful restart
- * (Ctrl-C / SIGINT / SIGTERM) preserves terminal scrollback on disk. Only
- * matters for commands that die with us; hosted ones are skipped. MUST be
+ * Called from the process `exit` hook (server.mjs). Terminals normally outlive
+ * us in the pty-host, but not always — `cockpit stop`, or the next server
+ * replacing a host whose code changed, ends them — and then this is the
+ * scrollback their interrupted bubbles come back with. The file does not
+ * leak when they survive instead: finalize and bubble deletion remove it by
+ * id. MUST be
  * synchronous: an `exit` handler cannot await, and async fs writes would not
  * flush before the process dies. The placeholder JSONL line still says
  * `running: true`; the next server reconciles it on load (see
@@ -679,10 +680,6 @@ export const INTERRUPTED_EXIT_CODE = -1;
 export function flushAllRunningSync(): void {
   const registry = getRegistry();
   for (const cmd of registry.values()) {
-    // Hosted commands outlive us and the pty-host keeps their output; the next
-    // server gets it back on adoption. Flushing them would only leave a
-    // sidecar no entry references once they finish.
-    if (isHostedSession(cmd.ptyProcess ?? cmd.process)) continue;
     const buf = cmd.ptyRingBuffer;
     if (!buf || buf.length === 0) continue;
     try {
@@ -698,9 +695,9 @@ export function flushAllRunningSync(): void {
  *
  * A terminal command is persisted as a placeholder (running: true) and only
  * cleared by finalizeCommand inside the owning process. Commands survive a
- * restart in the pty-host and are adopted first; ones lost with a dead host
- * (or run in-process by the pre-pipe fallback) are not, so their placeholder
- * is stranded — and loadHistory skips every running entry, making the bubble vanish. Here we rewrite any running
+ * restart in the pty-host and are adopted first; ones lost with their host
+ * (it died, or was replaced for running outdated code) are not, so their
+ * placeholder is stranded — and loadHistory skips every running entry, making the bubble vanish. Here we rewrite any running
  * entry that is NOT live in *this* process into a finished one: drop `running`,
  * mark it interrupted, and attach its flushed output file if present. Also
  * collapses duplicate ids (rerun placeholders) keeping the latest.

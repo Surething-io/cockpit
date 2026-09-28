@@ -257,7 +257,6 @@
     "noSessionsYet": "No sessions yet",
     "projectList": "Project List",
     "openFolder": "Open Folder",
-    "selectingFolder": "Selecting...",
     "loadingHistory": "Loading history..."
   },
   "scheduledTasks": {
@@ -1265,8 +1264,19 @@
     "imageTooLarge": "Image too large to preview",
     "cannotPreviewBinary": "Cannot preview binary file",
     "fileTooLarge": "File too large to preview (over 10MB)",
-    "fileModifiedExternally": "File was modified externally",
-    "pickFolderPrompt": "Select project folder"
+    "fileModifiedExternally": "File was modified externally"
+  },
+  "folderPicker": {
+    "title": "Open Folder",
+    "placeholder": "Type or paste a path, e.g. ~/Work/my-app",
+    "open": "Open",
+    "showHidden": "Show hidden",
+    "hint": "↑↓ select · Tab/Enter go in · ⌘/Ctrl+Enter open",
+    "empty": "No subfolders",
+    "noMatch": "No matching folders",
+    "notFound": "Folder not found",
+    "notDirectory": "Not a folder",
+    "denied": "Permission denied. On macOS, grant access in System Settings › Privacy & Security."
   },
   "confirm": {
     "title": "Notice",

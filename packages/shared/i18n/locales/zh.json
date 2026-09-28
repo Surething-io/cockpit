@@ -257,7 +257,6 @@
     "noSessionsYet": "暂无会话",
     "projectList": "项目列表",
     "openFolder": "打开文件夹",
-    "selectingFolder": "选择中...",
     "loadingHistory": "加载历史消息..."
   },
   "scheduledTasks": {
@@ -1265,8 +1264,19 @@
     "imageTooLarge": "图片文件过大，无法预览",
     "cannotPreviewBinary": "无法预览二进制文件",
     "fileTooLarge": "文件过大，无法预览（超过 10MB）",
-    "fileModifiedExternally": "文件已被外部修改",
-    "pickFolderPrompt": "选择项目文件夹"
+    "fileModifiedExternally": "文件已被外部修改"
+  },
+  "folderPicker": {
+    "title": "打开文件夹",
+    "placeholder": "输入或粘贴路径，如 ~/Work/my-app",
+    "open": "打开",
+    "showHidden": "显示隐藏目录",
+    "hint": "↑↓ 选择 · Tab/回车 进入 · ⌘/Ctrl+回车 打开",
+    "empty": "没有子文件夹",
+    "noMatch": "没有匹配的文件夹",
+    "notFound": "文件夹不存在",
+    "notDirectory": "不是文件夹",
+    "denied": "没有访问权限。macOS 上请在 系统设置 › 隐私与安全性 中授权。"
   },
   "confirm": {
     "title": "提示",

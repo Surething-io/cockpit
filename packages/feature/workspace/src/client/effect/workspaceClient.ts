@@ -9,7 +9,7 @@
  *   - projectClient — `/api/projects` GET/POST
  *   - stateClient — project-state / global-state / scheduled-tasks
  *   - workspaceClient (this file) — settings / version / note / sessions /
- *     project-settings / pick-folder / open-vscode / open-cursor / git-worktree
+ *     project-settings / fs-dirs / open-vscode / open-cursor / git-worktree
  */
 import { Effect } from "effect"
 import { AppError } from "@cockpit/effect-core"
@@ -192,14 +192,31 @@ export const saveProjectSettings = (
   httpPostJson("/api/project-settings", body)
 
 // ─────────────────────────────────────────────────────────
-// /api/pick-folder
+// /api/fs/dirs
 // ─────────────────────────────────────────────────────────
 
-/** Backend returns `{folder: string | null}` (null = user cancelled or failed). */
-export const pickFolder = (): Effect.Effect<
-  { folder?: string | null },
-  AppError
-> => httpJson("/api/pick-folder")
+export interface DirEntry {
+  name: string
+  path: string
+  hidden: boolean
+  git: boolean
+}
+
+/** Mirrors the server's DirListing; paths arrive pre-split, never split here. */
+export interface DirListing {
+  path: string
+  parent: string | null
+  home: string
+  sep: string
+  segments: { name: string; path: string }[]
+  roots: string[]
+  dirs: DirEntry[]
+  error?: "notFound" | "notDirectory" | "denied"
+}
+
+/** `path` may be "", "~/x", relative (to home) or absolute. */
+export const listDirs = (path: string): Effect.Effect<DirListing, AppError> =>
+  httpJson(`/api/fs/dirs?path=${encodeURIComponent(path)}`)
 
 // ─────────────────────────────────────────────────────────
 // /api/open-vscode & /api/open-cursor (fire-and-forget)

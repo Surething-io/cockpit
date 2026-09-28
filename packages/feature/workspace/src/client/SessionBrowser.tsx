@@ -9,9 +9,16 @@ import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
   loadSessionProjects,
   loadSessionsByProject,
-  pickFolder,
 } from './effect/workspaceClient';
+import { FolderPicker } from './FolderPicker';
 import { EngineBadge, SessionNumberBadge, type SessionListItem } from '@cockpit/feature-agent';
+
+// The picker is one column of names, so the full-width board would be mostly
+// empty space; it gets its own compact shell, never wider than the board (so
+// it keeps clear of the sidebar the same way). Written out in full: Tailwind
+// only sees literal class names.
+const FOLDER_PICKER_SHELL_CLASS =
+  'relative w-full max-w-[min(42rem,calc((100vw_-_28rem)*0.9))] h-[min(70vh,36rem)] mx-4 bg-card rounded-lg shadow-lv3 flex flex-col overflow-hidden';
 
 /** Rows come straight from /api/sessions/projects/[encodedPath]. */
 type SessionInfo = SessionListItem;
@@ -130,6 +137,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
 
   useEffect(() => {
     if (isOpen) {
+      setIsPickingFolder(false);
       loadProjects();
       // Focus and select the retained keyword so typing replaces it
       setTimeout(() => {
@@ -139,28 +147,21 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
     }
   }, [isOpen, loadProjects]);
 
-  // Open folder picker
-  const handlePickFolder = useCallback(async () => {
-    if (isPickingFolder) return;
-    setIsPickingFolder(true);
-    const exit = await BrowserRuntime.runPromiseExit(pickFolder());
-    if (exit._tag === 'Success' && exit.value.folder && onAddProject) {
-      onAddProject(exit.value.folder);
-      onClose();
-    }
-    setIsPickingFolder(false);
-  }, [isPickingFolder, onAddProject, onClose]);
+  const handleFolderPicked = useCallback((folder: string) => {
+    onAddProject?.(folder);
+    onClose();
+  }, [onAddProject, onClose]);
 
-  // Close on ESC key
+  // ESC backs out of the folder picker first, then closes the board
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
+      if (e.key !== 'Escape' || !isOpen) return;
+      if (isPickingFolder) setIsPickingFolder(false);
+      else onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, isPickingFolder, onClose]);
 
   const handleSessionClick = (cwd: string, session: SessionInfo) => {
     // Extract sessionId from sessionPath (filename without .jsonl)
@@ -197,13 +198,26 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
       />
 
       {/* Modal */}
-      <div className={MODAL_SHELL_CLASS}>
+      <div className={isPickingFolder ? FOLDER_PICKER_SHELL_CLASS : MODAL_SHELL_CLASS}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h2 className="text-sm font-medium text-foreground">
-            {t('sessions.projectList')}
-          </h2>
+          {isPickingFolder ? (
+            <button
+              onClick={() => setIsPickingFolder(false)}
+              className="flex items-center gap-1 text-sm font-medium text-foreground hover:text-brand transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              {t('folderPicker.title')}
+            </button>
+          ) : (
+            <h2 className="text-sm font-medium text-foreground">
+              {t('sessions.projectList')}
+            </h2>
+          )}
           <div className="flex items-center gap-3">
+            {!isPickingFolder && (
             <div className="relative">
               <input
                 ref={searchInputRef}
@@ -228,16 +242,16 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
                 </button>
               )}
             </div>
-            {onAddProject && (
+            )}
+            {onAddProject && !isPickingFolder && (
               <button
-                onClick={handlePickFolder}
-                disabled={isPickingFolder}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-hover transition-colors disabled:opacity-50"
+                onClick={() => setIsPickingFolder(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-hover transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m3-3H9m-4 7h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
-                {isPickingFolder ? t('sessions.selectingFolder') : t('sessions.openFolder')}
+                {t('sessions.openFolder')}
               </button>
             )}
             <button
@@ -251,7 +265,9 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
           </div>
         </div>
 
-        {/* Content */}
+        {isPickingFolder ? (
+          <FolderPicker onPick={handleFolderPicked} />
+        ) : (
         <div className="flex-1 overflow-y-auto p-4">
           {isLoadingProjects && (
             <div className="flex items-center justify-center h-full">
@@ -405,6 +421,7 @@ export function SessionBrowser({ isOpen, onClose, onSelectSession, onAddProject,
             );
           })}
         </div>
+        )}
       </div>
     </div>
   );

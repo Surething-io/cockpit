@@ -25,6 +25,8 @@ import {
   unregisterTerminal,
   getRunningCommand,
   flushAllRunningSync,
+  adoptPtyHostSessions,
+  sweepOrphanTerminalOutputs,
   getFirstAvailableLine,
   writeStdinToCommand,
   readSince,
@@ -50,8 +52,10 @@ import {
 import type { ReadResult } from "@cockpit/feature-console/server"
 
 // Re-exported so the top-level server (server.mjs) can flush live PTY scrollback
-// to disk from its process `exit` hook — same import path in dev and prod.
-export { flushAllRunningSync }
+// to disk from its process `exit` hook, adopt the PTYs a previous server left in
+// the pty-host at boot, and sweep orphaned output files — same import path in
+// dev and prod.
+export { flushAllRunningSync, adoptPtyHostSessions, sweepOrphanTerminalOutputs }
 
 // Silence unused — kept for symmetry with their use inside the legacy wsServer
 void addOutputListener

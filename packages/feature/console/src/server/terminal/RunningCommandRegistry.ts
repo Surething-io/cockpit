@@ -4,16 +4,25 @@
 // 1. Track all running child processes (buffer stdout/stderr)
 // 2. Write to the JSONL history file when a child process exits
 
-import { ChildProcess } from 'child_process';
-import type { IPty } from 'node-pty';
 import fs from 'fs/promises';
 import { writeFileSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { getTerminalHistoryPath, getTerminalOutputPath, ensureParentDir } from '@cockpit/shared-utils';
 import { registerTerminal, finalizeTerminal, notifyOutputListeners, notifyExitListeners } from './TerminalBridge';
 import { broadcastConsoleDelta } from './consoleBroadcast';
+import { removeEntryOutput, sweepOrphanOutputs } from './historyStore';
+import {
+  ensurePtyHostConnected,
+  isHostedSession,
+  setPtyHostAdoptHandler,
+  type AdoptedHostSession,
+  type PipeProcess,
+  type PtyHandle,
+} from './ptyHostClient';
 
 const MAX_OUTPUT_LINES = 5000;
+/** Cap on the unterminated tail of pipe output (see appendCommandOutput). */
+const MAX_OUTPUT_PARTIAL = 64 * 1024;
 const OUTPUT_FILE_THRESHOLD = 4096;
 /** PTY raw byte ring buffer cap (~2MB worth of chars, covers 20k+ typical lines) */
 const PTY_RING_BUFFER_MAX = 2 * 1024 * 1024;
@@ -56,6 +65,8 @@ export class PtyRingBuffer {
   private _totalLinesEverWritten = 0;
   /** Global line number of the first complete line currently in the ring. */
   private _firstAvailableLine = 0;
+  /** Whether the head was ever cut, i.e. may start mid escape sequence. */
+  private _trimmed = false;
 
   constructor(max: number = PTY_RING_BUFFER_MAX) {
     this.max = max;
@@ -67,6 +78,7 @@ export class PtyRingBuffer {
     this.totalLen += data.length;
     this._totalLinesEverWritten += countNewlines(data);
     while (this.totalLen > this.max && this.chunks.length > 0) {
+      this._trimmed = true;
       const overflow = this.totalLen - this.max;
       const oldest = this.chunks[0];
       if (oldest.length <= overflow) {
@@ -98,6 +110,10 @@ export class PtyRingBuffer {
   /** Global line number of the first complete line still in the ring. */
   get firstAvailableLine(): number {
     return this._firstAvailableLine;
+  }
+
+  get trimmed(): boolean {
+    return this._trimmed;
   }
 }
 
@@ -131,15 +147,17 @@ export interface RunningCommand {
   tabId: string;
   pid: number;
   /**
-   * Child process — set in pipe mode only. PTY mode drives everything through
-   * `ptyProcess` (output, stdin, kill), so there is no ChildProcess to record.
+   * Child process — set in pipe mode only. Normally a stand-in for a child
+   * living in the pty-host (see ptyHostClient.ts); a real ChildProcess only
+   * when that host predates pipe support. PTY mode drives everything through
+   * `ptyProcess` (output, stdin, kill), so there is no process to record.
    * It used to hold a throwaway `spawn("true")` purely to satisfy this type,
    * which crashed the server on Windows (no `true.exe`, and the async spawn
    * error had no listener). Read it only after checking the mode.
    */
-  process?: ChildProcess;
-  /** PTY process instance (set in PTY mode) */
-  ptyProcess?: IPty;
+  process?: PipeProcess;
+  /** PTY session handle — lives in the pty-host process (see ptyHostClient.ts) */
+  ptyProcess?: PtyHandle;
   /** Whether PTY mode is enabled */
   usePty?: boolean;
   outputLines: string[];
@@ -197,17 +215,23 @@ function getRegistry(): Map<string, RunningCommand> {
   return g[GLOBAL_KEY] as Map<string, RunningCommand>;
 }
 
+type NewCommand = Omit<
+  RunningCommand,
+  'outputLines' | 'outputPartial' | 'ptyRingBuffer' | 'totalLinesEverWritten' | 'lastOutputAt'
+>;
+
 /**
  * Register a running command
  * Automatically attaches close/error listeners to ensure finalizeCommand always runs
  */
-export function registerCommand(
-  cmd: Omit<
-    RunningCommand,
-    'outputLines' | 'outputPartial' | 'ptyRingBuffer' | 'totalLinesEverWritten' | 'lastOutputAt'
-  >,
-): void {
+export function registerCommand(cmd: NewCommand): void {
   console.log(`[registry] register: id=${cmd.commandId}, cmd="${cmd.command}", pid=${cmd.pid}, pty=${!!cmd.ptyProcess}, server=${getServerId()}`);
+  trackCommand(cmd);
+  // Write placeholder entry to disk (no output, marked as running)
+  writeHistoryPlaceholder(cmd.commandId, cmd.command, cmd.timestamp, cmd.cwd, cmd.projectCwd, cmd.tabId, !!cmd.usePty, cmd.sourceId).catch(() => {});
+}
+
+function trackCommand(cmd: NewCommand, seedOutput?: string): void {
   const entry: RunningCommand = {
     ...cmd,
     outputLines: [],
@@ -216,13 +240,14 @@ export function registerCommand(
     // Only PTY commands get a ring buffer — pipe mode replay still uses outputLines.
     ...(cmd.ptyProcess ? { ptyRingBuffer: new PtyRingBuffer() } : {}),
   };
+  if (seedOutput && entry.ptyRingBuffer) {
+    entry.ptyRingBuffer.append(seedOutput);
+    entry.totalLinesEverWritten = entry.ptyRingBuffer.totalLinesEverWritten;
+  }
   getRegistry().set(cmd.commandId, entry);
 
   // Register in TerminalBridge (for CLI access)
   registerTerminal(cmd.tabId, cmd.commandId, cmd.command, cmd.projectCwd);
-
-  // Write placeholder entry to disk (no output, marked as running)
-  writeHistoryPlaceholder(cmd.commandId, cmd.command, cmd.timestamp, cmd.cwd, cmd.projectCwd, cmd.tabId, !!cmd.usePty, cmd.sourceId).catch(() => {});
 
   if (cmd.ptyProcess) {
     // PTY mode: single data event (stdout + stderr merged, matching a real terminal).
@@ -251,10 +276,10 @@ export function registerCommand(
     const child = cmd.process;
     if (!child) return;
 
-    child.stdout?.on('data', (data: Buffer) => {
+    child.stdout?.on('data', (data: Buffer | string) => {
       appendCommandOutput(cmd.commandId, data.toString());
     });
-    child.stderr?.on('data', (data: Buffer) => {
+    child.stderr?.on('data', (data: Buffer | string) => {
       appendCommandOutput(cmd.commandId, data.toString());
     });
 
@@ -269,6 +294,67 @@ export function registerCommand(
 }
 
 /**
+ * Re-register terminal sessions a previous server left running in the
+ * pty-host.
+ *
+ * Their `running: true` placeholders are already on disk, so nothing is
+ * written here; the host's buffered output (including whatever was printed
+ * while no server was up) seeds the replay buffer so a re-attaching bubble
+ * shows it. A session that finished while we were down is finalized with its
+ * real exit code before this resolves.
+ */
+async function adoptHostSessions(sessions: AdoptedHostSession[]): Promise<void> {
+  const finishing: Promise<void>[] = [];
+  for (const session of sessions) {
+    const { meta, output, exitCode } = session;
+    const pid = session.handle.pid ?? 0;
+    if (!meta || getRegistry().has(meta.commandId)) {
+      // Nothing to attach it to. Still listen for the exit, which is what
+      // lets the host forget the session once it ends.
+      if (session.kind === 'pty') session.handle.onExit(() => {});
+      else session.handle.on('close', () => {});
+      continue;
+    }
+    console.log(`[registry] adopt: id=${meta.commandId}, kind=${session.kind}, cmd="${meta.command}", pid=${pid}, server=${getServerId()}`);
+    if (session.kind === 'pty') {
+      trackCommand({ ...meta, pid, ptyProcess: session.handle, usePty: true }, output);
+    } else {
+      trackCommand({ ...meta, pid, process: session.handle });
+      if (output) appendCommandOutput(meta.commandId, output);
+    }
+    // Finalized here rather than left to the handle's exit event so the caller
+    // can wait for the history write. Started synchronously, so it claims the
+    // registry entry first and the event path becomes a no-op.
+    if (exitCode !== undefined) finishing.push(finalizeCommand(meta.commandId, exitCode, pid));
+  }
+  await Promise.all(finishing);
+}
+
+setPtyHostAdoptHandler(adoptHostSessions);
+
+/**
+ * Pick up the sessions a previous server left in the pty-host. Awaited by
+ * every read that decides whether a bubble is still running, so a restart
+ * never reports a live terminal as interrupted. Cheap after the first call.
+ */
+export function adoptPtyHostSessions(): Promise<void> {
+  return ensurePtyHostConnected();
+}
+
+/**
+ * Server-start housekeeping: reclaim sidecar output files nothing references.
+ * After adoption, so an adopted session that just finished has had its
+ * finalize write land first.
+ */
+export async function sweepOrphanTerminalOutputs(): Promise<void> {
+  await ensurePtyHostConnected();
+  const { removed, bytes } = await sweepOrphanOutputs();
+  if (removed > 0) {
+    console.log(`[registry] removed ${removed} orphaned terminal output file(s), ${(bytes / 1e6).toFixed(1)} MB`);
+  }
+}
+
+/**
  * Append output to the buffer
  */
 export function appendCommandOutput(commandId: string, data: string): void {
@@ -279,8 +365,13 @@ export function appendCommandOutput(commandId: string, data: string): void {
   const parts = text.split('\n');
   cmd.outputPartial = parts.pop() || '';
 
-  // No truncation on outputPartial — normal CLI output always has newlines,
-  // and the rare lineless cases (base64, progress bars) are too small to matter.
+  // Progress bars (curl, docker pull, pip) redraw with `\r` and never emit a
+  // newline, so this "line" would otherwise grow for the whole run — held in
+  // memory, re-scanned by every split above, and persisted whole at the end.
+  // Only its tail is ever visible, so keep just that.
+  if (cmd.outputPartial.length > MAX_OUTPUT_PARTIAL) {
+    cmd.outputPartial = cmd.outputPartial.slice(-MAX_OUTPUT_PARTIAL);
+  }
 
   if (parts.length > 0) {
     cmd.outputLines.push(...parts);
@@ -314,6 +405,13 @@ export function getFirstAvailableLine(cmd: RunningCommand): number {
 }
 
 function getBufferedOutput(cmd: RunningCommand): string {
+  // PTY output lives only in the ring (outputLines stays empty in PTY mode).
+  // Persist it raw — a finished PTY bubble replays it through xterm — but cut
+  // a trimmed head to a safe start, exactly as a live re-attach does.
+  if (cmd.ptyRingBuffer) {
+    const snap = cmd.ptyRingBuffer.snapshot();
+    return cmd.ptyRingBuffer.trimmed ? snap.slice(findSafeStart(snap)) : snap;
+  }
   const lines = cmd.outputLines.join('\n');
   if (cmd.outputPartial) {
     return lines ? lines + '\n' + cmd.outputPartial : cmd.outputPartial;
@@ -446,8 +544,7 @@ async function writeHistoryPlaceholder(
       const removedLines = existingLines.slice(0, existingLines.length - 99);
       for (const line of removedLines) {
         try {
-          const old = JSON.parse(line);
-          if (old.outputFile) await fs.unlink(old.outputFile).catch(() => {});
+          await removeEntryOutput(projectCwd, JSON.parse(line));
         } catch { /* ignore */ }
       }
       existingLines = existingLines.slice(-99);
@@ -521,6 +618,10 @@ export async function finalizeCommand(commandId: string, exitCode: number, pid?:
     entry.outputFile = outputPath;
   } else {
     entry.output = output;
+    // A sidecar from earlier would outlive this entry unreferenced: the
+    // exit-time flush of this run, or a previous run's spill (rerun reuses
+    // the id).
+    await fs.unlink(getTerminalOutputPath(cmd.projectCwd, cmd.commandId)).catch(() => {});
   }
 
   // Read existing history and replace the placeholder entry
@@ -564,10 +665,11 @@ export async function finalizeCommand(commandId: string, exitCode: number, pid?:
 export const INTERRUPTED_EXIT_CODE = -1;
 
 /**
- * Synchronously dump every live PTY ring buffer to its output file.
+ * Synchronously dump every live in-process PTY ring buffer to its output file.
  *
  * Called from the process `exit` hook (server.mjs) so a graceful restart
- * (Ctrl-C / SIGINT / SIGTERM) preserves terminal scrollback on disk. MUST be
+ * (Ctrl-C / SIGINT / SIGTERM) preserves terminal scrollback on disk. Only
+ * matters for commands that die with us; hosted ones are skipped. MUST be
  * synchronous: an `exit` handler cannot await, and async fs writes would not
  * flush before the process dies. The placeholder JSONL line still says
  * `running: true`; the next server reconciles it on load (see
@@ -577,6 +679,10 @@ export const INTERRUPTED_EXIT_CODE = -1;
 export function flushAllRunningSync(): void {
   const registry = getRegistry();
   for (const cmd of registry.values()) {
+    // Hosted commands outlive us and the pty-host keeps their output; the next
+    // server gets it back on adoption. Flushing them would only leave a
+    // sidecar no entry references once they finish.
+    if (isHostedSession(cmd.ptyProcess ?? cmd.process)) continue;
     const buf = cmd.ptyRingBuffer;
     if (!buf || buf.length === 0) continue;
     try {
@@ -590,10 +696,11 @@ export function flushAllRunningSync(): void {
 /**
  * Reconcile orphaned `running: true` placeholders left by a previous server.
  *
- * A PTY terminal is persisted as a placeholder (running: true) and only cleared
- * by finalizeCommand inside the owning process. A server restart/crash kills the
- * PTY without finalizing, so the placeholder is stranded — and loadHistory skips
- * every running entry, making the bubble vanish. Here we rewrite any running
+ * A terminal command is persisted as a placeholder (running: true) and only
+ * cleared by finalizeCommand inside the owning process. Commands survive a
+ * restart in the pty-host and are adopted first; ones lost with a dead host
+ * (or run in-process by the pre-pipe fallback) are not, so their placeholder
+ * is stranded — and loadHistory skips every running entry, making the bubble vanish. Here we rewrite any running
  * entry that is NOT live in *this* process into a finished one: drop `running`,
  * mark it interrupted, and attach its flushed output file if present. Also
  * collapses duplicate ids (rerun placeholders) keeping the latest.
@@ -601,6 +708,10 @@ export function flushAllRunningSync(): void {
  * Idempotent: rewrites the file only when something actually changed.
  */
 export async function reconcileOrphanedRunning(projectCwd: string, tabId: string): Promise<void> {
+  // Sessions surviving in the pty-host are live, not orphaned — they must be
+  // in the registry before the check below.
+  await ensurePtyHostConnected();
+
   const historyPath = getTerminalHistoryPath(projectCwd, tabId);
 
   let content: string;

@@ -12,7 +12,9 @@
  * (the route in FSError, httpApi.ts in its own try/catch).
  */
 import fs from "fs/promises"
+import { basename, join } from "path"
 import {
+  COCKPIT_PROJECTS_DIR,
   getTerminalHistoryPath,
   getTerminalOutputPath,
   ensureParentDir,
@@ -39,6 +41,24 @@ export interface HistoryEntry {
    * UI reload mid-automation brings the bubble back still drivable.
    */
   autoConnect?: boolean
+}
+
+/**
+ * Delete an entry's sidecar output file.
+ *
+ * By path derived from the id, not only the recorded `outputFile`: a sidecar
+ * can exist that the entry never recorded — the exit-time flush of a running
+ * command, or a previous run's spill left behind by a rerun whose output
+ * fitted inline. Trusting `outputFile` alone left those on disk forever.
+ */
+export async function removeEntryOutput(
+  cwd: string,
+  entry: { id?: string; outputFile?: string }
+): Promise<void> {
+  const paths = new Set<string>()
+  if (entry.outputFile) paths.add(entry.outputFile)
+  if (entry.id) paths.add(getTerminalOutputPath(cwd, entry.id))
+  for (const p of paths) await fs.unlink(p).catch(() => {})
 }
 
 /** Outputs above this spill into a sidecar file to keep the JSONL small. */
@@ -94,8 +114,7 @@ export async function appendHistoryEntry(
     )
     for (const line of removedLines) {
       try {
-        const old = JSON.parse(line)
-        if (old.outputFile) await fs.unlink(old.outputFile).catch(() => {})
+        await removeEntryOutput(cwd, JSON.parse(line))
       } catch {
         /* ignore */
       }
@@ -174,4 +193,87 @@ export async function readHistoryEntries(
   } catch {
     return []
   }
+}
+
+/**
+ * Sidecars younger than this are left alone: finalize writes the file first
+ * and the entry that references it second, so a brand-new file may simply not
+ * be referenced *yet*.
+ */
+const ORPHAN_MIN_AGE_MS = 10 * 60 * 1000
+
+/**
+ * Delete sidecar output files no history entry references any more.
+ *
+ * Deletion used to trust only an entry's recorded `outputFile`, so sidecars it
+ * never recorded (exit-time flushes, a rerun's earlier spill) piled up. The
+ * delete paths now remove by id; this reclaims what accumulated before that
+ * and anything a crash leaves between the two writes. Runs at server start,
+ * after pty-host sessions are adopted.
+ *
+ * A file is kept when any history file in its project dir records it as an
+ * `outputFile` (compared by file name, so a symlinked data dir cannot make a
+ * live reference look foreign), or it belongs to a still-running entry (reconcile attaches a
+ * running command's flushed file when it turns out to be interrupted).
+ */
+export async function sweepOrphanOutputs(
+  now: number = Date.now(),
+  projectsDir: string = COCKPIT_PROJECTS_DIR
+): Promise<{ removed: number; bytes: number }> {
+  let removed = 0
+  let bytes = 0
+  let projects: string[]
+  try {
+    projects = await fs.readdir(projectsDir)
+  } catch {
+    return { removed, bytes }
+  }
+
+  for (const project of projects) {
+    const dir = join(projectsDir, project)
+    let names: string[]
+    try {
+      names = await fs.readdir(dir)
+    } catch {
+      continue // not a directory
+    }
+    const outputs = names.filter((n) => /^terminal-output-.+\.txt$/.test(n))
+    if (outputs.length === 0) continue
+
+    const keep = new Set<string>()
+    for (const name of names) {
+      if (!/^terminal-history-.+\.jsonl$/.test(name)) continue
+      let content: string
+      try {
+        content = await fs.readFile(join(dir, name), "utf-8")
+      } catch {
+        continue
+      }
+      for (const line of content.split("\n")) {
+        if (!line) continue
+        try {
+          const entry = JSON.parse(line) as HistoryEntry & { running?: boolean }
+          if (entry.outputFile) keep.add(basename(entry.outputFile))
+          if (entry.running && entry.id) keep.add(`terminal-output-${entry.id}.txt`)
+        } catch {
+          /* unparseable line references nothing */
+        }
+      }
+    }
+
+    for (const name of outputs) {
+      if (keep.has(name)) continue
+      const file = join(dir, name)
+      try {
+        const stat = await fs.stat(file)
+        if (now - stat.mtimeMs < ORPHAN_MIN_AGE_MS) continue
+        await fs.unlink(file)
+        removed++
+        bytes += stat.size
+      } catch {
+        /* vanished meanwhile */
+      }
+    }
+  }
+  return { removed, bytes }
 }

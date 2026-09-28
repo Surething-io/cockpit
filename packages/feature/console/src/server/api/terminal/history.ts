@@ -17,6 +17,7 @@ import { broadcastConsoleDelta } from "../../terminal/consoleBroadcast"
 import {
   appendHistoryEntry,
   removeHistoryEntry,
+  removeEntryOutput,
   type HistoryEntry,
 } from "../../terminal/historyStore"
 
@@ -145,9 +146,7 @@ export const DELETE = handler((req) =>
             // Kill the backend process (if still running) so closing a bubble
             // actually ends it.
             killCommand(commandId)
-            if (entry.outputFile) {
-              await fs.unlink(entry.outputFile).catch(() => {})
-            }
+            await removeEntryOutput(cwd, entry)
           })
         } else {
           // Clear all — kill every running backend process for this tab first,
@@ -161,10 +160,7 @@ export const DELETE = handler((req) =>
             const lines = content.trim().split("\n").filter(Boolean)
             for (const line of lines) {
               try {
-                const entry = JSON.parse(line)
-                if (entry.outputFile) {
-                  await fs.unlink(entry.outputFile).catch(() => {})
-                }
+                await removeEntryOutput(cwd, JSON.parse(line))
               } catch {
                 /* ignore */
               }

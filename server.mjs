@@ -99,6 +99,11 @@ async function ensureSingleInstance() {
 //    `npm run dev` (Next detects "a dev server is already running" via
 //    .next/dev/logs and refuses to start). So the parent must explicitly
 //    kill all direct children before exiting.
+//
+//    Terminal-bubble commands (PTY and pipe) are out of reach of this on
+//    purpose: they live in the pty-host (bin/pty-host.mjs), which is launched
+//    through a short-lived intermediate and so is never our child. That is what lets them survive
+//    an update or restart; only `cockpit stop` (/api/shutdown) ends them.
 // ============================================
 // Assigned once the server-side bundle is loaded (see app.prepare below). Lets the
 // synchronous exit hook flush live PTY scrollback to disk so a graceful restart
@@ -276,6 +281,13 @@ app.prepare().then(async () => {
   const httpApi = await import(dev ? './src/lib/httpApi.ts' : './dist/httpApi.mjs');
   const { handleBrowserApi, handleTerminalApi, handleConnectionApi } = httpApi;
   flushRunningSync = httpApi.flushAllRunningSync || null;
+  // Reconnect to the pty-host now rather than on the first page load, so
+  // terminals that survived the restart are back in the registry (and their
+  // `cockpit terminal` short ids resolve) as soon as we serve anything.
+  httpApi.adoptPtyHostSessions?.().catch(() => {});
+  // Reclaim terminal output files no history entry references (waits for the
+  // adoption above internally). Off the boot path — nothing waits on it.
+  httpApi.sweepOrphanTerminalOutputs?.().catch(() => {});
   const { scheduledTaskManager } = await import(dev ? '@cockpit/feature-agent/server/scheduledTasks' : './dist/scheduledTasks.mjs');
 
   // Initialize the scheduled-task manager

@@ -7,8 +7,7 @@
  *   - Heartbeat is driven by Schedule.spaced and cancels automatically.
  *   - Spawn / attach / signal / resize semantics match the original handler.
  */
-import { spawn, execSync, type ChildProcess } from "child_process"
-import * as nodePty from "node-pty"
+import { spawn, execSync } from "child_process"
 import { Effect, Scope, Schedule, Stream } from "effect"
 import type { WebSocket } from "ws"
 import { ValidationError, WSError } from "@cockpit/effect-core"
@@ -23,6 +22,11 @@ import {
   getAllProjectCwds,
   findSafeStart,
   writeStdinToCommand,
+  spawnPtyInHost,
+  spawnPipeInHost,
+  adoptPtyHostSessions,
+  type PipeProcess,
+  type PtyHandle,
 } from "@cockpit/feature-console/server"
 import {
   isWindows,
@@ -32,6 +36,12 @@ import {
 import { resolveGitBash, resolveWindowsPowerShell, resolveBashShell } from "../shell"
 
 const HEARTBEAT = Schedule.spaced("30 seconds")
+
+/** Message of a spawn failure, unwrapping Effect's UnknownException. */
+function errorMessage(e: unknown): string {
+  const cause = (e as { error?: unknown }).error ?? e
+  return cause instanceof Error ? cause.message : String(cause)
+}
 const OPEN_PREFERRED_SHELL_COMMAND = "__cockpit_open_preferred_shell__"
 
 type PtySpawnTarget = {
@@ -239,13 +249,13 @@ const attachPipeListeners = (
   registry: CleanupRegistry,
   send: (msg: Record<string, unknown>) => Effect.Effect<void, WSError>,
   commandId: string,
-  child: ChildProcess
+  child: PipeProcess
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
-    const onStdout = (data: Buffer) => {
+    const onStdout = (data: Buffer | string) => {
       Effect.runFork(send({ type: "stdout", commandId, data: data.toString() }))
     }
-    const onStderr = (data: Buffer) => {
+    const onStderr = (data: Buffer | string) => {
       Effect.runFork(send({ type: "stderr", commandId, data: data.toString() }))
     }
     const pid = child.pid
@@ -290,7 +300,7 @@ const attachPtyListeners = (
   registry: CleanupRegistry,
   send: (msg: Record<string, unknown>) => Effect.Effect<void, WSError>,
   commandId: string,
-  pty: nodePty.IPty
+  pty: PtyHandle
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
     const dataDisposable = pty.onData((data: string) => {
@@ -394,53 +404,80 @@ const dispatchMessage = (
         ...env,
       }
 
+      // node-pty's env type rejects undefined values (child_process just skips
+      // them), and JSON to the pty-host would drop them anyway — so drop the
+      // unset keys here.
+      const definedEnv: Record<string, string> = {}
+      for (const [k, v] of Object.entries(childEnv)) {
+        if (v !== undefined) definedEnv[k] = v
+      }
+
       try {
         if (usePty) {
-          // node-pty's env type rejects undefined values (child_process just
-          // skips them), so drop the unset keys here.
-          const ptyEnv: Record<string, string> = {}
-          for (const [k, v] of Object.entries(childEnv)) {
-            if (v !== undefined) ptyEnv[k] = v
-          }
           const ptyTarget =
             command === OPEN_PREFERRED_SHELL_COMMAND
               ? resolvePreferredPtyShell(cwd)
               : { file: resolveCommandShell(), args: ["--login", "-c", command], cwd, name: command }
-          const ptyProcess = nodePty.spawn(
-            ptyTarget.file,
-            ptyTarget.args,
-            {
-              name: "xterm-256color",
-              cols: cols || 120,
-              rows: rows || 30,
-              cwd: ptyTarget.cwd,
-              env: ptyEnv,
-            }
-          )
-          registerCommand({
+          // The PTY lives in the pty-host process, not here, so it survives a
+          // cockpit update/restart. `meta` is what the next server needs to
+          // re-register it (see adoptPtySessions in RunningCommandRegistry).
+          const timestamp = new Date().toISOString()
+          const meta = {
             commandId,
             command: ptyTarget.name,
             cwd,
             projectCwd,
             tabId,
-            pid: ptyProcess.pid,
-            ptyProcess,
-            usePty: true,
-            timestamp: new Date().toISOString(),
-            sourceId,
-          })
-          Effect.runFork(send({ type: "pid", commandId, pid: ptyProcess.pid, command: ptyTarget.name }))
+            timestamp,
+            ...(sourceId ? { sourceId } : {}),
+          }
           Effect.runFork(
-            attachPtyListeners(registry, send, commandId, ptyProcess)
+            Effect.tryPromise(() =>
+              spawnPtyInHost({
+                id: commandId,
+                file: ptyTarget.file,
+                args: ptyTarget.args,
+                cwd: ptyTarget.cwd,
+                env: definedEnv,
+                cols: cols || 120,
+                rows: rows || 30,
+                meta,
+              })
+            ).pipe(
+              Effect.flatMap((ptyProcess) =>
+                Effect.sync(() => {
+                  registerCommand({ ...meta, pid: ptyProcess.pid, ptyProcess, usePty: true })
+                  Effect.runFork(send({ type: "pid", commandId, pid: ptyProcess.pid, command: ptyTarget.name }))
+                  Effect.runFork(
+                    attachPtyListeners(registry, send, commandId, ptyProcess)
+                  )
+                })
+              ),
+              Effect.catchAll((e) =>
+                send({ type: "error", commandId, error: errorMessage(e) }).pipe(
+                  Effect.catchAll(() => Effect.void)
+                )
+              )
+            )
           )
         } else {
-          const child = spawn(resolveCommandShell(), ["--login", "-c", command], {
+          const shell = resolveCommandShell()
+          const meta = {
+            commandId,
+            command,
             cwd,
-            env: childEnv as NodeJS.ProcessEnv,
-            stdio: ["pipe", "pipe", "pipe"],
-            detached: true,
-          })
-          if (child.pid) {
+            projectCwd,
+            tabId,
+            timestamp: new Date().toISOString(),
+            ...(sourceId ? { sourceId } : {}),
+          }
+          const register = (child: PipeProcess) => {
+            if (!child.pid) {
+              Effect.runFork(
+                send({ type: "error", commandId, error: "Failed to spawn process" })
+              )
+              return
+            }
             registerCommand({
               commandId,
               command,
@@ -449,18 +486,46 @@ const dispatchMessage = (
               tabId,
               pid: child.pid,
               process: child,
-              timestamp: new Date().toISOString(),
+              timestamp: meta.timestamp,
               sourceId,
             })
             Effect.runFork(send({ type: "pid", commandId, pid: child.pid, command }))
             Effect.runFork(
               attachPipeListeners(registry, send, commandId, child)
             )
-          } else {
-            Effect.runFork(
-              send({ type: "error", commandId, error: "Failed to spawn process" })
-            )
           }
+          // Like PTYs, pipe commands run in the pty-host so they survive a
+          // cockpit update/restart. In-process spawning remains only for a
+          // host staged by a build without pipe support (spawnPipeInHost
+          // returns null) — such a child still dies with this server.
+          const spawnLocal = (): PipeProcess =>
+            spawn(shell, ["--login", "-c", command], {
+              cwd,
+              env: childEnv as NodeJS.ProcessEnv,
+              stdio: ["pipe", "pipe", "pipe"],
+              detached: true,
+            })
+          Effect.runFork(
+            Effect.tryPromise(() =>
+              spawnPipeInHost({
+                id: commandId,
+                file: shell,
+                args: ["--login", "-c", command],
+                cwd,
+                env: definedEnv,
+                meta,
+              })
+            ).pipe(
+              Effect.flatMap((child) =>
+                Effect.try(() => register(child ?? spawnLocal()))
+              ),
+              Effect.catchAll((e) =>
+                send({ type: "error", commandId, error: errorMessage(e) }).pipe(
+                  Effect.catchAll(() => Effect.void)
+                )
+              )
+            )
+          )
         }
       } catch (e) {
         Effect.runFork(
@@ -551,19 +616,28 @@ const dispatchMessage = (
         }
       }
     } else if (type === "running") {
-      const commands = getRunningCommands(projectCwd)
-      if (commands.length === 0) {
-        const size = getRegistrySize()
-        const cwds = getAllProjectCwds()
-        Effect.runFork(
-          Effect.logWarning("[ws/terminal] running query: 0 commands").pipe(
-            Effect.annotateLogs("projectCwd", projectCwd),
-            Effect.annotateLogs("registryTotal", size),
-            Effect.annotateLogs("cwds", cwds)
-          )
+      // After a restart the answer must include PTYs adopted from the
+      // pty-host, or the page would not re-attach to them.
+      Effect.runFork(
+        Effect.promise(adoptPtyHostSessions).pipe(
+          Effect.andThen(() => {
+            const commands = getRunningCommands(projectCwd)
+            if (commands.length === 0) {
+              const size = getRegistrySize()
+              const cwds = getAllProjectCwds()
+              Effect.runFork(
+                Effect.logWarning("[ws/terminal] running query: 0 commands").pipe(
+                  Effect.annotateLogs("projectCwd", projectCwd),
+                  Effect.annotateLogs("registryTotal", size),
+                  Effect.annotateLogs("cwds", cwds)
+                )
+              )
+            }
+            return send({ type: "running", commands })
+          }),
+          Effect.catchAll(() => Effect.void)
         )
-      }
-      Effect.runFork(send({ type: "running", commands }))
+      )
     }
   })
 

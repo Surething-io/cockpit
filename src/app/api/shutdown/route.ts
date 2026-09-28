@@ -16,6 +16,7 @@
 import { Effect } from "effect"
 import { handler, ok } from "@cockpit/effect-runtime/server"
 import { PermissionError } from "@cockpit/effect-core"
+import { shutdownPtyHost } from "@cockpit/feature-console/server"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -31,6 +32,11 @@ export const POST = handler((req) =>
         resource: "server",
       })
     }
+
+    // A stop means everything stops, terminals included. They live in the
+    // pty-host, which outlives us by design (update/restart), so it has to be
+    // told explicitly. Sent now so it lands during the grace period below.
+    shutdownPtyHost()
 
     // forkDaemon, not the request fiber: the response has to be returned before
     // the exit fires. process.exit(0) then runs server.mjs's 'exit' hook —

@@ -461,7 +461,7 @@ class ScheduledTaskManager {
     // file alone. Every write path still refuses (mutateJsonFile uses the same
     // strict read), so nothing overwrites what the user has to repair by hand.
     try {
-      this.tasks = await readJsonFileForUpdate<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
+      this.tasks = await this.readTasksFromDisk();
     } catch (error) {
       this.loadFailed = true;
       this.tasks = [];
@@ -498,9 +498,16 @@ class ScheduledTaskManager {
 
   /**
    * Read tasks from disk (avoids in-memory inconsistency between dual module instances).
+   *
+   * Under the file lock: writeJsonFile truncates and rewrites in place (no atomic
+   * rename), so an unlocked read racing a writer sees an empty file, and the strict
+   * parse turns that into a thrown "not valid JSON". Never call this from inside a
+   * withFileLock(SCHEDULED_TASKS_FILE) block — the lock does not nest.
    */
   private async readTasksFromDisk(): Promise<ScheduledTask[]> {
-    return readJsonFileForUpdate<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
+    return withFileLock(SCHEDULED_TASKS_FILE, () =>
+      readJsonFileForUpdate<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []),
+    );
   }
 
   /**
@@ -607,7 +614,7 @@ class ScheduledTaskManager {
    */
   async resumeTask(id: string): Promise<ScheduledTask | null> {
     // Read latest data from disk
-    const allTasks = await readJsonFileForUpdate<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
+    const allTasks = await this.readTasksFromDisk();
     const task = allTasks.find(t => t.id === id);
     if (!task) return null;
 
@@ -642,7 +649,7 @@ class ScheduledTaskManager {
    */
   async triggerTask(id: string): Promise<boolean> {
     await this.ensureInit();
-    const allTasks = await readJsonFileForUpdate<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
+    const allTasks = await this.readTasksFromDisk();
     const task = allTasks.find(t => t.id === id);
     if (!task) return false;
 

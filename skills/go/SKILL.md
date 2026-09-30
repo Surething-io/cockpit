@@ -1,97 +1,36 @@
 ---
 name: go
-description: "Land converged work in self-verifying MVP slices, advancing stage to stage without interruption."
-argument-hint: "[research conclusion path / brief / leave empty to reuse current session context]"
+description: "Implement agreed work in self-verifying slices without stopping, logging every decision the spec did not cover."
+argument-hint: "[spec path / brief / empty = what this conversation agreed]"
 ---
 
-# Landing Mode
-
-Take the already-converged research conclusion and land it as MVP slices continuously and automatically; each stage closes its own verification loop, with one end-to-end recap at the very end.
-
-## Trigger conditions (all must hold)
-
-1. The research / discussion phase has ended and the conclusion has converged
-2. The user explicitly says "start landing / implement / go"
-3. The user wants continuous, automatic progress without per-stage confirmation
-
-If any condition fails, fall back to `qa` mode for clarification first.
-
-## Pre-flight check (mandatory before starting)
-
-Confirm the following are **in hand**; if any is missing, stop and ask — do not guess:
-
-| Item | Source |
-|---|---|
-| Research conclusion | Session context / a path the user gives / pasted text |
-| Landing scope | What's in, what's out |
-| Acceptance criteria | What counts as "end-to-end runs" |
-| Working directory and stack | Project root path, language, framework |
-
-## Execution loop
+Implementation mode: build what was agreed, in small slices that each prove themselves, without stopping for sign-off.
 
 ```
-while there are unfinished MVP sub-tasks:
-  1. Pick the next minimum closed-loop sub-task
-     - Deliverable: a standalone artifact
-     - Verifiable: a clear way to run / check it
-  2. Write code (minimum change, KISS)
-  3. Self-verify: run commands, hit endpoints, read output — do not wait for the user's nod
-  4. Emit [Stage N delivery summary + verification report]
-  5. No pause; proceed to the next stage
-end while
+input  = the path or brief given, else what this conversation agreed (a PRD, an analysis, a plan)
+accept = its success criteria; if none can be inferred, ask once before starting
+notes  = {{COCKPIT_DIR}}/skills/go/notes/<basename of cwd>-<feature>.md
+                                                 # same task continued → append under a new round heading
 
-Finally emit [Overall recap: end-to-end interaction verification + total delivery list]
+while slices remain:
+    pick the next smallest slice that runs and can be checked on its own
+    implement it                                   # minimum change, KISS
+    verify by running it: commands, requests, tests — not by reading the code
+    if it fails: fix and re-verify, at most 3 tries
+                 then mark it blocked, note why, continue with what does not depend on it
+    for each choice the spec did not cover:
+        cheap to undo  → take the simplest option, log it to notes
+        costly to undo → stop and ask
+    emit: Stage N — <what> — <how verified> — <result>
+
+emit recap:
+    ## End-to-end   the full user flow, run once: steps and result
+    ## Decisions    the notes file as a markdown link: [<basename of cwd>-<feature>.md](<absolute path>)
+    ## Residuals    what is left, blocked or known broken, with suggested priority
 ```
 
-## Per-stage output format
+Stop and ask only for: missing information that makes progress impossible, a destructive or irreversible operation (deleting data, force-pushing, rewriting history), or a choice that is costly to undo. Never stop just to report a finished slice.
 
-```markdown
-### Stage N: <sub-task name>
+**Notes** — one Y-statement line per decision: `<chose X over Y> — <to achieve …>, accepting <cost>`. Also log spec items you had to change and anything the user should know before shipping. It is not a work log: slices finishing, tests passing and builds going green stay out. It lives outside the repo, and Cockpit deletes it after 30 days untouched.
 
-**Delivery summary**
-- Goal: <what this stage achieves>
-- Changes:
-  - <file1>: <what was done>
-  - <file2>: <what was done>
-- Status: ✅ done / ⚠️ partial / ❌ blocked
-
-**Verification report**
-- How verified: <commands run / endpoints called>
-- Result: <output summary / key metrics>
-- Residual issues: <none / list>
-```
-
-## Final recap format
-
-```markdown
-## Overall recap
-
-### End-to-end interaction verification
-- Scenario: <full user-flow description>
-- Steps: <1 → 2 → 3>
-- Result: <passes / failure points>
-
-### Total delivery list
-| Stage | Sub-task | Key artifact | Status |
-
-### Known residuals
-<none / list with suggested priority>
-```
-
-## When to stop and ask (only three cases)
-
-1. **Blocking ambiguity**: a key piece of info is missing and progress is impossible (unknown API contract, unclear business rule)
-2. **Destructive operation**: deleting data, force-pushing, rewriting git history, or other irreversible actions
-3. **Branching decision**: a key design choice the research did not cover
-
-**Do NOT stop for**:
-- "This step looks important, should I confirm?" → No, do the KISS default
-- "Maybe this way, maybe that way" → Pick the simplest implementation and continue
-- "Done with a stage, awaiting sign-off" → No, go straight to the next stage
-
-## Key principles
-
-- **KISS over completeness**: a minimal runnable implementation > grand-and-complete
-- **Running over reading**: actually run it to verify > stare at code
-- **Continuous over pausing**: auto-advance > frequent asking
-- **Recap over interruption**: one final review > mid-flow breaks
+Good run: after reading the recap and the notes file, nothing in the code surprises the user.

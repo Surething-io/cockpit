@@ -512,6 +512,9 @@ function readSkillName(path: string): string | null {
 // frontmatter + body) — identical in shape to a user-defined skill — so it's
 // written verbatim, no frontmatter synthesis. Overwritten on every dispatch so
 // the file always reflects the current code + the loopback base URL.
+// Only the files written here are overwritten: never clear `dir` first — it also
+// holds user data, e.g. /go's decision notes in skills/go/notes/ (swept by
+// GoNotesCleanupLive), which a wipe would delete without any error.
 // Returns null on any failure so the caller can fall back to inlining.
 //
 // Synchronous fs on purpose: keeps resolveCommandPrompt's sync signature — all

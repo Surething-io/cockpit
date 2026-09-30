@@ -25,6 +25,7 @@ import {
   AgentServiceLive,
   SnapshotServiceLive,
   SessionCleanupLive,
+  GoNotesCleanupLive,
   SessionSearchServiceLive,
   DelegationServiceLive,
   BotRegistryServiceLive
@@ -57,6 +58,8 @@ export const AppLayer = Layer.mergeAll(
   SnapshotServiceLive,
   // Ollama session transcript retention (daily sweep)
   SessionCleanupLive,
+  // /go decision notes retention (daily sweep, 30 days)
+  GoNotesCleanupLive,
   // Cross-project session search (/api/sessions/search)
   SessionSearchServiceLive,
   // Fire-and-forget sub-task sessions + session status (/api/sessions/delegate, /status)

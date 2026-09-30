@@ -20,7 +20,7 @@ import type {
 
 export const DEFAULT_CLAUDE_MODEL: ClaudeModelId = 'claude-opus-5-5';
 export const DEFAULT_CLAUDE_EFFORT: ClaudeEffort = 'high';
-export const DEFAULT_CODEX_MODEL: CodexModelId = 'gpt-6-sol';
+export const DEFAULT_CODEX_MODEL: CodexModelId = 'gpt-6.1-sol';
 export const DEFAULT_CODEX_REASONING_EFFORT: CodexReasoningEffort = 'low';
 
 const CLAUDE_EFFORTS: ReadonlyArray<{ id: ClaudeEffort; label: string }> = [
@@ -41,6 +41,13 @@ const CLAUDE_MODELS: ReadonlyArray<{
   thinking?: boolean;
   fast?: boolean;
 }> = [
+  {
+    id: 'claude-sonnet-5-5',
+    label: 'Claude Sonnet 5.5',
+    effort: ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode', 'ultrathink'],
+    // Claude Code's own default for Sonnet 5.5 is `medium`, like Opus 5.5.
+    defaultEffort: 'medium',
+  },
   {
     id: 'claude-sonnet-5',
     label: 'Claude Sonnet 5',
@@ -94,6 +101,12 @@ const CODEX_MODELS: ReadonlyArray<{
   {
     id: 'gpt-6-astra',
     label: 'GPT-6-Astra',
+    reasoning: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    defaultReasoning: 'low',
+  },
+  {
+    id: 'gpt-6.1-sol',
+    label: 'GPT-6.1-Sol',
     reasoning: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
     defaultReasoning: 'low',
   },

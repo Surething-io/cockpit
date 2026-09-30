@@ -90,7 +90,7 @@ Open the project (on `main`). The **top bar** of the Cockpit window (the TabMana
 
 Now the same Cockpit window can hold 5 project tabs in parallel: 3 for feature work, 2 for bug-fixing — each its own checkout, its own chat session, no stepping on each other.
 
-### Feature work — `/qa` → `/cg` → `/ex` → `/go` → review
+### Feature work — `/qa` → `/cg` → `/ex` → `/go` → `/cr`
 
 1. **`/qa`** — describe the requirement. Claude switches to **clarification mode**: instead of jumping into code, it asks back about ambiguous points.
 
@@ -123,7 +123,13 @@ Now the same Cockpit window can hold 5 project tabs in parallel: 3 for feature w
    /go land the plan above
    ```
 
-7. **Code review** — switch to Explorer's **Status** tab to walk the diff file-by-file. Unhappy with something? **Highlight-comment** (multiple rounds); comments support a "Send to AI" action that kicks off a fix-up pass — see [Comments](/en/docs/explorer/file-tree/#comments).
+7. **`/cr`** — let the AI review the change first: static correctness plus the runtime behaviour a line-by-line read misses.
+
+   ```text
+   /cr review this change
+   ```
+
+8. **Code review** — switch to Explorer's **Status** tab to walk the diff file-by-file. Unhappy with something? **Highlight-comment** (multiple rounds); comments support a "Send to AI" action that kicks off a fix-up pass — see [Comments](/en/docs/explorer/file-tree/#comments).
 
 ### End-to-end verification — Console + `/cc`
 

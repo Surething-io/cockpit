@@ -1,4 +1,4 @@
-**Skills** are short prompts you trigger with `/` in any Agent tab — each one rewires how the AI works on a single reply. OpenCockpit ships **13 built-in Skills** (the `/qa /fx /ex /go /cg /cc /cr` modes, plus `/ap /html /new-branch /skillify /ss /dl`); you can also write your own as `SKILL.md` files and install them the same way. Both flavours live in the same `/` menu.
+**Skills** are short prompts you trigger with `/` in any Agent tab — each one rewires how the AI works on a single reply. OpenCockpit ships **12 built-in Skills** (the `/qa /fx /ex /go /cg /cc /cr` modes, plus `/html /new-branch /skillify /ss /dl`); you can also write your own as `SKILL.md` files and install them the same way. Both flavours live in the same `/` menu.
 
 > Don't confuse these with the slash menu inside **Notes** (the project-notes editor), which is a formatter palette for headings, lists, tables and so on. The chat input only recognises Skills — typing `/` there opens a menu listing the built-ins plus any installed `/skill-name`.
 
@@ -13,14 +13,13 @@
 | **`/cg`** | CodeGraph project exploration | ❌ | ❌ |
 | **`/cc`** | End-to-end verification via `cockpit` CLI (browser + terminal bubbles) | ❌ | ❌ (drives bubbles, not source edits) |
 | **`/cr`** | Full code review (static + dynamic) | ❌ | ❌ (produces findings, no edits) |
-| **`/ap`** | Implement a spec, logging out-of-spec decisions to an apply-notes file | ❌ | ✅ Yes |
 | **`/html`** | Build an interactive local React app wired to the [bash SDK](/en/docs/agent/html-apps/) | ❌ | ✅ Yes (writes the app) |
 | **`/new-branch`** | Cut a clean branch off the latest `origin/main` | ❌ | ❌ (git only) |
 | **`/skillify`** | Distil this conversation's workflow into a reusable Skill | ❌ | ✅ Yes (writes the SKILL.md) |
 | **`/ss`** | Find a past session — any project, engine or date — from one sentence | ❌ | ❌ (search only) |
 | **`/dl`** | Delegate a sub-task to a new session in any directory, on any engine, without waiting | ❌ | ❌ (the child session does the work) |
 
-The first seven are *modes* — they change how the AI works for one reply — and each gets a section below. The last six are one-shot jobs; their SKILL.md carries the full instructions, so there is nothing to configure. `/ss` and `/dl` also get short sections below, since they work across sessions.
+The first seven are *modes* — they change how the AI works for one reply — and each gets a section below. The last five are one-shot jobs; their SKILL.md carries the full instructions, so there is nothing to configure. `/ss` and `/dl` also get short sections below, since they work across sessions.
 
 ## `/qa` — Clarify before changing anything
 
@@ -176,7 +175,7 @@ The right entry point depends on what you have:
 - If you need an earlier conversation back → `/ss`
 - If the work belongs in another project or on another engine → `/dl`
 
-> The 13 built-in Skills above are the complete set Cockpit ships. For repeated workflows of your own, see [Custom Skills](#custom-skills) below — they show up in the same `/` menu as `/skill-name`.
+> The 12 built-in Skills above are the complete set Cockpit ships. For repeated workflows of your own, see [Custom Skills](#custom-skills) below — they show up in the same `/` menu as `/skill-name`.
 
 ## Custom Skills
 

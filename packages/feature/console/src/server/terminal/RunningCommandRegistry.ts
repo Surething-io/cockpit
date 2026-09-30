@@ -305,7 +305,10 @@ function trackCommand(cmd: NewCommand, seedOutput?: string): void {
  */
 async function adoptHostSessions(sessions: AdoptedHostSession[]): Promise<void> {
   const finishing: Promise<void>[] = [];
-  for (const session of sessions) {
+  // Newest first: mid-rerun, the host can still hold the previous run of the
+  // same command (it is exiting). The later spawn is the one the bubble shows;
+  // the older one is skipped below.
+  for (const session of [...sessions].reverse()) {
     const { meta, output, exitCode } = session;
     const pid = session.handle.pid ?? 0;
     if (!meta || getRegistry().has(meta.commandId)) {

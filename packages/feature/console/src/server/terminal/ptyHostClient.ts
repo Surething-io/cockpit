@@ -14,7 +14,7 @@
 // bundle and server.mjs load separate copies of this module, and two
 // connections would each receive — and each ack — the same exit events.
 import { spawn } from 'child_process';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import { EventEmitter } from 'events';
 import { connect, type Socket } from 'net';
@@ -82,6 +82,7 @@ export type AdoptedHostSession =
   | (AdoptedBase & { kind: 'pipe'; handle: PipeProcess });
 
 export interface PtySpawnOptions {
+  /** The command id. The host session gets its own id (see sessionIdFor). */
   id: string;
   file: string;
   args: string[];
@@ -586,16 +587,32 @@ async function requireConnection(): Promise<HostConnection> {
   return conn;
 }
 
+/**
+ * Host session id for one run of a command — never the bare command id.
+ *
+ * A rerun reuses the command id, and the UI starts it only 200ms after
+ * interrupting the previous run; a dev server can take longer than that to
+ * exit. Keyed by command id, that late exit (and any last output) was routed
+ * to the new run, which then showed as finished with no output. With a
+ * per-run id the two are separate sessions: the old run's events reach only
+ * its own handle, whose finalize the registry drops on the pid check.
+ */
+function sessionIdFor(commandId: string): string {
+  return `${commandId}~${randomUUID().slice(0, 8)}`;
+}
+
 /** Spawn a PTY inside the host, launching the host if needed. */
 export async function spawnPtyInHost(opts: PtySpawnOptions): Promise<PtyHandle> {
   const conn = await requireConnection();
-  return conn.spawn('pty', new RemotePty(opts.id, conn, 0), opts);
+  const sid = sessionIdFor(opts.id);
+  return conn.spawn('pty', new RemotePty(sid, conn, 0), { ...opts, id: sid });
 }
 
 /** Spawn a pipe-mode command inside the host, launching the host if needed. */
 export async function spawnPipeInHost(opts: PipeSpawnOptions): Promise<PipeProcess> {
   const conn = await requireConnection();
-  return conn.spawn('pipe', new RemotePipe(opts.id, conn, 0), opts);
+  const sid = sessionIdFor(opts.id);
+  return conn.spawn('pipe', new RemotePipe(sid, conn, 0), { ...opts, id: sid });
 }
 
 /**

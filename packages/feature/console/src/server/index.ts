@@ -24,6 +24,7 @@ export * from './terminal/RunningCommandRegistry';
 export * from './terminal/writeStdin';
 export * from './terminal/outputQuery';
 export * from './terminal/ptyHostClient';
+export * from './terminal/processTree';
 
 // Bubble-titles helper (used by /api/connection/list to join titles
 // into the unified bubble listing). The route handlers live in

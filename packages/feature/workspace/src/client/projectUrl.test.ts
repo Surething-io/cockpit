@@ -21,6 +21,17 @@ describe('buildProjectUrl', () => {
     expect(url).toContain('view=explorer');
   });
 
+  it('reveals a terminal bubble in the Console, panel included', () => {
+    expect(buildProjectUrl('/work/p', { bubble: 'cmd-1-abc' }))
+      .toBe('/project?cwd=%2Fwork%2Fp&bubble=cmd-1-abc&view=console');
+    // A session frozen earlier on the same project keeps its id, but the
+    // bubble decides the panel.
+    const url = buildProjectUrl('/work/p', { sessionId: 's1', switchToAgent: true, bubble: 'cmd-1' });
+    expect(url).toContain('sessionId=s1');
+    expect(url.match(/view=/g)).toHaveLength(1);
+    expect(url).toContain('view=console');
+  });
+
   it('distinguishes a blank active tab from an unspecified active tab', () => {
     expect(buildProjectUrl('/work/project', { blank: true }))
       .toBe('/project?cwd=%2Fwork%2Fproject&newChat=1');

@@ -15,6 +15,7 @@ import {
   saveProjectSettings,
 } from './effect/consoleClient';
 import { FILE_VIEWER_CHIPS } from '@cockpit/shared-utils';
+import { toast } from '@cockpit/shared-ui';
 
 interface ConsoleViewProps {
   cwd: string;
@@ -22,7 +23,12 @@ interface ConsoleViewProps {
   tabId?: string;
   onCwdChange?: (newCwd: string) => void;
   onOpenNote?: () => void;
+  /** Reveal this bubble (running-terminals board). A new object per request. */
+  focusBubble?: { commandId: string; nonce: number } | null;
 }
+
+/** A focus request whose bubble never shows up by then is reported and dropped. */
+const FOCUS_TIMEOUT_MS = 3000;
 
 const TOOLBAR_HEIGHT = 41;
 
@@ -39,7 +45,7 @@ const BUBBLE_GUIDE: { key: string; label: string; triggers: string[]; notes?: st
   { key: 'filePreview', label: 'console.bubbleFilePreview', triggers: [...FILE_VIEWER_CHIPS] },
 ];
 
-function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote }: ConsoleViewProps) {
+function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote, focusBubble }: ConsoleViewProps) {
   const { t } = useTranslation();
   const state = useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange });
   const {
@@ -249,6 +255,47 @@ function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote 
     });
     return () => cancelAnimationFrame(rafId);
   }, [maximizedId, consoleHeight, scrollRef]);
+
+  // Reveal a bubble on request. A freshly mounted frame is still loading its
+  // history and re-attaching running commands, so the request waits until the
+  // bubble is actually in the list (or gives up after FOCUS_TIMEOUT_MS).
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focusBubble) return;
+    setMaximizedId(null);
+    setPendingFocusId(focusBubble.commandId);
+  }, [focusBubble]);
+
+  useEffect(() => {
+    if (!pendingFocusId) return;
+    if (!consoleItems.some((item) => item.data.id === pendingFocusId)) return;
+    const id = pendingFocusId;
+    const rafId = requestAnimationFrame(() => {
+      const scroller = scrollRef.current;
+      const el = scroller?.querySelector(`[data-bubble-id="${CSS.escape(id)}"]`) as HTMLElement | null;
+      if (!scroller || !el) return;
+      setPendingFocusId(null);
+      // Selecting is the highlight: the bubble's own selected border, the same
+      // one a click gives it.
+      setSelectedCommandId(id);
+      // Scroll only the console's own scroller: scrollIntoView would also move
+      // the three-panel swipe container, which is an overflow ancestor too.
+      const elRect = el.getBoundingClientRect();
+      const scrollerRect = scroller.getBoundingClientRect();
+      const offset = elRect.top - scrollerRect.top - Math.max(0, (scrollerRect.height - elRect.height) / 2);
+      scroller.scrollTo({ top: scroller.scrollTop + offset, behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [pendingFocusId, consoleItems, scrollRef, setSelectedCommandId]);
+
+  useEffect(() => {
+    if (!pendingFocusId) return;
+    const timer = setTimeout(() => {
+      setPendingFocusId(null);
+      toast(t('runningTerminals.notFound'), 'error');
+    }, FOCUS_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [pendingFocusId, t]);
 
   // Listen for terminal command execution events from ChatInput
   const executeCommand = stateExecuteCommand;

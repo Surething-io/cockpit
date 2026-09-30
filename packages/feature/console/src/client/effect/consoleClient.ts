@@ -352,3 +352,29 @@ export const saveServicesConfig = (
   body: Record<string, unknown>
 ): Effect.Effect<{ customCommands?: CustomCommand[] }, AppError> =>
   httpPostJsonFor("/api/services/config", body)
+
+// ─────────────────────────────────────────────────────────
+// terminal/running (sidebar running-terminals board)
+// ─────────────────────────────────────────────────────────
+
+export interface RunningTerminal {
+  commandId: string
+  shortId: string
+  title?: string
+  command: string
+  cwd: string
+  projectCwd: string
+  tabId: string
+  pid: number
+  timestamp: string
+  usePty?: boolean
+}
+
+export const loadRunningTerminals = (): Effect.Effect<RunningTerminal[], AppError> =>
+  httpGet<RunningTerminal[]>("/api/terminal/running")
+
+/** Stop a live terminal (same semantics as the bubble's stop button). */
+export const interruptRunningTerminal = (
+  commandId: string
+): Effect.Effect<{ interrupted: boolean }, AppError> =>
+  httpPostJsonFor<{ interrupted: boolean }>("/api/terminal/running", { commandId })

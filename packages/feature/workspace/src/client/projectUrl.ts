@@ -4,6 +4,8 @@ export interface InitialProjectTarget {
   switchToAgent?: boolean;
   /** Project-relative file to reveal in the Explorer on mount. */
   file?: string;
+  /** Terminal bubble (commandId) to reveal in the Console on mount. */
+  bubble?: string;
 }
 
 export function buildProjectUrl(cwd: string, initial?: InitialProjectTarget): string {
@@ -17,13 +19,19 @@ export function buildProjectUrl(cwd: string, initial?: InitialProjectTarget): st
   // Explorer would look like nothing happened.
   if (initial?.file) {
     url += `&file=${encodeURIComponent(initial.file)}`;
+  } else if (initial?.bubble) {
+    url += `&bubble=${encodeURIComponent(initial.bubble)}`;
   }
   // Exactly one `view`, decided here. Both intents can be frozen on the same
   // cwd (a session link lands first, then the Bots panel opens that directory),
   // and emitting both turns `view` into a string[] on the other side, which
   // matches neither panel — the frame would open on whatever it last saved.
   // The file target wins: it is the more specific request of the two.
-  const view = initial?.file ? 'explorer' : initial?.sessionId && initial.switchToAgent ? 'agent' : null;
+  const view = initial?.file
+    ? 'explorer'
+    : initial?.bubble
+      ? 'console'
+      : initial?.sessionId && initial.switchToAgent ? 'agent' : null;
   if (view) url += `&view=${view}`;
   return url;
 }

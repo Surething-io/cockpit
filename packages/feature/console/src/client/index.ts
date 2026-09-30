@@ -12,10 +12,12 @@ export { QuickCommandsPopover } from './QuickCommandsPopover';
 export { ShortIdBadge } from './ShortIdBadge';
 export { XtermRenderer } from './XtermRenderer';
 export { AliasManager } from './AliasManager';
+export { RunningTerminalsPanel } from './RunningTerminalsPanel';
 
 // Hooks
 export { useConsoleState, matchInput as matchConsoleInput, type ConsoleItem } from './useConsoleState';
 export { useBrowserBridge } from './useBrowserBridge';
+export { useRunningTerminals } from './useRunningTerminals';
 export { useCockpitBridge, getCockpitBridge } from './useCockpitBridge';
 
 // Bubble plugin contract + registry

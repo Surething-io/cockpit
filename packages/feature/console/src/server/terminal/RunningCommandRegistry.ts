@@ -9,7 +9,8 @@ import { writeFileSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { getTerminalHistoryPath, getTerminalOutputPath, ensureParentDir } from '@cockpit/shared-utils';
 import { registerTerminal, finalizeTerminal, notifyOutputListeners, notifyExitListeners } from './TerminalBridge';
-import { broadcastConsoleDelta } from './consoleBroadcast';
+import { broadcastConsoleDelta, broadcastRunningChanged } from './consoleBroadcast';
+import { interruptPidTree } from './processTree';
 import { removeEntryOutput, sweepOrphanOutputs } from './historyStore';
 import {
   ensurePtyHostConnected,
@@ -246,6 +247,7 @@ function trackCommand(cmd: NewCommand, seedOutput?: string): void {
 
   // Register in TerminalBridge (for CLI access)
   registerTerminal(cmd.tabId, cmd.commandId, cmd.command, cmd.projectCwd);
+  broadcastRunningChanged();
 
   if (cmd.ptyProcess) {
     // PTY mode: single data event (stdout + stderr merged, matching a real terminal).
@@ -466,6 +468,7 @@ export function killCommand(commandId: string): void {
   const cmd = getRegistry().get(commandId);
   if (!cmd) return;
   cmd.deleted = true;
+  broadcastRunningChanged();
   console.log(`[registry] kill: id=${commandId}, pid=${cmd.pid}, pty=${!!cmd.ptyProcess}, server=${getServerId()}`);
   if (cmd.ptyProcess) {
     // node-pty kills the whole pty session (process group)
@@ -480,6 +483,54 @@ export function killCommand(commandId: string): void {
       } catch { /* exited */ }
     }, 1000);
   }
+}
+
+/** One live terminal as the running-terminals board lists it. */
+export interface RunningTerminalInfo {
+  commandId: string;
+  command: string;
+  cwd: string;
+  projectCwd: string;
+  tabId: string;
+  pid: number;
+  timestamp: string;
+  usePty?: boolean;
+}
+
+/**
+ * Every live command across all projects. Tombstoned entries (bubble already
+ * deleted, process on its way out) are left out.
+ */
+export function listAllRunning(): RunningTerminalInfo[] {
+  const results: RunningTerminalInfo[] = [];
+  for (const cmd of getRegistry().values()) {
+    if (cmd.deleted) continue;
+    results.push({
+      commandId: cmd.commandId,
+      command: cmd.command,
+      cwd: cmd.cwd,
+      projectCwd: cmd.projectCwd,
+      tabId: cmd.tabId,
+      pid: cmd.pid,
+      timestamp: cmd.timestamp,
+      ...(cmd.usePty ? { usePty: true } : {}),
+    });
+  }
+  return results;
+}
+
+/**
+ * Stop a live command the way the bubble's stop button does: signal its
+ * process tree, no tombstone, so the exit is persisted and the bubble stays.
+ * The pid comes from the registry, never from the caller. Returns false when
+ * the command is not (or no longer) running.
+ */
+export function interruptCommand(commandId: string): boolean {
+  const cmd = getRegistry().get(commandId);
+  if (!cmd || cmd.deleted || !cmd.pid) return false;
+  console.log(`[registry] interrupt: id=${commandId}, pid=${cmd.pid}, server=${getServerId()}`);
+  interruptPidTree(cmd.pid);
+  return true;
 }
 
 /**
@@ -586,6 +637,7 @@ export async function finalizeCommand(commandId: string, exitCode: number, pid?:
   if (cmd.deleted) {
     cmd.ptyRingBuffer = undefined;
     registry.delete(commandId);
+    broadcastRunningChanged();
     return;
   }
 
@@ -595,6 +647,7 @@ export async function finalizeCommand(commandId: string, exitCode: number, pid?:
   // needed for live attach/replay during the run.
   cmd.ptyRingBuffer = undefined;
   registry.delete(commandId);
+  broadcastRunningChanged();
 
   const entry: Record<string, unknown> = {
     id: cmd.commandId,

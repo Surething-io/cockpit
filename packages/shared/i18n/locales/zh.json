@@ -322,7 +322,8 @@
   },
   "runningTerminals": {
     "title": "终端",
-    "count": "{{count}} 个",
+    "status": "{{count}} 个终端 · {{projects}} 个项目",
+    "keys": "↑↓ 选择 · Enter 跳转 · Del 停止 · Esc 关闭",
     "empty": "没有正在运行的终端",
     "currentProject": "当前项目",
     "stop": "停止",

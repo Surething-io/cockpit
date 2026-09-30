@@ -43,6 +43,8 @@ interface TabManagerProps {
   initialView?: ViewType;
   /** Project-relative file to reveal in the Explorer on mount (from the URL). */
   initialFile?: string;
+  /** Terminal bubble (commandId) to reveal in the Console on mount (from the URL). */
+  initialBubble?: string;
 }
 
 /**
@@ -184,7 +186,7 @@ const DIFF_DISMISS_DAMPING = 0.5;
  *  between the user and the thing they just asked to get rid of. */
 const DIFF_DISMISS_MS = 140;
 
-export function TabManager({ initialCwd, initialSessionId, initialBlank, initialView, initialFile }: TabManagerProps) {
+export function TabManager({ initialCwd, initialSessionId, initialBlank, initialView, initialFile, initialBubble }: TabManagerProps) {
   const { t } = useTranslation();
   // activeView must be declared before useTabState, as useTabState needs it to determine unread state
   const [activeView, setActiveView] = useState<ViewType>(initialView ?? 'agent');
@@ -277,6 +279,10 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
   // reveal happens on first paint instead of racing a post-mount message.
   const [fileOpenRequest, setFileOpenRequest] = useState<{ path: string; lineNumber?: number; nonce: number } | null>(
     initialFile ? { path: initialFile, nonce: 0 } : null,
+  );
+  // Same idea for the Console: seeded from the URL, bumped by FOCUS_CONSOLE_BUBBLE.
+  const [focusBubble, setFocusBubble] = useState<{ commandId: string; nonce: number } | null>(
+    initialBubble ? { commandId: initialBubble, nonce: 0 } : null,
   );
   // The window-message listener is registered once per tab set; reaching the
   // reveal handler through a ref keeps its identity out of that effect's deps.
@@ -516,6 +522,11 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
       // project that is already mounted (a fresh frame gets it from the URL).
       if (event.data?.type === 'OPEN_FILE' && typeof event.data?.path === 'string') {
         handleOpenFileLinkRef.current({ path: event.data.path });
+      }
+      // Reveal a terminal bubble — the sidebar's running-terminals board.
+      if (event.data?.type === 'FOCUS_CONSOLE_BUBBLE' && typeof event.data?.commandId === 'string') {
+        handleViewChange('console');
+        setFocusBubble((prev) => ({ commandId: event.data.commandId, nonce: (prev?.nonce ?? 0) + 1 }));
       }
     };
 
@@ -921,7 +932,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
             {/* CONSOLE view: command execution + browser */}
             <div className="w-1/3 h-full overflow-hidden">
               <PanelPortalProvider>
-                <ConsoleView cwd={initialCwd} tabId="default" onOpenNote={handleOpenNote} />
+                <ConsoleView cwd={initialCwd} tabId="default" onOpenNote={handleOpenNote} focusBubble={focusBubble} />
               </PanelPortalProvider>
             </div>
           </SwipeableContent>

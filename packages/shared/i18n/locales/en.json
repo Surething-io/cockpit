@@ -322,7 +322,8 @@
   },
   "runningTerminals": {
     "title": "Terminals",
-    "count": "{{count}} running",
+    "status": "{{count}} terminal(s) · {{projects}} project(s)",
+    "keys": "↑↓ select · Enter open · Del stop · Esc close",
     "empty": "No terminals running",
     "currentProject": "current project",
     "stop": "Stop",

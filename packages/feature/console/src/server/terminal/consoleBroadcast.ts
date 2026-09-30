@@ -55,3 +55,24 @@ export function broadcastConsoleDelta(
     }
   }
 }
+
+/**
+ * Tell every global-state client that the set of live terminals changed
+ * (spawned, adopted, exited, killed). Carries no payload on purpose: clients
+ * refetch `/api/terminal/running`, which also joins the bubble titles, so this
+ * hot path never touches the disk.
+ */
+export function broadcastRunningChanged(): void {
+  const set = g.__cockpitGlobalStateClients;
+  if (!set || set.size === 0) return;
+  const data = JSON.stringify({ type: "running-terminals-changed" });
+  for (const ws of set) {
+    if (ws.readyState === WS_OPEN) {
+      try {
+        ws.send(data);
+      } catch {
+        /* drop a single dead client */
+      }
+    }
+  }
+}

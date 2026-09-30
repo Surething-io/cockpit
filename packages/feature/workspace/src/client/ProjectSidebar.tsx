@@ -7,6 +7,7 @@ import { ProjectItem, type ProjectSessionBadge } from './ProjectItem';
 import { GlobalSessionMonitor, GlobalSession } from '@cockpit/feature-agent';
 import { PinnedSessionsPanel } from '@cockpit/feature-agent';
 import { ScheduledTasksPanel } from '@cockpit/feature-agent';
+import { RunningTerminalsPanel } from '@cockpit/feature-console';
 import { usePinnedSessions } from '@cockpit/feature-agent';
 import { useScheduledTasks } from '@cockpit/feature-agent';
 import { useWebSocket, toast } from '@cockpit/shared-ui';
@@ -47,6 +48,8 @@ interface ProjectSidebarProps {
   activeHtmlAppPreviewPath: string | null;
   onShowHtmlAppPreview: (item: HtmlAppPreview) => void;
   onSwitchProject: (cwd: string, sessionId: string) => void;
+  /** Open the project on its Console panel and reveal one terminal bubble. */
+  onFocusTerminal: (cwd: string, commandId: string) => void;
   onResolveSessionNumbers: () => Promise<Record<string, string>>;
   /** Live tab order per project cwd, pushed up by each project iframe (null =
    *  a tab with no session yet). Absent for projects whose iframe has never
@@ -258,11 +261,13 @@ export function ProjectSidebar({
   activeHtmlAppPreviewPath,
   onShowHtmlAppPreview,
   onSwitchProject,
+  onFocusTerminal,
   onResolveSessionNumbers,
   sessionOrders,
   sessionNumbers,
 }: ProjectSidebarProps) {
   const { t, i18n } = useTranslation();
+  const projectOrder = useMemo(() => projects.map((p) => p.cwd), [projects]);
   const { latest: latestVersion, hasUpdate } = useLatestVersion();
   const [updatePopoverOpen, setUpdatePopoverOpen] = useState(false);
   const updatePopoverRef = useRef<HTMLDivElement | null>(null);
@@ -559,6 +564,13 @@ export function ProjectSidebar({
           onDelete={deleteScheduledTask}
           onMarkRead={markScheduledRead}
           onUpdateTask={updateScheduledTask}
+        />
+        {/* Running terminals (all projects) */}
+        <RunningTerminalsPanel
+          collapsed={collapsed}
+          currentCwd={currentCwd}
+          projectOrder={projectOrder}
+          onFocusTerminal={onFocusTerminal}
         />
         {/* Notes */}
         <button

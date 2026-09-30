@@ -609,6 +609,39 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
     updateUrl(cwd, sessionId);
   }, [projects, activeIndex, collapsed, saveProjects, updateUrl, touchBeforeGlobalNavigation]);
 
+  // Reveal one terminal bubble (called from the running-terminals board): switch
+  // to its project, swipe to Console, scroll the bubble into view. The session
+  // the project was on is left as it is.
+  const handleFocusTerminal = useCallback((cwd: string, commandId: string) => {
+    const sessionId = projectSessionIdsRef.current.get(cwd) ?? undefined;
+    touchBeforeGlobalNavigation(cwd, sessionId);
+    const existingIndex = projects.findIndex(p => p.cwd === cwd);
+
+    if (existingIndex >= 0) {
+      const iframe = iframeRefs.current.get(cwd);
+      if (iframe?.contentWindow) {
+        iframe.contentWindow.postMessage({ type: 'FOCUS_CONSOLE_BUBBLE', commandId }, '*');
+      } else {
+        // Never mounted (lazy load): freeze the target into the iframe URL, the
+        // same way a pending file is carried.
+        initialSessionIdsRef.current.set(cwd, { ...initialSessionIdsRef.current.get(cwd), bubble: commandId });
+      }
+      if (existingIndex !== activeIndex) {
+        setActiveIndex(existingIndex);
+        saveProjects(projects, existingIndex, collapsed);
+      }
+    } else {
+      const newProjects = [...projects, { cwd }];
+      const newActiveIndex = newProjects.length - 1;
+      setProjects(newProjects);
+      setActiveIndex(newActiveIndex);
+      saveProjects(newProjects, newActiveIndex, collapsed);
+      initialSessionIdsRef.current.set(cwd, { bubble: commandId });
+    }
+
+    updateUrl(cwd, sessionId);
+  }, [projects, activeIndex, collapsed, saveProjects, updateUrl, touchBeforeGlobalNavigation]);
+
   // Build iframe URL. For a project opened with a specific session, carry the sessionId
   // (and, when the open intent was "jump into a session", view=agent) in the URL so that
   // useTabState inside the iframe activates it deterministically on mount. The value is
@@ -656,6 +689,7 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
         activeHtmlAppPreviewPath={activeHtmlAppPreviewPath}
         onShowHtmlAppPreview={handleShowHtmlAppPreview}
         onSwitchProject={handleSwitchProject}
+        onFocusTerminal={handleFocusTerminal}
         onResolveSessionNumbers={resolveSessionNumbers}
         sessionOrders={sessionOrders}
         sessionNumbers={liveSessionNumbers}

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
-import { useWebSocket, SessionNumberChip, sessionNumberClass, sessionNumberRing, sessionNumberWash, type SessionNumberStatus } from '@cockpit/shared-ui';
+import { useWebSocket, SessionNumberChip, ProjectNumberChip, sessionNumberRing, sessionNumberWash, type SessionNumberStatus } from '@cockpit/shared-ui';
 import { fetchCurrentBranch } from '@cockpit/feature-explorer';
 
 /** One clickable session badge in a project row. `label` is the session's live
@@ -32,20 +32,6 @@ interface ProjectItemProps {
   onSelectSession?: (sessionId: string) => void;
   onRemove: () => void;
   onOpenNote?: () => void;
-}
-
-// Project number: rounded square distinguishes projects from circular session tabs.
-// Collapsed rows have no room for the session badges, so the square itself takes
-// over the aggregate status colour there (same palette as the badges).
-function NumberIcon({ number, status, isActive }: { number: number; status: SessionNumberStatus; isActive: boolean }) {
-  return (
-    <span
-      className={`flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-[4px] border font-mono text-[10px] font-medium leading-none tabular-nums transition-colors ${sessionNumberClass(status, isActive)}`}
-      aria-hidden="true"
-    >
-      {number}
-    </span>
-  );
 }
 
 // Session badge: circle, matching the tab bar's session numbers. Clicking one
@@ -156,7 +142,8 @@ export function ProjectItem({
       onMouseLeave={() => setIsHovered(false)}
       data-tooltip={tooltipText}
     >
-      <NumberIcon number={index + 1} status={collapsedStatus} isActive={isActive} />
+      {/* Rounded square = project; circles = sessions. */}
+      <ProjectNumberChip number={index + 1} status={collapsedStatus} isActive={isActive} />
 
       {!collapsed && (
         <>

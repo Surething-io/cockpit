@@ -1,73 +1,53 @@
 ---
 name: ex
-description: "Analyze a complex problem with a fixed thinking skeleton; analysis only, no code changes."
+description: "Deep analysis of a complex question in one pass: answer first, then cited findings, options and open points; no code changes."
+argument-hint: "[question]"
 ---
 
-# ex — structured discussion skill
-
-Analyze complex problems with a fixed thinking skeleton. **Output analysis only; do not modify code.**
-
-## Entry: complexity check
-
-When the question arrives, **first judge complexity**:
-
-- **Simple problem** → answer directly, **do not apply the methodology** (KISS)
-- **Complex problem** → run the full 6-step skeleton below
-
-Treat as complex if any of these holds:
-- Multiple candidate solutions need trade-off
-- Multiple hypotheses need verification
-- Spans multiple modules / systems / layers
-- The user explicitly asks for deep discussion
-
-## Methodology skeleton (complex problems only)
-
-Run in order, **in one pass, without stopping to ask the user**:
+Deep analysis mode: take a complex question to a conclusion in one pass, backed by evidence. No code changes, and do not stop to ask the user — mark what is missing and keep going.
 
 ```
-1. Problem study   Clarify the problem itself through What / Why / How
-2. Diverge         Enumerate candidate hypotheses, solutions, perspectives
-3. Converge        Pick the top 1-3
-4. Diverge again   Deep-dive into the chosen ones (details, risks, edge cases)
-5. Iterate-verify  Verify key hypotheses via code search / web search / bash experiments
-6. Summarize       Conclude; use a comparison matrix when multiple options sit side by side
+if simple(question): answer directly, skip everything below
+
+think (not emitted): what / why / how → diverge on hypotheses and candidates
+                     → converge on the top 1-3 → dig into them → verify the key claims
+verify by: reading and searching code · official docs and web · small commands and experiments
+
+emit, answer first, empty sections omitted:
+    ## Answer      the bottom line, 1-3 sentences
+    <view>         only if it helps: solution skeleton (how-to) · comparison matrix (A vs B)
+                   · call chain / data flow (why it works this way)
+    ## Findings    what supports the answer, one line each — <claim> — <file:line | link | output>
+    ## Options     only when there is a choice to make: decision blocks (below)
+    ## Risks       only when there are any
+    ## Pending     what is missing — and which conclusion it would change
+
+on follow-up: dig into what was asked, then emit only the delta, never the unchanged analysis:
+    ## Changed     each edit as <section>: <old> → <new>; a changed Answer goes first
+    ## New         findings, options or risks the follow-up added
+    ## Pending     what is still missing
 ```
 
-### What / Why / How facets (cross-cutting)
+`simple` = one clear answer, no trade-off, no hypothesis to test, one module. Anything spanning systems, needing a choice, or explicitly asked to go deep is complex.
 
-- **What**: what is the problem / solution, what is the boundary
-- **Why**: why does this problem exist, why pick this solution
-- **How**: how to implement / land / verify it
+Findings you inferred but did not verify are marked `(hypothesis)` with the check that would confirm them. A solution skeleton shows the parts and how they connect at the level a decision is made on; drop every line whose removal would not change that decision.
 
-## Execution rules
+Written for skimming: every bullet one line, each fact stated once in the section it belongs to.
 
-### Run once, never interrupt the user
+**Options** — a condensed MADR record: the question as a bold title, then a fenced text block with the decision drivers, the options, and the recommendation last:
 
-- **Never call AskUserQuestion**
-- When information is missing → explicitly mark **"⚠️ Pending: xxx"** and let the user follow up later
-- Do not stop just because info is incomplete; push as far as the evidence allows
+**1. <question>**
 
-### Verification means
+```
+Drivers: <criterion> · <criterion>
+A ★ <option>
+    + <gain>
+    - <cost>
+B   <option>
+    + <gain>
+    - <cost>
 
-Allowed verification tools:
+★ A — <why, in terms of the drivers, one line>
+```
 
-| Means | Tools | Use case |
-|---|---|---|
-| Code search | Grep / Read / Glob | Find in-repo evidence for hypotheses |
-| Web search | WebSearch / WebFetch | Look up official docs and external material |
-| Bash experiments | Bash | Run small commands, test scripts, curl |
-
-**Forbidden**: verifying by asking the user via AskUserQuestion.
-
-## Output rules
-
-- **No mandatory output template** — organize by what the problem needs
-- **Comparison matrix is optional** — use it only when multiple options / hypotheses must sit side by side
-- Simple questions get short answers; do not over-frame for the sake of framing
-
-## What this skill does NOT do
-
-- ❌ Do not modify code (this is a discussion skill, not an implementation skill)
-- ❌ Do not interrupt the user mid-flow (one-shot)
-- ❌ Do not force a comparison matrix on every question
-- ❌ Do not compete with `/qa` or `/fx` — the three are siblings, triggered explicitly by the user
+Options mutually exclusive, at most 3. ★ is always given, never "up to you", and argued from the drivers.

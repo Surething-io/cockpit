@@ -1,40 +1,50 @@
 ---
 name: qa
-description: "Clarify the requirement first: restate understanding, then a decision table with recommendations."
+description: "Clarify a requirement as a lean PRD: problem, goal, success, scope, assumptions, and only the decisions that need you."
+argument-hint: "[requirement]"
 ---
 
-Enter requirement clarification mode. The goal is to align on intent before touching code, so a misread requirement never turns into wasted changes.
+Requirement clarification mode: align on what the user wants before anyone designs or builds anything. No solution, no code.
 
-## Steps
+```
+emit a lean PRD, fixed sections in this order, empty ones omitted:
+    ## Problem       who is hurt, how, and the evidence            # ≤ 3 bullets
+    ## Goal          the outcome, one sentence
+    ## Success       how we know it worked — observable, measurable
+    ## Scope         In / Out
+    ## Constraints   hard limits the user or the system already imposes
+    ## Assumptions   everything taken as given that the user did not say
+    ## Decisions     assumptions with a real alternative the user must pick
+stop                                        # no code edits, no broad search, no subagents
+on reply: emit only the delta, never the unchanged PRD:
+    ## Changed     each edit as <section>: <old> → <new>; each answered decision
+                   as one Y-statement line: <chose X over Y> — <to achieve …>, accepting <cost>
+    ## New         assumptions or decisions the answer opened, if any
+    ## Open        still-open decisions as blocks; none → "nothing open — confirm?"
+```
 
-1. Restate your understanding: a few sentences on what changes, where, and what the current behaviour is. Read the code to confirm the current state first — a restatement built on a guess wastes more turns than no restatement at all.
-2. List the open questions as a multiple-choice table (format below).
-3. Stop and wait: do not modify code until the user answers.
+Written for skimming: every bullet one line, each fact stated once in the section it belongs to. Stay at the level of the requirement — what and why, never how. A bullet that names a mechanism, component, threshold or model belongs to whatever comes after; leave it out.
 
-## Open-questions table
+Assumptions are the point: an unstated default that turns out wrong is the most expensive gap there is, because nobody knew it was a choice. List every one that would change what gets built, even when it feels obvious. Read code only to check a specific fact an assumption rests on — one file you can already name.
 
-Always use a table, and always give every question concrete options plus a recommendation. The user should be able to lock the design by replying with letters, not by answering open-ended prose questions.
+**Decisions** — a condensed MADR record per open decision: the question as a bold title, then a fenced text block with the decision drivers, the options, and the recommendation last:
 
-| # | Question | Options | Recommend | Why |
-|---|---|---|---|---|
-| 1 | <the decision to settle> | A <option one><br>B <option two><br>C <option three> | **A** | <why not B / C — one line of trade-off> |
-| 2 | <the decision to settle> | A <option one><br>B <option two> | **B** | <why not A — one line of trade-off> |
+**1. <question>**
 
-Follow the table with: "Reply 1A 2B, or say 'all as recommended'".
+```
+Drivers: <criterion> · <criterion>
+A ★ <option>
+    + <gain>
+    - <cost>
+B   <option>
+    + <gain>
+    - <cost>
 
-Rules:
-- One option per line, separated by <br> — never slash-joined on a single line. The longer the options, the harder a single line is to compare.
-- Options must be mutually exclusive and exhaustive, at most 3. If you cannot name a second option, it was never an open question — do not pad the table.
-- The Recommend column must always be filled. Never "up to you" or "either works".
-- Keep Why to one line about the trade-off (why not the other option), not a description of the feature.
-- Put hard constraints in their own table or paragraph: if an option drags a hidden cost along (a hardcoded constant depends on it, changing this breaks that), spell it out separately. It is decision input, not a reason cell.
+★ A — <why, in terms of the drivers, one line>
+```
 
-## Boundaries
+- Options mutually exclusive and exhaustive, at most 3. Gain / cost stay one phrase each.
+- Drivers: the 1-3 criteria this choice turns on. ★ is always given, never "up to you", and argued from them.
+- End with: "Reply 1A 2B, 'all as recommended', or correct anything above."
 
-- Output understanding only: do not modify code, write files, or run mutating commands. Reading code to confirm the current state is allowed and encouraged.
-- Follow the KISS principle: list only what genuinely changes the implementation direction. Anything you can settle by looking it up, look it up.
-- If nothing is ambiguous, just say so and offer to start — do not manufacture a table.
-
-## Verification
-
-If the user can reply with only letters or "all as recommended" and you can start implementing, the clarification was good. If they have to write a paragraph back, your options were not exhaustive or your recommendation was missing.
+Good round: the user can answer with letters alone. If they have to write a paragraph back, the options were not exhaustive or a recommendation was missing.

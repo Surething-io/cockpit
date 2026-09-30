@@ -41,7 +41,7 @@ import { DeepseekBalanceButton } from './DeepseekBalanceButton';
 import { EngineQuotaButton } from './EngineQuotaButton';
 import { COLUMN_HEADER_ROW } from './columnHeaderRow';
 import type { ApiKeyEngine, UserMessageIndexEntry } from './effect/agentClient';
-import { CommentsListModal } from '@cockpit/feature-comments';
+import { CommentsListModal, useHasComments } from '@cockpit/feature-comments';
 import { useTranslation } from 'react-i18next';
 
 // Migrated from src/components/project/Chat.tsx.
@@ -189,6 +189,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   const [isHovered, setIsHovered] = useState(false);
   const [isProjectSessionsOpen, setIsProjectSessionsOpen] = useState(false);
   const [isCommentsListOpen, setIsCommentsListOpen] = useState(false);
+  const hasComments = useHasComments(initialCwd);
   const [isUserMessagesOpen, setIsUserMessagesOpen] = useState(false);
   const [historyTokenUsage, setHistoryTokenUsage] = useState<TokenUsage | null>(null);
   // Plan mode (per-tab): controlled by TabInfo.planMode (persisted); falls back to
@@ -1000,6 +1001,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
               engine={engine}
               onShowGitStatus={onShowGitStatus}
               onShowComments={initialCwd ? handleShowComments : undefined}
+              hasComments={hasComments}
               onOpenNote={onOpenNote}
               isFavorite={isFavorite}
               onToggleFavorite={onToggleFavorite}

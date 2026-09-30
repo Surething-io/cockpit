@@ -20,6 +20,8 @@ interface ChatInputProps {
   engine?: ChatEngine;
   onShowGitStatus?: () => void;
   onShowComments?: () => void;
+  /** Tint the comments button only when the project has comments */
+  hasComments?: boolean;
   onOpenNote?: () => void;
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
@@ -46,7 +48,7 @@ interface ChatInputProps {
   setDraftImages?: React.Dispatch<React.SetStateAction<ImageInfo[]>>;
 }
 
-export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine: _engine, onShowGitStatus, onShowComments, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, draft, setDraft, draftImages, setDraftImages }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine: _engine, onShowGitStatus, onShowComments, hasComments, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, draft, setDraft, draftImages, setDraftImages }: ChatInputProps) {
   const { t } = useTranslation();
   const localInput = useState('');
   const localImages = useState<ImageInfo[]>([]);
@@ -240,7 +242,11 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
         {onShowComments && (
           <button
             onClick={onShowComments}
-            className="p-2 text-amber-11 hover:text-amber-10 hover:bg-amber-9/10 active:bg-amber-9/20 active:scale-95 rounded-lg transition-all"
+            className={`p-2 rounded-lg transition-all active:scale-95 ${
+              hasComments
+                ? 'text-amber-11 hover:text-amber-10 hover:bg-amber-9/10 active:bg-amber-9/20'
+                : 'text-muted-foreground hover:text-foreground hover:bg-hover active:bg-muted'
+            }`}
             title={t('chat.viewAllComments')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

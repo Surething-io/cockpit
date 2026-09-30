@@ -19,6 +19,7 @@ export {
 } from './useAllComments';
 
 export { useComments } from './useComments';
+export { useHasComments } from './useHasComments';
 
 // UI: list-style modal showing all code annotations
 export { CommentsListModal } from './CommentsListModal';

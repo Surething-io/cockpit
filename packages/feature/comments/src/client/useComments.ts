@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { CodeComment } from '../server/api/comments';
-import { subscribeCommentsChange } from './useAllComments';
+import { subscribeCommentsChange, emitCommentsChange } from './useAllComments';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import {
   loadComments,
@@ -99,6 +99,7 @@ export function useComments({ cwd, filePath }: UseCommentsOptions): UseCommentsR
     if (exit._tag === 'Success' && exit.value.comment) {
       const created = exit.value.comment;
       setComments(prev => [...prev, created]);
+      emitCommentsChange();
       return created;
     }
     if (exit._tag === 'Failure') {
@@ -126,6 +127,7 @@ export function useComments({ cwd, filePath }: UseCommentsOptions): UseCommentsR
     const exit = await BrowserRuntime.runPromiseExit(deleteCommentEff(cwd, id));
     if (exit._tag === 'Success') {
       setComments(prev => prev.filter(c => c.id !== id));
+      emitCommentsChange();
       return true;
     }
     console.error('Failed to delete comment:', exit.cause);

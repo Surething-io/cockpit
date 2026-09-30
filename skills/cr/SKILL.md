@@ -120,7 +120,8 @@ def assemble(reports):
         diagram.mark_once(f.break_location, f"✗#{f.n} {f.severity} {f.break_note}")
         # mechanical placement only — no other edit to the diagram
 
-    return render(heading_and_verdict(findings),  # the ONLY text the main session writes,
+    return render(heading_and_verdict(findings),  # the ONLY text the main session writes
+                                                  # (incl. the > 5 findings index, §4),
                   diagram,                        # together with the coverage block
                   [f.block for f in findings],
                   coverage(reports))
@@ -277,9 +278,10 @@ REPORT = [                                  # exactly these four parts, nothing 
     "findings",          # one block each, sorted
     "coverage",          # ```text block
 ]
-# > 5 findings → plain-text index before the diagram: "#1 🔴 introduced — <Consequence>"
+# > 5 findings → index before the diagram, a Markdown list, one item per finding:
+#   "- #1 🔴 introduced — <Consequence>"   (bare lines collapse into one paragraph)
 # language = the user's; identifiers and file:line unchanged
-# blank line before and after every code block
+# blank line before the "## Review" heading and before and after every code block
 # test runs / scratch scripts / side notes → a finding's Why, or the last coverage line
 
 def format_gate(report) -> list[str]:          # countable checks only; never judges content
@@ -336,7 +338,9 @@ Static-only reviewer → `slices: none (static only)`.
 ```python
 assert every reviewer triaged and judged alone; nothing relayed between tracks     # P1
 assert every report passed format_gate, or was bounced to its own author           # P2
-assert main session wrote only heading+verdict and coverage; findings verbatim     # P2
+assert main session wrote only heading+verdict (+ index) and coverage; findings verbatim  # P2
+assert blank line before "## Review"; index (> 5 findings) is a "- " list, one per line  # §4 —
+                                                   # main-session text never passes format_gate
 assert every behavioural claim rests on real code / source, not a proxy            # P3
 assert diagram arrows == real control flow; each ✗#n once, right-hand column       # P4
 assert every slice ✓ / ✗#n / not-modelled; every finding has an Origin             # coverage

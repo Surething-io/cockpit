@@ -38,6 +38,20 @@ import { resolveGitBash, resolveWindowsPowerShell, resolveBashShell } from "../s
 
 const HEARTBEAT = Schedule.spaced("30 seconds")
 
+/**
+ * PTY spawns in flight → the last size the page asked for meanwhile.
+ *
+ * Spawning is asynchronous (a round trip to the pty-host, or launching it), and
+ * the page sends its first `resize` as soon as xterm has measured the bubble —
+ * usually before the spawn has come back. With no registered command to apply
+ * it to, that resize used to be dropped and the PTY stayed at the 120x30
+ * default, so zsh laid its prompt out for a wider screen (right prompt wrapped,
+ * stray `%` lines). Held here instead and applied once the PTY is registered.
+ * Keyed by command id; a rerun's resize must reach the new PTY, not the old run
+ * still registered under that id.
+ */
+const pendingPtySizes = new Map<string, { cols: number; rows: number } | null>()
+
 /** Message of a spawn failure, unwrapping Effect's UnknownException. */
 function errorMessage(e: unknown): string {
   const cause = (e as { error?: unknown }).error ?? e
@@ -356,6 +370,7 @@ const dispatchMessage = (
             timestamp,
             ...(sourceId ? { sourceId } : {}),
           }
+          pendingPtySizes.set(commandId, null)
           Effect.runFork(
             Effect.tryPromise(() =>
               spawnPtyInHost({
@@ -372,6 +387,8 @@ const dispatchMessage = (
               Effect.flatMap((ptyProcess) =>
                 Effect.sync(() => {
                   registerCommand({ ...meta, pid: ptyProcess.pid, ptyProcess, usePty: true })
+                  const size = pendingPtySizes.get(commandId)
+                  if (size) ptyProcess.resize(size.cols, size.rows)
                   Effect.runFork(send({ type: "pid", commandId, pid: ptyProcess.pid, command: ptyTarget.name }))
                   Effect.runFork(
                     attachPtyListeners(registry, send, commandId, ptyProcess)
@@ -382,7 +399,8 @@ const dispatchMessage = (
                 send({ type: "error", commandId, error: errorMessage(e) }).pipe(
                   Effect.catchAll(() => Effect.void)
                 )
-              )
+              ),
+              Effect.ensuring(Effect.sync(() => pendingPtySizes.delete(commandId)))
             )
           )
         } else {
@@ -501,6 +519,9 @@ const dispatchMessage = (
         commandId: string
         cols: number
         rows: number
+      }
+      if (pendingPtySizes.has(commandId)) {
+        pendingPtySizes.set(commandId, { cols, rows })
       }
       const cmd = getRunningCommand(commandId)
       if (cmd?.usePty && cmd.ptyProcess) {

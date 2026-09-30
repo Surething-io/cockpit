@@ -320,6 +320,17 @@
     "weeklyMon9am": "Mon 09:00",
     "monthly1st9am": "1st of month 09:00"
   },
+  "runningTerminals": {
+    "title": "Terminals",
+    "count": "{{count}} running",
+    "empty": "No terminals running",
+    "currentProject": "current project",
+    "stop": "Stop",
+    "confirmStop": "Stop this process?",
+    "stopping": "Stopping…",
+    "stopFailed": "Failed to stop the terminal",
+    "notFound": "Couldn't find this terminal's bubble"
+  },
   "cron": {
     "everyNMinutes": "Every {{n}} minutes",
     "everyNHours": "Every {{n}} hours",
@@ -1181,6 +1192,8 @@
     "aggregateFailed": "Aggregation failed",
     "aggregateBaselineSkipped": "Skipped {{count}} baseline-scale call(s)",
     "aggregateBaselineIncluded": "Including {{count}} baseline-scale call(s)",
+    "callsBaselineHidden": "Hid {{count}} baseline-scale call(s)",
+    "callsBaselineShown": "Showing {{count}} baseline-scale call(s)",
     "aggregateSkippedHint": "These calls touched more than {{threshold}} files — usually a branch switch or rebase rather than authored work. Click to toggle.",
     "imageBefore": "Before",
     "imageAfter": "After",

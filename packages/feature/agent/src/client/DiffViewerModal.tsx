@@ -398,7 +398,8 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
   const [aggregate, setAggregate] = useState(false);
   // Escape hatch for the file-count heuristic below: a genuine wide codemod
   // looks exactly like a branch switch by size alone, so the user can always
-  // pull the skipped calls back in.
+  // pull the skipped calls back in. One switch for both views, so the call
+  // list and the aggregate never disagree about what the turn consists of.
   const [includeBaselineShifts, setIncludeBaselineShifts] = useState(false);
 
   // Snapshot-backed calls, oldest first — the only ones a range can span
@@ -418,6 +419,13 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
     () => (includeBaselineShifts ? hashedCalls : hashedCalls.slice(leadingBaselineShifts)),
     [hashedCalls, includeBaselineShifts, leadingBaselineShifts],
   );
+  // The per-call list hides the same leading shifts: opening the viewer on a
+  // 200-file branch switch buries the calls the user came to look at.
+  const listedCalls = useMemo(() => {
+    if (includeBaselineShifts || leadingBaselineShifts === 0) return calls;
+    const hidden = new Set(hashedCalls.slice(0, leadingBaselineShifts).map((c) => c.key));
+    return calls.filter((c) => !hidden.has(c.key));
+  }, [calls, hashedCalls, includeBaselineShifts, leadingBaselineShifts]);
   // base..head for the aggregate view. `base` is the OLDEST spanned call's
   // PARENT so that call's own changes are inside the range; null means the
   // range starts at the empty tree (parentless day-root commit).
@@ -527,10 +535,21 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
   // the selection survives refetches; if it's ever truly gone the pane falls
   // back to the last-good render (displayCall) instead of jumping to the top.
   useEffect(() => {
-    if (calls.length > 0 && selectedCallKey == null) {
-      selectCall(calls[0]);
+    if (listedCalls.length > 0 && selectedCallKey == null) {
+      selectCall(listedCalls[0]);
     }
-  }, [calls, selectedCallKey, selectCall]);
+  }, [listedCalls, selectedCallKey, selectCall]);
+
+  // The one exception to "never re-pick": the selected call got HIDDEN — the
+  // user switched shifts back off, or a refetch brought in later calls that
+  // turned the first one into a leading shift. It is still in `calls`, so the
+  // pane would keep showing a call the list no longer has.
+  useEffect(() => {
+    if (selectedCallKey == null || listedCalls.length === 0) return;
+    if (listedCalls.some((c) => c.key === selectedCallKey)) return;
+    if (!calls.some((c) => c.key === selectedCallKey)) return;
+    selectCall(listedCalls[0]);
+  }, [calls, listedCalls, selectedCallKey, selectCall]);
 
   // A mode switch swaps the whole file set. Deliberately only re-selects when
   // the current path is GONE: a file edited in this call is usually present in
@@ -574,7 +593,10 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose, showMarkdownPreview, showHtmlPreview, jsonPreview]);
 
-  const totalFiles = useMemo(() => calls.reduce((n, c) => n + c.files.length, 0), [calls]);
+  const totalFiles = useMemo(
+    () => listedCalls.reduce((n, c) => n + c.files.length, 0),
+    [listedCalls],
+  );
 
   const centered = (text: string) => (
     <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
@@ -693,7 +715,22 @@ export function FileDiffViewer({ toolCalls, cwd, sessionId, onClose, onContentSe
               Explorer compare mode replacing its commit list). */}
           {showLeft && !aggregate && (
             <div className="w-60 flex-shrink-0 border-r border-border overflow-y-auto">
-              {calls.map((call) => (
+              {/* Same never-silently rule as the aggregate bar: say what is
+                  hidden and offer it back in place. */}
+              {leadingBaselineShifts > 0 && (
+                <button
+                  onClick={() => setIncludeBaselineShifts((v) => !v)}
+                  data-tooltip={t('diffViewer.aggregateSkippedHint', {
+                    threshold: BASELINE_SHIFT_FILES,
+                  })}
+                  className="w-full px-3 py-1.5 border-b border-border text-left text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-colors"
+                >
+                  {includeBaselineShifts
+                    ? t('diffViewer.callsBaselineShown', { count: leadingBaselineShifts })
+                    : t('diffViewer.callsBaselineHidden', { count: leadingBaselineShifts })}
+                </button>
+              )}
+              {listedCalls.map((call) => (
                 <div
                   key={call.key}
                   onClick={() => selectCall(call)}

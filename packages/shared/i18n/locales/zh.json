@@ -320,6 +320,17 @@
     "weeklyMon9am": "每周一 09:00",
     "monthly1st9am": "每月 1 号 09:00"
   },
+  "runningTerminals": {
+    "title": "终端",
+    "count": "{{count}} 个",
+    "empty": "没有正在运行的终端",
+    "currentProject": "当前项目",
+    "stop": "停止",
+    "confirmStop": "停止这个进程？",
+    "stopping": "停止中…",
+    "stopFailed": "停止终端失败",
+    "notFound": "没找到这个终端的气泡"
+  },
   "cron": {
     "everyNMinutes": "每 {{n}} 分钟",
     "everyNHours": "每 {{n}} 小时整点",
@@ -1181,6 +1192,8 @@
     "aggregateFailed": "汇总失败",
     "aggregateBaselineSkipped": "已跳过 {{count}} 次基线级调用",
     "aggregateBaselineIncluded": "已计入 {{count}} 次基线级调用",
+    "callsBaselineHidden": "已隐藏 {{count}} 次基线级调用",
+    "callsBaselineShown": "已显示 {{count}} 次基线级调用",
     "aggregateSkippedHint": "这些调用改动的文件数超过 {{threshold}}，通常是切换分支 / rebase 而非编写代码。点击切换是否计入",
     "imageBefore": "变更前",
     "imageAfter": "变更后",

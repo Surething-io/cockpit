@@ -14,10 +14,10 @@ const inter = Inter({
 });
 
 const SITE_URL = 'https://opencockpit.dev';
-const DEFAULT_TITLE = 'OpenCockpit — The Open Claude Code GUI for Any Agent';
+const DEFAULT_TITLE = 'OpenCockpit — Open Claude Code GUI for Any LLM (Codex, GLM, Kimi, Ollama)';
 // Kept under 160 chars so Google SERP doesn't truncate before the closing keywords.
 const DEFAULT_DESCRIPTION =
-  'Open-source Claude Code GUI — parallel AI coding. Multi-engine (Codex/DeepSeek/GLM/Kimi/Ollama), terminal, Chrome & DB bubbles, code graph. Local, MIT.';
+  "Cockpit IDE: Claude Code's agent workflow on any LLM — Claude, Codex, DeepSeek, GLM, Kimi or local Ollama. Terminal, browser & DB built in. Self-host. MIT.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -55,7 +55,7 @@ export const metadata: Metadata = {
         url: '/og.png',
         width: 1200,
         height: 630,
-        alt: 'OpenCockpit — Claude Code GUI for parallel AI coding',
+        alt: 'OpenCockpit — Open Claude Code GUI for any LLM',
       },
     ],
     locale: 'en_US',

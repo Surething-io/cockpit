@@ -13,7 +13,7 @@ export const messages = {
       // Page <title>. Kept separate from `headline` because the root layout's
       // title template appends ' · OpenCockpit'; using `headline` here rendered
       // the tab as "OpenCockpit · OpenCockpit".
-      metaTitle: 'OpenCockpit — The Open Claude Code GUI for Any Agent',
+      metaTitle: 'OpenCockpit — Open Claude Code GUI for Any LLM (Codex, GLM, Kimi, Ollama)',
       subheadline: 'One seat. One AI. Everything under control.',
       // Short, punchy lead shown in the Hero. `description` below stays long for
       // JSON-LD / structured data — don't merge them.
@@ -24,7 +24,7 @@ export const messages = {
         'OpenCockpit is the open-source Claude Code GUI — an IDE-like workbench for the whole dev loop, and a single canvas for whatever agent you bring next. Multi-project Claude sessions out of the box; pop open a tab for Codex, DeepSeek, GLM, Kimi, or local Ollama whenever you need. Built-in terminal, Chrome control, PostgreSQL / MySQL / Redis bubbles, code review, and slash modes — all local. Web client–server under the hood: self-host it on a shared dev box and every teammate gets a seat, each coding with AI in their own project or worktree.',
       // SEO ≤160 chars — used by metadata only, not visible on the page. Don't merge with description.
       metaDescription:
-        'Open-source Claude Code GUI — IDE-like workbench for parallel AI coding. Codex/DeepSeek/GLM/Kimi/Ollama, terminal, browser & DB. Self-host for your team. MIT.',
+        'Cockpit IDE: Claude Code\'s agent workflow on any LLM — Claude, Codex, DeepSeek, GLM, Kimi or local Ollama. Terminal, browser & DB built in. Self-host. MIT.',
       installLabel: 'Install',
       tryOnline: 'Try Online',
       githubStar: 'Star on GitHub',
@@ -425,6 +425,17 @@ export const messages = {
       indexLead:
         'Everything about running OpenCockpit — the open-source GUI for Claude Code and any other coding agent you bring. Start with the introduction, or jump straight to a panel.',
       indexStart: 'New here? Start with the introduction →',
+      // Search-facing <title> per page, keyed like `sidebar.pages`. Phrased as
+      // the problem a searcher has, not the feature name; pages without an
+      // entry fall back to "<sidebar label> · Documentation".
+      seoTitles: {
+        engines: 'Use Claude Code with Any LLM: GLM, Kimi, DeepSeek, Ollama',
+        workflows: 'Chain Slash Commands into Multi-Step AI Workflows',
+        skills: 'Turn Chats into Reusable Claude Code Skills (SKILL.md)',
+        snapshots: 'Undo and Review Every AI Agent Change, Tool Call by Tool Call',
+        htmlApps: 'HTML Apps That Run Bash: No CORS, No Server',
+        terminalBubble: 'Web Terminal for AI Coding Sessions',
+      },
       readOnGithub: 'Read on GitHub',
       comingSoon: 'Coming soon',
       onThisPage: 'On this page',
@@ -513,7 +524,7 @@ export const messages = {
       headline: 'OpenCockpit',
       // 页面 <title>。与 headline 分开：根 layout 的 title 模板会追加
       // ' · OpenCockpit'，直接用 headline 会渲染成 "OpenCockpit · OpenCockpit"。
-      metaTitle: 'OpenCockpit —— 开源的 Claude Code GUI，任何 Agent 都能接',
+      metaTitle: 'OpenCockpit —— 开源 Claude Code 图形界面，接任意大模型（GLM / Kimi / DeepSeek）',
       subheadline: 'One seat. One AI. Everything under control.',
       // 页面展示用的精简 lead；下方 description 保持长文本供 JSON-LD 使用，勿合并。
       lead:
@@ -523,7 +534,7 @@ export const messages = {
         'OpenCockpit 是开源的 Claude Code GUI —— 贴合研发全流程的 IDE 式工作台，也是你想接入的任何 Agent 的统一画布。多项目 Claude 会话开箱即用；想用 Codex、DeepSeek、GLM、Kimi 或本地 Ollama？直接新开一个 tab。内置终端、Chrome 自动化、PostgreSQL / MySQL / Redis 气泡、代码评审与斜杠模式 —— 全部本地。Web client-server 架构：可自托管到共享开发机，全队一起飞，在各自项目 / worktree 上并行 AI coding。',
       // SEO ≤160 字符（CJK 计为 1.5×）—— 仅用于 metadata，不在页面展示。勿与 description 合并。
       metaDescription:
-        '开源 Claude Code GUI —— IDE 式工作台，多项目并行 AI 编程。Codex/DeepSeek/GLM/Kimi/Ollama 多引擎，内置终端、浏览器与数据库气泡。可自托管供全队使用。MIT 协议。',
+        'Cockpit IDE：用 Claude Code 的工作流驱动任意大模型 —— Claude、Codex、DeepSeek、GLM、Kimi 或本地 Ollama，无需改环境变量。内置终端、浏览器与数据库，可自托管。MIT 协议。',
       badge: 'Claude · Codex · DeepSeek · GLM · Kimi · Ollama',
       installLabel: '安装',
       tryOnline: '在线体验',
@@ -923,6 +934,15 @@ export const messages = {
       indexLead:
         'OpenCockpit 的完整使用文档 —— 开源的 Claude Code 图形界面，也能接上你手边任何一个编程 Agent。第一次来就从「介绍」开始，或者直接跳到某个面板。',
       indexStart: '第一次使用？从「介绍」开始 →',
+      // Search-facing <title> per page; see the en entry.
+      seoTitles: {
+        engines: 'Claude Code 接任意大模型：GLM、Kimi、DeepSeek、Ollama',
+        workflows: '把斜杠命令串成多步骤 AI 工作流',
+        skills: '把对话沉淀成可复用的 Claude Code Skill（SKILL.md）',
+        snapshots: '逐个工具调用回看、回滚 AI Agent 的每一处改动',
+        htmlApps: '能直接调用 bash 的 HTML 应用：无 CORS、无需后端',
+        terminalBubble: 'AI 编程会话里的 Web 终端',
+      },
       readOnGithub: '在 GitHub 阅读',
       comingSoon: '即将上线',
       onThisPage: '本页内容',

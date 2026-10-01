@@ -54,11 +54,14 @@ export async function generateMetadata({ params }: DocsPageProps): Promise<Metad
   const source = await readDocSource(slugStr, locale);
   const description = source ? extractDocDescription(source) : undefined;
 
-  const title = `${pageLabel} · ${t.docs.title} · OpenCockpit`;
+  const seoTitle =
+    (t.docs.seoTitles as Partial<Record<string, string>>)[page.labelKey] ??
+    `${pageLabel} · ${t.docs.title}`;
+  const title = `${seoTitle} · OpenCockpit`;
   const url = `${SITE_URL}/${locale}/docs/${slugStr}/`;
 
   return {
-    title: `${pageLabel} · ${t.docs.title}`,
+    title: seoTitle,
     description,
     openGraph: {
       title, description, url,

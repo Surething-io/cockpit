@@ -1772,15 +1772,17 @@ SDK 的 \`query({ resume })\` 和 CLI 的 \`claude -r\` 操作的是**同一份*
       'project graph',
       'code navigation AI',
       'conventional coupling',
-      'Claude Code GUI',
+      'what is a code graph',
+      'code graph for AI agents',
+      '代码图谱',
       'OpenCockpit',
       'Cockpit',
     ],
     content: {
       en: {
-        title: 'Code Graphs for AI Agents: Symbols and Calls',
+        title: 'What Is a Code Graph? How AI Coding Agents Use One',
         description:
-          'Learn how code graphs map symbols, callers and dependencies, and how OpenCockpit gives AI agents structural context beyond text search.',
+          'A code graph maps every symbol, caller and dependency in your project. What it is, why grep falls short for AI coding agents, and how to give them one.',
         readingTime: '6 min read',
         body: `A **code graph** is a structured map of your project's symbols and the relationships between them — who calls whom, what depends on what, which files always get edited together. It is the kind of mental model a human builds before refactoring. For an AI agent still doing \`grep -r\` to find anything, it is the missing layer.
 
@@ -1869,9 +1871,9 @@ That is the entire onboarding. Try it on a function whose impact you don't fully
 \`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [Try Online](/try)`,
       },
       zh: {
-        title: 'Code Graph：给 AI 一张项目图谱',
+        title: 'Code Graph 是什么？AI 编程 Agent 怎样用代码图谱',
         description:
-          '代码图谱（code graph）是你项目里所有符号和它们之间关系的结构化地图——谁调用谁、谁依赖谁、哪些文件总是一起被改。这正是 AI Agent 和你代码库之间缺失的那一层，也是 grep 在最重要的问题上成为 Agent 天花板的原因。',
+          '代码图谱（code graph）把项目里的符号、调用和依赖画成一张图。本文讲清它是什么、grep 为什么不够，以及怎样让 AI 编程 Agent 用上它。',
         readingTime: '6 min read',
         body: `**代码图谱（code graph）**是你项目里所有符号和它们之间关系的结构化地图——谁调用谁、谁依赖谁、哪些文件总是一起被改。这本就是人在重构前画在白板上的那张图。但对一个还在 \`grep -r\` 找东西的 AI Agent 来说，这一层是缺失的。
 
@@ -3053,6 +3055,9 @@ cockpit ~/work/data-pipeline
       'Claude Code desktop',
       'Claude Code Desktop app',
       'Claude Code desktop vs Cockpit',
+      'Claude Code CLI vs GUI',
+      'Claude Code desktop vs CLI',
+      'Claude Code 和 Claude Desktop 区别',
       'Cursor alternative',
       'Continue alternative',
       'Aider alternative',
@@ -3061,9 +3066,9 @@ cockpit ~/work/data-pipeline
     ],
     content: {
       en: {
-        title: 'Claude Code GUIs Compared: CLI to Desktop',
+        title: 'Claude Code CLI vs GUI vs Desktop (2026): Which to Use',
         description:
-          'Compare Claude Code CLI, Desktop, IDE tools, Aider and OpenCockpit across parallel sessions, privacy, cost and team workflows.',
+          'CLI for scripts and headless boxes, Desktop for single-machine polish, a GUI like OpenCockpit for parallel projects on any LLM. Plus IDE plugins and Aider.',
         readingTime: '8 min read',
         body: `*Updated July 2026 — added the redesigned official Claude Code Desktop app and Cockpit's self-hosting model.*
 
@@ -3158,9 +3163,9 @@ The strongest argument *against* Cockpit is also the simplest: if your day is "o
 Want to try? \`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit)`,
       },
       zh: {
-        title: 'Claude Code GUI 对比（2026）：CLI、Desktop、Cursor 与开源方案',
+        title: 'Claude Code CLI vs GUI vs Desktop（2026）：该用哪个',
         description:
-          '对比 Claude Code CLI、官方 Desktop、Cursor 等 IDE 插件、Aider 与 OpenCockpit，覆盖并行任务、隐私、成本和团队协作。',
+          '脚本和无界面服务器用 CLI，单机图形体验用官方 Desktop，多项目并行、接任意大模型用 OpenCockpit 这类 GUI。另附 IDE 插件与 Aider 对比。',
         readingTime: '阅读约 8 分钟',
         body: `*2026 年 7 月更新 —— 加入了改版后的官方 Claude Code Desktop，以及 Cockpit 的自托管模型。*
 

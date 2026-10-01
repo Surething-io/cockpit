@@ -1,3 +1,5 @@
+Use a Claude Code-style agent with any LLM — Claude, Codex, DeepSeek, GLM, Kimi or local Ollama. One engine per tab, no environment variables to edit.
+
 OpenCockpit talks to 6 AI engines out of the box. Each Agent tab picks one engine; you can mix and match across tabs without restarting — pick by what's running locally, what billing account you're on, or which model is best at the task in front of you.
 
 | Engine | How to sign in | When to use |
@@ -10,6 +12,22 @@ OpenCockpit talks to 6 AI engines out of the box. Each Agent tab picks one engin
 | [Ollama](#ollama) | Nothing — runs locally | Offline use, sensitive data, custom models. |
 
 > Everything runs locally.
+
+## Claude Code with GLM, Kimi, DeepSeek or Ollama
+
+The usual way to run Claude Code on another model is to override its environment — `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` in your shell — or to put a protocol gateway in front of it. That works, but the switch is global to the shell: one model at a time, and changing models means editing variables and restarting `claude`.
+
+OpenCockpit makes the engine a per-tab choice instead:
+
+|  | Env vars / gateway | OpenCockpit |
+|---|---|---|
+| Switching models | Edit env vars or gateway config, restart `claude` | Pick an engine in the tab header |
+| Several models side by side | One per shell | One per tab, in the same window |
+| Where the key lives | Shell profile or gateway config | Per engine, under `~/.cockpit/<engine>/credentials.json` |
+| What runs the conversation | Claude Code itself, full feature set | Claude tabs: the Claude Agent SDK. Codex tabs: the `codex` CLI. DeepSeek / GLM / Kimi / Ollama tabs: Cockpit's [Built-in Agent](#what-runs-the-api-key-engines) |
+| Session history, snapshots, forking | Whatever the CLI provides | The same for every engine |
+
+The trade-off is real: the Built-in Agent has seven tools and no MCP servers or subagents. If you need those on a non-Anthropic model, the environment-variable route still gives you them; OpenCockpit trades them for switching per tab without touching your shell.
 
 ## Overview
 

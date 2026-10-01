@@ -1,3 +1,5 @@
+用 Claude Code 式的 Agent 驱动任意大模型 —— Claude、Codex、DeepSeek、GLM、Kimi 或本地 Ollama。每个 tab 选一个引擎,不用改环境变量。
+
 OpenCockpit 开箱支持 6 个 AI 引擎。每个 Agent tab 选一个,可以跨 tab 混用,不用重启 —— 按本地是否有模型、账号在谁那、当前任务哪个最擅长来挑。
 
 | 引擎 | 登录方式 | 何时用 |
@@ -10,6 +12,22 @@ OpenCockpit 开箱支持 6 个 AI 引擎。每个 Agent tab 选一个,可以跨 
 | [Ollama](#ollama) | 不用 —— 本地跑 | 离线、敏感数据、自定义模型。 |
 
 > 一切都在本地完成。
+
+## Claude Code 接 GLM、Kimi、DeepSeek、Ollama
+
+让 Claude Code 换用其他模型,常见做法是在 shell 里覆盖它的环境变量 —— `ANTHROPIC_BASE_URL` 和 `ANTHROPIC_AUTH_TOKEN` —— 或者在前面架一层协议网关。这能用,但切换是整个 shell 级别的:同一时间只能用一个模型,换模型就得改变量、重启 `claude`。
+
+OpenCockpit 把引擎变成了每个 tab 自己的选择:
+
+|  | 环境变量 / 网关 | OpenCockpit |
+|---|---|---|
+| 切换模型 | 改环境变量或网关配置,重启 `claude` | 在 tab 顶部选引擎 |
+| 多个模型同时用 | 一个 shell 一个 | 一个 tab 一个,同一个窗口里 |
+| key 放在哪 | shell 配置文件或网关配置 | 按引擎分开,存在 `~/.cockpit/<engine>/credentials.json` |
+| 由谁来跑对话 | Claude Code 本身,功能完整 | Claude tab:Claude Agent SDK。Codex tab:`codex` CLI。DeepSeek / GLM / Kimi / Ollama tab:Cockpit 的[内置 Agent](#纯-key-引擎跑的是什么) |
+| 会话历史、快照、分叉 | 取决于 CLI 本身 | 所有引擎一样 |
+
+代价也要说清楚:内置 Agent 只有七个工具,没有 MCP server,也没有子代理。如果你需要在非 Anthropic 模型上用这些,环境变量的方式仍然能给你;OpenCockpit 用它们换来了按 tab 切换、不碰 shell。
 
 ## Overview
 

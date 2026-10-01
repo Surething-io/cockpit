@@ -4,7 +4,7 @@
   </a>
 </p>
 
-<h1 align="center">OpenCockpit — The open Claude Code GUI for any agent</h1>
+<h1 align="center">OpenCockpit — The open Claude Code GUI for any LLM</h1>
 
 <p align="center">
   <strong>One seat. One AI. Everything under control.</strong><br/>

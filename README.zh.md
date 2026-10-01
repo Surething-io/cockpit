@@ -4,7 +4,7 @@
   </a>
 </p>
 
-<h1 align="center">OpenCockpit —— 开源 Claude Code GUI，兼容任意 Agent</h1>
+<h1 align="center">OpenCockpit —— 开源 Claude Code 图形界面，接任意大模型</h1>
 
 <p align="center">
   <strong>One seat. One AI. Everything under control.</strong><br/>

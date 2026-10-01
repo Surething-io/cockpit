@@ -120,9 +120,13 @@ describe('scheduled task session rebind', () => {
     expect(queued).toBe(true);
 
     hub.sessionId = FRESH_SESSION; // engine announced (ctx.rekey), run still going
-    await vi.waitFor(() => expect(onDisk().sessionId).toBe(FRESH_SESSION), { timeout: 3000 });
+    // One wait for both: persistSessionRebind announces only after its write resolves, so
+    // the file can already show the new id while the announcement is a tick away.
+    await vi.waitFor(() => {
+      expect(onDisk().sessionId).toBe(FRESH_SESSION);
+      expect(fired).toEqual([FRESH_SESSION]); // ...and announced, so the board repoints now
+    }, { timeout: 3000 });
     expect(hub.active).toBe(true); // ...persisted while the turn is still in flight
-    expect(fired).toEqual([FRESH_SESSION]); // ...and announced, so the board repoints now
     expect(hub.stopped).toBe(false); // nowhere near the deadline
 
     hub.active = false; // let the run finish so the manager unwinds

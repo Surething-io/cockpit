@@ -32,6 +32,268 @@ export interface Post {
 
 export const posts: Post[] = [
   {
+    slug: 'claude-code-with-glm-kimi-deepseek',
+    date: '2026-10-01',
+    keywords: [
+      'Claude Code GLM',
+      'Claude Code Kimi',
+      'Claude Code DeepSeek',
+      'Claude Code with any LLM',
+      'Claude Code without environment variables',
+      'ANTHROPIC_BASE_URL',
+      'switch models Claude Code',
+      'Claude Code 国产模型',
+      'Claude Code 接 GLM',
+      'Claude Code 接 Kimi',
+      'Claude Code 接 DeepSeek',
+      'OpenCockpit',
+    ],
+    content: {
+      en: {
+        title: 'Claude Code with GLM, Kimi and DeepSeek — No Env Vars',
+        description:
+          'Run a Claude Code-style agent on GLM, Kimi, DeepSeek or Ollama without editing ANTHROPIC_BASE_URL: one engine per tab, side by side, and what you give up.',
+        readingTime: '5 min read',
+        body: `Search for "Claude Code with GLM" or "Claude Code with Kimi" and almost every guide gives you the same recipe: export \`ANTHROPIC_BASE_URL\` and \`ANTHROPIC_AUTH_TOKEN\`, point them at the provider's Anthropic-compatible endpoint, restart \`claude\`.
+
+It works. It's also global to your shell, which turns "try the same prompt on another model" into an exercise in editing variables.
+
+## The three usual recipes
+
+**1. Export the variables.**
+
+\`\`\`bash
+export ANTHROPIC_BASE_URL="<provider's Anthropic-compatible endpoint>"
+export ANTHROPIC_AUTH_TOKEN="<your key>"
+claude
+\`\`\`
+
+One model per shell. To switch, you change both variables and start over.
+
+**2. Wrap it in shell functions.** A \`glm\`, a \`kimi\`, a \`ds\` in your \`~/.zshrc\`, each setting the variables before launching \`claude\`. Nicer to type; still one model per terminal, and the keys now live in your shell profile.
+
+**3. Put a gateway in front.** LiteLLM or a similar proxy translates Claude Code's Anthropic protocol to whatever the provider speaks. Most flexible, and one more service to run and configure.
+
+All three have one thing going for them: what runs is Claude Code itself, so you keep its full feature set — MCP servers, subagents, everything.
+
+## One engine per tab instead
+
+OpenCockpit makes the model a per-tab choice. Open a tab, pick **GLM**, **Kimi**, **DeepSeek** or **Ollama** in the header, paste the key once into that engine's picker, done. The next tab can be Claude, the one after that Codex.
+
+![Six OpenCockpit tabs, each on a different engine, answering the same question in the same project](/opencockpit.webp)
+
+That screenshot is the whole point: the same question, six engines, one window, one project. No variable changed, nothing restarted.
+
+A few things come along with per-engine setup:
+
+- **Keys stay out of your shell.** Each engine keeps its own credential file under \`~/.cockpit/<engine>/credentials.json\`.
+- **The model list is live.** GLM, Kimi and DeepSeek tabs fetch the models your key can actually use, so a model the provider ships tomorrow shows up on its own.
+- **Provider-specific bits are handled.** GLM tabs have a region switch (mainland or international host, same key) and a Coding Plan quota check; Kimi tabs read your plan's 5-hour and weekly windows; DeepSeek tabs show your prepaid balance.
+- **Same UI for every engine.** Session history, forking and per-tool-call snapshots work the same whichever model is answering.
+
+## What you give up
+
+This part matters, so plainly: GLM, Kimi, DeepSeek and Ollama tabs don't run Claude Code. They run OpenCockpit's own Built-in Agent against the provider's OpenAI-compatible endpoint. It reads and edits files, runs shell commands and streams its work, but it has **seven tools** — Read, Write, Edit, Bash, Glob, Grep, TodoWrite — and **no MCP servers, no subagents, no image input**.
+
+If you need MCP or subagents on a non-Anthropic model, the environment-variable recipe is still the right tool. OpenCockpit trades them for switching per tab without touching your shell — which, for comparing models or keeping a cheap model on routine work next to Claude on the hard parts, is usually the trade you want.
+
+## Try it
+
+\`\`\`bash
+npm i -g @surething/cockpit && cockpit
+\`\`\`
+
+Open a project, add a tab, pick an engine. Setup details for each provider — where to get the key, which models to start with, common errors — are in [AI Engines](/en/docs/agent/engines/).`,
+      },
+      zh: {
+        title: 'Claude Code 接 GLM、Kimi、DeepSeek，不用改环境变量',
+        description:
+          '不改 ANTHROPIC_BASE_URL，也能让 Claude Code 式的 Agent 跑在 GLM、Kimi、DeepSeek 或 Ollama 上：每个 tab 一个引擎、并排对比，以及要付出的代价。',
+        readingTime: '阅读约 5 分钟',
+        body: `搜"Claude Code 接 GLM"或"Claude Code 接 Kimi"，几乎所有教程给的都是同一套做法：导出 \`ANTHROPIC_BASE_URL\` 和 \`ANTHROPIC_AUTH_TOKEN\`，指向厂商的 Anthropic 兼容端点，重启 \`claude\`。
+
+这能用。但它作用于整个 shell，于是"同一个问题换个模型试试"就变成了反复改环境变量。
+
+## 常见的三种做法
+
+**1. 直接导出环境变量。**
+
+\`\`\`bash
+export ANTHROPIC_BASE_URL="<厂商的 Anthropic 兼容端点>"
+export ANTHROPIC_AUTH_TOKEN="<你的 key>"
+claude
+\`\`\`
+
+一个 shell 一个模型。想换，就得改两个变量再重来。
+
+**2. 包成 shell 函数。** 在 \`~/.zshrc\` 里写 \`glm\`、\`kimi\`、\`ds\` 几个函数，各自设好变量再启动 \`claude\`。敲起来方便了，但还是一个终端一个模型，而且 key 都写进了 shell 配置。
+
+**3. 在前面架一层网关。** 用 LiteLLM 之类的代理，把 Claude Code 的 Anthropic 协议转成厂商的协议。最灵活，代价是多跑、多配一个服务。
+
+这三种做法有一个共同的好处：跑的是 Claude Code 本身，功能完整 —— MCP server、子代理，一样不少。
+
+## 换个思路：每个 tab 一个引擎
+
+OpenCockpit 把模型变成了每个 tab 自己的选择。新开一个 tab，在顶部选 **GLM**、**Kimi**、**DeepSeek** 或 **Ollama**，把 key 粘进这个引擎的选择器，就好了。下一个 tab 可以是 Claude，再下一个可以是 Codex。
+
+![OpenCockpit 的六个 tab，各用一个不同的引擎，在同一个项目里回答同一个问题](/opencockpit.webp)
+
+这张截图就是全部要点：同一个问题，六个引擎，一个窗口，一个项目。没改任何变量，也没重启任何东西。
+
+按引擎分开配置，还顺带解决了几件事：
+
+- **key 不进 shell。** 每个引擎的 key 单独存在 \`~/.cockpit/<engine>/credentials.json\`。
+- **模型列表是实时拉取的。** GLM、Kimi、DeepSeek 的 tab 会用你的 key 拉取账号实际可用的模型，厂商明天上新模型，这里自动出现。
+- **各家的特殊之处都处理好了。** GLM 有区域切换（国内站或国际站，同一个 key）和 Coding Plan 额度查询；Kimi 能查套餐的 5 小时和每周额度；DeepSeek 能看预充值余额。
+- **所有引擎同一套界面。** 会话历史、分叉、逐个工具调用的快照，不管哪个模型在回答都一样。
+
+## 代价
+
+这一点要说清楚：GLM、Kimi、DeepSeek、Ollama 的 tab 跑的不是 Claude Code，而是 OpenCockpit 自己的内置 Agent，对接厂商的 OpenAI 兼容端点。它能读写文件、跑命令、流式输出，但只有**七个工具** —— Read、Write、Edit、Bash、Glob、Grep、TodoWrite —— **没有 MCP server，没有子代理，也不支持图片输入**。
+
+如果你需要在非 Anthropic 模型上用 MCP 或子代理，改环境变量的做法仍然是对的选择。OpenCockpit 用它们换来了按 tab 切换、不碰 shell。如果你的目的是对比模型，或者让便宜的模型干日常活、Claude 啃难题，这笔交换通常是划算的。
+
+## 上手
+
+\`\`\`bash
+npm i -g @surething/cockpit && cockpit
+\`\`\`
+
+打开一个项目，加一个 tab，选一个引擎。每个厂商的接入细节 —— key 去哪拿、先用哪个模型、常见报错 —— 都在 [AI 引擎](/zh/docs/agent/engines/) 文档里。`,
+      },
+    },
+  },
+  {
+    slug: 'openclaude-vs-opencockpit',
+    date: '2026-10-01',
+    keywords: [
+      'OpenClaude',
+      'OpenClaude GUI',
+      'OpenClaude vs OpenCockpit',
+      'open Claude Code',
+      'Claude Code with any LLM',
+      'Claude Code alternative open source',
+      'Claude Code GUI any model',
+      'OpenClaude 图形界面',
+      'Claude Code 任意模型',
+      'OpenCockpit',
+    ],
+    content: {
+      en: {
+        title: 'OpenClaude vs OpenCockpit: Claude Code on Any LLM',
+        description:
+          'Both bring a Claude Code-style agent to any model. OpenClaude is a terminal CLI; OpenCockpit is a browser workbench. How they differ and when to use which.',
+        readingTime: '5 min read',
+        body: `If you've searched for an "OpenClaude GUI", you probably already know what you want: the Claude Code way of working, on a model that isn't Claude. OpenClaude and OpenCockpit both answer that. They take very different routes to get there, and the right pick depends on where you like to work.
+
+*Facts about OpenClaude below come from its README as of October 2026. If something has changed, the README wins.*
+
+## OpenClaude: the CLI, opened up
+
+[OpenClaude](https://github.com/Gitlawb/openclaude) is an open-source coding-agent CLI — "runs anywhere, uses anything". Its README says it originated from the Claude Code codebase and has since been substantially modified to support many providers: OpenAI-compatible APIs, Gemini, GitHub Models, Codex, Ollama and a long list of others.
+
+Because it keeps the Claude Code shape, it keeps the Claude Code feature set: MCP servers, subagents, slash commands, a terminal-first workflow, plus a bundled VS Code extension. You install it with \`npm install -g @gitlawb/openclaude\` and use it where you'd use \`claude\`.
+
+On licensing, the README is specific: MIT for OpenClaude contributors' modifications, while the Claude Code code it derives from remains Anthropic's.
+
+## OpenCockpit: a workbench around the agent
+
+OpenCockpit doesn't fork any CLI. It's a local web app — Agent, Explorer and Console panels in one browser window — and each Agent tab picks an engine:
+
+- **Claude** tabs run on the official Claude Agent SDK, with your existing \`claude\` login.
+- **Codex** tabs drive OpenAI's \`codex\` CLI.
+- **DeepSeek, GLM, Kimi and Ollama** tabs run OpenCockpit's own Built-in Agent against the provider's API.
+
+The point isn't one agent on many models so much as many sessions side by side: several projects in the sidebar, several tabs per project, each on whatever engine suits it, with the file browser, diffs, terminals and per-tool-call snapshots right next to the chat. It's also client–server, so you can run it once on a shared dev box and give every teammate a seat. MIT licensed.
+
+## Side by side
+
+|  | OpenClaude | OpenCockpit |
+|---|---|---|
+| Interface | Terminal CLI + VS Code extension | Browser workbench (Agent / Explorer / Console) |
+| How it reaches other models | Its own CLI, many providers | Per-tab engine: Claude, Codex, DeepSeek, GLM, Kimi, Ollama |
+| Provider breadth | Wider — 20+ providers incl. Gemini, GitHub Models, LM Studio | Six engines |
+| MCP & subagents on non-Anthropic models | Yes | No — the Built-in Agent has seven tools |
+| Parallel work | One session per terminal | Many projects × many tabs in one window |
+| Reviewing what the agent changed | Your usual git workflow | Per-tool-call snapshots and a diff viewer built in |
+| Team use | Each person runs their own CLI | Self-host once, every teammate gets a seat |
+| License | MIT for its modifications; derived code remains Anthropic's | MIT |
+
+## Which one, then?
+
+**Pick OpenClaude** if you live in the terminal, want the broadest choice of providers, or need MCP servers and subagents on a non-Anthropic model. On those points it simply does more.
+
+**Pick OpenCockpit** if what you're missing is the GUI part: running several projects and models in parallel, seeing files and diffs next to the conversation, reviewing every tool call, or sharing one setup with a team.
+
+They don't exclude each other, either. OpenCockpit's Console panel is a real terminal, so you can run \`openclaude\` in one bubble while the Agent panel works on something else.
+
+## Try OpenCockpit
+
+\`\`\`bash
+npm i -g @surething/cockpit && cockpit
+\`\`\`
+
+Engine setup is in [AI Engines](/en/docs/agent/engines/), and the longer comparison with the official CLI and Desktop app is in [Claude Code CLI vs GUI vs Desktop](/en/blog/claude-code-gui-comparison/).`,
+      },
+      zh: {
+        title: 'OpenClaude 与 OpenCockpit：让 Claude Code 跑在任意模型上',
+        description:
+          '两者都把 Claude Code 式的 Agent 带到任意模型上。OpenClaude 是终端 CLI，OpenCockpit 是浏览器里的工作台。区别在哪、各自适合谁。',
+        readingTime: '阅读约 5 分钟',
+        body: `如果你搜过"OpenClaude GUI"，你多半已经清楚自己要什么：Claude Code 那种工作方式，但用的不是 Claude 模型。OpenClaude 和 OpenCockpit 都能给你这个，只是路线完全不同，选哪个取决于你习惯在哪干活。
+
+*下文关于 OpenClaude 的事实来自它 2026 年 10 月的 README。如有变化，以 README 为准。*
+
+## OpenClaude：把 CLI 打开
+
+[OpenClaude](https://github.com/Gitlawb/openclaude) 是一个开源的编程 Agent CLI —— "runs anywhere, uses anything"。它的 README 说明，它源自 Claude Code 的代码库，之后做了大量修改以支持多家模型：OpenAI 兼容接口、Gemini、GitHub Models、Codex、Ollama，以及一长串其他厂商。
+
+因为保留了 Claude Code 的形态，它也保留了 Claude Code 的功能：MCP server、子代理、斜杠命令、终端优先的工作流，另外还附带一个 VS Code 扩展。用 \`npm install -g @gitlawb/openclaude\` 安装，平时在哪用 \`claude\`，就在哪用它。
+
+许可证方面，README 写得很明确：OpenClaude 贡献者的修改部分是 MIT，而它所源自的 Claude Code 代码仍归 Anthropic 所有。
+
+## OpenCockpit：围绕 Agent 的工作台
+
+OpenCockpit 不 fork 任何 CLI。它是一个本地 Web 应用 —— Agent、Explorer、Console 三个面板在一个浏览器窗口里 —— 每个 Agent tab 自己选引擎：
+
+- **Claude** tab 跑在官方 Claude Agent SDK 上，直接复用你已有的 \`claude\` 登录。
+- **Codex** tab 驱动 OpenAI 的 \`codex\` CLI。
+- **DeepSeek、GLM、Kimi、Ollama** tab 跑 OpenCockpit 自己的内置 Agent，对接厂商的 API。
+
+重点与其说是"一个 Agent 跑多个模型"，不如说是"多个会话并排跑"：侧边栏里多个项目，每个项目多个 tab，每个 tab 用最合适的引擎，文件浏览、diff、终端、逐个工具调用的快照都在对话旁边。它还是 client-server 架构，可以在共享开发机上部署一次，团队每人一个座位。MIT 协议。
+
+## 并排对比
+
+|  | OpenClaude | OpenCockpit |
+|---|---|---|
+| 界面 | 终端 CLI + VS Code 扩展 | 浏览器工作台（Agent / Explorer / Console） |
+| 怎么接其他模型 | 自己的 CLI，支持很多厂商 | 每个 tab 选引擎：Claude、Codex、DeepSeek、GLM、Kimi、Ollama |
+| 厂商覆盖面 | 更广 —— 20 多家，包括 Gemini、GitHub Models、LM Studio | 六个引擎 |
+| 非 Anthropic 模型上的 MCP 和子代理 | 有 | 没有 —— 内置 Agent 只有七个工具 |
+| 并行工作 | 一个终端一个会话 | 一个窗口里多项目 × 多 tab |
+| 回看 Agent 改了什么 | 用你平时的 git 流程 | 内置逐个工具调用的快照和 diff 查看器 |
+| 团队使用 | 每人各跑一个 CLI | 自托管一次，每个队友一个座位 |
+| 许可证 | 修改部分 MIT，源自的代码仍归 Anthropic | MIT |
+
+## 那该选哪个？
+
+**选 OpenClaude**：如果你长期待在终端里，想要最多的模型选择，或者需要在非 Anthropic 模型上用 MCP server 和子代理。在这几点上，它就是能做更多。
+
+**选 OpenCockpit**：如果你缺的是图形界面这部分 —— 多个项目、多个模型并行跑，在对话旁边看文件和 diff，回看每一次工具调用，或者和团队共用一套环境。
+
+两者也不互斥。OpenCockpit 的 Console 面板是真正的终端，你完全可以在一个气泡里跑 \`openclaude\`，同时让 Agent 面板干别的。
+
+## 试试 OpenCockpit
+
+\`\`\`bash
+npm i -g @surething/cockpit && cockpit
+\`\`\`
+
+引擎配置见 [AI 引擎](/zh/docs/agent/engines/)，和官方 CLI、Desktop 的更完整对比见 [Claude Code CLI vs GUI vs Desktop](/zh/blog/claude-code-gui-comparison/)。`,
+      },
+    },
+  },
+  {
     slug: 'long-term-memory-is-a-directory',
     date: '2026-09-22',
     keywords: [

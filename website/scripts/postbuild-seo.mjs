@@ -112,8 +112,8 @@ function section(heading, list) {
 const en = pages.filter((p) => p.locale === 'en');
 const llms =
   `# ${BRAND}\n\n` +
-  `> ${BRAND} is an open-source (MIT) GUI for Claude Code and other coding agents ` +
-  `— Codex, DeepSeek, GLM, Kimi and local Ollama models. It runs locally as a ` +
+  `> ${BRAND} is the open (MIT) Claude Code GUI for any LLM — Claude, Codex, ` +
+  `DeepSeek, GLM, Kimi and local Ollama models, one engine per tab. It runs locally as a ` +
   `web client/server: parallel agent sessions across projects, a file explorer ` +
   `with git and LSP, a built-in terminal, Chrome automation and database ` +
   `bubbles, and a code graph for agent-driven exploration.\n\n` +
@@ -151,7 +151,7 @@ for (const [locale, lang] of Object.entries(LANG_BY_LOCALE)) {
   <channel>
     <title>${BRAND} Blog</title>
     <link>${SITE_URL}/${locale}/blog/</link>
-    <description>Notes on ${BRAND} — the open Claude Code GUI.</description>
+    <description>Notes on ${BRAND} — the open Claude Code GUI for any LLM.</description>
     <language>${lang}</language>
     <lastBuildDate>${new Date(items[0].date).toUTCString()}</lastBuildDate>
     <atom:link href="${SITE_URL}/${locale}/feed.xml" rel="self" type="application/rss+xml" />

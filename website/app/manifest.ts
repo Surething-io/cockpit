@@ -16,10 +16,10 @@ export const dynamic = 'force-static';
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'OpenCockpit — The Open Claude Code GUI',
+    name: 'OpenCockpit — The Open Claude Code GUI for Any LLM',
     short_name: 'OpenCockpit',
     description:
-      'Open-source Claude Code GUI for parallel AI coding. Multi-engine, local-first, MIT.',
+      'Open Claude Code GUI for any LLM — Claude, Codex, DeepSeek, GLM, Kimi, Ollama side by side. Local-first, MIT.',
     start_url: '/en/',
     scope: '/',
     display: 'standalone',

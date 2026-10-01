@@ -1,9 +1,9 @@
-OpenCockpit 是 Claude Code 的开源 GUI —— 也是你后续想接入的任何 AI agent 的统一画布。一切都在本地完成。
+OpenCockpit 是开源的 Claude Code 图形界面，接任意大模型 —— Claude、Codex、DeepSeek、GLM、Kimi 或本地 Ollama，每个 tab 一个引擎。一切都在本地完成。
 
 ## 你能得到什么
 
 - **多项目并行会话。** 跨不同项目同时跑 5+ 个 agent 会话。每个会话有自己的 tab；结束时桌面会弹 toast 通知你。
-- **接入任意 agent。** Claude 开箱即用。Codex、DeepSeek、GLM（智谱）、Kimi（月之暗面）、本地 Ollama 模型只需新开一个 tab —— 粘贴 API key（Ollama 连 key 都不要）。
+- **接入任意大模型。** Claude 开箱即用。Codex、DeepSeek、GLM（智谱）、Kimi（月之暗面）、本地 Ollama 模型只需新开一个 tab —— 粘贴 API key（Ollama 连 key 都不要）。
 - **不止于聊天。** 真实终端、Chrome 自动化、PostgreSQL / MySQL / Redis / Neo4j 气泡 —— 全部在同一个窗口里，agent 都能驱动。
 - **代码感知的导航。** LSP 跳转定义、函数调用图（Code Map）、让 AI 通过 HTTP 探索项目图的 `/cg` 斜杠命令。
 

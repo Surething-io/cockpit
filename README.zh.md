@@ -26,7 +26,7 @@
 
 ---
 
-> **OpenCockpit 是开源的 Claude Code GUI** —— 贴合研发全流程的 IDE 式工作台，也是你想接入的任何 Agent 的统一画布。多项目 Claude 会话开箱即用；想用 **Codex、DeepSeek、GLM、Kimi 或本地 Ollama**？直接新开一个 tab。内置终端、Chrome 自动化、PostgreSQL / MySQL / Redis 气泡、代码评审与斜杠模式 —— 全部本地。Web client-server 架构：**自托管到共享开发机，全队一起飞。**
+> **OpenCockpit 是开源的 Claude Code 图形界面，接任意大模型** —— 贴合研发全流程的 IDE 式工作台。多项目 Claude 会话开箱即用；想用 **Codex、DeepSeek、GLM、Kimi 或本地 Ollama**？直接新开一个 tab 并排跑，不用改环境变量。内置终端、Chrome 自动化、PostgreSQL / MySQL / Redis 气泡、代码评审与斜杠模式 —— 全部本地。Web client-server 架构：**自托管到共享开发机，全队一起飞。**
 
 https://github.com/user-attachments/assets/18f1a5dc-64f3-4ff6-b9fc-9cd08181fbb8
 
@@ -82,7 +82,7 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 
 ## 功能特性
 
-### 引擎 —— 默认 Claude，也接得住你想要的任何 Agent
+### 引擎 —— 默认 Claude，任意大模型都接得住
 
 - **Claude** *(默认)* —— 完整官方 Agent SDK；`claude` CLI 已配置即零额外设置
 - **Codex** —— 直接读 `~/.codex` 配置，聊天 / Shell / 气泡都一样

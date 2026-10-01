@@ -26,7 +26,7 @@
 
 ---
 
-> **OpenCockpit is the open-source Claude Code GUI** — an IDE-like workbench for the whole dev loop, and a single canvas for whatever agent you bring next. Run multi-project Claude sessions out of the box; pop open a tab for **Codex, DeepSeek, GLM, Kimi, or local Ollama** whenever you need. Built-in terminal, Chrome control, PostgreSQL / MySQL / Redis bubbles, code review, and slash modes — all local. And it's web client–server: **self-host it on a shared dev box and every teammate gets a seat.**
+> **OpenCockpit is the open Claude Code GUI for any LLM** — an IDE-like workbench for the whole dev loop. Run multi-project Claude sessions out of the box; pop open a tab for **Codex, DeepSeek, GLM, Kimi, or local Ollama** whenever you need, side by side, with no environment variables to edit. Built-in terminal, Chrome control, PostgreSQL / MySQL / Redis bubbles, code review, and slash modes — all local. And it's web client–server: **self-host it on a shared dev box and every teammate gets a seat.**
 
 https://github.com/user-attachments/assets/18f1a5dc-64f3-4ff6-b9fc-9cd08181fbb8
 
@@ -82,7 +82,7 @@ An honest snapshot as of July 2026 — each tool wins somewhere. Spotted an erro
 
 ## Features
 
-### Engines — Claude by default, bring any agent you want
+### Engines — Claude by default, bring any LLM you want
 
 - **Claude** *(default)* — full official Agent SDK; zero setup if `claude` CLI is already configured
 - **Codex** — reuses your `~/.codex` config; same chat, same shell + bubbles

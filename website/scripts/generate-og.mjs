@@ -103,10 +103,10 @@ const svg = `<?xml version="1.0" encoding="UTF-8"?>
     Cockpit
   </text>
   <text x="80" y="320" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, sans-serif" font-size="42" font-weight="700" fill="#e6edf3" letter-spacing="-0.6">
-    The open-source Claude Code GUI,
+    The open Claude Code GUI
   </text>
   <text x="80" y="372" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, sans-serif" font-size="42" font-weight="700" fill="url(#accent)" letter-spacing="-0.6">
-    built like an IDE.
+    for any LLM.
   </text>
 
   <!-- tagline -->

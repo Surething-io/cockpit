@@ -18,10 +18,10 @@ export const messages = {
       // Short, punchy lead shown in the Hero. `description` below stays long for
       // JSON-LD / structured data — don't merge them.
       lead:
-        'The open-source Claude Code GUI, built like an IDE for the whole dev loop — code, terminal, browser & DB in one workbench. Runs on your laptop, or on a shared dev box where every teammate gets a seat.',
+        'The open Claude Code GUI for any LLM, built like an IDE for the whole dev loop — code, terminal, browser & DB in one workbench. Runs on your laptop, or on a shared dev box where every teammate gets a seat.',
       pronounce: '/ˈkɒkpɪt/ — like an aircraft cockpit',
       description:
-        'OpenCockpit is the open-source Claude Code GUI — an IDE-like workbench for the whole dev loop, and a single canvas for whatever agent you bring next. Multi-project Claude sessions out of the box; pop open a tab for Codex, DeepSeek, GLM, Kimi, or local Ollama whenever you need. Built-in terminal, Chrome control, PostgreSQL / MySQL / Redis bubbles, code review, and slash modes — all local. Web client–server under the hood: self-host it on a shared dev box and every teammate gets a seat, each coding with AI in their own project or worktree.',
+        'OpenCockpit is the open Claude Code GUI for any LLM — an IDE-like workbench for the whole dev loop. Multi-project Claude sessions out of the box; pop open a tab for Codex, DeepSeek, GLM, Kimi, or local Ollama whenever you need, side by side, with no environment variables to edit. Built-in terminal, Chrome control, PostgreSQL / MySQL / Redis bubbles, code review, and slash modes — all local. Web client–server under the hood: self-host it on a shared dev box and every teammate gets a seat, each coding with AI in their own project or worktree.',
       // SEO ≤160 chars — used by metadata only, not visible on the page. Don't merge with description.
       metaDescription:
         'Cockpit IDE: Claude Code\'s agent workflow on any LLM — Claude, Codex, DeepSeek, GLM, Kimi or local Ollama. Terminal, browser & DB built in. Self-host. MIT.',
@@ -34,10 +34,10 @@ export const messages = {
     home: {
       headline: 'Your coding agents. One cockpit.',
       // Two beats, matching zh. The H1 is evocative rather than descriptive, so
-      // this line carries "what is this": the first sentence names the category
-      // the whole site ranks for and which appeared nowhere in visible copy,
-      // the second keeps the concrete proof.
-      lead: 'The open-source, IDE-like Claude Code GUI. Run Claude, Codex, DeepSeek, GLM, Kimi, and Ollama with your code, terminal, browser, and databases all in one.',
+      // this line carries "what is this": the first sentence repeats the page
+      // <title>'s positioning ("Open Claude Code GUI for any LLM") so searchers
+      // see the phrase they clicked, the second keeps the concrete proof.
+      lead: 'The open Claude Code GUI for any LLM. Run Claude, Codex, DeepSeek, GLM, Kimi, or local Ollama side by side — with your code, terminal, browser, and databases in one IDE-like workbench.',
       installNote: 'Runs on your machine. Opens in your browser.',
       // Prerequisite + licence, rendered directly under the install command.
       // This is the highest-doubt moment on the page: without this line a
@@ -168,7 +168,7 @@ export const messages = {
     },
     engines: {
       tag: '⚙ Engines',
-      headline: 'Claude by default — bring any agent you want',
+      headline: 'Claude by default — bring any LLM you want',
       desc: 'Each engine runs in its own tab, with its own session history. Pick from the new-tab dropdown.',
       items: [
         {
@@ -409,7 +409,7 @@ export const messages = {
       ],
     },
     footer: {
-      tagline: 'The open-source, IDE-like Claude Code GUI.',
+      tagline: 'The open Claude Code GUI for any LLM.',
       product: 'Product',
       resources: 'Resources',
       community: 'Community',
@@ -423,7 +423,7 @@ export const messages = {
       // Lead paragraph on the docs index (`/[locale]/docs/`). Distinct from
       // `description`, which is written for the SERP snippet.
       indexLead:
-        'Everything about running OpenCockpit — the open-source GUI for Claude Code and any other coding agent you bring. Start with the introduction, or jump straight to a panel.',
+        'Everything about running OpenCockpit — the open Claude Code GUI for any LLM. Start with the introduction, or jump straight to a panel.',
       indexStart: 'New here? Start with the introduction →',
       // Search-facing <title> per page, keyed like `sidebar.pages`. Phrased as
       // the problem a searcher has, not the feature name; pages without an
@@ -528,10 +528,10 @@ export const messages = {
       subheadline: 'One seat. One AI. Everything under control.',
       // 页面展示用的精简 lead；下方 description 保持长文本供 JSON-LD 使用，勿合并。
       lead:
-        '开源的 Claude Code GUI —— 贴合研发全流程的 IDE 式工作台：读码、终端、浏览器与数据库一体。跑在本机，或部署到共享开发机，全队一起飞。',
+        '开源的 Claude Code 图形界面，接任意大模型 —— 贴合研发全流程的 IDE 式工作台：读码、终端、浏览器与数据库一体。跑在本机，或部署到共享开发机，全队一起飞。',
       pronounce: '/ˈkɒkpɪt/ —— 像飞机驾驶舱',
       description:
-        'OpenCockpit 是开源的 Claude Code GUI —— 贴合研发全流程的 IDE 式工作台，也是你想接入的任何 Agent 的统一画布。多项目 Claude 会话开箱即用；想用 Codex、DeepSeek、GLM、Kimi 或本地 Ollama？直接新开一个 tab。内置终端、Chrome 自动化、PostgreSQL / MySQL / Redis 气泡、代码评审与斜杠模式 —— 全部本地。Web client-server 架构：可自托管到共享开发机，全队一起飞，在各自项目 / worktree 上并行 AI coding。',
+        'OpenCockpit 是开源的 Claude Code 图形界面，接任意大模型 —— 贴合研发全流程的 IDE 式工作台。多项目 Claude 会话开箱即用；想用 Codex、DeepSeek、GLM、Kimi 或本地 Ollama？直接新开一个 tab 并排跑，不用改环境变量。内置终端、Chrome 自动化、PostgreSQL / MySQL / Redis 气泡、代码评审与斜杠模式 —— 全部本地。Web client-server 架构：可自托管到共享开发机，全队一起飞，在各自项目 / worktree 上并行 AI coding。',
       // SEO ≤160 字符（CJK 计为 1.5×）—— 仅用于 metadata，不在页面展示。勿与 description 合并。
       metaDescription:
         'Cockpit IDE：用 Claude Code 的工作流驱动任意大模型 —— Claude、Codex、DeepSeek、GLM、Kimi 或本地 Ollama，无需改环境变量。内置终端、浏览器与数据库，可自托管。MIT 协议。',
@@ -549,10 +549,10 @@ export const messages = {
       headline: 'Your coding agents. One cockpit.',
       // Two beats on purpose. The H1 is left in English and is evocative rather
       // than descriptive, so this line carries "what is this" on its own: the
-      // first sentence names the category the whole site ranks for and which
-      // appeared nowhere in visible copy before, the second keeps the concrete
-      // proof — six engines plus the surfaces they drive.
-      lead: '开源的 Claude Code GUI，做成了 IDE 的样子。Claude、Codex、DeepSeek、GLM、Kimi、Ollama 都能跑，代码、终端、浏览器、数据库统统 All in One。',
+      // first sentence repeats the page <title>'s positioning so searchers see
+      // the phrase they clicked, the second keeps the concrete proof — six
+      // engines plus the surfaces they drive.
+      lead: '开源的 Claude Code 图形界面，接任意大模型。Claude、Codex、DeepSeek、GLM、Kimi、本地 Ollama 并排跑，代码、终端、浏览器、数据库都在一个 IDE 式工作台里。',
       installNote: '启动本地 web 服务，通过浏览器访问运行。',
       // 前置条件 + 许可证，紧跟在安装命令下方。这是全页疑虑最重的一刻：
       // 没有这行，未装 Node 的访客第一次接触产品就是 command not found；
@@ -677,7 +677,7 @@ export const messages = {
     },
     engines: {
       tag: '⚙ 引擎',
-      headline: '默认 Claude —— 也接得住你想要的任何 Agent',
+      headline: '默认 Claude —— 任意大模型都接得住',
       desc: '每个引擎跑在独立 tab，会话历史互不串。新建 tab 时下拉切换。',
       items: [
         {
@@ -918,7 +918,7 @@ export const messages = {
       ],
     },
     footer: {
-      tagline: '开源的 Claude Code GUI，做成了 IDE 的样子。',
+      tagline: '开源的 Claude Code 图形界面，接任意大模型。',
       product: '产品',
       resources: '资源',
       community: '社区',
@@ -932,7 +932,7 @@ export const messages = {
       // 文档索引页（`/[locale]/docs/`）的导语。与 `description` 分开：后者是写给
       // 搜索结果摘要的。
       indexLead:
-        'OpenCockpit 的完整使用文档 —— 开源的 Claude Code 图形界面，也能接上你手边任何一个编程 Agent。第一次来就从「介绍」开始，或者直接跳到某个面板。',
+        'OpenCockpit 的完整使用文档 —— 开源的 Claude Code 图形界面，接任意大模型。第一次来就从「介绍」开始，或者直接跳到某个面板。',
       indexStart: '第一次使用？从「介绍」开始 →',
       // Search-facing <title> per page; see the en entry.
       seoTitles: {

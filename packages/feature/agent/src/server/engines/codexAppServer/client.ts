@@ -73,9 +73,20 @@ export class CodexAppServerClient {
   private nextId = 1;
   private closed = false;
   private exitReason: Error | null = null;
+  /**
+   * Resolves once the child process is actually gone. `dispose()` only starts
+   * the teardown — on Windows it hands off to an async `taskkill` — so anything
+   * that must not overlap the old server (a fresh one on the same CODEX_HOME)
+   * waits on this rather than on `dispose()` returning.
+   */
+  readonly exited: Promise<void>;
 
   private constructor(child: ChildProcessWithoutNullStreams, private readonly opts: CodexAppServerOptions) {
     this.child = child;
+    this.exited = new Promise((resolve) => {
+      child.once('exit', () => resolve());
+      child.once('error', () => resolve()); // spawn failed: there is no process to wait for
+    });
 
     readLines(child.stdout, (line) => this.onLine(line));
     readLines(child.stderr, (line) => {

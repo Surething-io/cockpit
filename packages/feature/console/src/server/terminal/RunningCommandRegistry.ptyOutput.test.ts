@@ -15,6 +15,25 @@ import type { PtyHandle } from './ptyHostClient';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const historyDirs: string[] = [];
 
+/**
+ * Wait for the finalized history entry, not just for the registry to drop the
+ * command: finalizeCommand unregisters synchronously and only then writes the
+ * output file and the JSONL, which on a slow disk (Windows CI) can land well
+ * after the registry is empty — reading early returns the running placeholder.
+ */
+async function waitForFinalEntry(historyPath: string, id: string, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const lines = (await fs.readFile(historyPath, 'utf-8')).trim().split('\n');
+      const entry = lines.map((l) => JSON.parse(l)).find((e) => e.id === id);
+      if (entry && !entry.running && entry.exitCode !== undefined) return entry;
+    } catch { /* not written yet, or caught mid-write */ }
+    if (Date.now() > deadline) throw new Error(`no finalized history entry for ${id}`);
+    await sleep(25);
+  }
+}
+
 afterAll(async () => {
   for (const d of historyDirs) await fs.rm(d, { recursive: true, force: true });
 });
@@ -54,11 +73,9 @@ async function runToExit(name: string, chunks: string[]) {
   await sleep(100); // let the placeholder write land
   for (const c of chunks) pty.emit(c);
   pty.exit(3);
-  for (let i = 0; i < 40 && getRunningCommand(commandId); i++) await sleep(25);
-  await sleep(50);
 
-  const lines = (await fs.readFile(historyPath, 'utf-8')).trim().split('\n');
-  const entry = lines.map((l) => JSON.parse(l)).find((e) => e.id === commandId);
+  const entry = await waitForFinalEntry(historyPath, commandId);
+  expect(getRunningCommand(commandId)).toBeUndefined();
   const output: string = entry.outputFile
     ? await fs.readFile(entry.outputFile, 'utf-8')
     : entry.output;
@@ -110,8 +127,7 @@ describe('sidecar output files do not outlive their entry', () => {
     await sleep(100);
     pty.emit('short\r\n');
     pty.exit(0);
-    for (let i = 0; i < 40 && getRunningCommand(commandId); i++) await sleep(25);
-    await sleep(50);
+    await waitForFinalEntry(getTerminalHistoryPath(projectCwd, 'tab-stale'), commandId);
 
     await expect(fs.access(stale)).rejects.toThrow();
   });

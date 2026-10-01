@@ -65,6 +65,8 @@ describe('listAllRunning', () => {
 });
 
 describe('interruptCommand', () => {
+  // Generous timeout: on Windows interruptPidTree reads the process table
+  // through a cold PowerShell (several seconds on CI) before signalling.
   it('kills the whole process tree and keeps the bubble as a finished entry', async () => {
     const projectCwd = path.join(os.tmpdir(), `cockpit-interrupt-${Date.now()}`);
     // A shell with a grandchild, like a real bubble running `npm run dev`.
@@ -74,15 +76,20 @@ describe('interruptCommand', () => {
     await sleep(200); // grandchild spawned + placeholder written
 
     expect(interruptCommand('cmd-int')).toBe(true);
-    for (let i = 0; i < 30 && getRunningCommand('cmd-int'); i++) await sleep(100);
+    // The registry empties before the JSONL is rewritten, so poll the file for
+    // the finalized entry rather than the registry plus a fixed delay.
+    const historyPath = getTerminalHistoryPath(projectCwd, 'default');
+    let entry: { running?: boolean; exitCode?: number } | undefined;
+    for (const deadline = Date.now() + 10_000; Date.now() < deadline; await sleep(100)) {
+      const content = await fs.readFile(historyPath, 'utf-8').catch(() => '');
+      entry = content.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+        .find((e) => e.id === 'cmd-int');
+      if (entry && !entry.running && entry.exitCode !== undefined) break;
+    }
     expect(getRunningCommand('cmd-int')).toBeUndefined();
-
-    const content = await fs.readFile(getTerminalHistoryPath(projectCwd, 'default'), 'utf-8');
-    const entries = content.trim().split('\n').map((l) => JSON.parse(l));
-    const entry = entries.find((e) => e.id === 'cmd-int');
     expect(entry?.running).toBeFalsy();      // finalized, not left as a placeholder
     expect(entry?.exitCode).toBeDefined();   // persisted: the bubble stays, as finished
-  });
+  }, 20_000);
 
   it('refuses unknown and tombstoned commands', () => {
     expect(interruptCommand('cmd-does-not-exist')).toBe(false);

@@ -77,6 +77,12 @@ const CLAUDE_MODELS: ReadonlyArray<{
     effort: ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode', 'ultrathink'],
     defaultEffort: 'high',
   },
+  {
+    id: 'claude-haiku-5-5',
+    label: 'Claude Haiku 5.5',
+    effort: ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode', 'ultrathink'],
+    defaultEffort: 'medium',
+  },
   { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', thinking: true },
 ];
 

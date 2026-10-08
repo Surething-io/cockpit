@@ -12,13 +12,17 @@ interface TokenStatsModalProps {
   onClose: () => void;
 }
 
-// Claude API official pricing ($/MTok) — 2026.09.
+// Claude API official pricing ($/MTok) — 2026.10.
 // Pricing only: model colors are derived separately (see assignColors) so a new
 // model never has to be added here just to get a distinct color.
 // Cache read is 0.1x base input and cache write (5m) is 1.25x on every model
 // EXCEPT Fable/Mythos 5.1 (reads 0.025x) and Opus 5.5 (reads 0.05x) — the rows
 // you cannot derive from the input price, and the reason neither family
 // fallback below can be trusted for a 5.1-and-later id.
+// Haiku 5.5 is the one tiered model: prompts over 100K tokens bill at 5x. The
+// stats only carry lifetime totals per model, not per-request prompt sizes, so
+// its row is the base tier and its cost here is a lower bound. The haiku
+// fallback (Haiku 4.5 prices) would overstate it 10x.
 const MODEL_PRICING: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
   'claude-fable-5-1':  { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.50 },
   'claude-mythos-5-1': { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.50 },
@@ -34,6 +38,7 @@ const MODEL_PRICING: Record<string, { input: number; output: number; cacheRead: 
   'claude-sonnet-5':   { input: 2,  output: 10, cacheRead: 0.20, cacheWrite: 2.50 },
   'claude-sonnet-4-6': { input: 3,  output: 15, cacheRead: 0.30, cacheWrite: 3.75 },
   'claude-sonnet-4-5': { input: 3,  output: 15, cacheRead: 0.30, cacheWrite: 3.75 },
+  'claude-haiku-5-5':  { input: 0.10, output: 0.50, cacheRead: 0.01, cacheWrite: 0.125 },
   'claude-haiku-4-5':  { input: 1,  output: 5,  cacheRead: 0.10, cacheWrite: 1.25 },
 };
 

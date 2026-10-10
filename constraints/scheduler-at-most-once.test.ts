@@ -34,7 +34,6 @@ vi.mock('../packages/feature/agent/src/server/state/globalState', () => ({
 const home = mkdtempSync(join(tmpdir(), 'cockpit-at-most-once-'));
 process.env.COCKPIT_HOME = home;
 const file = join(home, 'scheduled-tasks.json');
-const disk = (): Task[] => JSON.parse(readFileSync(file, 'utf8'));
 
 vi.mock('../packages/feature/agent/src/server/engines/orchestrator', () => ({
   dispatchChat: vi.fn(async () => {
@@ -44,8 +43,8 @@ vi.mock('../packages/feature/agent/src/server/engines/orchestrator', () => ({
   }),
 }));
 
-const onceTask = (over: Partial<Task> = {}): Task => ({
-  id: 'once-1',
+const onceTask = (id: string, over: Partial<Task> = {}): Task => ({
+  id,
   cwd: home,
   tabId: 'tab-1',
   sessionId: 'session-1',
@@ -57,6 +56,12 @@ const onceTask = (over: Partial<Task> = {}): Task => ({
   createdAt: Date.now() - 60_000,
   ...over,
 });
+
+type Manager = Awaited<ReturnType<typeof boot>>;
+
+/** Tasks read through the manager (under the file lock): writes are not atomic, so an
+ *  unlocked readFileSync can catch a half-written file. */
+const disk = (m: Manager): Promise<Task[]> => m.getTasks();
 
 /** A fresh manager, as a restarted process would have. */
 async function boot() {
@@ -85,22 +90,28 @@ beforeEach(() => {
 
 describe('OnceTaskAtMostOnce', () => {
   it('claims the run on disk before the prompt is sent', async () => {
-    writeFileSync(file, JSON.stringify([onceTask()]));
-    await boot();
+    writeFileSync(file, JSON.stringify([onceTask('claim-1')]));
+    const m = await boot();
     await until(() => seen.dispatches === 1);
 
-    const claimed = (seen.diskAtDispatch as Task[]).find((t) => t.id === 'once-1')!;
+    const claimed = (seen.diskAtDispatch as Task[]).find((t) => t.id === 'claim-1')!;
     expect(claimed.firingSince).toEqual(expect.any(Number));
     expect(claimed.completed).toBe(true);
+
+    // Let this run settle before the next test rewrites the file: a manager still
+    // settling a run would otherwise write into the next test's fixture.
+    for (let i = 0; i < 250 && !(await disk(m)).find((t) => t.id === 'claim-1')?.lastResult; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
   });
 
   it('a claim found on startup is recorded as interrupted, not sent again', async () => {
-    writeFileSync(file, JSON.stringify([onceTask({ firingSince: Date.now() - 5000, completed: true })]));
-    await boot();
+    writeFileSync(file, JSON.stringify([onceTask('boot-1', { firingSince: Date.now() - 5000, completed: true })]));
+    const m = await boot();
     await new Promise((r) => setTimeout(r, 300)); // give a wrongly armed timer time to fire
 
     expect(seen.dispatches).toBe(0);
-    const task = disk().find((t) => t.id === 'once-1')!;
+    const task = (await disk(m)).find((t) => t.id === 'boot-1')!;
     expect(task.firingSince).toBeUndefined();
     expect(task.lastResult).toBe('interrupted');
     expect(task.completed).toBe(true);

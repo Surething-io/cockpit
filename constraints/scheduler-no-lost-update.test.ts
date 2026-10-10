@@ -11,7 +11,7 @@
  * reverted, and an edit that replaced the in-memory object made the run's
  * result land on an orphaned copy that never reached disk.
  */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -39,7 +39,6 @@ vi.mock('../packages/feature/agent/src/server/engines/orchestrator', () => ({
 const home = mkdtempSync(join(tmpdir(), 'cockpit-no-lost-update-'));
 process.env.COCKPIT_HOME = home;
 const file = join(home, 'scheduled-tasks.json');
-const disk = (id: string): Task => (JSON.parse(readFileSync(file, 'utf8')) as Task[]).find((t) => t.id === id)!;
 
 const cronTask = (id: string, over: Partial<Task> = {}): Task => ({
   id,
@@ -64,6 +63,14 @@ async function until(cond: () => boolean, ms = 8000) {
   }
 }
 
+async function untilAsync(cond: () => Promise<boolean>, ms = 8000) {
+  const end = Date.now() + ms;
+  while (!(await cond())) {
+    if (Date.now() > end) throw new Error('timed out waiting');
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
 afterAll(() => rmSync(home, { recursive: true, force: true }));
 
 describe('SchedulerNoLostUpdate', () => {
@@ -71,6 +78,11 @@ describe('SchedulerNoLostUpdate', () => {
     writeFileSync(file, JSON.stringify([cronTask('a'), cronTask('b', { unread: true, sortIndex: 0 })]));
     const { scheduledTaskManager: m } = await import('../packages/feature/agent/src/server/scheduledTasks');
     await m.init();
+    // Read through the manager (under the file lock), not readFileSync: writes are not
+    // atomic, so an unlocked read can catch a half-written file.
+    let snapshot: Task[] = [];
+    const refresh = async () => { snapshot = await m.getTasks(); };
+    const disk = (id: string): Task => snapshot.find((t) => t.id === id)!;
 
     // Start a run of task a and hold it in flight.
     hub.active = true;
@@ -84,7 +96,7 @@ describe('SchedulerNoLostUpdate', () => {
 
     // Let the run finish and settle.
     hub.active = false;
-    await until(() => disk('a').lastResult !== undefined);
+    await untilAsync(async () => { await refresh(); return disk('a').lastResult !== undefined; });
 
     expect(disk('b').unread).toBe(false); // read mark kept
     expect(disk('b').sortIndex).toBe(0); // order kept

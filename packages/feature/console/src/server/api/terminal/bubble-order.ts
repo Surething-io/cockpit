@@ -18,6 +18,7 @@ import {
   getBubbleOrderPath,
   readJsonFile,
   writeJsonFile,
+  withFileLock,
 } from "@cockpit/shared-utils"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { FSError, ValidationError } from "@cockpit/effect-core"
@@ -115,23 +116,21 @@ export const POST = handler((req) =>
 
     const orderPath = getBubbleOrderPath(body.cwd, body.tabId)
 
-    // Read-merge-write so partial patches don't clobber the sibling field.
-    const existing = normalise(
-      yield* Effect.tryPromise({
-        try: () => readJsonFile<unknown>(orderPath, []),
-        catch: (cause) => new FSError({ path: orderPath, op: "read", cause }),
-      })
-    )
-
-    const next: BubbleOrderFile = {
-      order: hasOrder ? (body.order as string[]) : existing.order,
-      titles: hasTitles
-        ? mergeTitles(existing.titles, body.titles as Record<string, string>)
-        : existing.titles,
-    }
-
-    yield* Effect.tryPromise({
-      try: () => writeJsonFile(orderPath, next),
+    // Read-merge-write so partial patches don't clobber the sibling field —
+    // under the file lock, so two concurrent patches can't drop each other.
+    const next = yield* Effect.tryPromise({
+      try: () =>
+        withFileLock(orderPath, async () => {
+          const existing = normalise(await readJsonFile<unknown>(orderPath, []))
+          const merged: BubbleOrderFile = {
+            order: hasOrder ? (body.order as string[]) : existing.order,
+            titles: hasTitles
+              ? mergeTitles(existing.titles, body.titles as Record<string, string>)
+              : existing.titles,
+          }
+          await writeJsonFile(orderPath, merged)
+          return merged
+        }),
       catch: (cause) =>
         new FSError({ path: orderPath, op: "write", cause }),
     })

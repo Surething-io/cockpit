@@ -11,7 +11,7 @@
  */
 import { Context, Effect, Layer } from "effect"
 import { join } from "path"
-import { COCKPIT_DIR, readJsonFileForUpdate, writeJsonFile } from "@cockpit/shared-utils"
+import { COCKPIT_DIR, readJsonFileForUpdate, withFileLock, writeJsonFile } from "@cockpit/shared-utils"
 import { FSError } from "@cockpit/effect-core"
 
 // ─────────────────────────────────────────────────────────
@@ -63,7 +63,7 @@ export const ProjectServiceLive = Layer.succeed(
     }),
     write: (data) =>
       Effect.tryPromise({
-        try: () => writeJsonFile(PROJECTS_FILE, data),
+        try: () => withFileLock(PROJECTS_FILE, () => writeJsonFile(PROJECTS_FILE, data)),
         catch: (cause) =>
           new FSError({ path: PROJECTS_FILE, op: "write", cause }),
       }),

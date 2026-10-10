@@ -5,7 +5,7 @@
  */
 import fs from "fs/promises"
 import { Effect } from "effect"
-import { getTerminalHistoryPath } from "@cockpit/shared-utils"
+import { getTerminalHistoryPath, withFileLock } from "@cockpit/shared-utils"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { FSError, ValidationError } from "@cockpit/effect-core"
 import {
@@ -155,24 +155,28 @@ export const DELETE = handler((req) =>
           for (const c of getRunningCommands(cwd)) {
             if (c.tabId === tabId) killCommand(c.commandId)
           }
-          try {
-            const content = await fs.readFile(historyPath, "utf-8")
-            const lines = content.trim().split("\n").filter(Boolean)
-            for (const line of lines) {
-              try {
-                await removeEntryOutput(cwd, JSON.parse(line))
-              } catch {
-                /* ignore */
+          // Under the history lock, so a concurrent placeholder / finalize
+          // cannot write the old lines back after the unlink.
+          await withFileLock(historyPath, async () => {
+            try {
+              const content = await fs.readFile(historyPath, "utf-8")
+              const lines = content.trim().split("\n").filter(Boolean)
+              for (const line of lines) {
+                try {
+                  await removeEntryOutput(cwd, JSON.parse(line))
+                } catch {
+                  /* ignore */
+                }
               }
+            } catch {
+              /* file may not exist */
             }
-          } catch {
-            /* file may not exist */
-          }
-          try {
-            await fs.unlink(historyPath)
-          } catch (e: unknown) {
-            if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e
-          }
+            try {
+              await fs.unlink(historyPath)
+            } catch (e: unknown) {
+              if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e
+            }
+          })
         }
       },
       catch: (cause) =>
@@ -255,40 +259,42 @@ export const PATCH = handler((req) =>
 
     const result = yield* Effect.tryPromise({
       try: async () => {
-        try {
-          const content = await fs.readFile(historyPath, "utf-8")
-          const lines = content.trim().split("\n").filter(Boolean)
-          let updated = false
-          const newLines = lines.map((line) => {
-            try {
-              const entry = JSON.parse(line)
-              if (entry.id === id) {
-                updated = true
-                return JSON.stringify({ ...entry, ...fields })
+        return withFileLock(historyPath, async () => {
+          try {
+            const content = await fs.readFile(historyPath, "utf-8")
+            const lines = content.trim().split("\n").filter(Boolean)
+            let updated = false
+            const newLines = lines.map((line) => {
+              try {
+                const entry = JSON.parse(line)
+                if (entry.id === id) {
+                  updated = true
+                  return JSON.stringify({ ...entry, ...fields })
+                }
+              } catch {
+                /* keep original */
               }
-            } catch {
-              /* keep original */
+              return line
+            })
+            if (updated) {
+              await fs.writeFile(
+                historyPath,
+                newLines.join("\n") + "\n",
+                "utf-8"
+              )
             }
-            return line
-          })
-          if (updated) {
-            await fs.writeFile(
-              historyPath,
-              newLines.join("\n") + "\n",
-              "utf-8"
-            )
+            return { success: true, updated }
+          } catch (e: unknown) {
+            if (
+              e instanceof Error &&
+              "code" in e &&
+              (e as NodeJS.ErrnoException).code === "ENOENT"
+            ) {
+              return { success: true, updated: false }
+            }
+            throw e
           }
-          return { success: true, updated }
-        } catch (e: unknown) {
-          if (
-            e instanceof Error &&
-            "code" in e &&
-            (e as NodeJS.ErrnoException).code === "ENOENT"
-          ) {
-            return { success: true, updated: false }
-          }
-          throw e
-        }
+        })
       },
       catch: (cause) =>
         new FSError({ path: historyPath, op: "write", cause }),

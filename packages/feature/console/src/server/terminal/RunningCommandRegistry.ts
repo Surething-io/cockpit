@@ -7,7 +7,7 @@
 import fs from 'fs/promises';
 import { writeFileSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
-import { getTerminalHistoryPath, getTerminalOutputPath, ensureParentDir } from '@cockpit/shared-utils';
+import { getTerminalHistoryPath, getTerminalOutputPath, ensureParentDir, withFileLock } from '@cockpit/shared-utils';
 import { registerTerminal, finalizeTerminal, notifyOutputListeners, notifyExitListeners } from './TerminalBridge';
 import { broadcastConsoleDelta, broadcastRunningChanged } from './consoleBroadcast';
 import { interruptPidTree } from './processTree';
@@ -563,57 +563,61 @@ async function writeHistoryPlaceholder(
   sourceId?: string,
 ): Promise<void> {
   const historyPath = getTerminalHistoryPath(projectCwd, tabId);
-  await ensureParentDir(historyPath);
+  // Enqueue on the history lock synchronously, before the first await: a fast
+  // command's finalizeCommand must find this placeholder already written.
+  await withFileLock(historyPath, async () => {
+    await ensureParentDir(historyPath);
 
-  const entry: Record<string, unknown> = {
-    id: commandId, command, output: '', timestamp, cwd,
-    ...(usePty ? { usePty: true } : {}),
-    running: true,
-  };
+    const entry: Record<string, unknown> = {
+      id: commandId, command, output: '', timestamp, cwd,
+      ...(usePty ? { usePty: true } : {}),
+      running: true,
+    };
 
-  let existingLines: string[] = [];
-  try {
-    const content = await fs.readFile(historyPath, 'utf-8');
-    existingLines = content.trim().split('\n').filter(Boolean);
-  } catch { /* file does not exist */ }
-
-  // Rerun: an entry with this id already exists (finalized from a previous run).
-  // Replace it in place (avoids duplicate-id lines) and signal a rerun, not an add.
-  let isRerun = false;
-  for (let i = 0; i < existingLines.length; i++) {
+    let existingLines: string[] = [];
     try {
-      if (JSON.parse(existingLines[i]).id === commandId) {
-        existingLines[i] = JSON.stringify(entry);
-        isRerun = true;
-        break;
-      }
-    } catch { /* ignore unparseable */ }
-  }
+      const content = await fs.readFile(historyPath, 'utf-8');
+      existingLines = content.trim().split('\n').filter(Boolean);
+    } catch { /* file does not exist */ }
 
-  if (!isRerun) {
-    // Limit to 100 entries max (only when appending a genuinely new bubble)
-    if (existingLines.length >= 100) {
-      const removedLines = existingLines.slice(0, existingLines.length - 99);
-      for (const line of removedLines) {
-        try {
-          await removeEntryOutput(projectCwd, JSON.parse(line));
-        } catch { /* ignore */ }
-      }
-      existingLines = existingLines.slice(-99);
+    // Rerun: an entry with this id already exists (finalized from a previous run).
+    // Replace it in place (avoids duplicate-id lines) and signal a rerun, not an add.
+    let isRerun = false;
+    for (let i = 0; i < existingLines.length; i++) {
+      try {
+        if (JSON.parse(existingLines[i]).id === commandId) {
+          existingLines[i] = JSON.stringify(entry);
+          isRerun = true;
+          break;
+        }
+      } catch { /* ignore unparseable */ }
     }
-    existingLines.push(JSON.stringify(entry));
-  }
 
-  await fs.writeFile(historyPath, existingLines.join('\n') + '\n', 'utf-8');
+    if (!isRerun) {
+      // Limit to 100 entries max (only when appending a genuinely new bubble)
+      if (existingLines.length >= 100) {
+        const removedLines = existingLines.slice(0, existingLines.length - 99);
+        for (const line of removedLines) {
+          try {
+            await removeEntryOutput(projectCwd, JSON.parse(line));
+          } catch { /* ignore */ }
+        }
+        existingLines = existingLines.slice(-99);
+      }
+      existingLines.push(JSON.stringify(entry));
+    }
 
-  // Sync to other tabs. sourceId lets the originating tab drop its own echo
-  // (critical for rerun: that tab already reset + re-attached locally).
-  broadcastConsoleDelta(
-    projectCwd,
-    tabId,
-    isRerun ? { op: 'rerun', entry } : { op: 'add', entry },
-    sourceId,
-  );
+    await fs.writeFile(historyPath, existingLines.join('\n') + '\n', 'utf-8');
+
+    // Sync to other tabs. sourceId lets the originating tab drop its own echo
+    // (critical for rerun: that tab already reset + re-attached locally).
+    broadcastConsoleDelta(
+      projectCwd,
+      tabId,
+      isRerun ? { op: 'rerun', entry } : { op: 'add', entry },
+      sourceId,
+    );
+  });
 }
 
 /**
@@ -663,46 +667,50 @@ export async function finalizeCommand(commandId: string, exitCode: number, pid?:
   };
 
   const historyPath = getTerminalHistoryPath(cmd.projectCwd, cmd.tabId);
-  await ensureParentDir(historyPath);
+  // Same lock as the placeholder write: replace-or-append must see it.
+  await withFileLock(historyPath, async () => {
+    await ensureParentDir(historyPath);
 
-  // Store long output in a separate file
-  if (output.length > OUTPUT_FILE_THRESHOLD) {
-    const outputPath = getTerminalOutputPath(cmd.projectCwd, cmd.commandId);
-    await fs.writeFile(outputPath, output, 'utf-8');
-    entry.outputFile = outputPath;
-  } else {
-    entry.output = output;
-    // A sidecar from earlier would outlive this entry unreferenced: the
-    // exit-time flush of this run, or a previous run's spill (rerun reuses
-    // the id).
-    await fs.unlink(getTerminalOutputPath(cmd.projectCwd, cmd.commandId)).catch(() => {});
-  }
+    // Store long output in a separate file
+    if (output.length > OUTPUT_FILE_THRESHOLD) {
+      const outputPath = getTerminalOutputPath(cmd.projectCwd, cmd.commandId);
+      await fs.writeFile(outputPath, output, 'utf-8');
+      entry.outputFile = outputPath;
+    } else {
+      entry.output = output;
+      // A sidecar from earlier would outlive this entry unreferenced: the
+      // exit-time flush of this run, or a previous run's spill (rerun reuses
+      // the id).
+      await fs.unlink(getTerminalOutputPath(cmd.projectCwd, cmd.commandId)).catch(() => {});
+    }
 
-  // Read existing history and replace the placeholder entry
-  let existingLines: string[] = [];
-  try {
-    const content = await fs.readFile(historyPath, 'utf-8');
-    existingLines = content.trim().split('\n').filter(Boolean);
-  } catch {
-    // file does not exist
-  }
-
-  // Find and replace the placeholder entry; append if not found
-  let replaced = false;
-  for (let i = 0; i < existingLines.length; i++) {
+    // Read existing history and replace the placeholder entry
+    let existingLines: string[] = [];
     try {
-      if (JSON.parse(existingLines[i]).id === commandId) {
-        existingLines[i] = JSON.stringify(entry);
-        replaced = true;
-        break;
-      }
-    } catch { /* ignore */ }
-  }
-  if (!replaced) {
-    existingLines.push(JSON.stringify(entry));
-  }
+      const content = await fs.readFile(historyPath, 'utf-8');
+      existingLines = content.trim().split('\n').filter(Boolean);
+    } catch {
+      // file does not exist
+    }
 
-  await fs.writeFile(historyPath, existingLines.join('\n') + '\n', 'utf-8');
+    // Find and replace the placeholder entry; append if not found
+    let replaced = false;
+    for (let i = 0; i < existingLines.length; i++) {
+      try {
+        if (JSON.parse(existingLines[i]).id === commandId) {
+          existingLines[i] = JSON.stringify(entry);
+          replaced = true;
+          break;
+        }
+      } catch { /* ignore */ }
+    }
+    if (!replaced) {
+      existingLines.push(JSON.stringify(entry));
+    }
+
+    await fs.writeFile(historyPath, existingLines.join('\n') + '\n', 'utf-8');
+  });
+
 
   // Flip the bubble to finished in other tabs. Output is NOT sent here — it rides
   // the per-command terminal stream (each attached tab already got the exit event).
@@ -767,52 +775,55 @@ export async function reconcileOrphanedRunning(projectCwd: string, tabId: string
 
   const historyPath = getTerminalHistoryPath(projectCwd, tabId);
 
-  let content: string;
-  try {
-    content = await fs.readFile(historyPath, 'utf-8');
-  } catch {
-    return; // no history file yet
-  }
-
-  const lines = content.trim().split('\n').filter(Boolean);
-  if (lines.length === 0) return;
-
-  // Dedup by id, keeping the last occurrence (rerun appends a fresh placeholder).
-  const byId = new Map<string, Record<string, unknown>>();
-  let changed = false;
-  for (const line of lines) {
-    let entry: Record<string, unknown>;
+  await withFileLock(historyPath, async () => {
+    let content: string;
     try {
-      entry = JSON.parse(line);
+      content = await fs.readFile(historyPath, 'utf-8');
     } catch {
-      changed = true; // drop unparseable line
-      continue;
+      return; // no history file yet
     }
-    const id = entry.id as string | undefined;
-    if (!id) continue;
-    if (byId.has(id)) changed = true; // duplicate collapsed
-    byId.delete(id);
-    byId.set(id, entry);
-  }
 
-  for (const entry of byId.values()) {
-    if (entry.running !== true) continue;
-    const id = entry.id as string;
-    // Still live in this server (same-process refresh) → leave it for reattach.
-    if (getRunningCommand(id)) continue;
+    const lines = content.trim().split('\n').filter(Boolean);
+    if (lines.length === 0) return;
 
-    delete entry.running;
-    entry.exitCode = INTERRUPTED_EXIT_CODE;
-    const outputPath = getTerminalOutputPath(projectCwd, id);
-    try {
-      const stat = await fs.stat(outputPath);
-      if (stat.size > 0) entry.outputFile = outputPath;
-    } catch { /* no flushed output → bubble restores empty */ }
-    changed = true;
-  }
+    // Dedup by id, keeping the last occurrence (rerun appends a fresh placeholder).
+    const byId = new Map<string, Record<string, unknown>>();
+    let changed = false;
+    for (const line of lines) {
+      let entry: Record<string, unknown>;
+      try {
+        entry = JSON.parse(line);
+      } catch {
+        changed = true; // drop unparseable line
+        continue;
+      }
+      const id = entry.id as string | undefined;
+      if (!id) continue;
+      if (byId.has(id)) changed = true; // duplicate collapsed
+      byId.delete(id);
+      byId.set(id, entry);
+    }
 
-  if (!changed) return;
+    for (const entry of byId.values()) {
+      if (entry.running !== true) continue;
+      const id = entry.id as string;
+      // Still live in this server (same-process refresh) → leave it for reattach.
+      if (getRunningCommand(id)) continue;
 
-  const rewritten = [...byId.values()].map((e) => JSON.stringify(e)).join('\n') + '\n';
-  await fs.writeFile(historyPath, rewritten, 'utf-8');
+      delete entry.running;
+      entry.exitCode = INTERRUPTED_EXIT_CODE;
+      const outputPath = getTerminalOutputPath(projectCwd, id);
+      try {
+        const stat = await fs.stat(outputPath);
+        if (stat.size > 0) entry.outputFile = outputPath;
+      } catch { /* no flushed output → bubble restores empty */ }
+      changed = true;
+    }
+
+    if (!changed) return;
+
+    const rewritten = [...byId.values()].map((e) => JSON.stringify(e)).join('\n') + '\n';
+    await fs.writeFile(historyPath, rewritten, 'utf-8');
+  });
+
 }

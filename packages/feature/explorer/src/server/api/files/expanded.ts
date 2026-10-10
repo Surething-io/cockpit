@@ -6,6 +6,7 @@ import {
   getExpandedPathsPath,
   readJsonFile,
   writeJsonFile,
+  withFileLock,
 } from "@cockpit/shared-utils"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { FSError, ValidationError } from "@cockpit/effect-core"
@@ -43,7 +44,8 @@ export const POST = handler((req) =>
     }
     const filePath = getExpandedPathsPath(body.cwd)
     yield* Effect.tryPromise({
-      try: () => writeJsonFile(filePath, body.paths),
+      try: () =>
+        withFileLock(filePath, () => writeJsonFile(filePath, body.paths)),
       catch: (cause) => new FSError({ path: filePath, op: "write", cause }),
     })
     return ok({ success: true })

@@ -12,6 +12,7 @@ import {
   KIMI_CREDENTIALS_FILE,
   readJsonFile,
   writeJsonFile,
+  withFileLock,
 } from '@cockpit/shared-utils';
 
 interface ApiKeyFile {
@@ -35,7 +36,7 @@ function createApiKeyStore(file: string): ApiKeyStore {
       return creds.apiKey?.trim() ?? '';
     },
     async write(apiKey: string) {
-      await writeJsonFile<ApiKeyFile>(file, { apiKey });
+      await withFileLock(file, () => writeJsonFile<ApiKeyFile>(file, { apiKey }));
     },
   };
 }

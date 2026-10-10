@@ -18,6 +18,7 @@ import {
   getTerminalHistoryPath,
   getTerminalOutputPath,
   ensureParentDir,
+  withFileLock,
 } from "@cockpit/shared-utils"
 
 export interface HistoryEntry {
@@ -88,43 +89,46 @@ export async function appendHistoryEntry(
     entryToSave.outputFile = outputPath
   }
 
-  let existingLines: string[] = []
-  try {
-    const content = await fs.readFile(historyPath, "utf-8")
-    existingLines = content.trim().split("\n").filter(Boolean)
-  } catch {
-    /* file does not exist */
-  }
-
-  if (entry.id) {
-    const alreadyExists = existingLines.some((line) => {
-      try {
-        return JSON.parse(line).id === entry.id
-      } catch {
-        return false
-      }
-    })
-    if (alreadyExists) return { success: true, skipped: true }
-  }
-
-  if (existingLines.length >= MAX_ENTRIES) {
-    const removedLines = existingLines.slice(
-      0,
-      existingLines.length - (MAX_ENTRIES - 1)
-    )
-    for (const line of removedLines) {
-      try {
-        await removeEntryOutput(cwd, JSON.parse(line))
-      } catch {
-        /* ignore */
-      }
+  // Every writer of this JSONL serializes on its path (see LockedRMWOnly).
+  return withFileLock(historyPath, async () => {
+    let existingLines: string[] = []
+    try {
+      const content = await fs.readFile(historyPath, "utf-8")
+      existingLines = content.trim().split("\n").filter(Boolean)
+    } catch {
+      /* file does not exist */
     }
-    existingLines = existingLines.slice(-(MAX_ENTRIES - 1))
-  }
 
-  existingLines.push(JSON.stringify(entryToSave))
-  await fs.writeFile(historyPath, existingLines.join("\n") + "\n", "utf-8")
-  return { success: true }
+    if (entry.id) {
+      const alreadyExists = existingLines.some((line) => {
+        try {
+          return JSON.parse(line).id === entry.id
+        } catch {
+          return false
+        }
+      })
+      if (alreadyExists) return { success: true, skipped: true }
+    }
+
+    if (existingLines.length >= MAX_ENTRIES) {
+      const removedLines = existingLines.slice(
+        0,
+        existingLines.length - (MAX_ENTRIES - 1)
+      )
+      for (const line of removedLines) {
+        try {
+          await removeEntryOutput(cwd, JSON.parse(line))
+        } catch {
+          /* ignore */
+        }
+      }
+      existingLines = existingLines.slice(-(MAX_ENTRIES - 1))
+    }
+
+    existingLines.push(JSON.stringify(entryToSave))
+    await fs.writeFile(historyPath, existingLines.join("\n") + "\n", "utf-8")
+    return { success: true }
+  })
 }
 
 /**
@@ -142,33 +146,37 @@ export async function removeHistoryEntry(
   onMatch?: (entry: HistoryEntry) => void | Promise<void>
 ): Promise<HistoryEntry | null> {
   const historyPath = getTerminalHistoryPath(cwd, tabId)
-  let removed: HistoryEntry | null = null
-  try {
-    const content = await fs.readFile(historyPath, "utf-8")
-    const lines = content.trim().split("\n").filter(Boolean)
-    const remaining: string[] = []
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line) as HistoryEntry
-        if (entry.id === id) {
-          removed = entry
-          if (onMatch) await onMatch(entry)
-          continue
+  // onMatch runs while holding the lock, so it must not take this lock itself
+  // (killCommand is synchronous; removeEntryOutput touches only the sidecar).
+  return withFileLock(historyPath, async () => {
+    let removed: HistoryEntry | null = null
+    try {
+      const content = await fs.readFile(historyPath, "utf-8")
+      const lines = content.trim().split("\n").filter(Boolean)
+      const remaining: string[] = []
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line) as HistoryEntry
+          if (entry.id === id) {
+            removed = entry
+            if (onMatch) await onMatch(entry)
+            continue
+          }
+        } catch {
+          /* keep unparseable lines verbatim */
         }
-      } catch {
-        /* keep unparseable lines verbatim */
+        remaining.push(line)
       }
-      remaining.push(line)
+      if (remaining.length > 0) {
+        await fs.writeFile(historyPath, remaining.join("\n") + "\n", "utf-8")
+      } else {
+        await fs.unlink(historyPath).catch(() => {})
+      }
+    } catch (e: unknown) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e
     }
-    if (remaining.length > 0) {
-      await fs.writeFile(historyPath, remaining.join("\n") + "\n", "utf-8")
-    } else {
-      await fs.unlink(historyPath).catch(() => {})
-    }
-  } catch (e: unknown) {
-    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e
-  }
-  return removed
+    return removed
+  })
 }
 
 /** Read every entry for a tab. Missing file → empty list. */

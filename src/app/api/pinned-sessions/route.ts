@@ -10,6 +10,7 @@ import {
   PINNED_SESSIONS_FILE,
   readJsonFile,
   writeJsonFile,
+  withFileLock,
 } from "@cockpit/shared-utils"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { FSError, ValidationError } from "@cockpit/effect-core"
@@ -40,7 +41,10 @@ export const POST = handler((req) =>
       )
     }
     yield* Effect.tryPromise({
-      try: () => writeJsonFile(PINNED_SESSIONS_FILE, body.sessions),
+      try: () =>
+        withFileLock(PINNED_SESSIONS_FILE, () =>
+          writeJsonFile(PINNED_SESSIONS_FILE, body.sessions)
+        ),
       catch: (cause) =>
         new FSError({
           path: PINNED_SESSIONS_FILE,

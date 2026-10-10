@@ -488,6 +488,33 @@ export function killCommand(commandId: string): void {
   }
 }
 
+/**
+ * Make sure no process still runs under `commandId` before a new run reuses the id
+ * (rerun). Kills the old run like a deleted bubble — its finalize writes nothing; the new
+ * run's placeholder replaces the history entry in place — and waits until it has left the
+ * registry, escalating to SIGKILL at the deadline. Resolves true once the id is free,
+ * false if the old process outlived `timeoutMs`: the caller must then not start a second
+ * process beside it (constraints/one-run-per-command-id.test.ts).
+ */
+export async function retireRunningCommand(commandId: string, timeoutMs = 3000): Promise<boolean> {
+  if (!getRegistry().has(commandId)) return true;
+  killCommand(commandId);
+  const deadline = Date.now() + timeoutMs;
+  while (getRegistry().has(commandId)) {
+    if (Date.now() >= deadline) {
+      const cmd = getRegistry().get(commandId);
+      try {
+        if (cmd?.ptyProcess) cmd.ptyProcess.kill('SIGKILL');
+        else if (cmd) process.kill(cmd.pid, 'SIGKILL');
+      } catch { /* already gone */ }
+      await new Promise((r) => setTimeout(r, 200));
+      return !getRegistry().has(commandId);
+    }
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  return true;
+}
+
 /** One live terminal as the running-terminals board lists it. */
 export interface RunningTerminalInfo {
   commandId: string;

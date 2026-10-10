@@ -26,6 +26,7 @@ import {
   spawnPipeInHost,
   adoptPtyHostSessions,
   interruptPidTree,
+  retireRunningCommand,
   type PipeProcess,
   type PtyHandle,
 } from "@cockpit/feature-console/server"
@@ -352,117 +353,141 @@ const dispatchMessage = (
         if (v !== undefined) definedEnv[k] = v
       }
 
-      try {
-        if (usePty) {
-          const ptyTarget =
-            command === OPEN_PREFERRED_SHELL_COMMAND
-              ? resolvePreferredPtyShell(cwd)
-              : { file: resolveCommandShell(), args: ["--login", "-c", command], cwd, name: command }
-          // The PTY lives in the pty-host process, not here, so it survives a
-          // cockpit update/restart. `meta` is what the next server needs to
-          // re-register it (see adoptPtySessions in RunningCommandRegistry).
-          const timestamp = new Date().toISOString()
-          const meta = {
-            commandId,
-            command: ptyTarget.name,
-            cwd,
-            projectCwd,
-            tabId,
-            timestamp,
-            ...(sourceId ? { sourceId } : {}),
-          }
-          pendingPtySizes.set(commandId, null)
-          Effect.runFork(
-            Effect.tryPromise(() =>
-              spawnPtyInHost({
-                id: commandId,
-                file: ptyTarget.file,
-                args: ptyTarget.args,
-                cwd: ptyTarget.cwd,
-                env: definedEnv,
-                cols: cols || 120,
-                rows: rows || 30,
-                meta,
-              })
-            ).pipe(
-              Effect.flatMap((ptyProcess) =>
-                Effect.sync(() => {
-                  registerCommand({ ...meta, pid: ptyProcess.pid, ptyProcess, usePty: true })
-                  const size = pendingPtySizes.get(commandId)
-                  if (size) ptyProcess.resize(size.cols, size.rows)
-                  Effect.runFork(send({ type: "pid", commandId, pid: ptyProcess.pid, command: ptyTarget.name }))
-                  Effect.runFork(
-                    attachPtyListeners(registry, send, commandId, ptyProcess)
-                  )
-                })
-              ),
-              Effect.catchAll((e) =>
-                send({ type: "error", commandId, error: errorMessage(e) }).pipe(
-                  Effect.catchAll(() => Effect.void)
-                )
-              ),
-              Effect.ensuring(Effect.sync(() => pendingPtySizes.delete(commandId)))
-            )
-          )
-        } else {
-          const shell = resolveCommandShell()
-          const meta = {
-            commandId,
-            command,
-            cwd,
-            projectCwd,
-            tabId,
-            timestamp: new Date().toISOString(),
-            ...(sourceId ? { sourceId } : {}),
-          }
-          const register = (child: PipeProcess) => {
-            if (!child.pid) {
-              Effect.runFork(
-                send({ type: "error", commandId, error: "Failed to spawn process" })
-              )
-              return
+      // One process per commandId. A rerun of a command that is still running (double-
+      // clicked rerun, or one that ignored the client's SIGINT) must retire the old
+      // process first — otherwise it is orphaned: still running, unreachable from the UI.
+      // Started before any spawn code below can run.
+      const retiring = getRunningCommand(commandId) ? retireRunningCommand(commandId) : null
+
+      const spawnRun = () => {
+        try {
+          if (usePty) {
+            const ptyTarget =
+              command === OPEN_PREFERRED_SHELL_COMMAND
+                ? resolvePreferredPtyShell(cwd)
+                : { file: resolveCommandShell(), args: ["--login", "-c", command], cwd, name: command }
+            // The PTY lives in the pty-host process, not here, so it survives a
+            // cockpit update/restart. `meta` is what the next server needs to
+            // re-register it (see adoptPtySessions in RunningCommandRegistry).
+            const timestamp = new Date().toISOString()
+            const meta = {
+              commandId,
+              command: ptyTarget.name,
+              cwd,
+              projectCwd,
+              tabId,
+              timestamp,
+              ...(sourceId ? { sourceId } : {}),
             }
-            registerCommand({
+            pendingPtySizes.set(commandId, null)
+            Effect.runFork(
+              Effect.tryPromise(() =>
+                spawnPtyInHost({
+                  id: commandId,
+                  file: ptyTarget.file,
+                  args: ptyTarget.args,
+                  cwd: ptyTarget.cwd,
+                  env: definedEnv,
+                  cols: cols || 120,
+                  rows: rows || 30,
+                  meta,
+                })
+              ).pipe(
+                Effect.flatMap((ptyProcess) =>
+                  Effect.sync(() => {
+                    registerCommand({ ...meta, pid: ptyProcess.pid, ptyProcess, usePty: true })
+                    const size = pendingPtySizes.get(commandId)
+                    if (size) ptyProcess.resize(size.cols, size.rows)
+                    Effect.runFork(send({ type: "pid", commandId, pid: ptyProcess.pid, command: ptyTarget.name }))
+                    Effect.runFork(
+                      attachPtyListeners(registry, send, commandId, ptyProcess)
+                    )
+                  })
+                ),
+                Effect.catchAll((e) =>
+                  send({ type: "error", commandId, error: errorMessage(e) }).pipe(
+                    Effect.catchAll(() => Effect.void)
+                  )
+                ),
+                Effect.ensuring(Effect.sync(() => pendingPtySizes.delete(commandId)))
+              )
+            )
+          } else {
+            const shell = resolveCommandShell()
+            const meta = {
               commandId,
               command,
               cwd,
               projectCwd,
               tabId,
-              pid: child.pid,
-              process: child,
-              timestamp: meta.timestamp,
-              sourceId,
-            })
-            Effect.runFork(send({ type: "pid", commandId, pid: child.pid, command }))
-            Effect.runFork(
-              attachPipeListeners(registry, send, commandId, child)
-            )
-          }
-          // Like PTYs, pipe commands run in the pty-host so they survive a
-          // cockpit update/restart.
-          Effect.runFork(
-            Effect.tryPromise(() =>
-              spawnPipeInHost({
-                id: commandId,
-                file: shell,
-                args: ["--login", "-c", command],
+              timestamp: new Date().toISOString(),
+              ...(sourceId ? { sourceId } : {}),
+            }
+            const register = (child: PipeProcess) => {
+              if (!child.pid) {
+                Effect.runFork(
+                  send({ type: "error", commandId, error: "Failed to spawn process" })
+                )
+                return
+              }
+              registerCommand({
+                commandId,
+                command,
                 cwd,
-                env: definedEnv,
-                meta,
+                projectCwd,
+                tabId,
+                pid: child.pid,
+                process: child,
+                timestamp: meta.timestamp,
+                sourceId,
               })
-            ).pipe(
-              Effect.flatMap((child) => Effect.sync(() => register(child))),
-              Effect.catchAll((e) =>
-                send({ type: "error", commandId, error: errorMessage(e) }).pipe(
-                  Effect.catchAll(() => Effect.void)
+              Effect.runFork(send({ type: "pid", commandId, pid: child.pid, command }))
+              Effect.runFork(
+                attachPipeListeners(registry, send, commandId, child)
+              )
+            }
+            // Like PTYs, pipe commands run in the pty-host so they survive a
+            // cockpit update/restart.
+            Effect.runFork(
+              Effect.tryPromise(() =>
+                spawnPipeInHost({
+                  id: commandId,
+                  file: shell,
+                  args: ["--login", "-c", command],
+                  cwd,
+                  env: definedEnv,
+                  meta,
+                })
+              ).pipe(
+                Effect.flatMap((child) => Effect.sync(() => register(child))),
+                Effect.catchAll((e) =>
+                  send({ type: "error", commandId, error: errorMessage(e) }).pipe(
+                    Effect.catchAll(() => Effect.void)
+                  )
                 )
               )
             )
+          }
+        } catch (e) {
+          Effect.runFork(
+            send({ type: "error", commandId, error: (e as Error).message })
           )
         }
-      } catch (e) {
+      }
+
+      if (!retiring) {
+        spawnRun()
+      } else {
         Effect.runFork(
-          send({ type: "error", commandId, error: (e as Error).message })
+          Effect.promise(() => retiring).pipe(
+            Effect.flatMap((free) =>
+              free
+                ? Effect.sync(spawnRun)
+                : send({ type: "error", commandId, error: "previous run of this command is still exiting" }).pipe(
+                    Effect.catchAll(() => Effect.void)
+                  )
+            )
+          )
         )
       }
     } else if (type === "stdin") {

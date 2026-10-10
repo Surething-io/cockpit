@@ -7,6 +7,7 @@ import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import next from 'next';
 import { rotateIfLarge } from './bin/rotateLog.mjs';
+import { acquireInstanceLock } from './bin/instanceLock.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 process.env.COCKPIT_ROOT = __dirname;
@@ -28,6 +29,7 @@ const cockpitHome = process.env.COCKPIT_HOME
 const normHome = (p) => { try { return realpathSync(p); } catch { return p; } };
 
 const SERVER_JSON = join(cockpitHome, 'server.json');
+let releaseInstanceLock = () => {};
 
 // Read once at boot. `version` backs `cockpit status` (process.env
 // npm_package_version is only set when launched through an npm script, so it is
@@ -195,6 +197,7 @@ function removeServerJson() {
 process.on('exit', () => {
   try { flushRunningSync?.(); } catch {}
   removeServerJson();
+  releaseInstanceLock();
   killChildren();
 });
 
@@ -257,6 +260,22 @@ function assertNextVersionMatchesBuild() {
   }
 }
 assertNextVersionMatchesBuild();
+
+// Take the data dir's instance lock before Next (and with it the scheduler) starts. This
+// is what decides a simultaneous start; ensureSingleInstance below additionally catches a
+// running instance from a version that predates the lock.
+if (!process.env.COCKPIT_FORCE) {
+  const lock = acquireInstanceLock(cockpitHome);
+  if (!lock.ok) {
+    console.error(`\n✗ This data dir already has a running cockpit (pid ${lock.pid}).`);
+    console.error(`  Data dir: ${cockpitHome}`);
+    console.error(`  To run a second instance, isolate it with COCKPIT_HOME, e.g.:`);
+    console.error(`    COCKPIT_HOME=~/.cockpit-alt cockpit`);
+    console.error(`  False alarm? Delete ${join(cockpitHome, 'server.lock')} or set COCKPIT_FORCE=1.\n`);
+    process.exit(1);
+  }
+  releaseInstanceLock = lock.release;
+}
 
 const app = next({ dev });
 const handle = app.getRequestHandler();

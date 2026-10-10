@@ -74,10 +74,10 @@ export const POST = handler(() =>
     yield* Effect.sync(() => spawnOrphaned(ollamaPath, ["serve"]))
 
     // Wait for readiness (up to 8s)
-    const started = yield* Effect.promise(async () => {
+    const started = yield* Effect.gen(function* () {
       for (let i = 0; i < 16; i++) {
-        await new Promise((r) => setTimeout(r, 500))
-        if (await isOllamaRunning()) return true
+        yield* Effect.sleep("500 millis")
+        if (yield* Effect.promise(() => isOllamaRunning())) return true
       }
       return false
     })

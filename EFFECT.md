@@ -21,8 +21,8 @@ Hard exclusions:
   the Effect runtime has already failed, no fiber context available, so synchronous
   `console.error` is permitted
 - Short UI `setTimeout` / debounce / reconnect (< 5s visual/network fallback) —
-  ESLint emits a warning but does not force a rewrite to `Effect.delay`
-  (**retries / backoff must use `Schedule`**; UI visual feedback is free to remain)
+  UI code is outside the lint rule's scope, so nothing forces a rewrite to
+  `Effect.delay` (**retries / backoff must use `Schedule`**; UI visual feedback is free to remain)
 
 ---
 
@@ -288,24 +288,38 @@ export const XxxServiceLive = Layer.scoped(
 
 ## 10. CI / Lint enforcement
 
-`packages/feature/*/server/**` + `src/app/api/**` + `src/lib/**`:
+Two tiers. **Lint-enforced** rules are `error` in `eslint.config.mjs`
+(`no-restricted-syntax`), so `npm run lint` — and with it CI — fails on them
+(pinned by `constraints/effect-lint-rules-enforced.test.ts`). **Conventions**
+are equally expected in review but have no lint rule, because a syntactic ban
+would also hit legitimate uses.
+
+Lint-enforced — server IO code (`src/app/api/**`, `src/lib/effect/**`,
+`packages/feature/*/src/effect/**`, `packages/feature/*/src/server/effect/**`,
+`packages/feature/*/src/server/api/**`):
 
 | Forbidden | Replacement |
 |---|---|
-| `try/catch` | `Effect.try / Effect.tryPromise` |
-| `Promise.all` | `Effect.all` |
-| `setTimeout(retry, ...)` | `Effect.delay / Schedule` |
-| `window.parent.postMessage` | `IframeBus.publish + Topics` |
+| `Promise.all` | `Effect.all` / `Effect.forEach(…, { concurrency })` |
+| `Promise.race` | `Effect.race` |
+| `setTimeout` | `Effect.sleep` / `Effect.delay` / `Schedule` |
+| `setInterval` | `Effect.repeat(Schedule.spaced(…))` |
+
+Lint-enforced — client code (`packages/feature/*/src/client/**`):
+- `window.parent.postMessage` forbidden — use `publishTopic` + Topics (IframeBus)
+- In components (`.tsx`), a direct `fetch(...)` is forbidden — go through
+  `client/effect/<X>Client.ts`
+
+Conventions (no lint rule):
+
+| Avoid | Prefer |
+|---|---|
+| `try/catch` in business code | `Effect.try / Effect.tryPromise` (a `try` inside a `tryPromise` body, or a subprocess adapter per §0, is fine) |
 | `import { globalManager }` | `yield* XxxServiceTag` |
+| `fetch(...)` in client `.ts` hooks | a `client/effect/` wrapper (hooks that already wrap it in `Effect.tryPromise` are the IO layer) |
 
-`packages/feature/*/client/**`:
-- Bare `fetch(...)` forbidden — go through `client/effect/<X>Client.ts`
-- Bare `postMessage` forbidden — go through IframeBus
-- Other rules same as above; `useState` is unconstrained (pure UI)
-
-`packages/shared/ui/**` + `packages/feature/*/components/**` (presentation only): unconstrained.
-
-Rules are enforced in `eslint.config.mjs` (`no-restricted-imports` / `no-restricted-syntax`).
+`useState` is unconstrained (pure UI). `packages/shared/ui/**` +
+`packages/feature/*/components/**` (presentation only): unconstrained.
 
 ---
 

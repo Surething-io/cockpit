@@ -36,9 +36,10 @@ export const GET = handler(() =>
       catch: () => null,
     }).pipe(Effect.orElseSucceed(() => DEFAULT))
 
-    const enriched = yield* Effect.promise(() =>
-      Promise.all(
-        (data.skills || []).map(async (s) => {
+    const enriched = yield* Effect.forEach(
+      data.skills || [],
+      (s) =>
+        Effect.promise(async () => {
           const parsed = await parseSkillMd(s.path)
           return {
             id: s.id,
@@ -50,8 +51,8 @@ export const GET = handler(() =>
             argumentHint: parsed.argumentHint,
             valid: parsed.valid,
           }
-        })
-      )
+        }),
+      { concurrency: "unbounded" }
     )
     return ok(enriched)
   })

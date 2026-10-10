@@ -54,6 +54,23 @@ const httpPutJson = <A>(
   })
 
 // ─────────────────────────────────────────────────────────
+// /api/project-state (read-only slice: per-session engine + model)
+// ─────────────────────────────────────────────────────────
+
+export interface SessionEngineState {
+  engines?: Record<string, string>
+  ollamaModels?: Record<string, string>
+  deepseekModels?: Record<string, string>
+  kimiModels?: Record<string, string>
+  glmModels?: Record<string, string>
+}
+
+export const loadSessionEngineState = (
+  cwd: string
+): Effect.Effect<SessionEngineState, AppError> =>
+  httpJson<SessionEngineState>(`/api/project-state?cwd=${encodeURIComponent(cwd)}`)
+
+// ─────────────────────────────────────────────────────────
 // /api/session/user-messages
 // ─────────────────────────────────────────────────────────
 

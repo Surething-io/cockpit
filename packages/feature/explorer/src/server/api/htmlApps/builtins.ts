@@ -18,6 +18,7 @@
  * which api/apps.ts deliberately does not gate on any marker (see its header).
  */
 import { join } from "path"
+import { Effect } from "effect"
 import { APPS_DIR } from "@cockpit/shared-utils"
 import { parseHtmlMeta } from "../../lib/parseHtmlMeta"
 
@@ -46,9 +47,10 @@ export interface BuiltinAppInfo {
  * index.html is missing are omitted entirely rather than rendered as invalid
  * cards: an undeletable broken card is worse than no card.
  */
-export async function listBuiltinApps(): Promise<BuiltinAppInfo[]> {
-  const entries = await Promise.all(
-    BUILTIN_APP_NAMES.map(async (dir): Promise<BuiltinAppInfo | null> => {
+export function listBuiltinApps(): Effect.Effect<BuiltinAppInfo[]> {
+  return Effect.forEach(
+    BUILTIN_APP_NAMES,
+    (dir) => Effect.promise(async (): Promise<BuiltinAppInfo | null> => {
       const filePath = join(APPS_DIR, dir, "index.html")
       const meta = await parseHtmlMeta(filePath)
       if (!meta.valid) return null
@@ -64,7 +66,7 @@ export async function listBuiltinApps(): Promise<BuiltinAppInfo[]> {
         valid: true,
         builtin: true as const,
       }
-    })
-  )
-  return entries.filter((e): e is BuiltinAppInfo => e !== null)
+    }),
+    { concurrency: "unbounded" }
+  ).pipe(Effect.map((entries) => entries.filter((e): e is BuiltinAppInfo => e !== null)))
 }

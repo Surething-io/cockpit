@@ -2,9 +2,8 @@
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
-import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
-import { AppError } from '@cockpit/effect-core';
+import { loadSessionEngineState } from '../effect';
 import { useChatHistory } from '../useChatHistory';
 import { useChatStream, NO_BG_TASKS } from '../useChatStream';
 import { TaskStoreContext, createTaskStore } from '../taskStore';
@@ -54,21 +53,7 @@ export function MobileChat({ cwd, initialSessionId, initialTitle, onBack, isActi
   // the desktop tab system). Runs once; failures are non-fatal (we fall back to
   // the engine echoed by history and the server's default model).
   useEffect(() => {
-    const eff = Effect.tryPromise({
-      try: async () => {
-        const res = await fetch(`/api/project-state?cwd=${encodeURIComponent(cwd)}`);
-        if (!res.ok) return null;
-        return (await res.json()) as {
-          engines?: Record<string, string>;
-          ollamaModels?: Record<string, string>;
-          deepseekModels?: Record<string, string>;
-          kimiModels?: Record<string, string>;
-          glmModels?: Record<string, string>;
-        };
-      },
-      catch: (cause) => new AppError({ message: 'loadProjectState failed', cause }),
-    });
-    BrowserRuntime.runPromiseExit(eff).then((exit) => {
+    BrowserRuntime.runPromiseExit(loadSessionEngineState(cwd)).then((exit) => {
       if (exit._tag === 'Success' && exit.value) {
         const d = exit.value;
         setResolved({

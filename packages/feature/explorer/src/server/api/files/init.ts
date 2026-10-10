@@ -67,30 +67,31 @@ async function readdirWithMeta(
   return nodes
 }
 
-async function resolveSymlinkTargets(
-  nodes: FileNode[],
-  cwd: string
-): Promise<void> {
-  const promises: Promise<void>[] = []
-  for (const node of nodes) {
-    if (node.isSymlink) {
-      promises.push(
-        readlink(join(cwd, node.path))
-          .then((target) => {
-            node.symlinkTarget = target
-          })
-          .catch(() => {})
-      )
+/** Fill in symlinkTarget across the whole tree; an unreadable link is left without one. */
+function resolveSymlinkTargets(nodes: FileNode[], cwd: string): Effect.Effect<void> {
+  const links: FileNode[] = []
+  const collect = (list: FileNode[]) => {
+    for (const node of list) {
+      if (node.isSymlink) links.push(node)
+      if (node.children) collect(node.children)
     }
-    if (node.children) resolveSymlinkTargets(node.children, cwd)
   }
-  await Promise.all(promises)
+  collect(nodes)
+  return Effect.forEach(
+    links,
+    (node) =>
+      Effect.tryPromise(() => readlink(join(cwd, node.path))).pipe(
+        Effect.tap((target) => Effect.sync(() => { node.symlinkTarget = target })),
+        Effect.ignore
+      ),
+    { concurrency: "unbounded", discard: true }
+  )
 }
 
-async function buildPartialTree(
+function buildPartialTree(
   cwd: string,
   expandedPaths: string[]
-): Promise<FileNode[]> {
+): Effect.Effect<FileNode[], FSError> {
   const expandedSet = new Set(expandedPaths)
   const validExpanded = expandedPaths.filter((p) => {
     const parts = p.split("/")
@@ -101,12 +102,18 @@ async function buildPartialTree(
   })
 
   const dirsToLoad = ["", ...validExpanded]
-  const results = await Promise.all(
-    dirsToLoad.map((p) =>
-      readdirWithMeta(cwd, p).then((nodes) => ({ path: p, nodes }))
-    )
-  )
+  return Effect.forEach(
+    dirsToLoad,
+    (p) =>
+      Effect.tryPromise({
+        try: () => readdirWithMeta(cwd, p),
+        catch: (cause) => new FSError({ path: join(cwd, p), op: "read", cause }),
+      }).pipe(Effect.map((nodes) => ({ path: p, nodes }))),
+    { concurrency: "unbounded" }
+  ).pipe(Effect.map((results) => assembleTree(results)))
+}
 
+function assembleTree(results: Array<{ path: string; nodes: FileNode[] }>): FileNode[] {
   const childrenMap = new Map<string, FileNode[]>()
   for (const { path, nodes } of results) {
     childrenMap.set(path, nodes)
@@ -147,14 +154,8 @@ export const GET = handler((req) =>
         new FSError({ path: expandedPathsFile, op: "read", cause }),
     })
 
-    const files = yield* Effect.tryPromise({
-      try: async () => {
-        const tree = await buildPartialTree(cwd, expandedPaths)
-        await resolveSymlinkTargets(tree, cwd)
-        return tree
-      },
-      catch: (cause) => new FSError({ path: cwd, op: "read", cause }),
-    })
+    const files = yield* buildPartialTree(cwd, expandedPaths)
+    yield* resolveSymlinkTargets(files, cwd)
 
     return ok({ files, expandedPaths, cwd })
   })

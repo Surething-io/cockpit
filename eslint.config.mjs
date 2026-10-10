@@ -78,9 +78,8 @@ const eslintConfig = defineConfig([
     },
   },
   // ============================================================
-  // v2 Effect paradigm constraints (enabled in P8 at warning level — they
-  // don't block merges, but drive continuous cleanup through P8+)
-  // See EFFECT.md §10 for details
+  // v2 Effect paradigm constraints — errors, so `npm run lint` (CI) fails on
+  // them. See EFFECT.md §10; pinned by constraints/effect-lint-rules-enforced.
   // ============================================================
   {
     files: [
@@ -92,7 +91,7 @@ const eslintConfig = defineConfig([
     ],
     rules: {
       "no-restricted-syntax": [
-        "warn",
+        "error",
         {
           selector:
             "CallExpression[callee.object.name='Promise'][callee.property.name='all']",
@@ -121,7 +120,7 @@ const eslintConfig = defineConfig([
     files: ["packages/feature/*/src/client/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-syntax": [
-        "warn",
+        "error",
         {
           selector:
             "CallExpression[callee.object.object.name='window'][callee.object.property.name='parent'][callee.property.name='postMessage']",
@@ -148,7 +147,7 @@ const eslintConfig = defineConfig([
     files: ["packages/feature/*/src/client/**/*.tsx"],
     rules: {
       "no-restricted-syntax": [
-        "warn",
+        "error",
         {
           selector: "CallExpression[callee.name='fetch']",
           message:

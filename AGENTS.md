@@ -191,3 +191,12 @@ The `v*` tag push triggers `.github/workflows/publish.yml` which:
 - **MCP tools**: Do not use MCP tools unless the user explicitly requests it (e.g., "use xxx")
 - **Git commits**: Do not auto-commit code; only commit when the user explicitly says "commit"
 - **English everywhere in code**: Write commit messages (subject and body), code comments, and CLI/console log output entirely in English; Chinese may appear only in quoted literals (e.g. UI copy, example prompts). Conversation replies stay in Chinese
+
+<!-- cdd:begin -->
+## cdd (Constraint-Driven Development)
+
+- Constraints live in `constraints/`. Changing one is a constraint change and needs human review; never weaken a constraint to make a check pass.
+- cdd config lives in `.cdd/` (hidden directory): `config.json` and `baseline.json` decide how changes are judged. Editing them is a constraint change too — do not edit them to get a pass.
+- Before committing, run `cdd change` to classify the change as A/B/C/D. A type-D change (incident fix) must add a new constraint that fails before the fix.
+- Where checks run: local self-check (default) · commit hook · CI — same command in each. Which ones this repo actually wires up is defined by its own hook / CI config.
+<!-- cdd:end -->

@@ -1,0 +1,26 @@
+{
+  "default": "R1",
+  "paths": {
+    "server.mjs": "R3",
+    "src/lib/auth.ts": "R3",
+    "src/lib/wsServer.ts": "R3",
+    "src/app/api/settings/route.ts": "R3",
+    "packages/feature/console/src/server/api/bash.ts": "R3",
+    "packages/feature/agent/src/server/api/engineCredentials.ts": "R3",
+    "packages/feature/agent/src/server/push/": "R3",
+    "packages/feature/explorer/src/server/api/apps.ts": "R3",
+
+    "packages/feature/agent/src/server/scheduledTasks.ts": "R2",
+    "packages/feature/agent/src/server/sessionRunHub.ts": "R2",
+    "packages/feature/agent/src/server/engines/": "R2",
+    "packages/feature/agent/src/effect/sessionCleanupLive.ts": "R2",
+    "packages/feature/console/src/server/terminal/": "R2",
+    "packages/feature/explorer/src/server/api/git/": "R2",
+    "packages/feature/explorer/src/server/files/": "R2",
+    "packages/shared/utils/src/paths.ts": "R2",
+
+    "packages/shared/ui/": "R0",
+    "packages/shared/i18n/": "R0",
+    "website/": "R0"
+  }
+}

@@ -60,15 +60,16 @@ try {
 // ─────────────────────────────────────────────────────────
 
 /**
- * Same-origin check for the /ws/bash upgrade: the WS `Origin` header must match
- * the request `Host`. A cross-site page (drive-by to localhost) sends a
- * different host and is rejected; so is a missing/unparseable Origin.
+ * Extra same-origin check for the /ws/bash upgrade: the WS `Origin` header must
+ * match the request `Host`, and a missing/unparseable Origin is rejected.
  *
- * This is the ONLY gate on the RCE channel. No preview surface renders in an
- * opaque origin today — HTML previews and console browser bubbles are all
- * same-origin with no sandbox attribute — so `Origin: null` is not a case this
- * codebase currently produces. It is still rejected, but do not read that as a
- * second tier of protection: it isn't one.
+ * This is NOT the boundary. Every upgrade has already passed `checkOriginGate`
+ * in src/lib/auth.ts (run first in server.mjs), which rejects a mismatched
+ * Origin and an unexpected Host but lets a missing Origin through. The only
+ * thing this adds is refusing non-browser clients that send no Origin at all.
+ * No preview surface renders in an opaque origin today — HTML previews and
+ * console browser bubbles are all same-origin with no sandbox attribute — so
+ * `Origin: null` is not a case this codebase currently produces.
  */
 function isSameOriginWs(req: IncomingMessage): boolean {
   const origin = req.headers.origin;
@@ -104,14 +105,13 @@ const wss: WebSocketServer = g_ws.__cockpitWss ?? (() => {
     } else if (pathname === '/ws/terminal') {
       runTerminalHandler(ws, query.projectCwd as string);
     } else if (pathname === '/ws/bash') {
-      // RCE channel — only same-origin embedders may connect. HTML previews and
-      // console bubbles carry Origin === host and pass; an external website
-      // (drive-by to localhost) mismatches and is rejected. There is no
-      // "untrusted preview" tier: every local .html rendered by this app is
-      // same-origin, so it passes here whether or not we injected the SDK into
-      // it — a page can hand-roll its own WebSocket. This check is the whole
-      // boundary, which is why the decision of WHAT to preview is the security
-      // decision.
+      // RCE channel — only same-origin embedders may connect. A cross-site page
+      // was already rejected by checkOriginGate (auth.ts); this adds "Origin
+      // required". HTML previews and console bubbles carry Origin === host and
+      // pass. There is no "untrusted preview" tier: every local .html rendered
+      // by this app is same-origin, so it passes whether or not we injected the
+      // SDK into it — a page can hand-roll its own WebSocket. That is why the
+      // decision of WHAT to preview is the security decision.
       if (!isSameOriginWs(req)) {
         try { ws.close(4403, 'forbidden origin'); } catch { /* ignore */ }
       } else {

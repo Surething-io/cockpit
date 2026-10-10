@@ -10,6 +10,7 @@
     ".": "./src/index.ts",
     "./htmlBashSdk": "./src/htmlBashSdk.ts",
     "./homePath": "./src/homePath.ts",
+    "./pathWithin": "./src/pathWithin.ts",
     "./outputProgress": "./src/outputProgress.ts",
     "./encodePath": "./src/encodePath.ts",
     "./sessionLink": "./src/sessionLink.ts"

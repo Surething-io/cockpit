@@ -6,6 +6,7 @@ import { Effect } from 'effect';
 import { useEffectQuery } from '@cockpit/effect-react';
 import { Portal, blurActiveElement, ChangeClassChip, MenuContainerProvider } from '@cockpit/shared-ui';
 import { classifyPath, classifyFiles, type ChangeClass } from '@cockpit/shared-utils';
+import { relativeToRoot } from '@cockpit/shared-utils/pathWithin';
 import { COLUMN_HEADER_ROW } from './columnHeaderRow';
 import { X, PanelLeft, Wrench, Maximize, Minimize, Layers } from 'lucide-react';
 // Tech debt: DiffView / GitFileTree are generic renderers used by both
@@ -221,11 +222,7 @@ function callSubjectPreview(call: CallEntry, maxChars: number, maxLines: number)
 }
 
 function toRelativePath(filePath: string, cwd?: string): string {
-  if (cwd && filePath.startsWith(cwd)) {
-    const rel = filePath.slice(cwd.length);
-    return rel.startsWith('/') ? rel.slice(1) : rel;
-  }
-  return filePath;
+  return (cwd && relativeToRoot(cwd, filePath)) || filePath;
 }
 
 /** Legacy fallback: one pseudo-call per Edit/Write, diff rebuilt from params. */

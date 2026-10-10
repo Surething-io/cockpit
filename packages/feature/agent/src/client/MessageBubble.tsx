@@ -22,6 +22,7 @@ import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { MdPreviewModal } from './MdPreviewModal';
 import { readFileForPreview } from './effect/agentClient';
 import { useTranslation } from 'react-i18next';
+import { relativeToRoot } from '@cockpit/shared-utils/pathWithin';
 
 // Migrated from src/components/project/MessageBubble.tsx.
 
@@ -326,10 +327,11 @@ function parseLocalFileLink(href: string, cwd?: string): LocalFileLink | null {
 
   if (pathPart.startsWith('/')) {
     const abs = normalizeAbsPath(pathPart);
-    if (root && abs === root) return null; // the project dir itself, not a file
-    if (root && abs.startsWith(root + '/')) {
+    const inside = root ? relativeToRoot(root, abs) : null;
+    if (inside === '') return null; // the project dir itself, not a file
+    if (inside) {
       // Plainly inside the project — the Explorer tree can show it.
-      return { rel: resolveRelativePath('', abs.slice(root.length + 1)), abs: null, ...line };
+      return { rel: resolveRelativePath('', inside), abs: null, ...line };
     }
     // Outside cwd (or no cwd at all): ambiguous, keep BOTH readings.
     return { rel: resolveRelativePath('', abs), abs, ...line };

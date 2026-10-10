@@ -7,6 +7,7 @@ import { stat, cp } from "fs/promises"
 import { join, resolve, basename, extname } from "path"
 import { Effect } from "effect"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { isPathWithin } from "@cockpit/shared-utils/pathWithin"
 import {
   FSError,
   PermissionError,
@@ -70,7 +71,7 @@ export const POST = handler((req) =>
     const basePath = resolve(cwd)
     const targetAbsDir = resolve(join(basePath, targetDir))
 
-    if (!targetAbsDir.startsWith(basePath)) {
+    if (!isPathWithin(basePath, targetAbsDir, true)) {
       return yield* Effect.fail(
         new PermissionError({ action: "paste", resource: targetDir })
       )

@@ -13,6 +13,7 @@ import { useLiveTask } from './taskStore';
 // reverse import. Clean up: extract a simpler preview primitive into shared,
 // or migrate the relevant parts of PreviewModal into feature-agent later.
 import { PreviewModal } from '@cockpit/feature-explorer';
+import { relativeToRoot } from '@cockpit/shared-utils/pathWithin';
 
 // Migrated from src/components/project/ToolCallModal.tsx.
 
@@ -179,10 +180,8 @@ export function ToolCallModal({ toolCall, cwd, sessionId, disableOverlays = fals
 
   // Get path relative to cwd
   const getRelativePath = (fullPath: string) => {
-    if (cwd && fullPath.startsWith(cwd)) {
-      const relativePath = fullPath.slice(cwd.length);
-      return relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
-    }
+    const relativePath = cwd ? relativeToRoot(cwd, fullPath) : null;
+    if (relativePath) return relativePath;
     const parts = fullPath.split('/');
     if (parts.length > 2) {
       return '.../' + parts.slice(-2).join('/');

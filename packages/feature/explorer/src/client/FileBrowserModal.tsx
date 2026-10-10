@@ -74,6 +74,7 @@ import { ReferencesPanel } from './ReferencesPanel';
 import { SearchResultsPanel } from './SearchResultsPanel';
 import type { Location } from '@cockpit/feature-explorer/server/lsp/types';
 import { useSwipeContext } from '@cockpit/shared-ui';
+import { relativeToRoot } from '@cockpit/shared-utils/pathWithin';
 
 /**
  * Drag range for the left file-tree pane. The minimum is the width the pane
@@ -460,10 +461,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
 
     const def = definitions[0];
     // tsserver returns absolute paths; convert to relative (relative to cwd)
-    const cwdPrefix = cwd.endsWith('/') ? cwd : cwd + '/';
-    const relativePath = def.file.startsWith(cwdPrefix)
-      ? def.file.slice(cwdPrefix.length)
-      : def.file;
+    const relativePath = relativeToRoot(cwd, def.file) || def.file;
 
     // Push current position to navigation history before jumping
     navHistory.push({
@@ -501,10 +499,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
   }, [fileTree.selectedPath, isLSPSupported, runLSPTokenHover]);
 
   const handleLSPReferenceSelect = useCallback((ref: Location) => {
-    const cwdPrefix = cwd.endsWith('/') ? cwd : cwd + '/';
-    const relativePath = ref.file.startsWith(cwdPrefix)
-      ? ref.file.slice(cwdPrefix.length)
-      : ref.file;
+    const relativePath = relativeToRoot(cwd, ref.file) || ref.file;
 
     // Push current position to navigation history before jumping
     if (fileTree.selectedPath) {

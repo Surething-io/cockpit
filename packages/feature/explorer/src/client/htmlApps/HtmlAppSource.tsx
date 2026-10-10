@@ -5,6 +5,7 @@ import { FileCode2, Image as ImageIcon } from 'lucide-react';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { CodeViewer } from '../CodeViewer';
 import { fetchFileText, fetchFileStat } from '../effect/filesClient';
+import { relativeToRoot } from '@cockpit/shared-utils/pathWithin';
 
 /**
  * Source view for an HTML small-app: a sidebar listing the entry `.html` plus the
@@ -70,7 +71,7 @@ export function HtmlAppSource({ entryPath, entryContent }: {
   // permission always passes. The chat/session cwd may be a different project
   // (e.g. app files under llm-eval while the session runs in cockpit) → denied.
   const appDir = useMemo(() => dirOf(entryPath), [entryPath]);
-  const relOf = (abs: string) => (abs.startsWith(appDir + '/') ? abs.slice(appDir.length + 1) : baseOf(abs));
+  const relOf = (abs: string) => relativeToRoot(appDir, abs) || baseOf(abs);
 
   // Content cache for text files (entry seeded synchronously).
   const contentRef = useRef<Map<string, string>>(new Map());

@@ -8,6 +8,7 @@ import { copyFile, stat } from "fs/promises"
 import { join, resolve, dirname, basename, extname } from "path"
 import { Effect } from "effect"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
+import { isPathWithin } from "@cockpit/shared-utils/pathWithin"
 import {
   FSError,
   PermissionError,
@@ -32,7 +33,7 @@ export const POST = handler((req) =>
     const basePath = resolve(cwd)
     const fullPath = resolve(join(basePath, filePath))
 
-    if (!fullPath.startsWith(basePath + "/")) {
+    if (!isPathWithin(basePath, fullPath)) {
       return yield* Effect.fail(
         new PermissionError({
           action: "copy",

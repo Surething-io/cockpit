@@ -22,6 +22,7 @@ import { useAddBot } from './registry/useAddBot';
 import type { CodeComment } from '@cockpit/feature-comments';
 import { TocSidebar } from '@cockpit/shared-ui';
 import { useSelectionToolbar } from './useSelectionToolbar';
+import { relativeToRoot } from '@cockpit/shared-utils/pathWithin';
 
 // ============================================
 // InteractiveMarkdownPreview
@@ -96,7 +97,7 @@ export function InteractiveMarkdownPreview({
 }: InteractiveMarkdownPreviewProps) {
   // Derive sourceFile (relative path)
   const sourceFile = sourceFileProp
-    || (cwd && filePath.startsWith(cwd) ? filePath.slice(cwd.endsWith('/') ? cwd.length : cwd.length + 1) : filePath);
+    || (cwd && relativeToRoot(cwd, filePath)) || filePath;
   const { t } = useTranslation();
   // === Hooks ===
   const menuContainer = useMenuContainer();

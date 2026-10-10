@@ -44,11 +44,10 @@ function safeEqual(a: string, b: string): boolean {
 
 export function isLoopbackAddr(addr: string | undefined): boolean {
   if (!addr) return false;
-  return (
-    addr === '::1' ||
-    addr === '::ffff:127.0.0.1' ||
-    addr.startsWith('127.')
-  );
+  // The whole 127.0.0.0/8 block, in both the IPv4 form and the IPv4-mapped IPv6 form a
+  // dual-stack (`::`) listener reports. Matching only ::ffff:127.0.0.1 let a page
+  // DNS-rebound to 127.0.0.2 skip the Host check (constraints/origin-gate-properties).
+  return addr === '::1' || addr.startsWith('127.') || addr.toLowerCase().startsWith('::ffff:127.');
 }
 
 function parseCookies(header: string | undefined): Record<string, string> {

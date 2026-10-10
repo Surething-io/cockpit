@@ -1,6 +1,7 @@
 import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
-import { chmod, mkdir, readFile, writeFile } from 'fs/promises';
+import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'fs/promises';
+import { randomUUID } from 'crypto';
 import { closeSync, existsSync, mkdirSync, openSync, readSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, readdirSync, readFileSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { encodePath } from './encodePath';
@@ -711,20 +712,37 @@ export async function readJsonFileForUpdate<T>(filePath: string, defaultValue: T
 }
 
 /**
- * Write a JSON file directly.
- * Single-process Node app + withFileLock serializes writers,
- * so no need for atomic rename (which breaks fs.watch on macOS).
+ * Write a JSON file atomically: write a temp file beside it, then rename it over the
+ * target. Any reader — including ones that skip withFileLock, or another process — sees
+ * the old document or the new one, never a truncated one, and a crash mid-write leaves
+ * the old file intact. (withFileLock still serializes read-modify-write cycles; this is
+ * about torn reads and crashes. constraints/atomic-state-writes.test.ts pins both.)
+ *
+ * The rename gives the file a new inode. On macOS a fs.watch on the FILE is bound to the
+ * old inode and goes quiet — watch the directory and filter by name instead (see
+ * watchGlobalStateFile).
+ *
+ * Credentials (SECRET_FILES) are created owner-only; the temp file carries the mode
+ * through the rename.
  */
 export async function writeJsonFile<T>(filePath: string, data: T): Promise<void> {
   await ensureParentDir(filePath);
-  if (!SECRET_FILE_SET.has(filePath)) {
-    await writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
-    return;
+  const body = JSON.stringify(data, null, 2);
+  const secret = SECRET_FILE_SET.has(filePath);
+  const tmp = `${filePath}.${process.pid}.${randomUUID()}.tmp`; // same dir: rename stays atomic
+  try {
+    await writeFile(tmp, body, secret ? { encoding: 'utf-8', mode: OWNER_ONLY } : 'utf-8');
+    if (secret) await chmod(tmp, OWNER_ONLY); // `mode` is filtered by the umask
+    await rename(tmp, filePath);
+  } catch (err) {
+    await unlink(tmp).catch(() => {});
+    // Windows refuses to rename over a file another process holds open; fall back to an
+    // in-place write rather than failing the save.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY') throw err;
+    await writeFile(filePath, body, secret ? { encoding: 'utf-8', mode: OWNER_ONLY } : 'utf-8');
+    if (secret) await chmod(filePath, OWNER_ONLY);
   }
-  // Credentials: owner-only. `mode` applies only when the file is created, so a file an
-  // older version wrote as 0644 is tightened explicitly.
-  await writeFile(filePath, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: OWNER_ONLY });
-  await chmod(filePath, OWNER_ONLY);
 }
 
 // ============================================

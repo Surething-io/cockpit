@@ -7,7 +7,7 @@
  * - Failures flow as Tagged Errors (WSError | FSError); no bare try/catch.
  */
 import { watch, existsSync, mkdirSync } from "fs"
-import { dirname } from "path"
+import { basename, dirname } from "path"
 import { Effect, Queue, Schedule, Scope, Stream } from "effect"
 import type { WebSocket } from "ws"
 import { FSError, WSError } from "@cockpit/effect-core"
@@ -36,42 +36,46 @@ const sendGlobalState = (
   })
 
 /**
- * Start an fs.watch and enqueue a tick on every change event.
+ * Call `onChange` whenever state.json changes; returns a stop function.
+ *
+ * Watches the DIRECTORY and filters by name, never the file itself: writeJsonFile
+ * replaces the file atomically (temp + rename), which gives it a new inode, and on macOS
+ * a per-file watch stays bound to the old one and goes quiet after the first write.
+ * Exported for constraints/atomic-state-writes.test.ts.
+ */
+export function watchGlobalStateFile(onChange: () => void): () => void {
+  const dir = dirname(GLOBAL_STATE_FILE)
+  const name = basename(GLOBAL_STATE_FILE)
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  let watcher: ReturnType<typeof watch> | null = null
+  try {
+    watcher = watch(dir, (_, filename) => {
+      if (filename === name) onChange()
+    })
+    watcher.on("error", () => {
+      /* swallow — Effect error channels handle this through other paths */
+    })
+  } catch {
+    /* ignore */
+  }
+  return () => {
+    try {
+      watcher?.close()
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * Enqueue a tick on every state.json change.
  */
 const watchStateFile = (
   trigger: Queue.Queue<void>
 ): Effect.Effect<void, never, Scope.Scope> =>
   Effect.acquireRelease(
-    Effect.sync(() => {
-      const dir = dirname(GLOBAL_STATE_FILE)
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-
-      const offer = () => Effect.runFork(Queue.offer(trigger, undefined))
-      let watcher: ReturnType<typeof watch> | null = null
-      try {
-        watcher = watch(GLOBAL_STATE_FILE, () => offer())
-      } catch {
-        try {
-          watcher = watch(dir, (_, filename) => {
-            if (filename === "state.json") offer()
-          })
-        } catch {
-          /* ignore */
-        }
-      }
-      watcher?.on("error", () => {
-        /* swallow — Effect error channels handle this through other paths */
-      })
-      return watcher
-    }),
-    (watcher) =>
-      Effect.sync(() => {
-        try {
-          watcher?.close()
-        } catch {
-          /* ignore */
-        }
-      })
+    Effect.sync(() => watchGlobalStateFile(() => Effect.runFork(Queue.offer(trigger, undefined)))),
+    (stop) => Effect.sync(stop)
   ).pipe(Effect.asVoid)
 
 /**

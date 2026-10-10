@@ -14,7 +14,7 @@ import {
 } from "@cockpit/effect-core"
 import type { WSConnection } from "@cockpit/effect-services"
 import { fromWebSocket } from "@cockpit/effect-runtime/server"
-import { fileWatcher, reviewWatcher, type FileEvent } from "../fileWatcher"
+import { fileWatcher, type FileEvent } from "../fileWatcher"
 import {
   subscribeBuildProgress,
   type BuildProgressEvent,
@@ -42,24 +42,6 @@ const fileEvents = (
       return Stream.fromQueue(queue)
     })
   )
-
-/**
- * Convert reviewWatcher into a Stream (no payload, notification only).
- */
-const reviewEvents: Stream.Stream<void, never, Scope.Scope> = Stream.unwrapScoped(
-  Effect.gen(function* () {
-    const queue = yield* Queue.unbounded<void>()
-    yield* Effect.acquireRelease(
-      Effect.sync(() =>
-        reviewWatcher.subscribe(() => {
-          Effect.runFork(Queue.offer(queue, undefined))
-        })
-      ),
-      (unsubscribe) => Effect.sync(unsubscribe)
-    )
-    return Stream.fromQueue(queue)
-  })
-)
 
 /**
  * Convert code-index build progress into a Stream.
@@ -108,16 +90,6 @@ export const handleFileWatch = (
     // Heartbeat
     yield* Effect.forkScoped(
       Effect.repeat(conn.send({ type: "ping" }), HEARTBEAT)
-    )
-
-    // Review notification stream
-    yield* Effect.forkScoped(
-      reviewEvents.pipe(
-        Stream.mapEffect(() =>
-          conn.send({ type: "watch", data: [{ type: "review" }] })
-        ),
-        Stream.runDrain
-      )
     )
 
     // Code-index build progress stream

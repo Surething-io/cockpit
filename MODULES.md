@@ -35,7 +35,6 @@ bootstrap. **All business code lives in `packages/`.**
 | `packages/feature/comments/`      | `@cockpit/feature-comments`   | Code annotation API + hooks + list modal |
 | `packages/feature/console/`       | `@cockpit/feature-console`    | Terminal + browser bubbles + DB bubbles |
 | `packages/feature/explorer/`      | `@cockpit/feature-explorer`   | File browser + code rendering (DiffView, CodeViewer, MarkdownPreview) + git + LSP |
-| `packages/feature/review/`        | `@cockpit/feature-review`     | Review pages + identity (ARP MAC) + comment threads |
 | `packages/feature/skills/`        | `@cockpit/feature-skills`     | SKILL.md parser + slash autocomplete + cross-frame bus |
 | `packages/feature/workspace/`     | `@cockpit/feature-workspace`  | Integrator feature — consumes all other features; mounted by Next.js `src/app/page.tsx`. Contains Workspace + TabManager + Providers + cross-feature modals. There is no `apps/` directory; the integrator lives as a feature package. |
 
@@ -76,12 +75,11 @@ relationship.
 ## Current feature dependency graph (acyclic)
 
 ```
-feature-workspace  ──→  agent, console, explorer, review, skills
+feature-workspace  ──→  agent, console, explorer, skills
 feature-agent      ──→  feature-comments, feature-explorer
-feature-explorer   ──→  feature-comments, feature-review
+feature-explorer   ──→  feature-comments
 feature-skills     ──→  feature-explorer
 feature-comments   ──→  (none)
-feature-review     ──→  (none)
 feature-console    ──→  (none)
 ```
 
@@ -107,7 +105,7 @@ owner, because `feature-comments` and `feature-skills` both already depend on
 
 The admission rule is **two or more consumers**. A client used by exactly one
 feature belongs in that feature (`agentClient`, `gitClient`, `lspClient`,
-`htmlAppsClient`, `reviewClient`, `consoleClient`, … are all correctly private);
+`htmlAppsClient`, `consoleClient`, … are all correctly private);
 promoting those would move private code into shared space and make each feature
 harder to read on its own.
 
@@ -184,10 +182,6 @@ Special handler-name conventions for Next.js dynamic segments (because
 
 | Next.js path                                | Package handler file                                    |
 |---------------------------------------------|---------------------------------------------------------|
-| `api/review/route.ts`                       | `feature-review/server/api/index.ts`                    |
-| `api/review/[id]/route.ts`                  | `feature-review/server/api/by-id.ts`                    |
-| `api/review/[id]/comments/route.ts`         | `feature-review/server/api/by-id-comments.ts`           |
-| `api/review/[id]/replies/route.ts`          | `feature-review/server/api/by-id-replies.ts`            |
 | `api/sessions/projects/[encodedPath]/route.ts` | `feature-agent/server/api/sessions/project-encoded.ts` |
 | `api/session/[sessionId]/fork/route.ts`     | `feature-agent/server/api/session/fork.ts`              |
 | `api/session/[sessionId]/history/route.ts`  | `feature-agent/server/api/session/history.ts`           |
@@ -254,14 +248,6 @@ code. They typically import the mounted component from a feature package:
 // src/app/page.tsx
 import { Workspace } from '@cockpit/feature-workspace';
 export default function Home() { return <Workspace />; }
-```
-
-```tsx
-// src/app/review/[id]/page.tsx
-import { ReviewPage } from '@cockpit/feature-review';
-export default function ReviewRoute({ params }) {
-  return <ReviewPage reviewId={params.id} />;
-}
 ```
 
 There is no centralized "app/" intermediary. Each page mounts its feature

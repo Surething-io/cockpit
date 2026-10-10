@@ -1,10 +1,9 @@
-import { watch, readFileSync, statSync, existsSync, mkdirSync, writeFileSync, type FSWatcher } from 'fs';
+import { watch, readFileSync, statSync, existsSync, type FSWatcher } from 'fs';
 import { join, resolve } from 'path';
-import { REVIEW_SIGNAL_FILE, REVIEW_DIR } from '@cockpit/shared-utils';
 
 export interface FileEvent {
-  /** 'file' = regular file change, 'git' = .git directory change, 'review' = review file change */
-  type: 'file' | 'git' | 'review';
+  /** 'file' = regular file change, 'git' = .git directory change */
+  type: 'file' | 'git';
 }
 
 export type FileChangeCallback = (events: FileEvent[]) => void;
@@ -267,58 +266,6 @@ class FileWatcherManager {
   }
 }
 
-// ============================================
-// Review directory watcher (global singleton, independent of cwd)
-// ============================================
-
-export type ReviewChangeCallback = () => void;
-
-class ReviewWatcher {
-  private listeners = new Set<ReviewChangeCallback>();
-  private watcher: FSWatcher | null = null;
-  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-  subscribe(callback: ReviewChangeCallback): () => void {
-    this.listeners.add(callback);
-    if (!this.watcher) this.start();
-    return () => {
-      this.listeners.delete(callback);
-      if (this.listeners.size === 0) this.stop();
-    };
-  }
-
-  private start() {
-    try {
-      // Ensure the signal file exists (fs.watch on a single file requires the file to already exist)
-      if (!existsSync(REVIEW_DIR)) mkdirSync(REVIEW_DIR, { recursive: true });
-      if (!existsSync(REVIEW_SIGNAL_FILE)) writeFileSync(REVIEW_SIGNAL_FILE, '0');
-      // Watch the signal file for changes (written by notifyReviewChange after the API saves a comment)
-      // Single-file fs.watch reliably detects content changes on both macOS (kqueue) and Linux (inotify)
-      this.watcher = watch(REVIEW_SIGNAL_FILE, () => {
-        if (this.debounceTimer) clearTimeout(this.debounceTimer);
-        this.debounceTimer = setTimeout(() => this.notify(), 300);
-      });
-      this.watcher.on('error', () => {
-        this.stop();
-        setTimeout(() => { if (this.listeners.size > 0) this.start(); }, 2000);
-      });
-    } catch {
-      // Signal file missing or other error; ignore
-    }
-  }
-
-  private stop() {
-    if (this.watcher) { try { this.watcher.close(); } catch {} this.watcher = null; }
-    if (this.debounceTimer) { clearTimeout(this.debounceTimer); this.debounceTimer = null; }
-  }
-
-  private notify() {
-    for (const cb of this.listeners) {
-      try { cb(); } catch (err) { console.error('ReviewWatcher callback error:', err); }
-    }
-  }
-}
-
 // Global singletons — pinned to globalThis to survive both Next.js dev HMR
 // reloads and the Next.js custom-server dual module load (server.mjs's Node
 // ESM import vs the webpack bundler import inside `.next/server`). Without
@@ -327,7 +274,5 @@ class ReviewWatcher {
 // change twice. Pattern matches PgPoolManager / RedisManager / etc.
 const g_watch = globalThis as unknown as {
   __cockpitFileWatcher?: FileWatcherManager;
-  __cockpitReviewWatcher?: ReviewWatcher;
 };
 export const fileWatcher = g_watch.__cockpitFileWatcher ?? (g_watch.__cockpitFileWatcher = new FileWatcherManager());
-export const reviewWatcher = g_watch.__cockpitReviewWatcher ?? (g_watch.__cockpitReviewWatcher = new ReviewWatcher());

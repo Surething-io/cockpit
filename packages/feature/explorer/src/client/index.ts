@@ -1,7 +1,7 @@
 // @cockpit/feature-explorer (client) — File explorer panel.
 // Owns code-rendering UI (CodeViewer, DiffView, InteractiveMarkdownPreview,
 // PreviewModal): rendering source code is explorer's domain responsibility,
-// reused by feature-agent (chat) / feature-review / feature-skills.
+// reused by feature-agent (chat) / feature-skills.
 
 // ============================================
 // Top-level UI

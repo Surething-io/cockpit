@@ -38,7 +38,6 @@ import { useAddBot } from './registry/useAddBot';
 import { buildTreeFromPaths, collectAllDirPaths, mergeFileTree } from './fileBrowser/utils';
 import { InteractiveMarkdownPreview } from '@cockpit/feature-explorer';
 import { HtmlAppFrame } from './HtmlAppFrame';
-import { ShareReviewToggle } from '@cockpit/feature-review';
 import { type FileEditorHandle } from './FileEditorModal';
 import { QuickFileOpen } from './QuickFileOpen';
 import { useWebSocket } from '@cockpit/shared-ui';
@@ -2042,7 +2041,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                         </>
                       ) : (
                         <>
-                          {/* View mode order: share · readable/preview · blame · copy · codemap · edit */}
+                          {/* View mode order: readable/preview · blame · copy · codemap · edit */}
                           {/* Diff — only for files git reports as modified/renamed,
                               and only on the tree tab. Same toggle the diff-mode
                               header exits with, so the two directions are one
@@ -2055,18 +2054,6 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                             >
                               {t('common.diff')}
                             </button>
-                          )}
-                          {/* Share first — markdown only. Style left unchanged (this component
-                              is shared with the agent-chat / diff-view preview headers). */}
-                          {fileTree.fileContent?.type === 'text' && isMarkdownFile(fileTree.selectedPath) && (
-                            <ShareReviewToggle
-                              content={fileTree.fileContent.content || ''}
-                              sourceFile={
-                                fileTree.selectedPath && cwd && fileTree.selectedPath.startsWith(cwd)
-                                  ? fileTree.selectedPath.slice(cwd.endsWith('/') ? cwd.length : cwd.length + 1)
-                                  : (fileTree.selectedPath || '')
-                              }
-                            />
                           )}
                           {/* Collapse / expand every foldable long-text value in the JSON
                               preview at once. Only foldable *strings* fold (see
@@ -2328,7 +2315,7 @@ function FileBrowserModalImpl({ onClose, cwd, initialTab = 'tree', tabSwitchTrig
                         ) : (fileTree.previewMarkdown && isMarkdownFile(fileTree.selectedPath) && !fileTree.showBlame) ? (
                           // In-place markdown preview replaces CodeViewer when the global
                           // toggle is on. `embedded` drops the inner header (host toolbar
-                          // owns filePath + ShareReviewToggle + the toggle).
+                          // owns filePath + the toggle).
                           <div className="h-full flex flex-col">
                             <InteractiveMarkdownPreview
                               content={fileTree.fileContent.content}

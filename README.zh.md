@@ -49,7 +49,7 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 | 每个子代理都从空白开始 | **Bots**：用 `@name` 叫进任务的持久化、文件原生子代理；每次都在可检查的独立会话中运行 |
 | Agent 够不到浏览器 / 数据库 | **智能气泡**：Chrome、PostgreSQL、MySQL、Redis —— Agent 可驱动 |
 | 读陌生仓库就是 90 分钟"找地鼠" | **代码地图（Code Map）** chip 视图 —— caller / callee pin 一点即跳 |
-| AI 输出审阅低效 | **局域网共享评审页**、行级评论、任意评论可回喂给 AI |
+| AI 输出审阅低效 | 任意文件行级评论，任意评论可回喂给 AI |
 | 每天写一遍"做 X 但不要动代码" | **斜杠模式** `/qa /fx /ex /go /cg /cc /cr` + 通过 Skills 侧边栏自定义 `SKILL.md` |
 | 没有自动化触发器 | 一次性 / 间隔 / **Cron** **定时任务** |
 | 担心"云端中转" | **完全本地**。无遥测，DeepSeek / GLM / Kimi 的 API Key 仅存在本机 `~/.cockpit/<引擎>/credentials.json` |
@@ -66,7 +66,6 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 | 引擎 | ✅ **Claude + Codex / DeepSeek / GLM / Kimi / Ollama**（BYOK） | 仅 Claude | 仅 Claude |
 | 多项目并行会话 | ✅ | ✅ | ✅ |
 | Agent 可驱动浏览器 & 数据库（Chrome / Postgres / MySQL / Redis） | ✅ 智能气泡 | ❌ 仅只读预览面板 | ❌ |
-| 局域网共享评审页 | ✅ | ❌ | ❌ |
 | 全离线 / 内网隔离 | ✅ 走 Ollama | ❌ | ❌ |
 | 手机 / 平板可用 | ✅ 局域网任意浏览器 —— 代码跑在**你自己的**机器上 | ✅ 走 Claude Code on the web（云端沙箱） | ❌ 仅桌面 |
 | 原生桌面应用 | ❌ 本地 Web 应用（需 Node ≥ 20） | ✅ | ✅ Tauri |
@@ -124,12 +123,10 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 - 🔴 **Redis 气泡** —— 浏览键值、查看数据、执行命令
 - 拖拽排序、网格 / 放大布局，每个标签独立的环境变量与 Shell 别名
 
-### 代码评审 —— 局域网共享，无需 SaaS
+### 代码评论
 
-- 局域网分享评审页面 —— **队友零安装**即可参与
-- 行级评论与回复线程
+- 任意文件行级评论
 - **任意评论可发给 AI** 作为上下文，自动修复
-- 未读评论红点提醒，跨项目可见
 
 ### 斜杠模式 —— 切换 Agent 姿态
 
@@ -168,7 +165,6 @@ Cockpit 就是那个仪表盘。它**不替代** Claude Code，而是站在官�
 - **独立开发者多仓并行：** "API 在重构、Web 在写测试、Pipeline 在排 bug —— 同时跑、同时可见。"
 - **一个真正记得住的专家：** 今天让 `@product` 记下路线图决策，下个月再叫它时读的还是同一份显式、可审阅上下文，不污染主会话。
 - **新仓库的第一天：** 用 Code Map 打开它，沿着 caller / callee pin 一路点过去 —— 鉴权流程 5 次点击就走完，不再是 90 分钟的"文件树找地鼠"。
-- **二人小团队：** Senior 用局域网共享评审页 review，半成品代码不用绕 GitHub PR。
 - **共享开发机团队：** 在代码所在的机器上自托管一个 Cockpit —— 队友打开浏览器就能一起飞，各自在自己的项目 / worktree 上跑 AI 会话。
 - **评审 AI 写的 PR：** 把改动文件切到 Code Map，**改动过的函数被高亮**，周围还画着它们的 caller / callee —— 一眼看清这次改动的爆炸半径。
 - **全栈杂活模式：** 后端 bug 一个 tab 跑 `/fx`，另一个 tab 跑 `/ex` 规划前端重构，最后 `/go` 落地 —— 三种姿态、三种 Agent 模式。
@@ -255,7 +251,7 @@ Claude Code 在 Windows 上的优先级一致。
 
 - 安装 [Git for Windows](https://git-scm.com/download/win) 可获得 bash 终端。不装的话
   Console 面板会运行 PowerShell，且 HTML 应用使用的 `cockpit.bash` 通道不可用。
-- 文件浏览、diff、review、chat 等面板的行为与其他平台一致。
+- 文件浏览、diff、chat 等面板的行为与其他平台一致。
 
 想要 Linux 工具链？把**整个** Cockpit 放进 **WSL2** 运行，那里它就是一个普通的 Linux 安装：
 

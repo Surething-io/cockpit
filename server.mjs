@@ -1,7 +1,7 @@
 import { createServer } from 'http';
 import { createGzip, constants as zlibConstants } from 'zlib';
 import { exec, execSync } from 'child_process';
-import { networkInterfaces, homedir } from 'os';
+import { homedir } from 'os';
 import { writeFileSync, mkdirSync, readFileSync, realpathSync, unlinkSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -336,12 +336,11 @@ app.prepare().then(async () => {
   // Local-admin marker — stamp an internal, client-UNFORGEABLE header telling
   // the app layer whether this request comes from a trusted LOCAL peer (loopback
   // socket + no forwarding header), the same "local exempt" notion checkAccess()
-  // uses. Review viewing of a CLOSED review is revoked for everyone except the
-  // local admin; the app can't see the TCP peer, so we decide it here.
+  // uses. Local-only routes (shutdown / restart / update) read it; the app
+  // can't see the TCP peer, so we decide it here.
   //
   // We ALWAYS overwrite any inbound x-cockpit-local first: without this a remote
-  // client could send the header and impersonate a local admin. Mirrors the
-  // share server's x-forwarded-for injection discipline.
+  // client could send the header and impersonate a local admin.
   // ============================================
   const LOCAL_HEADER = 'x-cockpit-local';
   const markLocalRequest = (req) => {
@@ -528,72 +527,6 @@ app.prepare().then(async () => {
       const openUrl = openProject ? `${url}/?cwd=${encodeURIComponent(openProject)}` : url;
       const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
       exec(`${cmd} ${openUrl}`);
-    }
-  });
-
-  // ============================================
-  // Share Server — LAN review-sharing service.
-  // Route allowlist: only /review/* and its supporting assets are exposed.
-  // ============================================
-  const sharePort = port + 1000; // dev 3456→4456, prod 3457→4457
-
-  const SHARE_ALLOWED_PREFIXES = ['/review/', '/api/review', '/_next/', '/fonts/', '/icons/'];
-  const SHARE_ALLOWED_EXACT = ['/favicon.ico'];
-
-  function isShareAllowed(url) {
-    const pathname = url.split('?')[0];
-    if (SHARE_ALLOWED_EXACT.includes(pathname)) return true;
-    return SHARE_ALLOWED_PREFIXES.some(p => pathname.startsWith(p));
-  }
-
-  function getLanIPs() {
-    const interfaces = networkInterfaces();
-    const ips = [];
-    for (const iface of Object.values(interfaces)) {
-      for (const alias of iface || []) {
-        if (alias.family === 'IPv4' && !alias.internal) {
-          ips.push(alias.address);
-        }
-      }
-    }
-    return ips;
-  }
-
-  const shareServer = createServer((req, res) => {
-    // Token gate first (share is also covered). Read the gate BEFORE we inject
-    // x-forwarded-for below, so the injection can't fool the local check.
-    if (applyHttpGate(req, res)) return;
-    if (req.url?.startsWith('/api/')) gzipJsonResponse(req, res);
-    if (isShareAllowed(req.url || '')) {
-      // The share port is the revocation surface for LAN viewers — never the
-      // local admin. Force the marker to '0' (also strips any forged inbound
-      // value). The admin uses the main port (localhost) to keep access to a
-      // closed review.
-      req.headers['x-cockpit-local'] = '0';
-      // Inject the client's real IP for /api/review/identify
-      const clientIp = req.socket.remoteAddress || '';
-      req.headers['x-forwarded-for'] = clientIp;
-      handle(req, res);
-    } else {
-      res.writeHead(403, { 'Content-Type': 'text/plain' });
-      res.end('403 Forbidden');
-    }
-  });
-
-  shareServer.listen(sharePort, '0.0.0.0', () => {
-    const lanIPs = getLanIPs();
-    if (lanIPs.length > 0) {
-      lanIPs.forEach(ip => console.log(`> Share on http://${ip}:${sharePort}`));
-    } else {
-      console.log(`> Share on http://0.0.0.0:${sharePort}`);
-    }
-  });
-
-  shareServer.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.log(`> Share server port ${sharePort} in use, skipping`);
-    } else {
-      console.error('Share server error:', err.message);
     }
   });
 });

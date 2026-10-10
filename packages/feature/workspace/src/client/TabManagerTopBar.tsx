@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TabInfo } from './useTabState';
 import { ViewSwitcherBar } from '@cockpit/shared-ui';
-import { ReviewDropdown } from '@cockpit/feature-review';
 import { toast } from '@cockpit/shared-ui';
 import { useTranslation } from 'react-i18next';
 import { publishTopic } from '@cockpit/effect-react';
@@ -307,8 +306,6 @@ export function TabManagerTopBar({
 
         {/* Right: session-related */}
         <div className="flex items-center gap-2">
-          {/* Review management */}
-          <ReviewDropdown cwd={initialCwd} />
           {/* Reload current project */}
           <button
             onClick={() => window.location.reload()}

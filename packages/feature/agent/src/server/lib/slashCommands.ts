@@ -520,7 +520,7 @@ function readSkillName(path: string): string | null {
 // Synchronous fs on purpose: keeps resolveCommandPrompt's sync signature — all
 // five engine chat handlers (chat.ts + chat/{codex,deepseek,kimi,ollama}.ts)
 // invoke it inline inside an Effect.gen — and the payload is a single small
-// local file, same pattern as notifyReviewChange.
+// local file.
 function writeBuiltinSkill(cmd: string, content: string, baseUrl: string): string | null {
   try {
     const dir = join(BUILTIN_SKILLS_OUT_DIR, cmd);

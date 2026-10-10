@@ -32,7 +32,7 @@ const eslintConfig = defineConfig([
   //   pattern, e.g. agent → explorer for code-rendering primitives) and
   //   @cockpit/shared-*. Cycles must be avoided — the current dependency
   //   graph is acyclic (workspace → all features; agent → explorer →
-  //   comments → shared-*; review/skills → comments).
+  //   comments → shared-*; skills → explorer).
   //   By convention, only feature-workspace imports across multiple
   //   features (it's the application integrator). Other features should
   //   import from another feature only when there's a clear "supporting

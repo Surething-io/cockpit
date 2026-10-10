@@ -49,7 +49,7 @@ Cockpit is the instrument panel. It does **not** replace Claude Code; it stands 
 | Every subagent starts with a blank slate | **Bots**: persistent, file-native subagents you tag with `@name`; each runs in its own inspectable session |
 | Agent can't reach your browser / DB | **Smart Bubbles**: Chrome, PostgreSQL, MySQL, Redis — drivable by the agent |
 | Reading an unfamiliar repo means a 90-min file-tree scavenger hunt | **Code Map** chip view — caller / callee pins, click to walk the call graph |
-| Reviewing AI output is friction | **LAN-shared review pages**, line-level comments, send any comment back as AI context |
+| Reviewing AI output is friction | Line-level comments on any file, send any comment back as AI context |
 | Same "do X but don't change code" prompt every day | **Slash modes** `/qa /fx /ex /go /cg /cc /cr` + custom `SKILL.md` via the Skills sidebar |
 | No automation hooks | One-time / interval / cron-based **scheduled tasks** |
 | "Cloud relay" trust concerns | **Fully local**. No telemetry. API keys (DeepSeek / GLM / Kimi) stay in `~/.cockpit/<engine>/credentials.json` on your laptop. |
@@ -66,7 +66,6 @@ An honest snapshot as of July 2026 — each tool wins somewhere. Spotted an erro
 | Engines | ✅ **Claude + Codex / DeepSeek / GLM / Kimi / Ollama** (BYOK) | Claude only | Claude only |
 | Parallel multi-project sessions | ✅ | ✅ | ✅ |
 | Agent-drivable browser & DB (Chrome / Postgres / MySQL / Redis) | ✅ Smart Bubbles | ❌ preview pane only | ❌ |
-| LAN-shared code review pages | ✅ | ❌ | ❌ |
 | Fully offline / air-gapped | ✅ via Ollama | ❌ | ❌ |
 | Phone / tablet access | ✅ any LAN browser — code runs on **your** machine | ✅ via Claude Code on the web (cloud sandbox) | ❌ desktop only |
 | Native desktop app | ❌ local web app (needs Node ≥ 20) | ✅ | ✅ Tauri |
@@ -124,12 +123,10 @@ An honest snapshot as of July 2026 — each tool wins somewhere. Spotted an erro
 - 🔴 **Redis Bubble** — browse keys, inspect values, execute commands
 - Drag-to-reorder, grid / maximized layout, per-tab env vars & shell aliases
 
-### Code Review — LAN-shared, no SaaS
+### Code Comments
 
-- LAN-shareable review pages — **teammates need zero install**
-- Line-level comments with reply threads
+- Line-level comments on any file
 - **Send any comment back to AI** as context for an automated fix
-- Red-dot badges keep unread feedback visible across projects
 
 ### Slash modes — change the agent's posture
 
@@ -168,7 +165,6 @@ An honest snapshot as of July 2026 — each tool wins somewhere. Spotted an erro
 - **Solo dev, multi-repo:** "I have a refactor running in API, tests writing in Web, and a bug investigation in Pipeline — all at once, all visible."
 - **A specialist that remembers:** tag `@product` for a roadmap decision today and again next month; it reads the same explicit, reviewable context without polluting the main chat.
 - **Day one in an unfamiliar repo:** Open it in Code Map, click through caller/callee pins, walk the auth flow in five clicks instead of a 90-minute file-tree scavenger hunt.
-- **Two-person team:** Senior reviews via LAN-shared review page, no GitHub PR round-trip needed for in-progress work.
 - **Team on a shared dev box:** self-host one Cockpit where the code lives — every teammate opens a browser, takes a seat, and runs their own AI sessions in their own project / worktree.
 - **Reviewing AI-generated PRs:** Switch the changed files into Code Map — changed functions are highlighted with their callers / callees still drawn around them, so blast-radius is one click away.
 - **Full-stack chore mode:** `/fx` in one tab on a backend bug, `/ex` in another to plan the frontend refactor, `/go` to land it — three slash modes, three different agent postures.
@@ -260,7 +256,7 @@ order Claude Code applies on Windows.
 - Install [Git for Windows](https://git-scm.com/download/win) for a bash
   terminal. Without it the Console panel runs PowerShell, and the
   `cockpit.bash` channel used by HTML apps is unavailable.
-- The file browser, diff, review and chat panels behave as they do elsewhere.
+- The file browser, diff and chat panels behave as they do elsewhere.
 
 Prefer a Linux toolchain? Run *all* of Cockpit inside **WSL2**, where it is an
 ordinary Linux install:

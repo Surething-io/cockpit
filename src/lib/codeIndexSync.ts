@@ -35,10 +35,9 @@ export function wireCodeIndexToFileWatcher(): void {
 
   registerWatcherSubscriber((cwd, onDirty) => {
     fileWatcher.subscribe(cwd, (events) => {
-      // The watcher emits 'file' (working-tree change), 'git' (HEAD/refs move),
-      // and 'review' (review-signal file). 'file' implies source content
-      // changed. 'git' also implies content may differ (checkout / merge moves
-      // files). 'review' is unrelated to source — skip it.
+      // The watcher emits 'file' (working-tree change) and 'git' (HEAD/refs
+      // move). 'file' implies source content changed. 'git' also implies
+      // content may differ (checkout / merge moves files).
       if (events.some((e) => e.type === 'file' || e.type === 'git')) {
         onDirty();
       }

@@ -1,8 +1,7 @@
 /**
  * FileWatcher Service — file change Stream.
  *
- * Replaces the hand-written watchers in src/lib/fileWatcher.ts and
- * reviewWatcher.
+ * Replaces the hand-written watcher in src/lib/fileWatcher.ts.
  */
 import { Context, Effect, Stream, Scope } from "effect"
 import type { FSError } from "@cockpit/effect-core"

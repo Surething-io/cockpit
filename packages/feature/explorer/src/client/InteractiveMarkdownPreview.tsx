@@ -21,7 +21,6 @@ import { useAddSkill } from './registry/useAddSkill';
 import { useAddBot } from './registry/useAddBot';
 import type { CodeComment } from '@cockpit/feature-comments';
 import { TocSidebar } from '@cockpit/shared-ui';
-import { ShareReviewToggle } from '@cockpit/feature-review';
 import { useSelectionToolbar } from './useSelectionToolbar';
 
 // ============================================
@@ -35,9 +34,9 @@ interface InteractiveMarkdownPreviewProps {
   filePath: string;      // File path (comment data binding + AI reference)
   cwd: string;           // useComments + fetchAllCommentsWithCode
   onClose?: () => void;
-  /** Relative path for review sourceFile matching. Derived from filePath + cwd if not provided */
+  /** Project-relative path, used to resolve relative .md links. Derived from filePath + cwd if not provided */
   sourceFile?: string;
-  /** Embedded (in-place) mode: hides the header (filePath + ShareReviewToggle + close X)
+  /** Embedded (in-place) mode: hides the header (filePath + close X)
    *  and makes ESC a no-op for closing — the host owns the on/off control. Defaults to false
    *  so the modal call sites (agent chat, diff view) keep their current behavior. */
   embedded?: boolean;
@@ -396,7 +395,7 @@ export function InteractiveMarkdownPreview({
   // ============================================
   return (
     <>
-      {/* Header — hidden in embedded mode (host toolbar owns filePath + ShareReviewToggle
+      {/* Header — hidden in embedded mode (host toolbar owns filePath
           + the on/off toggle, so an inner header would be redundant). */}
       {!embedded && (
         <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3 flex-shrink-0">
@@ -415,7 +414,6 @@ export function InteractiveMarkdownPreview({
             {'\u200E'}{filePath}
           </span>
           <div className="flex items-center gap-3">
-            <ShareReviewToggle content={content} sourceFile={sourceFile} />
             {/* Register this SKILL.md (skills.json) or BOT.md (bot.json) — the
                 markdown counterpart of the HTML preview's BookmarkPlus. Only for
                 files literally named SKILL.md; the registry stores absolute paths,

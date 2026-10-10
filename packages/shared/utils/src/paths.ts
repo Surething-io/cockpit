@@ -36,8 +36,6 @@ export const CODEX_SESSION_INDEX_FILE = join(COCKPIT_DIR, 'codex-session-index.j
 // bubbles. Same shape/mechanics as skills.json (manual add/remove of absolute
 // paths), but the enrichment reads each file's <title>/<meta> head.
 export const HTML_APPS_FILE = join(COCKPIT_DIR, 'html.json');
-export const REVIEW_DIR = join(COCKPIT_DIR, 'review');
-export const REVIEW_SIGNAL_FILE = join(REVIEW_DIR, '_signal');
 
 // Built-in HTML apps shipped inside the package (/apps), served by
 // /apps/builtin/<name>/. NOT derived from COCKPIT_DIR — this is the install
@@ -63,16 +61,6 @@ export const BUILTIN_SKILLS_SRC_DIR = join(process.env.COCKPIT_ROOT || process.c
 // builtinBots.ts). Nothing is ever written back here.
 export const BUILTIN_BOTS_SRC_DIR = join(process.env.COCKPIT_ROOT || process.cwd(), 'bots');
 
-/**
- * Write to the signal file to notify ReviewWatcher of a comment change.
- * Synchronous write ensures fs.watch can detect the change.
- */
-export function notifyReviewChange(): void {
-  try {
-    if (!existsSync(REVIEW_DIR)) mkdirSync(REVIEW_DIR, { recursive: true });
-    writeFileSync(REVIEW_SIGNAL_FILE, Date.now().toString());
-  } catch { /* ignore */ }
-}
 export const CLAUDE_DIR = join(HOME_DIR, '.claude');
 export const CLAUDE_PROJECTS_DIR = join(CLAUDE_DIR, 'projects');
 // DeepSeek, Kimi and GLM each keep only a credential file here. Their transcripts live in
@@ -266,13 +254,6 @@ export function getProjectSettingsPath(cwd: string): string {
  */
 export function getBubbleOrderPath(cwd: string, tabId: string): string {
   return join(getCockpitProjectDir(cwd), `terminal-bubble-order-${tabId}.json`);
-}
-
-/**
- * Get the review JSON file path
- */
-export function getReviewFilePath(reviewId: string): string {
-  return join(REVIEW_DIR, `${reviewId}.json`);
 }
 
 // ============================================

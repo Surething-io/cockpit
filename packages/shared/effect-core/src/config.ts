@@ -64,7 +64,7 @@ const hostConfig = Config.string("COCKPIT_HOST").pipe(
 )
 
 // Prefer `COCKPIT_PORT` (the legacy v1 variable name hard-coded by
-// scheduledTasks / review/share-info), falling back to `PORT`. Final defaults
+// scheduledTasks), falling back to `PORT`. Final defaults
 // are 3457 (prod) / 3456 (dev, derived below).
 const portConfig = Config.integer("COCKPIT_PORT").pipe(
   Config.orElse(() => Config.integer("PORT")),

@@ -37,7 +37,6 @@ const nextConfig = {
     '@cockpit/feature-comments',
     '@cockpit/feature-console',
     '@cockpit/feature-explorer',
-    '@cockpit/feature-review',
     '@cockpit/feature-skills',
     '@cockpit/feature-workspace',
   ],

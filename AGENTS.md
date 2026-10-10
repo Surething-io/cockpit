@@ -70,7 +70,6 @@ framework boot. See `MODULES.md` for the dependency rules.
     / Redis / Neo4j / MongoDB / Bash)
   - `explorer/` - File browser + code rendering (DiffView, CodeViewer,
     InteractiveMarkdownPreview, PreviewModal) + git + LSP
-  - `review/` - Review pages with anchored highlights and threaded comments
   - `skills/` - SKILL.md parser + slash autocomplete + cross-frame bus
   - `workspace/` - Application integrator (Workspace, TabManager,
     Providers, SettingsModal, NoteModal, SessionBrowser)

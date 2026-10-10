@@ -3,13 +3,13 @@
  *
  * `git add <files>`
  */
-import { exec } from "child_process"
+import { execFile } from "child_process"
 import { promisify } from "util"
 import { Effect } from "effect"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { AppError, ValidationError } from "@cockpit/effect-core"
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 export interface GitStageRequest {
   cwd?: string
@@ -17,17 +17,17 @@ export interface GitStageRequest {
 }
 
 const runGit = (
-  cmd: string,
+  args: string[],
   cwd: string
 ): Effect.Effect<void, AppError> =>
   Effect.tryPromise({
-    try: () => execAsync(cmd, { cwd }).then(() => undefined),
+    try: () => execFileAsync("git", args, { cwd }).then(() => undefined),
     catch: (cause) =>
-      new AppError({ message: `git command failed: ${cmd}`, cause }),
+      new AppError({ message: `git command failed: git ${args.join(" ")}`, cause }),
   })
 
 const checkIsRepo = (cwd: string): Effect.Effect<void, ValidationError> =>
-  runGit("git rev-parse --git-dir", cwd).pipe(
+  runGit(["rev-parse", "--git-dir"], cwd).pipe(
     Effect.mapError(
       () =>
         new ValidationError({ field: "cwd", reason: "not a git repository" })
@@ -48,12 +48,7 @@ export const POST = handler((req) =>
 
     yield* checkIsRepo(cwd)
 
-    // Escape file paths (spaces / special chars)
-    const escaped = files
-      .map((f) => `"${f.replace(/"/g, '\\"')}"`)
-      .join(" ")
-
-    yield* runGit(`git add ${escaped}`, cwd)
+    yield* runGit(["add", "--", ...files], cwd)
 
     return ok({
       success: true,

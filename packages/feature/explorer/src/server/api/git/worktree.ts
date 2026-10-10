@@ -4,7 +4,7 @@
  * GET: list worktrees + candidate nextPath
  * POST: 5 actions — add / remove / lock / unlock / checkout
  */
-import { exec } from "child_process"
+import { execFile } from "child_process"
 import { promisify } from "util"
 import { promises as fs } from "fs"
 import { dirname, basename, join } from "path"
@@ -12,7 +12,7 @@ import { Effect } from "effect"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { AppError, ValidationError } from "@cockpit/effect-core"
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 function generateRandomWord(): string {
   const consonants = "bcdfghjklmnprstvwz"
@@ -69,17 +69,17 @@ function parseWorktreeList(output: string): WorktreeInfo[] {
 }
 
 const runGit = (
-  cmd: string,
+  args: string[],
   cwd: string
 ): Effect.Effect<string, AppError> =>
   Effect.tryPromise({
-    try: () => execAsync(cmd, { cwd }).then((r) => r.stdout),
+    try: () => execFileAsync("git", args, { cwd }).then((r) => r.stdout),
     catch: (cause) =>
-      new AppError({ message: `git command failed: ${cmd}`, cause }),
+      new AppError({ message: `git command failed: git ${args.join(" ")}`, cause }),
   })
 
-const runGitOrEmpty = (cmd: string, cwd: string): Effect.Effect<string> =>
-  runGit(cmd, cwd).pipe(Effect.orElseSucceed(() => ""))
+const runGitOrEmpty = (args: string[], cwd: string): Effect.Effect<string> =>
+  runGit(args, cwd).pipe(Effect.orElseSucceed(() => ""))
 
 /**
  * Resolve a worktree's creation time via its admin dir (.git/worktrees/<name>).
@@ -118,7 +118,7 @@ const getNextWorktreePath = (
         const randomWord = generateRandomWord()
         const candidatePath = join(parentDir, `${projectName}-${randomWord}`)
         try {
-          await execAsync(`test -e "${candidatePath}"`)
+          await fs.access(candidatePath)
         } catch {
           return { path: candidatePath, randomWord }
         }
@@ -133,7 +133,7 @@ export const GET = handler((req) =>
     const cwd = new URL(req.url).searchParams.get("cwd") || process.cwd()
 
     // Fallback response when not a git repo
-    const isRepoCheck = yield* runGit("git rev-parse --git-dir", cwd).pipe(
+    const isRepoCheck = yield* runGit(["rev-parse", "--git-dir"], cwd).pipe(
       Effect.map(() => true),
       Effect.orElseSucceed(() => false)
     )
@@ -141,7 +141,7 @@ export const GET = handler((req) =>
       return ok({ isGitRepo: false, worktrees: [] })
     }
 
-    const stdout = yield* runGit("git worktree list --porcelain", cwd)
+    const stdout = yield* runGit(["worktree", "list", "--porcelain"], cwd)
     const worktrees = yield* Effect.forEach(
       parseWorktreeList(stdout),
       (w) =>
@@ -152,7 +152,7 @@ export const GET = handler((req) =>
 
     const next = yield* getNextWorktreePath(cwd, worktrees)
     const gitUserName = (
-      yield* runGitOrEmpty("git config user.name", cwd)
+      yield* runGitOrEmpty(["config", "user.name"], cwd)
     )
       .trim()
       .toLowerCase()
@@ -195,13 +195,15 @@ export const POST = handler((req) =>
             new ValidationError({ field: "path", reason: "missing" })
           )
         }
-        let cmd: string
+        // Branch names and paths come from the request (and ultimately from
+        // remote refs): pass them as argv, and end option parsing first.
+        let args: string[]
         if (newBranch) {
           const base = baseBranch || "origin/main"
-          cmd = `git worktree add --no-track -b "${newBranch}" "${path}" "${base}"`
+          args = ["worktree", "add", "--no-track", "-b", newBranch, "--end-of-options", path, base]
         } else if (branch) {
           const localBranch = branch.replace(/^origin\//, "")
-          cmd = `git worktree add "${path}" "${localBranch}"`
+          args = ["worktree", "add", "--end-of-options", path, localBranch]
         } else {
           return yield* Effect.fail(
             new ValidationError({
@@ -210,7 +212,7 @@ export const POST = handler((req) =>
             })
           )
         }
-        yield* runGit(cmd, cwd)
+        yield* runGit(args, cwd)
         return ok({ success: true, path })
       }
       case "remove":
@@ -221,13 +223,11 @@ export const POST = handler((req) =>
             new ValidationError({ field: "path", reason: "missing" })
           )
         }
-        const cmd =
+        const args =
           action === "remove"
-            ? `git worktree remove --force "${path}"`
-            : action === "lock"
-              ? `git worktree lock "${path}"`
-              : `git worktree unlock "${path}"`
-        yield* runGit(cmd, cwd)
+            ? ["worktree", "remove", "--force", "--end-of-options", path]
+            : ["worktree", action, "--end-of-options", path]
+        yield* runGit(args, cwd)
         return ok({ success: true })
       }
       case "checkout": {
@@ -242,7 +242,7 @@ export const POST = handler((req) =>
           )
         }
         const localBranch = branch.replace(/^origin\//, "")
-        yield* runGit(`git checkout "${localBranch}"`, path)
+        yield* runGit(["checkout", "--end-of-options", localBranch], path)
         return ok({ success: true })
       }
       default:

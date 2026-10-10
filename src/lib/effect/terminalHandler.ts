@@ -7,7 +7,7 @@
  *   - Heartbeat is driven by Schedule.spaced and cancels automatically.
  *   - Spawn / attach / signal / resize semantics match the original handler.
  */
-import { execSync } from "child_process"
+import { execFileSync } from "child_process"
 import { Effect, Scope, Schedule, Stream } from "effect"
 import type { WebSocket } from "ws"
 import { ValidationError, WSError } from "@cockpit/effect-core"
@@ -68,7 +68,8 @@ type PtySpawnTarget = {
 
 function commandPath(command: string): string | null {
   try {
-    const found = execSync(`command -v ${command}`, {
+    // `command -v` is a shell builtin; the name travels as $1, never as code.
+    const found = execFileSync("sh", ["-c", 'command -v "$1"', "sh", command], {
       encoding: "utf-8",
       timeout: 3000,
     })

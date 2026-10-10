@@ -6,12 +6,12 @@
  * - §4: Service Tag + Live in this single file.
  * - §11: business functions carry explicit Effect<A, E> return types.
  */
-import { exec } from "child_process"
+import { execFile } from "child_process"
 import { promisify } from "util"
 import { Context, Effect, Layer } from "effect"
 import { AppError, ValidationError } from "@cockpit/effect-core"
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 // ─────────────────────────────────────────────────────────
 // Data model — wire-compatible GitStatusResponse.
@@ -144,17 +144,17 @@ export const GitService = Context.GenericTag<GitService>("@cockpit/GitService")
 // ─────────────────────────────────────────────────────────
 
 const runGit = (
-  cmd: string,
+  args: string[],
   cwd: string
 ): Effect.Effect<string, AppError> =>
   Effect.tryPromise({
-    try: () => execAsync(cmd, { cwd }).then((r) => r.stdout),
+    try: () => execFileAsync("git", args, { cwd }).then((r) => r.stdout),
     catch: (cause) =>
-      new AppError({ message: `git command failed: ${cmd}`, cause }),
+      new AppError({ message: `git command failed: git ${args.join(" ")}`, cause }),
   })
 
 const checkIsRepo = (cwd: string): Effect.Effect<void, ValidationError> =>
-  runGit("git rev-parse --git-dir", cwd).pipe(
+  runGit(["rev-parse", "--git-dir"], cwd).pipe(
     Effect.mapError(
       () =>
         new ValidationError({
@@ -189,7 +189,7 @@ export const GitServiceLive = Layer.succeed(
 
         // 2. Read porcelain status output.
         const stdout = yield* runGit(
-          "git -c core.quotePath=false status --porcelain=v1 -u",
+          ["-c", "core.quotePath=false", "status", "--porcelain=v1", "-u"],
           cwd
         )
         const { staged, unstaged } = parseGitStatus(stdout)
@@ -199,13 +199,13 @@ export const GitServiceLive = Layer.succeed(
         //    the main response is not affected.
         const [stagedNumstat, unstagedNumstat] = yield* Effect.all(
           [
-            runGit("git -c core.quotePath=false diff --cached --numstat", cwd).pipe(
+            runGit(["-c", "core.quotePath=false", "diff", "--cached", "--numstat"], cwd).pipe(
               Effect.map(parseNumstat),
               Effect.orElseSucceed(
                 () => new Map<string, { additions: number; deletions: number }>()
               )
             ),
-            runGit("git -c core.quotePath=false diff --numstat", cwd).pipe(
+            runGit(["-c", "core.quotePath=false", "diff", "--numstat"], cwd).pipe(
               Effect.map(parseNumstat),
               Effect.orElseSucceed(
                 () => new Map<string, { additions: number; deletions: number }>()

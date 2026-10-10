@@ -2,7 +2,7 @@ import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { closeSync, existsSync, mkdirSync, openSync, readSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, readdirSync, readFileSync } from 'fs';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { encodePath } from './encodePath';
 import { expandHomePath } from './homePath';
 
@@ -606,9 +606,10 @@ export function findCodexSessionPath(threadId: string): string | null {
 
   if (!existsSync(CODEX_SESSIONS_DIR)) return null;
   try {
-    const result = execSync(
-      `find ${JSON.stringify(CODEX_SESSIONS_DIR)} -name "*${normalizedThreadId}.jsonl" -type f 2>/dev/null`,
-      { encoding: 'utf8', timeout: 3000 }
+    const result = execFileSync(
+      'find',
+      [CODEX_SESSIONS_DIR, '-name', `*${normalizedThreadId}.jsonl`, '-type', 'f'],
+      { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }
     ).trim();
     if (result) return result.split('\n')[0];
   } catch { /* ignore */ }

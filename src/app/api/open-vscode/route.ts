@@ -19,7 +19,8 @@ export const POST = handler((req) =>
 
     const cwd = body.cwd
     yield* Effect.sync(() => {
-      exec(`code "${cwd}"`, (error) => {
+      // Constant command; the directory travels as cwd, never through the shell.
+      exec("code .", { cwd }, (error) => {
         if (error) {
           Effect.runFork(
             Effect.logError("[open-vscode]").pipe(

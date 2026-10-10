@@ -17,7 +17,7 @@
  * files go through one batched command, and any per-file failure (untracked
  * unlink) is lifted to `Effect.fail` so the client sees a real error toast.
  */
-import { exec } from "child_process"
+import { execFile } from "child_process"
 import { promisify } from "util"
 import fs from "fs/promises"
 import path from "path"
@@ -25,7 +25,7 @@ import { Effect } from "effect"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { AppError, ValidationError } from "@cockpit/effect-core"
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 interface DiscardRequest {
   cwd?: string
@@ -69,10 +69,7 @@ const restoreBatch = (
 ): Effect.Effect<FileResult[], AppError> =>
   Effect.tryPromise({
     try: async () => {
-      const escaped = files
-        .map((f) => `"${f.replace(/"/g, '\\"')}"`)
-        .join(" ")
-      await execAsync(`git restore -- ${escaped}`, { cwd })
+      await execFileAsync("git", ["restore", "--", ...files], { cwd })
       return files.map(
         (f) => ({ file: f, success: true }) satisfies FileResult
       )

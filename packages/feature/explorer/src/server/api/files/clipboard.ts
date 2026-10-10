@@ -29,9 +29,12 @@ async function writeClipboard(fullPath: string): Promise<void> {
       `set the clipboard to POSIX file "${fullPath}"`,
     ])
   } else if (isWindows) {
-    execSync(
-      `powershell -Command "Set-Clipboard -Value '${fullPath.replace(/'/g, "''")}'"`
-    )
+    // argv, not a shell string: only PowerShell's own single-quote rule applies.
+    await execFileAsync("powershell", [
+      "-NoProfile",
+      "-Command",
+      `Set-Clipboard -Value '${fullPath.replace(/'/g, "''")}'`,
+    ])
   } else {
     // Pipe the path via stdin in both branches so the file name is never
     // interpolated into a shell command (avoids quoting/escaping pitfalls).

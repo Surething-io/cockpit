@@ -6,7 +6,7 @@
  * Unlike `killCommand` this does NOT tombstone the registry entry: the exit is
  * persisted normally and the bubble stays, showing the command as finished.
  */
-import { execSync } from "child_process"
+import { execFileSync, execSync } from "child_process"
 import { isWindows } from "@cockpit/shared-utils"
 
 /**
@@ -64,7 +64,7 @@ export function getDescendantPids(pid: number): number[] {
 
   function collect(parentPid: number) {
     try {
-      const result = execSync(`pgrep -P ${parentPid}`, {
+      const result = execFileSync("pgrep", ["-P", String(parentPid)], {
         encoding: "utf-8",
         timeout: 3000,
       }).trim()

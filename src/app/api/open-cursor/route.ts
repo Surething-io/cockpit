@@ -20,7 +20,8 @@ export const POST = handler((req) =>
     // fire-and-forget; exec errors go to Logger and do not block the response
     const cwd = body.cwd
     yield* Effect.sync(() => {
-      exec(`cursor "${cwd}"`, (error) => {
+      // Constant command; the directory travels as cwd, never through the shell.
+      exec("cursor .", { cwd }, (error) => {
         if (error) {
           Effect.runFork(
             Effect.logError("[open-cursor]").pipe(

@@ -3,14 +3,14 @@
  *
  * List commit history (pagination via offset/limit + custom format).
  */
-import { exec } from "child_process"
+import { execFile } from "child_process"
 import { promisify } from "util"
 import { Effect } from "effect"
 import { handler, ok } from "@cockpit/effect-runtime/server"
 import { AppError } from "@cockpit/effect-core"
 import { parseCommitLog } from "./commitLog"
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 function getRelativeDate(date: Date): string {
   const now = new Date()
@@ -40,14 +40,20 @@ export const GET = handler((req) =>
     const offset = parseInt(sp.get("offset") || "0", 10)
 
     // Git expands %xNN placeholders into control-character separators. Keep
-    // the placeholders literal here: an actual NUL cannot be passed to exec.
+    // the placeholders literal here: an actual NUL cannot be passed as an argv.
     const format = "%x1e%H%x00%h%x00%an%x00%ae%x00%ci%x00%s%x00%b%x00"
-    const skipArg = offset > 0 ? `--skip=${offset}` : ""
+    const skipArgs = offset > 0 ? [`--skip=${offset}`] : []
 
     const stdout = yield* Effect.tryPromise({
       try: () =>
-        execAsync(
-          `git -c core.quotePath=false log ${branch} --format="${format}" --name-only -n ${limit} ${skipArg}`,
+        execFileAsync(
+          "git",
+          [
+            "-c", "core.quotePath=false", "log",
+            `--format=${format}`, "--name-only", "-n", String(limit), ...skipArgs,
+            // `branch` comes from the query string: never let it parse as an option.
+            "--end-of-options", branch,
+          ],
           { cwd, maxBuffer: 10 * 1024 * 1024 }
         ).then((r) => r.stdout),
       catch: (cause) =>

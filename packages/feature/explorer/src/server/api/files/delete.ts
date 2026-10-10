@@ -5,7 +5,7 @@
  */
 import { stat, rm } from "fs/promises"
 import { join, resolve, sep } from "path"
-import { execFile, execSync } from "child_process"
+import { execFile } from "child_process"
 import { promisify } from "util"
 import { Effect } from "effect"
 import { isMac, isWindows } from "@cockpit/shared-utils"
@@ -27,8 +27,14 @@ async function moveToTrash(fullPath: string): Promise<void> {
   } else if (isWindows) {
     try {
       const escaped = fullPath.replace(/'/g, "''")
-      execSync(
-        `powershell -Command "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('${escaped}','OnlyErrorDialogs','SendToRecycleBin')"`,
+      // argv, not a shell string: only PowerShell's own single-quote rule applies.
+      await execFileAsync(
+        "powershell",
+        [
+          "-NoProfile",
+          "-Command",
+          `Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('${escaped}','OnlyErrorDialogs','SendToRecycleBin')`,
+        ],
         { timeout: 10000 }
       )
     } catch {
@@ -37,7 +43,7 @@ async function moveToTrash(fullPath: string): Promise<void> {
     }
   } else {
     try {
-      execSync(`gio trash "${fullPath}"`, { timeout: 5000 })
+      await execFileAsync("gio", ["trash", "--", fullPath], { timeout: 5000 })
     } catch {
       const info = await stat(fullPath)
       await rm(fullPath, { recursive: info.isDirectory(), force: true })

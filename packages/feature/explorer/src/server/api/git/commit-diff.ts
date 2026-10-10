@@ -7,14 +7,17 @@
  *
  * Merge commits and regular commits use different diff commands.
  */
-import { exec } from "child_process"
+import { execFile } from "child_process"
 import { promisify } from "util"
 import { Effect } from "effect"
 import { handler, ok } from "@cockpit/effect-runtime/server"
 import { AppError, ValidationError } from "@cockpit/effect-core"
 import { isImagePath } from "@cockpit/feature-explorer/server/files/shared"
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
+
+/** A full or abbreviated object name — never something git could read as an option. */
+const COMMIT_HASH = /^[0-9a-f]{4,64}$/i
 
 function unquotePath(p: string): string {
   if (p.startsWith('"') && p.endsWith('"')) return p.slice(1, -1)
@@ -30,22 +33,22 @@ interface FileChange {
 }
 
 const runGit = (
-  cmd: string,
+  args: string[],
   cwd: string,
   maxBuffer = 10 * 1024 * 1024
 ): Effect.Effect<string, AppError> =>
   Effect.tryPromise({
     try: () =>
-      execAsync(cmd, { cwd, maxBuffer }).then((r) => r.stdout),
+      execFileAsync("git", args, { cwd, maxBuffer }).then((r) => r.stdout),
     catch: (cause) =>
-      new AppError({ message: `git command failed: ${cmd}`, cause }),
+      new AppError({ message: `git command failed: git ${args.join(" ")}`, cause }),
   })
 
 const runGitOrEmpty = (
-  cmd: string,
+  args: string[],
   cwd: string
 ): Effect.Effect<string> =>
-  runGit(cmd, cwd).pipe(Effect.orElseSucceed(() => ""))
+  runGit(args, cwd).pipe(Effect.orElseSucceed(() => ""))
 
 /** Does `<rev>:<file>` resolve to a blob? Costs no content transfer. */
 const blobExists = (
@@ -53,7 +56,7 @@ const blobExists = (
   rev: string,
   file: string
 ): Effect.Effect<boolean> =>
-  runGit(`git cat-file -e ${rev}:"${file}"`, cwd).pipe(
+  runGit(["cat-file", "-e", `${rev}:${file}`], cwd).pipe(
     Effect.as(true),
     Effect.orElseSucceed(() => false)
   )
@@ -61,20 +64,21 @@ const blobExists = (
 const getChangedFiles = (cwd: string, hash: string) =>
   Effect.gen(function* () {
     const parentInfo = yield* runGit(
-      `git rev-list --parents -n 1 ${hash}`,
+      ["rev-list", "--parents", "-n", "1", hash],
       cwd
     )
     const parents = parentInfo.trim().split(" ").slice(1)
     const isMergeCommit = parents.length > 1
 
+    const q = ["-c", "core.quotePath=false"]
     const [nameStatusCmd, numstatCmd] = isMergeCommit
       ? [
-          `git -c core.quotePath=false diff ${hash}^1 ${hash} --name-status`,
-          `git -c core.quotePath=false diff ${hash}^1 ${hash} --numstat`,
+          [...q, "diff", `${hash}^1`, hash, "--name-status"],
+          [...q, "diff", `${hash}^1`, hash, "--numstat"],
         ]
       : [
-          `git -c core.quotePath=false show ${hash} --name-status --format=""`,
-          `git -c core.quotePath=false show ${hash} --numstat --format=""`,
+          [...q, "show", hash, "--name-status", "--format="],
+          [...q, "show", hash, "--numstat", "--format="],
         ]
 
     const [nameStatus, numstat] = yield* Effect.all(
@@ -151,11 +155,11 @@ const getChangedFiles = (cwd: string, hash: string) =>
 const getFileDiff = (cwd: string, hash: string, file: string) =>
   Effect.gen(function* () {
     const parentHash = (yield* runGitOrEmpty(
-      `git rev-parse ${hash}^1`,
+      ["rev-parse", `${hash}^1`],
       cwd
     )).trim()
 
-    // Images never travel as content. `git show` on a PNG through execAsync's
+    // Images never travel as content. `git show` on a PNG read with the
     // utf-8 default yields mojibake, which the text differ then happily renders
     // line by line — that garbage is exactly what the history panel used to
     // show. All the client needs is which revisions hold the blob; it renders
@@ -181,10 +185,10 @@ const getFileDiff = (cwd: string, hash: string, file: string) =>
     }
 
     const oldContent = parentHash
-      ? yield* runGitOrEmpty(`git show ${parentHash}:${file}`, cwd)
+      ? yield* runGitOrEmpty(["show", `${parentHash}:${file}`], cwd)
       : ""
 
-    const newContent = yield* runGitOrEmpty(`git show ${hash}:${file}`, cwd)
+    const newContent = yield* runGitOrEmpty(["show", `${hash}:${file}`], cwd)
 
     const isNew = oldContent === "" && newContent !== ""
     const isDeleted = oldContent !== "" && newContent === ""
@@ -208,6 +212,11 @@ export const GET = handler((req) =>
     if (!hash) {
       return yield* Effect.fail(
         new ValidationError({ field: "hash", reason: "missing" })
+      )
+    }
+    if (!COMMIT_HASH.test(hash)) {
+      return yield* Effect.fail(
+        new ValidationError({ field: "hash", reason: "not a commit hash" })
       )
     }
 

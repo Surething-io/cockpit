@@ -31,10 +31,10 @@
  * request cache would be premature optimisation.
  */
 
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export interface CoEditHistoryEntry {
   /** Project-relative path of the co-edited file. Named `filePath` to match
@@ -114,13 +114,13 @@ async function collectHistory(
   //   coupling chain. For modern workflows this is rarely a problem.
   const baseFlags =
     granularity === 'merge'
-      ? `--merges --first-parent --name-only`
-      : `--follow --name-only`;
+      ? ['--merges', '--first-parent', '--name-only']
+      : ['--follow', '--name-only'];
   let stdout: string;
   try {
-    const result = await execAsync(
-      `git log -n ${commits} ${baseFlags} ` +
-        `--pretty=format:'${SEP}%H|%cI' -- ${shellQuote(filePath)}`,
+    const result = await execFileAsync(
+      'git',
+      ['log', '-n', String(commits), ...baseFlags, `--pretty=format:${SEP}%H|%cI`, '--', filePath],
       { cwd, maxBuffer: 50 * 1024 * 1024 },
     );
     stdout = result.stdout;
@@ -203,8 +203,9 @@ async function collectUncommitted(
 ): Promise<string[]> {
   let stdout: string;
   try {
-    const result = await execAsync(
-      'git -c core.quotePath=false status --porcelain',
+    const result = await execFileAsync(
+      'git',
+      ['-c', 'core.quotePath=false', 'status', '--porcelain'],
       { cwd, maxBuffer: 10 * 1024 * 1024 },
     );
     stdout = result.stdout;
@@ -242,11 +243,6 @@ async function collectUncommitted(
     .sort((a, b) => a.localeCompare(b));
 }
 
-/** Conservative shell-quoter for a path argument. We avoid shell-meta
- *  expansion by single-quoting and escaping any single quotes inside. */
-function shellQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
-}
 
 /**
  * Build the co-edit response for a target file. `commits` controls the

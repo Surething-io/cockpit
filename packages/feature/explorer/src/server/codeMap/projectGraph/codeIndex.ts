@@ -34,7 +34,7 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { getServerParser, grammarForExtension } from './serverTreeSitter';
 import { SUPPORTED_GRAMMARS } from '../languageMap';
@@ -1148,14 +1148,8 @@ export function invalidateIndex(cwd?: string): void {
 // opened a brand-new file" case at query time.
 // ============================================================================
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
-/** Conservative shell-quoter for a path used as a git pathspec.
- *  We avoid shell-meta expansion by single-quoting and escaping any
- *  single quotes inside. Mirror of the helper in `coedit.ts`. */
-function shellQuotePath(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
-}
 
 /**
  * True when `relPath` belongs in this project's source fileset — same
@@ -1178,7 +1172,7 @@ async function isPathInProjectFileset(
   // Quick non-git heuristic so dev/test environments without git still work.
   let isGit = true;
   try {
-    await execAsync('git rev-parse --git-dir', { cwd });
+    await execFileAsync('git', ['rev-parse', '--git-dir'], { cwd });
   } catch {
     isGit = false;
   }
@@ -1189,8 +1183,9 @@ async function isPathInProjectFileset(
     return true;
   }
   try {
-    await execAsync(
-      `git -c core.quotePath=false ls-files --cached --others --exclude-standard --error-unmatch -- ${shellQuotePath(relPath)}`,
+    await execFileAsync(
+      'git',
+      ['-c', 'core.quotePath=false', 'ls-files', '--cached', '--others', '--exclude-standard', '--error-unmatch', '--', relPath],
       { cwd },
     );
     return true;

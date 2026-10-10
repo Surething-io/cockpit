@@ -9,7 +9,7 @@
  * still shows its changes; "unstaged" would compare index-vs-disk there and
  * render an empty diff.
  */
-import { exec } from "child_process"
+import { execFile } from "child_process"
 import { promisify } from "util"
 import fs from "fs/promises"
 import path from "path"
@@ -17,7 +17,7 @@ import { Effect } from "effect"
 import { handler, ok } from "@cockpit/effect-runtime/server"
 import { ValidationError } from "@cockpit/effect-core"
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 export interface GitDiffResponse {
   oldContent: string
@@ -28,24 +28,24 @@ export interface GitDiffResponse {
 }
 
 const readGitShow = (
-  cmd: string,
+  args: string[],
   cwd: string
 ): Effect.Effect<string, never> =>
   Effect.tryPromise({
     try: () =>
-      execAsync(cmd, { cwd, maxBuffer: 10 * 1024 * 1024 }).then(
+      execFileAsync("git", args, { cwd, maxBuffer: 10 * 1024 * 1024 }).then(
         (r) => r.stdout
       ),
     catch: () => null,
   }).pipe(Effect.orElseSucceed(() => "" as string))
 
 const readGitShowFlag = (
-  cmd: string,
+  args: string[],
   cwd: string
 ): Effect.Effect<{ content: string; missing: boolean }, never> =>
   Effect.tryPromise({
     try: () =>
-      execAsync(cmd, { cwd, maxBuffer: 10 * 1024 * 1024 }).then(
+      execFileAsync("git", args, { cwd, maxBuffer: 10 * 1024 * 1024 }).then(
         (r) => ({ content: r.stdout, missing: false })
       ),
     catch: () => null,
@@ -86,27 +86,27 @@ export const GET = handler((req) =>
     let isDeleted = false
 
     if (type === "staged") {
-      const head = yield* readGitShowFlag(`git show HEAD:"${headFile}"`, cwd)
+      const head = yield* readGitShowFlag(["show", `HEAD:${headFile}`], cwd)
       oldContent = head.content
       isNew = head.missing
 
-      const staged = yield* readGitShowFlag(`git show :"${file}"`, cwd)
+      const staged = yield* readGitShowFlag(["show", `:${file}`], cwd)
       newContent = staged.content
       isDeleted = staged.missing
     } else {
       if (type === "worktree") {
         // HEAD -> disk: ignore the index entirely so staged and unstaged
         // edits show up as a single change set.
-        const head = yield* readGitShowFlag(`git show HEAD:"${headFile}"`, cwd)
+        const head = yield* readGitShowFlag(["show", `HEAD:${headFile}`], cwd)
         oldContent = head.content
         isNew = head.missing
       } else {
         // Try staging first, fall back to HEAD, otherwise mark as isNew
-        const staged = yield* readGitShowFlag(`git show :"${file}"`, cwd)
+        const staged = yield* readGitShowFlag(["show", `:${file}`], cwd)
         if (!staged.missing) {
           oldContent = staged.content
         } else {
-          const head = yield* readGitShowFlag(`git show HEAD:"${headFile}"`, cwd)
+          const head = yield* readGitShowFlag(["show", `HEAD:${headFile}`], cwd)
           if (!head.missing) {
             oldContent = head.content
           } else {

@@ -3,22 +3,22 @@
  *
  * List current / upstream / local / remote branches.
  */
-import { exec } from "child_process"
+import { execFile } from "child_process"
 import { promisify } from "util"
 import { Effect } from "effect"
 import { handler, ok } from "@cockpit/effect-runtime/server"
 import { AppError } from "@cockpit/effect-core"
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 const runGit = (
-  cmd: string,
+  args: string[],
   cwd: string
 ): Effect.Effect<string, AppError> =>
   Effect.tryPromise({
-    try: () => execAsync(cmd, { cwd }).then((r) => r.stdout),
+    try: () => execFileAsync("git", args, { cwd }).then((r) => r.stdout),
     catch: (cause) =>
-      new AppError({ message: `git command failed: ${cmd}`, cause }),
+      new AppError({ message: `git command failed: git ${args.join(" ")}`, cause }),
   })
 
 export const GET = handler((req) =>
@@ -27,16 +27,16 @@ export const GET = handler((req) =>
 
     const [currentBranch, localBranches, remoteBranches] = yield* Effect.all(
       [
-        runGit("git rev-parse --abbrev-ref HEAD", cwd),
-        runGit('git branch --format="%(refname:short)"', cwd),
-        runGit('git branch -r --format="%(refname:short)"', cwd),
+        runGit(["rev-parse", "--abbrev-ref", "HEAD"], cwd),
+        runGit(["branch", "--format=%(refname:short)"], cwd),
+        runGit(["branch", "-r", "--format=%(refname:short)"], cwd),
       ],
       { concurrency: "unbounded" }
     )
 
     // Upstream may not exist → fall back to origin/main
     const upstream = yield* runGit(
-      "git rev-parse --abbrev-ref @{upstream}",
+      ["rev-parse", "--abbrev-ref", "@{upstream}"],
       cwd
     ).pipe(
       Effect.map((s) => s.trim()),

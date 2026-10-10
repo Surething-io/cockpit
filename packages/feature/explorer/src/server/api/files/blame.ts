@@ -4,13 +4,13 @@
  * Parses git blame --porcelain output and batch-fetches the full commit messages.
  * Process-level semaphore (max 3 concurrent) prevents large repos from blocking the event loop.
  */
-import { exec } from "child_process"
+import { execFile } from "child_process"
 import { promisify } from "util"
 import { Effect } from "effect"
 import { handler, ok } from "@cockpit/effect-runtime/server"
 import { AppError, ValidationError } from "@cockpit/effect-core"
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 const GIT_TIMEOUT_MS = 15000
 const MAX_CONCURRENT = 3
 let activeCount = 0
@@ -74,8 +74,9 @@ export const GET = handler((req) =>
       () =>
         Effect.tryPromise({
           try: async () => {
-            const { stdout } = await execAsync(
-              `git -c core.quotePath=false blame --porcelain "${path}"`,
+            const { stdout } = await execFileAsync(
+              "git",
+              ["-c", "core.quotePath=false", "blame", "--porcelain", "--", path],
               {
                 cwd,
                 maxBuffer: 10 * 1024 * 1024,
@@ -124,8 +125,12 @@ export const GET = handler((req) =>
               (h) => h !== ZERO_HASH
             )
             if (uniqueHashes.length > 0) {
-              const { stdout: logOutput } = await execAsync(
-                `git -c core.quotePath=false log --format="%H%x00%B%x00" --no-walk ${uniqueHashes.join(" ")}`,
+              const { stdout: logOutput } = await execFileAsync(
+                "git",
+                [
+                  "-c", "core.quotePath=false", "log", "--format=%H%x00%B%x00",
+                  "--no-walk", "--end-of-options", ...uniqueHashes,
+                ],
                 {
                   cwd,
                   maxBuffer: 10 * 1024 * 1024,

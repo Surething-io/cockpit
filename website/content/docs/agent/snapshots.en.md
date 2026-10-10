@@ -39,7 +39,7 @@ Cockpit keeps a **shadow git repository** per project under `<data dir>/snapshot
 Snapshots are deliberately short-lived — they're a review aid, not a backup:
 
 - History is kept for **7 days** (one branch per day; expired days are deleted and their objects reclaimed immediately).
-- A project untouched for **30 days** has its shadow repo removed entirely; so do repos whose project directory no longer exists.
+- A project untouched for **30 days** has its shadow repo removed entirely. A missing project directory alone never triggers removal — an unmounted drive or a renamed or deleted folder keeps its history until it ages out.
 - Size guards keep runaway projects in check: files over **2 MB** are skipped, and a change set over **50,000 files or 1 GB** suspends snapshotting for that project (with a log warning) rather than eating your disk.
 - Cost is modest in practice: a 13 GB monorepo with ~100 MB of tracked sources compresses to a ~74 MB shadow repo, and each subsequent snapshot stores only the changed files (~80 ms per tool call).
 

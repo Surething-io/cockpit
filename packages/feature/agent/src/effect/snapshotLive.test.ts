@@ -328,7 +328,10 @@ describe('SnapshotServiceLive', () => {
     await rm(work3, { recursive: true, force: true });
   });
 
-  it('cleanup removes a repo whose project directory no longer exists', async () => {
+  it('cleanup keeps a recent repo whose project directory no longer exists', async () => {
+    // Retention is by age only: a missing project dir (unmounted drive, renamed or
+    // mistakenly deleted folder) is when the history is needed. See
+    // constraints/snapshot-retention-by-age-only.test.ts.
     const work4 = await mkdtemp(join(tmpdir(), 'cockpit-snap-gone-'));
     await writeFile(join(work4, 'a.txt'), 'x\n');
     await svc((s) => s.baseline(work4, 'session-gone', 'claude'));
@@ -337,7 +340,7 @@ describe('SnapshotServiceLive', () => {
 
     await rm(work4, { recursive: true, force: true }); // project dir gone
     await svc((s) => s.cleanup);
-    expect(existsSync(repoDir)).toBe(false);
+    expect(existsSync(repoDir)).toBe(true);
   });
 
   it('uses the tool description as the commit subject when no files are declared', async () => {

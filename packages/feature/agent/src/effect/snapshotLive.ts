@@ -1035,8 +1035,11 @@ const cleanupImpl = (
     const now = Date.now()
     const dayCutoff = localDay(new Date(now - (keepDays - 1) * 24 * 3600 * 1000))
 
-    /** Evaluate staleness from a fresh meta read. Corrupt meta NEVER counts
-     *  as stale — a torn meta.json must not delete a whole project history. */
+    /** Evaluate staleness from a fresh meta read — by age only. Corrupt meta NEVER
+     *  counts as stale (a torn meta.json must not delete a whole project history),
+     *  and neither does a missing project directory: an unmounted drive, a renamed
+     *  folder or a project deleted by mistake is exactly when this history is needed.
+     *  A repo whose project is gone gets no new snapshots and ages out on the TTL. */
     const isStale = (repoDir: string): Effect.Effect<"stale" | "keep" | "corrupt", never> =>
       Effect.gen(function* () {
         const { state, meta } = yield* readMetaState(repoDir)
@@ -1049,10 +1052,7 @@ const cleanupImpl = (
           return mtime < now - repoTtlDays * 24 * 3600 * 1000 ? ("stale" as const) : ("keep" as const)
         }
         const m = meta as Meta
-        const cwdGone = !(yield* fsTry("stat cwd", () =>
-          stat(m.cwd).then((s) => s.isDirectory())
-        ).pipe(Effect.orElseSucceed(() => false)))
-        return m.lastSnapshotAt < now - repoTtlDays * 24 * 3600 * 1000 || cwdGone
+        return m.lastSnapshotAt < now - repoTtlDays * 24 * 3600 * 1000
           ? ("stale" as const)
           : ("keep" as const)
       })
@@ -1103,7 +1103,7 @@ const cleanupImpl = (
           repoDir,
           Effect.gen(function* () {
             if ((yield* isStale(repoDir)) !== "stale") return
-            yield* Effect.logInfo(`snapshot cleanup: removing repo ${name} (stale or cwd gone)`)
+            yield* Effect.logInfo(`snapshot cleanup: removing repo ${name} (inactive for ${repoTtlDays}+ days)`)
             yield* fsTry("rm repo", () => rm(repoDir, { recursive: true, force: true })).pipe(
               Effect.orElseSucceed(() => undefined)
             )

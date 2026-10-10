@@ -74,9 +74,9 @@ Both notes auto-save about 5 seconds after you stop typing. **There's no "save" 
 - **No image embedding** — text and code only.
 - **No file attachments.**
 - **No cross-tab live sync** — if you have the same note open in two windows, the later save overwrites the earlier one.
-- **Notes aren't shared** with collaborators — they're local to your machine. For shared docs use [Tech Plan Review](/en/docs/explorer/reviews/#create-share) instead.
+- **Notes aren't shared** with collaborators — they're local to your machine.
 - **No cross-note search** — the editor doesn't ship a built-in search; use the browser's `Cmd+F` to find things inside a note.
 
 ## Next
 
-- [Tech Plan Review](/en/docs/explorer/reviews/#create-share) — for notes you want to share with teammates
+- [Skills](/en/docs/agent/skills/) — turn instructions you keep pasting from a note into a slash command

@@ -144,17 +144,6 @@ export const messages = {
           'Drag-to-reorder bubbles, grid / maximized layout',
         ],
       },
-      review: {
-        tag: 'Team',
-        name: 'Code Review',
-        title: 'Ship faster, together',
-        bullets: [
-          'LAN-shareable review pages — teammates need zero install',
-          'Line-level comments with reply threads',
-          'Send any comment back to AI as context for an automated fix',
-          'Built on plain Markdown — no separate review system',
-        ],
-      },
     },
     bubbles: {
       headline: 'Smart Bubbles in Console',
@@ -336,12 +325,6 @@ export const messages = {
           opcode: '❌',
         },
         {
-          dim: 'LAN-shared code review pages',
-          us: '✅',
-          official: '❌',
-          opcode: '❌',
-        },
-        {
           dim: 'Fully offline / air-gapped',
           us: '✅ via Ollama',
           official: '❌',
@@ -492,7 +475,6 @@ export const messages = {
           // Reference
           cli: 'Cockpit CLI',
           chromeExtension: 'Chrome Extension',
-          reviews: 'Tech Plan Review',
           keyboardShortcuts: 'Keyboard Shortcuts',
           faq: 'FAQ & Troubleshooting',
         },
@@ -651,17 +633,6 @@ export const messages = {
           '浏览器气泡 —— 通过无障碍树控制 Chrome',
           '数据库气泡 —— PostgreSQL / MySQL / Redis',
           '气泡拖拽排序、网格 / 放大布局',
-        ],
-      },
-      review: {
-        tag: '团队',
-        name: '代码评审',
-        title: '团队协作，加速发布',
-        bullets: [
-          '局域网分享评审页面 —— 队友零安装即可参与',
-          '行级评论与回复线程',
-          '任意评论可发给 AI 作为上下文，自动修复',
-          '直接基于 Markdown 文件，无需额外评审系统',
         ],
       },
     },
@@ -845,12 +816,6 @@ export const messages = {
           opcode: '❌',
         },
         {
-          dim: '局域网共享评审页',
-          us: '✅',
-          official: '❌',
-          opcode: '❌',
-        },
-        {
           dim: '全离线 / 内网隔离',
           us: '✅ 走 Ollama',
           official: '❌',
@@ -996,7 +961,6 @@ export const messages = {
           // Reference
           cli: 'Cockpit CLI',
           chromeExtension: 'Chrome 扩展',
-          reviews: '技术方案评审',
           keyboardShortcuts: '键盘快捷键',
           faq: '常见问题与排查',
         },

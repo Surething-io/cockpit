@@ -1400,7 +1400,7 @@ Cockpit sets a cookie and cleans the URL — the token doesn't linger in the add
 - or, when two people work the **same repo**, each takes a **git worktree** — Cockpit manages worktrees from the Explorer, so parallel agents never trample each other's checkout,
 - picks their engine per tab: Claude by default, or **Codex / DeepSeek / Kimi / Ollama** with their own key.
 
-Every seat gets the full cockpit: agent chat, xterm.js terminal, Chrome control, PostgreSQL / MySQL / Redis bubbles, code review pages, scheduled tasks.
+Every seat gets the full cockpit: agent chat, xterm.js terminal, Chrome control, PostgreSQL / MySQL / Redis bubbles, scheduled tasks.
 
 ## The honest part: what this is and isn't
 
@@ -1502,7 +1502,7 @@ Cockpit 会写入 cookie 并清理 URL —— 令牌不会留在地址栏里。�
 - 两个人改**同一个仓库**时，各占一个 **git worktree** —— Cockpit 在 Explorer 里直接管理 worktree，并行的 Agent 不会互踩检出；
 - 每个 tab 自选引擎：默认 Claude，也可以带自己的 Key 用 **Codex / DeepSeek / Kimi / Ollama**。
 
-每个席位都是完整驾驶舱：Agent 对话、xterm.js 终端、Chrome 控制、PostgreSQL / MySQL / Redis 气泡、代码评审页、定时任务。
+每个席位都是完整驾驶舱：Agent 对话、xterm.js 终端、Chrome 控制、PostgreSQL / MySQL / Redis 气泡、定时任务。
 
 ## 实话实说：它是什么，不是什么
 
@@ -2935,8 +2935,6 @@ Because skills are just markdown files at paths *you* choose, the team-asset sto
 
 Now skills are diffable, reviewable, \`git blame\`-able. The senior engineer's "always do X but never Y" stops being a Slack DM and becomes a PR with a reviewer. New hires \`git pull\`, click **+ Add Skill** three times, and the team's tacit knowledge is in their slash menu before the end of day one.
 
-Cockpit's LAN-shared review surface (see [our previous post](/en/blog/claude-code-gui-comparison/)) makes the inner loop tighter: write a skill in chat, share the review page over LAN, teammate comments line-by-line, send their comments back to the agent as context, agent revises the skill, you commit.
-
 The point: **skills don't make a copy of your team's knowledge. They reference it.** When the handbook updates, the skill updates. There's only one source of truth, and it's already where your team keeps source of truth.
 
 ## Meta: a built-in skill that writes skills
@@ -3111,8 +3109,6 @@ Agent 自动进入你昨天训练过的**同款姿态**。同样的检查、同�
 \`\`\`
 
 Skill 因此可以 diff、可以 review、可以 \`git blame\`。Senior 那句"始终做 X、绝不做 Y"不再是一条 Slack 私信，而是一个有 reviewer 的 PR。新人 \`git pull\` 完，点 3 下 **+ Add Skill**，团队的隐性知识在他第一天结束前就出现在斜杠菜单里。
-
-Cockpit 的局域网共享评审页（参见[上一篇博客](/zh/blog/claude-code-gui-comparison/)）让内循环更紧：在对话里写出 skill、把评审页面分享到局域网、队友逐行评论、把评论喂回 Agent 作为上下文、Agent 修订、你 commit。
 
 关键是：**Skill 不是把团队的知识复制了一份，而是引用了它。** 当 handbook 更新，skill 就更新。**只有一个事实来源**，而且就是你团队本来存放事实的地方。
 
@@ -3384,7 +3380,6 @@ Aider is great. It's older, more opinionated about commits, and a good fit for s
 - You want notifications, red dots, and a real "session inbox".
 - You want more engines than Claude: **Codex / DeepSeek / Kimi / local Ollama**, each in its own tab with its own key.
 - Your work isn't just code — it touches a browser, a Postgres DB, or a Redis cache, and you'd like the agent to drive those too.
-- Your team reviews code together, and you want a shared review surface that doesn't need a SaaS.
 - You review what the agent did before trusting it: every file-touching tool call is [snapshotted](/en/docs/agent/snapshots/) — read a reply's changes like git history, including what \`Bash\` did.
 - Your team shares a dev box: Cockpit is **web client–server**, so you [install it once and every teammate gets a seat](/en/blog/self-host-claude-code-gui-for-your-team/) — each in their own project or worktree.
 
@@ -3401,7 +3396,7 @@ Aider is great. It's older, more opinionated about commits, and a good fit for s
 | Multi-project parallel | ❌ tmux required | ✅ sessions sidebar | ❌ multi-window | ❌ | ✅ first-class |
 | Engines beyond Claude | ❌ | ❌ | ✅ varies | ✅ | ✅ Codex / DeepSeek / Kimi / Ollama |
 | Browser / DB control | ❌ | ❌ preview only | usually ❌ | ❌ | ✅ Bubbles |
-| Code review surface | git tools | diff viewer | PR provider | git | ✅ LAN-shared |
+| Code review surface | git tools | diff viewer | PR provider | git | ✅ diff view + line comments sent to the agent |
 | Per-tool-call change history (what each Edit / **Bash** actually changed on disk) | ❌ | ❌ per-turn diff only | ⚠️ per-prompt checkpoints (Cursor) | ✅ auto git commits | ✅ snapshots incl. Bash, 7-day local |
 | Automation | scripts | ✅ Routines (cron + API + GitHub) | ❌ | scripts | ✅ scheduled tasks (cron) |
 | Self-host for a team | ❌ | ❌ | ❌ | ❌ | ✅ one dev box, every teammate a seat |
@@ -3415,7 +3410,6 @@ Aider is great. It's older, more opinionated about commits, and a good fit for s
 - **Solo, terminal-bound, want chat-driven coding:** Aider or raw CLI.
 - **All-in on Anthropic, one machine, want first-party polish:** the official desktop app.
 - **Multiple projects in flight, more engines than Claude, or your work crosses code+browser+DB:** Cockpit.
-- **Team that wants a shared review surface without buying a SaaS:** Cockpit (the LAN-share review page is the single feature that justifies it on its own).
 - **Team sharing one dev box:** Cockpit — [install once, every teammate gets a seat](/en/blog/self-host-claude-code-gui-for-your-team/).
 
 The strongest argument *against* Cockpit is also the simplest: if your day is "open one project, do one thing, close laptop", you don't need a cockpit. You need a yoke.
@@ -3481,7 +3475,6 @@ Aider 很好。老牌、对 commit 有自己的脾气，适合个人 OSS 项目�
 - 你想要通知、红点、真正的"会话收件箱"。
 - 你想要 Claude 之外的引擎：**Codex / DeepSeek / Kimi / 本地 Ollama**，每个 tab 各带各的 Key。
 - 你的工作不只是代码 —— 还涉及浏览器、Postgres、Redis，希望 Agent 也能驱动它们。
-- 你的团队需要一起做 review，想要一个不用上 SaaS 的共享评审面。
 - 你在信任 Agent 之前想先看清它干了什么：每次碰文件的工具调用都有[快照](/zh/docs/agent/snapshots/) —— 像读 git 历史一样读一条回复的变更，\`Bash\` 改了什么也看得到。
 - 你的团队共用一台开发机：Cockpit 是 **Web client-server** 架构，[装一次，全队一起飞](/zh/blog/self-host-claude-code-gui-for-your-team/) —— 各自在自己的项目 / worktree 上。
 
@@ -3498,7 +3491,7 @@ Aider 很好。老牌、对 commit 有自己的脾气，适合个人 OSS 项目�
 | 多项目并行 | ❌ 需要 tmux | ✅ 会话侧边栏 | ❌ 多窗口 | ❌ | ✅ 一等公民 |
 | Claude 之外的引擎 | ❌ | ❌ | ✅ 看插件 | ✅ | ✅ Codex / DeepSeek / Kimi / Ollama |
 | 浏览器 / DB 控制 | ❌ | ❌ 仅只读预览 | 通常 ❌ | ❌ | ✅ Bubbles |
-| 代码评审面 | git 工具 | diff 视图 | PR 平台 | git | ✅ 局域网共享 |
+| 代码评审面 | git 工具 | diff 视图 | PR 平台 | git | ✅ diff 视图 + 行级评论回喂 Agent |
 | 工具调用级变更历史（每次 Edit / **Bash** 在磁盘上到底改了什么） | ❌ | ❌ 仅按轮次 diff | ⚠️ 按轮次检查点（Cursor） | ✅ 真 git 自动提交 | ✅ 快照含 Bash，本地留 7 天 |
 | 自动化 | 脚本 | ✅ Routines（cron + API + GitHub） | ❌ | 脚本 | ✅ 定时任务（cron） |
 | 团队自托管 | ❌ | ❌ | ❌ | ❌ | ✅ 一台开发机，全队一起飞 |
@@ -3512,7 +3505,6 @@ Aider 很好。老牌、对 commit 有自己的脾气，适合个人 OSS 项目�
 - **独立开发者，终端派，想要对话式编码：** Aider 或裸 CLI。
 - **全押 Anthropic、单机作业、要第一方打磨：** 官方 Desktop。
 - **同时跟进多项目、想要多引擎，或工作横跨代码 + 浏览器 + 数据库：** Cockpit。
-- **团队想要一个共享评审面，但不想买 SaaS：** Cockpit（局域网共享评审页这一项就够买单了）。
 - **团队共用一台开发机：** Cockpit —— [装一次，全队一起飞](/zh/blog/self-host-claude-code-gui-for-your-team/)。
 
 反对 Cockpit 最强的论点也最朴素：**如果你一天就是"打开一个项目、干一件事、合电脑"，你不需要驾驶舱，你需要的是一根操纵杆。**

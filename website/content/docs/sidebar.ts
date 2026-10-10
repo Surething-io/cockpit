@@ -113,7 +113,6 @@ export const docsSidebar: DocSection[] = [
       { slug: 'explorer/recent', labelKey: 'recent', available: true },
       { slug: 'explorer/changes', labelKey: 'changes', available: true },
       { slug: 'explorer/history', labelKey: 'history', available: true },
-      { slug: 'explorer/reviews', labelKey: 'reviews', available: true },
     ],
   },
 
@@ -138,8 +137,7 @@ export const docsSidebar: DocSection[] = [
   // ─── 6. Reference (everything outside the running app) ────────────
   // Three flat reference docs: CLI (the cockpit binary surface),
   // keyboard shortcuts, and the FAQ.
-  // `chrome-extension` moved to Console (it's what powers Browser bubbles),
-  // and `reviews` moved to Explorer (it's a Markdown-file-anchored surface).
+  // `chrome-extension` moved to Console (it's what powers Browser bubbles).
   {
     key: 'reference',
     pages: [

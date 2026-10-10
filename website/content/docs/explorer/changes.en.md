@@ -54,7 +54,7 @@ This is deliberate: long commit messages don't belong in a single-line field, an
 
 ## Diff View
 
-Cockpit renders every file change — staged / unstaged in the **Changes** tab, commits in the **History** tab, line-anchored ranges in Tech Plan Review — through the same **Diff View**.
+Cockpit renders every file change — staged / unstaged in the **Changes** tab, commits in the **History** tab — through the same **Diff View**.
 
 ### Always side-by-side
 

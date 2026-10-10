@@ -122,7 +122,6 @@ export default async function HomePage({
       'Built-in xterm.js terminal',
       'Chrome browser automation',
       'PostgreSQL / MySQL / Redis bubbles',
-      'LAN-shared code review',
       'Slash modes: /qa, /fx, /ex, /go, /cg, /cc',
       'Custom skills via SKILL.md',
       'Scheduled tasks (one-time, interval, cron)',

@@ -7,7 +7,6 @@
  * with our private key. Outbound HTTPS to the browser's push service (FCM /
  * Mozilla autopush / Apple) is all that's required.
  */
-import { chmod } from 'fs/promises';
 import webpush from 'web-push';
 import {
   SETTINGS_FILE,
@@ -92,8 +91,7 @@ export async function getVapid(): Promise<PushVapid> {
         : DEFAULT_SUBJECT,
     };
     if (!hasKeys(stored) || stored.subject !== next.subject) {
-      await writeJsonFile(PUSH_VAPID_FILE, next);
-      await chmod(PUSH_VAPID_FILE, 0o600);
+      await writeJsonFile(PUSH_VAPID_FILE, next); // owner-only: PUSH_VAPID_FILE is in SECRET_FILES
     }
     // The pair is safe in its own file now; only then drop the legacy copy.
     if (legacy !== undefined) {

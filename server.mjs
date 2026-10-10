@@ -288,6 +288,9 @@ app.prepare().then(async () => {
   // Reclaim terminal output files no history entry references (waits for the
   // adoption above internally). Off the boot path — nothing waits on it.
   httpApi.sweepOrphanTerminalOutputs?.().catch(() => {});
+  // Credential files written by older versions were world-readable (0644); make
+  // them owner-only now rather than on their next write. Off the boot path.
+  httpApi.tightenSecretFiles?.().catch(() => {});
   const { scheduledTaskManager } = await import(dev ? '@cockpit/feature-agent/server/scheduledTasks' : './dist/scheduledTasks.mjs');
 
   // Initialize the scheduled-task manager

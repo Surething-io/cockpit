@@ -1,6 +1,6 @@
 import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
-import { mkdir, readFile, writeFile } from 'fs/promises';
+import { chmod, mkdir, readFile, writeFile } from 'fs/promises';
 import { closeSync, existsSync, mkdirSync, openSync, readSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, readdirSync, readFileSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { encodePath } from './encodePath';
@@ -90,6 +90,34 @@ export const GLM_CREDENTIALS_FILE = join(GLM_DIR, 'credentials.json');
 // and the resolvers in ollamaEnv.ts.
 export const OLLAMA_DIR = join(COCKPIT_DIR, 'ollama');
 export const OLLAMA_CONFIG_FILE = join(OLLAMA_DIR, 'config.json');
+
+/**
+ * Files that hold credentials. writeJsonFile writes these owner-only (0600) and
+ * tightenSecretFiles fixes ones an older version left world-readable. Register every
+ * new credential file here (constraints/secret-files-owner-only.test.ts checks that each
+ * *_CREDENTIALS_FILE is listed).
+ */
+export const SECRET_FILES: readonly string[] = [
+  DEEPSEEK_CREDENTIALS_FILE,
+  KIMI_CREDENTIALS_FILE,
+  GLM_CREDENTIALS_FILE,
+  OLLAMA_CONFIG_FILE,
+  PUSH_VAPID_FILE,
+];
+const SECRET_FILE_SET = new Set(SECRET_FILES);
+const OWNER_ONLY = 0o600;
+
+/**
+ * Make every existing secret file owner-only, without rewriting it. Run at startup:
+ * writeJsonFile only tightens a file the next time it is written.
+ */
+export async function tightenSecretFiles(): Promise<void> {
+  for (const file of SECRET_FILES) {
+    await chmod(file, OWNER_ONLY).catch((err: NodeJS.ErrnoException) => {
+      if (err.code !== 'ENOENT') console.warn(`[paths] could not restrict permissions of ${file}: ${err.message}`);
+    });
+  }
+}
 
 // ============================================
 // Path Encoding
@@ -689,7 +717,14 @@ export async function readJsonFileForUpdate<T>(filePath: string, defaultValue: T
  */
 export async function writeJsonFile<T>(filePath: string, data: T): Promise<void> {
   await ensureParentDir(filePath);
-  await writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  if (!SECRET_FILE_SET.has(filePath)) {
+    await writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+    return;
+  }
+  // Credentials: owner-only. `mode` applies only when the file is created, so a file an
+  // older version wrote as 0644 is tightened explicitly.
+  await writeFile(filePath, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: OWNER_ONLY });
+  await chmod(filePath, OWNER_ONLY);
 }
 
 // ============================================

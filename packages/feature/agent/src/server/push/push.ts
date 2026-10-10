@@ -2,16 +2,20 @@
  * Web Push core (server-only).
  *
  * Standard W3C Push + VAPID — no Google/Firebase registration, no API keys.
- * We self-generate a VAPID keypair (stored in settings.json), the browser
+ * We self-generate a VAPID keypair (stored in push-vapid.json), the browser
  * hands us a push endpoint per subscription, and web-push signs the request
  * with our private key. Outbound HTTPS to the browser's push service (FCM /
  * Mozilla autopush / Apple) is all that's required.
  */
+import { chmod } from 'fs/promises';
 import webpush from 'web-push';
 import {
   SETTINGS_FILE,
   PUSH_SUBSCRIPTIONS_FILE,
+  PUSH_VAPID_FILE,
+  mutateJsonFile,
   readJsonFile,
+  readJsonFileForUpdate,
   writeJsonFile,
   withFileLock,
 } from '@cockpit/shared-utils';
@@ -22,9 +26,14 @@ export interface PushVapid {
   subject: string;
 }
 
-interface Settings {
-  push?: PushVapid;
+/** settings.json as older versions wrote it: the key pair lived under `push`. */
+interface LegacySettings {
+  push?: Partial<PushVapid>;
   [k: string]: unknown;
+}
+
+function hasKeys(v: Partial<PushVapid> | undefined | null): v is Partial<PushVapid> & Pick<PushVapid, 'publicKey' | 'privateKey'> {
+  return !!v?.publicKey && !!v?.privateKey;
 }
 
 interface SubStore {
@@ -54,41 +63,46 @@ function isValidVapidSubject(sub: string | undefined): sub is string {
 }
 
 /**
- * Get the VAPID keypair, generating + persisting it on first use. Merges into
- * settings.json without clobbering other sections. Also migrates a previously
- * persisted invalid subject (e.g. the old mailto:cockpit@localhost default that
- * broke Apple/iOS delivery) to a valid one.
+ * Get the VAPID keypair, generating + persisting it on first use in
+ * push-vapid.json (owner-only). Two migrations happen on the way:
+ *
+ * - Older versions kept the pair under `push` in settings.json, which
+ *   GET /api/settings sends to the browser. Move it to push-vapid.json (same
+ *   keys, so existing subscriptions stay valid), then drop it from settings.
+ * - Heal a persisted invalid subject (e.g. the old mailto:cockpit@localhost
+ *   default that broke Apple/iOS delivery) to a valid one.
  */
 export async function getVapid(): Promise<PushVapid> {
   if (configured) return configured;
-  const vapid = await withFileLock(SETTINGS_FILE, async () => {
-    const settings = await readJsonFile<Settings>(SETTINGS_FILE, {});
-    if (settings.push?.publicKey && settings.push?.privateKey) {
-      const subject = isValidVapidSubject(settings.push.subject)
-        ? settings.push.subject
-        : DEFAULT_SUBJECT;
-      // Heal a bad persisted subject in place so iOS pushes stop getting
-      // rejected — the keypair is untouched, so existing subscriptions stay valid.
-      if (subject !== settings.push.subject) {
-        await writeJsonFile(SETTINGS_FILE, {
-          ...settings,
-          push: { ...settings.push, subject },
-        });
-      }
-      return {
-        publicKey: settings.push.publicKey,
-        privateKey: settings.push.privateKey,
-        subject,
-      };
-    }
-    const keys = webpush.generateVAPIDKeys();
-    const push: PushVapid = {
-      publicKey: keys.publicKey,
-      privateKey: keys.privateKey,
-      subject: DEFAULT_SUBJECT,
+  const vapid = await withFileLock(PUSH_VAPID_FILE, async () => {
+    // Strict read: a corrupt key file must fail loudly, not be regenerated —
+    // new keys would orphan every existing subscription.
+    const stored = await readJsonFileForUpdate<Partial<PushVapid>>(PUSH_VAPID_FILE, {});
+    const legacy = (await readJsonFile<LegacySettings>(SETTINGS_FILE, {})).push;
+    const source = hasKeys(stored)
+      ? stored
+      : hasKeys(legacy)
+        ? legacy
+        : webpush.generateVAPIDKeys();
+    const next: PushVapid = {
+      publicKey: source.publicKey,
+      privateKey: source.privateKey,
+      subject: isValidVapidSubject((source as Partial<PushVapid>).subject)
+        ? (source as PushVapid).subject
+        : DEFAULT_SUBJECT,
     };
-    await writeJsonFile(SETTINGS_FILE, { ...settings, push });
-    return push;
+    if (!hasKeys(stored) || stored.subject !== next.subject) {
+      await writeJsonFile(PUSH_VAPID_FILE, next);
+      await chmod(PUSH_VAPID_FILE, 0o600);
+    }
+    // The pair is safe in its own file now; only then drop the legacy copy.
+    if (legacy !== undefined) {
+      await mutateJsonFile<LegacySettings>(SETTINGS_FILE, {}, (settings) => {
+        const { push: _legacy, ...rest } = settings;
+        return rest;
+      });
+    }
+    return next;
   });
   webpush.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey);
   configured = vapid;

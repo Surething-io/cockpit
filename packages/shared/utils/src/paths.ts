@@ -21,6 +21,9 @@ export const COCKPIT_PROJECTS_DIR = join(COCKPIT_DIR, 'projects');
 export const GLOBAL_STATE_FILE = join(COCKPIT_DIR, 'state.json');
 export const PINNED_SESSIONS_FILE = join(COCKPIT_DIR, 'pinned-sessions.json');
 export const PUSH_SUBSCRIPTIONS_FILE = join(COCKPIT_DIR, 'push-subscriptions.json');
+// Web Push VAPID key pair. Its own file, NOT settings.json — GET /api/settings ships
+// settings to the browser, and the private key must stay on the server.
+export const PUSH_VAPID_FILE = join(COCKPIT_DIR, 'push-vapid.json');
 export const NOTE_FILE = join(COCKPIT_DIR, 'note.md');
 export const SCHEDULED_TASKS_FILE = join(COCKPIT_DIR, 'scheduled-tasks.json');
 export const SETTINGS_FILE = join(COCKPIT_DIR, 'settings.json');

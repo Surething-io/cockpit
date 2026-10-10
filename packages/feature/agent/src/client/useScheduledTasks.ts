@@ -42,7 +42,8 @@ export interface ScheduledTask {
   completed?: boolean;
   unread?: boolean;
   lastFiredAt?: number;
-  lastResult?: 'success' | 'error';
+  lastResult?: 'success' | 'error' | 'interrupted';
+  firingSince?: number; // a run is in flight
   createdAt: number;
   sortIndex?: number;
 }

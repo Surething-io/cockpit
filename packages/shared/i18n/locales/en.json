@@ -286,6 +286,8 @@
     "noTaskMessages": "No messages in this task's session yet",
     "success": "Success",
     "failure": "Failed",
+    "inFlight": "Running now",
+    "interrupted": "Interrupted",
     "createTask": "Create Scheduled Task",
     "editTask": "Edit Scheduled Task",
     "sendMessage": "Message",

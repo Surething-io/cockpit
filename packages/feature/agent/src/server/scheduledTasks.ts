@@ -37,10 +37,11 @@ export interface ScheduledTask {
   cron?: string;           // type=cron, e.g. "0 9 * * *"
   nextFireTime: number;    // timestamp ms
   paused: boolean;
-  completed?: boolean;     // type=once: set after firing
+  completed?: boolean;     // type=once: set when its scheduled run is claimed
   unread?: boolean;
   lastFiredAt?: number;
-  lastResult?: 'success' | 'error';
+  lastResult?: 'success' | 'error' | 'interrupted'; // interrupted: process died mid-run
+  firingSince?: number;    // set while a run is in flight (claimed on disk before sending)
   consecutiveFailures?: number; // resets on success; recurring tasks auto-pause at the threshold
   createdAt: number;
   sortIndex?: number;
@@ -244,9 +245,8 @@ const dispatchEngineMessageEff = (
       // reinforcing, since a from-scratch run carries no context and is the one most
       // likely to hit the deadline again.
       //
-      // Persisting is part of binding (see persistSessionRebind): mutating `task` alone
-      // would only reach disk in fireTask's post-run saveToDisk — exactly the moment this
-      // is trying not to depend on.
+      // Persisting is part of binding (see persistSessionRebind): the run's settle patch
+      // does not carry the session id, so without it the new id would never reach disk.
       let rebound = !startFresh; // a plain resume already points at the right session
       const deadline = Date.now() + RUN_DEADLINE_MS;
       while (isRunActive(key) && Date.now() < deadline) {
@@ -409,12 +409,192 @@ export const sendChatMessageEff = (task: ScheduledTask): Effect.Effect<boolean, 
   );
 
 /**
- * Promise<boolean> entry point that delegates to the Effect version internally.
- * fireTask / fireTaskManual continue to use Promise/async so the manager's
- * scheduling logic stays unchanged.
+ * Promise<boolean> entry point that delegates to the Effect version internally,
+ * so the manager's scheduling logic stays Promise/async.
  */
 async function sendChatMessage(task: ScheduledTask): Promise<boolean> {
   return AppRuntime.runPromise(sendChatMessageEff(task));
+}
+
+// ============================================
+// Task lifecycle — one transition table (State, as data)
+// ============================================
+
+/**
+ * Where a task is in its run lifecycle, derived from fields already on disk.
+ * `firing` comes first: a run in flight stays in flight even if the user pauses
+ * the task meanwhile (the pause applies once the run settles).
+ */
+export type TaskState = 'pending' | 'firing' | 'done' | 'interrupted' | 'paused';
+
+/** Run-lifecycle events. Edits, pause and resume are plain field patches, not events. */
+export type TaskEvent = 'due' | 'trigger' | 'settle' | 'boot';
+
+export function taskState(t: ScheduledTask): TaskState {
+  if (t.firingSince) return 'firing';
+  if (t.paused) return 'paused';
+  if (t.completed) return 'done';
+  if (t.lastResult === 'interrupted') return 'interrupted';
+  return 'pending';
+}
+
+/**
+ * The only legal run-lifecycle moves. Anything not listed is rejected — notably a
+ * second run while one is in flight, and a scheduled fire of a finished task.
+ * `settle` lands on pending / done / paused depending on the task (see settleRun).
+ */
+export const TRANSITIONS: ReadonlyArray<{ from: TaskState; event: TaskEvent; to: TaskState | 'settled' }> = [
+  { from: 'pending', event: 'due', to: 'firing' },
+  { from: 'pending', event: 'trigger', to: 'firing' },
+  { from: 'interrupted', event: 'due', to: 'firing' },
+  { from: 'interrupted', event: 'trigger', to: 'firing' },
+  { from: 'paused', event: 'trigger', to: 'firing' }, // manual run ignores pause
+  { from: 'done', event: 'trigger', to: 'firing' }, // manual re-run of a finished once task
+  { from: 'firing', event: 'settle', to: 'settled' },
+  { from: 'firing', event: 'boot', to: 'interrupted' }, // the process died mid-run
+];
+
+export function canTransition(t: ScheduledTask, event: TaskEvent): boolean {
+  const from = taskState(t);
+  return TRANSITIONS.some((r) => r.from === from && r.event === event);
+}
+
+// ============================================
+// Task patches — every change is a command applied to the current record
+// ============================================
+
+/** A change to one task, computed from its CURRENT stored state; null = no change. */
+type TaskPatch = (task: ScheduledTask) => Partial<ScheduledTask> | null;
+
+/** Fields only the scheduler writes; stripped from add / update input. */
+const SERVER_OWNED: ReadonlyArray<keyof ScheduledTask> = ['firingSince'];
+
+function withoutServerOwned<T extends Partial<ScheduledTask>>(fields: T): T {
+  const copy = { ...fields };
+  for (const k of SERVER_OWNED) delete copy[k];
+  return copy;
+}
+
+/** Next occurrence of a recurring task; a once task keeps its own time. */
+function nextOccurrence(t: ScheduledTask, now: number): number {
+  if (t.type === 'interval' && t.intervalMinutes) return now + t.intervalMinutes * 60000;
+  if (t.type === 'cron' && t.cron) return getNextCronTime(t.cron, new Date(now));
+  return t.nextFireTime;
+}
+
+/**
+ * Check whether `now` falls within the active time range of an interval task.
+ * Supports cross-midnight ranges such as 22:00 ~ 06:00.
+ */
+function isInActiveRange(task: ScheduledTask, now = new Date()): boolean {
+  if (task.type !== 'interval' || !task.activeFrom || !task.activeTo) return true;
+  const [fh, fm] = task.activeFrom.split(':').map(Number);
+  const [th, tm] = task.activeTo.split(':').map(Number);
+  const current = now.getHours() * 60 + now.getMinutes();
+  const from = fh * 60 + fm;
+  const to = th * 60 + tm;
+  return from <= to ? current >= from && current <= to : current >= from || current <= to;
+}
+
+/**
+ * Claim a run on disk before anything is sent. A scheduled `once` run is marked
+ * completed here, not after the run: if the process dies mid-run the task must
+ * not come back as pending (at most once).
+ */
+const claimRun = (event: 'due' | 'trigger', now: number): TaskPatch => (t) => ({
+  firingSince: now,
+  ...(event === 'due' && t.type === 'once' ? { completed: true } : {}),
+});
+
+/**
+ * Record a finished run on the current record. A manual run keeps the schedule
+ * and never trips the circuit breaker; a scheduled one completes a once task,
+ * auto-pauses a recurring task that keeps failing, or advances it.
+ */
+const settleRun = (event: 'due' | 'trigger', success: boolean, now: number): TaskPatch => (t) => {
+  const consecutiveFailures = success ? 0 : (t.consecutiveFailures ?? 0) + 1;
+  const base: Partial<ScheduledTask> = {
+    firingSince: undefined,
+    lastFiredAt: now,
+    lastResult: success ? 'success' : 'error',
+    consecutiveFailures,
+    unread: true,
+  };
+  if (event === 'trigger') return base;
+  if (t.type === 'once') return { ...base, completed: true };
+  if (!success && consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) return { ...base, paused: true };
+  return { ...base, nextFireTime: nextOccurrence(t, now) };
+};
+
+/** A claim found on startup: the previous process died mid-run. Never re-sent. */
+const interruptRun: TaskPatch = () => ({
+  firingSince: undefined,
+  lastResult: 'interrupted',
+  unread: true,
+});
+
+// ============================================
+// TaskStore — the only reader / writer of scheduled-tasks.json
+// ============================================
+
+/**
+ * scheduled-tasks.json is the single source of truth. Every write is a patch
+ * applied by task id to the record as it is on disk right now, under the file
+ * lock, so concurrent changes (a run settling, the user marking read, an edit)
+ * never overwrite one another. The strict read refuses a corrupt file rather
+ * than writing defaults over it.
+ */
+class TaskStore {
+  constructor(private readonly file: string) {}
+
+  read(): Promise<ScheduledTask[]> {
+    return withFileLock(this.file, () => readJsonFileForUpdate<ScheduledTask[]>(this.file, []));
+  }
+
+  /** Apply `patch` to task `id`; the updated task, or null if absent or unchanged. */
+  update(id: string, patch: TaskPatch): Promise<ScheduledTask | null> {
+    return withFileLock(this.file, async () => {
+      const all = await readJsonFileForUpdate<ScheduledTask[]>(this.file, []);
+      const i = all.findIndex((t) => t.id === id);
+      if (i === -1) return null;
+      const fields = patch(all[i]);
+      if (!fields) return null;
+      all[i] = { ...all[i], ...fields };
+      await writeJsonFile(this.file, all);
+      return all[i];
+    });
+  }
+
+  /** Apply `patch` to every task; writes only when something changed. */
+  updateAll(patch: TaskPatch): Promise<number> {
+    return withFileLock(this.file, async () => {
+      const all = await readJsonFileForUpdate<ScheduledTask[]>(this.file, []);
+      let changed = 0;
+      for (let i = 0; i < all.length; i++) {
+        const fields = patch(all[i]);
+        if (!fields) continue;
+        all[i] = { ...all[i], ...fields };
+        changed++;
+      }
+      if (changed) await writeJsonFile(this.file, all);
+      return changed;
+    });
+  }
+
+  add(task: ScheduledTask): Promise<ScheduledTask[]> {
+    return mutateJsonFile<ScheduledTask[]>(this.file, [], (all) => [...all, task]);
+  }
+
+  remove(id: string): Promise<boolean> {
+    return withFileLock(this.file, async () => {
+      const all = await readJsonFileForUpdate<ScheduledTask[]>(this.file, []);
+      const i = all.findIndex((t) => t.id === id);
+      if (i === -1) return false;
+      all.splice(i, 1);
+      await writeJsonFile(this.file, all);
+      return true;
+    });
+  }
 }
 
 // ============================================
@@ -424,10 +604,9 @@ async function sendChatMessage(task: ScheduledTask): Promise<boolean> {
 type TaskFiredCallback = (task: ScheduledTask) => void;
 
 class ScheduledTaskManager {
-  private tasks: ScheduledTask[] = [];
+  private readonly store = new TaskStore(SCHEDULED_TASKS_FILE);
+  /** Timers by task id. Holds no task state — every decision re-reads the store. */
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
-  /** Tasks currently inside fireTask — prevents reentrant double-fire (manual trigger + cron, HMR-leaked timer, etc.) */
-  private firing = new Set<string>();
   private initialized = false;
   private initPromise: Promise<void> | null = null;
   /** Set when the task file exists but does not parse; see init(). */
@@ -445,26 +624,25 @@ class ScheduledTaskManager {
   }
 
   /**
-   * Initialize: load tasks from disk and rebuild timers. Tasks belong to this data dir
-   * (COCKPIT_DIR), not a port — a single instance per data dir is enforced at startup
-   * (server.mjs's health-probe lock), so loading the whole file is correct and safe.
+   * Initialize: recover runs cut off by the previous process, then arm timers. Tasks
+   * belong to this data dir (COCKPIT_DIR), not a port — a single instance per data
+   * dir is enforced at startup (server.mjs's health-probe lock).
    */
   async init(): Promise<void> {
     if (this.initialized) return;
     this.initialized = true;
 
-    // readJsonFileForUpdate throws on a malformed file (deliberately — see its
-    // doc comment). This is the boot path: server.mjs awaits init() with no
-    // error boundary, so letting it propagate would turn one bad byte in
-    // scheduled-tasks.json into "Cockpit will not start". Both extremes are
-    // wrong; the middle is to run with no timers, say so loudly, and leave the
-    // file alone. Every write path still refuses (mutateJsonFile uses the same
-    // strict read), so nothing overwrites what the user has to repair by hand.
+    // The strict read throws on a malformed file (deliberately — see
+    // readJsonFileForUpdate). This is the boot path: server.mjs awaits init() with
+    // no error boundary, so letting it propagate would turn one bad byte in
+    // scheduled-tasks.json into "Cockpit will not start". Run with no timers, say
+    // so loudly, and leave the file alone — every write path uses the same strict
+    // read, so nothing overwrites what the user has to repair by hand.
+    let tasks: ScheduledTask[];
     try {
-      this.tasks = await this.readTasksFromDisk();
+      tasks = await this.store.read();
     } catch (error) {
       this.loadFailed = true;
-      this.tasks = [];
       console.error(
         `[ScheduledTaskManager] ${SCHEDULED_TASKS_FILE} could not be read — NO scheduled task will fire until it is fixed. The file has been left untouched:`,
         error,
@@ -472,16 +650,19 @@ class ScheduledTaskManager {
       return;
     }
 
-    console.log(`[ScheduledTaskManager] Loaded ${this.tasks.length} scheduled tasks`);
+    console.log(`[ScheduledTaskManager] Loaded ${tasks.length} scheduled tasks`);
 
-    // Rebuild timers (expired tasks get their nextFireTime recalculated or are marked completed)
-    for (const task of this.tasks) {
-      if (!task.paused && !task.completed) {
-        this.scheduleTask(task);
-      }
+    // A claim on disk at startup means the previous process died mid-run. Record it
+    // as interrupted; never re-send it (at most once).
+    for (const t of tasks) {
+      if (!canTransition(t, 'boot')) continue;
+      console.warn(`[ScheduledTask] task ${t.id} was cut off mid-run by the previous process; marking interrupted`);
+      await this.store.update(t.id, interruptRun);
     }
-    // scheduleTask may have modified nextFireTime / completed for expired tasks; persist
-    await this.saveToDisk();
+
+    for (const t of await this.store.read()) {
+      await this.arm(t);
+    }
   }
 
   /** True when init() could not parse the task file: no timers, and no writes. */
@@ -497,37 +678,21 @@ class ScheduledTaskManager {
   }
 
   /**
-   * Read tasks from disk (avoids in-memory inconsistency between dual module instances).
-   *
-   * Under the file lock: writeJsonFile truncates and rewrites in place (no atomic
-   * rename), so an unlocked read racing a writer sees an empty file, and the strict
-   * parse turns that into a thrown "not valid JSON". Never call this from inside a
-   * withFileLock(SCHEDULED_TASKS_FILE) block — the lock does not nest.
-   */
-  private async readTasksFromDisk(): Promise<ScheduledTask[]> {
-    return withFileLock(SCHEDULED_TASKS_FILE, () =>
-      readJsonFileForUpdate<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []),
-    );
-  }
-
-  /**
-   * Return all tasks for the current instance (reads from disk each time to ensure cross-instance consistency).
+   * Return all tasks, sorted by sortIndex (tasks without one fall back to createdAt).
    */
   async getTasks(): Promise<ScheduledTask[]> {
     await this.ensureInit();
-    const tasks = await this.readTasksFromDisk();
-    // Sort by sortIndex; tasks without sortIndex fall back to createdAt
+    const tasks = await this.store.read();
     tasks.sort((a, b) => (a.sortIndex ?? a.createdAt) - (b.sortIndex ?? b.createdAt));
     return tasks;
   }
 
   /**
-   * Return the count of unread tasks (reads from disk each time).
+   * Return the count of unread tasks.
    */
   async getUnreadCount(): Promise<number> {
     await this.ensureInit();
-    const tasks = await this.readTasksFromDisk();
-    return tasks.filter(t => t.unread).length;
+    return (await this.store.read()).filter((t) => t.unread).length;
   }
 
   /**
@@ -535,71 +700,31 @@ class ScheduledTaskManager {
    */
   async addTask(task: ScheduledTask): Promise<ScheduledTask> {
     await this.ensureInit();
-    const fullTask: ScheduledTask = { ...task };
-
-    // Append directly to disk (avoids dual-instance issues); locked read-modify-write.
-    await mutateJsonFile<ScheduledTask[]>(SCHEDULED_TASKS_FILE, [], (allTasks) => [...allTasks, fullTask]);
-
-    // Sync in-memory state (the server.mjs instance needs to set a timer)
-    this.tasks.push(fullTask);
-    if (!fullTask.paused && !fullTask.completed) {
-      this.scheduleTask(fullTask);
-    }
+    const fullTask = withoutServerOwned({ ...task });
+    await this.store.add(fullTask);
+    await this.arm(fullTask);
     return fullTask;
   }
 
   /**
-   * Update a task (read → modify → write to disk; avoids dual-instance issues).
+   * Update a task: patch the given fields onto its current record and re-arm its timer.
    */
   async updateTask(id: string, fields: Partial<ScheduledTask>): Promise<ScheduledTask | null> {
     await this.ensureInit();
-    // Locked read-modify-write so a concurrent fireTask/saveToDisk can't interleave
-    // and revert this update (or vice-versa).
-    const task = await withFileLock(SCHEDULED_TASKS_FILE, async () => {
-      const allTasks = await readJsonFileForUpdate<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
-      const idx = allTasks.findIndex(t => t.id === id);
-      if (idx === -1) return null;
-      const updated = { ...allTasks[idx], ...fields };
-      allTasks[idx] = updated;
-      await writeJsonFile(SCHEDULED_TASKS_FILE, allTasks);
-      return updated;
-    });
-    if (!task) return null;
-
-    // Sync in-memory state (the server.mjs instance needs to rebuild its timer)
-    const memIdx = this.tasks.findIndex(t => t.id === id);
-    if (memIdx !== -1) {
-      this.tasks[memIdx] = task;
-      this.clearTimer(id);
-      if (!task.paused && !task.completed) {
-        this.scheduleTask(task);
-      }
-    }
+    const patch = withoutServerOwned(fields);
+    const task = await this.store.update(id, () => patch);
+    if (task) await this.arm(task);
     return task;
   }
 
   /**
-   * Delete a task (read → modify → write to disk; avoids dual-instance issues).
+   * Delete a task.
    */
   async deleteTask(id: string): Promise<boolean> {
     await this.ensureInit();
-    const removed = await withFileLock(SCHEDULED_TASKS_FILE, async () => {
-      const allTasks = await readJsonFileForUpdate<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
-      const idx = allTasks.findIndex(t => t.id === id);
-      if (idx === -1) return false;
-      allTasks.splice(idx, 1);
-      await writeJsonFile(SCHEDULED_TASKS_FILE, allTasks);
-      return true;
-    });
-    if (!removed) return false;
-
-    // Sync in-memory state
-    const memIdx = this.tasks.findIndex(t => t.id === id);
-    if (memIdx !== -1) {
-      this.clearTimer(id);
-      this.tasks.splice(memIdx, 1);
-    }
-    return true;
+    const removed = await this.store.remove(id);
+    if (removed) this.clearTimer(id);
+    return removed;
   }
 
   /**
@@ -610,121 +735,49 @@ class ScheduledTaskManager {
   }
 
   /**
-   * Resume a task.
+   * Resume a task: recalculate an expired fire time and reset the failure counter, so a
+   * resumed task (incl. one auto-paused by the circuit breaker) gets a fresh set of
+   * attempts instead of re-tripping on the first failure.
    */
   async resumeTask(id: string): Promise<ScheduledTask | null> {
-    // Read latest data from disk
-    const allTasks = await this.readTasksFromDisk();
-    const task = allTasks.find(t => t.id === id);
-    if (!task) return null;
-
-    // Recalculate nextFireTime
+    await this.ensureInit();
     const now = Date.now();
-    let nextFireTime = task.nextFireTime;
-    if (nextFireTime <= now) {
-      if (task.type === 'interval' && task.intervalMinutes) {
-        nextFireTime = now + task.intervalMinutes * 60000;
-      } else if (task.type === 'cron' && task.cron) {
-        nextFireTime = getNextCronTime(task.cron);
-      } else {
-        // once type already expired; schedule 1 minute from now
-        nextFireTime = now + 60000;
-      }
-    }
-
-    // Reset the failure counter so a resumed task (incl. one auto-paused by the
-    // circuit breaker) gets a fresh set of attempts instead of re-tripping on the
-    // first failure.
-    return this.updateTask(id, { paused: false, nextFireTime, consecutiveFailures: 0 });
+    const task = await this.store.update(id, (t) => ({
+      paused: false,
+      consecutiveFailures: 0,
+      // An expired once task is rescheduled a minute out.
+      nextFireTime: t.nextFireTime > now ? t.nextFireTime : t.type === 'once' ? now + 60000 : nextOccurrence(t, now),
+    }));
+    if (task) await this.arm(task);
+    return task;
   }
 
   /**
-   * Manually trigger a task (runs in the background; returns immediately; does not affect the existing schedule).
-   * Skips paused / activeRange checks and sends the message directly.
-   */
-  /**
-   * @returns false when no task has this id. True means the task exists and the
-   * run has been queued — NOT that it succeeded, since fireTaskManual is
-   * deliberately not awaited (see below).
+   * Manually trigger a task. Runs in the background and returns immediately (a run can
+   * take minutes); does not change the existing schedule.
+   *
+   * @returns false when no task has this id. True means the task exists and the run
+   * was queued — NOT that it started: a task already in flight rejects the claim.
    */
   async triggerTask(id: string): Promise<boolean> {
     await this.ensureInit();
-    const allTasks = await this.readTasksFromDisk();
-    const task = allTasks.find(t => t.id === id);
-    if (!task) return false;
-
-    // Sync to in-memory state
-    const memIdx = this.tasks.findIndex(t => t.id === id);
-    if (memIdx !== -1) {
-      this.tasks[memIdx] = task;
-    } else {
-      this.tasks.push(task);
-    }
-
-    // Execute in the background to avoid blocking the HTTP request (sendChatMessage can take minutes)
-    this.fireTaskManual(id).catch(err => {
+    const exists = (await this.store.read()).some((t) => t.id === id);
+    if (!exists) return false;
+    this.runTask(id, 'trigger').catch((err) => {
       console.error(`[ScheduledTask] Manual trigger failed for ${id}:`, err);
     });
     return true;
   }
 
-  /** Internal implementation for manual trigger; skips paused / activeRange checks. */
-  private async fireTaskManual(id: string): Promise<void> {
-    // Share the same in-flight Set as fireTask: if the task is mid-flight from a
-    // cron tick, the manual trigger would otherwise start a second concurrent run
-    // against the same session (the route's 409 guard is the second line of defense).
-    if (this.firing.has(id)) {
-      console.warn(`[ScheduledTask] Skipping manual trigger of ${id}: still in flight`);
-      return;
-    }
-
-    const task = this.tasks.find(t => t.id === id);
-    if (!task) return;
-
-    console.log(`[ScheduledTask] Manual trigger ${id}: "${task.message}"`);
-
-    this.firing.add(id);
-    try {
-      const success = await sendChatMessage(task);
-
-      task.lastFiredAt = Date.now();
-      task.lastResult = success ? 'success' : 'error';
-      // Track the counter (a manual success clears the breaker) but never auto-pause on a
-      // user-initiated trigger — only the scheduled path trips the circuit breaker.
-      task.consecutiveFailures = success ? 0 : (task.consecutiveFailures ?? 0) + 1;
-      task.unread = true;
-
-      // Manual trigger does not change completed / nextFireTime; preserves the existing schedule
-      await this.saveToDisk();
-
-      if (this.onTaskFired) {
-        this.onTaskFired(task);
-      }
-    } finally {
-      this.firing.delete(id);
-    }
-  }
-
   /**
    * Persist a mid-run session rebind (see rebindTaskSession) without waiting for the run
-   * to end. The in-memory entry and the `task` object the dispatcher mutated are the same
-   * reference in the normal path; the assignment here is what makes this correct for any
-   * other caller too.
+   * to end, and tell the board, which otherwise keeps the dead id — and its preview pane
+   * keeps polling a transcript that does not exist — for the entire run.
    */
   async persistSessionRebind(id: string, sessionId: string): Promise<void> {
-    const t = this.tasks.find(x => x.id === id);
     // Unmanaged task — a direct sendChatMessageEff call (tests), or one deleted mid-run.
-    // saveToDisk writes the in-memory set as the WHOLE file, so a miss must not write:
-    // it would publish a task list this manager never owned.
-    if (!t) return;
-    t.sessionId = sessionId;
-    await this.saveToDisk();
-    // Tell the board, which otherwise only refetches on mount or on a user action and
-    // would keep the dead id — and its preview pane keeps polling the transcript of a
-    // session that does not exist — for the entire run. The channel already exists end to
-    // end (server.mjs broadcasts `task-fired` on this callback; ProjectSidebar reloads the
-    // list on it); it just used to fire once, after the run.
-    this.onTaskFired?.(t);
+    const task = await this.store.update(id, () => ({ sessionId }));
+    if (task) this.onTaskFired?.(task);
   }
 
   /**
@@ -735,7 +788,8 @@ class ScheduledTaskManager {
    * exist while pause/resume/update answered 404.
    */
   async markRead(id: string): Promise<boolean> {
-    return (await this.updateTask(id, { unread: false })) !== null;
+    await this.ensureInit();
+    return (await this.store.update(id, () => ({ unread: false }))) !== null;
   }
 
   /**
@@ -743,35 +797,15 @@ class ScheduledTaskManager {
    */
   async markReadBySessionId(sessionId: string): Promise<void> {
     await this.ensureInit();
-    await withFileLock(SCHEDULED_TASKS_FILE, async () => {
-      const allTasks = await readJsonFileForUpdate<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
-      let changed = false;
-      for (const task of allTasks) {
-        if (task.sessionId === sessionId && task.unread) {
-          task.unread = false;
-          changed = true;
-        }
-      }
-      if (changed) await writeJsonFile(SCHEDULED_TASKS_FILE, allTasks);
-    });
+    await this.store.updateAll((t) => (t.sessionId === sessionId && t.unread ? { unread: false } : null));
   }
 
   /**
-   * Mark all tasks as read (operates directly on disk; avoids dual-instance issues).
+   * Mark all tasks as read.
    */
   async markAllRead(): Promise<void> {
     await this.ensureInit();
-    await withFileLock(SCHEDULED_TASKS_FILE, async () => {
-      const allTasks = await readJsonFileForUpdate<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
-      let changed = false;
-      for (const task of allTasks) {
-        if (task.unread) {
-          task.unread = false;
-          changed = true;
-        }
-      }
-      if (changed) await writeJsonFile(SCHEDULED_TASKS_FILE, allTasks);
-    });
+    await this.store.updateAll((t) => (t.unread ? { unread: false } : null));
   }
 
   /**
@@ -779,65 +813,53 @@ class ScheduledTaskManager {
    */
   async reorderTasks(orderedIds: string[]): Promise<void> {
     await this.ensureInit();
-    await withFileLock(SCHEDULED_TASKS_FILE, async () => {
-      const allTasks = await readJsonFileForUpdate<ScheduledTask[]>(SCHEDULED_TASKS_FILE, []);
-      for (let i = 0; i < orderedIds.length; i++) {
-        const task = allTasks.find(t => t.id === orderedIds[i]);
-        if (task) task.sortIndex = i;
-      }
-      await writeJsonFile(SCHEDULED_TASKS_FILE, allTasks);
+    await this.store.updateAll((t) => {
+      const i = orderedIds.indexOf(t.id);
+      return i === -1 || t.sortIndex === i ? null : { sortIndex: i };
     });
   }
 
   // ---- Internal ----
 
   /**
-   * Schedule a task. If nextFireTime has already passed, a recurring task gets its next
-   * occurrence recalculated, and a `once` task is fired on this boot if it came due
-   * within MISSED_ONCE_GRACE_MS (timers do not survive the process).
-   * Returns true if a timer was set, or false if a `once` task was retired unrun.
+   * (Re)arm the timer for a task from its stored state. An expired recurring task gets
+   * its next occurrence; an expired `once` task fires on this boot if it came due within
+   * MISSED_ONCE_GRACE_MS (timers do not survive the process), and is retired unrun past it.
    */
-  private scheduleTask(task: ScheduledTask): boolean {
-    const now = Date.now();
+  private async arm(task: ScheduledTask): Promise<void> {
+    this.clearTimer(task.id);
+    if (task.paused || task.completed || task.firingSince) return;
 
-    if (task.nextFireTime <= now) {
-      // Expired: recalculate the next fire time
-      if (task.type === 'interval' && task.intervalMinutes) {
-        task.nextFireTime = now + task.intervalMinutes * 60000;
-      } else if (task.type === 'cron' && task.cron) {
-        task.nextFireTime = getNextCronTime(task.cron);
-      } else if (now - task.nextFireTime <= MISSED_ONCE_GRACE_MS) {
-        // A `once` task that came due while the process was down. Fall through with a
-        // clamped (~0) delay so it fires on this boot instead of being retired unrun.
+    const now = Date.now();
+    let fireAt = task.nextFireTime;
+    if (fireAt <= now) {
+      if (task.type !== 'once') {
+        fireAt = nextOccurrence(task, now);
+        await this.store.update(task.id, () => ({ nextFireTime: fireAt }));
+      } else if (now - fireAt <= MISSED_ONCE_GRACE_MS) {
         console.log(
-          `[ScheduledTask] once task ${task.id} came due ${Math.round((now - task.nextFireTime) / 1000)}s ago while down; firing now`,
+          `[ScheduledTask] once task ${task.id} came due ${Math.round((now - fireAt) / 1000)}s ago while down; firing now`,
         );
       } else {
         // Missed by more than the grace window: retire it, but leave a trail. Flipping
-        // `completed` alone made an un-run task render identically to a failed one
-        // (the card shows lastResult !== 'success' as a failure), with nothing in the
-        // log and no unread marker to say it never ran.
-        task.completed = true;
-        task.unread = true;
+        // `completed` alone made an un-run task render identically to a failed one, with
+        // nothing in the log and no unread marker to say it never ran.
+        await this.store.update(task.id, () => ({ completed: true, unread: true }));
         console.warn(
-          `[ScheduledTask] once task ${task.id} missed its fire time by ${Math.round((now - task.nextFireTime) / 60000)}min (grace ${MISSED_ONCE_GRACE_MS / 60000}min); not running`,
+          `[ScheduledTask] once task ${task.id} missed its fire time by ${Math.round((now - fireAt) / 60000)}min (grace ${MISSED_ONCE_GRACE_MS / 60000}min); not running`,
         );
-        return false;
+        return;
       }
     }
 
-    // Defensive: if a timer already exists for this task, clear it first.
-    // Map.set would otherwise overwrite the reference and leak the prior timer
-    // into Node's timer heap, where it would still fire and double-trigger fireTask.
-    this.clearTimer(task.id);
-
-    // Clamped: the missed-`once` catch-up path above leaves nextFireTime in the past.
-    const delay = Math.max(0, task.nextFireTime - now);
+    // Clamped: the missed-`once` catch-up path above leaves the fire time in the past.
     const timer = setTimeout(() => {
-      this.fireTask(task.id);
-    }, delay);
+      this.timers.delete(task.id);
+      this.runTask(task.id, 'due').catch((err) => {
+        console.error(`[ScheduledTask] Scheduled run failed for ${task.id}:`, err);
+      });
+    }, Math.max(0, fireAt - now));
     this.timers.set(task.id, timer);
-    return true;
   }
 
   private clearTimer(id: string): void {
@@ -849,104 +871,53 @@ class ScheduledTaskManager {
   }
 
   /**
-   * Check whether the current time falls within the active time range for an interval task.
+   * One run, scheduled or manual (Template Method): guard → claim → send → settle →
+   * re-arm → notify. The guard and the claim happen in ONE locked patch, so two
+   * triggers racing for the same task cannot both start a run, and the claim reaches
+   * disk before anything is sent.
    */
-  private isInActiveRange(task: ScheduledTask): boolean {
-    if (task.type !== 'interval' || !task.activeFrom || !task.activeTo) return true;
-    const now = new Date();
-    const [fh, fm] = task.activeFrom.split(':').map(Number);
-    const [th, tm] = task.activeTo.split(':').map(Number);
-    const current = now.getHours() * 60 + now.getMinutes();
-    const from = fh * 60 + fm;
-    const to = th * 60 + tm;
-    // Support cross-midnight ranges such as 22:00 ~ 06:00
-    if (from <= to) {
-      return current >= from && current <= to;
-    } else {
-      return current >= from || current <= to;
-    }
-  }
-
-  private async fireTask(id: string): Promise<void> {
-    // Reentrancy guard: sendChatMessage can take minutes; without this, a manual
-    // trigger overlapping with cron, an HMR-leaked timer, or any other re-entry
-    // would start a second run against the same session and likely trip the engine's
-    // burst rate limit (the route's 409 guard would also reject it, recorded as error).
-    if (this.firing.has(id)) {
-      console.warn(`[ScheduledTask] Skipping reentrant fire of ${id}: still in flight`);
-      return;
-    }
-
-    const task = this.tasks.find(t => t.id === id);
-    if (!task || task.paused) return;
-
-    // Recurring task: if outside the active range, skip and schedule the next occurrence
-    if (!this.isInActiveRange(task)) {
-      console.log(`[ScheduledTask] Skipping task ${id}: outside active range ${task.activeFrom}-${task.activeTo}`);
-      if (task.type === 'interval' && task.intervalMinutes) {
-        task.nextFireTime = Date.now() + task.intervalMinutes * 60000;
-        this.scheduleTask(task);
-        await this.saveToDisk();
+  private async runTask(id: string, event: 'due' | 'trigger'): Promise<void> {
+    // Assigned inside the locked patch below; `as` keeps TS from narrowing it to 'rejected'.
+    let outcome = 'rejected' as 'claimed' | 'outside-range' | 'rejected';
+    const claimed = await this.store.update(id, (t) => {
+      if (!canTransition(t, event)) return null;
+      if (event === 'due' && !isInActiveRange(t)) {
+        outcome = 'outside-range';
+        return { nextFireTime: nextOccurrence(t, Date.now()) };
       }
+      outcome = 'claimed';
+      return claimRun(event, Date.now())(t);
+    });
+
+    if (outcome === 'outside-range' && claimed) {
+      console.log(`[ScheduledTask] Skipping task ${id}: outside active range ${claimed.activeFrom}-${claimed.activeTo}`);
+      await this.arm(claimed);
+      return;
+    }
+    if (outcome !== 'claimed' || !claimed) {
+      console.warn(`[ScheduledTask] Not running ${id} (${event}): not runnable in its current state`);
       return;
     }
 
-    console.log(`[ScheduledTask] Firing task ${id}: "${task.message}"`);
-
-    this.firing.add(id);
+    console.log(`[ScheduledTask] ${event === 'due' ? 'Firing' : 'Manual trigger'} ${id}: "${claimed.message}"`);
+    let success = false;
     try {
-      // Execute the send
-      const success = await sendChatMessage(task);
-
-      // Update state
-      task.lastFiredAt = Date.now();
-      task.lastResult = success ? 'success' : 'error';
-      task.consecutiveFailures = success ? 0 : (task.consecutiveFailures ?? 0) + 1;
-      task.unread = true;
-
-      // Circuit breaker: stop a recurring task that keeps failing (e.g. persistent
-      // rate-limit / route-down) instead of retrying forever. The jsonl-missing case
-      // self-heals (fresh session), so this guards the *other* persistent failures.
-      const tripped =
-        !success && (task.consecutiveFailures ?? 0) >= MAX_CONSECUTIVE_FAILURES;
-
-      if (task.type === 'once') {
-        task.completed = true;
-      } else if (tripped) {
-        task.paused = true;
-        this.clearTimer(id);
-        console.warn(
-          `[ScheduledTask] auto-paused task ${id} after ${task.consecutiveFailures} consecutive failures`,
-        );
-      } else if (task.type === 'interval' && task.intervalMinutes) {
-        task.nextFireTime = Date.now() + task.intervalMinutes * 60000;
-        this.scheduleTask(task);
-      } else if (task.type === 'cron' && task.cron) {
-        task.nextFireTime = getNextCronTime(task.cron);
-        this.scheduleTask(task);
-      }
-
-      await this.saveToDisk();
-
-      // Notify the frontend
-      if (this.onTaskFired) {
-        this.onTaskFired(task);
-      }
+      success = await sendChatMessage(claimed);
     } finally {
-      this.firing.delete(id);
-    }
-  }
-
-  private async saveToDisk(): Promise<void> {
-    // In-memory state is empty because the file could not be parsed, not because
-    // there are no tasks. Writing it back is exactly the data loss this guards.
-    if (this.loadFailed) return;
-    try {
-      // Single instance per data dir (enforced at startup): the in-memory set IS the whole
-      // file. The lock serializes against updateTask/addTask/etc.
-      await mutateJsonFile<ScheduledTask[]>(SCHEDULED_TASKS_FILE, [], () => [...this.tasks]);
-    } catch (error) {
-      console.error('[ScheduledTaskManager] Failed to save:', error);
+      // Settled by id on the CURRENT record: edits made during the run survive, and the
+      // result lands even if the task object changed meanwhile.
+      const settled = await this.store.update(id, (t) =>
+        canTransition(t, 'settle') ? settleRun(event, success, Date.now())(t) : null,
+      );
+      if (settled) {
+        if (settled.paused && !claimed.paused && event === 'due') {
+          console.warn(
+            `[ScheduledTask] auto-paused task ${id} after ${settled.consecutiveFailures} consecutive failures`,
+          );
+        }
+        await this.arm(settled);
+        this.onTaskFired?.(settled);
+      }
     }
   }
 }

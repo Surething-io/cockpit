@@ -70,8 +70,24 @@ function getEngineTooltip(task: ScheduledTask): string {
   return task.model ? `${engine} · ${task.model}` : engine;
 }
 
+/**
+ * A once task is marked `completed` when its run is CLAIMED, before anything is sent
+ * (so a crash can never re-send it). While that run is in flight it is not finished.
+ */
+function isFinished(task: ScheduledTask): boolean {
+  return !!task.completed && !task.firingSince;
+}
+
+/** Result label for a finished run. */
+function resultText(task: ScheduledTask, t: (key: string) => string): string {
+  if (task.lastResult === 'success') return t('scheduledTasks.success');
+  if (task.lastResult === 'interrupted') return t('scheduledTasks.interrupted');
+  return t('scheduledTasks.failure');
+}
+
 function getStatusText(task: ScheduledTask, t: (key: string) => string): string {
-  if (task.completed) return t('scheduledTasks.completed');
+  if (task.firingSince) return t('scheduledTasks.inFlight');
+  if (isFinished(task)) return t('scheduledTasks.completed');
   if (task.paused) return t('scheduledTasks.paused');
   return t('common.running');
 }
@@ -104,7 +120,7 @@ function groupTasks(tasks: ScheduledTask[]) {
   const upcoming: ScheduledTask[] = [];
   const paused: ScheduledTask[] = [];
   for (const task of tasks) {
-    if (task.unread || task.completed) pendingReview.push(task);
+    if (task.unread || isFinished(task)) pendingReview.push(task);
     else if (task.paused) paused.push(task);
     else upcoming.push(task);
   }
@@ -182,7 +198,7 @@ export function ScheduledTasksPanel({
   // hover (the rough edge the SkillsModal version has).
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  const activeTasks = tasks.filter(t => !t.completed);
+  const activeTasks = tasks.filter(t => !isFinished(t));
   const runningCount = activeTasks.filter(t => !t.paused).length;
 
   const groups = useMemo(() => groupTasks(tasks), [tasks]);
@@ -403,7 +419,7 @@ export function ScheduledTasksPanel({
           `completed`, and updateTask only re-arms a timer when both are false, so
           the button would be a no-op. Re-scheduling goes through Edit instead,
           which does clear `completed` (see scheduledTasksApi dispatchPatch). */}
-      {task.completed ? null : task.paused ? (
+      {isFinished(task) ? null : task.paused ? (
         <button
           onClick={(e) => { e.stopPropagation(); onResume(task.id); }}
           className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-green-11"
@@ -455,7 +471,7 @@ export function ScheduledTasksPanel({
             : task.unread
               ? 'border-brand/40 bg-brand/5'
               : 'border-border'
-        } ${task.completed ? 'opacity-70' : ''}`}
+        } ${isFinished(task) ? 'opacity-70' : ''}`}
       >
         {/* Project name + engine. Task state is already explicit in the group,
             status text and result row, so a leading colour dot would duplicate it. */}
@@ -483,17 +499,20 @@ export function ScheduledTasksPanel({
           {/* A completed task keeps a stale `nextFireTime` from its last arming,
               so it must never be rendered as a countdown. */}
           <span className="flex-shrink-0">
-            {task.completed
-              ? (task.lastResult === 'success' ? t('scheduledTasks.success') : t('scheduledTasks.failure'))
+            {task.firingSince
+              ? t('scheduledTasks.inFlight')
+              : isFinished(task)
+              ? resultText(task, t)
               : task.paused
                 ? t('scheduledTasks.paused')
                 : formatNextFire(task.nextFireTime, t)}
           </span>
-          {!task.completed && task.lastFiredAt && (
+          {!isFinished(task) && !task.firingSince && task.lastFiredAt && (
             <>
               <span>·</span>
               <span className="flex-shrink-0">
-                {t('scheduledTasks.lastResult')}: {task.lastResult === 'success' ? '✓' : '✗'}
+                {t('scheduledTasks.lastResult')}:{' '}
+                {task.lastResult === 'success' ? '✓' : task.lastResult === 'interrupted' ? t('scheduledTasks.interrupted') : '✗'}
               </span>
             </>
           )}

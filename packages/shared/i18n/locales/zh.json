@@ -286,6 +286,8 @@
     "noTaskMessages": "该任务的会话暂无消息",
     "success": "成功",
     "failure": "失败",
+    "inFlight": "正在运行",
+    "interrupted": "已中断",
     "createTask": "创建定时任务",
     "editTask": "编辑定时任务",
     "sendMessage": "发送消息",

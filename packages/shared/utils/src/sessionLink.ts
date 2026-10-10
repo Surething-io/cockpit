@@ -52,3 +52,33 @@ export function parseSessionLink(
   if (!cwd || !sessionId) return null;
   return { cwd, sessionId };
 }
+
+export type SessionLinkSegment =
+  | { kind: 'text'; text: string }
+  | { kind: 'link'; text: string; target: SessionLinkTarget };
+
+// A root-relative session link standing on its own: at line start or after
+// whitespace/an opening bracket, so `https://other.host/project?…` never matches.
+const SESSION_LINK_IN_TEXT = /(^|[\s([])(\/project\?[^\s)\]]+)/g;
+
+/**
+ * Split plain text (user turns are not markdown-rendered) into text and
+ * session-link segments — e.g. the `[Delegated from Cockpit session /project?…]`
+ * line a delegated child session starts with. Only links parseSessionLink
+ * accepts become `link` segments.
+ */
+export function splitSessionLinks(text: string): SessionLinkSegment[] {
+  const segments: SessionLinkSegment[] = [];
+  let last = 0;
+  for (const m of text.matchAll(SESSION_LINK_IN_TEXT)) {
+    const href = m[2];
+    const target = parseSessionLink(href);
+    if (!target) continue;
+    const start = m.index! + m[1].length;
+    if (start > last) segments.push({ kind: 'text', text: text.slice(last, start) });
+    segments.push({ kind: 'link', text: href, target });
+    last = start + href.length;
+  }
+  if (last < text.length) segments.push({ kind: 'text', text: text.slice(last) });
+  return segments;
+}

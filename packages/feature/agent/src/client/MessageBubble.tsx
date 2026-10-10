@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
 import { Portal, toast, confirm as confirmDialog } from '@cockpit/shared-ui';
-import { Copy, FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed, GitBranch, MessageSquareQuote, Trash2, ArrowRightToLine, ArrowLeftToLine, ChevronDown, ChevronUp } from 'lucide-react';
+import { Copy, FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed, MessageSquare, GitBranch, MessageSquareQuote, Trash2, ArrowRightToLine, ArrowLeftToLine, ChevronDown, ChevronUp } from 'lucide-react';
 import { ToolCallModal } from './ToolCallModal';
 import { AskQuestionViewerModal } from './AskQuestionViewerModal';
 import { DiffViewerModal, resolveDiffCalls } from './DiffViewerModal';
@@ -15,7 +15,7 @@ import { isMutatingToolName } from '../shared/toolMutation';
 //   - MarkdownRenderer: a generic markdown renderer; candidate for shared-ui.
 // Allowed by MODULES.md as transitional reverse imports.
 import { HtmlPreviewModal, CsvPreviewModal, isMarkdownFile, isHtmlFile, isImageFile, isCsvFile, resolveRelativePath, fetchFileStat } from '@cockpit/feature-explorer';
-import { parseSessionLink } from '@cockpit/shared-utils/sessionLink';
+import { parseSessionLink, splitSessionLinks } from '@cockpit/shared-utils/sessionLink';
 import { openSessionLink } from './openSessionLink';
 import { MarkdownRenderer } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
@@ -456,9 +456,44 @@ const TextPartRow = memo(function TextPartRow({
     };
   }, [isUser, handleFileLinkClick]);
 
+  // User turns render as plain text, so a session link in one (the
+  // `[Delegated from Cockpit session /project?…]` line a delegated session starts
+  // with) is linkified here instead of by the markdown renderer.
+  const userSegments = useMemo(() => {
+    if (!isUser) return null;
+    const segments = splitSessionLinks(text);
+    return segments.some((s) => s.kind === 'link') ? segments : null;
+  }, [isUser, text]);
+
   const body = (
     <>
-      <MarkdownRenderer content={text} isUser={isUser} isStreaming={isStreaming} onLinkClick={handleLinkClick} />
+      {userSegments ? (
+        <div className="reading-measure whitespace-pre-wrap break-words">
+          {userSegments.map((seg, i) =>
+            seg.kind === 'link' ? (
+              // The raw URL is three lines of percent-encoding; show a chip with the
+              // short session id and keep the full target in the tooltip.
+              <a
+                key={i}
+                href={seg.text}
+                title={`${seg.target.cwd}\n${seg.target.sessionId}`}
+                className="inline-flex items-center gap-1 px-1.5 rounded bg-brand/10 hover:bg-brand/20 text-brand font-mono text-[0.9em] align-baseline whitespace-nowrap no-underline"
+                onClick={(e) => {
+                  e.preventDefault();
+                  openSessionLink(seg.target, seg.text);
+                }}
+              >
+                <MessageSquare className="w-3 h-3 shrink-0" aria-hidden />
+                {seg.target.sessionId.slice(0, 8)}
+              </a>
+            ) : (
+              seg.text
+            ),
+          )}
+        </div>
+      ) : (
+        <MarkdownRenderer content={text} isUser={isUser} isStreaming={isStreaming} onLinkClick={handleLinkClick} />
+      )}
       {isStreaming && <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />}
     </>
   );

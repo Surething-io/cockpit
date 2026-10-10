@@ -33,8 +33,9 @@
  * Making it unconditional costs nothing real: injection was never a security
  * boundary. Any page served here is same-origin and can hand-roll its own
  * WebSocket to /ws/bash with or without our help; the hard enforcement is, and
- * always was, the same-origin check on that upgrade (see wsServer.ts). A page
- * that does not use the SDK is simply unaffected by its presence.
+ * always was, checkOriginGate in src/lib/auth.ts, which server.mjs runs on every
+ * request and upgrade. A page that does not use the SDK is simply unaffected by
+ * its presence. constraints/sdk-injected-into-every-html.test.ts pins the rule.
  *
  * `cockpit-name` is therefore purely a registry concern again (parseHtmlMeta),
  * with no bearing on what runs.
@@ -241,7 +242,7 @@ export const GET = handler((req) =>
     // pytest-html, heap dump) would otherwise be buffered whole, and Cockpit is
     // a single process. Past the cap, serve it as a plain stream with no SDK:
     // degrading to "no bridge" beats an OOM that takes every panel down.
-    if (isHtml(ext) && info.size <= MAX_INJECTABLE_HTML_BYTES) {
+    if (wantsSdk(ext) && info.size <= MAX_INJECTABLE_HTML_BYTES) {
       const html = yield* Effect.tryPromise({
         try: () => readFile(fullPath, "utf-8"),
         catch: (cause) =>

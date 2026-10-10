@@ -3,7 +3,7 @@ import { Effect } from 'effect';
 import { withFileLock } from '@cockpit/shared-utils';
 import { dynamicHandler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import { FSError, NotFoundError, ValidationError } from '@cockpit/effect-core';
-import { isSessionBusy } from '../../sessionRunHub';
+import { beginTranscriptEdit } from '../../sessionRunHub';
 import { resolveSessionPath } from './sessionStore';
 import { deleteClaudeTurnLines } from './deleteTurnLines';
 import { deleteCodexTurnLines } from './codexFork';
@@ -29,13 +29,17 @@ export const DELETE = dynamicHandler<
     if (!body.messageUuid) {
       return yield* Effect.fail(new ValidationError({ field: 'messageUuid', reason: 'missing' }));
     }
-    if (isSessionBusy(sessionId)) {
-      return yield* Effect.fail(new ValidationError({ field: 'sessionId', reason: 'session is running' }));
-    }
-
     const store = resolveSessionPath(body.cwd, sessionId);
     if (!store) {
       return yield* Effect.fail(new NotFoundError({ resource: 'session', id: sessionId }));
+    }
+
+    // Hold the session's writer lease for the whole read → filter → write: a turn starting
+    // mid-edit would have its engine append lines that the write-back then overwrites (the
+    // engine does not take our file lock).
+    const endEdit = beginTranscriptEdit(sessionId);
+    if (!endEdit) {
+      return yield* Effect.fail(new ValidationError({ field: 'sessionId', reason: 'session is running' }));
     }
 
     const result = yield* Effect.tryPromise({
@@ -55,7 +59,7 @@ export const DELETE = dynamicHandler<
         return deleted;
       }),
       catch: (cause) => new FSError({ path: store.sessionPath, op: 'write', cause }),
-    });
+    }).pipe(Effect.ensuring(Effect.sync(endEdit)));
 
     if (result.targetMissed) {
       return yield* Effect.fail(new NotFoundError({ resource: 'message', id: body.messageUuid }));

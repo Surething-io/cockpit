@@ -74,6 +74,7 @@ const g = globalThis as unknown as {
   __cockpitRunRegistry?: Map<string, RunState>;
   __cockpitRunListeners?: Map<string, Set<RunListener>>;
   __cockpitRunSeqByKey?: Map<string, number>;
+  __cockpitTranscriptEdits?: Map<string, Promise<void>>;
 };
 const registry: Map<string, RunState> =
   g.__cockpitRunRegistry ?? (g.__cockpitRunRegistry = new Map());
@@ -87,6 +88,11 @@ const listeners: Map<string, Set<RunListener>> =
 // across eviction — both are required for a viewer to span the grace window correctly.
 const seqByKey: Map<string, number> =
   g.__cockpitRunSeqByKey ?? (g.__cockpitRunSeqByKey = new Map());
+// In-flight transcript edits (delete turn): key → resolves when the edit is done. An
+// edit is a writer like an engine — it rewrites the whole jsonl — so while one is held,
+// no turn may start (startRun refuses, waitForWriter waits).
+const edits: Map<string, Promise<void>> =
+  g.__cockpitTranscriptEdits ?? (g.__cockpitTranscriptEdits = new Map());
 
 /** Advance a run's seq and remember it under every alias so it survives eviction. */
 function bumpSeq(state: RunState): number {
@@ -153,7 +159,7 @@ export function startRun(
   //
   // A stopped run is idle but may still hold the writer lease (its engine is exiting);
   // refusing here is what keeps two engines off one session.
-  if (prev?.status === 'running' || prev?.writer) return false;
+  if (prev?.status === 'running' || prev?.writer || edits.has(key)) return false;
   // seq is monotonic across turns (never resets) so a viewer that stays connected over
   // consecutive turns keeps filtering new events by `seq > snapshotSeq`. Fall back to the
   // retained per-key seq when the prior turn has already been evicted from the registry.
@@ -294,26 +300,49 @@ export function releaseRun(key: string): void {
 }
 
 /**
- * Wait until no engine holds the writer lease for `key` (a stopped run may still be
- * exiting). Resolves true once free, false if still held after `timeoutMs`.
+ * Wait until nothing holds the writer lease for `key` — neither an engine (a stopped run
+ * may still be exiting) nor a transcript edit. Resolves true once free, false if still
+ * held after `timeoutMs`.
  */
 export async function waitForWriter(key: string, timeoutMs: number): Promise<boolean> {
-  const r = registry.get(key);
-  if (!r?.writer) return true;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timedOut = new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), timeoutMs); });
-  const freed = await Promise.race([r.writerReleased.then(() => true as const), timedOut]);
-  clearTimeout(timer);
-  return freed;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const r = registry.get(key);
+    const held = r?.writer ? r.writerReleased : edits.get(key);
+    if (!held) return true;
+    const left = deadline - Date.now();
+    if (left <= 0) return false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), left); });
+    const freed = await Promise.race([held.then(() => true as const), timedOut]);
+    clearTimeout(timer);
+    if (!freed) return false;
+  }
 }
 
 /**
- * True while a turn is streaming OR its engine still holds the writer lease. Use this —
- * not isRunActive — before anything that rewrites the session's transcript.
+ * True while a turn is streaming, its engine still holds the writer lease, or the
+ * transcript is being edited.
  */
 export function isSessionBusy(key: string): boolean {
   const r = registry.get(key);
-  return !!r && (r.status === 'running' || r.writer);
+  return edits.has(key) || (!!r && (r.status === 'running' || r.writer));
+}
+
+/**
+ * Take the writer lease for an edit of `key`'s transcript. Returns null if the session is
+ * busy; otherwise a release function, and until it is called no turn can start on `key`.
+ * Check and take happen in one synchronous tick, so an edit and a turn cannot both pass.
+ */
+export function beginTranscriptEdit(key: string): (() => void) | null {
+  if (isSessionBusy(key)) return null;
+  let done!: () => void;
+  const finished = new Promise<void>((resolve) => { done = resolve; });
+  edits.set(key, finished);
+  return () => {
+    if (edits.get(key) === finished) edits.delete(key);
+    done();
+  };
 }
 
 /** Snapshot of the current in-flight turn for a freshly connecting client. */

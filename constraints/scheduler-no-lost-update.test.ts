@@ -78,8 +78,7 @@ describe('SchedulerNoLostUpdate', () => {
     writeFileSync(file, JSON.stringify([cronTask('a'), cronTask('b', { unread: true, sortIndex: 0 })]));
     const { scheduledTaskManager: m } = await import('../packages/feature/agent/src/server/scheduledTasks');
     await m.init();
-    // Read through the manager (under the file lock), not readFileSync: writes are not
-    // atomic, so an unlocked read can catch a half-written file.
+    // Read through the manager, as the UI does, rather than parsing the file directly.
     let snapshot: Task[] = [];
     const refresh = async () => { snapshot = await m.getTasks(); };
     const disk = (id: string): Task => snapshot.find((t) => t.id === id)!;

@@ -1,8 +1,8 @@
 /**
  * Readers of scheduled-tasks.json must wait out an in-flight write.
  *
- * writeJsonFile truncates and rewrites in place (no atomic rename — it breaks
- * fs.watch on macOS), and only writers took the file lock. A getTasks() landing in
+ * writeJsonFile used to truncate and rewrite in place (it is atomic now — see
+ * AtomicStateWrites), and only writers took the file lock. A getTasks() landing in
  * that window read an empty file, and readJsonFileForUpdate's strict parse threw
  * "not valid JSON, refusing to overwrite it" — seen as a flaky CI failure in
  * scheduledTasks.missedOnce.test.ts, where a fired task's trailing status write

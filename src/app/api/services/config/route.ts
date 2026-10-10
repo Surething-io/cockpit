@@ -54,11 +54,10 @@ export const GET = handler((req) =>
     })
     // Legacy/corrupt entries are upgraded in memory on every read, which is
     // what actually defuses them for consumers. This GET deliberately does NOT
-    // write the normalized result back to disk: a read with a write side effect
-    // raced against a concurrent POST (neither takes the file lock) and could
-    // resurrect commands the user had just deleted, and a second reader landing
-    // in the truncate window would parse a half-written file. Whatever the user
-    // edits next persists the normalized shape through POST anyway.
+    // write the normalized result back to disk: the read above is not under the
+    // file lock, so a write-back of it could land after a concurrent POST and
+    // resurrect commands the user had just deleted. Whatever the user edits
+    // next persists the normalized shape through POST anyway.
     return ok({ customCommands: normalizeCustomCommands(raw?.customCommands) })
   })
 )
@@ -82,9 +81,8 @@ export const POST = handler((req) =>
         })
       )
     }
-    // withFileLock (not a bare writeJsonFile) because writeJsonFile is
-    // non-atomic by design — it truncates then writes, so an unserialized
-    // concurrent reader can observe a half-written file.
+    // Under withFileLock like every state-file write (LockedRMWOnly), so it
+    // serializes with any read-modify-write of the same file.
     const config: ServicesConfig = {
       customCommands: normalizeCustomCommands(body.customCommands),
     }

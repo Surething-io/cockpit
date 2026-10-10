@@ -17,8 +17,8 @@
  * leave the bubble "running" until restart. Earlier fixes added locks one file
  * at a time and kept missing some.
  *
- * Limits: the lock is per process. Two Cockpit processes on one data dir are
- * not covered, and neither is a crash in the middle of a non-atomic write.
+ * Limits: the lock is per process; two Cockpit processes on one data dir are
+ * not covered. (A crash mid-write is AtomicStateWrites' job, not this one's.)
  */
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, relative } from 'path';

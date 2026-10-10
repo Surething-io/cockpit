@@ -315,8 +315,8 @@ export const POST = handler((req) =>
     // whole thing, so ordering is simply each array's — there is no order field
     // to drift out of sync with it.
     const config: InstructionsConfig = { instructions: normalizeInstructions(body.instructions) }
-    // withFileLock, not a bare writeJsonFile: the latter truncates then writes,
-    // so an unserialized concurrent reader can observe a half-written file.
+    // Under withFileLock like every state-file write (LockedRMWOnly), so it
+    // serializes with any read-modify-write of the same file.
     yield* Effect.tryPromise({
       try: () => withFileLock(configPath, () => writeJsonFile(configPath, config)),
       catch: (cause) => new FSError({ path: configPath, op: "write", cause }),

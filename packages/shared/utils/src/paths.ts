@@ -781,7 +781,7 @@ export function withFileLock<T>(filePath: string, fn: () => Promise<T>): Promise
 /**
  * Lock-serialized read-modify-write of a JSON file. The lock spans the WHOLE
  * read→mutate→write cycle so concurrent callers can't interleave and lose each
- * other's updates (writeJsonFile is non-atomic by design — see above).
+ * other's updates (writeJsonFile makes each write atomic, not the cycle).
  *
  * Do NOT call this (or writeJsonFile/withFileLock on the same path) from inside
  * an existing withFileLock(samePath) block — the lock is a same-path promise

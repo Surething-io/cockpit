@@ -59,8 +59,7 @@ const onceTask = (id: string, over: Partial<Task> = {}): Task => ({
 
 type Manager = Awaited<ReturnType<typeof boot>>;
 
-/** Tasks read through the manager (under the file lock): writes are not atomic, so an
- *  unlocked readFileSync can catch a half-written file. */
+/** Tasks read through the manager, as the UI does, rather than parsing the file directly. */
 const disk = (m: Manager): Promise<Task[]> => m.getTasks();
 
 /** A fresh manager, as a restarted process would have. */

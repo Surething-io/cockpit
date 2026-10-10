@@ -24,6 +24,9 @@ import {
   parseCodexSubAgentActivity,
 } from '../api/session/codexTools';
 
+/** Upper bound on waiting for a disposed app-server child to exit (see runCodexAppServer). */
+const CHILD_EXIT_TIMEOUT_MS = 5_000;
+
 // Codex app-server event adapter. Translates Codex events into the same event
 // shapes the other engines emit.
 //
@@ -895,6 +898,15 @@ async function runCodexAppServer(ctx: RunCtx): Promise<void> {
   } finally {
     ctx.signal.removeEventListener('abort', abortStartup);
     client.dispose();
+    // dispose() only starts the teardown. Returning before the child is gone would let the
+    // next turn on this session (and the no-history stash merge in codexSpec.run) overlap
+    // a server that may still write the rollout. Bounded: a wedged child must not hang Stop.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      client.exited,
+      new Promise<void>((resolve) => { timer = setTimeout(resolve, CHILD_EXIT_TIMEOUT_MS); }),
+    ]);
+    clearTimeout(timer);
     cleanupImageFiles(imageFiles);
   }
 }

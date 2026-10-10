@@ -3,7 +3,7 @@ import { Effect } from 'effect';
 import { withFileLock } from '@cockpit/shared-utils';
 import { dynamicHandler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import { FSError, NotFoundError, ValidationError } from '@cockpit/effect-core';
-import { isRunActive } from '../../sessionRunHub';
+import { isSessionBusy } from '../../sessionRunHub';
 import { resolveSessionPath } from './sessionStore';
 import { deleteClaudeTurnLines } from './deleteTurnLines';
 import { deleteCodexTurnLines } from './codexFork';
@@ -29,7 +29,7 @@ export const DELETE = dynamicHandler<
     if (!body.messageUuid) {
       return yield* Effect.fail(new ValidationError({ field: 'messageUuid', reason: 'missing' }));
     }
-    if (isRunActive(sessionId)) {
+    if (isSessionBusy(sessionId)) {
       return yield* Effect.fail(new ValidationError({ field: 'sessionId', reason: 'session is running' }));
     }
 

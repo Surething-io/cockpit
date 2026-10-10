@@ -56,6 +56,16 @@ interface RunState {
   updatedAt: number;
   evictTimer?: ReturnType<typeof setTimeout>;
   abort?: () => void; // stop endpoint aborts the detached run via this
+  /**
+   * Writer lease: true from startRun until the engine's run() has really returned
+   * (releaseRun). Separate from `status` on purpose — Stop flips `status` to idle at once
+   * so the UI finalizes, but the engine may still be exiting and writing the transcript.
+   * A new turn, or anything that rewrites the transcript, must wait for the lease.
+   */
+  writer: boolean;
+  /** Resolved by releaseRun; waitForWriter races it against a timeout. */
+  writerReleased: Promise<void>;
+  releaseWriter: () => void;
 }
 
 const GRACE_MS = 60_000;
@@ -140,7 +150,10 @@ export function startRun(
   // The check and the registry.set below run in one synchronous tick (no await between), so two
   // concurrent dispatches for the same session/runId can't both pass — the second gets false.
   // Returning false (vs clobbering) prevents two writers from interleaving the same jsonl.
-  if (prev?.status === 'running') return false;
+  //
+  // A stopped run is idle but may still hold the writer lease (its engine is exiting);
+  // refusing here is what keeps two engines off one session.
+  if (prev?.status === 'running' || prev?.writer) return false;
   // seq is monotonic across turns (never resets) so a viewer that stays connected over
   // consecutive turns keeps filtering new events by `seq > snapshotSeq`. Fall back to the
   // retained per-key seq when the prior turn has already been evicted from the registry.
@@ -150,7 +163,12 @@ export function startRun(
     for (const k of prev.keys) registry.delete(k); // drop the prior turn's aliases
   }
   const startedAt = Date.now();
+  let releaseWriter!: () => void;
+  const writerReleased = new Promise<void>((resolve) => { releaseWriter = resolve; });
   registry.set(key, {
+    writer: true,
+    writerReleased,
+    releaseWriter,
     keys: new Set([key]),
     cwd,
     status: 'running',
@@ -239,16 +257,63 @@ export function markRunIdle(key: string, status: RunStatus = 'idle'): void {
     bumpSeq(r);
     fanout(r, { seq: r.seq, message: { type: 'run-ended', status } });
   }
+  scheduleEvict(r);
+}
+
+/**
+ * Evict the run STATE after the grace window — but never while its writer lease is held,
+ * or the lease (the only record that an engine is still writing) would vanish with it;
+ * releaseRun re-schedules the eviction instead.
+ *
+ * Do NOT delete listeners here: a viewer can still be connected past the grace window
+ * (its socket is kept alive by heartbeat and only reconnects on close), and the NEXT turn
+ * under the same sessionId re-keys a fresh run onto these same listener Sets. Deleting
+ * them would silently detach a live viewer from that next turn. Listener lifecycle is
+ * owned solely by addRunListener's unsubscribe, which fires on socket close and drops the
+ * empty Set.
+ */
+function scheduleEvict(r: RunState): void {
   if (r.evictTimer) clearTimeout(r.evictTimer);
   r.evictTimer = setTimeout(() => {
-    // Evict only the run STATE. Do NOT delete listeners here: a viewer can still be
-    // connected past the grace window (its socket is kept alive by heartbeat and only
-    // reconnects on close), and the NEXT turn under the same sessionId re-keys a fresh run
-    // onto these same listener Sets. Deleting them would silently detach a live viewer from
-    // that next turn. Listener lifecycle is owned solely by addRunListener's unsubscribe,
-    // which fires on socket close and drops the empty Set.
-    for (const k of r.keys) registry.delete(k);
+    r.evictTimer = undefined;
+    if (r.writer) return;
+    for (const k of r.keys) if (registry.get(k) === r) registry.delete(k);
   }, GRACE_MS);
+}
+
+/**
+ * The engine's run() has returned: its process is gone and it writes nothing more for
+ * this session. Releases the writer lease; idempotent.
+ */
+export function releaseRun(key: string): void {
+  const r = registry.get(key);
+  if (!r || !r.writer) return;
+  r.writer = false;
+  r.releaseWriter();
+  if (r.status !== 'running' && !r.evictTimer) scheduleEvict(r);
+}
+
+/**
+ * Wait until no engine holds the writer lease for `key` (a stopped run may still be
+ * exiting). Resolves true once free, false if still held after `timeoutMs`.
+ */
+export async function waitForWriter(key: string, timeoutMs: number): Promise<boolean> {
+  const r = registry.get(key);
+  if (!r?.writer) return true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), timeoutMs); });
+  const freed = await Promise.race([r.writerReleased.then(() => true as const), timedOut]);
+  clearTimeout(timer);
+  return freed;
+}
+
+/**
+ * True while a turn is streaming OR its engine still holds the writer lease. Use this —
+ * not isRunActive — before anything that rewrites the session's transcript.
+ */
+export function isSessionBusy(key: string): boolean {
+  const r = registry.get(key);
+  return !!r && (r.status === 'running' || r.writer);
 }
 
 /** Snapshot of the current in-flight turn for a freshly connecting client. */

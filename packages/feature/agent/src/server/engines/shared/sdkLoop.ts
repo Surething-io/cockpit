@@ -3,6 +3,45 @@ import type { RunCtx, ImageData } from '../types';
 
 type SdkOptions = Record<string, unknown>;
 
+/**
+ * Upper bound on waiting for a Claude Code child to exit after its input closed. The SDK
+ * closes stdin, gives the CLI ~2 s to shut down, then force-kills it; this only has to
+ * outlast that.
+ */
+const CHILD_EXIT_TIMEOUT_MS = 5_000;
+
+/** The slice of the SDK's ProcessTransport this file relies on. Not public API. */
+interface SdkTransportInternals {
+  process?: { exitCode: number | null; signalCode?: string | null };
+  waitForExit?: () => Promise<void>;
+}
+
+/**
+ * Wait (bounded) until this attempt's Claude Code child has exited. Closing the query does
+ * NOT wait for it — Query.cleanup() calls transport.close() without awaiting the process —
+ * and the CLI writes the session transcript itself, so returning earlier lets the next turn
+ * (or a compaction retry) start a second writer on the same session.
+ *
+ * Reaches into the SDK's ProcessTransport (`transport.process`, `transport.waitForExit`).
+ * Every access is optional, so a missing member degrades to "don't wait";
+ * sdkTransportInternals.test.ts pins both against the installed SDK, so an upgrade that
+ * moves them fails a test instead of silently dropping the wait.
+ */
+export async function waitForSdkChildExit(response: unknown, timeoutMs = CHILD_EXIT_TIMEOUT_MS): Promise<void> {
+  const transport = (response as { transport?: SdkTransportInternals } | null)?.transport;
+  const proc = transport?.process;
+  if (!transport?.waitForExit || !proc) return;
+  // waitForExit only resolves on a future 'exit' event: an already-exited child (non-zero
+  // code, not killed) would never resolve it.
+  if (proc.exitCode !== null || proc.signalCode) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    transport.waitForExit().catch(() => {}), // abort / non-zero exit reject — gone either way
+    new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); }),
+  ]);
+  clearTimeout(timer);
+}
+
 type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'image'; source: { type: 'base64'; media_type: ImageData['media_type']; data: string } };
@@ -182,6 +221,8 @@ export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Pr
       if (msg.type === 'result' && pendingTasks.size === 0) closeInput();
     }
     closeInput(); // ensure the generator can return even if the stream ended on its own
+    // The CLI writes the transcript: don't return (or retry) while it may still be running.
+    await waitForSdkChildExit(response);
 
     if (receivedResult || ctx.signal.aborted) break;
 

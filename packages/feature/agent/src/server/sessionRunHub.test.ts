@@ -13,6 +13,9 @@ import {
   isRunActive,
   getRunSnapshot,
   addRunListener,
+  releaseRun,
+  waitForWriter,
+  isSessionBusy,
 } from './sessionRunHub';
 
 describe('sessionRunHub (#10 run registry)', () => {
@@ -76,6 +79,7 @@ describe('sessionRunHub (#10 run registry)', () => {
   });
 
   it('new turn keeps seq monotonic (4, never resets) and clears events', () => {
+    releaseRun('S2'); // the previous turn's engine has exited (the orchestrator does this)
     startRun('S2', '/cwd');
     expect(getRunSnapshot('S2')?.seq).toBe(4);
     expect(getRunSnapshot('S2')?.events.length).toBe(0);
@@ -166,6 +170,7 @@ describe('sessionRunHub (#10 run registry)', () => {
       startRun('EV', '/cwd');
       appendRun('EV', { type: 'assistant', uuid: 'a' });
       markRunIdle('EV', 'idle'); // bumps seq (run-ended) + schedules the 60s evict
+      releaseRun('EV'); // engine exited: nothing holds the entry past the grace window
       const seqAtIdle = getRunSnapshot('EV')!.seq;
       expect(seqAtIdle).toBeGreaterThan(0);
 
@@ -176,6 +181,41 @@ describe('sessionRunHub (#10 run registry)', () => {
       expect(getRunSnapshot('EV')!.seq).toBe(seqAtIdle); // resumed, NOT reset to 0
       appendRun('EV', { type: 'assistant', uuid: 'b' });
       expect(getRunSnapshot('EV')!.seq).toBe(seqAtIdle + 1); // strictly increasing across eviction
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('writer lease: a stopped run keeps the session busy until its engine exits', async () => {
+    vi.useFakeTimers();
+    try {
+      startRun('W', '/cwd');
+      markRunIdle('W', 'idle'); // Stop: the UI is done…
+      expect(isRunActive('W')).toBe(false);
+      expect(isSessionBusy('W')).toBe(true); // …but the engine still writes
+      expect(startRun('W', '/cwd')).toBe(false); // no second writer
+
+      vi.advanceTimersByTime(60_001); // grace window passes: the lease must not be evicted
+      expect(isSessionBusy('W')).toBe(true);
+
+      const freed = waitForWriter('W', 10_000);
+      releaseRun('W'); // engine exited
+      await expect(freed).resolves.toBe(true);
+      expect(isSessionBusy('W')).toBe(false);
+      expect(startRun('W', '/cwd')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('waitForWriter gives up after its timeout while the lease is held', async () => {
+    vi.useFakeTimers();
+    try {
+      startRun('T', '/cwd');
+      markRunIdle('T', 'idle');
+      const freed = waitForWriter('T', 1000);
+      vi.advanceTimersByTime(1001);
+      await expect(freed).resolves.toBe(false);
+      releaseRun('T');
     } finally {
       vi.useRealTimers();
     }

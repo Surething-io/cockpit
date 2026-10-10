@@ -188,6 +188,7 @@
     "esbuild": "^0.28.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "fast-check": "^3.23.2",
     "sharp": "^0.34.5",
     "tailwindcss": "^4",
     "tsup": "^8.5.1",

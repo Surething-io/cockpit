@@ -1,11 +1,21 @@
 import { updateGlobalState, getSessionTitle } from '../state/globalState';
-import { startRun, appendRun, rekeyRun, markRunIdle, isRunActive, setRunAbort } from '../sessionRunHub';
+import {
+  startRun, appendRun, rekeyRun, markRunIdle, isRunActive, setRunAbort, releaseRun, waitForWriter,
+} from '../sessionRunHub';
 import { snapshotOnRunStart, snapshotOnRunEvent } from '../snapshot/hook';
 import { resolveCommandPrompt } from '../lib/slashCommands';
 import { randomUUID } from 'crypto';
 import type { DispatchParams, DispatchOutcome, RunCtx, RunEvent, EngineSpec } from './types';
 import { formatProviderError } from './shared/providerError';
 import { resolveOutputStyleText } from '../lib/outputStyles';
+
+/**
+ * How long a new turn waits for a stopped turn's engine to exit before giving up with 409.
+ * Stop is usually followed by a quick resend; the old engine normally exits well within
+ * this. Past it the engine is wedged, and starting a second writer on the same session is
+ * worse than asking the user to retry.
+ */
+const WRITER_RELEASE_TIMEOUT_MS = 10_000;
 
 /**
  * The single run-lifecycle skeleton for ALL engines.
@@ -76,6 +86,16 @@ export async function dispatchChat(
   // letting clients dedup the live user bubble without comparing prompt text.
   // `spec.name` is recorded so a delegation started from inside this turn can
   // inherit the engine the user is actually talking to (delegationLive).
+  // A turn still streaming under this key is a duplicate: reject at once (startRun below
+  // would too, but only after the wait). A STOPPED turn reads idle at once while its
+  // engine may still be exiting and writing the transcript — wait for its writer lease
+  // before starting a second engine here.
+  if (isRunActive(currentKey)) {
+    return { ok: false, status: 409, error: 'run already active' };
+  }
+  if (!(await waitForWriter(currentKey, WRITER_RELEASE_TIMEOUT_MS))) {
+    return { ok: false, status: 409, error: 'previous run is still stopping' };
+  }
   if (!startRun(currentKey, cwd || '', promptText, runId, spec.name)) {
     return { ok: false, status: 409, error: 'run already active' };
   }
@@ -124,6 +144,16 @@ export async function dispatchChat(
 
   void (async () => {
     try {
+      await runAndTeardown();
+    } finally {
+      // run() has returned (or thrown): the engine writes nothing more. Only now may the
+      // next turn on this session start — see waitForWriter above.
+      releaseRun(currentKey);
+    }
+  })();
+
+  async function runAndTeardown(): Promise<void> {
+    try {
       await spec.runner.run(ctx);
     } catch (error) {
       if (abort.signal.aborted) {
@@ -157,7 +187,7 @@ export async function dispatchChat(
     }
     isClosed = true;
     markRunIdle(currentKey, 'idle');
-  })();
+  }
 
   return { ok: true, runKey: currentKey, sessionId: actualSessionId ?? null };
 }

@@ -8,6 +8,10 @@
  * The client sends only the id and the text is resolved here at dispatch time,
  * so an edit to a style reaches the very next turn of every session using it,
  * and a scheduled task (which has no client) resolves it exactly the same way.
+ *
+ * Every engine receives the same framed section (formatOutputStyleSection), never
+ * the raw text: a bare line tacked onto the end of a long system prompt reads as a
+ * weak preference and loses to any nearer format instruction (a skill template).
  */
 import { getGlobalOutputStylesConfigPath, readJsonFile } from '@cockpit/shared-utils';
 
@@ -76,4 +80,18 @@ export async function resolveOutputStyleText(id: unknown): Promise<string | unde
     console.warn(`[output-styles] failed to read styles, running without one: ${String(err)}`);
     return undefined;
   }
+}
+
+/**
+ * The section every engine appends to its system prompt. The style's name is left out
+ * on purpose: it is a UI label, can drift from the content, and would only give the
+ * model a second, possibly contradicting, statement of the same rules.
+ */
+export function formatOutputStyleSection(content: string): string {
+  return `# Output style
+The user selected this output style for the session. Apply it to every reply, not just the first — including turns that run a skill or slash command. When a skill or project instruction fixes a reply's structure (sections, templates), keep that structure and apply the style inside it.
+
+<output_style>
+${content}
+</output_style>`;
 }

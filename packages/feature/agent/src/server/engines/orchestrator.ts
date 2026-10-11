@@ -7,7 +7,7 @@ import { resolveCommandPrompt } from '../lib/slashCommands';
 import { randomUUID } from 'crypto';
 import type { DispatchParams, DispatchOutcome, RunCtx, RunEvent, EngineSpec } from './types';
 import { formatProviderError } from './shared/providerError';
-import { resolveOutputStyleText } from '../lib/outputStyles';
+import { formatOutputStyleSection, resolveOutputStyleText } from '../lib/outputStyles';
 
 /**
  * How long a new turn waits for a stopped turn's engine to exit before giving up with 409.
@@ -63,9 +63,11 @@ export async function dispatchChat(
 
   const promptText = typeof prompt === 'string' ? prompt : undefined;
 
-  // Output style: resolved once here rather than in each runner, so every engine sees the same
-  // text for the same id. Never rejects — a deleted or unreadable style means no injection.
-  const outputStyle = await resolveOutputStyleText(body.outputStyleId);
+  // Output style: resolved and framed once here rather than in each runner, so every engine
+  // sees the same section for the same id. Never rejects — a deleted or unreadable style means
+  // no injection.
+  const outputStyleText = await resolveOutputStyleText(body.outputStyleId);
+  const outputStyle = outputStyleText ? formatOutputStyleSection(outputStyleText) : undefined;
 
   // #10 ws-converge: the run is fully detached. Start synchronously (client can subscribe by
   // runKey at once), run in the background, return the runKey.

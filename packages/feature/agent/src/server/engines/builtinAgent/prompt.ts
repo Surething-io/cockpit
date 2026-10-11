@@ -9,7 +9,8 @@
 export function buildSystemPrompt(cwd: string, outputStyle?: string): string {
   const base = buildBasePrompt(cwd);
   // Output style (server/lib/outputStyles.ts): appended last so it can refine the defaults above.
-  return outputStyle ? `${base}\n\n## Output style\n\n${outputStyle}` : base;
+  // It arrives already framed with its own heading.
+  return outputStyle ? `${base}\n\n${outputStyle}` : base;
 }
 
 function buildBasePrompt(cwd: string): string {

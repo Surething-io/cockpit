@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeOutputStyles } from './outputStyles';
+import { formatOutputStyleSection, normalizeOutputStyles } from './outputStyles';
 import { buildSystemPrompt } from '../engines/builtinAgent/prompt';
 
 describe('normalizeOutputStyles', () => {
@@ -29,8 +29,18 @@ describe('buildSystemPrompt output style', () => {
   it('appends the style last and leaves the prompt unchanged without one', () => {
     const base = buildSystemPrompt('/tmp');
     expect(buildSystemPrompt('/tmp', undefined)).toBe(base);
-    const styled = buildSystemPrompt('/tmp', 'Talk like a pirate.');
-    expect(styled.startsWith(base)).toBe(true);
-    expect(styled.endsWith('## Output style\n\nTalk like a pirate.')).toBe(true);
+    const section = formatOutputStyleSection('Talk like a pirate.');
+    const styled = buildSystemPrompt('/tmp', section);
+    expect(styled).toBe(`${base}\n\n${section}`);
+  });
+});
+
+describe('formatOutputStyleSection', () => {
+  it('frames the content with a heading, scope and precedence, and no style name', () => {
+    const section = formatOutputStyleSection('回答问题用中文');
+    expect(section.startsWith('# Output style\n')).toBe(true);
+    expect(section).toContain('every reply');
+    expect(section).toContain('skill');
+    expect(section.endsWith('<output_style>\n回答问题用中文\n</output_style>')).toBe(true);
   });
 });

@@ -38,7 +38,7 @@ export interface DispatchParams {
   //    (shared/noHistoryRollout.ts).
   noHistory?: boolean;
   // Output style to append to the system prompt, by id (server/lib/outputStyles.ts). The
-  // orchestrator resolves it to text once per dispatch and hands it over as RunCtx.outputStyle;
+  // orchestrator resolves and frames it once per dispatch and hands it over as RunCtx.outputStyle;
   // runners never read this field.
   outputStyleId?: string;
   // Brand-new session with a caller-chosen id (session delegation). Unlike `sessionId`, which
@@ -66,7 +66,8 @@ export interface RunCtx {
   readonly cwd: string;                       // normalized, may be ''
   readonly sessionId: string | undefined;     // resume target (undefined → new session)
   readonly params: DispatchParams;            // pass-through (model / mode / permissionMode / engine)
-  /** Resolved output-style text to APPEND to the engine's own system prompt; undefined = inject
+  /** Framed output-style section (formatOutputStyleSection) to APPEND to the engine's own
+   *  system prompt, used verbatim; undefined = inject
    *  nothing. Each runner has exactly one place it goes (claude systemPrompt.append, codex
    *  developerInstructions, built-in loop's buildSystemPrompt). */
   readonly outputStyle?: string;

@@ -19,6 +19,7 @@ import { spawn } from 'child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { pathToFileURL } from 'url';
 import ts from 'typescript';
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -36,7 +37,7 @@ const freshHome = () => {
 /** Start `n` processes that each try to take the lock, report, then hold until killed. */
 async function contend(home: string, n: number): Promise<{ won: number; lost: number }> {
   const script = `
-    const { acquireInstanceLock } = await import(${JSON.stringify(LOCK_MODULE)});
+    const { acquireInstanceLock } = await import(${JSON.stringify(pathToFileURL(LOCK_MODULE).href)});
     await new Promise((r) => setTimeout(r, Number(process.env.START_AT) - Date.now()));
     const res = acquireInstanceLock(process.env.HOME_DIR);
     process.stdout.write(res.ok ? 'won\\n' : 'lost\\n');

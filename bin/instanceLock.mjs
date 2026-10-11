@@ -39,6 +39,23 @@ function isStale(rec) {
 }
 
 /**
+ * renameSync that rides out Windows sharing violations: a contender reading the lock at
+ * that instant makes the rename fail with EPERM / EACCES / EBUSY. The read is brief, so
+ * retry with a short (synchronous — this runs before anything else boots) backoff.
+ */
+function renameOver(from, to) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return renameSync(from, to);
+    } catch (e) {
+      const blocked = e.code === 'EPERM' || e.code === 'EACCES' || e.code === 'EBUSY';
+      if (!blocked || attempt >= 20) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+  }
+}
+
+/**
  * Create `path` holding `body`, failing if it exists. The content is written to a temp
  * file first and published with link() — which, like O_EXCL, refuses an existing target —
  * so the file never appears empty. (An O_EXCL create is visible before its write lands,
@@ -95,7 +112,12 @@ export function acquireInstanceLock(home) {
       if (readText(path) !== seen) continue;
       const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
       writeFileSync(tmp, body, { mode: 0o600 });
-      renameSync(tmp, path);
+      try {
+        renameOver(tmp, path);
+      } catch (e) {
+        try { unlinkSync(tmp); } catch { /* gone */ }
+        throw e;
+      }
       return won();
     } finally {
       try { unlinkSync(claim); } catch { /* gone */ }

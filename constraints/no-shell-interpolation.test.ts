@@ -21,7 +21,7 @@
  * PIDs and internal paths).
  */
 import { readFileSync, readdirSync, statSync } from 'fs';
-import { join, relative } from 'path';
+import { join, relative, sep } from 'path';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = join(__dirname, '..');
@@ -69,7 +69,7 @@ describe('NoShellInterpolation', () => {
     const hits: string[] = [];
     for (const root of SCAN_ROOTS) {
       for (const file of walk(join(ROOT, root))) {
-        const rel = relative(ROOT, file);
+        const rel = relative(ROOT, file).split(sep).join('/');
         if (ALLOWED.has(rel)) continue;
         const text = readFileSync(file, 'utf8');
         for (const m of text.matchAll(SHELL_CALL)) {

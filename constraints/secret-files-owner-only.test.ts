@@ -35,6 +35,9 @@ const knownSecrets = (u: Utils) => [
 ];
 
 const groupOrOtherBits = (path: string) => statSync(path).mode & 0o077;
+// Windows has no group / other permission bits (chmod only toggles read-only), so the
+// mode assertions are POSIX-only; the registry check below runs everywhere.
+const posixModes = process.platform !== 'win32';
 
 beforeAll(async () => {
   utils = await import('../packages/shared/utils/src/index');
@@ -43,7 +46,7 @@ beforeAll(async () => {
 afterAll(() => rmSync(home, { recursive: true, force: true }));
 
 describe('SecretFilesOwnerOnly', () => {
-  it('every credential store writes its file owner-only', async () => {
+  it.skipIf(!posixModes)('every credential store writes its file owner-only', async () => {
     const { deepseekApiKey, kimiApiKey, glmApiKey } = await import(
       '../packages/feature/agent/src/server/engines/credentials'
     );
@@ -59,7 +62,7 @@ describe('SecretFilesOwnerOnly', () => {
     }
   });
 
-  it('a rewrite of a file left 0644 by an older version tightens it', async () => {
+  it.skipIf(!posixModes)('a rewrite of a file left 0644 by an older version tightens it', async () => {
     const file = utils.KIMI_CREDENTIALS_FILE;
     chmodSync(file, 0o644);
     const { kimiApiKey } = await import('../packages/feature/agent/src/server/engines/credentials');
@@ -67,7 +70,7 @@ describe('SecretFilesOwnerOnly', () => {
     expect(groupOrOtherBits(file)).toBe(0);
   });
 
-  it('startup tightens existing secret files without rewriting them', async () => {
+  it.skipIf(!posixModes)('startup tightens existing secret files without rewriting them', async () => {
     const file = utils.GLM_CREDENTIALS_FILE;
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, '{"apiKey":"old"}', { mode: 0o644 });

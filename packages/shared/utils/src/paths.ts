@@ -2,6 +2,7 @@ import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'fs/promises';
 import { randomUUID } from 'crypto';
+import { setTimeout as delay } from 'timers/promises';
 import { closeSync, existsSync, mkdirSync, openSync, readSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, readdirSync, readFileSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { encodePath } from './encodePath';
@@ -711,6 +712,29 @@ export async function readJsonFileForUpdate<T>(filePath: string, defaultValue: T
   }
 }
 
+const isRenameBlocked = (err: unknown) => {
+  const code = (err as NodeJS.ErrnoException)?.code;
+  return code === 'EPERM' || code === 'EACCES' || code === 'EBUSY';
+};
+
+/**
+ * rename() that rides out Windows sharing violations. A reader holding the target open
+ * (even a plain readFileSync, for a few ms) makes the rename fail with EPERM / EACCES /
+ * EBUSY; the hold is brief, so retry with a short backoff (~1s total) before the caller
+ * gives up on atomicity. Elsewhere this is a single rename.
+ */
+async function renameOver(from: string, to: string): Promise<void> {
+  const retries = process.platform === 'win32' ? 12 : 0;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await rename(from, to);
+    } catch (err) {
+      if (attempt >= retries || !isRenameBlocked(err)) throw err;
+      await delay(Math.min(10 * (attempt + 1), 150));
+    }
+  }
+}
+
 /**
  * Write a JSON file atomically: write a temp file beside it, then rename it over the
  * target. Any reader — including ones that skip withFileLock, or another process — sees
@@ -733,13 +757,12 @@ export async function writeJsonFile<T>(filePath: string, data: T): Promise<void>
   try {
     await writeFile(tmp, body, secret ? { encoding: 'utf-8', mode: OWNER_ONLY } : 'utf-8');
     if (secret) await chmod(tmp, OWNER_ONLY); // `mode` is filtered by the umask
-    await rename(tmp, filePath);
+    await renameOver(tmp, filePath);
   } catch (err) {
     await unlink(tmp).catch(() => {});
-    // Windows refuses to rename over a file another process holds open; fall back to an
-    // in-place write rather than failing the save.
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY') throw err;
+    // Windows refuses to rename over a file another process holds open; once the retries
+    // in renameOver are spent, fall back to an in-place write rather than failing the save.
+    if (!isRenameBlocked(err)) throw err;
     await writeFile(filePath, body, secret ? { encoding: 'utf-8', mode: OWNER_ONLY } : 'utf-8');
     if (secret) await chmod(filePath, OWNER_ONLY);
   }

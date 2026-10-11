@@ -44,7 +44,7 @@ describe('getVapid', () => {
     expect(vapid.privateKey).toBe(keys.privateKey);
     expect(vapid.subject).not.toContain('localhost'); // invalid subject healed
     expect(readJson(vapidFile)).toEqual(vapid);
-    expect(statSync(vapidFile).mode & 0o077).toBe(0); // owner-only
+    if (process.platform !== 'win32') expect(statSync(vapidFile).mode & 0o077).toBe(0); // owner-only (no such bits on Windows)
     expect(readJson(settingsFile)).toEqual({ language: 'zh' }); // push dropped, rest kept
   });
 

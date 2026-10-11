@@ -98,7 +98,7 @@ An honest snapshot as of July 2026 — each tool wins somewhere. Spotted an erro
 - **Multi-project concurrent sessions** with desktop notifications and red-dot badges
 - Session **pinning, forking**, cross-project session browser (Cmd+K)
 - `/ss` — **find any past session** (any project, engine or date) from a one-line description; the reply links straight to it
-- `/dl` — **delegate a sub-task** to a new session in another directory and/or on another engine, without waiting; ask later how it went
+- `/dl` — **delegate a sub-task** to a new session in another directory and/or on another engine, without waiting; ask later how it went. `/dl --wait` waits for the result and carries on in the same turn
 - **Bots** — tag a persistent, file-native subagent with `@name`; it runs in a separate session with its own identity, context, commitments, and Skills
 - **Per-tool-call snapshots** — every file-touching tool call is snapshotted (shadow git, fully local); review each reply's changes as a git-history-style timeline, including what `Bash` did
 - `!command` prefix to run shell from chat — output piped back as context

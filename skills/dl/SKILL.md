@@ -1,10 +1,12 @@
 ---
 name: dl
-description: "Delegate a sub-task to a new Cockpit session in any project on any engine, without waiting; check on it later."
-argument-hint: "<what to delegate, and optionally which engine / project>"
+description: "Delegate a sub-task to a new Cockpit session in any project on any engine; returns at once, or waits for the result with --wait."
+argument-hint: "[--wait] <what to delegate, and optionally which engine / project>"
 ---
 
-Hand a sub-task to a brand-new session that runs on its own — in another project directory and/or on another engine (codex, deepseek, kimi, glm, ollama, claude). You do NOT wait for it. You get a receipt back at once; the child notifies the user when it finishes.
+Hand a sub-task to a brand-new session that runs on its own — in another project directory and/or on another engine (codex, deepseek, kimi, glm, ollama, claude). By default you do NOT wait for it: you get a receipt back at once, and the child notifies the user when it finishes.
+
+**`--wait`** — when the arguments contain `--wait`, wait for the child to finish and carry on with its result in this same turn. Strip `--wait` from the task itself. Only the flag decides this: without it, never wait, even when later steps look like they depend on the result — delegate, restate the receipt, and say the result can be checked later.
 
 Use it when the work belongs in another directory, suits another engine, or simply should not block this conversation. For parallel work inside this same repository, your own subagents are usually the better tool.
 
@@ -36,6 +38,10 @@ EOF_JSON
 
 The receipt: `{ cwd, engine, model?, sessionId, link, title, createdAt, parent? }`.
 
+## 1b. Wait — only with `--wait`
+
+The moment the POST has returned a receipt, open `{{COCKPIT_DIR}}/skills/dl/wait.md` and follow it before any status call. It holds the poll loop and the budget rule that keep the wait alive past your Bash timeout. Skip it and you will either block past the timeout and lose the result, or report an outcome the child never produced.
+
 ## 2. Reply — always restate the receipt
 
 The receipt is the ONLY record of this delegation. Tool output is not searchable later, so repeat it in your reply text:
@@ -45,6 +51,8 @@ Delegated **<title>** to <engine> in `<cwd>` — [open session](<link>)
 ```
 
 Use the `link` exactly as returned.
+
+With `--wait`, add the outcome right under it — the `status` and a summary of `lastReply` — then continue with the rest of the turn using that result.
 
 ## 3. When the user asks how it went
 

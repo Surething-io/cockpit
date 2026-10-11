@@ -2,7 +2,6 @@ import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'fs/promises';
 import { randomUUID } from 'crypto';
-import { setTimeout as delay } from 'timers/promises';
 import { closeSync, existsSync, mkdirSync, openSync, readSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, readdirSync, readFileSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { encodePath } from './encodePath';
@@ -720,17 +719,19 @@ const isRenameBlocked = (err: unknown) => {
 /**
  * rename() that rides out Windows sharing violations. A reader holding the target open
  * (even a plain readFileSync, for a few ms) makes the rename fail with EPERM / EACCES /
- * EBUSY; the hold is brief, so retry with a short backoff (~1s total) before the caller
- * gives up on atomicity. Elsewhere this is a single rename.
+ * EBUSY. On Windows the rename is synchronous, so it can never overlap a synchronous read
+ * in this process (the unlocked readers in projects / session search); a reader in
+ * another process is ridden out with a short retry (~0.8s) before the caller gives up on
+ * atomicity. Elsewhere this is a single async rename.
  */
 async function renameOver(from: string, to: string): Promise<void> {
-  const retries = process.platform === 'win32' ? 12 : 0;
+  if (process.platform !== 'win32') return rename(from, to);
   for (let attempt = 0; ; attempt++) {
     try {
-      return await rename(from, to);
+      return renameSync(from, to);
     } catch (err) {
-      if (attempt >= retries || !isRenameBlocked(err)) throw err;
-      await delay(Math.min(10 * (attempt + 1), 150));
+      if (attempt >= 12 || !isRenameBlocked(err)) throw err;
+      await new Promise((r) => setTimeout(r, Math.min(10 * (attempt + 1), 150)));
     }
   }
 }

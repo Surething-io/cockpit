@@ -244,12 +244,19 @@ export function checkOriginGate(input: OriginGateInput): OriginGateDecision {
   if (mutating && input.origin !== undefined) {
     if (!input.host) return { action: 'deny', reason: 'missing host' };
     let originHost: string;
+    let defaultPort: string;
     try {
-      originHost = new URL(input.origin).host;
+      const o = new URL(input.origin);
+      originHost = o.host;
+      defaultPort = o.protocol === 'https:' ? ':443' : o.protocol === 'http:' ? ':80' : '';
     } catch {
       return { action: 'deny', reason: 'unparseable origin' };
     }
-    if (!originHost || originHost.toLowerCase() !== input.host.trim().toLowerCase()) {
+    // URL drops the scheme's default port from the origin; drop it from Host too, so
+    // `Host: localhost:443` matches `Origin: https://localhost:443`.
+    let selfHost = input.host.trim().toLowerCase();
+    if (defaultPort && selfHost.endsWith(defaultPort)) selfHost = selfHost.slice(0, -defaultPort.length);
+    if (!originHost || originHost.toLowerCase() !== selfHost) {
       return { action: 'deny', reason: 'cross-origin' };
     }
   }

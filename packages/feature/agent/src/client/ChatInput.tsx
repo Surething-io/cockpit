@@ -46,9 +46,11 @@ interface ChatInputProps {
   setDraft?: React.Dispatch<React.SetStateAction<string>>;
   draftImages?: ImageInfo[];
   setDraftImages?: React.Dispatch<React.SetStateAction<ImageInfo[]>>;
+  /** Predicted next prompt: shown as the placeholder, Tab on an empty box accepts it (no send). */
+  suggestion?: string | null;
 }
 
-export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine: _engine, onShowGitStatus, onShowComments, hasComments, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, draft, setDraft, draftImages, setDraftImages }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine: _engine, onShowGitStatus, onShowComments, hasComments, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, draft, setDraft, draftImages, setDraftImages, suggestion }: ChatInputProps) {
   const { t } = useTranslation();
   const localInput = useState('');
   const localImages = useState<ImageInfo[]>([]);
@@ -157,12 +159,19 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
     // Command list keyboard navigation takes precedence over send.
     if (commandAutocomplete.handleKeyDown(e)) return;
 
+    // Accept the suggestion into the box. Only on an empty box, so Tab keeps moving focus otherwise.
+    if (e.key === 'Tab' && !e.shiftKey && suggestion && !input) {
+      e.preventDefault();
+      setInput(suggestion);
+      return;
+    }
+
     // Normal send (excluding IME composition state)
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSend();
     }
-  }, [commandAutocomplete, handleSend]);
+  }, [commandAutocomplete, handleSend, suggestion, input, setInput]);
 
   const handlePaste = useCallback((e: ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData?.items;
@@ -346,7 +355,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
           onSelect={(e) => commandAutocomplete.trackCaret(e.currentTarget)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder={disabled ? t('chat.placeholderDisabled') : t('chat.placeholder')}
+          placeholder={disabled ? t('chat.placeholderDisabled') : suggestion || t('chat.placeholder')}
           rows={1}
           className="flex-1 resize-none px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-card text-foreground"
         />

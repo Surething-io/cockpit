@@ -90,6 +90,9 @@ interface UseChatStreamReturn {
   rateLimitInfo: RateLimitInfo | null;
   apiRetryInfo: ApiRetryInfo | null;
   backgroundTasks: BackgroundTaskInfo[];
+  /** The engine's predicted next prompt for the current session (claude `prompt_suggestion`), or
+   *  null. Cleared on send; never restored from disk. */
+  promptSuggestion: string | null;
   handleSend: (
     content: string,
     images?: ImageInfo[],
@@ -115,6 +118,9 @@ export function useChatStream(
   const [rateLimitInfo, setRateLimitInfo] = useState<RateLimitInfo | null>(null);
   const [apiRetryInfo, setApiRetryInfo] = useState<ApiRetryInfo | null>(null);
   const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTaskInfo[]>(NO_BG_TASKS);
+  // Tagged with the session it was predicted for, so switching this tab to another session hides
+  // it without an effect to reset it.
+  const [suggestion, setSuggestion] = useState<{ sessionId: string; text: string } | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // #10 ws-converge: the active detached run the originator is tailing over
@@ -446,6 +452,13 @@ export function useChatStream(
       setMessages((prev) => applyStreamEvent(prev, event as unknown as StreamEvent, { engine, assistantId: messageId }));
     }
 
+    // Arrives after the turn's result, before the run ends.
+    if (eventType === 'prompt_suggestion') {
+      const text = typeof event.suggestion === 'string' ? event.suggestion.trim() : '';
+      const sid = sessionIdRef.current;
+      setSuggestion(text && sid ? { sessionId: sid, text } : null);
+    }
+
     // Handle final result
     if (eventType === 'result') {
       // #bg: a result ends the active turn — after it a task_notification is a background one, and
@@ -599,6 +612,7 @@ export function useChatStream(
         images: messageImages,
       };
       setMessages((prev) => [...prev, userMessage]);
+      setSuggestion(null);
       setIsLoading(true);
       setLiveOutputTokens(null);
       sawServerUsageUpdateRef.current = false;
@@ -733,6 +747,7 @@ export function useChatStream(
     rateLimitInfo,
     apiRetryInfo,
     backgroundTasks,
+    promptSuggestion: suggestion && suggestion.sessionId === sessionId ? suggestion.text : null,
     handleSend,
     handleStop,
     abortControllerRef,

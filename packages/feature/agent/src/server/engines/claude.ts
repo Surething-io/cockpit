@@ -169,6 +169,11 @@ function buildClaudeOptions(ctx: RunCtx, independent: boolean): BuildSdkOptions 
       ) => planPermission(toolName, input, opts),
     }),
     includePartialMessages: true,
+    // Predicted next user prompt, shown as the composer's placeholder. The CLI emits one
+    // `prompt_suggestion` after the turn's `result` and still delivers it when the input closes
+    // on that result (sdkLoop), so nothing downstream waits for it. Suppressed by the CLI on a
+    // session's first turn, in plan mode, and when the user disabled it in settings.json.
+    promptSuggestions: true,
     abortController: abort,
     // env is ALWAYS passed: without it the SDK inherits process.env verbatim,
     // handing the agent this server's NODE_ENV=production. See sanitizedSpawnEnv.

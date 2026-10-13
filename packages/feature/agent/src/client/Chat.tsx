@@ -343,6 +343,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     rateLimitInfo,
     apiRetryInfo,
     backgroundTasks,
+    promptSuggestion,
     handleSend: streamHandleSend,
     handleStop,
   } = useChatStream(messages, setMessages, {
@@ -1010,6 +1011,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
               setDraft={setDraft}
               draftImages={draftImages}
               setDraftImages={setDraftImages}
+              suggestion={promptSuggestion}
             />
           );
           return composerSlot ? createPortal(composer, composerSlot) : composer;

@@ -99,6 +99,9 @@ interface UseChatStreamReturn {
     overrides?: { permissionMode?: 'plan' | null }
   ) => Promise<void>;
   handleStop: () => void;
+  /** Send a message into the session's live run (claude only) instead of starting one. The
+   *  bubble arrives over the run stream like any other event. Rejects with the server's reason. */
+  injectMessage: (content: string, images: ImageInfo[] | undefined, sessionId: string) => Promise<void>;
   abortControllerRef: React.RefObject<AbortController | null>;
 }
 
@@ -164,6 +167,12 @@ export function useChatStream(
   const sawResultRef = useRef(false);
   const turnActiveRef = useRef(false);
   const bgSeqRef = useRef(0);
+  // Mid-run sends: `launchTurnIdRef` is the runId this tab launched the run with, so its seeded
+  // `_human` event is told apart from a message injected later. `splitPendingRef` is set by such
+  // a message: the model's next message opens a fresh bubble below it rather than continuing the
+  // one above.
+  const launchTurnIdRef = useRef<string | null>(null);
+  const splitPendingRef = useRef(false);
 
   // Flush buffer to state (batched text delta → shared reducer)
   const flushStreamBuffer = useCallback(() => {
@@ -261,6 +270,7 @@ export function useChatStream(
       // auto-run when a background task reports back) → give it its own assistant bubble instead
       // of merging into the launcher's.
       if (isFollowUpTurn) {
+        splitPendingRef.current = false;
         const autoId = `auto-asst-${++bgSeqRef.current}`;
         curAsstIdRef.current = autoId;
         setMessages((prev) => [
@@ -269,6 +279,22 @@ export function useChatStream(
         ]);
       }
       turnActiveRef.current = true;
+      return;
+    }
+
+    // A message sent into this live run (from this tab or any other): the run seeds it as a
+    // `_human` event. The launch prompt's own event is skipped — its bubble already exists.
+    if (eventType === 'user' && event._human) {
+      const turnId = typeof event._turnId === 'string' ? event._turnId : null;
+      if (!turnId || turnId === launchTurnIdRef.current) return;
+      const text = (event.message as { content?: unknown } | undefined)?.content;
+      const id = `auto-user-${turnId}`;
+      setMessages((prev) =>
+        prev.some((m) => m.id === id)
+          ? prev
+          : [...prev, { id, role: 'user', content: typeof text === 'string' ? text : '', runKey: activeRunRef.current?.runKey } as ChatMessage]
+      );
+      splitPendingRef.current = true;
       return;
     }
 
@@ -409,6 +435,23 @@ export function useChatStream(
       // Any actual stream content means the retry / stuck state (if any) has cleared
       setApiRetryInfo(prev => prev ? null : prev);
       const streamEvent = event.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
+      // The first model message after a mid-turn send → its own bubble, below the user's.
+      if (splitPendingRef.current && streamEvent?.type === 'message_start') {
+        splitPendingRef.current = false;
+        if (streamFlushTimerRef.current) {
+          clearTimeout(streamFlushTimerRef.current);
+          streamFlushTimerRef.current = null;
+        }
+        flushStreamBuffer();
+        const prevId = messageId;
+        const autoId = `auto-asst-${++bgSeqRef.current}`;
+        curAsstIdRef.current = autoId;
+        messageId = autoId;
+        setMessages((prev) => [
+          ...prev.map((m) => (m.id === prevId ? { ...m, isStreaming: false } : m)),
+          { id: autoId, role: 'assistant', content: '', toolCalls: [], isStreaming: true, runKey: activeRunRef.current?.runKey } as ChatMessage,
+        ]);
+      }
       if (streamEvent?.type === 'content_block_delta' && streamEvent.delta?.type === 'text_delta') {
         const deltaText = streamEvent.delta.text || '';
         bumpOutputProgress(deltaText);
@@ -552,6 +595,7 @@ export function useChatStream(
         curAsstIdRef.current = ar.assistantId;
         sawResultRef.current = false;
         turnActiveRef.current = false;
+        splitPendingRef.current = false;
         sawServerUsageUpdateRef.current = false;
         setLiveOutputTokens(null);
         const snapshotOutputTokens = typeof msg.outputTokens === 'number' && Number.isFinite(msg.outputTokens)
@@ -627,6 +671,7 @@ export function useChatStream(
       // prompt ("继续"), where text comparison suppresses the new turn's bubble.
       // It is also the idempotency key for the run registry's test-and-set.
       const runId = genRunId();
+      launchTurnIdRef.current = runId;
 
       // Create assistant message placeholder
       const assistantMessageId = `assistant-${Date.now()}`;
@@ -642,6 +687,7 @@ export function useChatStream(
       curAsstIdRef.current = assistantMessageId;
       sawResultRef.current = false;
       turnActiveRef.current = false;
+      splitPendingRef.current = false;
 
       const isClaudeEngine = !engine || engine === 'claude';
       // The engines configured by API key. Each runs the Built-in Agent loop against its
@@ -739,6 +785,32 @@ export function useChatStream(
     [cwd, engine, planMode, noHistory, outputStyleId, ollamaModel, engineModel, claudeModel, claudeEffort, claudeFastMode, claudeThinking, codexModel, codexReasoningEffort, setMessages, endRun]
   );
 
+  const injectMessage = useCallback(
+    async (content: string, images: ImageInfo[] | undefined, targetSessionId: string) => {
+      setSuggestion(null);
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: content,
+          sessionId: targetSessionId,
+          runId: genRunId(),
+          images: images?.map((img) => ({ type: 'base64' as const, media_type: img.media_type, data: img.data })),
+          cwd,
+          language: i18n.language,
+          inject: true,
+        }),
+      });
+      // `injected: false` is fine too: the run had just closed its input, so the server opened
+      // a fresh run with this message, which the live stream picks up like any other.
+      if (!response.ok) {
+        const errBody = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(errBody?.error || i18n.t('chat.requestFailed', { defaultValue: 'Request failed' }));
+      }
+    },
+    [cwd]
+  );
+
   return {
     isLoading,
     tokenUsage,
@@ -750,6 +822,7 @@ export function useChatStream(
     promptSuggestion: suggestion && suggestion.sessionId === sessionId ? suggestion.text : null,
     handleSend,
     handleStop,
+    injectMessage,
     abortControllerRef,
   };
 }

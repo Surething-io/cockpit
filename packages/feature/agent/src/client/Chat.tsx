@@ -346,6 +346,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     promptSuggestion,
     handleSend: streamHandleSend,
     handleStop,
+    injectMessage,
   } = useChatStream(messages, setMessages, {
     sessionId,
     cwd: initialCwd,
@@ -376,10 +377,21 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
    * the peer pane writing into this transcript from stealing the viewport out
    * from under someone who is reading.
    */
-  const handleSend = useCallback<typeof streamHandleSend>((...args) => {
+  const handleSend = useCallback<typeof streamHandleSend>((content, images, overrides) => {
     messageListRef.current?.pinNextUserMessage();
-    return streamHandleSend(...args);
-  }, [streamHandleSend]);
+    // A run is live (this tab's, or one it is watching): the message joins it. The claude CLI
+    // folds it in at the turn's next tool boundary, or starts a turn at once when the run only
+    // stays resident for background tasks — which a new run could not do without killing them.
+    const liveSid = loadedSessionId || sessionId;
+    if (isClaudeEngine && liveSid && (isLoading || liveRunningRef.current)) {
+      return injectMessage(content, images, liveSid).catch((error: unknown) => {
+        // The composer already cleared itself; hand the text back rather than lose it.
+        setDraft((prev) => prev || content);
+        toast(error instanceof Error ? error.message : String(error), 'error');
+      });
+    }
+    return streamHandleSend(content, images, overrides);
+  }, [streamHandleSend, injectMessage, isClaudeEngine, isLoading, loadedSessionId, sessionId]);
 
   const wrappedHandleSend = useCallback(async (content: string, images?: ImageInfo[]) => {
     const firstLine = content.split('\n')[0];
@@ -995,9 +1007,10 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
           const composer = (
             <ChatInput
               onSend={wrappedHandleSend}
-              // #10: disable while THIS tab streams, or while the session is running elsewhere
-              // (viewer) — one active run per session; a concurrent send would 409.
-              disabled={isLoading || liveRunning}
+              // #10: one active run per session. A claude run takes further messages (handleSend
+              // injects them); any other engine's would 409, so the composer locks until it ends.
+              disabled={(isLoading || liveRunning) && !(isClaudeEngine && !!(loadedSessionId || sessionId))}
+              running={isLoading || liveRunning}
               cwd={initialCwd}
               engine={engine}
               onShowGitStatus={onShowGitStatus}

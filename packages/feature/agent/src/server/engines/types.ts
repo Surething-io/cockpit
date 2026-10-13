@@ -46,13 +46,25 @@ export interface DispatchParams {
   // caller can link to it before the engine starts. claude passes it to the SDK `sessionId`
   // option; built-in engines already use `runId` as the session id; codex assigns its own.
   newSessionId?: string;
+  // Deliver this message into the session's live run instead of starting a new one (the user
+  // typed while a turn was streaming, or while the run stays resident for background tasks).
+  // Opt-in, so an in-process caller such as the scheduler never lands in a run it did not start.
+  inject?: boolean;
+}
+
+/** A user message handed to a live run (DispatchParams.inject). The engine decides where it
+ *  lands; for the claude CLI that is the next tool boundary of the current turn, or a new turn
+ *  at once when the run is idle-resident. */
+export interface InjectedInput {
+  text?: string;
+  images?: ImageData[];
 }
 
 /** Dispatch result. The run is detached (fire-and-forget); on success the caller gets the
  *  registry runKey immediately and observes progress via the run registry — the HTTP route
  *  streams it through /ws/session-stream; the scheduler polls isRunActive/getRunSnapshot. */
 export type DispatchOutcome =
-  | { ok: true; runKey: string; sessionId: string | null }
+  | { ok: true; runKey: string; sessionId: string | null; injected?: boolean }
   | { ok: false; status: number; error: string };
 
 /** One event fanned out to the run registry. Must carry a discriminating `type`. */
@@ -79,6 +91,10 @@ export interface RunCtx {
   rekey(realSessionId: string): void;
   /** Current registry key (changes after rekey). Diagnostics only. */
   currentKey(): string;
+  /** Register (or with null, withdraw) the sink for messages injected into this live run. The
+   *  sink returns false once the engine can no longer take input (its input stream closed).
+   *  Runners that never call this keep the one-active-run 409 for mid-run sends. */
+  acceptInput(sink: ((input: InjectedInput) => boolean) | null): void;
 }
 
 /** A runner implements ONLY the engine-specific middle: the run loop + (optional) title. */

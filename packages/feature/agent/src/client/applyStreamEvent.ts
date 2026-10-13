@@ -257,7 +257,9 @@ export function applyStreamEvent(
     return out;
   }
 
-  // tool_result (user turn): merge into the matching toolCall
+  // tool_result (user turn): merge into the matching toolCall. Matched by tool id, not scoped to
+  // `assistantId`: a message the user sends mid-turn opens a fresh bubble for what follows, while
+  // the result of the call that was already running still belongs to the bubble above it.
   if (ev.type === 'user') {
     const content = ev.message?.content;
     if (!Array.isArray(content)) return messages;
@@ -267,8 +269,8 @@ export function applyStreamEvent(
         const tid = b.tool_use_id;
         const result = typeof b.content === 'string' ? b.content : JSON.stringify(b.content);
         out = out.map((m) =>
-          m.id === assistantId
-            ? { ...m, toolCalls: m.toolCalls?.map((tc) => (tc.id === tid ? { ...tc, result, isLoading: false } : tc)) }
+          m.toolCalls?.some((tc) => tc.id === tid)
+            ? { ...m, toolCalls: m.toolCalls.map((tc) => (tc.id === tid ? { ...tc, result, isLoading: false } : tc)) }
             : m
         );
       }

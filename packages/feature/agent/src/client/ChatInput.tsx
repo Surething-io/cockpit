@@ -16,6 +16,8 @@ const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 interface ChatInputProps {
   onSend: (message: string, images?: ImageInfo[]) => void;
   disabled?: boolean;
+  /** A run is live but takes messages: Enter sends into it (see Chat's handleSend). */
+  running?: boolean;
   cwd?: string;
   engine?: ChatEngine;
   onShowGitStatus?: () => void;
@@ -50,7 +52,7 @@ interface ChatInputProps {
   suggestion?: string | null;
 }
 
-export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine: _engine, onShowGitStatus, onShowComments, hasComments, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, draft, setDraft, draftImages, setDraftImages, suggestion }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSend, disabled, running, cwd, engine: _engine, onShowGitStatus, onShowComments, hasComments, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, draft, setDraft, draftImages, setDraftImages, suggestion }: ChatInputProps) {
   const { t } = useTranslation();
   const localInput = useState('');
   const localImages = useState<ImageInfo[]>([]);
@@ -355,7 +357,7 @@ export const ChatInput = memo(function ChatInput({ onSend, disabled, cwd, engine
           onSelect={(e) => commandAutocomplete.trackCaret(e.currentTarget)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder={disabled ? t('chat.placeholderDisabled') : suggestion || t('chat.placeholder')}
+          placeholder={disabled ? t('chat.placeholderDisabled') : running ? t('chat.placeholderRunning') : suggestion || t('chat.placeholder')}
           rows={1}
           className="flex-1 resize-none px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-card text-foreground"
         />

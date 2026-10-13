@@ -15,7 +15,7 @@
 import * as fs from 'fs';
 import * as readline from 'readline';
 import { Readable } from 'stream';
-import { injectionKind, isHumanTurnStart } from '../../../shared/transcriptTurns';
+import { injectionKind, isHumanTurnStart, queuedPromptAsUserEntry } from '../../../shared/transcriptTurns';
 import { asyncLaunchTaskId, parseTaskNotification, type ToolCallTask } from '../../../shared/subagentTask';
 import { generateTitle } from '../../sessionTitle';
 import { detectBotName } from '../../../shared/botSession';
@@ -186,7 +186,8 @@ export async function parseTranscriptFile(
 
   for await (const line of rl) {
     try {
-      const obj = JSON.parse(line) as TranscriptMessage & { summary?: string; aiTitle?: string; isMeta?: boolean };
+      const parsed = JSON.parse(line);
+      const obj = (queuedPromptAsUserEntry(parsed) ?? parsed) as TranscriptMessage & { summary?: string; aiTitle?: string; isMeta?: boolean };
       if (obj.type === 'user' || obj.type === 'assistant') {
         // Deduplicate: skip user messages with identical content within 1s of the previous one
         // (SDK resume + prompt may write duplicate user entries)

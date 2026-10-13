@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { injectionKind, isHumanTurnStart } from './transcriptTurns';
+import { injectionKind, isHumanTurnStart, queuedPromptAsUserEntry } from './transcriptTurns';
 
 const userText = (text: string, extra: Record<string, unknown> = {}) => ({
   type: 'user',
@@ -78,5 +78,33 @@ describe('isHumanTurnStart', () => {
     for (const c of cases) {
       expect(isHumanTurnStart(c)).toBe(injectionKind(c) === null);
     }
+  });
+});
+
+describe('queuedPromptAsUserEntry', () => {
+  const folded = {
+    type: 'attachment',
+    uuid: 'u1',
+    timestamp: '2026-10-13T12:21:58.721Z',
+    sessionId: 's1',
+    attachment: { type: 'queued_command', commandMode: 'prompt', prompt: 'also tell me BANANA' },
+  };
+
+  it('reads a message folded into a running turn as a human turn', () => {
+    const entry = queuedPromptAsUserEntry(folded);
+    expect(entry).toEqual({
+      type: 'user',
+      uuid: 'u1',
+      timestamp: '2026-10-13T12:21:58.721Z',
+      sessionId: 's1',
+      message: { role: 'user', content: 'also tell me BANANA' },
+    });
+    expect(isHumanTurnStart(entry!)).toBe(true);
+  });
+
+  it('leaves queued task notifications and other entries alone', () => {
+    expect(queuedPromptAsUserEntry({ ...folded, attachment: { ...folded.attachment, commandMode: 'task-notification' } })).toBeNull();
+    expect(queuedPromptAsUserEntry({ type: 'user', uuid: 'u2' })).toBeNull();
+    expect(queuedPromptAsUserEntry({ type: 'attachment', attachment: { type: 'date' } })).toBeNull();
   });
 });

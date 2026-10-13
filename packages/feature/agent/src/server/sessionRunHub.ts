@@ -20,6 +20,8 @@
  * parallel registry — same rationale as `globalStateClients` in src/lib/wsServer.ts.
  */
 
+import type { InjectedInput } from './engines/types';
+
 export type RunStatus = 'running' | 'idle' | 'error';
 export interface RunEvent {
   seq: number;
@@ -56,6 +58,9 @@ interface RunState {
   updatedAt: number;
   evictTimer?: ReturnType<typeof setTimeout>;
   abort?: () => void; // stop endpoint aborts the detached run via this
+  /** The engine's sink for messages injected mid-run (setRunInjector); absent for engines
+   *  that cannot take input once started. */
+  injector?: (input: InjectedInput) => boolean;
   /**
    * Writer lease: true from startRun until the engine's run() has really returned
    * (releaseRun). Separate from `status` on purpose — Stop flips `status` to idle at once
@@ -382,6 +387,42 @@ export function getRunInfo(
   // has no session id until the engine reveals one, and a caller that gates on
   // the id would read no engine exactly when a brand-new session delegates.
   return { cwd: r.cwd, sessionId: r.sessionId ?? null, engine: r.engine ?? null };
+}
+
+/** Register (or with null, withdraw) the live run's sink for injected user messages. */
+export function setRunInjector(key: string, injector: ((input: InjectedInput) => boolean) | null): void {
+  const r = registry.get(key);
+  if (!r) return;
+  if (injector) r.injector = injector;
+  else delete r.injector;
+}
+
+/**
+ * Hand a user message to the live run under `key`.
+ *  - 'ok': the engine took it; a `_human` event (stamped `_turnId` = runId) is appended so
+ *    every subscriber renders the bubble, exactly like the one startRun seeds.
+ *  - 'unsupported': the run's engine takes no input mid-run.
+ *  - 'closed': the engine already closed its input — the run is winding down, and the
+ *    message belongs to the next run.
+ *  - 'idle': nothing is running under `key`.
+ */
+export function injectRun(
+  key: string,
+  input: InjectedInput,
+  runId: string,
+): 'ok' | 'unsupported' | 'closed' | 'idle' {
+  const r = registry.get(key);
+  if (!r || r.status !== 'running') return 'idle';
+  if (!r.injector) return 'unsupported';
+  if (!r.injector(input)) return 'closed';
+  appendRun(key, {
+    type: 'user',
+    _human: true,
+    _turnId: runId,
+    _ts: Date.now(),
+    message: { role: 'user', content: input.text ?? '' },
+  });
+  return 'ok';
 }
 
 /** Register the detached run's abort fn so the stop endpoint can cancel it. */

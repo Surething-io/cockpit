@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as readline from 'readline';
 import { appendTextPart, appendToolPart, joinAssistantText } from '../../../shared/assistantText';
 import type { MessagePart } from '../../../shared/assistantText';
-import { injectionKind } from '../../../shared/transcriptTurns';
+import { injectionKind, queuedPromptAsUserEntry } from '../../../shared/transcriptTurns';
 import { asyncLaunchTaskId, parseTaskNotification, type ToolCallTask } from '../../../shared/subagentTask';
 
 export interface TranscriptMessage {
@@ -122,7 +122,8 @@ export async function parseTranscriptFile(filePath: string): Promise<ChatMessage
 
   for await (const line of rl) {
     try {
-      const obj = JSON.parse(line) as TranscriptMessage;
+      const parsed = JSON.parse(line);
+      const obj = (queuedPromptAsUserEntry(parsed) ?? parsed) as TranscriptMessage;
       if (obj.type === 'user' || obj.type === 'assistant') {
         rawMessages.push(obj);
       }

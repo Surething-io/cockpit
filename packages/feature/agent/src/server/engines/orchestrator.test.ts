@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { dispatchChat } from './orchestrator';
 import { isRunActive, getRunSnapshot, getRunSessionId, requestStop } from '../sessionRunHub';
-import type { EngineSpec, RunCtx, RunEvent } from './types';
+import type { EngineSpec, InjectedInput, RunCtx, RunEvent } from './types';
 
 // ── Contract suite for the shared run-lifecycle skeleton (orchestrator) ──
 // Uses fake engine runners (no real SDK/spawn). cwd is omitted so globalState never touches
@@ -73,6 +73,60 @@ describe('orchestrator dispatch contract', () => {
     const second = await dispatchChat(spec(blockingRun), { prompt: 'x', sessionId });
     expect(second).toEqual({ ok: false, status: 409, error: 'session is already running' });
     if (first.ok) requestStop(first.runKey);
+  });
+
+  it('inject: a mid-run send joins the live run and is seeded as a _human event', async () => {
+    const sessionId = `sess-${Date.now()}-${n++}`;
+    const got: InjectedInput[] = [];
+    const accepting = (ctx: RunCtx) => {
+      ctx.acceptInput((input) => { got.push(input); return true; });
+      return blockingRun(ctx);
+    };
+    const first = await dispatchChat(spec(accepting), { prompt: 'x', sessionId });
+    expect(first.ok).toBe(true);
+    await waitUntil(() => isRunActive(sessionId));
+    const runId = freshRunId();
+    const second = await dispatchChat(spec(accepting), { prompt: 'also y', sessionId, runId, inject: true });
+    expect(second).toEqual({ ok: true, runKey: sessionId, sessionId, injected: true });
+    expect(got).toEqual([{ text: 'also y', images: undefined }]);
+    const human = (getRunSnapshot(sessionId)?.events ?? []).filter(
+      (e) => (e as { _human?: boolean })._human,
+    ) as Array<{ _turnId?: string; message: { content: string } }>;
+    expect(human.map((e) => e.message.content)).toEqual(['x', 'also y']);
+    expect(human[1]._turnId).toBe(runId);
+    requestStop(sessionId);
+  });
+
+  it('inject: an engine that takes no mid-run input still answers 409', async () => {
+    const sessionId = `sess-${Date.now()}-${n++}`;
+    const first = await dispatchChat(spec(blockingRun), { prompt: 'x', sessionId });
+    expect(first.ok).toBe(true);
+    const second = await dispatchChat(spec(blockingRun), { prompt: 'y', sessionId, inject: true });
+    expect(second).toEqual({ ok: false, status: 409, error: 'session is already running' });
+    requestStop(sessionId);
+  });
+
+  it('inject: a run that already closed its input hands the message to a fresh run', async () => {
+    const sessionId = `sess-${Date.now()}-${n++}`;
+    let finish!: () => void;
+    const winding = (ctx: RunCtx) => {
+      ctx.acceptInput(() => false); // input closed: still running, but takes nothing more
+      return new Promise<void>((resolve) => { finish = resolve; });
+    };
+    const first = await dispatchChat(spec(winding), { prompt: 'x', sessionId });
+    expect(first.ok).toBe(true);
+    const prompts: Array<string | undefined> = [];
+    const pending = dispatchChat(
+      spec(async (ctx) => { prompts.push(ctx.prompt); }),
+      { prompt: 'y', sessionId, inject: true },
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    finish();
+    const second = await pending;
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.injected).toBeUndefined();
+    await waitUntil(() => prompts.length === 1);
+    expect(prompts).toEqual(['y']);
   });
 
   it('failure: runner throws → terminal status error + error event appended', async () => {

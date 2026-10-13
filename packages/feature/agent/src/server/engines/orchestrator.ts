@@ -1,6 +1,7 @@
 import { updateGlobalState, getSessionTitle } from '../state/globalState';
 import {
   startRun, appendRun, rekeyRun, markRunIdle, isRunActive, setRunAbort, releaseRun, waitForWriter,
+  injectRun, setRunInjector,
 } from '../sessionRunHub';
 import { snapshotOnRunStart, snapshotOnRunEvent } from '../snapshot/hook';
 import { resolveCommandPrompt } from '../lib/slashCommands';
@@ -37,7 +38,8 @@ export async function dispatchChat(
   const { sessionId, images, cwd, language } = body;
 
   // #10: one active run per session — a second concurrent write would corrupt the jsonl.
-  if (sessionId && isRunActive(sessionId)) {
+  // An `inject` send is the exception: it joins the live run instead of starting a second one.
+  if (sessionId && isRunActive(sessionId) && !body.inject) {
     return { ok: false, status: 409, error: 'session is already running' };
   }
 
@@ -53,6 +55,25 @@ export async function dispatchChat(
   const hasContent = (prompt && typeof prompt === 'string') || (images && images.length > 0);
   if (!hasContent) {
     return { ok: false, status: 400, error: 'Missing prompt or images' };
+  }
+
+  const runId = (typeof body.runId === 'string' && body.runId) || randomUUID();
+
+  // Mid-run send: hand the message to the live run. Falls through to a normal start only when
+  // that run has already closed its input ('closed' — it is winding down, so the message opens
+  // the next run once the writer lease frees) or ended in the meantime ('idle').
+  let joinsWindingDownRun = false;
+  if (sessionId && body.inject) {
+    const injected = injectRun(
+      sessionId,
+      { text: typeof prompt === 'string' ? prompt : undefined, images },
+      runId,
+    );
+    if (injected === 'ok') return { ok: true, runKey: sessionId, sessionId, injected: true };
+    if (injected === 'unsupported') {
+      return { ok: false, status: 409, error: 'session is already running' };
+    }
+    joinsWindingDownRun = injected === 'closed';
   }
 
   // Engine-specific pre-check BEFORE startRun (may resolve model / validate api key).
@@ -72,7 +93,6 @@ export async function dispatchChat(
   // #10 ws-converge: the run is fully detached. Start synchronously (client can subscribe by
   // runKey at once), run in the background, return the runKey.
   const abort = new AbortController();
-  const runId = (typeof body.runId === 'string' && body.runId) || randomUUID();
   // registry key: real sessionId for resume; provisional runId for new sessions (rekeyed to the
   // engine's real sessionId on reveal). currentKey/actualSessionId are mutated by rekey().
   let currentKey = sessionId || runId;
@@ -92,11 +112,17 @@ export async function dispatchChat(
   // would too, but only after the wait). A STOPPED turn reads idle at once while its
   // engine may still be exiting and writing the transcript — wait for its writer lease
   // before starting a second engine here.
-  if (isRunActive(currentKey)) {
+  if (!joinsWindingDownRun && isRunActive(currentKey)) {
     return { ok: false, status: 409, error: 'run already active' };
   }
   if (!(await waitForWriter(currentKey, WRITER_RELEASE_TIMEOUT_MS))) {
-    return { ok: false, status: 409, error: 'previous run is still stopping' };
+    return {
+      ok: false,
+      status: 409,
+      error: joinsWindingDownRun
+        ? 'the current run no longer takes messages; send again once it finishes'
+        : 'previous run is still stopping',
+    };
   }
   if (!startRun(currentKey, cwd || '', promptText, runId, spec.name)) {
     return { ok: false, status: 409, error: 'run already active' };
@@ -141,6 +167,9 @@ export async function dispatchChat(
     },
     currentKey() {
       return currentKey;
+    },
+    acceptInput(sink) {
+      setRunInjector(currentKey, sink);
     },
   };
 

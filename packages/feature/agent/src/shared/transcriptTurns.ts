@@ -65,3 +65,33 @@ export function isHumanTurnStart(entry: InjectionFields): boolean {
   if (!Array.isArray(content)) return false;
   return content.some((block) => block?.type === 'text');
 }
+
+/**
+ * A message the user sent while a turn was running, as the CLI persists it when it folds the
+ * message into that turn: not a `user` entry but an `attachment` of type `queued_command`
+ * (commandMode 'prompt'), written where the model first saw it. Messages that instead ran as a
+ * turn of their own are ordinary `user` entries and never reach here.
+ *
+ * Returns the equivalent `user` entry so every reader that renders or splits turns treats it as
+ * the human turn it is — read it as anything else and the message vanishes on reload. null for
+ * every other entry.
+ */
+export function queuedPromptAsUserEntry(entry: {
+  type?: string;
+  uuid?: string;
+  timestamp?: string;
+  sessionId?: string;
+  attachment?: { type?: string; commandMode?: string; prompt?: unknown; timestamp?: string };
+}): { type: 'user'; uuid?: string; timestamp?: string; sessionId?: string; message: { role: 'user'; content: string | unknown[] } } | null {
+  const a = entry.attachment;
+  if (entry.type !== 'attachment' || a?.type !== 'queued_command' || a.commandMode !== 'prompt') return null;
+  // String, or content blocks when the message carried images.
+  if (!(typeof a.prompt === 'string' || Array.isArray(a.prompt)) || a.prompt.length === 0) return null;
+  return {
+    type: 'user',
+    uuid: entry.uuid,
+    timestamp: entry.timestamp ?? a.timestamp,
+    sessionId: entry.sessionId,
+    message: { role: 'user', content: a.prompt },
+  };
+}

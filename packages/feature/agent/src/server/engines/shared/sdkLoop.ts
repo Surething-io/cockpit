@@ -1,4 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { randomUUID } from 'crypto';
 import type { RunCtx, ImageData } from '../types';
 
 type SdkOptions = Record<string, unknown>;
@@ -62,6 +63,14 @@ export type BuildSdkOptions = (
 
 const MAX_COMPACTION_RETRIES = 1;
 
+/**
+ * Results tolerated while a sent message still has no turn of its own before giving up on its
+ * stamp. Normally one is enough: a turn the CLI queued ahead of ours (a resume's orphan-task
+ * notification) runs first. The bound only stops a CLI that never stamps from holding the
+ * input open forever.
+ */
+const MAX_RESULTS_BEFORE_START = 3;
+
 /** Forward the CLI's stderr into the server log.
  *
  *  The SDK pipes the child's stderr ONLY when `options.stderr` is set — otherwise it spawns with
@@ -104,18 +113,7 @@ function follow(ctx: RunCtx): AbortController {
  * (env, permissionMode, config dir), injected by the caller.
  */
 export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Promise<void> {
-  const hasImages = !!(ctx.images && ctx.images.length > 0);
-
-  // Build the first user message content: images first (so the model sees them before text),
-  // then text.
-  const content: ContentBlock[] = [];
-  if (ctx.images) {
-    for (const img of ctx.images) {
-      content.push({ type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } });
-    }
-  }
-  if (ctx.prompt) content.push({ type: 'text', text: ctx.prompt });
-  const firstContent: string | ContentBlock[] = hasImages ? content : (ctx.prompt ?? '');
+  const firstContent = userContent(ctx.prompt, ctx.images);
 
   // Background-task persistence: run every turn over a STREAMING input so the underlying claude
   // process stays alive while `run_in_background` shells (and other backgrounded tasks) are still
@@ -129,15 +127,44 @@ export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Pr
   // a background task's notification and auto-runs a follow-up turn on this same stream (no nudge).
   const pendingTasks = new Set<string>();
 
+  // Messages we sent that no turn has started on yet, by uuid. A `result` is not necessarily the
+  // answer to our message: on resume the CLI first runs whatever it queued itself (e.g. a
+  // notification about background tasks the previous process left behind), so closing on that
+  // result would end the input before our prompt ever ran — the CLI then answers it anyway,
+  // after EOF, and stays up on any background task it starts, while every later send is turned
+  // away. The CLI stamps each reply with the uuid(s) of the user message(s) it answers
+  // (`user_message_uuid(s)`), which is what clears an entry here. Only messages that will start
+  // a turn of their own are tracked: one folded into a running turn is not reliably stamped.
+  const awaitingStart = new Set<string>();
+  let resultsSinceStart = 0;
+  let turnActive = false;
+
   // closeInput() lets the current attempt's input generator return, ending the streaming turn.
   // Held in an outer binding so an abort (user stop) can close whichever gate is live.
   let closeInput: () => void = () => {};
+  let gateClosed = false;
   if (!ctx.signal.aborted) {
     ctx.signal.addEventListener('abort', () => closeInput(), { once: true });
   }
 
+  // Messages the user sends while this run is live (orchestrator inject). Queued here and
+  // drained by the live attempt's input generator; `wakeInput` nudges it when one arrives.
+  // `priority: 'next'` lets the CLI fold the message in at the current turn's next tool
+  // boundary, or start a turn at once when the run sits idle on background tasks. Once the
+  // input is closed the sink refuses, and the orchestrator opens a fresh run instead — a
+  // message yielded just before the close is still answered, as the CLI drains its queue
+  // before exiting.
+  const injected: Array<{ content: string | ContentBlock[] }> = [];
+  let wakeInput: () => void = () => {};
+  ctx.acceptInput((input) => {
+    if (gateClosed || ctx.signal.aborted) return false;
+    injected.push({ content: userContent(input.text, input.images) });
+    wakeInput();
+    return true;
+  });
+
   for (let attempt = 0; attempt <= MAX_COMPACTION_RETRIES; attempt++) {
-    let gateClosed = false;
+    gateClosed = false;
     const gateOpen = new Promise<void>((resolve) => {
       closeInput = () => {
         if (!gateClosed) {
@@ -149,8 +176,13 @@ export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Pr
     if (ctx.signal.aborted) closeInput();
 
     const isRetry = attempt > 0;
+    const firstUuid = randomUUID();
+    awaitingStart.clear(); // a retry's 'continue' supersedes whatever the failed attempt sent
+    resultsSinceStart = 0;
+    awaitingStart.add(firstUuid);
     const firstYield = {
       type: 'user' as const,
+      uuid: firstUuid,
       // A compaction retry resumes the same session with 'continue'; the first attempt sends the
       // user turn (text ∪ images).
       message: { role: 'user' as const, content: isRetry ? 'continue' : firstContent },
@@ -159,7 +191,28 @@ export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Pr
     };
     const input = (async function* () {
       yield firstYield;
-      await gateOpen; // keep the process resident until the turn (and any background tasks) drain
+      // Keep the process resident until the turn (and any background tasks) drain, passing on
+      // whatever the user sends meanwhile.
+      for (;;) {
+        for (let next = injected.shift(); next; next = injected.shift()) {
+          const uuid = randomUUID();
+          // Sent while the run idles on background tasks → it starts a turn of its own.
+          if (!turnActive) awaitingStart.add(uuid);
+          yield {
+            type: 'user' as const,
+            uuid,
+            message: { role: 'user' as const, content: next.content },
+            parent_tool_use_id: null,
+            session_id: ctx.currentKey(),
+            priority: 'next' as const,
+          };
+        }
+        if (gateClosed) return;
+        await new Promise<void>((resolve) => {
+          wakeInput = resolve;
+          void gateOpen.then(resolve);
+        });
+      }
     })();
 
     const attemptAbort = follow(ctx);
@@ -185,7 +238,13 @@ export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Pr
         task_id?: string;
         ambient?: boolean;
         tasks?: Array<{ task_id: string; ambient?: boolean }>;
+        user_message_uuid?: string;
+        user_message_uuids?: string[];
       };
+      if (msg.type === 'system' && msg.subtype === 'init') turnActive = true;
+      for (const uuid of msg.user_message_uuids ?? (msg.user_message_uuid ? [msg.user_message_uuid] : [])) {
+        if (awaitingStart.delete(uuid)) resultsSinceStart = 0;
+      }
       // New session: the engine reveals its real sessionId in the system.init event.
       if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
         ctx.rekey(msg.session_id);
@@ -211,14 +270,19 @@ export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Pr
       if (msg.type === 'system' && msg.subtype === 'task_notification' && msg.task_id) {
         pendingTasks.delete(msg.task_id);
       }
-      if (msg.type === 'result') receivedResult = true;
+      if (msg.type === 'result') {
+        receivedResult = true;
+        turnActive = false;
+        if (awaitingStart.size > 0 && ++resultsSinceStart >= MAX_RESULTS_BEFORE_START) awaitingStart.clear();
+      }
 
       ctx.emit(message as { type: string; [k: string]: unknown });
 
-      // Turn produced a result and nothing is still running in the background → close the input so
-      // the process winds down. If a task is still pending, stay resident and let the SDK deliver
-      // its notification + auto-run the follow-up turn on this stream.
-      if (msg.type === 'result' && pendingTasks.size === 0) closeInput();
+      // Turn produced a result, nothing is still running in the background, and every message we
+      // sent has had its turn → close the input so the process winds down. If a task is still
+      // pending, stay resident and let the SDK deliver its notification + auto-run the follow-up
+      // turn on this stream.
+      if (msg.type === 'result' && pendingTasks.size === 0 && awaitingStart.size === 0) closeInput();
     }
     closeInput(); // ensure the generator can return even if the stream ended on its own
     // The CLI writes the transcript: don't return (or retry) while it may still be running.
@@ -228,4 +292,17 @@ export async function runSdkLoop(ctx: RunCtx, buildOptions: BuildSdkOptions): Pr
 
     // Stream ended without a result → likely context compaction; loop re-queries with 'continue'.
   }
+  ctx.acceptInput(null);
+}
+
+/** A user message's content: images first (so the model sees them before text), then text.
+ *  Plain string when there are no images. */
+function userContent(text: string | undefined, images: ImageData[] | undefined): string | ContentBlock[] {
+  if (!images || images.length === 0) return text ?? '';
+  const content: ContentBlock[] = images.map((img) => ({
+    type: 'image',
+    source: { type: 'base64', media_type: img.media_type, data: img.data },
+  }));
+  if (text) content.push({ type: 'text', text });
+  return content;
 }

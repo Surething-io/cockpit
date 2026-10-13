@@ -54,6 +54,10 @@ export function useLiveStream(
   // rather than by text — see the dedup layers in `apply`.
   const curTurnId = useRef<string | undefined>(undefined);
 
+  // Set by a message sent into the run after it started (mid-turn, or while resident on
+  // background tasks): the model's next message opens a fresh bubble below that user bubble.
+  const splitPending = useRef(false);
+
   const newPlaceholder = (): string => {
     const id = `live-asst-${++seq.current}`;
     curAssistantId.current = id;
@@ -89,6 +93,7 @@ export function useLiveStream(
         opts?.onLiveOutputTokens?.(null);
         opts?.onRunStartedAt?.(Date.now());
       }
+      splitPending.current = false;
       newPlaceholder(); // turn-start → new assistant bubble
       return;
     }
@@ -102,6 +107,12 @@ export function useLiveStream(
     }
     if (ev.type === 'stream_event') {
       const raw = ev.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
+      if (splitPending.current && raw?.type === 'message_start') {
+        splitPending.current = false;
+        const prevId = curAssistantId.current;
+        if (prevId) setMessages((prev) => prev.map((m) => (m.id === prevId ? { ...m, isStreaming: false } : m)));
+        newPlaceholder();
+      }
       if (raw?.type === 'content_block_delta' && raw.delta?.type === 'text_delta') {
         bumpOutputProgress(raw.delta.text);
       }
@@ -178,6 +189,8 @@ export function useLiveStream(
           : '';
       const turnId = typeof ev._turnId === 'string' ? ev._turnId : null;
       if (turnId) curTurnId.current = turnId;
+      // A turn of this run already happened → this message was sent into the live run.
+      if (turnActive.current || sawResult.current) splitPending.current = true;
       const startedAt = typeof ev._ts === 'number' ? ev._ts : null;
       const id = turnId ? `live-user-${turnId}` : `live-user-${++seq.current}`;
       setMessages((prev) => {
@@ -188,6 +201,9 @@ export function useLiveStream(
         // can't wipe real history.
         for (let i = prev.length - 1; i >= 0; i--) {
           if (prev[i].role !== 'user') continue;
+          // Another live turn's bubble: layer 1 already ruled out identity, and a repeated
+          // prompt sent into the same run must not read as its disk copy.
+          if (typeof prev[i].id === 'string' && prev[i].id.startsWith('live-user-')) break;
           const ts = prev[i].timestamp ? Date.parse(prev[i].timestamp as string) : NaN;
           if (startedAt !== null && !Number.isNaN(ts)) {
             if (ts >= startedAt) return prev; // this turn's disk copy → skip
@@ -343,6 +359,7 @@ export function useLiveStream(
         sawServerUsageUpdate.current = false;
         sawResult.current = false;
         turnActive.current = false;
+        splitPending.current = false;
         const snapshotOutputTokens = typeof msg.outputTokens === 'number' && Number.isFinite(msg.outputTokens)
           ? Math.max(0, Math.round(msg.outputTokens))
           : null;

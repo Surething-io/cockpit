@@ -45,7 +45,9 @@ describe('EffectLintRulesEnforced', () => {
         expect(await errorsFor(code, file), `${file}: ${code}`).toBe(1);
       }
     }
-  });
+    // 20 sequential lints, the first of which loads the whole ESLint config.
+    // ~1.8s on a macOS runner normally, but past the 5s default under load.
+  }, 30_000);
 
   it('client code: window.parent.postMessage is an error', async () => {
     expect(await errorsFor('export const f = () => window.parent.postMessage({}, "*");', 'packages/feature/agent/src/client/example.ts')).toBe(1);

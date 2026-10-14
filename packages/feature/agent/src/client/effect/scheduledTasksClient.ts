@@ -64,6 +64,7 @@ export interface CreateScheduledTaskParams {
   intervalMinutes?: number
   activeFrom?: string
   activeTo?: string
+  startAt?: number | null
   cron?: string
 }
 

@@ -13,6 +13,7 @@ import { EngineBadge } from './EngineBadge';
 import { SessionNumberBadge } from './SessionNumberBadge';
 import { ScheduledTaskPreview } from './ScheduledTaskPreview';
 import { readFileForPreview } from './effect/agentClient';
+import { formatMinutes } from './scheduleDuration';
 
 interface ScheduledTasksPanelProps {
   collapsed?: boolean;
@@ -27,7 +28,7 @@ interface ScheduledTasksPanelProps {
   onTrigger: (id: string) => void;
   onDelete: (id: string) => void;
   onMarkRead: (id: string) => void;
-  onUpdateTask: (id: string, fields: Partial<Pick<ScheduledTask, 'message' | 'taskFile' | 'type' | 'delayMinutes' | 'intervalMinutes' | 'activeFrom' | 'activeTo' | 'cron'>>) => void;
+  onUpdateTask: (id: string, fields: Partial<Pick<ScheduledTask, 'message' | 'taskFile' | 'type' | 'delayMinutes' | 'intervalMinutes' | 'activeFrom' | 'activeTo' | 'startAt' | 'cron'>>) => void;
 }
 
 function formatNextFire(ts: number, t: (key: string, opts?: Record<string, unknown>) => string): string {
@@ -44,10 +45,19 @@ function formatNextFire(ts: number, t: (key: string, opts?: Record<string, unkno
   return new Date(ts).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+/** Grid anchor label: once it has passed only the time of day still matters. */
+function formatStartAt(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return ms > Date.now() ? `${d.getMonth() + 1}/${d.getDate()} ${time}` : time;
+}
+
 function formatType(task: ScheduledTask, t: (key: string, opts?: Record<string, unknown>) => string): string {
-  if (task.type === 'once') return t('scheduledTasks.onceType', { minutes: task.delayMinutes });
+  if (task.type === 'once') return t('scheduledTasks.onceType', { duration: formatMinutes(task.delayMinutes ?? 0, t) });
   if (task.type === 'interval') {
-    const base = t('scheduledTasks.everyNMinutes', { minutes: task.intervalMinutes });
+    let base = t('scheduledTasks.everyDuration', { duration: formatMinutes(task.intervalMinutes ?? 0, t) });
+    if (task.startAt) base += ` · ${t('scheduledTasks.fromTime', { time: formatStartAt(task.startAt) })}`;
     if (task.activeFrom && task.activeTo) return `${base} (${task.activeFrom}-${task.activeTo})`;
     return base;
   }
@@ -675,6 +685,7 @@ export function ScheduledTasksPanel({
               intervalMinutes: editingTask.intervalMinutes,
               activeFrom: editingTask.activeFrom,
               activeTo: editingTask.activeTo,
+              startAt: editingTask.startAt,
               cron: editingTask.cron,
             }}
             onUpdate={(id, params) => {

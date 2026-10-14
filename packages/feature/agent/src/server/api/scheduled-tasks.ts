@@ -8,7 +8,11 @@
  */
 import { existsSync } from "fs"
 import { Effect } from "effect"
-import { getNextCronTime, type ScheduledTask } from "../scheduledTasks"
+import {
+  getNextCronTime,
+  nextIntervalFire,
+  type ScheduledTask,
+} from "../scheduledTasks"
 import { handler, ok, parseJsonRaw } from "@cockpit/effect-runtime/server"
 import { ValidationError } from "@cockpit/effect-core"
 import type { RawPatchRequest } from "../../contract/scheduledTasks"
@@ -103,6 +107,7 @@ export const POST = handler((req) =>
       intervalMinutes?: number
       activeFrom?: string
       activeTo?: string
+      startAt?: number | null
       cron?: string
     }
     const {
@@ -119,6 +124,7 @@ export const POST = handler((req) =>
       intervalMinutes,
       activeFrom,
       activeTo,
+      startAt: rawStartAt,
       cron,
     } = body
     if (!cwd || !tabId || !sessionId || !type) {
@@ -143,11 +149,17 @@ export const POST = handler((req) =>
     }
 
     const now = Date.now()
+    const startAt =
+      type === "interval" && typeof rawStartAt === "number" && rawStartAt > 0
+        ? rawStartAt
+        : undefined
     let nextFireTime: number
     if (type === "once" && delayMinutes) {
       nextFireTime = now + delayMinutes * 60000
     } else if (type === "interval" && intervalMinutes) {
-      nextFireTime = now + intervalMinutes * 60000
+      nextFireTime = startAt
+        ? nextIntervalFire(startAt, intervalMinutes, now)
+        : now + intervalMinutes * 60000
     } else if (type === "cron" && cron) {
       nextFireTime = getNextCronTime(cron)
     } else {
@@ -175,6 +187,7 @@ export const POST = handler((req) =>
       intervalMinutes: type === "interval" ? intervalMinutes : undefined,
       activeFrom: type === "interval" ? activeFrom : undefined,
       activeTo: type === "interval" ? activeTo : undefined,
+      startAt,
       cron: type === "cron" ? cron : undefined,
       nextFireTime,
       paused: false,

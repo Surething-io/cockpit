@@ -34,6 +34,7 @@ interface ChatInputProps {
     intervalMinutes?: number;
     activeFrom?: string;
     activeTo?: string;
+    startAt?: number | null;
     cron?: string;
   }) => void;
   /** Draft text and pending images, optionally owned by the parent.

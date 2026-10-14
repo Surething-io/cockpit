@@ -14,6 +14,7 @@ import { AppError, NotFoundError, ValidationError } from "@cockpit/effect-core"
 import {
   scheduledTaskManager,
   getNextCronTime,
+  nextIntervalFire,
   buildTaskPrompt,
   type ScheduledTask,
 } from "../server/scheduledTasks"
@@ -329,13 +330,26 @@ export const dispatchPatchEff = (
           ? fields.message.trim()
           : ""
     }
+    // startAt only means something on an interval task; anything else (or a
+    // null / non-positive value) clears it, and the grid restarts from now.
+    if ("startAt" in fields || "type" in fields) {
+      updatedFields.startAt =
+        fields.type === "interval" &&
+        typeof fields.startAt === "number" &&
+        fields.startAt > 0
+          ? fields.startAt
+          : undefined
+    }
     if (fields.type === "once" && fields.delayMinutes) {
       updatedFields.nextFireTime =
         now + (fields.delayMinutes as number) * 60000
       updatedFields.completed = false
     } else if (fields.type === "interval" && fields.intervalMinutes) {
-      updatedFields.nextFireTime =
-        now + (fields.intervalMinutes as number) * 60000
+      updatedFields.nextFireTime = nextIntervalFire(
+        (updatedFields.startAt as number | undefined) ?? now,
+        fields.intervalMinutes as number,
+        now
+      )
     } else if (fields.type === "cron" && fields.cron) {
       updatedFields.nextFireTime = getNextCronTime(fields.cron as string)
     }

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import i18n from '@cockpit/shared-i18n';
 import { modKey } from '@cockpit/shared-utils';
 import { useCommandAutocomplete, CommandAutocompleteMenu } from './commandAutocomplete';
+import { splitMinutes, toMinutes, type DurationUnit } from './scheduleDuration';
 
 // Convert cron expression to human-readable description
 function describeCron(expr: string): string | null {
@@ -108,6 +109,7 @@ interface TaskParams {
   intervalMinutes?: number;
   activeFrom?: string;
   activeTo?: string;
+  startAt?: number | null;
   cron?: string;
 }
 
@@ -124,6 +126,7 @@ interface ScheduleTaskPopoverProps {
     intervalMinutes?: number;
     activeFrom?: string;
     activeTo?: string;
+    startAt?: number | null;
     cron?: string;
   };
   onUpdate?: (id: string, params: TaskParams) => void;
@@ -136,12 +139,19 @@ const PRESETS = {
     { labelKey: 'scheduledTasks.15minLater', value: 15 },
     { labelKey: 'scheduledTasks.30minLater', value: 30 },
     { labelKey: 'scheduledTasks.1hourLater', value: 60 },
+    { labelKey: 'scheduledTasks.3hoursLater', value: 180 },
+    { labelKey: 'scheduledTasks.6hoursLater', value: 360 },
+    { labelKey: 'scheduledTasks.1dayLater', value: 1440 },
+    { labelKey: 'scheduledTasks.3daysLater', value: 4320 },
   ],
   interval: [
     { labelKey: 'scheduledTasks.every15min', value: 15 },
     { labelKey: 'scheduledTasks.every30min', value: 30 },
     { labelKey: 'scheduledTasks.every1hour', value: 60 },
     { labelKey: 'scheduledTasks.every2hours', value: 120 },
+    { labelKey: 'scheduledTasks.every6hours', value: 360 },
+    { labelKey: 'scheduledTasks.every12hours', value: 720 },
+    { labelKey: 'scheduledTasks.everyDay', value: 1440 },
   ],
   cron: [
     { labelKey: 'scheduledTasks.daily9am', value: '0 9 * * *' },
@@ -153,6 +163,15 @@ const PRESETS = {
 
 type TaskType = 'once' | 'interval' | 'cron';
 
+const DURATION_UNITS: DurationUnit[] = ['minute', 'hour', 'day'];
+
+/** epoch ms -> the "YYYY-MM-DDTHH:mm" local string a datetime-local input expects. */
+function toLocalInputValue(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: ScheduleTaskPopoverProps) {
   const { t } = useTranslation();
   const isEdit = !!editTask;
@@ -163,12 +182,18 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
   // toggling back and forth doesn't lose what was already typed.
   const [source, setSource] = useState<'message' | 'file'>(editTask?.taskFile ? 'file' : 'message');
   const [taskFile, setTaskFile] = useState(editTask?.taskFile || '');
-  const [customMinutes, setCustomMinutes] = useState(
-    editTask ? String(editTask.delayMinutes || editTask.intervalMinutes || '') : ''
-  );
+  // Custom amount + unit; an edited task opens in the largest unit that fits evenly.
+  const [initialAmount] = useState(() => {
+    const minutes = editTask?.delayMinutes || editTask?.intervalMinutes;
+    return minutes ? splitMinutes(minutes) : null;
+  });
+  const [customAmount, setCustomAmount] = useState(initialAmount ? String(initialAmount.value) : '');
+  const [customUnit, setCustomUnit] = useState<DurationUnit>(initialAmount?.unit ?? 'minute');
   const [customCron, setCustomCron] = useState(editTask?.cron || '');
   const [activeFrom, setActiveFrom] = useState(editTask?.activeFrom || '09:00');
   const [activeTo, setActiveTo] = useState(editTask?.activeTo || '18:00');
+  // Optional first fire for interval tasks; empty = start from now.
+  const [startAtInput, setStartAtInput] = useState(editTask?.startAt ? toLocalInputValue(editTask.startAt) : '');
   const [useTimeRange, setUseTimeRange] = useState(!!(editTask?.activeFrom && editTask?.activeTo));
   const [selectedPreset, setSelectedPreset] = useState<number | string | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -212,16 +237,18 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
     let params: TaskParams | null = null;
 
     if (type === 'once') {
-      const minutes = selectedPreset as number || parseInt(customMinutes, 10);
+      const minutes = selectedPreset as number || toMinutes(customAmount, customUnit);
       if (!minutes || minutes <= 0) return;
       params = { ...sourceFields, type: 'once', delayMinutes: minutes };
     } else if (type === 'interval') {
-      const minutes = selectedPreset as number || parseInt(customMinutes, 10);
+      const minutes = selectedPreset as number || toMinutes(customAmount, customUnit);
       if (!minutes || minutes <= 0) return;
       params = {
         ...sourceFields,
         type: 'interval',
         intervalMinutes: minutes,
+        // null (not omitted) so an edit that empties the field clears the stored value.
+        startAt: startAtInput ? new Date(startAtInput).getTime() : null,
         ...(useTimeRange ? { activeFrom, activeTo } : {}),
       };
     } else if (type === 'cron') {
@@ -239,7 +266,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
     }
 
     onClose();
-  }, [message, source, taskFile, type, selectedPreset, customMinutes, customCron, useTimeRange, activeFrom, activeTo, onCreate, onClose, isEdit, editTask, onUpdate]);
+  }, [message, source, taskFile, type, selectedPreset, customAmount, customUnit, customCron, startAtInput, useTimeRange, activeFrom, activeTo, onCreate, onClose, isEdit, editTask, onUpdate]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // The command menu (when open) already swallowed Escape / Enter / arrows via
@@ -255,7 +282,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
   const isValid = () => {
     if (source === 'file' ? !taskFile.trim() : !message.trim()) return false;
     if (type === 'once' || type === 'interval') {
-      return !!(selectedPreset || (customMinutes && parseInt(customMinutes, 10) > 0));
+      return !!(selectedPreset || toMinutes(customAmount, customUnit) > 0);
     }
     if (type === 'cron') {
       return !!(selectedPreset || customCron.trim());
@@ -334,7 +361,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
             {(['once', 'interval', 'cron'] as const).map((tp) => (
               <button
                 key={tp}
-                onClick={() => { setType(tp); setSelectedPreset(null); setCustomMinutes(''); setCustomCron(''); }}
+                onClick={() => { setType(tp); setSelectedPreset(null); setCustomAmount(''); setCustomUnit('minute'); setCustomCron(''); }}
                 className={`flex-1 px-2 py-1 text-xs rounded transition-colors ${
                   type === tp
                     ? 'bg-brand text-white'
@@ -359,7 +386,9 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
                   if (type === 'cron') {
                     setCustomCron(String(preset.value));
                   } else {
-                    setCustomMinutes(String(preset.value));
+                    const { value, unit } = splitMinutes(preset.value as number);
+                    setCustomAmount(String(value));
+                    setCustomUnit(unit);
                   }
                 }}
                 className={`px-2 py-1 text-xs rounded border transition-colors ${
@@ -377,7 +406,7 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
         {/* Custom input */}
         <div>
           <label className="text-xs text-muted-foreground mb-1 block">
-            {type === 'cron' ? t('scheduledTasks.customCron') : t('scheduledTasks.customMinutes')}
+            {type === 'cron' ? t('scheduledTasks.customCron') : t('scheduledTasks.customDuration')}
           </label>
           {type === 'cron' ? (
             <>
@@ -395,16 +424,55 @@ export function ScheduleTaskPopover({ onClose, onCreate, editTask, onUpdate }: S
               )}
             </>
           ) : (
-            <input
-              type="number"
-              value={customMinutes}
-              onChange={(e) => { setCustomMinutes(e.target.value); setSelectedPreset(null); }}
-              placeholder={t('scheduledTasks.minutesPlaceholder')}
-              min={1}
-              className="w-full px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            />
+            <div className="flex gap-1">
+              <input
+                type="number"
+                value={customAmount}
+                onChange={(e) => { setCustomAmount(e.target.value); setSelectedPreset(null); }}
+                placeholder={t('scheduledTasks.amountPlaceholder')}
+                min={1}
+                className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              {DURATION_UNITS.map((unit) => (
+                <button
+                  key={unit}
+                  onClick={() => { setCustomUnit(unit); setSelectedPreset(null); }}
+                  className={`px-3 text-xs rounded border transition-colors ${
+                    customUnit === unit
+                      ? 'border-brand bg-brand/10 text-brand'
+                      : 'border-border text-muted-foreground hover:text-foreground hover:border-foreground/30'
+                  }`}
+                >
+                  {t(`scheduledTasks.unit.${unit}`)}
+                </button>
+              ))}
+            </div>
           )}
         </div>
+
+        {/* Start time (interval tasks only) */}
+        {type === 'interval' && (
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">{t('scheduledTasks.startAt')}</label>
+            <div className="flex items-center gap-1">
+              <input
+                type="datetime-local"
+                value={startAtInput}
+                onChange={(e) => setStartAtInput(e.target.value)}
+                className="flex-1 min-w-0 px-2 py-1 text-sm border border-border rounded bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              {startAtInput && (
+                <button
+                  onClick={() => setStartAtInput('')}
+                  className="px-2 py-1 text-xs rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                >
+                  {t('scheduledTasks.clear')}
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">{t('scheduledTasks.startAtHint')}</p>
+          </div>
+        )}
 
         {/* Active time range (interval tasks only) */}
         {type === 'interval' && (

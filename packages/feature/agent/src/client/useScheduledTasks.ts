@@ -36,6 +36,7 @@ export interface ScheduledTask {
   intervalMinutes?: number;
   activeFrom?: string;
   activeTo?: string;
+  startAt?: number | null;
   cron?: string;
   nextFireTime: number;
   paused: boolean;
@@ -77,6 +78,7 @@ interface CreateTaskParams {
   intervalMinutes?: number;
   activeFrom?: string;
   activeTo?: string;
+  startAt?: number | null;
   cron?: string;
 }
 
@@ -186,7 +188,7 @@ export function useScheduledTasks() {
       fields: Partial<
         Pick<
           ScheduledTask,
-          'message' | 'taskFile' | 'type' | 'delayMinutes' | 'intervalMinutes' | 'activeFrom' | 'activeTo' | 'cron'
+          'message' | 'taskFile' | 'type' | 'delayMinutes' | 'intervalMinutes' | 'activeFrom' | 'activeTo' | 'startAt' | 'cron'
         >
       >,
       // Editing re-stamps the language, so a task written before the user switched

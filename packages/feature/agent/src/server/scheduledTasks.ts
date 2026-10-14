@@ -34,6 +34,7 @@ export interface ScheduledTask {
   intervalMinutes?: number; // type=interval
   activeFrom?: string;     // type=interval active time range start, "09:00"
   activeTo?: string;       // type=interval active time range end, "18:00"
+  startAt?: number;        // type=interval first fire (ms); runs stay on startAt + k * interval
   cron?: string;           // type=cron, e.g. "0 9 * * *"
   nextFireTime: number;    // timestamp ms
   paused: boolean;
@@ -475,9 +476,23 @@ function withoutServerOwned<T extends Partial<ScheduledTask>>(fields: T): T {
   return copy;
 }
 
+/**
+ * First point of the grid `anchor + k * interval` strictly after `now` (the anchor
+ * itself while it is still ahead). Interval tasks fire on this fixed grid rather than
+ * "last run end + interval", so run duration never accumulates as drift, and a missed
+ * slot (process down, machine asleep, outside the active range) is skipped, not replayed.
+ */
+export function nextIntervalFire(anchor: number, intervalMinutes: number, now: number): number {
+  if (anchor > now) return anchor;
+  const step = intervalMinutes * 60000;
+  return anchor + (Math.floor((now - anchor) / step) + 1) * step;
+}
+
 /** Next occurrence of a recurring task; a once task keeps its own time. */
 function nextOccurrence(t: ScheduledTask, now: number): number {
-  if (t.type === 'interval' && t.intervalMinutes) return now + t.intervalMinutes * 60000;
+  // nextFireTime is always a grid point (create / edit seed it from startAt or
+  // "now + interval"), so stepping from it keeps the same grid with no extra state.
+  if (t.type === 'interval' && t.intervalMinutes) return nextIntervalFire(t.nextFireTime, t.intervalMinutes, now);
   if (t.type === 'cron' && t.cron) return getNextCronTime(t.cron, new Date(now));
   return t.nextFireTime;
 }

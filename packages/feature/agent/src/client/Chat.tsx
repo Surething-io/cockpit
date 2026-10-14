@@ -136,6 +136,7 @@ interface ChatProps {
     intervalMinutes?: number;
     activeFrom?: string;
     activeTo?: string;
+    startAt?: number | null;
     cron?: string;
   }) => void;
   onOpenSession?: (sessionId: string, title?: string) => void; // Open a new session (used for Fork)
@@ -791,7 +792,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
 
   const handleCreateScheduledTask = useMemo(() => {
     if (!onCreateScheduledTask || !initialCwd || !tabId) return undefined;
-    return (params: { message: string; taskFile?: string; type: 'once' | 'interval' | 'cron'; delayMinutes?: number; intervalMinutes?: number; activeFrom?: string; activeTo?: string; cron?: string }) => {
+    return (params: { message: string; taskFile?: string; type: 'once' | 'interval' | 'cron'; delayMinutes?: number; intervalMinutes?: number; activeFrom?: string; activeTo?: string; startAt?: number | null; cron?: string }) => {
       onCreateScheduledTask({
         ...params,
         cwd: initialCwd,

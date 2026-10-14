@@ -70,6 +70,7 @@ interface ChatPanelProps {
     intervalMinutes?: number;
     activeFrom?: string;
     activeTo?: string;
+    startAt?: number | null;
     cron?: string;
   }) => void;
   onOpenSession?: (sessionId: string, title?: string) => void;

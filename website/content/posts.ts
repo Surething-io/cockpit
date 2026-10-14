@@ -32,6 +32,156 @@ export interface Post {
 
 export const posts: Post[] = [
   {
+    slug: 'three-ways-to-use-dl',
+    date: '2026-10-14',
+    keywords: [
+      'cross-engine code review',
+      'Codex code review',
+      'review code with two models',
+      'delegate task to another AI engine',
+      'Claude Code delegate to Codex',
+      'AI agent watch logs after deploy',
+      'multi-engine agent delegation',
+      '双模型代码评审',
+      '子任务委派',
+      '上线观察',
+      '跨引擎',
+      'OpenCockpit',
+    ],
+    content: {
+      en: {
+        title: 'Three Ways to Use /dl: Review, Delegate, Watch',
+        description:
+          'Three everyday /dl workflows: a second-engine code review with --wait, a sub-requirement clarified with /qa, and a release watch that never blocks your chat.',
+        readingTime: '4 min read',
+        body: `[\`/dl\`](/en/blog/find-and-delegate-sessions/) hands a task to a brand-new session — any project, any engine — and gives you a receipt with a link. That's the whole mechanism. What makes it useful is how you combine it, so here are the three ways it gets used every day.
+
+## 1. A second opinion on every review
+
+\`\`\`text
+/dl --wait codex cr
+/cr
+\`\`\`
+
+Two lines, one message. The first hands a code review to Codex in a fresh session; the second runs \`/cr\` in your own session, on whatever engine it's using.
+
+The two reviewers never see each other's work. Different models miss different things, so a problem both of them flag is almost certainly real, and a problem only one of them flags is exactly where you should look yourself.
+
+\`--wait\` is what makes this a single step. Without it, \`/dl\` returns as soon as the child starts; with it, this turn waits for Codex to finish and carries on with its result. So the turn ends with both reviews in front of you, not one review and a link to check later.
+
+## 2. Hand off a sub-requirement
+
+Halfway through a feature you find a piece that deserves its own session — another repo, or just something you don't want mixed into this conversation:
+
+\`\`\`text
+/dl add a CSV export endpoint to the api project
+/qa
+\`\`\`
+
+You get the receipt straight away and keep working:
+
+\`\`\`markdown
+Delegated **CSV export endpoint** to claude in \`/Users/me/work/api\` — [open session](/project?cwd=…&sessionId=…)
+\`\`\`
+
+The \`/qa\` on the second line travels with the task, so the child's first move is to clarify, not to build. The brief it got was written from one sentence of yours, so it is full of guesses; \`/qa\` puts them on the table: a short PRD with the scope, the assumptions, and the few decisions that need you, each with a recommendation.
+
+When you have a minute, open the link, answer with letters (\`1A 2B\`), and only then let it build.
+
+## 3. Keep an eye on a release
+
+The deploy is out and the main conversation has moved on. Someone still needs to watch:
+
+\`\`\`text
+/dl watch the api service logs and metrics for the next while, summarize anything unusual
+\`\`\`
+
+No \`--wait\` this time. Watching has no natural end, and waiting on it would just tie up your conversation. The child runs on its own, using the same command line you have — whatever logs and dashboards you can reach from your terminal, it can too. When it finishes it shows up unread in your recent sessions. Or ask at any point:
+
+\`\`\`text
+how is the release watch going?
+\`\`\`
+
+The agent finds the receipt, checks the child, and tells you whether it's \`running\`, \`done\`, \`failed\` or \`incomplete\`, with a summary of what it found.
+
+## Wait or don't wait
+
+One rule covers all three: add \`--wait\` only when the next thing in **this** turn needs the result. The review needs it, because the two opinions belong side by side. The sub-requirement and the release watch don't, so they run in the background and you check on them when it suits you.
+
+For parallel work inside the same repository, Claude's own subagents are still the lighter tool. \`/dl\` is for the rest: another engine, another directory, or a session you want to open and take over yourself.
+
+---
+
+**Try it:** \`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [Try Online](/try)`,
+      },
+      zh: {
+        title: '/dl 的三种用法：双引擎评审、子需求委派、上线观察',
+        description:
+          'OpenCockpit 里 /dl 的三种日常用法：用 --wait 让另一个引擎同时做代码评审，把子需求派出去再用 /qa 澄清，以及上线后派一个会话盯着，不占用当前对话。',
+        readingTime: '阅读约 4 分钟',
+        body: `[\`/dl\`](/zh/blog/find-and-delegate-sessions/) 把任务交给一个全新的会话（任意项目、任意引擎），并返回一张带链接的回执。机制就这么多，真正好用的地方在于怎么搭配。下面是每天都会用到的三种用法。
+
+## 1. 每次评审都多一个视角
+
+\`\`\`text
+/dl --wait codex cr
+/cr
+\`\`\`
+
+一条消息，两行。第一行把代码评审交给 Codex，在新会话里做；第二行在你自己的会话里跑 \`/cr\`，用的是当前会话的引擎。
+
+两边互相看不到对方的结论。不同的模型会漏掉不同的东西：两边都指出的问题基本可以确定是真的，只有一边指出的，正是你该亲自看一眼的地方。
+
+关键在 \`--wait\`。不加它，\`/dl\` 在子会话启动时就返回了；加上它，这一轮会等 Codex 做完，拿着结果继续往下走。所以这一轮结束时，两份评审都已经摆在你面前，而不是一份评审加一个待会儿再去看的链接。
+
+## 2. 把子需求派出去
+
+做功能做到一半，发现有一块值得单独开个会话：可能在另一个仓库，也可能只是不想和当前对话搅在一起：
+
+\`\`\`text
+/dl 给 api 项目加一个导出 CSV 的接口
+/qa
+\`\`\`
+
+回执马上就回来了，你接着干手头的事：
+
+\`\`\`markdown
+Delegated **CSV 导出接口** to claude in \`/Users/me/work/api\` — [open session](/project?cwd=…&sessionId=…)
+\`\`\`
+
+第二行的 \`/qa\` 会跟着任务一起交出去，所以子会话的第一件事是澄清需求，而不是动手写。它拿到的任务说明是根据你一句话写出来的，里面全是猜测；\`/qa\` 会把这些猜测摊开：一份简短的 PRD，列出范围、假设，以及少数需要你拍板的决策，每条都附带推荐。
+
+等有空了，点链接进入子会话，回复几个字母（\`1A 2B\`），然后再让它开工。
+
+## 3. 上线后派一个会话盯着
+
+服务已经发出去了，主对话也转到别的事上，但总得有人盯着：
+
+\`\`\`text
+/dl 观察一下 api 服务上线后的日志和监控，有异常就总结出来
+\`\`\`
+
+这次不加 \`--wait\`。观察没有明确的结束点，等着它只会白白占住当前对话。子会话自己跑，用的是和你一样的命令行：你在终端里能看到的日志和监控，它都能看到。结束后它会在最近会话里显示为未读；也可以随时问一句：
+
+\`\`\`text
+上线观察那边怎么样了？
+\`\`\`
+
+agent 会找到回执、查询子会话，告诉你它是 \`running\`、\`done\`、\`failed\` 还是 \`incomplete\`，并总结它发现了什么。
+
+## 等还是不等
+
+三个场景用同一条规则：只有**这一轮**接下来的事要用到结果时，才加 \`--wait\`。评审要用，因为两份意见要放在一起看；子需求和上线观察不需要，就让它们在后台跑，你什么时候方便什么时候去看。
+
+同一个仓库里的并行分工，Claude 自带的 subagent 仍然更轻量。\`/dl\` 负责剩下的：另一个引擎、另一个目录，或者一个你想打开、亲自接手的会话。
+
+---
+
+**试一下：** \`npm i -g @surething/cockpit\` · [GitHub](https://github.com/Surething-io/cockpit) · [在线体验](/try)`,
+      },
+    },
+  },
+  {
     slug: 'claude-code-with-glm-kimi-deepseek',
     date: '2026-10-01',
     keywords: [
@@ -977,7 +1127,7 @@ For parallel work inside one repository, Claude's own subagents are still the ri
 
 ## Try it
 
-Update Cockpit, then type \`/ss\` with whatever you remember about an old conversation — or \`/dl\` something you'd rather not wait for. Details in the [Skills](/en/docs/agent/skills/) docs.
+Update Cockpit, then type \`/ss\` with whatever you remember about an old conversation — or \`/dl\` something you'd rather not wait for. Details in the [Skills](/en/docs/agent/skills/) docs. For everyday workflows, see [Three Ways to Use /dl](/en/blog/three-ways-to-use-dl/).
 
 ---
 
@@ -1034,7 +1184,7 @@ agent 找到回执 —— 在当前对话里,或者在别的会话里通过 \`/s
 
 ## 试一下
 
-更新 Cockpit,输入 \`/ss\` 加一句你还记得的描述;或者用 \`/dl\` 把手边不想等的事派出去。细节见 [Skills](/zh/docs/agent/skills/) 文档。
+更新 Cockpit,输入 \`/ss\` 加一句你还记得的描述;或者用 \`/dl\` 把手边不想等的事派出去。细节见 [Skills](/zh/docs/agent/skills/) 文档。日常用法见 [/dl 的三种用法](/zh/blog/three-ways-to-use-dl/)。
 
 ---
 

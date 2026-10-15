@@ -124,7 +124,7 @@ export async function dispatchChat(
         : 'previous run is still stopping',
     };
   }
-  if (!startRun(currentKey, cwd || '', promptText, runId, spec.name)) {
+  if (!startRun(currentKey, cwd || '', promptText, runId, spec.name, images)) {
     return { ok: false, status: 409, error: 'run already active' };
   }
   setRunAbort(currentKey, () => {

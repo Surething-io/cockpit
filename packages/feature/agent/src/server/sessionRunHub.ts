@@ -45,9 +45,9 @@ interface RunState {
    *  without comparing message text (which breaks on repeated prompts like "继续"). */
   startedAt: number;
   /** The dispatch runId of the in-flight turn. Also stamped on the seeded `_human`
-   *  event, but that event only exists when the turn had prompt TEXT — an
-   *  images-only send has none, so a viewer needs it on the snapshot too or it
-   *  cannot scope that turn's tool-call snapshots (see ChatMessage.runId). */
+   *  event, but that event only exists when the turn had text or images, so a
+   *  viewer needs it on the snapshot too or it cannot scope that turn's
+   *  tool-call snapshots (see ChatMessage.runId). */
   runId?: string;
   /** Engine spec name of the turn (`claude`, `codex`, …). Read back by the
    *  delegate endpoint: a delegation with no explicit `engine` inherits the
@@ -138,9 +138,9 @@ function getUsageUpdateOutputTokens(message: unknown): number | null {
 
 /**
  * Begin a turn under `key` (a real sessionId for resume, or a provisional runId for a
- * new session). When `promptText` is given, seeds a synthetic human-user event as the
- * turn's first event so viewers render the new user bubble live (the human prompt is on
- * no engine's stream). `_human` lets useLiveStream tell it apart from tool_result `user`
+ * new session). When `promptText` or `images` are given, seeds a synthetic human-user
+ * event as the turn's first event so viewers render the new user bubble live (the human
+ * prompt is on no engine's stream). Images ride side-band as `_images`, like injectRun's. `_human` lets useLiveStream tell it apart from tool_result `user`
  * events.
  *
  * `runId` is the per-turn unique id (client genRunId() / orchestrator randomUUID). It is
@@ -155,6 +155,7 @@ export function startRun(
   promptText?: string,
   runId?: string,
   engine?: string,
+  images?: InjectedInput['images'],
 ): boolean {
   const prev = registry.get(key);
   // Atomic one-active guard (#10/#5): refuse to start if a turn is already live under `key`.
@@ -190,13 +191,14 @@ export function startRun(
     ...(engine ? { engine } : {}),
     updatedAt: startedAt,
   });
-  if (promptText) {
+  if (promptText || images?.length) {
     appendRun(key, {
       type: 'user',
       _human: true,
       ...(runId ? { _turnId: runId } : {}),
       _ts: startedAt,
-      message: { role: 'user', content: promptText },
+      message: { role: 'user', content: promptText ?? '' },
+      ...(images?.length ? { _images: images } : {}),
     });
   }
   return true;
@@ -421,6 +423,9 @@ export function injectRun(
     _turnId: runId,
     _ts: Date.now(),
     message: { role: 'user', content: input.text ?? '' },
+    // Side-band rather than content blocks, so every reader that takes `content` as the
+    // prompt text keeps working; the bubble shows them next to the text.
+    ...(input.images?.length ? { _images: input.images } : {}),
   });
   return 'ok';
 }

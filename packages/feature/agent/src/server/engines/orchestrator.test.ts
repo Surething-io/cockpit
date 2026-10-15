@@ -97,6 +97,37 @@ describe('orchestrator dispatch contract', () => {
     requestStop(sessionId);
   });
 
+  it('inject: images sent mid-run ride on the seeded _human event', async () => {
+    const sessionId = `sess-${Date.now()}-${n++}`;
+    const accepting = (ctx: RunCtx) => {
+      ctx.acceptInput(() => true);
+      return blockingRun(ctx);
+    };
+    await dispatchChat(spec(accepting), { prompt: 'x', sessionId });
+    await waitUntil(() => isRunActive(sessionId));
+    const img = { type: 'base64' as const, media_type: 'image/png' as const, data: 'AAAA' };
+    const out = await dispatchChat(spec(accepting), { prompt: 'look', images: [img], sessionId, inject: true });
+    expect(out.ok && out.injected).toBe(true);
+    const human = (getRunSnapshot(sessionId)?.events ?? []).filter(
+      (e) => (e as { _human?: boolean })._human,
+    ) as Array<{ _images?: unknown[] }>;
+    expect(human[1]._images).toEqual([img]);
+    requestStop(sessionId);
+  });
+
+  it('seeds an images-only launch as a _human event so viewers render it live', async () => {
+    const runId = freshRunId();
+    const img = { type: 'base64' as const, media_type: 'image/png' as const, data: 'BBBB' };
+    const out = await dispatchChat(spec(blockingRun), { images: [img], runId });
+    expect(out.ok).toBe(true);
+    const human = (getRunSnapshot(runId)?.events ?? []).filter(
+      (e) => (e as { _human?: boolean })._human,
+    ) as Array<{ _turnId?: string; _images?: unknown[]; message: { content: string } }>;
+    expect(human).toHaveLength(1);
+    expect(human[0]).toMatchObject({ _turnId: runId, _images: [img], message: { content: '' } });
+    requestStop(runId);
+  });
+
   it('inject: an engine that takes no mid-run input still answers 409', async () => {
     const sessionId = `sess-${Date.now()}-${n++}`;
     const first = await dispatchChat(spec(blockingRun), { prompt: 'x', sessionId });

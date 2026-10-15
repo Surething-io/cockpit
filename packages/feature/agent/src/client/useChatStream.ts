@@ -292,7 +292,13 @@ export function useChatStream(
       setMessages((prev) =>
         prev.some((m) => m.id === id)
           ? prev
-          : [...prev, { id, role: 'user', content: typeof text === 'string' ? text : '', runKey: activeRunRef.current?.runKey } as ChatMessage]
+          : [...prev, {
+              id,
+              role: 'user',
+              content: typeof text === 'string' ? text : '',
+              ...(Array.isArray(event._images) && event._images.length ? { images: event._images as MessageImage[] } : {}),
+              runKey: activeRunRef.current?.runKey,
+            } as ChatMessage]
       );
       splitPendingRef.current = true;
       return;

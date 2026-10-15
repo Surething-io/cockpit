@@ -213,7 +213,7 @@ export function useLiveStream(
           }
           break;
         }
-        return [...prev, { id, role: 'user', content: text } as ChatMessage];
+        return [...prev, { id, role: 'user', content: text, ...(ev._images?.length ? { images: ev._images } : {}) } as ChatMessage];
       });
       return;
     }
@@ -252,9 +252,9 @@ export function useLiveStream(
         message?: Record<string, unknown>;
       };
       if (msg.type === 'run-snapshot' && Array.isArray(msg.events)) {
-        // Authoritative turn identity, and the only source for an images-only
-        // turn (which seeds no `_human` event). Set before the replay below so
-        // the bubbles it creates dedup against it.
+        // Authoritative turn identity, also for a snapshot whose `_human` event
+        // carries none. Set before the replay below so the bubbles it creates
+        // dedup against it.
         if (typeof msg.runId === 'string' && msg.runId) curTurnId.current = msg.runId;
         // Idle run → nothing to stream; the disk history already loaded is authoritative.
         if (msg.status !== 'running') {

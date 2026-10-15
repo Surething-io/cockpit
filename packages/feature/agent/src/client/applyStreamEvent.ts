@@ -1,5 +1,5 @@
 import { appendTextPart, appendToolPart, joinAssistantText } from '../shared/assistantText';
-import type { ChatMessage, ToolCallInfo, ToolCallTask } from './types';
+import type { ChatMessage, MessageImage, ToolCallInfo, ToolCallTask } from './types';
 
 // Single engine-agnostic stream→messages reducer (#10 line 1).
 //
@@ -29,6 +29,7 @@ export interface StreamEvent {
   _human?: boolean; // synthetic human-prompt user event (rendered by useLiveStream)
   _turnId?: string; // per-turn unique id (the dispatch runId) — identity for live-bubble dedup
   _ts?: number; // server clock at startRun — time boundary for disk-copy dedup
+  _images?: MessageImage[]; // images sent with a message injected into the live run
   message?: { model?: string; role?: string; content?: unknown };
   event?: { type?: string; delta?: { type?: string; text?: string } };
   result?: unknown;

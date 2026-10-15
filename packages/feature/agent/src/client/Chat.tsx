@@ -369,6 +369,10 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     taskStore,
   });
 
+  // A live run of this session takes further messages: claude only, and only once the
+  // session id is known (injection addresses the run by it). Every send gate reads this.
+  const acceptsMidRunInput = isClaudeEngine && !!(loadedSessionId || sessionId);
+
   // ! prefix: first line is command, subsequent lines are user notes, supports images
   /**
    * The one funnel every person-initiated turn passes through — typing in the
@@ -384,7 +388,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
     // folds it in at the turn's next tool boundary, or starts a turn at once when the run only
     // stays resident for background tasks — which a new run could not do without killing them.
     const liveSid = loadedSessionId || sessionId;
-    if (isClaudeEngine && liveSid && (isLoading || liveRunningRef.current)) {
+    if (acceptsMidRunInput && liveSid && (isLoading || liveRunningRef.current)) {
       return injectMessage(content, images, liveSid).catch((error: unknown) => {
         // The composer already cleared itself; hand the text back rather than lose it.
         setDraft((prev) => prev || content);
@@ -392,7 +396,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       });
     }
     return streamHandleSend(content, images, overrides);
-  }, [streamHandleSend, injectMessage, isClaudeEngine, isLoading, loadedSessionId, sessionId]);
+  }, [streamHandleSend, injectMessage, acceptsMidRunInput, isLoading, loadedSessionId, sessionId]);
 
   const wrappedHandleSend = useCallback(async (content: string, images?: ImageInfo[]) => {
     const firstLine = content.split('\n')[0];
@@ -577,12 +581,16 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
   // side-by-side has two active panes, and the context ORs their reports
   // instead of letting the last writer win. Going inactive retracts the report
   // rather than overwriting the other pane's.
+  //
+  // "Loading" here means "cannot take a message now": every consumer (send to AI, explain,
+  // comments) only uses it to block sending. A live claude run takes messages (handleSend
+  // injects them), so it does not count.
   useEffect(() => {
     if (!tabId || !chatContext) return;
-    chatContext.setChatLoading(tabId, isActive && isLoading);
+    chatContext.setChatLoading(tabId, isActive && isLoading && !acceptsMidRunInput);
     if (!isActive) return;
     return () => { chatContext.setChatLoading(tabId, false); };
-  }, [tabId, isLoading, isActive, chatContext]);
+  }, [tabId, isLoading, isActive, chatContext, acceptsMidRunInput]);
 
   // Register with ChatContext (used to send messages from CodeViewer)
   useEffect(() => {
@@ -1010,7 +1018,7 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
               onSend={wrappedHandleSend}
               // #10: one active run per session. A claude run takes further messages (handleSend
               // injects them); any other engine's would 409, so the composer locks until it ends.
-              disabled={(isLoading || liveRunning) && !(isClaudeEngine && !!(loadedSessionId || sessionId))}
+              disabled={(isLoading || liveRunning) && !acceptsMidRunInput}
               running={isLoading || liveRunning}
               cwd={initialCwd}
               engine={engine}

@@ -22,12 +22,14 @@ import { useThemeSafe } from './ThemeProvider';
 import { scrollToHeadingAnchor } from './markdownLinks';
 import { remarkFrontmatterTable } from './markdownFrontmatter';
 import { normalizeMathDelimiters, remarkMathGuard } from './markdownMath';
+import { remarkCjk } from './markdownCjk';
 
 // Stable reference — avoid recreating on every render.
 // `remarkMathGuard` runs after `remarkMath` and demotes its false positives
 // (shell variables, prices) back to literal text — see markdownMath.ts.
-const REMARK_PLUGINS = [...remarkFrontmatterTable, remarkGfm, remarkMath, remarkMathGuard, remarkAlert];
-const REMARK_PLUGINS_NO_MATH = [...remarkFrontmatterTable, remarkGfm, remarkAlert];
+// `remarkCjk` lets emphasis close next to CJK punctuation — see markdownCjk.ts.
+const REMARK_PLUGINS = [...remarkFrontmatterTable, remarkGfm, ...remarkCjk, remarkMath, remarkMathGuard, remarkAlert];
+const REMARK_PLUGINS_NO_MATH = [...remarkFrontmatterTable, remarkGfm, ...remarkCjk, remarkAlert];
 const REHYPE_PLUGINS_BASE = [rehypeRaw, rehypeKatex];
 const REHYPE_PLUGINS_NO_MATH = [rehypeRaw];
 

@@ -10,7 +10,7 @@ import 'katex/dist/katex.min.css';
 import 'remark-github-blockquote-alert/alert.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { memo, useMemo, useRef, ComponentPropsWithoutRef, RefObject } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, ComponentPropsWithoutRef, RefObject } from 'react';
 import type { PluggableList } from 'unified';
 import type { ExtraProps } from 'react-markdown';
 // Deep subpath, NOT the '@cockpit/shared-utils' barrel: the barrel re-exports
@@ -240,6 +240,54 @@ function preprocessAsciiArt(content: string): string {
   return '```text\n' + content.trim() + '\n```';
 }
 
+/**
+ * Hover-revealed copy button for fenced code blocks. Icons are inline SVG
+ * (lucide's copy / check paths) rather than lucide-react: this module is also
+ * bundled into the standalone /html-lib/markdown.js, which has no i18n and
+ * should not pull in an icon library for two glyphs.
+ *
+ * Reveal uses the named group `group/code`, not a bare `group`: the chat
+ * message bubble is itself a `group`, so a bare `group-hover` would light up
+ * every code block in the message at once.
+ */
+function CopyCodeButton({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+  }, []);
+
+  const handleClick = () => {
+    void navigator.clipboard?.writeText(code).then(() => {
+      setCopied(true);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      title={copied ? 'Copied' : 'Copy'}
+      aria-label="Copy code"
+      className="absolute top-2 right-2 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/10 opacity-0 group-hover/code:opacity-100 focus-visible:opacity-100 transition-opacity"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {copied ? (
+          <path d="M20 6 9 17l-5-5" />
+        ) : (
+          <>
+            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+          </>
+        )}
+      </svg>
+    </button>
+  );
+}
+
 // Extract Markdown component config to avoid redefining on each render
 function createMarkdownComponents(
   isDark: boolean,
@@ -294,26 +342,31 @@ function createMarkdownComponents(
       // use a closure counter to track line numbers manually
       let lineCounter = 0;
 
+      // The margin lives on the wrapper so the copy button's `top` is measured
+      // from the block's visible edge, not from above its top margin.
       return (
-        <SyntaxHighlighter
-          style={isDark ? oneDark : oneLight}
-          language={language}
-          PreTag="div"
-          className="md-figure"
-          customStyle={{ margin: '1.35em 0', borderRadius: '0.375rem', fontSize: '0.92em' }}
-          wrapLines
-          lineProps={() => {
-            const sourceLine = codeStartLine + lineCounter;
-            lineCounter++;
-            return {
-              'data-source-start': sourceLine,
-              'data-source-end': sourceLine,
-              style: { display: 'block' },
-            } as React.HTMLProps<HTMLElement>;
-          }}
-        >
-          {code}
-        </SyntaxHighlighter>
+        <div className="group/code relative" style={{ margin: '1.35em 0' }}>
+          <SyntaxHighlighter
+            style={isDark ? oneDark : oneLight}
+            language={language}
+            PreTag="div"
+            className="md-figure"
+            customStyle={{ margin: 0, borderRadius: '0.375rem', fontSize: '0.92em' }}
+            wrapLines
+            lineProps={() => {
+              const sourceLine = codeStartLine + lineCounter;
+              lineCounter++;
+              return {
+                'data-source-start': sourceLine,
+                'data-source-end': sourceLine,
+                style: { display: 'block' },
+              } as React.HTMLProps<HTMLElement>;
+            }}
+          >
+            {code}
+          </SyntaxHighlighter>
+          <CopyCodeButton code={code} />
+        </div>
       );
     },
     // All custom components below destructure node (react-markdown passNode) and spread ...rest

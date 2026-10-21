@@ -7,8 +7,10 @@
  * (unicode61 does not segment CJK; trigram needs ≥3 chars). ripgrep over the small
  * corpus matches any substring in milliseconds.
  *
- * Layout:    <cockpitDir>/search-corpus/<engine>/<sessionId>.txt + manifest.json
- * Freshness: a session is re-extracted when its source mtime+size fingerprint changes,
+ * Layout:    <cockpitDir>/search-corpus/<engine>/<sessionId>.txt + manifest.v2.json
+ * Source:    corpus text is rendered from the TranscriptIndex snapshot (prompts and
+ *            replies it has already folded) — this layer never parses a transcript.
+ * Freshness: a session is re-rendered when its source mtime+size fingerprint changes,
  *            or when its project directory was unknown and has since become resolvable
  *            (the directory lookup draws on projects.json / state.json / other
  *            transcripts, none of which change the source fingerprint).
@@ -18,12 +20,12 @@
  * Concurrency: syncs are serialised by a semaphore owned by this layer.
  */
 import { execFile } from "node:child_process"
-import { randomUUID } from "node:crypto"
-import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
-import { dirname, join, resolve } from "node:path"
+import { mkdir, open, readdir, rm, stat } from "node:fs/promises"
+import { join, resolve } from "node:path"
 import { Effect, Either, Layer } from "effect"
 import { rgPath } from "@vscode/ripgrep"
 import { AppError, CockpitConfig, FSError, type FSOp } from "@cockpit/effect-core"
+import { readJsonOr, writeAtomically } from "@cockpit/effect-runtime/server/fs"
 import {
   SessionSearchService,
   type CorpusSyncStats,
@@ -34,14 +36,12 @@ import {
   CLAUDE_PROJECTS_DIR,
   GLOBAL_STATE_FILE,
   getBuiltinSessionsRoot,
-  listCodexSessions,
 } from "@cockpit/shared-utils"
 import { encodePath } from "@cockpit/shared-utils/encodePath"
 import { buildSessionLink } from "@cockpit/shared-utils/sessionLink"
-import {
-  parseCodexTranscriptFile,
-  parseTranscriptFile,
-} from "../server/api/session/transcriptParsers"
+import { generateTitle } from "../server/sessionTitle"
+import { isCodexSubagent, listMessages, titleMessages } from "../server/transcriptViews"
+import { codexSessionEntries, transcriptSnapshot } from "./transcriptIndexLive"
 
 // ─────────────────────────────────────────────────────────
 // Corpus format (pure)
@@ -54,8 +54,9 @@ export const CORPUS_HEADER_LINES = 7
 export const CORPUS_TITLE_LINE = 5
 
 const BUILTIN_ENGINES = ["ollama", "deepseek", "kimi", "glm"] as const
+const MANIFEST_FILE = "manifest.v2.json"
+const LEGACY_MANIFEST_FILE = "manifest.json"
 const PARSE_CONCURRENCY = 4
-const CWD_PROBE_BYTES = 256 * 1024
 const HEADER_PROBE_BYTES = 8192
 const SNIPPETS_PER_HIT = 3
 const SNIPPET_RADIUS = 120
@@ -205,12 +206,6 @@ const fsTry = <A>(
 ): Effect.Effect<A, FSError> =>
   Effect.tryPromise({ try: fn, catch: (cause) => new FSError({ path, op, cause }) })
 
-const readJsonOr = <T>(file: string, fallback: T): Effect.Effect<T, never> =>
-  fsTry(file, "read", () => readFile(file, "utf8")).pipe(
-    Effect.flatMap((raw) => Effect.try(() => JSON.parse(raw) as T)),
-    Effect.orElseSucceed(() => fallback)
-  )
-
 /** First `bytes` of a file as UTF-8; the handle is always closed. */
 const readHead = (file: string, bytes: number): Effect.Effect<string, FSError> =>
   Effect.acquireUseRelease(
@@ -223,40 +218,6 @@ const readHead = (file: string, bytes: number): Effect.Effect<string, FSError> =
       }),
     (fh) => Effect.tryPromise(() => fh.close()).pipe(Effect.ignore)
   )
-
-export interface AtomicWriteOps {
-  readonly mkdir: (dir: string, opts: { recursive: true }) => Promise<unknown>
-  readonly writeFile: (file: string, text: string) => Promise<void>
-  readonly rename: (from: string, to: string) => Promise<void>
-  readonly rm: (file: string, opts: { force: true }) => Promise<void>
-}
-
-const nodeAtomicWriteOps: AtomicWriteOps = { mkdir, writeFile, rename, rm }
-
-/**
- * Write via a sibling temp file + rename: a reader outside the lock sees the old or the
- * new file, never a truncated one. The temp name ends in `.tmp`, outside rg's `*.txt` glob.
- *
- * Whatever fails between creating the temp file and the rename — a partial writeFile
- * (disk full, quota, EIO) or the rename itself — removes the temp file and rethrows the
- * ORIGINAL error; a failing cleanup never masks it. Otherwise every retrying sync would
- * leave another orphan that no manifest entry ever points at.
- */
-export const writeAtomically = async (
-  file: string,
-  text: string,
-  ops: AtomicWriteOps = nodeAtomicWriteOps
-): Promise<void> => {
-  await ops.mkdir(dirname(file), { recursive: true })
-  const tmp = `${file}.${randomUUID()}.tmp`
-  await ops
-    .writeFile(tmp, text)
-    .then(() => ops.rename(tmp, file))
-    .catch(async (err: unknown) => {
-      await ops.rm(tmp, { force: true }).catch(() => undefined)
-      throw err
-    })
-}
 
 const listSubdirs = (root: string): Effect.Effect<string[], never> =>
   fsTry(root, "read", () => readdir(root, { withFileTypes: true })).pipe(
@@ -291,28 +252,17 @@ export const listCorpusSources: Effect.Effect<CorpusSource[], never> = Effect.ge
   for (const engine of BUILTIN_ENGINES) {
     yield* fromShardedStore(engine, getBuiltinSessionsRoot(engine))
   }
-  const codex = yield* Effect.try(() => listCodexSessions()).pipe(Effect.orElseSucceed(() => []))
+  // Sub-agent rollouts are out of scope (see header), as in every session list.
+  const codex = (yield* codexSessionEntries).filter((entry) => !isCodexSubagent(entry))
   for (const entry of codex) {
     out.push({ engine: "codex", sessionId: entry.id, sourcePath: entry.path, cwd: entry.cwd || null, encodedDir: null })
   }
   return out
 })
 
-/** First `cwd` field found near the head of a claude transcript. */
+/** The first `cwd` field of a claude transcript, from the transcript index. */
 const firstCwdInTranscript = (file: string): Effect.Effect<string | null, never> =>
-  readHead(file, CWD_PROBE_BYTES).pipe(
-    Effect.map((head) => {
-      for (const line of head.split("\n")) {
-        if (!line.includes('"cwd"')) continue
-        const parsed = Either.try(() => JSON.parse(line) as { cwd?: unknown })
-        if (Either.isRight(parsed) && typeof parsed.right.cwd === "string" && parsed.right.cwd) {
-          return parsed.right.cwd
-        }
-      }
-      return null
-    }),
-    Effect.orElseSucceed(() => null)
-  )
+  transcriptSnapshot(file, "claude").pipe(Effect.map((snap) => snap?.cwd ?? null))
 
 /**
  * encodedDir → cwd, for stores whose transcripts carry no cwd. Encoding is not
@@ -368,27 +318,33 @@ const resolveCwd = (
     return null
   })
 
+/**
+ * Corpus text for one session, rendered from the transcript index: the prompts and
+ * replies it has already folded (only bytes appended since its last read are parsed).
+ * The corpus is searchable text, not a chat rendering — every user prompt and assistant
+ * text block, line by line, with no display-layer merging or de-duplication.
+ */
 const extractText = (
   source: CorpusSource,
   cwd: string | null,
   updatedAt: number
 ): Effect.Effect<string | null, AppError> =>
-  Effect.tryPromise({
-    try: () =>
-      source.engine === "codex"
-        ? parseCodexTranscriptFile(source.sourcePath)
-        : parseTranscriptFile(source.sourcePath),
-    catch: (cause) => new AppError({ message: `failed to parse transcript ${source.sourcePath}`, cause }),
-  }).pipe(
-    Effect.map((parsed) => {
-      const messages = parsed.messages
-        .filter((m) => (m.role === "user" || m.role === "assistant") && m.content.trim())
-        .map((m) => ({ role: m.role, content: m.content }))
-      return messages.length === 0
-        ? null
-        : renderCorpusText({ engine: source.engine, sessionId: source.sessionId, cwd, title: parsed.title, updatedAt }, messages)
-    })
-  )
+  Effect.gen(function* () {
+    const format = source.engine === "codex" ? "codex" : "claude"
+    const snap = yield* transcriptSnapshot(source.sourcePath, format)
+    if (!snap) {
+      return yield* Effect.fail(new AppError({ message: `failed to read transcript ${source.sourcePath}` }))
+    }
+    if (snap.corpus.length === 0) return null
+    const title =
+      format === "codex"
+        ? listMessages(snap)[0]?.slice(0, 80) || "Untitled Session"
+        : generateTitle(snap.aiTitle, snap.summary, titleMessages(snap))
+    return renderCorpusText(
+      { engine: source.engine, sessionId: source.sessionId, cwd, title, updatedAt },
+      snap.corpus.map((line) => ({ role: line.role, content: line.text }))
+    )
+  })
 
 // ─────────────────────────────────────────────────────────
 // Sync
@@ -405,9 +361,14 @@ interface Planned {
 
 const syncImpl = (cockpitDir: string, corpusDir: string): Effect.Effect<CorpusSyncStats, FSError> =>
   Effect.gen(function* () {
-    const manifestFile = join(corpusDir, "manifest.json")
+    // v2: corpus text is rendered from the transcript index. A v1 manifest (text from
+    // the display parser) is only consulted to delete corpus files whose source is gone;
+    // every source is re-rendered once.
+    const manifestFile = join(corpusDir, MANIFEST_FILE)
+    const legacyManifestFile = join(corpusDir, LEGACY_MANIFEST_FILE)
     yield* fsTry(corpusDir, "mkdir", () => mkdir(corpusDir, { recursive: true }))
     const previous = yield* readJsonOr<Manifest>(manifestFile, {})
+    const legacy = yield* readJsonOr<Manifest>(legacyManifestFile, {})
     const sources = yield* listCorpusSources
     const lookup = yield* buildCwdLookup(
       cockpitDir,
@@ -486,7 +447,7 @@ const syncImpl = (cockpitDir: string, corpusDir: string): Effect.Effect<CorpusSy
     }
 
     let removed = 0
-    for (const [sourcePath, entry] of Object.entries(previous)) {
+    for (const [sourcePath, entry] of [...Object.entries(legacy), ...Object.entries(previous)]) {
       if (next[sourcePath] !== undefined || rebuilt.some(([p]) => p === sourcePath)) continue
       if (entry.corpusPath) {
         yield* fsTry(entry.corpusPath, "rm", () => rm(entry.corpusPath, { force: true })).pipe(Effect.ignore)
@@ -495,6 +456,9 @@ const syncImpl = (cockpitDir: string, corpusDir: string): Effect.Effect<CorpusSy
     }
 
     yield* fsTry(manifestFile, "write", () => writeAtomically(manifestFile, JSON.stringify(next)))
+    if (Object.keys(legacy).length > 0) {
+      yield* fsTry(legacyManifestFile, "rm", () => rm(legacyManifestFile, { force: true })).pipe(Effect.ignore)
+    }
     return {
       sources: sources.length,
       indexed: Object.values(next).filter((e) => e.corpusPath).length,

@@ -28,7 +28,8 @@ import {
   GoNotesCleanupLive,
   SessionSearchServiceLive,
   DelegationServiceLive,
-  BotRegistryServiceLive
+  BotRegistryServiceLive,
+  TranscriptIndexLive
 } from "@cockpit/feature-agent/effect"
 
 const isDev = process.env.COCKPIT_ENV === "dev"
@@ -65,7 +66,9 @@ export const AppLayer = Layer.mergeAll(
   // Fire-and-forget sub-task sessions + session status (/api/sessions/delegate, /status)
   DelegationServiceLive,
   // User-registered Bot directories (bot.json)
-  BotRegistryServiceLive
+  BotRegistryServiceLive,
+  // Incremental index over session transcripts (titles, user turns, usage)
+  TranscriptIndexLive
 )
 
 export type AppContext = Layer.Layer.Success<typeof AppLayer>

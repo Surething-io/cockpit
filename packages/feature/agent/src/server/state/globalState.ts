@@ -8,7 +8,6 @@ import {
   getDeepseekBuiltinSessionPath,
   getKimiBuiltinSessionPath,
   getGlmBuiltinSessionPath,
-  findCodexSessionPath,
   getSessionFilePath,
 } from '@cockpit/shared-utils';
 import { detectBotName } from '../../shared/botSession';
@@ -25,16 +24,19 @@ const CLAUDE_STYLE_PATHS = [
 ];
 
 /** First existing Claude-format transcript for this session, or null. */
-function findClaudeStylePath(cwd: string, sessionId: string): string | null {
+async function findClaudeStylePath(cwd: string, sessionId: string): Promise<string | null> {
   for (const resolve of CLAUDE_STYLE_PATHS) {
     const path = resolve(cwd, sessionId);
-    if (existsSync(path)) return path;
+    if (await access(path).then(() => true, () => false)) return path;
   }
   return null;
 }
-import { createReadStream, existsSync, statSync } from 'fs';
-import { createInterface } from 'readline';
+import { existsSync } from 'fs';
+import { access } from 'fs/promises';
 import { basename } from 'path';
+import type { TranscriptFormat, TranscriptSnapshot } from '@cockpit/effect-services';
+import { findCodexSession, runWithTranscriptIndex } from '../../effect/transcriptIndexLive';
+import { codexTitle, previewMessages, titleMessages } from '../transcriptViews';
 import { isRunActive } from '../sessionRunHub';
 import { sendPushNotification } from '../push/push';
 import { generateTitle } from '../sessionTitle';
@@ -233,46 +235,42 @@ export async function updateGlobalSessionStatus(
 }
 
 /**
- * Read the session title from a transcript file.
+ * Locate a session's transcript and its format. Claude-format stores are probed by
+ * cwd + sessionId; codex rollouts are looked up by thread id in the codex index.
  */
-export async function getSessionTitle(cwd: string, sessionId: string): Promise<string> {
-  const claudeStylePath = findClaudeStylePath(cwd, sessionId);
-  if (claudeStylePath) {
-    return getClaudeStyleTitle(claudeStylePath);
-  }
+async function resolveSessionFile(
+  cwd: string,
+  sessionId: string
+): Promise<{ path: string; format: TranscriptFormat } | null> {
+  const claudeStylePath = await findClaudeStylePath(cwd, sessionId);
+  if (claudeStylePath) return { path: claudeStylePath, format: 'claude' };
+  const codex = await findCodexSession(sessionId);
+  return codex ? { path: codex.path, format: 'codex' } : null;
+}
 
-  const codexPath = findCodexSessionPath(sessionId);
-  if (codexPath && existsSync(codexPath)) {
-    const title = await getCodexTitle(codexPath);
-    return title || 'Untitled Session';
-  }
-
-  return 'Untitled Session';
+/** Up-to-date folded transcript for a session, or null when it has none on disk. */
+async function sessionSnapshot(cwd: string, sessionId: string): Promise<TranscriptSnapshot | null> {
+  const resolved = await resolveSessionFile(cwd, sessionId);
+  if (!resolved) return null;
+  return runWithTranscriptIndex((index) => index.snapshot(resolved.path, resolved.format));
 }
 
 /**
- * Collect every valid user message from a transcript file, in order,
- * dispatching by engine format (Claude-style / Codex).
+ * Read the session title from a transcript file.
  */
-async function collectUserMessages(cwd: string, sessionId: string): Promise<string[]> {
-  const claudeStylePath = findClaudeStylePath(cwd, sessionId);
-  if (claudeStylePath) {
-    return await getClaudeStyleUserMessages(claudeStylePath);
-  }
-
-  const codexPath = findCodexSessionPath(sessionId);
-  if (codexPath && existsSync(codexPath)) {
-    return await getCodexUserMessages(codexPath);
-  }
-
-  return [];
+export async function getSessionTitle(cwd: string, sessionId: string): Promise<string> {
+  const snap = await sessionSnapshot(cwd, sessionId);
+  if (!snap) return UNTITLED_SESSION;
+  if (snap.format === 'codex') return codexTitle(snap) || UNTITLED_SESSION;
+  return generateTitle(snap.aiTitle, snap.summary, titleMessages(snap));
 }
 
 /**
  * Read the last user message from a transcript file.
  */
 export async function getLastUserMessage(cwd: string, sessionId: string): Promise<string | undefined> {
-  const messages = await collectUserMessages(cwd, sessionId);
+  const snap = await sessionSnapshot(cwd, sessionId);
+  const messages = snap ? previewMessages(snap) : [];
   return messages[messages.length - 1];
 }
 
@@ -300,7 +298,7 @@ export interface SessionPreview {
   searchText: string;
 }
 
-/** Session content read in a single pass: aiTitle + summary line + all user messages. */
+/** Session content: aiTitle + summary line + filtered user messages. */
 interface SessionContent {
   aiTitle: string;
   summary: string;
@@ -308,82 +306,14 @@ interface SessionContent {
 }
 
 /**
- * Resolve the on-disk transcript path for a session plus the reader that parses
- * it into SessionContent, dispatching by engine. Codex transcripts have no
- * summary line (their title is the first user message, already in `messages`).
- * Returns null when no transcript exists on any known path.
- */
-function resolveSessionFile(
-  cwd: string,
-  sessionId: string
-): { path: string; read: (p: string) => Promise<SessionContent> } | null {
-  const claudeStylePath = findClaudeStylePath(cwd, sessionId);
-  if (claudeStylePath) return { path: claudeStylePath, read: getClaudeStyleContent };
-
-  const codexPath = findCodexSessionPath(sessionId);
-  if (codexPath && existsSync(codexPath)) {
-    return {
-      path: codexPath,
-      read: async (p) => ({ aiTitle: '', summary: '', messages: await getCodexUserMessages(p) }),
-    };
-  }
-
-  return null;
-}
-
-// ── Parsed-content cache keyed by file fingerprint (mtime+size) ──────────────
-// getSessionContent streams and JSON.parses an entire transcript. The WS
-// snapshot re-runs it for the top-15 sessions on every state.json write — i.e.
-// on every chat-tab session switch — even though a switch never mutates any
-// transcript. Cache the *parsed* SessionContent (small: only user messages +
-// title lines, never the multi-MB assistant/tool bytes) per resolved path,
-// invalidated by an mtime+size fingerprint. A switch then costs one statSync per
-// session instead of a full read+parse; an active run or an external `claude -r`
-// append changes the fingerprint and re-reads naturally. Bounded LRU.
-const CONTENT_CACHE_MAX = 40;
-const contentCache = new Map<string, { fingerprint: string; content: SessionContent }>();
-
-/** Cheap change token — mtime + size, same idea as session-by-path's getFileFingerprint. */
-function fileFingerprint(filePath: string): string {
-  const st = statSync(filePath);
-  return `${st.mtimeMs}-${st.size}`;
-}
-
-/**
- * Collect the summary line plus every user message in a single file pass,
- * dispatching by engine. Result is cached by file fingerprint so repeated reads
- * of an unchanged transcript (the snapshot recompute on every tab switch) skip
- * the read+parse entirely.
+ * Title lines plus every user message, from the transcript index — a stat per
+ * call when the transcript is unchanged, a parse of only the appended bytes when
+ * it has grown.
  */
 async function getSessionContent(cwd: string, sessionId: string): Promise<SessionContent> {
-  const resolved = resolveSessionFile(cwd, sessionId);
-  if (!resolved) return { aiTitle: '', summary: '', messages: [] };
-
-  let fingerprint = '';
-  try {
-    fingerprint = fileFingerprint(resolved.path);
-    const cached = contentCache.get(resolved.path);
-    if (cached && cached.fingerprint === fingerprint) {
-      // LRU touch: re-insert so it counts as most-recently-used.
-      contentCache.delete(resolved.path);
-      contentCache.set(resolved.path, cached);
-      return cached.content;
-    }
-  } catch {
-    // stat failed (race with deletion, etc.) — fall through to a fresh read.
-  }
-
-  const content = await resolved.read(resolved.path);
-
-  if (fingerprint) {
-    contentCache.delete(resolved.path);
-    contentCache.set(resolved.path, { fingerprint, content });
-    if (contentCache.size > CONTENT_CACHE_MAX) {
-      const oldest = contentCache.keys().next().value;
-      if (oldest !== undefined) contentCache.delete(oldest);
-    }
-  }
-  return content;
+  const snap = await sessionSnapshot(cwd, sessionId);
+  if (!snap) return { aiTitle: '', summary: '', messages: [] };
+  return { aiTitle: snap.aiTitle, summary: snap.summary, messages: previewMessages(snap) };
 }
 
 /**
@@ -512,277 +442,4 @@ export async function getGlobalSessionsSnapshot(limit = 15): Promise<GlobalSessi
   // After the previews, so the two early-return branches above (already-fresh
   // loading session, preview failure) get an engine too.
   return attachEngines(previews);
-}
-
-/**
- * Strip command and system tags from a message.
- */
-function filterCommandTags(text: string): string {
-  // Remove <command-*> tags and their content
-  let filtered = text.replace(/<command-[^>]*>[\s\S]*?<\/command-[^>]*>/g, '');
-  // Remove <local-command-*> tags and their content
-  filtered = filtered.replace(/<local-command-[^>]*>[\s\S]*?<\/local-command-[^>]*>/g, '');
-  // Strip extra whitespace
-  filtered = filtered.trim();
-  return filtered;
-}
-
-/**
- * Check whether a message is a valid user message (not a system message).
- */
-function isValidUserMessage(text: string): boolean {
-  // Filter out system context messages
-  if (text.startsWith('This session is being continued')) return false;
-  if (text.startsWith('Caveat: The messages below')) return false;
-  // Filter out empty messages
-  if (!text.trim()) return false;
-  return true;
-}
-
-// ============================================
-// Transcript readers (Claude-style, Codex)
-// ============================================
-
-// Snapshot readers only consume `user`, `summary`, and `ai-title` lines — all
-// small. The bulk of a transcript's bytes are large `assistant` / tool_result
-// lines we discard, and JSON.parse-ing those (big string alloc + object graph +
-// GC) is the dominant cost on a cold read. A cheap byte scan for the wanted
-// type markers lets us skip parsing any line that can't be one of the three,
-// cutting parse volume by ~1-2 orders of magnitude on big transcripts.
-//
-// Compact machine-written JSONL guarantees the `"type":"x"` form (no spaces); a
-// space-padded variant is tolerated defensively. A false positive only wastes
-// one parse; a false negative only yields a slightly stale preview title (this
-// is best-effort code wrapped in try/catch), never a crash.
-const SNAPSHOT_TYPE_MARKERS = [
-  '"type":"user"',
-  '"type": "user"',
-  '"type":"summary"',
-  '"type": "summary"',
-  '"type":"ai-title"',
-  '"type": "ai-title"',
-];
-function isSnapshotRelevantLine(line: string): boolean {
-  for (const marker of SNAPSHOT_TYPE_MARKERS) {
-    if (line.includes(marker)) return true;
-  }
-  return false;
-}
-
-async function getClaudeStyleTitle(filePath: string): Promise<string> {
-  try {
-    const fileStream = createReadStream(filePath);
-    const rl = createInterface({ input: fileStream, crlfDelay: Infinity });
-
-    let aiTitle = '';
-    let summary = '';
-    const userMessages: string[] = [];
-
-    for await (const line of rl) {
-      if (!line.trim()) continue;
-      // Skip lines that can't be a wanted type before the expensive JSON.parse.
-      if (!isSnapshotRelevantLine(line)) continue;
-      try {
-        const entry = JSON.parse(line);
-        if (entry.type === 'ai-title' && entry.aiTitle) {
-          aiTitle = entry.aiTitle;
-        }
-        if (entry.type === 'summary' && entry.summary) {
-          summary = entry.summary;
-        }
-        if (entry.type === 'user') {
-          const message = entry.message;
-          if (!message?.content) continue;
-          if (typeof message.content === 'string') {
-            userMessages.push(message.content);
-          } else if (Array.isArray(message.content)) {
-            for (const block of message.content) {
-              if (block.type === 'text' && block.text) userMessages.push(block.text);
-            }
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    return generateTitle(aiTitle, summary, userMessages);
-  } catch {
-    return 'Untitled Session';
-  }
-}
-
-async function getClaudeStyleUserMessages(filePath: string): Promise<string[]> {
-  const messages: string[] = [];
-  try {
-    const fileStream = createReadStream(filePath);
-    const rl = createInterface({ input: fileStream, crlfDelay: Infinity });
-
-    for await (const line of rl) {
-      if (!line.trim()) continue;
-      // Skip lines that can't be a wanted type before the expensive JSON.parse.
-      if (!isSnapshotRelevantLine(line)) continue;
-      try {
-        const entry = JSON.parse(line);
-        if (entry.type !== 'user') continue;
-
-        const message = entry.message;
-        if (!message?.content) continue;
-
-        let text = '';
-        if (typeof message.content === 'string') {
-          text = message.content;
-        } else if (Array.isArray(message.content)) {
-          for (const block of message.content) {
-            if (block.type === 'text' && block.text) {
-              text = block.text;
-              break;
-            }
-          }
-        }
-
-        if (!text) continue;
-        const filtered = filterCommandTags(text);
-        if (filtered && isValidUserMessage(filtered)) {
-          messages.push(filtered);
-        }
-      } catch {
-        // ignore
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return messages;
-}
-
-/**
- * Single-pass Claude-style reader returning the summary line plus the filtered
- * user messages (same filtering as getClaudeStyleUserMessages). Lets
- * getSessionPreview build title + preview + search corpus from one file read.
- */
-async function getClaudeStyleContent(filePath: string): Promise<SessionContent> {
-  let aiTitle = '';
-  let summary = '';
-  const messages: string[] = [];
-  try {
-    const fileStream = createReadStream(filePath);
-    const rl = createInterface({ input: fileStream, crlfDelay: Infinity });
-
-    for await (const line of rl) {
-      if (!line.trim()) continue;
-      // Skip lines that can't be a wanted type before the expensive JSON.parse.
-      if (!isSnapshotRelevantLine(line)) continue;
-      try {
-        const entry = JSON.parse(line);
-        if (entry.type === 'ai-title' && entry.aiTitle) {
-          aiTitle = entry.aiTitle;
-          continue;
-        }
-        if (entry.type === 'summary' && entry.summary) {
-          summary = entry.summary;
-          continue;
-        }
-        if (entry.type !== 'user') continue;
-
-        const message = entry.message;
-        if (!message?.content) continue;
-
-        let text = '';
-        if (typeof message.content === 'string') {
-          text = message.content;
-        } else if (Array.isArray(message.content)) {
-          for (const block of message.content) {
-            if (block.type === 'text' && block.text) {
-              text = block.text;
-              break;
-            }
-          }
-        }
-
-        if (!text) continue;
-        const filtered = filterCommandTags(text);
-        if (filtered && isValidUserMessage(filtered)) {
-          messages.push(filtered);
-        }
-      } catch {
-        // ignore
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return { aiTitle, summary, messages };
-}
-
-async function getCodexUserMessages(filePath: string): Promise<string[]> {
-  const messages: string[] = [];
-  try {
-    const fileStream = createReadStream(filePath);
-    const rl = createInterface({ input: fileStream, crlfDelay: Infinity });
-
-    for await (const line of rl) {
-      if (!line.trim()) continue;
-      let entry: { type?: string; payload?: { type?: string; role?: string; content?: Array<{ type?: string; text?: string }> } };
-      try {
-        entry = JSON.parse(line);
-      } catch {
-        continue;
-      }
-
-      if (entry.type !== 'response_item') continue;
-      const payload = entry.payload;
-      if (!payload || payload.type !== 'message' || payload.role !== 'user') continue;
-
-      const text =
-        payload.content
-          ?.filter((c) => c.type === 'input_text' && c.text)
-          .map((c) => c.text!)
-          .join('') || '';
-
-      if (!text || text.startsWith('<') || text.startsWith('#')) continue;
-
-      const filtered = filterCommandTags(text);
-      if (filtered && isValidUserMessage(filtered)) {
-        messages.push(filtered);
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return messages;
-}
-
-async function getCodexTitle(filePath: string): Promise<string | undefined> {
-  try {
-    const fileStream = createReadStream(filePath);
-    const rl = createInterface({ input: fileStream, crlfDelay: Infinity });
-
-    for await (const line of rl) {
-      if (!line.trim()) continue;
-      let entry: { type?: string; payload?: { type?: string; role?: string; content?: Array<{ type?: string; text?: string }> } };
-      try {
-        entry = JSON.parse(line);
-      } catch {
-        continue;
-      }
-
-      if (entry.type !== 'response_item') continue;
-      const payload = entry.payload;
-      if (!payload || payload.type !== 'message' || payload.role !== 'user') continue;
-
-      const text =
-        payload.content
-          ?.filter((c) => c.type === 'input_text' && c.text)
-          .map((c) => c.text!)
-          .join('') || '';
-
-      if (!text || text.startsWith('<') || text.startsWith('#')) continue;
-      return text.slice(0, 80);
-    }
-
-    return undefined;
-  } catch {
-    return undefined;
-  }
 }

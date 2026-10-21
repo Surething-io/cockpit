@@ -45,7 +45,7 @@ export const GET = dynamicHandler<
     // where a session lives IS what it ran as, and this route is reachable for a
     // codex / deepseek / kimi / glm / ollama chat too. resolveSessionPath also
     // subsumes the existence check (null = no store holds it).
-    const store = resolveSessionPath(cwd, sessionId);
+    const store = yield* Effect.promise(() => resolveSessionPath(cwd, sessionId));
     if (!store) {
       return yield* Effect.fail(
         new NotFoundError({ resource: 'session', id: sessionId })

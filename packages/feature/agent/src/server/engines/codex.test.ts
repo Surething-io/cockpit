@@ -104,7 +104,10 @@ vi.mock('./codexAppServer/client', () => ({
 }));
 vi.mock('@cockpit/shared-utils', () => ({
   sanitizedSpawnEnv: () => ({}),
-  findCodexSessionPath: () => mocks.rolloutPath,
+}));
+vi.mock('../../effect/transcriptIndexLive', () => ({
+  findCodexSession: async () => (mocks.rolloutPath ? { path: mocks.rolloutPath } : null),
+  invalidateTranscript: () => {},
 }));
 
 /**

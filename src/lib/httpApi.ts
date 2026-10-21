@@ -14,7 +14,7 @@ import { parse } from "url"
 import { readFile } from "fs/promises"
 import { randomUUID } from "crypto"
 import { WebSocket } from "ws"
-import { getTerminalHistoryPath, tightenSecretFiles } from "@cockpit/shared-utils"
+import { getTerminalHistoryPath, tightenPrivateData, tightenSecretFiles } from "@cockpit/shared-utils"
 import { resolve as resolvePath } from "path"
 import {
   getTerminalByShortId,
@@ -55,7 +55,7 @@ import type { ReadResult } from "@cockpit/feature-console/server"
 // to disk from its process `exit` hook, adopt the PTYs a previous server left in
 // the pty-host at boot, sweep orphaned output files, and make credential files
 // owner-only — same import path in dev and prod.
-export { flushAllRunningSync, adoptPtyHostSessions, sweepOrphanTerminalOutputs, tightenSecretFiles }
+export { flushAllRunningSync, adoptPtyHostSessions, sweepOrphanTerminalOutputs, tightenPrivateData, tightenSecretFiles }
 
 // Silence unused — kept for symmetry with their use inside the legacy wsServer
 void addOutputListener

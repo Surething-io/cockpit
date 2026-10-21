@@ -1,10 +1,11 @@
-import { readFile, writeFile } from 'fs/promises';
+import { readFile } from 'fs/promises';
 import { Effect } from 'effect';
 import { withFileLock } from '@cockpit/shared-utils';
 import { dynamicHandler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import { FSError, NotFoundError, ValidationError } from '@cockpit/effect-core';
 import { beginTranscriptEdit } from '../../sessionRunHub';
 import { resolveSessionPath } from './sessionStore';
+import { rewriteTranscript } from '../../transcriptWrite';
 import { deleteClaudeTurnLines } from './deleteTurnLines';
 import { deleteCodexTurnLines } from './codexFork';
 
@@ -29,7 +30,7 @@ export const DELETE = dynamicHandler<
     if (!body.messageUuid) {
       return yield* Effect.fail(new ValidationError({ field: 'messageUuid', reason: 'missing' }));
     }
-    const store = resolveSessionPath(body.cwd, sessionId);
+    const store = yield* Effect.promise(() => resolveSessionPath(body.cwd, sessionId));
     if (!store) {
       return yield* Effect.fail(new NotFoundError({ resource: 'session', id: sessionId }));
     }
@@ -50,10 +51,9 @@ export const DELETE = dynamicHandler<
           ? deleteCodexTurnLines(originalLines, body.messageUuid)
           : deleteClaudeTurnLines(originalLines, body.messageUuid);
         if (!deleted.targetMissed) {
-          await writeFile(
+          await rewriteTranscript(
             store.sessionPath,
             deleted.newLines.length > 0 ? `${deleted.newLines.join('\n')}\n` : '',
-            'utf-8',
           );
         }
         return deleted;

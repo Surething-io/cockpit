@@ -32,6 +32,7 @@
 import * as fs from 'fs';
 import { join, basename } from 'path';
 import { CLAUDE_PROJECTS_DIR } from '@cockpit/shared-utils';
+import { rewriteTranscriptSync } from '../../transcriptWrite';
 
 /**
  * Stash location: inside the session's OWN directory — the same one the vendor uses for
@@ -143,7 +144,7 @@ export function mergeStashedTranscript(sessionPath: string): 'merged' | 'restore
     return 'restored';
   }
 
-  fs.writeFileSync(sessionPath, spliceTurn(history, turn, sessionPath).join('\n') + '\n', 'utf-8');
+  rewriteTranscriptSync(sessionPath, spliceTurn(history, turn, sessionPath).join('\n') + '\n');
   fs.unlinkSync(stash);
   return 'merged';
 }

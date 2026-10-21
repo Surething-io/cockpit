@@ -23,6 +23,7 @@
  * record may have copied it); insertion only targets the first developer message.
  */
 import * as fs from 'fs';
+import { rewriteTranscriptSync } from '../../transcriptWrite';
 
 const OPEN = '<cockpit_output_style>';
 const CLOSE = '</cockpit_output_style>';
@@ -146,8 +147,6 @@ export function syncCodexOutputStyle(sessionPath: string, style: string | undefi
   }
 
   if (result === 'unchanged') return result;
-  const tmp = `${sessionPath}.output-style.tmp`;
-  fs.writeFileSync(tmp, lines.join('\n'), 'utf-8');
-  fs.renameSync(tmp, sessionPath);
+  rewriteTranscriptSync(sessionPath, lines.join('\n'));
   return result;
 }

@@ -2,3 +2,4 @@
 export * from "./wsAdapter"
 export * from "./runtime"
 export * from "../next"
+export * from "./fs"

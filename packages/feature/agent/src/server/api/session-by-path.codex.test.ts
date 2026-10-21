@@ -6,12 +6,18 @@ import { join } from 'path';
 const sessionPaths = new Map<string, string>();
 const sessionEntries = new Map<string, { path: string; agentRole?: string; agentNickname?: string }>();
 
-vi.mock('@cockpit/shared-utils', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@cockpit/shared-utils')>();
+// The codex catalog is the only thing that maps a thread id to its rollout: the
+// session's own transcript (sessionPaths) and the sub-agent ones (sessionEntries).
+vi.mock('../../effect/transcriptIndexLive', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../effect/transcriptIndexLive')>();
   return {
     ...actual,
-    findCodexSessionPath: (sessionId: string) => sessionPaths.get(sessionId) || null,
-    findCodexSessionEntry: (id: string) => sessionEntries.get(id) || null,
+    findCodexSession: async (id: string) => {
+      const entry = sessionEntries.get(id);
+      if (entry) return { id, ...entry };
+      const path = sessionPaths.get(id);
+      return path ? { id, path } : null;
+    },
   };
 });
 

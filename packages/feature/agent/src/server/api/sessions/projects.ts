@@ -1,9 +1,11 @@
-import * as fs from 'fs';
+import { readdir } from 'fs/promises';
 import * as path from 'path';
 import { Effect } from 'effect';
-import { CLAUDE_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath, getBuiltinSessionRoots, listCodexSessions, normalizeCodexSessionId } from '@cockpit/shared-utils';
+import { CLAUDE_PROJECTS_DIR, COCKPIT_PROJECTS_DIR, GLOBAL_STATE_FILE, encodePath, getBuiltinSessionRoots, normalizeCodexSessionId } from '@cockpit/shared-utils';
 import { handler } from '@cockpit/effect-runtime/server';
-import { AppError } from '@cockpit/effect-core';
+import { isJsonObject, readJsonOr } from '@cockpit/effect-runtime/server/fs';
+import { TranscriptIndex } from '@cockpit/effect-services';
+import { isCodexSubagent } from '../../transcriptViews';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,117 +26,82 @@ interface SessionsIndex {
   originalPath?: string;
 }
 
+type ProjectMap = Map<string, { fullPath: string; sessionCount: number }>;
+
+// A missing, half-written or non-object file reads as null: the caller falls back to
+// the next source for the project path, as it always has.
+const readJson = <T extends object>(file: string): Effect.Effect<T | null, never> =>
+  readJsonOr<T | null>(file, null, isJsonObject<T>);
+
+const listDir = (dir: string): Effect.Effect<string[], never> =>
+  Effect.tryPromise(() => readdir(dir)).pipe(Effect.orElseSucceed((): string[] => []));
+
+const listSubdirs = (root: string): Effect.Effect<string[], never> =>
+  Effect.tryPromise(() => readdir(root, { withFileTypes: true })).pipe(
+    Effect.map((entries) => entries.filter((d) => d.isDirectory()).map((d) => d.name)),
+    Effect.orElseSucceed((): string[] => [])
+  );
+
+// .jsonl session files in a directory (exclude agent- subprocess files)
+const listSessionFiles = (dir: string): Effect.Effect<string[], never> =>
+  listDir(dir).pipe(Effect.map((files) => files.filter((f) => f.endsWith('.jsonl') && !f.startsWith('agent-'))));
+
 // Read the real project path from sessions-index.json
-function getProjectPathFromIndex(projectDir: string): string | null {
-  const indexPath = path.join(projectDir, 'sessions-index.json');
-  if (!fs.existsSync(indexPath)) {
+const getProjectPathFromIndex = (projectDir: string): Effect.Effect<string | null, never> =>
+  readJson<SessionsIndex>(path.join(projectDir, 'sessions-index.json')).pipe(
+    Effect.map((index) => {
+      const first = Array.isArray(index?.entries) ? index.entries[0]?.projectPath : undefined;
+      const found = index?.originalPath || first;
+      return typeof found === 'string' && found ? found : null;
+    })
+  );
+
+// The first cwd field among the project's transcripts, from the transcript index
+const getProjectPathFromJsonl = (projectDir: string): Effect.Effect<string | null, never, TranscriptIndex> =>
+  Effect.gen(function* () {
+    const index = yield* TranscriptIndex;
+    for (const file of yield* listSessionFiles(projectDir)) {
+      const snap = yield* index.snapshot(path.join(projectDir, file), 'claude');
+      if (snap?.cwd) return snap.cwd;
+    }
     return null;
-  }
-
-  try {
-    const content = fs.readFileSync(indexPath, 'utf-8');
-    const index: SessionsIndex = JSON.parse(content);
-
-    // Prefer originalPath
-    if (index.originalPath) {
-      return index.originalPath;
-    }
-
-    // Otherwise get it from the projectPath of the first entry
-    if (index.entries && index.entries.length > 0 && index.entries[0].projectPath) {
-      return index.entries[0].projectPath;
-    }
-  } catch {
-    // Parse failed, return null
-  }
-
-  return null;
-}
-
-// Read the cwd field from jsonl files
-function getProjectPathFromJsonl(projectDir: string): string | null {
-  try {
-    const files = fs.readdirSync(projectDir)
-      .filter(file => file.endsWith('.jsonl') && !file.startsWith('agent-'));
-
-    for (const file of files) {
-      const filePath = path.join(projectDir, file);
-      const content = fs.readFileSync(filePath, 'utf-8');
-      const lines = content.split('\n');
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const obj = JSON.parse(line);
-          if (obj.cwd) {
-            return obj.cwd;
-          }
-        } catch {
-          // Ignore parse errors
-        }
-      }
-    }
-  } catch {
-    // Ignore read errors
-  }
-
-  return null;
-}
+  });
 
 // Build a lookup of encodedPath → cwd from the global state file
 // This covers projects whose only sessions live in stores that carry no cwd field
 // (the Built-in Agent stores) or outside the cwd-encoded layout entirely (codex)
-function buildCwdLookupFromGlobalState(): Map<string, string> {
-  const lookup = new Map<string, string>();
-  try {
-    if (!fs.existsSync(GLOBAL_STATE_FILE)) return lookup;
-    const content = fs.readFileSync(GLOBAL_STATE_FILE, 'utf-8');
-    const state = JSON.parse(content) as { sessions?: Array<{ cwd?: string }> };
-    if (state.sessions) {
-      for (const session of state.sessions) {
-        if (session.cwd) {
-          lookup.set(encodePath(session.cwd), session.cwd);
-        }
+const buildCwdLookupFromGlobalState: Effect.Effect<Map<string, string>, never> =
+  readJson<{ sessions?: Array<{ cwd?: string }> }>(GLOBAL_STATE_FILE).pipe(
+    Effect.map((state) => {
+      const lookup = new Map<string, string>();
+      for (const session of Array.isArray(state?.sessions) ? state.sessions : []) {
+        if (typeof session?.cwd === 'string' && session.cwd) lookup.set(encodePath(session.cwd), session.cwd);
       }
-    }
-  } catch { /* ignore */ }
-  return lookup;
-}
+      return lookup;
+    })
+  );
 
 // Resolve the real project path from an encoded directory name using all available sources
-function resolveProjectPath(
+const resolveProjectPath = (
   encodedDirName: string,
   cwdLookup: Map<string, string>,
-  claudeProjectDir?: string,
-): string | null {
-  // 1. Try Claude's sessions-index.json
-  if (claudeProjectDir) {
-    const fromIndex = getProjectPathFromIndex(claudeProjectDir);
-    if (fromIndex) return fromIndex;
+  claudeProjectDir: string | undefined,
+): Effect.Effect<string | null, never, TranscriptIndex> =>
+  Effect.gen(function* () {
+    if (claudeProjectDir) {
+      // 1. Claude's sessions-index.json
+      const fromIndex = yield* getProjectPathFromIndex(claudeProjectDir);
+      if (fromIndex) return fromIndex;
+      // 2. cwd field from Claude's jsonl files
+      const fromJsonl = yield* getProjectPathFromJsonl(claudeProjectDir);
+      if (fromJsonl) return fromJsonl;
+    }
+    // 3. Global state lookup
+    return cwdLookup.get(encodedDirName) ?? null;
+  });
 
-    // 2. Try cwd field from Claude's jsonl files
-    const fromJsonl = getProjectPathFromJsonl(claudeProjectDir);
-    if (fromJsonl) return fromJsonl;
-  }
-
-  // 3. Try global state lookup
-  const fromState = cwdLookup.get(encodedDirName);
-  if (fromState) return fromState;
-
-  return null;
-}
-
-// Count .jsonl session files in a directory (exclude agent- subprocess files)
-function countSessionFiles(dir: string): number {
-  try {
-    if (!fs.existsSync(dir)) return 0;
-    return fs.readdirSync(dir)
-      .filter(file => file.endsWith('.jsonl') && !file.startsWith('agent-'))
-      .length;
-  } catch {
-    return 0;
-  }
-}
+const claudeDirIfPresent = (dirName: string, claudeDirs: Set<string>): string | undefined =>
+  claudeDirs.has(dirName) ? path.join(CLAUDE_PROJECTS_DIR, dirName) : undefined;
 
 /**
  * Merge one session store into the project map. Every store except the primary Claude one
@@ -148,74 +115,48 @@ function countSessionFiles(dir: string): number {
  * Path resolution runs only for projects not already in the map: an existing entry already
  * has a resolved path, so an unresolvable sibling store must still contribute its count.
  */
-function mergeStoreIntoProjects(
+const mergeStoreIntoProjects = (
   root: string,
-  projectMap: Map<string, { fullPath: string; sessionCount: number }>,
+  projectMap: ProjectMap,
   cwdLookup: Map<string, string>,
-): void {
-  if (!fs.existsSync(root)) return;
+  claudeDirs: Set<string>,
+): Effect.Effect<void, never, TranscriptIndex> =>
+  Effect.gen(function* () {
+    for (const dirName of yield* listSubdirs(root)) {
+      const count = (yield* listSessionFiles(path.join(root, dirName))).length;
+      if (count === 0) continue;
 
-  let dirNames: string[];
-  try {
-    dirNames = fs.readdirSync(root, { withFileTypes: true })
-      .filter(dirent => dirent.isDirectory())
-      .map(dirent => dirent.name);
-  } catch {
-    return;
-  }
+      const existing = projectMap.get(dirName);
+      if (existing) {
+        existing.sessionCount += count;
+        continue;
+      }
 
-  for (const dirName of dirNames) {
-    const storeDir = path.join(root, dirName);
-    const count = countSessionFiles(storeDir);
-    if (count === 0) continue;
-
-    const existing = projectMap.get(dirName);
-    if (existing) {
-      existing.sessionCount += count;
-      continue;
+      const fullPath = yield* resolveProjectPath(dirName, cwdLookup, claudeDirIfPresent(dirName, claudeDirs));
+      if (!fullPath) continue;
+      projectMap.set(dirName, { fullPath, sessionCount: count });
     }
-
-    const claudeDir = path.join(CLAUDE_PROJECTS_DIR, dirName);
-    const fullPath = resolveProjectPath(
-      dirName,
-      cwdLookup,
-      fs.existsSync(claudeDir) ? claudeDir : undefined,
-    );
-    if (!fullPath) continue;
-
-    projectMap.set(dirName, { fullPath, sessionCount: count });
-  }
-}
+  });
 
 // Read codex sessions from cockpit session.json. Codex is the only engine that needs
 // this: its transcripts live outside the cwd-encoded layout, so there is no project dir
 // to scan — the session.json engines map is the only record that ties one to a project.
-function codexSessionIdsFromCockpitState(encodedDirName: string): string[] {
-  try {
-    const sessionJsonPath = path.join(COCKPIT_PROJECTS_DIR, encodedDirName, 'session.json');
-    if (!fs.existsSync(sessionJsonPath)) return [];
-    const content = fs.readFileSync(sessionJsonPath, 'utf-8');
-    const state = JSON.parse(content) as {
-      sessions?: string[];
-      engines?: Record<string, string>;
-    };
-    if (!state.sessions || !state.engines) return [];
-
-    return state.sessions
-      .filter((sessionId) => state.engines![sessionId] === 'codex')
-      .map(normalizeCodexSessionId);
-  } catch {
-    return [];
-  }
-}
+const codexSessionIdsFromCockpitState = (encodedDirName: string): Effect.Effect<string[], never> =>
+  readJson<{ sessions?: unknown; engines?: Record<string, unknown> }>(
+    path.join(COCKPIT_PROJECTS_DIR, encodedDirName, 'session.json')
+  ).pipe(
+    Effect.map((state) => {
+      if (!Array.isArray(state?.sessions) || !state.engines || typeof state.engines !== 'object') return [];
+      const engines = state.engines;
+      return state.sessions
+        .filter((id): id is string => typeof id === 'string' && engines[id] === 'codex')
+        .map(normalizeCodexSessionId);
+    })
+  );
 
 export const GET = handler(() =>
   Effect.gen(function* () {
-    const projects = yield* Effect.tryPromise({
-      try: () => buildProjectsList(),
-      catch: (cause) =>
-        new AppError({ message: 'Failed to list projects', cause }),
-    });
+    const projects = yield* buildProjectsList;
     return new Response(JSON.stringify(projects), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -223,89 +164,83 @@ export const GET = handler(() =>
   })
 );
 
-async function buildProjectsList() {
-  const cwdLookup = buildCwdLookupFromGlobalState();
+const buildProjectsList: Effect.Effect<ProjectInfo[], never, TranscriptIndex> = Effect.gen(function* () {
+  const cwdLookup = yield* buildCwdLookupFromGlobalState;
 
-    // Collect projects from all sources: Map<encodedPath, { fullPath, sessionCount }>
-    const projectMap = new Map<string, { fullPath: string; sessionCount: number }>();
+  // Collect projects from all sources: Map<encodedPath, { fullPath, sessionCount }>
+  const projectMap: ProjectMap = new Map();
 
-    // --- Source 1: Claude projects dir ---
-    if (fs.existsSync(CLAUDE_PROJECTS_DIR)) {
-      const projectDirs = fs.readdirSync(CLAUDE_PROJECTS_DIR, { withFileTypes: true })
-        .filter(dirent => dirent.isDirectory())
-        .map(dirent => dirent.name);
-
-      for (const dirName of projectDirs) {
+  // --- Source 1: Claude projects dir ---
+  const claudeDirNames = yield* listSubdirs(CLAUDE_PROJECTS_DIR);
+  const claudeDirs = new Set(claudeDirNames);
+  const resolved = yield* Effect.forEach(
+    claudeDirNames,
+    (dirName) =>
+      Effect.gen(function* () {
         const claudeDir = path.join(CLAUDE_PROJECTS_DIR, dirName);
-        const fullPath = resolveProjectPath(dirName, cwdLookup, claudeDir);
-        if (!fullPath) continue;
+        const fullPath = yield* resolveProjectPath(dirName, cwdLookup, claudeDir);
+        const count = fullPath ? (yield* listSessionFiles(claudeDir)).length : 0;
+        return { dirName, fullPath, count };
+      }),
+    { concurrency: 8 }
+  );
+  for (const { dirName, fullPath, count } of resolved) {
+    if (fullPath && count > 0) projectMap.set(dirName, { fullPath, sessionCount: count });
+  }
 
-        const count = countSessionFiles(claudeDir);
-        if (count > 0) {
-          projectMap.set(dirName, { fullPath, sessionCount: count });
-        }
-      }
+  // --- Source 2: Built-in Agent stores (ollama, deepseek, kimi, glm) ---
+  // ~/.cockpit/<engine>/projects is deliberately NOT scanned: those are transcripts from
+  // the removed Claude Agent SDK mode, and no loop remains that can resume them.
+  for (const root of getBuiltinSessionRoots()) {
+    yield* mergeStoreIntoProjects(root, projectMap, cwdLookup, claudeDirs);
+  }
+
+  // --- Source 3: Codex sessions via cockpit session.json + global Codex index ---
+  const codexByProject = new Map<string, Set<string>>();
+  const codexProjectPaths = new Map<string, string>();
+  const cockpitDirs = yield* listSubdirs(COCKPIT_PROJECTS_DIR);
+  const codexIds = yield* Effect.forEach(cockpitDirs, codexSessionIdsFromCockpitState, { concurrency: 16 });
+  cockpitDirs.forEach((dirName, i) => {
+    if (codexIds[i].length > 0) codexByProject.set(dirName, new Set(codexIds[i]));
+  });
+
+  const index = yield* TranscriptIndex;
+  for (const session of (yield* index.codexSessions).filter((e) => !isCodexSubagent(e))) {
+    const dirName = encodePath(session.cwd);
+    const ids = codexByProject.get(dirName) ?? new Set<string>();
+    ids.add(session.id);
+    codexByProject.set(dirName, ids);
+    codexProjectPaths.set(dirName, session.cwd);
+  }
+
+  for (const [dirName, ids] of codexByProject) {
+    const engineCount = ids.size;
+    if (engineCount === 0) continue;
+
+    const existing = projectMap.get(dirName);
+    if (existing) {
+      existing.sessionCount += engineCount;
+    } else {
+      const fullPath =
+        codexProjectPaths.get(dirName) ??
+        (yield* resolveProjectPath(dirName, cwdLookup, claudeDirIfPresent(dirName, claudeDirs)));
+      if (!fullPath) continue;
+      projectMap.set(dirName, { fullPath, sessionCount: engineCount });
     }
+  }
 
-    // --- Source 2: Built-in Agent stores (ollama, deepseek, kimi, glm) ---
-    // ~/.cockpit/<engine>/projects is deliberately NOT scanned: those are transcripts from
-    // the removed Claude Agent SDK mode, and no loop remains that can resume them.
-    for (const root of getBuiltinSessionRoots()) {
-      mergeStoreIntoProjects(root, projectMap, cwdLookup);
-    }
+  // Build the final project list
+  const projects: ProjectInfo[] = [];
+  for (const [encodedPath, { fullPath, sessionCount }] of projectMap) {
+    projects.push({
+      name: path.basename(fullPath),
+      fullPath,
+      encodedPath,
+      sessionCount,
+    });
+  }
 
-    // --- Source 3: Codex sessions via cockpit session.json + global Codex index ---
-    const codexByProject = new Map<string, Set<string>>();
-    const codexProjectPaths = new Map<string, string>();
-    if (fs.existsSync(COCKPIT_PROJECTS_DIR)) {
-      const cockpitDirs = fs.readdirSync(COCKPIT_PROJECTS_DIR, { withFileTypes: true })
-        .filter(dirent => dirent.isDirectory())
-        .map(dirent => dirent.name);
-
-      for (const dirName of cockpitDirs) {
-        const ids = codexSessionIdsFromCockpitState(dirName);
-        if (ids.length === 0) continue;
-        codexByProject.set(dirName, new Set(ids));
-      }
-    }
-
-    for (const session of listCodexSessions()) {
-      const dirName = encodePath(session.cwd);
-      const ids = codexByProject.get(dirName) ?? new Set<string>();
-      ids.add(session.id);
-      codexByProject.set(dirName, ids);
-      codexProjectPaths.set(dirName, session.cwd);
-    }
-
-    for (const [dirName, ids] of codexByProject) {
-      const engineCount = ids.size;
-      if (engineCount === 0) continue;
-
-      const existing = projectMap.get(dirName);
-      if (existing) {
-        existing.sessionCount += engineCount;
-      } else {
-        const claudeDir = path.join(CLAUDE_PROJECTS_DIR, dirName);
-        const claudeDirExists = fs.existsSync(claudeDir) ? claudeDir : undefined;
-        const fullPath = codexProjectPaths.get(dirName) ?? resolveProjectPath(dirName, cwdLookup, claudeDirExists);
-        if (!fullPath) continue;
-
-        projectMap.set(dirName, { fullPath, sessionCount: engineCount });
-      }
-    }
-
-    // Build the final project list
-    const projects: ProjectInfo[] = [];
-    for (const [encodedPath, { fullPath, sessionCount }] of projectMap) {
-      projects.push({
-        name: path.basename(fullPath),
-        fullPath,
-        encodedPath,
-        sessionCount,
-      });
-    }
-
-    // Sort alphabetically by last path component
-    projects.sort((a, b) => a.name.localeCompare(b.name));
-    return projects;
-}
+  // Sort alphabetically by last path component
+  projects.sort((a, b) => a.name.localeCompare(b.name));
+  return projects;
+});

@@ -25,7 +25,8 @@ process.env.COCKPIT_HOME = dir;
 const transcript = join(dir, 'session-1.jsonl');
 
 vi.mock('../packages/feature/agent/src/server/api/session/sessionStore', () => ({
-  resolveSessionPath: () => ({ sessionPath: transcript, engine: 'claude' }),
+  // async: the resolver probes the stores with fs/promises and the codex catalog.
+  resolveSessionPath: async () => ({ sessionPath: transcript, engine: 'claude' }),
 }));
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));

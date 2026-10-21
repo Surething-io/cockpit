@@ -1,4 +1,4 @@
-import * as fs from 'fs';
+import { access } from 'fs/promises';
 import { join } from 'path';
 import {
   CODEX_SESSIONS_DIR,
@@ -7,8 +7,8 @@ import {
   getKimiBuiltinSessionPath,
   getGlmBuiltinSessionPath,
   getOllamaSessionPath,
-  findCodexSessionPath,
 } from '@cockpit/shared-utils';
+import { findCodexSession } from '../../../effect/transcriptIndexLive';
 
 export type SessionEngine =
   | 'claude'
@@ -35,33 +35,23 @@ export interface SessionStore {
  * are in the SDK's own shape and no loop remains that can resume them, so surfacing them
  * would offer sessions that die on the first turn.
  */
-export function resolveSessionPath(
+export async function resolveSessionPath(
   cwd: string,
   sessionId: string
-): SessionStore | null {
-  const sessionPath = getClaudeSessionPath(cwd, sessionId);
-  if (fs.existsSync(sessionPath)) {
-    return { sessionPath, engine: 'claude' };
-  }
-  const deepseekPath = getDeepseekBuiltinSessionPath(cwd, sessionId);
-  if (fs.existsSync(deepseekPath)) {
-    return { sessionPath: deepseekPath, engine: 'deepseek' };
-  }
-  const kimiPath = getKimiBuiltinSessionPath(cwd, sessionId);
-  if (fs.existsSync(kimiPath)) {
-    return { sessionPath: kimiPath, engine: 'kimi' };
-  }
-  const glmPath = getGlmBuiltinSessionPath(cwd, sessionId);
-  if (fs.existsSync(glmPath)) {
-    return { sessionPath: glmPath, engine: 'glm' };
-  }
-  const codexPath = findCodexSessionPath(sessionId);
-  if (codexPath) {
-    return { sessionPath: codexPath, engine: 'codex' };
-  }
-  const ollamaPath = getOllamaSessionPath(cwd, sessionId);
-  if (fs.existsSync(ollamaPath)) {
-    return { sessionPath: ollamaPath, engine: 'ollama' };
+): Promise<SessionStore | null> {
+  const exists = (p: string) => access(p).then(() => true, () => false);
+  // Probe order is the precedence order when a session id exists in more than one store.
+  const probes: Array<[SessionEngine, () => Promise<string | null>]> = [
+    ['claude', async () => getClaudeSessionPath(cwd, sessionId)],
+    ['deepseek', async () => getDeepseekBuiltinSessionPath(cwd, sessionId)],
+    ['kimi', async () => getKimiBuiltinSessionPath(cwd, sessionId)],
+    ['glm', async () => getGlmBuiltinSessionPath(cwd, sessionId)],
+    ['codex', async () => (await findCodexSession(sessionId))?.path ?? null],
+    ['ollama', async () => getOllamaSessionPath(cwd, sessionId)],
+  ];
+  for (const [engine, locate] of probes) {
+    const sessionPath = await locate();
+    if (sessionPath && (engine === 'codex' || (await exists(sessionPath)))) return { sessionPath, engine };
   }
   return null;
 }

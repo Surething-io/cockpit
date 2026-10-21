@@ -14,6 +14,7 @@
 import * as fs from 'fs';
 import { dirname, join } from 'path';
 import { CODEX_SESSIONS_DIR } from '@cockpit/shared-utils';
+import { rewriteTranscriptSync } from '../../transcriptWrite';
 
 const STASH_SUFFIX = '.nohistory-backup';
 
@@ -75,7 +76,7 @@ export function stashCodexRollout(sessionPath: string): boolean {
   fs.mkdirSync(dirname(stash), { recursive: true });
   fs.renameSync(sessionPath, stash);
   try {
-    fs.writeFileSync(sessionPath, `${meta}\n`, 'utf-8');
+    rewriteTranscriptSync(sessionPath, `${meta}\n`);
   } catch (error) {
     if (fs.existsSync(stash) && !fs.existsSync(sessionPath)) {
       fs.renameSync(stash, sessionPath);
@@ -110,7 +111,7 @@ export function mergeStashedCodexRollout(sessionPath: string): 'merged' | 'resto
   // Codex rollout entries are append-only JSONL records keyed by call_id / item id; unlike
   // Claude transcripts, they do not carry a cross-line parentUuid chain that needs a seam
   // rewrite when an isolated turn is appended back onto the stashed history.
-  fs.writeFileSync(sessionPath, [...history, ...turnLines].join('\n') + '\n', 'utf-8');
+  rewriteTranscriptSync(sessionPath, [...history, ...turnLines].join('\n') + '\n');
   fs.unlinkSync(stash);
   return 'merged';
 }

@@ -3,7 +3,7 @@ import * as readline from 'readline';
 import { join } from 'path';
 import { Effect } from 'effect';
 import { resolveSessionPath } from './session/sessionStore';
-import { findCodexSessionEntry } from '@cockpit/shared-utils';
+import { findCodexSession } from '../../effect/transcriptIndexLive';
 import { handler, ok, parseJsonRaw } from '@cockpit/effect-runtime/server';
 import {
   AppError,
@@ -173,8 +173,9 @@ async function findCodexSubagentTranscript(
   }
 
   if (!agentId) return null;
-  const entry = findCodexSessionEntry(agentId);
-  if (!entry || !fs.existsSync(entry.path)) return null;
+  // resolveCodex only returns a rollout that exists on disk.
+  const entry = await findCodexSession(agentId);
+  if (!entry) return null;
   return {
     transcriptPath: entry.path,
     // The child's own session_meta is authoritative for role/nickname; fall back to
@@ -283,7 +284,7 @@ export const POST = handler((req) =>
     }
 
     // Resolve session file across 6 engines (claude/deepseek/codex/kimi/glm/ollama)
-    const resolved = yield* Effect.sync(() => resolveSessionPath(cwd, sessionId));
+    const resolved = yield* Effect.promise(() => resolveSessionPath(cwd, sessionId));
     if (!resolved) {
       return yield* Effect.fail(
         new NotFoundError({ resource: 'session', id: sessionId })

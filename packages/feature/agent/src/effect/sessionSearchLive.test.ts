@@ -5,6 +5,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { Effect } from 'effect';
+import { writeAtomically } from '@cockpit/effect-runtime/server/fs';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cockpit-ss-'));
 const home = path.join(root, 'home');
@@ -214,7 +215,7 @@ describe('writeAtomically', () => {
     const d = dir();
     const file = path.join(d, 's.txt');
     fs.writeFileSync(file, 'old');
-    await live.writeAtomically(file, 'new', realOps());
+    await writeAtomically(file, 'new', realOps());
     expect(fs.readFileSync(file, 'utf8')).toBe('new');
     expect(tmpFiles(d)).toEqual([]);
   });
@@ -234,7 +235,7 @@ describe('writeAtomically', () => {
     };
     // Retry a few times: nothing may accumulate.
     for (let i = 0; i < 3; i++) {
-      await expect(live.writeAtomically(file, 'new content', ops)).rejects.toBe(diskFull);
+      await expect(writeAtomically(file, 'new content', ops)).rejects.toBe(diskFull);
     }
     expect(tmpFiles(d)).toEqual([]);
     expect(fs.readFileSync(file, 'utf8')).toBe('old');
@@ -245,7 +246,7 @@ describe('writeAtomically', () => {
     const file = path.join(d, 's.txt');
     const renameErr = new Error('EXDEV');
     await expect(
-      live.writeAtomically(file, 'x', { ...realOps(), rename: async () => { throw renameErr; } }),
+      writeAtomically(file, 'x', { ...realOps(), rename: async () => { throw renameErr; } }),
     ).rejects.toBe(renameErr);
     expect(tmpFiles(d)).toEqual([]);
   });
@@ -259,7 +260,7 @@ describe('writeAtomically', () => {
       writeFile: async () => { throw writeErr; },
       rm: async () => { throw new Error('cleanup failed'); },
     };
-    await expect(live.writeAtomically(file, 'x', ops)).rejects.toBe(writeErr);
+    await expect(writeAtomically(file, 'x', ops)).rejects.toBe(writeErr);
   });
 });
 

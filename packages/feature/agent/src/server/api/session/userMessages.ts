@@ -42,7 +42,7 @@ export const POST = handler((req) =>
     }
 
     // Same 6-engine resolution as session-by-path: the file's location is the engine.
-    const resolved = yield* Effect.sync(() => resolveSessionPath(cwd, sessionId));
+    const resolved = yield* Effect.promise(() => resolveSessionPath(cwd, sessionId));
     if (!resolved) {
       return yield* Effect.fail(
         new NotFoundError({ resource: 'session', id: sessionId })

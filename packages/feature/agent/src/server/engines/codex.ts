@@ -1,7 +1,8 @@
 import { estimateOutputUnits } from '@cockpit/shared-utils/outputProgress';
 import { CodexAppServerClient, type CodexNotification } from './codexAppServer/client';
 import { CodexEventShim } from './codexAppServer/events';
-import { sanitizedSpawnEnv, findCodexSessionPath } from '@cockpit/shared-utils';
+import { sanitizedSpawnEnv } from '@cockpit/shared-utils';
+import { findCodexSession } from '../../effect/transcriptIndexLive';
 import { randomUUID } from 'crypto';
 import { writeFileSync, unlinkSync, mkdirSync, existsSync, statSync, openSync, readSync, closeSync } from 'fs';
 import { StringDecoder } from 'string_decoder';
@@ -280,8 +281,12 @@ interface CodexEventAdapter {
   assertSuccess(): void;
 }
 
-function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
-  const { sessionId } = ctx;
+/**
+ * `initialRolloutPath` is the resumed session's rollout, resolved by the caller before
+ * the turn starts (null for a fresh session) — the *Base sampling below depends on
+ * reading it before the model can have run.
+ */
+function createCodexEventAdapter(ctx: RunCtx, initialRolloutPath: string | null): CodexEventAdapter {
   let terminated = false;
   let failure: Error | null = null;
   let progressOutputTokens = 0;
@@ -317,9 +322,9 @@ function createCodexEventAdapter(ctx: RunCtx): CodexEventAdapter {
     spawnBase = c.spawn.length; reportBase = c.reports.length;
   };
 
-  if (sessionId) {
+  if (initialRolloutPath) {
     try {
-      rolloutPath = findCodexSessionPath(sessionId);
+      rolloutPath = initialRolloutPath;
       initBases();
     } catch { rolloutPath = null; }
   }
@@ -716,7 +721,8 @@ async function interruptTurns(client: CodexAppServerClient, shim: CodexEventShim
  */
 async function runCodexAppServer(ctx: RunCtx): Promise<void> {
   const imageFiles = ctx.images && ctx.images.length > 0 ? writeImagesToTemp(ctx.images) : [];
-  const adapter = createCodexEventAdapter(ctx);
+  const resumed = ctx.sessionId ? await findCodexSession(ctx.sessionId) : null;
+  const adapter = createCodexEventAdapter(ctx, resumed?.path ?? null);
   const shim = new CodexEventShim();
 
   let terminal: 'completed' | 'failed' | null = null;
@@ -916,7 +922,7 @@ export const codexSpec: EngineSpec = {
   // No preflight: the orchestrator's own "prompt or images" check is sufficient.
   runner: {
     async run(ctx: RunCtx) {
-      const sessionPath = ctx.sessionId ? findCodexSessionPath(ctx.sessionId) : null;
+      const sessionPath = ctx.sessionId ? ((await findCodexSession(ctx.sessionId))?.path ?? null) : null;
       // Output style: bring the rollout in line with the current selection BEFORE anything
       // else touches it (the noHistory stash below moves it aside). The session is idle here —
       // the orchestrator admits one run per session and the Codex child is not spawned yet.

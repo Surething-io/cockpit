@@ -373,7 +373,7 @@ const statusImpl = (
 ): Effect.Effect<SessionStatusReport, NotFoundError | AppError> =>
   Effect.gen(function* () {
     const running = yield* Effect.sync(() => isRunActive(sessionId))
-    const store = yield* Effect.sync(() => resolveSessionPath(cwd, sessionId))
+    const store = yield* Effect.promise(() => resolveSessionPath(cwd, sessionId))
     const link = buildSessionLink(cwd, sessionId)
     if (!store) {
       if (!running) return yield* Effect.fail(new NotFoundError({ resource: "session", id: sessionId }))

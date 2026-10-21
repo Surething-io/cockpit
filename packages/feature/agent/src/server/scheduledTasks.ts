@@ -4,9 +4,10 @@ import {
   getSessionFilePath,
   getClaudeSessionPath, getOllamaSessionPath,
   getDeepseekBuiltinSessionPath, getKimiBuiltinSessionPath,
-  getGlmBuiltinSessionPath, findCodexSessionPath,
+  getGlmBuiltinSessionPath,
 } from '@cockpit/shared-utils';
 import { updateGlobalState } from './state/globalState';
+import { findCodexSession } from '../effect/transcriptIndexLive';
 import { isRunActive, getRunSnapshot, getRunSessionId, requestStop } from './sessionRunHub';
 import { dispatchChat } from './engines/orchestrator';
 import { getEngineSpec } from './engines/registry';
@@ -339,10 +340,10 @@ export async function readSessionOutputStyleId(task: ScheduledTask): Promise<str
  * Codex stores sessions outside the cwd-encoded layout, so its helper globs by
  * sessionId and returns null when not found.
  */
-function sessionPathFor(engine: string, task: ScheduledTask): string | null {
+async function sessionPathFor(engine: string, task: ScheduledTask): Promise<string | null> {
   const builtinPath = BUILTIN_LOOP_PATHS[engine];
   if (builtinPath) return builtinPath(task.cwd, task.sessionId);
-  if (engine === 'codex') return findCodexSessionPath(task.sessionId);
+  if (engine === 'codex') return (await findCodexSession(task.sessionId))?.path ?? null;
   return getClaudeSessionPath(task.cwd, task.sessionId);
 }
 
@@ -384,7 +385,7 @@ export const sendChatMessageEff = (task: ScheduledTask): Effect.Effect<boolean, 
     // Resume target gone (cleared history, session-id rotation, retention pruning,
     // or a codex glob miss) → don't fail; start a FRESH session running the same
     // message and write the new session id back to the task (see dispatchEngineMessageEff).
-    const sessionPath = sessionPathFor(engine, task);
+    const sessionPath = yield* Effect.promise(() => sessionPathFor(engine, task));
     const startFresh = !sessionPath || !existsSync(sessionPath);
     if (startFresh) {
       console.warn(

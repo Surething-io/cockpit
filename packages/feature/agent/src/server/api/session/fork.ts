@@ -1,9 +1,7 @@
 import { createReadStream } from 'fs';
-import { writeFile } from 'fs/promises';
 import { createInterface } from 'readline';
 import { randomUUID } from 'crypto';
 import { Effect } from 'effect';
-import { ensureParentDir } from '@cockpit/shared-utils';
 import {
   dynamicHandler,
   ok,
@@ -21,6 +19,7 @@ import {
 } from './sessionStore';
 import { isHumanTurnStart } from '../../../shared/transcriptTurns';
 import { copyReferencedArtifacts } from './sessionArtifacts';
+import { rewriteTranscript } from '../../transcriptWrite';
 import { buildCodexForkLines } from './codexFork';
 
 export const runtime = 'nodejs';
@@ -113,7 +112,7 @@ export const POST = dynamicHandler<
     // Probe every engine store, not just Claude's: the button is offered on deepseek /
     // kimi / ollama chats too, whose transcripts live under different roots entirely —
     // so resolveSessionPath is also what decides which store the fork gets written into.
-    const store = resolveSessionPath(cwd, originalSessionId);
+    const store = yield* Effect.promise(() => resolveSessionPath(cwd, originalSessionId));
     if (!store) {
       return yield* Effect.fail(
         new NotFoundError({ resource: 'session', id: originalSessionId })
@@ -240,8 +239,7 @@ export const POST = dynamicHandler<
     }
     yield* Effect.tryPromise({
       try: async () => {
-        await ensureParentDir(newPath);
-        await writeFile(newPath, result.newLines.join('\n') + '\n', 'utf-8');
+        await rewriteTranscript(newPath, result.newLines.join('\n') + '\n');
       },
       catch: (cause) => new FSError({ path: newPath, op: 'write', cause }),
     });

@@ -808,8 +808,9 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
         // A brand-new chat has no session yet. Rather than block scheduling, hand the
         // task a random id: it misses every engine's session-file lookup, so the first
         // fire takes the existing startFresh path (see scheduledTasks.ts) and rebinds
-        // the task to the session the engine mints. Must NOT be '' — an empty id makes
-        // findCodexSessionPath glob `*.jsonl` and resume an unrelated rollout.
+        // the task to the session the engine mints. Must NOT be '': an empty id is not a
+        // session key in any store, and lookups that build paths from it (a glob in the
+        // old codex resolver) can land on an unrelated file.
         sessionId: sessionId ?? crypto.randomUUID(),
         engine,
         ...(engine === 'ollama' && ollamaModel && { model: ollamaModel }),

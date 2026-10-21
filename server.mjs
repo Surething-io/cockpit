@@ -307,9 +307,9 @@ app.prepare().then(async () => {
   // Reclaim terminal output files no history entry references (waits for the
   // adoption above internally). Off the boot path — nothing waits on it.
   httpApi.sweepOrphanTerminalOutputs?.().catch(() => {});
-  // Credential files written by older versions were world-readable (0644); make
-  // them owner-only now rather than on their next write. Off the boot path.
-  httpApi.tightenSecretFiles?.().catch(() => {});
+  // Older versions left the data directory and credential files world-readable;
+  // make them owner-only now rather than on their next write. Off the boot path.
+  (httpApi.tightenPrivateData ?? httpApi.tightenSecretFiles)?.().catch(() => {});
   const { scheduledTaskManager } = await import(dev ? '@cockpit/feature-agent/server/scheduledTasks' : './dist/scheduledTasks.mjs');
 
   // Initialize the scheduled-task manager
@@ -528,7 +528,7 @@ app.prepare().then(async () => {
     // Write server.json so CLI subcommands can read the port, and so
     // `cockpit status` / `stop` can find and identify this instance.
     try {
-      mkdirSync(cockpitHome, { recursive: true });
+      mkdirSync(cockpitHome, { recursive: true, mode: 0o700 });
       writeFileSync(SERVER_JSON, JSON.stringify({
         pid: process.pid,
         port,

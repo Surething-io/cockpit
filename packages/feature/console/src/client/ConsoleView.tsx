@@ -25,6 +25,13 @@ interface ConsoleViewProps {
   onOpenNote?: () => void;
   /** Reveal this bubble (running-terminals board). A new object per request. */
   focusBubble?: { commandId: string; nonce: number } | null;
+  /**
+   * Whether the Console panel is the one on screen. All three panels stay
+   * mounted, and a selected bubble listens for its shortcuts (Cmd+F, Cmd+M,
+   * ESC) on the whole document in the capture phase — so while hidden, a
+   * selected bubble would swallow Cmd+F meant for the Agent chat.
+   */
+  isActive?: boolean;
 }
 
 /** A focus request whose bubble never shows up by then is reported and dropped. */
@@ -45,7 +52,7 @@ const BUBBLE_GUIDE: { key: string; label: string; triggers: string[]; notes?: st
   { key: 'filePreview', label: 'console.bubbleFilePreview', triggers: [...FILE_VIEWER_CHIPS] },
 ];
 
-function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote, focusBubble }: ConsoleViewProps) {
+function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote, focusBubble, isActive = true }: ConsoleViewProps) {
   const { t } = useTranslation();
   const state = useConsoleState({ cwd, initialShellCwd, tabId, onCwdChange });
   const {
@@ -204,6 +211,7 @@ function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote,
   );
 
   useEffect(() => {
+    if (!isActive) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'm' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
@@ -214,7 +222,7 @@ function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote,
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedCommandId, toggleMaximize]);
+  }, [isActive, selectedCommandId, toggleMaximize]);
 
   // Track visible area height
   useEffect(() => {
@@ -385,7 +393,9 @@ function ConsoleViewImpl({ cwd, initialShellCwd, tabId, onCwdChange, onOpenNote,
               <ConsoleBubbleRow
                 key={item.data.id}
                 item={item}
-                selected={selectedCommandId === item.data.id}
+                // Gated on isActive: the selection survives a panel switch, but
+                // its document-level shortcuts must not fire from other panels.
+                selected={isActive && selectedCommandId === item.data.id}
                 maximized={maximizedId === item.data.id}
                 initialSleeping={sleepingBubbles.has(item.data.id)}
                 tabId={tabId}

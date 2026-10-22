@@ -932,7 +932,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
             {/* CONSOLE view: command execution + browser */}
             <div className="w-1/3 h-full overflow-hidden">
               <PanelPortalProvider>
-                <ConsoleView cwd={initialCwd} tabId="default" onOpenNote={handleOpenNote} focusBubble={focusBubble} />
+                <ConsoleView cwd={initialCwd} tabId="default" onOpenNote={handleOpenNote} focusBubble={focusBubble} isActive={activeView === 'console'} />
               </PanelPortalProvider>
             </div>
           </SwipeableContent>

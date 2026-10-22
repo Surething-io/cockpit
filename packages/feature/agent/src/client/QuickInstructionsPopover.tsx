@@ -1067,6 +1067,7 @@ export function QuickInstructionsPopover({ cwd, anchorRef, onClose, onSelect, on
   const [flyout, setFlyout] = useState<{ scope: Scope; groupId: string; position: FlyoutPosition } | null>(null);
   const [managerScope, setManagerScope] = useState<Scope | null>(null);
 
+  const popoverRef = useRef<HTMLDivElement>(null);
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1115,13 +1116,22 @@ export function QuickInstructionsPopover({ cwd, anchorRef, onClose, onSelect, on
   useEffect(() => {
     if (!flyout) return;
     const drop = () => { clearTimers(); setFlyout(null); };
+    // Only a scroll that can move the group row counts: the popover's own list
+    // or one of its ancestors. Anything else — the chat transcript auto-scrolling
+    // while a reply streams, or the flyout scrolling its own long list — leaves
+    // the row where it was, and dropping on it would close the submenu moments
+    // after it opened.
+    const dropOnScroll = (e: Event) => {
+      const popover = popoverRef.current;
+      if (popover && e.target instanceof Node && e.target.contains(popover)) drop();
+    };
     window.addEventListener('resize', drop);
     // Capture phase: the scroll happens on the popover's own scroll container,
     // and scroll events do not bubble to window.
-    window.addEventListener('scroll', drop, true);
+    window.addEventListener('scroll', dropOnScroll, true);
     return () => {
       window.removeEventListener('resize', drop);
-      window.removeEventListener('scroll', drop, true);
+      window.removeEventListener('scroll', dropOnScroll, true);
     };
   }, [flyout, clearTimers]);
 
@@ -1191,7 +1201,7 @@ export function QuickInstructionsPopover({ cwd, anchorRef, onClose, onSelect, on
 
   return (
     <>
-      <div className="absolute bottom-full left-0 mb-2 w-80 max-w-[calc(100vw-1.5rem)] bg-popover border border-border rounded-lg shadow-lv2 z-50 max-h-[70vh] overflow-y-auto">
+      <div ref={popoverRef} className="absolute bottom-full left-0 mb-2 w-80 max-w-[calc(100vw-1.5rem)] bg-popover border border-border rounded-lg shadow-lv2 z-50 max-h-[70vh] overflow-y-auto">
         <InstructionSection
           label={t('chat.globalInstructions')}
           nodes={globalNodes}

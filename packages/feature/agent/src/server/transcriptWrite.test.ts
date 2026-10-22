@@ -16,6 +16,8 @@ let write: typeof import('./transcriptWrite');
 const user = (text: string) => JSON.stringify({ type: 'user', message: { content: text } }) + '\n';
 const run = <A>(f: (i: Index) => Effect.Effect<A, never>) =>
   Effect.runPromise(Effect.flatMap(services.TranscriptIndex, f).pipe(Effect.provide(live.TranscriptIndexLive)));
+// Windows has no POSIX permission bits: every file reports 0o666.
+const ownerOnly = process.platform === 'win32' ? 0o666 : 0o600;
 const messages = async (p: string) => views.previewMessages((await run((i) => i.snapshot(p, 'claude')))!);
 
 beforeAll(async () => {
@@ -56,7 +58,7 @@ describe('rewriteTranscript', () => {
     await write.rewriteTranscript(p, edited);
     const after = fs.statSync(p);
     expect(after.ino).not.toBe(before.ino);
-    expect(after.mode & 0o777).toBe(0o600);
+    expect(after.mode & 0o777).toBe(ownerOnly);
     expect(fs.readFileSync(p, 'utf8')).toBe(edited);
     expect(fs.readdirSync(root).filter((f) => f.endsWith('.tmp'))).toEqual([]);
   });
@@ -64,7 +66,7 @@ describe('rewriteTranscript', () => {
   it('creates a missing transcript, owner-only, parents included', async () => {
     const p = path.join(root, 'new', 'dir', 'd.jsonl');
     write.rewriteTranscriptSync(p, user('hi'));
-    expect(fs.statSync(p).mode & 0o777).toBe(0o600);
+    expect(fs.statSync(p).mode & 0o777).toBe(ownerOnly);
     expect(await messages(p)).toEqual(['hi']);
   });
 });

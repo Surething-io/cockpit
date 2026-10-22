@@ -130,7 +130,9 @@ describe('codex catalog', () => {
   });
 
   it('canonicalises a cwd that no longer exists through its existing ancestors', async () => {
-    const realRoot = fs.realpathSync(root); // /var → /private/var on macOS
+    // `.native`, matching the promise realpath under test: the JS fallback keeps
+    // Windows 8.3 short names (RUNNER~1) that the native one expands.
+    const realRoot = fs.realpathSync.native(root); // /var → /private/var on macOS
     const gone = path.join(root, 'deleted-project', 'sub');
     expect(await live.canonicalPath(gone)).toBe(path.join(realRoot, 'deleted-project', 'sub'));
     expect(await live.canonicalPath(root)).toBe(realRoot);

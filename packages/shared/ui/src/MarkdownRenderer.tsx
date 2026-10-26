@@ -18,18 +18,22 @@ import type { ExtraProps } from 'react-markdown';
 // /html-lib/markdown.js, where esbuild resolves every import in the barrel
 // regardless of tree-shaking and the build fails outright.
 import { resolveLocalMediaUrl } from '@cockpit/shared-utils/htmlBashSdk';
+import { parseSessionLink } from '@cockpit/shared-utils/sessionLink';
 import { useThemeSafe } from './ThemeProvider';
 import { scrollToHeadingAnchor } from './markdownLinks';
 import { remarkFrontmatterTable } from './markdownFrontmatter';
 import { normalizeMathDelimiters, remarkMathGuard } from './markdownMath';
 import { remarkCjk } from './markdownCjk';
+import { remarkSessionLinks, SESSION_LINK_ATTR } from './markdownSessionLinks';
+import { SessionLinkChip } from './SessionLinkChip';
 
 // Stable reference — avoid recreating on every render.
 // `remarkMathGuard` runs after `remarkMath` and demotes its false positives
 // (shell variables, prices) back to literal text — see markdownMath.ts.
 // `remarkCjk` lets emphasis close next to CJK punctuation — see markdownCjk.ts.
-const REMARK_PLUGINS = [...remarkFrontmatterTable, remarkGfm, ...remarkCjk, remarkMath, remarkMathGuard, remarkAlert];
-const REMARK_PLUGINS_NO_MATH = [...remarkFrontmatterTable, remarkGfm, ...remarkCjk, remarkAlert];
+// `remarkSessionLinks` turns bare `/project?…` session links into chips.
+const REMARK_PLUGINS = [...remarkFrontmatterTable, remarkGfm, ...remarkCjk, remarkMath, remarkMathGuard, remarkAlert, remarkSessionLinks];
+const REMARK_PLUGINS_NO_MATH = [...remarkFrontmatterTable, remarkGfm, ...remarkCjk, remarkAlert, remarkSessionLinks];
 const REHYPE_PLUGINS_BASE = [rehypeRaw, rehypeKatex];
 const REHYPE_PLUGINS_NO_MATH = [rehypeRaw];
 
@@ -381,30 +385,45 @@ function createMarkdownComponents(
     blockquote: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'blockquote'> & ExtraProps) => (
       <blockquote className="border-l-2 border-border pl-4 text-muted-foreground" {...rest}>{children}</blockquote>
     ),
-    a: ({ href, children, node: _node, ...rest }: ComponentPropsWithoutRef<'a'> & ExtraProps) => (
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-brand hover:underline"
-        {...rest}
-        onClick={(e) => {
-          if (!href) return;
-          // Same-document anchor → smooth-scroll within this renderer.
-          if (href.startsWith('#')) {
-            if (scrollToHeadingAnchor(wrapperRef.current, href.slice(1))) {
+    a: ({ href, children, node: _node, ...rest }: ComponentPropsWithoutRef<'a'> & ExtraProps) => {
+      const sessionTarget = href && SESSION_LINK_ATTR in rest ? parseSessionLink(href) : null;
+      if (sessionTarget) {
+        return (
+          <SessionLinkChip
+            href={href!}
+            target={sessionTarget}
+            newTab
+            onClick={(e) => {
+              if (onLinkClick?.(href!)) e.preventDefault();
+            }}
+          />
+        );
+      }
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-brand hover:underline"
+          {...rest}
+          onClick={(e) => {
+            if (!href) return;
+            // Same-document anchor → smooth-scroll within this renderer.
+            if (href.startsWith('#')) {
+              if (scrollToHeadingAnchor(wrapperRef.current, href.slice(1))) {
+                e.preventDefault();
+              }
+              return;
+            }
+            // Delegate other hrefs to the host (explorer opens local .md in-place);
+            // if consumed, prevent the default browser navigation.
+            if (onLinkClick?.(href)) {
               e.preventDefault();
             }
-            return;
-          }
-          // Delegate other hrefs to the host (explorer opens local .md in-place);
-          // if consumed, prevent the default browser navigation.
-          if (onLinkClick?.(href)) {
-            e.preventDefault();
-          }
-        }}
-      >{children}</a>
-    ),
+          }}
+        >{children}</a>
+      );
+    },
     table: ({ children, node: _node, ...rest }: ComponentPropsWithoutRef<'table'> & ExtraProps) => (
       <div className="md-figure overflow-x-auto" {...rest}><table className="min-w-full border border-border">{children}</table></div>
     ),

@@ -20,6 +20,7 @@ export * from './themeColor';
 // Markdown
 export * from './MarkdownRenderer';
 export * from './markdownLinks';
+export { SessionLinkChip } from './SessionLinkChip';
 
 // Floating UI primitives
 export * from './FloatingToolbar';

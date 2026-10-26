@@ -57,9 +57,14 @@ export type SessionLinkSegment =
   | { kind: 'text'; text: string }
   | { kind: 'link'; text: string; target: SessionLinkTarget };
 
-// A root-relative session link standing on its own: at line start or after
-// whitespace/an opening bracket, so `https://other.host/project?…` never matches.
-const SESSION_LINK_IN_TEXT = /(^|[\s([])(\/project\?[^\s)\]]+)/g;
+// A root-relative session link standing on its own: not glued to a URL-ish
+// character, so `https://other.host/project?…` and `a/b/project?…` never match,
+// while prose punctuation (CJK `链接：/project?…`, `(`, `[`) still may precede it.
+// The body is ASCII URL characters only (buildSessionLink percent-encodes
+// everything else), so a trailing `。` / `）` is not swallowed; trailing ASCII
+// sentence punctuation is trimmed as GFM does for its autolinks.
+const SESSION_LINK_IN_TEXT = /(?<![\w/.~%=&+@-])\/project\?[\w\-.~%!$&*+,;=:@/?#]+/g;
+const TRAILING_PUNCT = /[.,;:!?]+$/;
 
 /**
  * Split plain text (user turns are not markdown-rendered) into text and
@@ -71,10 +76,10 @@ export function splitSessionLinks(text: string): SessionLinkSegment[] {
   const segments: SessionLinkSegment[] = [];
   let last = 0;
   for (const m of text.matchAll(SESSION_LINK_IN_TEXT)) {
-    const href = m[2];
+    const href = m[0].replace(TRAILING_PUNCT, '');
     const target = parseSessionLink(href);
     if (!target) continue;
-    const start = m.index! + m[1].length;
+    const start = m.index!;
     if (start > last) segments.push({ kind: 'text', text: text.slice(last, start) });
     segments.push({ kind: 'link', text: href, target });
     last = start + href.length;

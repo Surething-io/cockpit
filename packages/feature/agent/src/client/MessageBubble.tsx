@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
 import { Portal, toast, confirm as confirmDialog } from '@cockpit/shared-ui';
-import { Copy, FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed, MessageSquare, GitBranch, MessageSquareQuote, Trash2, ArrowRightToLine, ArrowLeftToLine, ChevronDown, ChevronUp } from 'lucide-react';
+import { Copy, FileDiff, MessageCircleQuestion, Circle, Loader, CheckCircle2, MessageSquareDashed, GitBranch, MessageSquareQuote, Trash2, ArrowRightToLine, ArrowLeftToLine, ChevronDown, ChevronUp } from 'lucide-react';
 import { ToolCallModal } from './ToolCallModal';
 import { AskQuestionViewerModal } from './AskQuestionViewerModal';
 import { DiffViewerModal, resolveDiffCalls } from './DiffViewerModal';
@@ -17,7 +17,7 @@ import { isMutatingToolName } from '../shared/toolMutation';
 import { HtmlPreviewModal, CsvPreviewModal, isMarkdownFile, isHtmlFile, isImageFile, isCsvFile, resolveRelativePath, fetchFileStat } from '@cockpit/feature-explorer';
 import { parseSessionLink, splitSessionLinks } from '@cockpit/shared-utils/sessionLink';
 import { openSessionLink } from './openSessionLink';
-import { MarkdownRenderer } from '@cockpit/shared-ui';
+import { MarkdownRenderer, SessionLinkChip } from '@cockpit/shared-ui';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { MdPreviewModal } from './MdPreviewModal';
 import { readFileForPreview } from './effect/agentClient';
@@ -473,21 +473,15 @@ const TextPartRow = memo(function TextPartRow({
         <div className="reading-measure whitespace-pre-wrap break-words">
           {userSegments.map((seg, i) =>
             seg.kind === 'link' ? (
-              // The raw URL is three lines of percent-encoding; show a chip with the
-              // short session id and keep the full target in the tooltip.
-              <a
+              <SessionLinkChip
                 key={i}
                 href={seg.text}
-                title={`${seg.target.cwd}\n${seg.target.sessionId}`}
-                className="inline-flex items-center gap-1 px-1.5 rounded bg-brand/10 hover:bg-brand/20 text-brand font-mono text-[0.9em] align-baseline whitespace-nowrap no-underline"
+                target={seg.target}
                 onClick={(e) => {
                   e.preventDefault();
                   openSessionLink(seg.target, seg.text);
                 }}
-              >
-                <MessageSquare className="w-3 h-3 shrink-0" aria-hidden />
-                {seg.target.sessionId.slice(0, 8)}
-              </a>
+              />
             ) : (
               seg.text
             ),

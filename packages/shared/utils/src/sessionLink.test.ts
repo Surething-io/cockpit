@@ -51,4 +51,19 @@ describe('sessionLink', () => {
       expect(splitSessionLinks(text).filter((s) => s.kind === 'link')).toEqual([]);
     }
   });
+
+  it('finds a link after CJK punctuation and stops before trailing punctuation', () => {
+    const href = buildSessionLink('/a/中文', 'abc');
+    for (const text of [`链接：${href}`, `（${href}）`, `see ${href}.`, `链接：${href}。`]) {
+      const links = splitSessionLinks(text).filter((s) => s.kind === 'link');
+      expect(links).toEqual([{ kind: 'link', text: href, target: { cwd: '/a/中文', sessionId: 'abc' } }]);
+    }
+  });
+
+  it('ignores a /project path glued to another URL or path', () => {
+    const href = buildSessionLink('/a', 'abc');
+    for (const text of [`https://other.host${href}`, `foo/bar${href}`, `x${href}`]) {
+      expect(splitSessionLinks(text).some((s) => s.kind === 'link')).toBe(false);
+    }
+  });
 });

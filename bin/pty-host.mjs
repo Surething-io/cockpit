@@ -72,6 +72,35 @@ if (!socketPath || !stageDir) {
   process.exit(2);
 }
 
+// Replies the browser terminal sends back for queries a program wrote: OSC
+// colors (ESC ] N ; ... BEL | ESC \), cursor position report (CSI ... R) and
+// device attributes (CSI ... c, incl. the `>` / `=` variants).
+const REPLY_SEQ_RE = /\x1b\][0-9]+;[^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[\d;?>=]*[Rc]/g;
+const SHELLS = new Set(['zsh', 'bash', 'sh', 'dash', 'ksh', 'mksh', 'fish', 'nu', 'tcsh', 'csh']);
+
+/**
+ * Drop terminal-query replies the shell itself would read as keystrokes.
+ *
+ * The browser round trip is slow enough that a short-lived program can ask
+ * (`\e]11;?`, `\e[6n`) and exit before the reply lands; the shell prompt then
+ * gets `11;rgb:0000/0000/0000` typed into it (`command not found: 11` storms).
+ * A program that is still in the foreground is waiting for exactly that reply
+ * (gh's prompt reads stdin until the cursor report shows up), so it must get
+ * it. The foreground process tells the two apart. Windows' ConPTY only reports
+ * the spawned file, so there every reply is dropped, as before.
+ */
+function dropOrphanReplies(p, data) {
+  if (!data.includes('\x1b')) return data;
+  REPLY_SEQ_RE.lastIndex = 0;
+  if (!REPLY_SEQ_RE.test(data)) return data;
+  let fg = null;
+  if (process.platform !== 'win32') {
+    try { fg = p.process; } catch { /* exited */ }
+  }
+  if (fg && !SHELLS.has(fg.replace(/^-/, ''))) return data;
+  return data.replace(REPLY_SEQ_RE, '');
+}
+
 function log(line) {
   const stamped = `[${new Date().toISOString()}] [pty-host ${process.pid}] ${line}\n`;
   if (!logPath) return;
@@ -324,7 +353,10 @@ async function serve() {
       case 'write':
         if (!s || s.exited) return;
         try {
-          if (s.kind === 'pty') s.pty.write(msg.data);
+          if (s.kind === 'pty') {
+            const data = dropOrphanReplies(s.pty, msg.data);
+            if (data) s.pty.write(data);
+          }
           else if (s.child.stdin.writable) s.child.stdin.write(msg.data);
         } catch { /* exited */ }
         return;

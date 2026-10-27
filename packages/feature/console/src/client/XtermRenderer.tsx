@@ -288,51 +288,23 @@ export const XtermRenderer = memo(forwardRef<XtermSearchHandle, XtermRendererPro
     term.loadAddon(searchAddon);
     term.open(containerRef.current);
 
-    // ===== Block terminal-protocol response floods =====
-    // When a hung child process leaves unread query responses in the pty input
-    // buffer (e.g. it asked OSC 11 background color or CSI 6n cursor position
-    // and exited before reading the answer), the parent zsh later reads those
-    // bytes as keystrokes. ESC/CSI gets eaten by ZLE; the printable remainder
-    // is run as a command, producing `command not found: 11` /
-    // `no such file or directory: rgb:0000/0000/0000` storms.
+    // Terminal queries (OSC 10/11/12/4 colors, CSI 6n cursor position, DA)
+    // are answered by xterm.js as usual: CLIs block on them — survey-based
+    // prompts (gh) read stdin until the cursor report arrives and swallow
+    // whatever the user types meanwhile, termenv waits 5s per color query.
     //
-    // Two layers of defense:
-    //   (1) Don't let xterm.js auto-answer these queries in the first place.
-    //   (2) Even if something else generates a response, strip it from the
-    //       upstream onData stream before it reaches the pty.
-    const blockOsc = (id: number) =>
-      term.parser.registerOscHandler(id, () => true);
-    blockOsc(10);   // foreground color query
-    blockOsc(11);   // background color query (root cause in observed bug)
-    blockOsc(12);   // cursor color query
-    blockOsc(4);    // palette color query
-    blockOsc(52);   // clipboard read
-    // CSI handlers are matched by (prefix, intermediates, final) — register
-    // every variant we want to swallow. Without the prefix variants xterm.js
-    // still auto-answers `\x1b[>c` (secondary DA) and `\x1b[=c` (tertiary DA),
-    // which then leaks `0;276;0c` onto the next zsh prompt as a self-insert.
-    const blockCsi = (final: string, prefix?: string) =>
-      term.parser.registerCsiHandler({ prefix, final }, () => true);
-    blockCsi('n');           // DSR / CPR (cursor position report)
-    blockCsi('n', '?');      // DEC private DSR
-    blockCsi('c');           // Primary DA  (`\x1b[c`,  `\x1b[0c`)
-    blockCsi('c', '>');      // Secondary DA (`\x1b[>c`, `\x1b[>0c`) — xterm.js replies `\x1b[>0;276;0c`
-    blockCsi('c', '=');      // Tertiary DA  (`\x1b[=c`)
+    // A reply that arrives after its asker exited would be read by the shell
+    // as keystrokes (`command not found: 11` storms). That is filtered in
+    // bin/pty-host.mjs, which can see whether the shell itself is in the
+    // foreground — the browser cannot.
+    //
+    // OSC 52 (clipboard) stays blocked: a program must not read or overwrite
+    // the user's clipboard through the terminal.
+    term.parser.registerOscHandler(52, () => true);
 
-    // Match OSC responses (ESC ] N ; ... BEL  or  ESC ] N ; ... ESC \) and
-    // CSI responses ending in R (CPR) or c (DA). The CSI parameter class must
-    // include `>` and `=` so secondary/tertiary DA replies (e.g.
-    // `\x1b[>0;276;0c`) get stripped — otherwise the whole reply is forwarded
-    // to the pty as stdin and zsh self-inserts the printable tail.
-    const RESPONSE_SEQ_RE = /\x1b\][0-9]+;[^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[\d;?>=]*[Rc]/g;
-
-    // Forward each key to PTY (filter out any stray protocol responses)
+    // Forward each key to PTY
     term.onData((data: string) => {
-      const cleaned = data.replace(RESPONSE_SEQ_RE, '');
-      if (!cleaned) return;
-      if (onInputRef.current) {
-        onInputRef.current(cleaned);
-      }
+      onInputRef.current?.(data);
     });
 
     // Initial fit + notify server of size

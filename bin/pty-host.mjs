@@ -97,7 +97,9 @@ function dropOrphanReplies(p, data) {
   if (process.platform !== 'win32') {
     try { fg = p.process; } catch { /* exited */ }
   }
-  if (fg && !SHELLS.has(fg.replace(/^-/, ''))) return data;
+  // macOS reports the bare name (`zsh`); Linux reports argv[0], which may be a
+  // path (`/bin/sh`) or a login shell's `-zsh`.
+  if (fg && !SHELLS.has(fg.split('/').pop().replace(/^-/, ''))) return data;
   return data.replace(REPLY_SEQ_RE, '');
 }
 

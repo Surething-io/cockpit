@@ -201,6 +201,13 @@ export interface FileFunctionsResponse {
    *  Undefined / false means the entry IS in the index and an empty
    *  `functions` (if any) genuinely reflects the parsed file. */
   notIndexed?: boolean;
+  /** True when the project index was not built yet, so only the
+   *  file-local layer is filled in: `functions` and `intraCalls` are
+   *  final, while `externalCalls`, `methodCalls`, `upstreamCalls`,
+   *  `downstreamCalls` and `notIndexed` are not computed yet. A build is
+   *  running in the background; refetch after its `done` progress frame
+   *  to get the full projection. */
+  crossFilePending?: boolean;
 }
 
 // ============================================================================

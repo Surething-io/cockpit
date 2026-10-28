@@ -5,9 +5,12 @@ import { readFile, stat } from "node:fs/promises"
 import path from "node:path"
 import { Effect } from "effect"
 import {
+  codeIndexBuildFailed,
+  ensureCodeIndex,
   fileFunctionsFromIndex,
-  getCodeIndex,
+  fileFunctionsLocal,
   invalidateIndex,
+  peekCodeIndex,
   refreshFocalFile,
 } from "@cockpit/feature-explorer/server/codeMap/projectGraph/codeIndex"
 import type { FunctionNode } from "@cockpit/feature-explorer/server/codeMap/projectGraph/types"
@@ -79,10 +82,30 @@ export const GET = handler((req) =>
 
     const result = yield* Effect.tryPromise({
       try: async () => {
-        const index = await getCodeIndex(cwd, { forceRefresh })
-        await refreshFocalFile(cwd, normalizedPath, index)
-        const payload = fileFunctionsFromIndex(index, normalizedPath)
-        if (payload) return { kind: "indexed" as const, payload }
+        // Never wait for the project index: a cold build is O(project)
+        // (~45s at 12.8K files), and this route is asked about ONE file.
+        // Without an index, answer the file-local layer and let the build
+        // run in the background — see `crossFilePending` in types.ts.
+        if (forceRefresh) ensureCodeIndex(cwd, { forceRefresh: true })
+        const index = peekCodeIndex(cwd)
+        // A failed background build will not deliver cross-file data on its
+        // own; don't promise it (the client would wait for nothing).
+        const crossFilePending = !index && !codeIndexBuildFailed(cwd)
+        if (index) {
+          await refreshFocalFile(cwd, normalizedPath, index)
+          const payload = fileFunctionsFromIndex(index, normalizedPath)
+          if (payload) return { kind: "indexed" as const, payload }
+        } else {
+          ensureCodeIndex(cwd)
+          const local = await fileFunctionsLocal(cwd, normalizedPath)
+          if (local) {
+            return {
+              kind: "indexed" as const,
+              payload: { ...local, fileCount: 0, crossFilePending },
+            }
+          }
+        }
+        const fileCount = index?.files.size ?? 0
 
         const fullPath = resolveSafePath(cwd, normalizedPath)
         if (!fullPath) return { kind: "not-found" as const }
@@ -97,7 +120,7 @@ export const GET = handler((req) =>
               payload: {
                 filePath: normalizedPath,
                 language: "markdown",
-                fileCount: index.files.size,
+                fileCount,
                 mtimeMs: stats.mtimeMs,
                 functions: chunkMarkdown(normalizedPath, text),
                 intraCalls: [],
@@ -114,7 +137,7 @@ export const GET = handler((req) =>
           payload: {
             filePath: normalizedPath,
             language: "text",
-            fileCount: index.files.size,
+            fileCount,
             mtimeMs: stats.mtimeMs,
             functions: [],
             intraCalls: [],
@@ -127,7 +150,10 @@ export const GET = handler((req) =>
             // Client uses this flag to render a graceful "not indexed" hint
             // with a rebuild button, instead of the generic "no functions"
             // empty state.
-            notIndexed: true,
+            // Without an index we can't tell "rejected by the index" from
+            // "not indexed yet" — leave the verdict to the refetch.
+            notIndexed: !crossFilePending,
+            crossFilePending,
           },
         }
       },

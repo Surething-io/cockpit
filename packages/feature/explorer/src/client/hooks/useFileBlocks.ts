@@ -5,8 +5,10 @@
  * (functions + intra-file calls + cross-file callers/callees). Cached
  * per (cwd, filePath) so flipping back and forth between focal files is
  * instant after the first visit. The server keeps the project-wide
- * CodeIndex hot per cwd; the first call for a brand-new cwd is the only
- * slow one (full project parse — seconds on monorepos).
+ * CodeIndex hot per cwd. For a brand-new cwd the server does NOT wait for
+ * that index (a full project parse — up to tens of seconds on monorepos):
+ * it answers the file-local layer flagged `crossFilePending`, and the hook
+ * refetches once the build's `done` frame arrives over `/ws/watch`.
  *
  * `invalidateBlocksCache(cwd)` is called when the user hits the manual
  * refresh button — drops every focal-file projection for that cwd so
@@ -21,6 +23,7 @@ import type { FileFunctionsResponse } from '@cockpit/feature-explorer/server/cod
 import { Effect } from 'effect';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { AppError } from '@cockpit/effect-core';
+import { useWebSocket } from '@cockpit/shared-ui';
 
 export type FileFunctionsState =
   | { state: 'idle' }
@@ -74,7 +77,9 @@ async function fetchFileFunctions(
         throw new Error(data.error || `HTTP ${res.status}`);
       }
       const json = (await res.json()) as FileFunctionsResponse;
-      ffCache.set(k, json);
+      // A partial (file-local) answer must not satisfy later lookups once
+      // the index is ready — cache only the full projection.
+      if (!json.crossFilePending) ffCache.set(k, json);
       return json;
     },
     catch: (cause) => new AppError({ message: 'fetchFileFunctions failed', cause }),
@@ -105,17 +110,25 @@ export function useFileFunctions(cwd: string, filePath: string | null) {
     };
   }, []);
 
+  // Latest requested (cwd, file). A response for anything else is stale —
+  // the focal file moved on while it was in flight.
+  const latestKeyRef = useRef('');
+
+  /** `silent`: upgrade data already on screen (pending → full projection)
+   *  without flashing the loading state, and keep that data if it fails. */
   const run = useCallback(
-    (cwd: string, file: string, forceRefresh: boolean) => {
-      setState({ state: 'loading' });
+    (cwd: string, file: string, forceRefresh: boolean, silent = false) => {
+      const k = ffKey(cwd, file);
+      latestKeyRef.current = k;
+      if (!silent) setState({ state: 'loading' });
       fetchFileFunctions(cwd, file, forceRefresh)
         .then((result) => {
-          if (!mountedRef.current) return;
+          if (!mountedRef.current || latestKeyRef.current !== k) return;
           if (result === 'not-found') setState({ state: 'notFound' });
           else setState({ state: 'ready', data: result });
         })
         .catch((err: Error) => {
-          if (!mountedRef.current) return;
+          if (!mountedRef.current || latestKeyRef.current !== k || silent) return;
           setState({ state: 'error', message: err.message });
         });
     },
@@ -134,6 +147,29 @@ export function useFileFunctions(cwd: string, filePath: string | null) {
     if (!cwd || !filePath) return;
     run(cwd, filePath, true);
   }, [cwd, filePath, run]);
+
+  // Cross-file layer still building server-side: refetch on its `done`
+  // frame (sent on failure too — the server then answers without the flag).
+  const crossFilePending = state.state === 'ready' && state.data.crossFilePending === true;
+  const onWatchMessage = useCallback(
+    (msg: unknown) => {
+      const m = msg as { type?: string; data?: { cwd?: string; phase?: string } };
+      if (m?.type !== 'graphProgress' || m.data?.cwd !== cwd || m.data.phase !== 'done') return;
+      if (filePath) run(cwd, filePath, false, true);
+    },
+    [cwd, filePath, run],
+  );
+  useWebSocket({
+    url: `/ws/watch?cwd=${encodeURIComponent(cwd)}`,
+    onMessage: onWatchMessage,
+    enabled: crossFilePending,
+  });
+  // Subscribe, then check once: a build that finished between the response
+  // and the subscription above sends no further `done`. Must run after
+  // useWebSocket's effect, hence declared below it.
+  useEffect(() => {
+    if (crossFilePending && filePath) run(cwd, filePath, false, true);
+  }, [crossFilePending, cwd, filePath, run]);
 
   return { state, refresh };
 }

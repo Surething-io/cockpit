@@ -36,7 +36,7 @@ import { fetchFileTextRaw } from '../effect/filesClient';
 
 import { SymbolIcon } from './symbolIcon';
 
-import { useFileFunctions } from '../hooks/useFileBlocks';
+import { useFileFunctions, type FileFunctionsState } from '../hooks/useFileBlocks';
 import { GraphBuildProgress } from './GraphBuildProgress';
 import { useAIBridge } from '@cockpit/shared-ui';
 import { useComments, type CodeComment } from '@cockpit/feature-comments';
@@ -76,6 +76,9 @@ import { ViewCommentCard } from '../ViewCommentCard';
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/** Module-level so the substituted state keeps one identity across renders. */
+const LOADING_STATE: FileFunctionsState = { state: 'loading' };
 
 function basename(p: string): string {
   const i = p.lastIndexOf('/');
@@ -1249,7 +1252,12 @@ export function BlockViewer({
     onFocalChange?.(focalFile);
   }, [focalFile, onFocalChange]);
 
-  const { state, refresh } = useFileFunctions(cwd, focalFile);
+  const { state: fnsState, refresh } = useFileFunctions(cwd, focalFile);
+  // The map is a cross-file view: a file-local answer (index still building)
+  // would render a canvas with no caller / callee pins and then re-layout.
+  // Keep the build progress up until the full projection lands.
+  const state =
+    fnsState.state === 'ready' && fnsState.data.crossFilePending ? LOADING_STATE : fnsState;
 
   // Source text for the focal file — needed so each block can slice
   // and highlight its own lines. One fetch per focal-file change.

@@ -1037,6 +1037,7 @@ export async function getCodeIndex(cwd: string, opts: GetIndexOptions = {}): Pro
     indexCache.set(cwd, index);
     evictIndexesToBudget(cwd);
     inflight.delete(cwd);
+    buildFailures.delete(cwd);
     // Fresh build subsumes any dirty flag that arrived during the build.
     dirtyCwds.delete(cwd);
     // Kick off analytics precompute in the background. Lazy-require to
@@ -1078,11 +1079,132 @@ export function invalidateIndex(cwd?: string): void {
     indexCache.clear();
     inflight.clear();
     dirtyCwds.clear();
+    buildFailures.clear();
+    localContexts.clear();
     return;
   }
   indexCache.delete(cwd);
   inflight.delete(cwd);
   dirtyCwds.delete(cwd);
+  buildFailures.delete(cwd);
+  for (const key of localContexts.keys()) {
+    if (key.startsWith(`${cwd}\u0000`)) localContexts.delete(key);
+  }
+}
+
+// ============================================================================
+// Non-blocking access — a virtual proxy over getCodeIndex.
+//
+// A full build is O(project): ~45s for a 12.8K-file repo, all of it tree-
+// sitter parsing on the main thread. Callers that only need ONE file's data
+// must not sit behind it. `peekCodeIndex` answers "is it ready?" without
+// ever starting or awaiting work; `ensureCodeIndex` starts the build and
+// returns at once. `getCodeIndex` stays the blocking entry point for routes
+// whose answer genuinely needs the whole project.
+// ============================================================================
+
+/** Cwds whose background build (started via `ensureCodeIndex`) failed.
+ *  Without this latch, a client that refetches on the build's terminal frame
+ *  would restart a doomed build forever. Cleared by a forced rebuild, by any
+ *  successful build, and by `invalidateIndex`. */
+const buildFailures = new Map<string, unknown>();
+
+/** The cached index for `cwd`, or null. Never builds, never awaits. A
+ *  pending watcher sync runs in the background instead of in front of the
+ *  caller; the caller's own focal file is refreshed by `refreshFocalFile`. */
+export function peekCodeIndex(cwd: string): CodeIndex | null {
+  ensureSubscribed(cwd);
+  const cached = indexCache.get(cwd);
+  if (!cached) return null;
+  indexCache.delete(cwd);
+  indexCache.set(cwd, cached);
+  if (dirtyCwds.has(cwd)) {
+    dirtyCwds.delete(cwd);
+    syncDirtyIndex(cwd, cached).catch(() => {
+      // Same policy as getCodeIndex: a failed sync leaves the stale index;
+      // the next watcher event re-marks the cwd dirty.
+    });
+  }
+  return cached;
+}
+
+/** Start building the index for `cwd` if it isn't cached or in flight, and
+ *  return immediately. Progress and completion are reported through
+ *  `emitBuildProgress` (the `done` frame fires on success and failure). */
+export function ensureCodeIndex(cwd: string, opts: GetIndexOptions = {}): void {
+  if (opts.forceRefresh) buildFailures.delete(cwd);
+  else if (buildFailures.has(cwd)) return;
+  getCodeIndex(cwd, opts).catch((err) => {
+    buildFailures.set(cwd, err);
+    console.error(`[codeIndex] background build failed for ${cwd}:`, err);
+  });
+}
+
+/** True when the last background build for `cwd` failed and nothing has
+ *  retried it since — i.e. cross-file data will NOT arrive on its own. */
+export function codeIndexBuildFailed(cwd: string): boolean {
+  return buildFailures.has(cwd);
+}
+
+// ============================================================================
+// File-local projection — one file, no project index.
+// ============================================================================
+
+/** Handler project contexts for the file-local projection, keyed
+ *  `cwd\0grammar`. Building one can cost a couple of `git ls-files` runs
+ *  (the TS handler loads tsconfigs + workspaces), and a cold project tends
+ *  to get many file-local requests while its build runs — so pay it once. */
+const localContexts = new Map<string, Promise<unknown>>();
+
+function localContextFor(cwd: string, grammar: string, relPath: string): Promise<unknown> {
+  const key = `${cwd}\u0000${grammar}`;
+  let ctx = localContexts.get(key);
+  if (!ctx) {
+    const handler = getHandler(grammar as Parameters<typeof getHandler>[0]);
+    ctx = Promise.resolve(handler.buildProjectContext(cwd, new Set([relPath])));
+    ctx.catch(() => localContexts.delete(key));
+    localContexts.set(key, ctx);
+  }
+  return ctx;
+}
+
+/**
+ * `fileFunctionsFromIndex`'s file-local layer — symbols and intra-file calls
+ * — computed from the focal file alone, in the time it takes to parse it.
+ *
+ * Imports are deliberately dropped before call resolution. Resolving them
+ * needs the project fileset; resolving against a one-file set would turn
+ * every project import (`./b`, `@/lib/x`) into a phantom npm package. So
+ * everything import-dependent — `externalCalls`, `methodCalls` and both
+ * cross-file edge lists — comes back empty and belongs to the full index.
+ *
+ * Returns null when the file has no supported grammar or fails to parse.
+ */
+export async function fileFunctionsLocal(
+  cwd: string,
+  relPath: string,
+): Promise<FileFunctionsResponse | null> {
+  const parsed = await parseOneFile(path.join(cwd, relPath), relPath);
+  if (!parsed) return null;
+  const local: CodeIndex = {
+    cwd,
+    files: new Map(),
+    truncated: false,
+    tsconfigs: [],
+    workspaces: new Map(),
+    projectContexts: new Map([
+      [parsed.language, await localContextFor(cwd, parsed.language, relPath)],
+    ]),
+    fileSet: new Set([parsed.path]),
+    generatedAt: Date.now(),
+    buildMs: 0,
+  };
+  await buildIndexedFileEntry(
+    { ...parsed, importBindings: [], importSpecifiers: [] },
+    null,
+    local,
+  );
+  return fileFunctionsFromIndex(local, parsed.path);
 }
 
 // ============================================================================

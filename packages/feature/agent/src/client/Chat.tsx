@@ -112,6 +112,9 @@ interface ChatProps {
   // externally (e.g. a scheduled-task run) would otherwise never be fetched.
   refreshSignal?: { sessionId: string; nonce: number } | null;
   onLoadingChange?: (isLoading: boolean) => void;
+  /** Whether the composer holds unsent text or images. Reported up so the
+   *  workspace sidebar can flag projects with a pending draft. */
+  onDraftPresenceChange?: (hasDraft: boolean) => void;
   onSessionIdChange?: (sessionId: string) => void;
   onTitleChange?: (title: string) => void;
   /** The Bot that dispatched this session, or null when a human opened it. Reported
@@ -177,7 +180,7 @@ interface ChatProps {
  */
 const ENGINE_OPTIONS_ROW = `${COLUMN_HEADER_ROW} pl-3 pr-14 bg-card/50`;
 
-export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, outputStyle: outputStyleProp, onOutputStyleChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onSessionIdChange, onTitleChange, onBotChange, onShowGitStatus, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
+export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode: planModeProp, onPlanModeChange, noHistory: noHistoryProp, onNoHistoryChange, outputStyle: outputStyleProp, onOutputStyleChange, hideHeader, hideSidebar, isActive = true, isFocused = isActive, peerTabId, peerSide, refreshSignal, onLoadingChange, onDraftPresenceChange, onSessionIdChange, onTitleChange, onBotChange, onShowGitStatus, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink, onOpenSessionBrowser, onOpenSettings }: ChatProps) {
   const { t } = useTranslation();
   const composerSlot = useComposerSlot();
   // Owned here, not in ChatInput: the composer is portalled when this pane is
@@ -549,6 +552,15 @@ export function Chat({ tabId, initialCwd, initialSessionId, engine: engineProp, 
       onSessionIdChange?.(sessionId);
     }
   }, [sessionId, onSessionIdChange]);
+
+  // Report draft presence on edges only; the cleanup retracts it when the draft
+  // empties (sent / cleared) and when this Chat unmounts (tab closed).
+  const hasDraft = draft.trim().length > 0 || draftImages.length > 0;
+  useEffect(() => {
+    if (!hasDraft || !onDraftPresenceChange) return;
+    onDraftPresenceChange(true);
+    return () => onDraftPresenceChange(false);
+  }, [hasDraft, onDraftPresenceChange]);
 
   // Notify parent when isLoading changes
   const prevIsLoadingRef = useRef(false);

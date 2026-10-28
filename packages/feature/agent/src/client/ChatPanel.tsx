@@ -53,6 +53,8 @@ interface ChatPanelProps {
   peerSide?: 'left' | 'right';
   // Forwarded to Chat: forced history refresh on explicit session jump (see ChatProps.refreshSignal)
   refreshSignal?: { sessionId: string; nonce: number } | null;
+  /** Composer draft presence for this tab (see ChatProps.onDraftPresenceChange). */
+  onDraftChange?: (tabId: string, hasDraft: boolean) => void;
   onStateChange: (tabId: string, updates: { isLoading?: boolean; sessionId?: string; title?: string; bot?: string }) => void;
   onShowGitStatus?: () => void;
   onOpenNote?: () => void;
@@ -79,10 +81,14 @@ interface ChatPanelProps {
   onOpenFileLink?: (target: { path: string; lineNumber?: number }) => void;
 }
 
-export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, outputStyle, onOutputStyleChange, isActive, isFocused, peerTabId, peerSide, refreshSignal, onStateChange, onShowGitStatus, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink }: ChatPanelProps) {
+export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollamaModel, onOllamaModelChange, deepseekModel, onDeepseekModelChange, kimiModel, onKimiModelChange, glmModel, onGlmModelChange, claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange, claudeFastMode, onClaudeFastModeChange, claudeThinking, onClaudeThinkingChange, codexModel, onCodexModelChange, codexReasoningEffort, onCodexReasoningEffortChange, planMode, onPlanModeChange, noHistory, onNoHistoryChange, outputStyle, onOutputStyleChange, isActive, isFocused, peerTabId, peerSide, refreshSignal, onDraftChange, onStateChange, onShowGitStatus, onOpenNote, isFavorite, onToggleFavorite, onCreateScheduledTask, onOpenSession, onContentSearch, onShowFileDiff, onOpenFileLink }: ChatPanelProps) {
   const handleLoadingChange = useCallback((isLoading: boolean) => {
     onStateChange(tabId, { isLoading });
   }, [tabId, onStateChange]);
+
+  const handleDraftPresenceChange = useCallback((hasDraft: boolean) => {
+    onDraftChange?.(tabId, hasDraft);
+  }, [tabId, onDraftChange]);
 
   const handleSessionIdChange = useCallback((newSessionId: string) => {
     onStateChange(tabId, { sessionId: newSessionId });
@@ -199,6 +205,7 @@ export function ChatPanel({ tabId, cwd, sessionId, engine, onEngineChange, ollam
       peerSide={peerSide}
       refreshSignal={refreshSignal}
       onLoadingChange={handleLoadingChange}
+      onDraftPresenceChange={onDraftChange ? handleDraftPresenceChange : undefined}
       onSessionIdChange={handleSessionIdChange}
       onTitleChange={handleTitleChange}
       onBotChange={handleBotChange}

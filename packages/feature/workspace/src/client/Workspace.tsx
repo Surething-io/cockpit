@@ -48,6 +48,9 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
   // A tab with no session yet (blank new tab) keeps its slot as null so the
   // positions after it stay honest.
   const [sessionOrders, setSessionOrders] = useState<Record<string, Array<string | null>>>({});
+  // Projects whose frame holds an unsent composer draft, fed by PROJECT_DRAFT
+  // pushes from each TabManager.
+  const [draftCwds, setDraftCwds] = useState<ReadonlySet<string>>(() => new Set());
   const [isLoaded, setIsLoaded] = useState(false);
   // Lazy load: only render project iframes that have been activated before (ever-growing set)
   const [loadedCwds, setLoadedCwds] = useState<Set<string>>(new Set());
@@ -182,6 +185,23 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
         const current = prev[cwd];
         if (current && current.length === ids.length && current.every((id, i) => id === ids[i])) return prev;
         return { ...prev, [cwd]: ids };
+      });
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type !== 'PROJECT_DRAFT') return;
+      const { cwd, hasDraft } = event.data;
+      if (typeof cwd !== 'string') return;
+      setDraftCwds((prev) => {
+        if (prev.has(cwd) === !!hasDraft) return prev;
+        const next = new Set(prev);
+        if (hasDraft) next.add(cwd);
+        else next.delete(cwd);
+        return next;
       });
     };
     window.addEventListener('message', handleMessage);
@@ -692,6 +712,7 @@ export function Workspace({ initialCwd, initialSessionId, initialBlank }: Worksp
         onFocusTerminal={handleFocusTerminal}
         onResolveSessionNumbers={resolveSessionNumbers}
         sessionOrders={sessionOrders}
+        draftCwds={draftCwds}
         sessionNumbers={liveSessionNumbers}
       />
 

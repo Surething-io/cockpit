@@ -222,6 +222,7 @@
     "upgradeCommandCopied": "已复制 `cockpit update`",
     "projectNotes": "项目笔记",
     "closeProject": "关闭项目",
+    "unsentDraft": "有未发送的输入",
     "bots": "机器人"
   },
   "mobile": {

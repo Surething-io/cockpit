@@ -464,6 +464,24 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
     }, '*');
   }, [initialCwd, tabs]);
 
+  // Tabs whose composer holds an unsent draft. Kept in a ref so typing never
+  // re-renders the tab tree; only the project-level flip below is state.
+  const draftTabIdsRef = useRef<Set<string>>(new Set());
+  const [hasDraft, setHasDraft] = useState(false);
+  const handleDraftChange = useCallback((tabId: string, tabHasDraft: boolean) => {
+    const ids = draftTabIdsRef.current;
+    if (tabHasDraft) ids.add(tabId);
+    else ids.delete(tabId);
+    setHasDraft(ids.size > 0);
+  }, []);
+
+  // Push draft presence up so the sidebar can mark this project. Also fires on
+  // mount, which clears a stale flag left by a previous frame for this cwd.
+  useEffect(() => {
+    if (!initialCwd || window.parent === window) return;
+    window.parent.postMessage({ type: 'PROJECT_DRAFT', cwd: initialCwd, hasDraft }, '*');
+  }, [initialCwd, hasDraft]);
+
   // Listen for messages from the parent window (used by Workspace to switch sessions)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -844,6 +862,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                           isActive={isChatSurfaceActive(tab.id, paneTabIds, activeView === 'agent', pageVisible)}
                           isFocused={tab.id === activeTabId}
                           refreshSignal={sessionRefresh}
+                          onDraftChange={handleDraftChange}
                           onStateChange={updateTabState}
                           onShowGitStatus={handleShowGitStatus}
                           onContentSearch={handleContentSearch}
@@ -1012,6 +1031,7 @@ export function TabManager({ initialCwd, initialSessionId, initialBlank, initial
                     isActive={isChatSurfaceActive(tab.id, paneTabIds, true, pageVisible)}
                     isFocused={tab.id === activeTabId}
                     refreshSignal={sessionRefresh}
+                    onDraftChange={handleDraftChange}
                     onStateChange={updateTabState}
                     isFavorite={isTabPinned(tab.id)}
                     onToggleFavorite={handleTogglePin}

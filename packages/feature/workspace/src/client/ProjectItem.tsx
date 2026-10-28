@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { BrowserRuntime } from '@cockpit/effect-runtime';
 import { useWebSocket, SessionNumberChip, ProjectNumberChip, sessionNumberRing, sessionNumberWash, type SessionNumberStatus } from '@cockpit/shared-ui';
 import { fetchCurrentBranch } from '@cockpit/feature-explorer';
+import { Pencil } from 'lucide-react';
 
 /** One clickable session badge in a project row. `label` is the session's live
  *  position in that project's tab bar, or '·' when the project's iframe has not
@@ -26,6 +27,8 @@ interface ProjectItemProps {
   collapsed: boolean;
   hasUnread?: boolean;
   isLoading?: boolean;
+  /** Some chat composer in this project holds an unsent draft. */
+  hasDraft?: boolean;
   /** Right-aligned session badges (already sorted and capped by the caller). */
   sessionBadges?: ProjectSessionBadge[];
   onClick: () => void;
@@ -70,6 +73,7 @@ export function ProjectItem({
   collapsed,
   hasUnread,
   isLoading,
+  hasDraft,
   sessionBadges,
   onClick,
   onSelectSession,
@@ -143,7 +147,19 @@ export function ProjectItem({
       data-tooltip={tooltipText}
     >
       {/* Rounded square = project; circles = sessions. */}
-      <ProjectNumberChip number={index + 1} status={collapsedStatus} isActive={isActive} />
+      {/* Pencil corner mark = an unsent draft waiting in this project. Shown on
+          the active project too: the draft may sit in a tab that is not in view. */}
+      <span className="relative flex-shrink-0">
+        <ProjectNumberChip number={index + 1} status={collapsedStatus} isActive={isActive} />
+        {hasDraft && (
+          <span
+            className="absolute -right-1.5 -top-1.5 flex h-3 w-3 items-center justify-center rounded-full bg-secondary text-muted-foreground"
+            title={t('workspace.unsentDraft')}
+          >
+            <Pencil className="h-2 w-2" strokeWidth={2.5} />
+          </span>
+        )}
+      </span>
 
       {!collapsed && (
         <>

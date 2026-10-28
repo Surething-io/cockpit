@@ -222,6 +222,7 @@
     "upgradeCommandCopied": "Copied `cockpit update`",
     "projectNotes": "Project Notes",
     "closeProject": "Close project",
+    "unsentDraft": "Unsent draft",
     "bots": "Bots"
   },
   "mobile": {

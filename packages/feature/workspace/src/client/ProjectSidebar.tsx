@@ -55,6 +55,8 @@ interface ProjectSidebarProps {
    *  a tab with no session yet). Absent for projects whose iframe has never
    *  been mounted (lazy load). */
   sessionOrders: Record<string, Array<string | null>>;
+  /** Project cwds whose frame reports an unsent composer draft. */
+  draftCwds: ReadonlySet<string>;
   /** Live "project.session" coordinates, keyed `${cwd}\n${sessionId}`. */
   sessionNumbers: Record<string, string>;
 }
@@ -264,6 +266,7 @@ export function ProjectSidebar({
   onFocusTerminal,
   onResolveSessionNumbers,
   sessionOrders,
+  draftCwds,
   sessionNumbers,
 }: ProjectSidebarProps) {
   const { t, i18n } = useTranslation();
@@ -512,6 +515,7 @@ export function ProjectSidebar({
               collapsed={collapsed}
               hasUnread={unreadCwds.has(project.cwd)}
               isLoading={loadingCwds.has(project.cwd)}
+              hasDraft={draftCwds.has(project.cwd)}
               sessionBadges={badgesByCwd.get(project.cwd)}
               onClick={() => onSelectProject(index)}
               onSelectSession={(sessionId) => onSwitchProject(project.cwd, sessionId)}

@@ -10,12 +10,30 @@
 import { spawn, execSync, type ChildProcess } from 'child_process';
 import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
+import { totalmem } from 'os';
 import { resolve, join } from 'path';
 import type { LanguageServerAdapter, Location, HoverInfo } from './types';
 
 const REQUEST_TIMEOUT = 10_000; // 10s (definition, references)
 const HOVER_TIMEOUT = 3_000;   // 3s (hover doesn't need long; skip display on timeout)
 const COLD_START_TIMEOUT = 30_000; // 30s (wait for project to load on cold start)
+
+/**
+ * tsserver heap ceiling in MB: half the machine's memory, clamped to
+ * [4096, 8192]. Node's default (~4.2 GB) is too small for large monorepos —
+ * a 12.8K-file project hit "Reached heap limit" about 27s into every project
+ * load, so each request respawned a server that could never finish loading.
+ * 8192 matches the ceiling VS Code users commonly set via
+ * `typescript.tsserver.maxTsServerMemory`; the floor keeps small machines at
+ * Node's own default rather than below it.
+ */
+const TSSERVER_MAX_HEAP_MB = Math.max(
+  4096,
+  Math.min(8192, Math.floor(totalmem() / 1024 / 1024 / 2)),
+);
+
+/** V8's fatal heap-exhaustion banner, as printed to stderr before abort. */
+const OOM_PATTERN = /Reached heap limit|JavaScript heap out of memory/;
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
@@ -32,6 +50,7 @@ export class TSServerAdapter implements LanguageServerAdapter {
   private buffer = Buffer.alloc(0);
   private openedFiles = new Set<string>();
   private coldStart = true; // newly started; project not yet fully loaded
+  private outOfMemory = false;
 
   /** Spawn the tsserver process */
   spawn(): ChildProcess {
@@ -40,7 +59,12 @@ export class TSServerAdapter implements LanguageServerAdapter {
 
     const setTitleScript = resolve(process.cwd(), 'bin/set-title.js');
     // Preload set-title.js via --require to set the process name without affecting tsserver's main module loading
-    const child = spawn('node', ['--require', setTitleScript, tsserverPath, '--disableAutomaticTypingAcquisition'], {
+    const child = spawn('node', [
+      `--max-old-space-size=${TSSERVER_MAX_HEAP_MB}`,
+      '--require', setTitleScript,
+      tsserverPath,
+      '--disableAutomaticTypingAcquisition',
+    ], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
@@ -52,6 +76,7 @@ export class TSServerAdapter implements LanguageServerAdapter {
 
     child.stderr!.setEncoding('utf-8');
     child.stderr!.on('data', (data: string) => {
+      if (OOM_PATTERN.test(data)) this.outOfMemory = true;
       console.log(`[tsserver stderr] ${data.trim()}`);
     });
 
@@ -165,6 +190,10 @@ export class TSServerAdapter implements LanguageServerAdapter {
       column: ref.start.offset,
       lineText: ref.lineText || '',
     }));
+  }
+
+  exitedOutOfMemory(): boolean {
+    return this.outOfMemory;
   }
 
   /** Graceful shutdown */

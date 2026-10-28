@@ -21,12 +21,97 @@ import { PyrightAdapter } from './pyrightAdapter';
 const GLOBAL_KEY = Symbol.for('lsp_server_registry_v2');
 const IDLE_TIMER_KEY = Symbol.for('lsp_idle_timer_v2');
 
+const HEALTH_KEY = Symbol.for('lsp_server_health_v1');
+
 const MAX_SERVERS = 5;
 const IDLE_TIMEOUT = 5 * 60 * 1000;  // 5 minutes
 const IDLE_CHECK_INTERVAL = 60 * 1000; // check every 60 seconds
 
 type GlobalWithRegistry = typeof globalThis & {
-  [key: symbol]: Map<string, LSPServerInstance> | ReturnType<typeof setInterval> | undefined;
+  [key: symbol]:
+    | Map<string, LSPServerInstance>
+    | Map<string, ServerHealth>
+    | ReturnType<typeof setInterval>
+    | undefined;
+};
+
+// ============================================
+// Out-of-memory circuit breaker
+//
+// A server that dies of heap exhaustion while loading its project will die
+// the same way on every respawn, and each attempt holds the request that
+// triggered it for the whole load (37s per hover, measured). Health is kept
+// per (language, cwd) as a small state machine; no entry means "running":
+//
+//   running    ──OOM exit──────────────────────▶ restarting (streak 1)
+//   restarting ──OOM exit, streak < MAX────────▶ restarting (streak + 1)
+//   restarting ──OOM exit, streak = MAX────────▶ tripped
+//   restarting ──non-OOM exit (idle, LRU, …)───▶ running
+//   tripped    ──cooldown elapsed──────────────▶ restarting (one more try)
+//
+// While tripped, getOrCreateServer returns null — the same "no LSP for this
+// file" answer callers already handle — instead of spawning.
+// ============================================
+
+type ServerHealth =
+  | { state: 'restarting'; oomStreak: number }
+  | { state: 'tripped'; until: number };
+
+/** Consecutive OOM exits before the breaker trips. */
+const MAX_OOM_STREAK = 2;
+/** How long a tripped server stays down before one more attempt. */
+const TRIP_COOLDOWN = 30 * 60 * 1000;
+/** An OOM after this much uptime is a fresh incident (e.g. a huge file
+ *  opened hours in), not a continuation of a crash-on-load streak. */
+const OOM_STREAK_WINDOW = 10 * 60 * 1000;
+
+function getHealth(): Map<string, ServerHealth> {
+  const g = globalThis as GlobalWithRegistry;
+  if (!g[HEALTH_KEY]) g[HEALTH_KEY] = new Map<string, ServerHealth>();
+  return g[HEALTH_KEY] as Map<string, ServerHealth>;
+}
+
+/** True while the breaker for `key` is open. A tripped entry whose cooldown
+ *  has elapsed moves to `restarting` one strike short of the limit, so a
+ *  single further OOM re-trips it. */
+function isTripped(key: string): boolean {
+  const health = getHealth();
+  const h = health.get(key);
+  if (h?.state !== 'tripped') return false;
+  if (Date.now() < h.until) return true;
+  health.set(key, { state: 'restarting', oomStreak: MAX_OOM_STREAK - 1 });
+  return false;
+}
+
+function recordExit(key: string, outOfMemory: boolean, uptimeMs: number): void {
+  const health = getHealth();
+  if (!outOfMemory) {
+    health.delete(key);
+    return;
+  }
+  const prev = health.get(key);
+  const streak =
+    prev?.state === 'restarting' && uptimeMs < OOM_STREAK_WINDOW ? prev.oomStreak + 1 : 1;
+  if (streak >= MAX_OOM_STREAK) {
+    health.set(key, { state: 'tripped', until: Date.now() + TRIP_COOLDOWN });
+    console.log(
+      `[lsp-registry] ${key} ran out of memory ${streak} times in a row; ` +
+        `not restarting for ${TRIP_COOLDOWN / 60_000} min`,
+    );
+  } else {
+    health.set(key, { state: 'restarting', oomStreak: streak });
+  }
+}
+
+/** Test-only handle on the module-private breaker. NEVER call from
+ *  production code. Driving it through getOrCreateServer would need a real
+ *  language server that runs out of memory on demand. */
+export const __lspHealthTesting = {
+  recordExit,
+  isTripped,
+  clear(): void {
+    getHealth().clear();
+  },
 };
 
 function getRegistry(): Map<string, LSPServerInstance> {
@@ -158,6 +243,8 @@ export async function getOrCreateServer(language: SupportedLanguage, cwd: string
     return existing;
   }
 
+  if (isTripped(key)) return null;
+
   // LRU eviction
   evictIfNeeded();
 
@@ -170,6 +257,7 @@ export async function getOrCreateServer(language: SupportedLanguage, cwd: string
   });
 
   const childProcess = adapter.spawn();
+  const startedAt = Date.now();
 
   const instance: LSPServerInstance = {
     language,
@@ -191,7 +279,10 @@ export async function getOrCreateServer(language: SupportedLanguage, cwd: string
   // Auto-clean up when the process exits
   childProcess.on('exit', () => {
     console.log(`[lsp-registry] ${language} server exited (cwd=${resolvedCwd})`);
-    registry.delete(key);
+    // Only the current instance may clear the slot — an old process exiting
+    // late must not evict its replacement.
+    if (registry.get(key) === instance) registry.delete(key);
+    recordExit(key, adapter.exitedOutOfMemory?.() ?? false, Date.now() - startedAt);
   });
 
   // Initialize if the adapter requires it (e.g. pyright's LSP initialize handshake)

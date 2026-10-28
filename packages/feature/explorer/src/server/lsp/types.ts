@@ -47,6 +47,10 @@ export interface LanguageServerAdapter {
 
   /** Graceful shutdown */
   shutdown(): void;
+
+  /** True once the process has died from heap exhaustion. Lets the registry
+   *  stop respawning a server that cannot fit the project in memory. */
+  exitedOutOfMemory?(): boolean;
 }
 
 /** LSP Server instance (used internally by the Registry) */
